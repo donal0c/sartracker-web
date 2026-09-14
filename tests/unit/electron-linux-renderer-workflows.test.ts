@@ -194,7 +194,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     expect(checkout.uses).toBe('actions/checkout@v4')
     expect(checkout.with).toMatchObject({ ref: '${{ env.EXPECTED_SOURCE_SHA }}' })
     expect(binding.run).toContain('git rev-parse HEAD')
-    expect(binding.run).toContain('git rev-parse HEAD^{tree}')
+    expect(binding.run).toContain("git rev-parse 'HEAD^{tree}'")
     expect(binding.run).toContain('git status --porcelain')
     expect(binding.run).toContain('source-binding.json')
     expect(binding.run).toContain('EXPECTED_SOURCE_SHA')

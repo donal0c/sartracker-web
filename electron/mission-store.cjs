@@ -90,6 +90,10 @@ const {
   readArchiveCleanupMembershipGeneration,
 } = require('./archive-cleanup-membership.cjs')
 const {
+  ensureSearchOperationsGenerationSchema,
+  installSearchOperationsGenerationTriggers,
+} = require('./search-operations-generation.cjs')
+const {
   deriveArchiveLifecycleEventId,
   readCurrentMissionFinalizationBoundary,
   prepareCurrentMissionFinalizationRead,
@@ -119,7 +123,10 @@ const {
   initializeLegacyEventProvenanceBackfill,
   readLegacyEventProvenanceBackfillPending,
 } = require('./mission-event-provenance-backfill.cjs')
-const { createParticipantStore } = require('./participant-store.cjs')
+const {
+  assertMissionParticipantBackfillComplete,
+  createParticipantStore,
+} = require('./participant-store.cjs')
 const { createResponsiveMissionWriter } = require('./responsive-mission-writer.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
@@ -2190,6 +2197,10 @@ function createElectronMissionStore(options) {
       input.mission_id,
       () => participantStore.selectMissionParticipants(input),
     ),
+    resolveLegacyParticipantRoster: async (input) => runCoverageMutation(
+      input.mission_id,
+      () => participantStore.resolveLegacyParticipantRoster(input),
+    ),
     addMissionParticipant: async (input) => runCoverageMutation(
       input.mission_id,
       () => participantStore.addMissionParticipant(input),
@@ -3677,6 +3688,7 @@ function migrate(db, archiveDirectory) {
       added_by TEXT,
       removed_at TEXT,
       removed_by TEXT,
+      starting_member_device_ids_json TEXT,
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,
       FOREIGN KEY (mission_team_id) REFERENCES mission_teams(id),
       CHECK ((kind = 'device') = (traccar_device_id IS NOT NULL)),
@@ -3688,6 +3700,8 @@ function migrate(db, archiveDirectory) {
     CREATE TABLE IF NOT EXISTS mission_replay_generations (
       mission_id TEXT PRIMARY KEY,
       generation INTEGER NOT NULL CHECK(generation >= 0),
+      search_operations_generation INTEGER NOT NULL DEFAULT 0
+        CHECK(search_operations_generation >= 0),
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
     CREATE TABLE IF NOT EXISTS mission_finalization_fences (
@@ -4322,6 +4336,9 @@ function migrate(db, archiveDirectory) {
       FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE
     );
   `)
+    // Search Operations pagination has its own derived fence so audit-only
+    // events such as backup telemetry do not expire an unchanged page.
+    ensureSearchOperationsGenerationSchema(db)
     // Additive operational migration: request targets are excluded from archive rows.
     // Existing targets stay unknown until a real request or acknowledged chunk supplies one.
     ensureColumnExists(db, 'tracking_history_checkpoints', 'requested_until', 'TEXT')
@@ -4344,6 +4361,7 @@ function migrate(db, archiveDirectory) {
     ensureColumnExists(db, 'gpx_track_imports', 'retired_by', 'TEXT')
     ensureColumnExists(db, 'gpx_import_revisions', 'outing_id', 'TEXT')
     ensureColumnExists(db, 'gpx_import_revisions', 'import_state', "TEXT NOT NULL DEFAULT 'complete'")
+    ensureColumnExists(db, 'mission_participants', 'starting_member_device_ids_json', 'TEXT')
     ensureColumnExists(
       db,
       'gpx_import_revisions',
@@ -4570,6 +4588,7 @@ function migrate(db, archiveDirectory) {
     // Install after synchronous schema migration. Later bounded/background
     // evidence writes are runtime membership changes and must advance it.
     installArchiveCleanupMembershipTriggers(db, CURRENT_SCHEMA_VERSION)
+    installSearchOperationsGenerationTriggers(db)
     db.prepare("INSERT INTO metadata (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(String(CURRENT_SCHEMA_VERSION))
   })
@@ -5577,19 +5596,20 @@ function finishMission(db, missionId) {
   if (mission.status === 'finished' || mission.status === 'finalized') {
     throw new Error('Mission is already finished.')
   }
-  const incompleteBackfillCount = db.prepare(`SELECT COUNT(*) AS count
-    FROM participant_backfill_checkpoints
-    WHERE mission_id = ? AND completed = 0`)
-    .get(missionId).count
-  if (incompleteBackfillCount > 0) {
-    throw new Error(
-      `Mission cannot be finished while ${incompleteBackfillCount} participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.`,
-    )
-  }
   const timestamp = now()
   const additionalPausedSeconds =
     mission.status === 'paused' ? calculatePausedSeconds(mission.pause_time, timestamp) : 0
   const transaction = db.transaction(() => {
+    const incompleteBackfillCount = db.prepare(`SELECT COUNT(*) AS count
+      FROM participant_backfill_checkpoints
+      WHERE mission_id = ? AND completed = 0`)
+      .get(missionId).count
+    if (incompleteBackfillCount > 0) {
+      throw new Error(
+        `Mission cannot be finished while ${incompleteBackfillCount} participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.`,
+      )
+    }
+    assertMissionParticipantBackfillComplete(db, missionId)
     assertLegacyMissionObjectBackfillSettled(db)
     assertLegacyEventProvenanceReady(db, missionId)
     assertNoUnsettledGpxImportState(db, missionId)

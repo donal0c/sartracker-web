@@ -29,6 +29,11 @@ const {
   ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_SQL,
   assertArchiveCleanupMembershipGeneration,
 } = require('./archive-cleanup-membership.cjs')
+const {
+  SEARCH_OPERATIONS_GENERATION_COLUMN,
+  SEARCH_OPERATIONS_TRIGGER_NAMES,
+  SEARCH_OPERATIONS_TRIGGER_SQL,
+} = require('./search-operations-generation.cjs')
 
 const CURRENT_SCHEMA_VERSION = 13
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
@@ -65,7 +70,7 @@ const EXPECTED_INDEX_NAMES = Object.freeze([
   'idx_search_assignments_mission',
   'idx_search_passes_mission',
 ])
-const EXPECTED_TRIGGER_NAMES = Object.freeze([
+const LEGACY_EXPECTED_TRIGGER_NAMES = Object.freeze([
   ...ARCHIVE_CLEANUP_MEMBERSHIP_TRIGGER_NAMES,
   'positions_replay_day_count_delete',
   'positions_replay_day_count_insert',
@@ -138,6 +143,7 @@ const CANONICAL_MISSING_REPLAY_OBJECTS = Object.freeze({
         AND known_day = substr(MAX(OLD.timestamp, OLD.received_at,
           COALESCE(OLD.timestamp_provenance_recorded_at, OLD.received_at)), 1, 10);
     END`,
+  ...SEARCH_OPERATIONS_TRIGGER_SQL,
 })
 
 /** Stable archive scratch error with no mission content in its message. */
@@ -439,20 +445,36 @@ function rebuildDerivedTables(scratch, missionId) {
 
 /** Installs the exact named source indexes and triggers after bulk extraction. */
 function installPostLoadObjects(source, scratch) {
+  const hasSearchOperationsGeneration = source.prepare(
+    'PRAGMA table_info(mission_replay_generations)',
+  ).all().some((column) => column.name === SEARCH_OPERATIONS_GENERATION_COLUMN)
+  const expectedTriggerNames = hasSearchOperationsGeneration
+    ? Object.freeze([...LEGACY_EXPECTED_TRIGGER_NAMES, ...SEARCH_OPERATIONS_TRIGGER_NAMES].sort())
+    : LEGACY_EXPECTED_TRIGGER_NAMES
   const objects = source.prepare(`SELECT type, name, sql FROM sqlite_master
     WHERE type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
     ORDER BY type, name`).all()
   const indexes = objects.filter((row) => row.type === 'index')
   const triggers = objects.filter((row) => row.type === 'trigger')
   if (indexes.some((row) => !EXPECTED_INDEX_NAMES.includes(row.name))
-    || triggers.some((row) => !EXPECTED_TRIGGER_NAMES.includes(row.name))) {
+    || triggers.some((row) => !expectedTriggerNames.includes(row.name))) {
     throw new ArchiveScratchError(
       'ARCHIVE_SCOPE_INVALID',
       'Mission archive source indexes or triggers do not match schema v13.',
     )
   }
   const sourceSql = new Map(objects.map((row) => [row.name, row.sql]))
-  for (const name of [...EXPECTED_INDEX_NAMES, ...EXPECTED_TRIGGER_NAMES]) {
+  if (hasSearchOperationsGeneration && SEARCH_OPERATIONS_TRIGGER_NAMES.some((name) => {
+    const sourceTriggerSql = sourceSql.get(name)
+    return sourceTriggerSql !== undefined
+      && normalizeSchemaSql(sourceTriggerSql) !== normalizeSchemaSql(SEARCH_OPERATIONS_TRIGGER_SQL[name])
+  })) {
+    throw new ArchiveScratchError(
+      'ARCHIVE_SCOPE_INVALID',
+      'Mission archive Search Operations triggers do not match the canonical schema.',
+    )
+  }
+  for (const name of [...EXPECTED_INDEX_NAMES, ...expectedTriggerNames]) {
     const sql = sourceSql.get(name) ?? CANONICAL_MISSING_REPLAY_OBJECTS[name]
     if (typeof sql !== 'string') {
       throw new ArchiveScratchError(
@@ -462,6 +484,11 @@ function installPostLoadObjects(source, scratch) {
     }
     scratch.prepare(sql).run()
   }
+}
+
+/** Compares persisted schema SQL while ignoring harmless whitespace changes. */
+function normalizeSchemaSql(sql) {
+  return sql.replace(/\s+/gu, ' ').trim()
 }
 
 /** Produces an authenticated schema-ledger identity for manifest verification. */

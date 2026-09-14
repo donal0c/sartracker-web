@@ -1,3 +1,4 @@
+import type { LegacyRosterAttestationInput } from '../../../shared/legacy-roster-attestation.mjs'
 import type {
   AddMissionParticipantInput,
   GroupMembershipEvent,
@@ -14,6 +15,7 @@ import type { ParticipantRuntimeState } from './participant-store'
 import { createParticipationScope } from './participation-scope'
 
 type ParticipantStoreBoundary = {
+  readonly resolveLegacyParticipantRoster?: (input: LegacyRosterAttestationInput) => Promise<MissionParticipant>
   readonly selectMissionParticipants: (
     input: SelectMissionParticipantsInput,
   ) => Promise<readonly MissionParticipant[]>
@@ -63,7 +65,11 @@ export type ParticipantRuntimeController = {
     missionId: string,
     selectedBy: string,
   ) => Promise<readonly MissionParticipant[]>
-  readonly addParticipant: (input: Omit<AddMissionParticipantInput, 'mission_id'>) => Promise<MissionParticipant | null>
+  readonly addParticipant: (input: Omit<AddMissionParticipantInput, 'mission_id' | 'ref' | 'kind'> & (
+    | { readonly kind: 'device'; readonly ref: string }
+    | { readonly kind: 'group'; readonly ref: { readonly traccar_group_id: string; readonly name: string } }
+  )) => Promise<MissionParticipant | null>
+  readonly resolveLegacyRoster: (input: Omit<LegacyRosterAttestationInput, 'mission_id'>) => Promise<MissionParticipant | null>
   readonly removeParticipant: (
     participantId: string,
     removedBy: string,
@@ -304,7 +310,7 @@ export async function startParticipantRuntime(
       if (input.kind === 'group' && !canSelectGroups()) {
         throw incompleteRosterSelectionError()
       }
-      const observedInput = input.kind === 'group' && typeof participantRef !== 'string'
+      const observedInput = typeof participantRef !== 'string'
         ? {
             ...input,
             ref: {
@@ -314,11 +320,17 @@ export async function startParticipantRuntime(
                 .map((device) => device.device_id),
             },
           }
-        : input
+        : { ...input, ref: participantRef }
       return dependencies.participantStore.addMissionParticipant({
         mission_id: missionId,
         ...observedInput,
       })
+    }),
+    resolveLegacyRoster: async (input) => mutate(async (missionId) => {
+      if (!dependencies.participantStore.resolveLegacyParticipantRoster) {
+        throw new Error('Legacy roster recovery is unavailable in this runtime.')
+      }
+      return dependencies.participantStore.resolveLegacyParticipantRoster({ ...input, mission_id: missionId })
     }),
     removeParticipant: async (participantId, removedBy, reason) => mutate(async (missionId) =>
       dependencies.participantStore.removeMissionParticipant({

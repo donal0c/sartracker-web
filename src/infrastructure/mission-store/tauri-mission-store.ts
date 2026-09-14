@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { LegacyRosterAttestationInput } from '../../../shared/legacy-roster-attestation.mjs'
 import type {
   AcknowledgeIngestEvidenceLossInput,
   IngestEvidenceHealth,
@@ -184,11 +185,19 @@ export type MissionParticipant = {
   readonly added_by: string | null
   readonly removed_at: string | null
   readonly removed_by: string | null
+  /** Immutable JSON array of devices selected when this group window began. */
+  readonly starting_member_device_ids_json?: string | null
   readonly backfill_window_to?: string | null
   readonly backfill_reconciled_until?: string | null
   readonly backfill_completed?: number | null
   readonly backfill_member_count?: number | null
   readonly backfill_completed_count?: number | null
+  /** True when a legacy group window's starting roster was conservatively reconstructed. */
+  readonly backfill_scope_inferred?: boolean | null
+  readonly backfill_scope_attested?: boolean
+  /** True when a legacy group window has no provable historical roster. */
+  readonly backfill_scope_unknown?: boolean | null
+  readonly backfill_scope_error?: string | null
 }
 
 export type GroupMembershipEvent = {
@@ -914,7 +923,7 @@ export type AddMissionParticipantInput = {
   readonly ref: string | {
     readonly traccar_group_id: string
     readonly name: string
-    readonly member_device_ids?: readonly string[]
+    readonly member_device_ids: readonly string[]
   }
   readonly effective_from?: string
   readonly confirmed_by: string
@@ -1040,6 +1049,7 @@ export type MissionStore = {
   readonly addMissionParticipant?: (
     input: AddMissionParticipantInput,
   ) => Promise<MissionParticipant>
+  readonly resolveLegacyParticipantRoster?: (input: LegacyRosterAttestationInput) => Promise<MissionParticipant>
   readonly removeMissionParticipant?: (input: {
     readonly mission_id: string
     readonly participant_id: string

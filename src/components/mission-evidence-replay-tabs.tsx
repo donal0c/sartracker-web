@@ -280,7 +280,7 @@ export function SearchOperationsTab(props: {
       <SearchPageNavigator controller={props.controller} disabled={props.reviewBusy} kind="passes" label="Recorded passes" onSearchChange={setPassSearch} page={props.operations.pages.passes} search={passSearch} />
     </section>
     {props.reviewBusy ? <p className="text-xs text-stone-400" data-testid="search-operations-refreshing" role="status">Updating retained Search Operations evidence…</p> : null}
-    {props.writeBlocked ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-write-blocked">Evidence entry is disabled until Review refresh succeeds. Retained evidence search and paging remain available.</p> : null}
+    {props.writeBlocked ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-write-blocked">Evidence entry is disabled until failed evidence reads recover. Retry a failed page with First or Search; a Review error requires Review refresh.</p> : null}
     {props.readOnly ? <p className="rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-amber-100" data-testid="search-operations-read-only">This finished or finalized mission is permanently read-only. Retained assignments and passes remain visible for evidence review; new records require an active mission.</p> : null}
     {!props.hideMutationControls && props.operations.areas.length > 0 ? <section className="rounded-2xl border border-stone-800 bg-stone-900/30 p-5" data-testid="search-operation-entry">
       <p className="mb-3 text-xs font-medium text-amber-200">Pass outcomes are coordinator-declared. Coverage remains advisory only and never declares an area searched.</p>
@@ -338,9 +338,10 @@ function SearchPageNavigator(props: {
     <div className="mt-2 flex flex-wrap gap-2">
       <input className="min-w-44 flex-1 rounded-lg border border-stone-700 bg-stone-950 px-2 py-1 text-xs text-stone-100" data-testid={`search-operation-${props.kind}-search`} disabled={props.disabled} maxLength={120} onChange={(event) => props.onSearchChange(event.target.value)} placeholder={`Search ${props.label.toLowerCase()}`} value={props.search} />
       <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-search-apply`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.searchSearchOperations(props.kind, props.search)} type="button">Search</button>
-      {props.page.pageNumber > 1 ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-first`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.returnToFirstSearchOperations(props.kind)} type="button">First</button> : null}
+      {props.page.pageNumber > 1 || props.page.error ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-first`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.returnToFirstSearchOperations(props.kind)} type="button">First</button> : null}
       {props.page.hasMore ? <button className="rounded-lg border border-stone-600 px-2 py-1 text-xs" data-testid={`search-operation-${props.kind}-next`} disabled={props.disabled || props.page.loading} onClick={() => void props.controller?.loadNextSearchOperations(props.kind)} type="button">Next</button> : null}
     </div>
+    {props.page.error ? <p role="alert" className="mt-2 text-xs text-amber-200">{props.page.error}</p> : null}
   </div>
 }
 

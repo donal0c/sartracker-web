@@ -2,7 +2,9 @@ const SEARCH_OPERATION_PAGE_LIMIT = 25
 const MAX_SEARCH_OPERATION_PAGE_LIMIT = 50
 const MAX_SEARCH_OPERATION_PAGE_BYTES = 256 * 1024
 const MAX_SEARCH_OPERATION_TEXT_LENGTH = 200
+const SEARCH_OPERATION_CURSOR_VERSION = 3
 const SEARCH_OPERATION_KINDS = new Set(['areas', 'assignments', 'outings', 'passes'])
+const { readSearchOperationsGeneration } = require('./search-operations-generation.cjs')
 
 /** Reads one bounded, searchable Search Operations projection page. */
 function readSearchOperationPage(database, input) {
@@ -12,7 +14,7 @@ function readSearchOperationPage(database, input) {
 
 /** Reads count and entries from one pinned mission-evidence snapshot. */
 function readSearchOperationPageWithinSnapshot(database, query) {
-  const generation = readMissionReplayGeneration(database, query.missionId)
+  const generation = readSearchOperationsGeneration(database, query.missionId)
   const specification = pageSpecification(query.kind)
   const cursor = decodeSearchOperationCursor(query.cursor, { ...query, generation })
   const searchPattern = `%${escapeLike(query.search)}%`
@@ -176,7 +178,8 @@ function escapeLike(value) {
 
 /** Encodes one mission/kind/search-bound keyset continuation. */
 function encodeSearchOperationCursor(value) {
-  return Buffer.from(JSON.stringify({ v: 2, ...value }), 'utf8').toString('base64url')
+  return Buffer.from(JSON.stringify({ v: SEARCH_OPERATION_CURSOR_VERSION, ...value }), 'utf8')
+    .toString('base64url')
 }
 
 /** Decodes and verifies a Search Operations continuation before SQL use. */
@@ -188,7 +191,7 @@ function decodeSearchOperationCursor(value, query) {
   } catch {
     throw new Error('Search Operations page cursor is invalid.')
   }
-  if (parsed?.v !== 2 || parsed.missionId !== query.missionId
+  if (parsed?.v !== SEARCH_OPERATION_CURSOR_VERSION || parsed.missionId !== query.missionId
     || parsed.kind !== query.kind || parsed.search !== query.search
     || !Number.isSafeInteger(parsed.generation) || parsed.generation < 0
     || !isBoundedCursorText(parsed.orderValue) || !isBoundedCursorText(parsed.id)) {
@@ -213,19 +216,6 @@ function assertSearchOperationPageResult(result, requestedLimit = MAX_SEARCH_OPE
   if (Buffer.byteLength(JSON.stringify(result), 'utf8') > MAX_SEARCH_OPERATION_PAGE_BYTES) {
     throw new Error('Search Operations worker page exceeds the renderer byte budget.')
   }
-}
-
-/** Reads the bounded generation that owns a Search Operations page chain. */
-function readMissionReplayGeneration(database, missionId) {
-  const hasGenerationTable = database.prepare(`SELECT 1 FROM sqlite_master
-    WHERE type = 'table' AND name = 'mission_replay_generations'`).get() !== undefined
-  if (!hasGenerationTable) return 0
-  const generation = Number(database.prepare(`SELECT generation
-    FROM mission_replay_generations WHERE mission_id = ?`).get(missionId)?.generation ?? 0)
-  if (!Number.isSafeInteger(generation) || generation < 0) {
-    throw new Error('Search Operations mission generation is invalid.')
-  }
-  return generation
 }
 
 /** Normalizes one small text field before it can reach SQLite or a cursor. */

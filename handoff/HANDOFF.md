@@ -2,48 +2,50 @@
 
 Updated 2026-09-13. Read after `CLAUDE.md`.
 
-## Current baseline and active work
+## Current state
 
-Master is `8f93f8d1cc4554178706e23401ecd496d1193195`: PR26 WAR-06 mission-scope
-repair is merged, following PR23 transport and PR24 property/mutation work.
-WAR-06's implementation, retained diagnostics and remaining domain questions are
-in [its remediation record](../docs/assurance/findings/war-06/claude-review-remediation.md).
-Older history is in [the archive](archive/pre-war06-repair-20260913.md).
+Master is `2b2bf8e605e27123c9e454598828d71cb7c062aa`; PR25/26 are merged.
+DON-267 is Done. DON-254 remains In Progress; release remains HOLD.
+[PR27](https://github.com/donal0c/sartracker-web/pull/27), Repair Train D
+(`codex/repair-train-d`, AUD-08/DON-271 and AUD-09/DON-279), is **not ready to merge**.
+Earlier readiness at `e3eac2b68d2bf67c3bbe71e0116a3c64e6c62764` is withdrawn after
+Claude review. Follow-up fixes are verified locally; exact-head PR checks and
+reviews control the next decision. Preserve the retained qualification failures.
+Train C rebases after Train D merges. Donal owns merge; no merge is authorized here.
 
-PR25 / DON-254 on `codex/don-254-legacy-recovery-responsiveness` is a test/tooling
-repair. It observes real production worker completion/exit, then independently
-checks stored evidence, with strict 200 ms and final-tail gates. The latest review
-follow-up fixes recursive evidence binding, pins the audit oracle to a real store
-write in ordinary tests, removes the GPX self-poll, isolates native restart timing,
-and adds CI report validation and relevant master-push verification.
-[Current review disposition](../docs/assurance/findings/legacy-recovery-review-followup.md).
+## Active work and decision
 
-## Verification and next action
+The [Claude review disposition](../docs/assurance/findings/pr27-claude-review.md)
+records each finding, reproductions and the pending decision. Confirmed fixes cover
+backdated group scope/scheduling, corrupt-row isolation, drawing retirement parity,
+progress display, input types and an uploaded NOT RUN qualification receipt.
+Generation fallback is intentional immutable-archive compatibility; a native test
+now covers cascade invalidation. Removing a participant never clears required history.
 
-The latest [PR25 terminal receipt](https://github.com/donal0c/sartracker-web/pull/25)
-binds the final source/CI head, native artifact, custody proof and merge readiness.
-Earlier `c93b6925` proof is historical after this follow-up; its evidence README
-and manifest distinguish source snapshots from current inputs. Do not infer
-readiness from old READY comments. Donal owns merge; no merge/release is authorized.
+**Approved by Donal:** audited coordinator recovery for missing legacy membership,
+including explicitly attested empty scope (SAR-QA-022). Implementation preserves the
+NULL snapshot and appends an audit event; supplied members require the original
+history window. Native/restart/archive checks and independent native/shared and
+UI/IPC reviews pass. No new local build or Electron run was performed.
 
-Local stable correctness passes 447 files / 4,731 tests with the same six
-qualification-only skips. Focused custody/report controls and separated native
-restart intervals pass. The terminal PR receipt records final strict affected
-timings, build/lint and exact-head CI/artifact checks; require it before READY.
-Operator behavior is unchanged; no manual edit.
-Use [testing cadence](../docs/testing-and-review-cadence.md) and the single
-[two-track queue](../docs/two-track-execution-workplan.md).
+## Verification and next actions
+
+Full serial correctness: 4,825 tests / 458 files pass; six existing exclusions.
+Affected Chromium: 26/26 pass, with inspected screenshots and retained traces.
+Lint, typecheck, workflow and syntax checks pass. A stale drawing-delete assertion
+was corrected to verify visible removal plus retained retirement; production inputs
+were unchanged after the full source cycle. PR checks are separate from packaged acceptance.
+The [original Train D record](../docs/assurance/findings/repair-train-d.md) retains
+earlier full-source/browser/CI proof. Native attempt 1 remains FAILED.
+Do not repeat native runs on unchanged baseline blockers. Existing gate requirements
+remain; source binding also changed quoted Git syntax and exported the expected tree.
 
 ## Remaining limits
 
-DON-254 remains In Progress and release HOLD. The 204.046 ms concurrent SQLite
-read is unresolved; this observer repair does not establish operator-read latency
-under backfill. Historical 239.509 ms attribution remains incomplete. The native
-probe uses a second disposable store and injected production runner; it does not
-qualify default application wiring or operator load. Strict whole-candidate
-responsiveness, replay/soak, provider, field and publication remain separate.
-
-Repair Trains C/D, applicable WAR-04 remediation and remaining team requests stay
-in the [coordinated ledger](../docs/assurance/coordinated-work-ledger.md).
-Time-unverified current positions driving stationary attention is still an open
-domain question outside these changes.
+DON-254 retains the coverage result-bound race, three baseline settings failures,
+unresolved 204.046 ms concurrent SQLite read and incomplete 239.509 ms attribution.
+Strict responsiveness, replay/soak, provider, field and publication qualification
+remain separate. Use the [coordinated ledger](../docs/assurance/coordinated-work-ledger.md),
+[two-track queue](../docs/two-track-execution-workplan.md) and
+[testing cadence](../docs/testing-and-review-cadence.md). Earlier history is in
+[the archive](archive/pre-war06-repair-20260913.md).

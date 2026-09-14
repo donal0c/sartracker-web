@@ -464,7 +464,7 @@ export function MissionReviewWorkspace() {
                         || (snapshot.mission.status === 'finished' && !correctionAuthorizationActive)
                         || snapshot.mission.status === 'finalized'}
                       reviewBusy={loading || refreshing}
-                      writeBlocked={error !== null}
+                      writeBlocked={error !== null || Object.values(searchOperations.pages).some((page) => Boolean(page.error))}
                     />
                   </Suspense>
                 ) : activeTab === 'marker-log' ? (

@@ -187,3 +187,20 @@ SAR Tracker showed raw 2026-08-22T15:10:17.000Z while Traccar Replay showed 22/0
 “current fixes were slow to come in.”
 
 Following discussion with Sean we believe the breadcrumb fixed time should be taken from Traccar server and not from any other time.
+
+---
+
+## Donal approval — legacy roster recovery, 2026-09-13
+
+Source: Donal's current Codex PR27 Claude review follow-up conversation.
+This is Donal's product approval, not a newly inferred SAR team answer.
+
+Question/recommendation sent:
+
+> The P1 needs your decision: may we add an audited coordinator action to supply missing legacy membership—or explicitly confirm an empty roster—with Finish still requiring complete history?
+>
+> I recommend that approach. The recorded requirements don’t define this recovery authority, so I haven’t invented it.
+
+Donal's answer (verbatim):
+
+> go with your recommendation.

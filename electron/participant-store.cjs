@@ -1,4 +1,10 @@
 const { randomUUID } = require('node:crypto')
+const { normalizeLegacyRosterAttestation, readLegacyRosterAttestation } = require('../shared/legacy-roster-attestation.mjs')
+const {
+  evaluateParticipantBackfill,
+  parseStartingMemberDeviceIds,
+  resolveParticipantBackfillScope,
+} = require('../shared/participant-backfill-completeness.mjs')
 
 /** Creates the transactional mission participant subsystem. */
 function createParticipantStore(options) {
@@ -18,18 +24,20 @@ function createParticipantStore(options) {
       const transaction = db.transaction(() => {
         const selected = []
         for (const groupInput of groups) {
+          const memberDeviceIds = normalizeDeviceIdArray(groupInput?.member_device_ids)
           const team = createOrGetTeam(db, mission.id, groupInput, timestamp)
           assertNoActiveDuplicate(db, mission.id, 'group', null, team.id)
           selected.push(insertParticipant(db, {
             missionId: mission.id,
             kind: 'group',
             missionTeamId: team.id,
+            startingMemberDeviceIdsJson: serializeStartingMemberDeviceIds(memberDeviceIds),
             provenance: 'explicit',
             effectiveFrom: mission.start_time,
             addedAt: timestamp,
             addedBy: selectedBy,
           }))
-          for (const deviceId of normalizeDeviceIdArray(groupInput?.member_device_ids)) {
+          for (const deviceId of memberDeviceIds) {
             insertMembershipEvent(db, {
               missionId: mission.id,
               missionTeamId: team.id,
@@ -103,19 +111,37 @@ function createParticipantStore(options) {
       const transaction = db.transaction(() => {
         let teamId = null
         let deviceId = null
+        let requiredMemberDeviceIds = []
         if (kind === 'group') {
           teamId = createOrGetTeam(db, mission.id, input?.ref, addedAt).id
           if (!Array.isArray(input?.ref?.member_device_ids)) {
             throw new Error('Current group member device ids are required.')
           }
+          const memberDeviceIds = normalizeDeviceIdArray(input.ref.member_device_ids)
+          requiredMemberDeviceIds = memberDeviceIds
           synchronizeObservedGroupMembership(
             db,
             mission.id,
             teamId,
-            normalizeDeviceIdArray(input.ref.member_device_ids),
+            memberDeviceIds,
             addedAt,
             addedAt,
           )
+          const scope = resolveParticipantBackfillScope({
+            participant: {
+              missionId: mission.id,
+              kind: 'group',
+              teamId,
+              effectiveFrom,
+              addedAt,
+              startingMemberDeviceIdsJson: serializeStartingMemberDeviceIds(memberDeviceIds),
+            },
+            ...readParticipantBackfillEvidence(db, mission.id),
+          })
+          if (scope.scope === 'unknown') {
+            throw new Error(scope.error ?? 'Participant group history scope is unavailable.')
+          }
+          requiredMemberDeviceIds = scope.memberDeviceIds
         } else {
           deviceId = normalizeIdentifier(input?.ref, 'Traccar device id')
         }
@@ -125,6 +151,9 @@ function createParticipantStore(options) {
           kind,
           deviceId,
           missionTeamId: teamId,
+          startingMemberDeviceIdsJson: kind === 'group'
+            ? serializeStartingMemberDeviceIds(normalizeDeviceIdArray(input.ref.member_device_ids))
+            : null,
           provenance: 'explicit',
           effectiveFrom,
           addedAt,
@@ -141,7 +170,7 @@ function createParticipantStore(options) {
             updatedAt: addedAt,
           })
         } else {
-          for (const memberDeviceId of normalizeDeviceIdArray(input.ref.member_device_ids)) {
+          for (const memberDeviceId of requiredMemberDeviceIds) {
             insertBackfillCheckpoint(db, {
               missionId: mission.id,
               deviceId: memberDeviceId,
@@ -165,6 +194,38 @@ function createParticipantStore(options) {
           confirmed_by: actor,
         })
         return participant
+      })
+      return transaction()
+    },
+
+    /** Appends an explicit coordinator attestation and schedules the original history interval atomically. */
+    resolveLegacyParticipantRoster(input) {
+      const details = normalizeLegacyRosterAttestation(input)
+      const timestamp = readNow()
+      const transaction = db.transaction(() => {
+        const mission = requireMutableMission(db, details.mission_id)
+        const participant = requireParticipant(db, mission.id, details.participant_id)
+        const evaluation = readParticipantBackfillEvaluations(db, mission.id, [participant]).get(participant.id)
+        if (participant.kind !== 'group' || participant.starting_member_device_ids_json != null
+          || evaluation?.scope !== 'unknown' || evaluation?.error) {
+          throw new Error('Only an unresolved legacy group roster can be attested. Already resolved rosters require a separate audited correction.')
+        }
+        validateEffectiveFrom(mission, normalizeTimestamp(participant.effective_from, 'Original interval start'),
+          normalizeTimestamp(participant.added_at, 'Original interval end'))
+        if (normalizeTimestamp(participant.added_at, 'Original interval end') > timestamp) {
+          throw new Error('Original participant interval cannot end in the future. Retain this mission for repair.')
+        }
+        insertAudit(db, mission.id, 'participant_roster_attested', timestamp, details,
+          `participant-roster-attestation:${participant.id}`)
+        const resolved = readParticipantBackfillEvaluations(db, mission.id, [participant]).get(participant.id)
+        if (resolved?.scope !== 'attested') throw new Error('Roster attestation could not be verified.')
+        for (const deviceId of resolved.memberDeviceIds) {
+          insertBackfillCheckpoint(db, { missionId: mission.id, deviceId,
+            windowFrom: participant.effective_from, windowTo: participant.added_at, updatedAt: timestamp })
+        }
+        recordCoverageChange(mission.id, timestamp)
+        failAfterMutation(faultInjection)
+        return listMissionParticipants(db, mission.id).find((row) => row.id === participant.id)
       })
       return transaction()
     },
@@ -329,16 +390,19 @@ function insertParticipant(db, input) {
     added_by: input.addedBy ?? null,
     removed_at: null,
     removed_by: null,
+    starting_member_device_ids_json: input.startingMemberDeviceIdsJson ?? null,
   }
   db.prepare(`INSERT INTO mission_participants (
-      id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
-      effective_from, added_at, added_by, removed_at, removed_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)`)
+    id, mission_id, kind, traccar_device_id, mission_team_id, provenance,
+    effective_from, added_at, added_by, removed_at, removed_by,
+    starting_member_device_ids_json
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`)
     .run(
       participant.id, participant.mission_id, participant.kind,
       participant.traccar_device_id, participant.mission_team_id,
       participant.provenance, participant.effective_from,
       participant.added_at, participant.added_by,
+      participant.starting_member_device_ids_json,
     )
   return participant
 }
@@ -471,7 +535,7 @@ function insertBackfillCheckpoint(db, input) {
 }
 
 function listMissionParticipants(db, missionId) {
-  return db.prepare(`SELECT participant.*, team.traccar_group_id, team.name AS team_name,
+  const participants = db.prepare(`SELECT participant.*, team.traccar_group_id, team.name AS team_name,
       CASE WHEN participant.kind = 'device' THEN (
         SELECT MAX(checkpoint.window_to) FROM participant_backfill_checkpoints AS checkpoint
         WHERE checkpoint.mission_id = participant.mission_id
@@ -496,40 +560,112 @@ function listMissionParticipants(db, missionId) {
           AND checkpoint.traccar_device_id = participant.traccar_device_id
           AND checkpoint.window_from >= participant.effective_from
           AND checkpoint.window_to <= participant.added_at
-      ) ELSE NULL END AS backfill_completed,
-      CASE WHEN participant.kind = 'group' THEN (
-        SELECT COUNT(DISTINCT initial_membership.traccar_device_id)
-        FROM mission_group_membership_events AS initial_membership
-        WHERE initial_membership.mission_id = participant.mission_id
-          AND initial_membership.mission_team_id = participant.mission_team_id
-          AND initial_membership.change = 'member'
-          AND initial_membership.observed_at = participant.added_at
-      ) ELSE NULL END AS backfill_member_count,
-      CASE WHEN participant.kind = 'group' THEN (
-        SELECT COUNT(DISTINCT CASE WHEN EXISTS (
-            SELECT 1 FROM participant_backfill_checkpoints AS group_checkpoint
-            WHERE group_checkpoint.mission_id = initial_membership.mission_id
-              AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
-              AND group_checkpoint.window_from >= participant.effective_from
-              AND group_checkpoint.window_to <= participant.added_at
-          ) AND NOT EXISTS (
-            SELECT 1 FROM participant_backfill_checkpoints AS group_checkpoint
-            WHERE group_checkpoint.mission_id = initial_membership.mission_id
-              AND group_checkpoint.traccar_device_id = initial_membership.traccar_device_id
-              AND group_checkpoint.window_from >= participant.effective_from
-              AND group_checkpoint.window_to <= participant.added_at
-              AND group_checkpoint.completed = 0
-          ) THEN initial_membership.traccar_device_id END)
-        FROM mission_group_membership_events AS initial_membership
-        WHERE initial_membership.mission_id = participant.mission_id
-          AND initial_membership.mission_team_id = participant.mission_team_id
-          AND initial_membership.change = 'member'
-          AND initial_membership.observed_at = participant.added_at
-      ) ELSE NULL END AS backfill_completed_count
+      ) ELSE NULL END AS backfill_completed
     FROM mission_participants AS participant
     LEFT JOIN mission_teams AS team ON team.id = participant.mission_team_id
     WHERE participant.mission_id = ?
     ORDER BY participant.added_at ASC, participant.rowid ASC`).all(missionId)
+  const evaluations = readParticipantBackfillEvaluations(db, missionId, participants)
+  return participants.map((participant) => {
+    const evaluation = evaluations.get(participant.id)
+    if (evaluation === undefined) throw new Error('Participant backfill evaluation is unavailable.')
+    if (participant.kind !== 'group') {
+      return {
+        ...participant,
+        backfill_completed: evaluation.complete ? 1 : 0,
+      }
+    }
+    return {
+      ...participant,
+      backfill_member_count: evaluation.scope === 'unknown'
+        ? null
+        : evaluation.memberDeviceIds.length,
+      backfill_completed_count: evaluation.scope === 'unknown'
+        ? null
+        : evaluation.completedMemberDeviceIds.length,
+      backfill_scope_inferred: evaluation.scope === 'inferred',
+      backfill_scope_attested: evaluation.scope === 'attested',
+      backfill_scope_unknown: evaluation.scope === 'unknown',
+      backfill_scope_error: evaluation.error ?? null,
+    }
+  })
+}
+
+/** Rejects mission completion when any participant has unknown or incomplete history. */
+function assertMissionParticipantBackfillComplete(db, missionId) {
+  const participants = db.prepare(`SELECT participant.id, participant.kind,
+      participant.traccar_device_id, participant.mission_team_id,
+      participant.effective_from, participant.added_at,
+      participant.starting_member_device_ids_json
+    FROM mission_participants AS participant
+    WHERE participant.mission_id = ?`).all(missionId)
+  const evaluations = readParticipantBackfillEvaluations(db, missionId, participants)
+  for (const participant of participants) {
+    const evaluation = evaluations.get(participant.id)
+    if (evaluation === undefined) throw new Error('Participant backfill evaluation is unavailable.')
+    if (evaluation.complete) continue
+    if (evaluation.error !== undefined) throw new Error(evaluation.error)
+    if (evaluation.scope === 'unknown') {
+      throw new Error('Mission cannot be finished because a legacy group history scope is unknown. Review retained group membership before finishing.')
+    }
+    throw new Error(
+      'Mission cannot be finished while participant history backfill coverage is incomplete. Keep the mission active and retry history backfill before finishing.',
+    )
+  }
+}
+
+/** Reads all participant backfill inputs once so projection and Finish share one evaluator. */
+function readParticipantBackfillEvaluations(db, missionId, participants) {
+  const evidence = readParticipantBackfillEvidence(db, missionId)
+  const attestations = db.prepare("SELECT id, mission_id, event_type, timestamp, details_json FROM mission_events WHERE mission_id = ? AND event_type = 'participant_roster_attested'").all(missionId)
+  return new Map(participants.map((participant) => [
+    participant.id,
+    evaluateParticipantBackfill({
+      participant: {
+        missionId: participant.mission_id ?? missionId,
+        kind: participant.kind,
+        deviceId: participant.traccar_device_id,
+        teamId: participant.mission_team_id,
+        effectiveFrom: participant.effective_from,
+        addedAt: participant.added_at,
+        startingMemberDeviceIdsJson: participant.starting_member_device_ids_json,
+        ...readLegacyRosterAttestation(attestations, missionId, participant.id),
+      },
+      ...evidence,
+    }),
+  ]))
+}
+
+/** Reads the persisted checkpoint and membership evidence shared by projection and selection. */
+function readParticipantBackfillEvidence(db, missionId) {
+  const checkpoints = db.prepare(`SELECT mission_id, traccar_device_id,
+      window_from, window_to, reconciled_until, completed
+    FROM participant_backfill_checkpoints
+    WHERE mission_id = ?`).all(missionId).map((checkpoint) => ({
+    missionId: checkpoint.mission_id,
+    deviceId: checkpoint.traccar_device_id,
+    windowFrom: checkpoint.window_from,
+    windowTo: checkpoint.window_to,
+    reconciledUntil: checkpoint.reconciled_until,
+    completed: checkpoint.completed,
+  }))
+  const membershipEvents = db.prepare(`SELECT mission_id, mission_team_id,
+      traccar_device_id, change, observed_at, COALESCE(sequence, rowid) AS sequence
+    FROM mission_group_membership_events
+    WHERE mission_id = ?`).all(missionId).map((event) => ({
+    missionId: event.mission_id,
+    teamId: event.mission_team_id,
+    deviceId: event.traccar_device_id,
+    change: event.change,
+    observedAt: event.observed_at,
+    sequence: event.sequence,
+  }))
+  return { checkpoints, membershipEvents }
+}
+
+/** Serializes a normalized immutable group selection snapshot. */
+function serializeStartingMemberDeviceIds(deviceIds) {
+  return JSON.stringify([...new Set(deviceIds)].sort())
 }
 
 function assertNoActiveDuplicate(db, missionId, kind, deviceId, teamId) {
@@ -701,8 +837,8 @@ function normalizeArray(value, label) {
 }
 
 function normalizeDeviceIdArray(value) {
-  if (value === undefined) return []
-  return normalizeArray(value, 'Group member device ids')
+  if (!Array.isArray(value)) throw new Error('Group member device ids are required.')
+  return value
     .map((deviceId) => normalizeIdentifier(deviceId, 'Traccar device id'))
 }
 
@@ -748,11 +884,11 @@ function failAfterMutation(faultInjection) {
   }
 }
 
-function insertAudit(db, missionId, eventType, timestamp, details) {
+function insertAudit(db, missionId, eventType, timestamp, details, eventId = randomUUID()) {
   db.prepare(`INSERT INTO mission_events (
     id, mission_id, event_type, timestamp, details_json, recorded_at, recording_completeness
   ) VALUES (?, ?, ?, ?, ?, ?, 'complete')`)
-    .run(randomUUID(), missionId, eventType, timestamp, JSON.stringify(details), timestamp)
+    .run(eventId, missionId, eventType, timestamp, JSON.stringify(details), timestamp)
 }
 
-module.exports = { createParticipantStore }
+module.exports = { assertMissionParticipantBackfillComplete, createParticipantStore }

@@ -4,7 +4,36 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-13):** PR26/WAR-06 is merged at
+**PR27 review follow-up:** earlier readiness is withdrawn. Donal approved audited
+legacy-roster recovery on 2026-09-13 (SAR-QA-022); implement it with immutable
+original evidence, explicit coordinator attestation and original-window backfill.
+The [follow-up record](assurance/findings/pr27-claude-review.md) owns current proof.
+Working-tree verification is in progress; earlier green statements below are historical.
+
+**Active reconciliation (2026-09-13):** baseline
+`2b2bf8e605e27123c9e454598828d71cb7c062aa` includes merged PR25 and PR26.
+DON-267 is Done; DON-254 is In Progress; release remains HOLD. Train D owns
+AUD-08 / DON-271 and AUD-09 / DON-279 on `codex/repair-train-d`; parallel Train C
+owns map repairs. Merge D first, then rebase C. Reproduce both D defects red,
+preserve SAR-QA-001/002/008/014/015/018 and existing Finish fences, verify native
+SQLite/backfill/backup, rendered recovery and affected packaged boundaries,
+then obtain broad and two focused exact-head reviews. No BCP-17 qualification
+or change to the strict <200 ms gate belongs to either repair train.
+
+Train D source correctness, affected browser flows and independent working-diff
+reviews are green. Packaged attempt 1 remains failed; its stale harness locator
+and diagnostic custody are corrected with 22 focused harness tests and two
+actual roster browser tests passing. Final independent harness review is clear.
+Proceed through [PR27](https://github.com/donal0c/sartracker-web/pull/27) CI/review
+with the native/restart qualification gap explicit.
+The new D native gate is manual opt-in; normal CI records NOT RUN, and all
+pre-existing gates remain unchanged. Before any clean native qualification,
+DON-254 must address the proven coverage metadata/snapshot race, packaged
+service-worker registration, listener pressure and unassigned script diagnostic
+recorded in the [coordinated ledger](assurance/coordinated-work-ledger.md).
+These are bounded follow-ups, not permission to expand either active train.
+
+**Historical reconciliation:** PR26/WAR-06 is merged at
 `8f93f8d1cc4554178706e23401ecd496d1193195`. PR25's observer repair is reconciled
 onto it with unchanged recovery test inputs and both packaged CI steps retained;
 its latest PR receipt controls combined-head merge readiness. Release remains HOLD.

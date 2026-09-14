@@ -16,6 +16,70 @@ import {
 } from '../../src/features/mission-review/start-mission-review-runtime'
 
 describe('startMissionReviewRuntime', () => {
+  it('recovers a failed first-page continuation without resetting Review [DON-279]', async () => {
+    let fail = false
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      kind: string; cursor?: string; search?: string
+    }) => {
+      if (fail && input.cursor) throw new Error('Search Operations page changed; return to the first page.')
+      return { kind: input.kind, search: input.search ?? '', generation: 0,
+        entries: [], totalCount: 0, nextCursor: input.kind === 'areas' ? 'next' : null }
+    })
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: createMissionReviewStoreStub({ listSearchOperationPage }),
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) }, applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    const snapshot = applyRuntime.mock.calls.at(-1)![0].snapshot
+    fail = true
+    await runtime.loadNextSearchOperations('areas')
+    expect(applyRuntime.mock.calls.at(-1)![0].searchOperations.pages.areas.error)
+      .toBe('Search Operations page changed; return to the first page.')
+    expect(applyRuntime.mock.calls.at(-1)![0].error).toBeNull()
+    fail = false
+    await runtime.returnToFirstSearchOperations('areas')
+    expect(listSearchOperationPage).toHaveBeenLastCalledWith({
+      missionId: FIRST_MISSION.id, kind: 'areas', search: '', limit: 25,
+    })
+    expect(applyRuntime.mock.calls.at(-1)![0].searchOperations.pages.areas.error).toBeNull()
+    expect(applyRuntime.mock.calls.at(-1)![0].snapshot).toBe(snapshot)
+  })
+
+  it('page recovery preserves errors owned by other pages and Review [DON-279]', async () => {
+    let failPages = false
+    let failReview = false
+    const listSearchOperationPage = vi.fn().mockImplementation(async (input: {
+      kind: string; cursor?: string; search?: string
+    }) => {
+      if (failPages && input.cursor) throw new Error(`${input.kind} read failed`)
+      return { kind: input.kind, search: input.search ?? '', generation: 0,
+        entries: [], totalCount: 0, nextCursor: 'next' }
+    })
+    const stub = createMissionReviewStoreStub({ listSearchOperationPage })
+    const listMissions = stub.listMissions
+    const applyRuntime = vi.fn()
+    const runtime = await startMissionReviewRuntime({
+      missionStore: { ...stub, listMissions: async () => {
+        if (failReview) throw new Error('Review unavailable')
+        return await listMissions()
+      } },
+      layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]) }, applyRuntime,
+    })
+    await runtime.load(FIRST_MISSION.id)
+    failPages = true
+    await runtime.loadNextSearchOperations('areas')
+    await runtime.loadNextSearchOperations('passes')
+    failPages = false
+    await runtime.searchSearchOperations('areas', '')
+    expect(applyRuntime.mock.calls.at(-1)![0].searchOperations.pages.passes.error).toBe('passes read failed')
+    failReview = true
+    await runtime.refreshSelectedMission()
+    expect(applyRuntime.mock.calls.at(-1)![0].error).toBe('Review unavailable')
+    await runtime.searchSearchOperations('passes', '')
+    expect(applyRuntime.mock.calls.at(-1)![0].error).toBe('Review unavailable')
+  })
+
   it('keeps map continuation ownership separate from interactive table pagination', async () => {
     const first = { ...replayResult('2026-04-10T08:20:00.000Z', 'first'), totalTrackCount: 2, nextCursor: 'next' }
     let resolveMap!: (value: typeof first) => void

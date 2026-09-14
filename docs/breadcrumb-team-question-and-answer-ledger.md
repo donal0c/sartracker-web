@@ -6,6 +6,27 @@ Status: **Canonical source for questions put to the SAR team and the answers rec
 
 ## Purpose
 
+### SAR-QA-022 — Donal authorizes audited legacy roster recovery (2026-09-13)
+
+**Source:** [raw approval](../team-feedback/breadcrumb-question-answers-20260822.md#donal-approval--legacy-roster-recovery-2026-09-13).
+This is Donal's product approval; it is not attributed to the operational team.
+**Question:** "may we add an audited coordinator action to supply missing legacy membership—or explicitly confirm an empty roster—with Finish still requiring complete history?"
+**Answer, verbatim:** "go with your recommendation."
+**Related authority:** SAR-QA-001/002/008 require complete retained history;
+SAR-QA-015 establishes coordinator selection. They did not define resolution of
+unrecoverable legacy membership, so this adds that specific authority.
+**Derived implementation:** preserve the original NULL roster; append a separate
+attestation with actor, non-empty reason, timestamp and explicit empty/member mode.
+Do not fabricate membership observations or erase required history on removal.
+Supplied IDs require the full original participant interval; repeated attestation
+is rejected rather than overwriting history. Later correction needs separate audited
+repair. This does not authorize automatic empty conversion or corrupt-record repair.
+**Traceability:** DON-271 / PR27; `shared/legacy-roster-attestation.mjs`,
+`electron/participant-store.cjs`, `tests/unit/assurance/pr27-participant-review.test.ts`,
+`tests/unit/legacy-roster-recovery-browser.test.ts`, `tests/e2e/legacy-roster-recovery.spec.ts`.
+
+### Ledger purpose
+
 This ledger preserves the team's actual words before they are converted into
 architecture, Linear issues, implementation plans, or tests. It exists because
 summaries alone allowed an already-answered Traccar database question to be
