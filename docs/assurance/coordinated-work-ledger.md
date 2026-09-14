@@ -58,19 +58,15 @@ head.
 
 ## Current merged disposition
 
-Current baseline is `2b2bf8e605e27123c9e454598828d71cb7c062aa`: PR25 and PR26
-are merged, DON-267 is Done, DON-254 is In Progress and release remains HOLD.
-Train D owns AUD-08 / DON-271 and AUD-09 / DON-279 on `codex/repair-train-d`.
-Parallel Train C owns map repairs; intended merge order is D first, then C
-rebased onto it. Both begin with current-head red proof and retain the strict
-<200 ms gate and separate final-candidate qualification. D has current-base
-red/green and focused native/browser proof. Full source correctness passes
-4,785 tests, and 23 affected browser flows pass. Packaged attempt 1 remains
-FAILED; re-add, backup and restart were not reached. Corrected harness tests
-pass 22/22; independent harness recheck is clear. Exact-head CI/review attestations remain pending
-in [PR27](https://github.com/donal0c/sartracker-web/pull/27) and
-[its record](findings/repair-train-d.md).
-No repair acceptance is claimed. Earlier open-PR/status statements below are
+Current baseline is `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`: Donal merged
+[PR27](https://github.com/donal0c/sartracker-web/pull/27) on 2026-09-14, after
+PR25/PR26. DON-267 is Done; DON-254 remains In Progress and release HOLD.
+Train D's AUD-08 / DON-271 and AUD-09 / DON-279 implementation is integrated.
+Its [record](findings/repair-train-d.md) and review disposition retain earlier
+source/browser proof and failed native attempt. Packaged qualification remains
+deferred, not passing. PR28 map work is rebased onto this master and awaits
+affected integration CI/review. The strict <200 ms gate and final-candidate
+qualification remain separate. Earlier open-PR/status statements below are
 historical receipts, superseded by this reconciliation.
 
 Separate follow-up candidate: the DON-229, DON-228 and large hosted history
@@ -217,7 +213,16 @@ flows, independent safety review and full 456-file / 4,849-test correctness pass
 (six existing qualification skips) are retained. A separately reviewed CI-only
 delta gates these flows before packaging. Fresh exact-head CI remains required;
 PR28 stays draft and DON-7/DON-76 remain In Progress. Exact native event cause
-and packaged qualification remain unproven.
+of that failed run remains unrecorded.
+
+Update 2026-09-14: subsequent pre-rebase CI34783712783 at `e2a31ed6` passed
+4,849 tests, four browser flows and the packaged map smoke. Downloaded exact
+head/tree-bound evidence showed replacement content, no sampled stale pixels
+after removal, final 0/15 missing / Not field ready and clean child exit. Prior
+failures remain retained. PR27 is now merged as `2ab581e0`; PR28 is rebased onto
+that master and undergoing affected integration verification before fresh CI.
+The 41 insufficiently attributed renderer diagnostics and skipped strict/scale/
+soak/archive qualifications remain limits; scoped map proof is not release proof.
 
 The audit's additional measured concerns are not silently discarded. Attachment
 base64 frame cost, Traccar oversize-response buffering, GPX hit-test cost,

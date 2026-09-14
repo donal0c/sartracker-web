@@ -464,3 +464,27 @@ existing workflow contract suite. Only its expected literal is corrected to
 Local red: one failed/seven passed. Green: eight passed, actionlint and lint pass.
 [Failed run and escape analysis](../../evidence/war-11-map/linux-ci-34782626004/README.md)
 remain separate from the source repair evidence. Fresh full exact-head CI is required.
+### Post-Train D integration — 2026-09-14
+
+PR27 merged as `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`; PR28 rebased
+onto current master. Only the handoff conflicted; it is reconciled with Train D's
+audited roster decisions and retained qualification limits. Map production/test
+blobs and historical evidence are unchanged from pre-rebase `e2a31ed6`.
+Independent review of the combined main/preload/workflow found no interaction
+regression: sender validation, map notifications/unsubscribe and mutation wrapping
+compose with Train D's separate roster channel. Both evidence lanes are uploaded;
+Train D's packaged qualification remains explicitly deferred, not passing.
+
+Affected local checks pass: 126 tests across nine files, four isolated Chromium
+flows (23.0s), TypeScript, targeted ESLint and main/preload syntax. Removal and
+replacement screenshots were inspected. Default actionlint 1.7.12 consumed CPU
+without completing external-linter orchestration; owned process was terminated,
+and bounded retries timed out. Workflow-only actionlint passed; all 32 shell steps
+passed standalone serial ShellCheck with the same exclusions and inert expression
+substitution. This is decomposed validation, not a successful default invocation.
+No production/workflow edit was made to bypass that local tooling issue.
+
+Pre-rebase CI34783712783 remains scoped green Linux evidence, with verified ZIP
+digest and source head/tree. Fresh integrated CI is pending. No local Electron
+launch/build, merge or release occurred. Strict, scale, soak, archive/installer and
+field qualifications remain separate; all earlier failure receipts are retained.

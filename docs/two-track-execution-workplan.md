@@ -563,45 +563,30 @@ scale, soak, and field proof remain WAR-12 work.
 
 ### WAR-11 official-map qualification and freshness repair
 
-Active under `DON-7` / `DON-76` from merged PR25 base `2b2bf8e`: only
-WAR-04 MAP-01/02/03 and AUD-11. Package content/identity validation, current-view
-tile verification, reader/raster invalidation and the valid no-coverage hatch
-are implemented; [the remediation record](assurance/findings/war-11-offline-map-remediation.md)
-owns exact evidence and unresolved qualification. Train D's mission truth changes
-remain separate and its merge precedes final integration of this map branch.
+DON-7 / DON-76 covers only WAR-04 MAP-01/02/03 and AUD-11. Package content/identity
+validation, actual current-view tile checks, reader/raster invalidation and valid
+missing-coverage hatch are implemented. [PR28](https://github.com/donal0c/sartracker-web/pull/28)
+remains draft. PR27 merged as `2ab581e0` on 2026-09-14; this map branch is rebased
+onto that master and now requires affected integration verification and fresh CI.
 
-Three packaged attempts remain FAILED. The third proves replacement B with
-15/15 checked tiles and Field ready, then passive removal withdraws raster and
-readiness; its final removed-package operator result assertion fails. A later
-unit/Chromium red-first repair preserves current negative results after redundant
-tile errors while keeping positive and stale-result invalidation. That repair
-was not reached by the subsequent failed Linux smoke. No further local native
-attempt or rebuild is authorized.
+Pre-rebase head `e2a31ed657a22d5ff329d2d9dfa9968a3627bcc6` passed Linux
+CI34783712783: 456 files / 4,849 tests / six existing qualification skips, four
+browser flows and packaged map smoke. Downloaded source-bound evidence verifies
+replacement imagery, removal with no sampled stale pixels, final 0/15 missing /
+Not field ready and clean child exit. This is scoped pre-rebase Linux proof.
 
-Final frozen serial correctness passes 456 files / 4,829 tests with six existing
-qualification-only skips. Draft [PR28](https://github.com/donal0c/sartracker-web/pull/28)
-is pushed at `bfc37b747e69267ca48d32b16c9cb48815aaa537`. CI `34776633574` failed
-the packaged map gate at initial rendering: the loaded source was at default
-zoom 12 rather than synthetic camera zoom 11. Source/build/package/SQLite/GPU
-gates passed and later packaged gates were skipped. The harness's corrected
-style-restoration/camera sequence passes 39 focused tests and exact-diff review;
-the original 10-second readiness deadline is unchanged. Missing initial red
-provenance and post-implementation sensitivity controls are retained in the
-camera receipt. Obtain fresh exact-head CI. Train D integration
-follows its owner-authorized merge. Keep package qualification FAILED,
-DON-7/DON-76 In Progress and release HOLD; no licensed/private map/provider,
-Windows, distribution, performance-threshold or BCP-17 qualification is implied.
+[The remediation record](assurance/findings/war-11-offline-map-remediation.md)
+retains all three macOS failures, three earlier Linux failures, the excluded
+mixed-input browser run and subsequent red/green repairs. Global style completion
+no longer blocks removal/replacement raster invalidation; the dedicated four-flow
+browser gate precedes CI packaging. No original readiness deadline was relaxed.
 
-Latest MAP-03 repair supersedes the source counts above: CI `34779414995` failed
-passive removal with replacement raster still visible. Real Chromium reproduced
-starvation by an unrelated pending source; the repair uses structural style
-availability and explicit mutation postconditions instead of global load completion.
-Clean red precedes repair. Final green: 23 focused, four browser flows, full
-456 files / 4,849 passed / six existing qualification skips. Independent safety
-review passed. A separately verified CI-only delta makes all four browser flows
-a pre-package gate. Push the repair and obtain fresh exact-head CI; PR28 stays
-draft pending Train D's owner-authorized merge and affected integration checks.
-The native CI failure's exact event cause remains unrecorded; no release proof.
+Next: affected main/preload/workflow integration review, map and workflow controls,
+type/syntax/actionlint and isolated Chromium; push reviewed integration and watch
+fresh exact-head CI. No local Electron/build or merge. DON-7/DON-76 remain In
+Progress; release HOLD. Unattributed renderer diagnostics, strict responsiveness,
+960k replay, tracking soak, archive/installer/field, licensed/private provider,
+Windows, distribution and BCP-17 qualification remain separate.
 
 ### Breadcrumb And Mission-History Programme
 
