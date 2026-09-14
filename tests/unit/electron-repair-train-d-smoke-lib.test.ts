@@ -10,6 +10,7 @@ import {
   createSmokeDeadline,
   createSmokeDeadlines,
   closeOwnedSmokeChild,
+  createLinuxVulkanStartupDiagnosticAllowlist,
   evaluateSmokeResults,
   historyRequestCoversWindow,
   remainingSmokeTime,
@@ -485,6 +486,11 @@ describe('Repair Train D packaged smoke gates', () => {
     expect(() => assertNoUnexpectedDiagnostics(valid, createSmokeDiagnosticAllowlist({
       ...context, processStderr: valid.processStderr,
     }))).not.toThrow()
+    expect(() => assertNoUnexpectedDiagnostics(valid, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: 'linux', processStderr: valid.processStderr,
+      processStderrCount: valid.counts.processStderr,
+      processStderrTruncated: valid.truncated.processStderr,
+    }))).not.toThrow()
 
     for (const messages of [
       [second, first],
@@ -495,12 +501,30 @@ describe('Repair Train D packaged smoke gates', () => {
       expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist({
         ...context, processStderr: diagnostics.processStderr,
       }))).toThrow(/unexpected packaged diagnostics/i)
+      expect(() => assertNoUnexpectedDiagnostics(diagnostics, createLinuxVulkanStartupDiagnosticAllowlist({
+        platform: 'linux', processStderr: diagnostics.processStderr,
+        processStderrCount: diagnostics.counts.processStderr,
+        processStderrTruncated: diagnostics.truncated.processStderr,
+      }))).toThrow(/unexpected packaged diagnostics/i)
     }
 
     const nonLinux = makeDiagnostics([first, second])
     expect(() => assertNoUnexpectedDiagnostics(nonLinux, createSmokeDiagnosticAllowlist({
       ...context, platform: 'darwin', processStderr: nonLinux.processStderr,
     }))).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(nonLinux, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: 'darwin', processStderr: nonLinux.processStderr,
+      processStderrCount: nonLinux.counts.processStderr,
+      processStderrTruncated: nonLinux.truncated.processStderr,
+    }))).toThrow(/unexpected packaged diagnostics/i)
+
+    const missingTiming = makeDiagnostics([first, second])
+    Reflect.deleteProperty(missingTiming.processStderr[1], 'elapsedMs')
+    expect(() => assertNoUnexpectedDiagnostics(missingTiming, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: 'linux', processStderr: missingTiming.processStderr,
+      processStderrCount: missingTiming.counts.processStderr,
+      processStderrTruncated: missingTiming.truncated.processStderr,
+    }))).toThrow(/diagnostic/i)
   })
 
   it('rejects a pass receipt that omits package, cleanup, or B-history evidence', () => {

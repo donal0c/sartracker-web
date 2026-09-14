@@ -442,6 +442,21 @@ export function isExpectedLinuxVulkanStartupPair(entries, context = {}) {
     && LINUX_VULKAN_INITIALIZATION_FAILURE.test(launchEntries[1]?.message ?? '')
 }
 
+/** Builds a narrowly scoped allowlist for the packaged Linux startup control. */
+export function createLinuxVulkanStartupDiagnosticAllowlist(context = {}) {
+  const expectedPair = isExpectedLinuxVulkanStartupPair(context.processStderr, context)
+  const startupStderr = (entry) => expectedPair
+    && entry?.phase === 'launch'
+    && entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && (LINUX_VULKAN_INSTANCE_FAILURE.test(entry?.message ?? '')
+      || LINUX_VULKAN_INITIALIZATION_FAILURE.test(entry?.message ?? ''))
+  return {
+    ...DEFAULT_DIAGNOSTIC_ALLOWLIST,
+    processStderr: Object.freeze([startupStderr]),
+  }
+}
+
 /** Returns the contextual allowlist for the deliberate device-22 history hold. */
 export function createSmokeDiagnosticAllowlist(context = {}) {
   const providerOrigin = typeof context.providerOrigin === 'string' ? context.providerOrigin : ''
