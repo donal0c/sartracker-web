@@ -44,7 +44,12 @@ function createMockMap() {
       sources.set(id, config)
       sourceHandles.set(id, { setData: vi.fn(), updateData: vi.fn() })
     }),
-    setFilter: vi.fn(),
+    getFilter: vi.fn((id: string) => layers.get(id)?.filter),
+    getPaintProperty: vi.fn((id: string, property: string) => layers.get(id)?.paint?.[property]),
+    setFilter: vi.fn((id: string, filter: unknown) => {
+      const layer = layers.get(id)
+      if (layer !== undefined) layer.filter = filter
+    }),
     setPaintProperty: vi.fn((layerId: string, property: string, value: unknown) => {
       const layer = layers.get(layerId)
       if (layer === undefined) {
@@ -196,6 +201,22 @@ describe('tracking overlay marker configuration', () => {
   })
 
   describe('filter syntax', () => {
+    it('does not repeat equal style writes during idle synchronization [AUD-04]', async () => {
+      const { syncTrackingOverlay } = await import('../../src/features/tracking/sync-tracking-overlay')
+      const snapshot = {
+        devices: [], positions: [], breadcrumbs: [],
+        connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
+      }
+      syncTrackingOverlay(map as never, snapshot, [], [], true)
+      map.setFilter.mockClear()
+      map.setPaintProperty.mockClear()
+
+      syncTrackingOverlay(map as never, snapshot, [], [], true)
+
+      expect(map.setFilter).not.toHaveBeenCalled()
+      expect(map.setPaintProperty).not.toHaveBeenCalled()
+    })
+
     it('never sets a layer filter that uses the legacy $type selector', () => {
       for (const call of map.setFilter.mock.calls) {
         assertNoLegacyTypeSelector(call[1])
@@ -469,9 +490,7 @@ describe('tracking overlay marker configuration', () => {
       const lineFilter = map.setFilter.mock.calls.find(
         ([layerId]) => layerId === 'tracking-breadcrumbs-line',
       )?.[1]
-      const dotsFilter = map.setFilter.mock.calls.find(
-        ([layerId]) => layerId === 'tracking-breadcrumbs-dots',
-      )?.[1]
+      const dotsFilter = map.getFilter('tracking-breadcrumbs-dots')
 
       expect(dots.paint?.['circle-radius']).toBe(4)
       expect(dots.paint?.['circle-color']).toEqual(['get', 'color'])

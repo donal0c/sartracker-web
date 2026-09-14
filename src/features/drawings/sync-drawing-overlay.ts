@@ -1,3 +1,4 @@
+import { setMapFilterIfChanged } from '../map/map-style-writes'
 import type maplibregl from 'maplibre-gl'
 
 import type { Drawing } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -68,36 +69,36 @@ export function syncDrawingOverlay(
     'label',
   )
 
-  map.setFilter(DRAWING_FILL_LAYER_ID, combineMapFilters(IS_POLYGON_GEOMETRY, geometryVisibilityFilter))
-  map.setFilter(
+  setMapFilterIfChanged(map, DRAWING_FILL_LAYER_ID, combineMapFilters(IS_POLYGON_GEOMETRY, geometryVisibilityFilter))
+  setMapFilterIfChanged(map,
     DRAWING_FILL_HITBOX_LAYER_ID,
     combineMapFilters(IS_POLYGON_GEOMETRY, geometryVisibilityFilter),
   )
   // Both the casing and the coloured line render every geometry feature so that
   // polygon boundaries (search areas, sectors) get the same crisp, haloed
   // outline as plain lines and range rings.
-  map.setFilter(
+  setMapFilterIfChanged(map,
     DRAWING_LINE_CASING_LAYER_ID,
     combineMapFilters(IS_GEOMETRY_KIND, geometryVisibilityFilter),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     DRAWING_LINE_LAYER_ID,
     combineMapFilters(IS_GEOMETRY_KIND, geometryVisibilityFilter),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     DRAWING_LINE_HITBOX_LAYER_ID,
     combineMapFilters(IS_LINE_GEOMETRY, geometryVisibilityFilter),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     DRAWING_LABEL_LAYER_ID,
     combineMapFilters(['==', ['get', 'featureKind'], 'label'], labelVisibilityFilter),
   )
   const geometryPointFilter = ['all', IS_POINT_GEOMETRY, IS_GEOMETRY_KIND] as MapOverlayFilter
-  map.setFilter(
+  setMapFilterIfChanged(map,
     DRAWING_POINT_LAYER_ID,
     combineMapFilters(geometryPointFilter, geometryVisibilityFilter),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     DRAWING_POINT_HITBOX_LAYER_ID,
     combineMapFilters(geometryPointFilter, geometryVisibilityFilter),
   )

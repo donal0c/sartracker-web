@@ -4,74 +4,41 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 
 ## Current baseline and active work
 
-Master is `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`: Donal merged
-[PR27](https://github.com/donal0c/sartracker-web/pull/27) on 2026-09-14.
-Train D's participant completeness, audited legacy roster recovery (SAR-QA-022)
-and stable Search Operations pagination are integrated. Removing participants
-never clears required history; legacy recovery preserves the NULL snapshot and
-appends audit evidence. See [Train D](../docs/assurance/findings/repair-train-d.md)
-and [review disposition](../docs/assurance/findings/pr27-claude-review.md).
-Its native qualification failure remains retained; merge is not release proof.
+Master is `cda87aa03f27eb69532ae9506aa9e719cef7e364`, including merged PR27
+(Train D) and PR28 (official-map freshness). Refreshed against origin on
+2026-09-14. Earlier PR28 draft/review statuses are historical.
 
-Active: WAR-11 / DON-7 / DON-76, draft
-[PR28](https://github.com/donal0c/sartracker-web/pull/28), branch
-`codex/war-11-offline-map-freshness`. Rebased onto the merged master.
-Scope remains MAP-01/02/03 + AUD-11: validated package identity/content,
-actual current-view tile checks, reader/raster invalidation and valid missing hatch.
-The only rebase conflict was this handoff; shared main/preload/CI changes merged
-automatically and require affected integration verification.
+Repair Train C is active on `codex/repair-train-c`: AUD-04 equal overlay
+writes and AUD-06 repeated Go To/style-loading target loss. Current-style
+getter guards preserve real overlay changes; active target ownership survives
+pending acknowledgement. New navigation cancels stale basemap camera restores.
+No layer-catalog files are needed, so AUD-12 remains deferred. DON-264's broader
+persistent-warning feature and DON-6's full parity acceptance remain open.
 
 ## Verification and next action
 
-Claude review remediation is active; PR28 readiness is withdrawn and draft status
-restored. Integrated CI34812540230 passed at `3ecb7b8a` (4,943 tests, six existing
-skips, four browser flows and packaged map smoke), but does not cover the new
-repairs. See [review disposition](../docs/assurance/findings/pr28-claude-review.md).
-Local repairs and source/browser/independent review are complete; fresh exact-head
-CI evidence remains required. No local Electron/build or merge is authorized.
-
-Prior integrated head `3ecb7b8a` passed Linux CI34812540230: 467 files /
-4,943 tests / six existing qualification skips, four browser flows and packaged
-map smoke. Evidence ZIP10335243404 was digest/head/tree verified; A/B imagery
-changed, passive/final removal had 289 transparent samples, final Check View was
-0/15 missing and Not field ready, and child exit was clean (0/null).
-This remains historical scoped Linux proof, superseded for the review repairs.
-
-Current local fixes cover persisted-validation reuse, conditional settings mutation,
-WAL preflight, bounded decoded-proof reuse, raster reconstruction recovery and
-negative-result races. Stable correctness passes 468 files / 4,956 tests / six
-existing skips; six synthetic Chromium flows, typecheck, lint and independent
-reviews pass. The first full run's stale message expectation failure is retained.
-Repair `220366e5` is pushed. A post-push synthetic probe found same-path provider
-metadata changes bypassed the new save guard; a source-snapshot comparison fixes
-that locally. Follow-up correctness passes 468 files / 4,957 tests / six existing
-skips, settings 27/27 and independent review pass; unchanged browser evidence is
-reused. CI34819550032 was cancelled as superseded. Next: push follow-up and verify
-fresh exact-head CI. Same-path non-persisted provider URL/password edits remain
-outside this offline freshness proof. No local Electron,
-package build, merge or release. Default local actionlint previously timed out;
-workflow-only parsing and all 32 shell steps checked serially passed.
-
-Detailed history, clean red/green and all failed receipts remain in
-[WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md).
-Three macOS failures and Linux failures34776633574/34779414995/34782626004 remain
-failed. The last was a stale workflow text assertion, corrected without runtime
-change; its validation gap is recorded. The mixed-input browser run is excluded.
+Red/green evidence and accepted review corrections are in
+[Train C](../docs/assurance/findings/repair-train-c.md).
+Focused source tests, three synthetic rendered map regressions, five existing
+overlay browser flows and review-strengthened navigation rechecks pass.
+Owner inspected the rendered target screenshots. The initial full source run
+was interrupted for the review-discovered stale camera restoration defect;
+the final stable source cycle passes 471 files / 4,970 tests with six existing
+qualification skips. Lint, TypeScript/build/bundle budgets, workflow syntax and
+independent source/evidence reviews pass. Exact-head CI remains required.
+Commit/push and open the PR, then verify CI; Donal owns merge.
 
 ## Remaining limits
 
-Release HOLD; DON-254 and DON-7/DON-76 remain In Progress. Strict `<200 ms`,
-960k replay, tracking soak, archive lifecycle and installer/field qualification
-are not established by the green map CI. Train D's deferred packaged gate is
-NOT RUN. The 41 renderer diagnostics lack sufficient request attribution.
-Original decoder crash PID80389 remains ours with native cause unconfirmed;
-raw crash/process evidence stays private under `tmp/war-11/crash/`.
+Release remains HOLD. Strict `<200 ms`, replay/soak, installer/field and
+official-map distribution qualification are separate. Train D's deferred
+packaged gate remains NOT RUN. Earlier map/native failures and diagnostic
+attribution gaps remain retained; this renderer repair does not close them.
+Electron coverage IPC, service-worker registration, mission-store enumeration
+and diagnostic custody remain owned by the parallel native-runtime task.
 
-Retain DON-254's coverage result-bound race, baseline settings failures,
-204.046 ms concurrent SQLite read and incomplete 239.509 ms attribution.
-No private/licensed tiles or credentials were read; Windows, distribution,
-provider and BCP-17 qualification remain separate. Follow the
-[two-track queue](../docs/two-track-execution-workplan.md),
-[coordinated ledger](../docs/assurance/coordinated-work-ledger.md) and
+See the [coordinated ledger](../docs/assurance/coordinated-work-ledger.md),
+[two-track queue](../docs/two-track-execution-workplan.md), and
 [testing cadence](../docs/testing-and-review-cadence.md).
-Older history is in [the archive](archive/pre-war06-repair-20260913.md).
+The previous handoff and its detailed historical failures are retained
+[here](archive/pre-train-c-20260914.md).

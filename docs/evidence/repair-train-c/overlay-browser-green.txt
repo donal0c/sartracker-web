@@ -1,0 +1,19 @@
+[WebServer] (node:16714) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 5 tests using 1 worker
+
+(node:16721) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:16721) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/coverage.spec.ts:157:3 › complete mission-history coverage [DON-275] › reattaches complete mission history after a basemap style change (3.0s)
+  ✓  2 [chromium] › tests/e2e/drawing-tools.spec.ts:14:3 › M8 drawing workflows › creates a line drawing from the toolbar and persists it (2.3s)
+  ✓  3 [chromium] › tests/e2e/gpx-import.spec.ts:42:3 › M22 GPX import parity › renders imported GPX tracks in the panel, layer catalog, review workspace, and map source (2.6s)
+  ✓  4 [chromium] › tests/e2e/helicopter-panel.spec.ts:15:3 › M23 helicopter layer parity › persists helicopter slots, renders the overlay, and supports visibility toggles (2.0s)
+  ✓  5 [chromium] › tests/e2e/marker.spec.ts:13:3 › M6 marker workflows › creates a clue marker from a map click and persists it (1.4s)
+
+  5 passed (13.5s)

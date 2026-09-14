@@ -1,0 +1,199 @@
+RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/sync-tracking-overlay.test.ts (24 tests | 1 failed | 23 skipped) 36ms
+       × does not repeat equal style writes during idle synchronization [AUD-04] 36ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/sync-tracking-overlay.test.ts > tracking overlay marker configuration > filter syntax > does not repeat equal style writes during idle synchronization [AUD-04]
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 7 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "tracking-breadcrumbs-casing",
+      Array [
+        "all",
+        Array [
+          "==",
+          Array [
+            "geometry-type",
+          ],
+          "LineString",
+        ],
+        Array [
+          "==",
+          Array [
+            "get",
+            "featureKind",
+          ],
+          "breadcrumbLine",
+        ],
+      ],
+    ]
+
+  2nd vi.fn() call:
+
+    Array [
+      "tracking-breadcrumbs-line",
+      Array [
+        "all",
+        Array [
+          "==",
+          Array [
+            "geometry-type",
+          ],
+          "LineString",
+        ],
+        Array [
+          "==",
+          Array [
+            "get",
+            "featureKind",
+          ],
+          "breadcrumbLine",
+        ],
+      ],
+    ]
+
+  3rd vi.fn() call:
+
+    Array [
+      "tracking-breadcrumbs-dots",
+      Array [
+        "==",
+        Array [
+          "get",
+          "deviceId",
+        ],
+        "__hidden__",
+      ],
+    ]
+
+  4th vi.fn() call:
+
+    Array [
+      "tracking-devices-attention",
+      Array [
+        "all",
+        Array [
+          "all",
+          Array [
+            "==",
+            Array [
+              "geometry-type",
+            ],
+            "Point",
+          ],
+          Array [
+            "==",
+            Array [
+              "get",
+              "featureKind",
+            ],
+            "device",
+          ],
+        ],
+        Array [
+          "==",
+          Array [
+            "get",
+            "attention",
+          ],
+          true,
+        ],
+      ],
+    ]
+
+  5th vi.fn() call:
+
+    Array [
+      "tracking-devices-halo",
+      Array [
+        "all",
+        Array [
+          "==",
+          Array [
+            "geometry-type",
+          ],
+          "Point",
+        ],
+        Array [
+          "==",
+          Array [
+            "get",
+            "featureKind",
+          ],
+          "device",
+        ],
+      ],
+    ]
+
+  6th vi.fn() call:
+
+    Array [
+      "tracking-devices-circle",
+      Array [
+        "all",
+        Array [
+          "==",
+          Array [
+            "geometry-type",
+          ],
+          "Point",
+        ],
+        Array [
+          "==",
+          Array [
+            "get",
+            "featureKind",
+          ],
+          "device",
+        ],
+      ],
+    ]
+
+  7th vi.fn() call:
+
+    Array [
+      "tracking-devices-label",
+      Array [
+        "all",
+        Array [
+          "==",
+          Array [
+            "geometry-type",
+          ],
+          "Point",
+        ],
+        Array [
+          "==",
+          Array [
+            "get",
+            "featureKind",
+          ],
+          "device",
+        ],
+      ],
+    ]
+
+
+Number of calls: 7
+
+ ❯ tests/unit/sync-tracking-overlay.test.ts:211:33
+    209|       syncTrackingOverlay(map as never, snapshot, [], [], true)
+    210|
+    211|       expect(map.setFilter).not.toHaveBeenCalled()
+       |                                 ^
+    212|       expect(map.setPaintProperty).not.toHaveBeenCalled()
+    213|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 skipped (24)
+   Start at  11:03:41
+   Duration  565ms (transform 46ms, setup 0ms, import 31ms, tests 36ms, environment 419ms)

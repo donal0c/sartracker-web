@@ -4,6 +4,15 @@
 
 ## Planning Rule
 
+**Repair Train C (2026-09-14):** current base is merged PR28 at `cda87aa0`.
+Branch `codex/repair-train-c` owns AUD-04 / DON-264 and AUD-06 / DON-6 only.
+Redundant style writes, target lifetime and stale camera restoration have
+red/green source/browser evidence in [Train C](assurance/findings/repair-train-c.md).
+Final source cycle and independent reviews pass; exact-head CI remains required
+before merge readiness. AUD-12 stays deferred; broader DON-264/DON-6 work and all native-runtime,
+strict timing and release qualification remain separate. Earlier D/PR28 readiness
+statements below are historical; the handoff owns current operating state.
+
 **PR27 review follow-up:** earlier readiness is withdrawn. Donal approved audited
 legacy-roster recovery on 2026-09-13 (SAR-QA-022); implement it with immutable
 original evidence, explicit coordinator attestation and original-window backfill.

@@ -15,13 +15,15 @@ type MapTargetStoreState = {
   readonly clearActiveTarget: (id: number) => void
 }
 
+let nextTargetRequestId = 0
+
 export const useMapTargetStore = create<MapTargetStoreState>((set, get) => ({
   activeTarget: null,
   pendingTarget: null,
   queueTarget: (latitude, longitude, label = null) =>
     set(() => {
       const request = {
-        id: (get().activeTarget?.id ?? get().pendingTarget?.id ?? 0) + 1,
+        id: ++nextTargetRequestId,
         latitude,
         longitude,
         label,

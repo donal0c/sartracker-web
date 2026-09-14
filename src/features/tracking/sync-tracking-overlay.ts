@@ -1,3 +1,4 @@
+import { setMapFilterIfChanged, setMapPaintPropertyIfChanged } from '../map/map-style-writes'
 import type maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, GeoJSONSourceDiff } from 'maplibre-gl'
 
@@ -142,7 +143,7 @@ export function syncTrackingOverlay(
       'line-join': 'round',
     },
   })
-  map.setPaintProperty(TRACKING_BREADCRUMB_CASING_LAYER_ID, 'line-width', breadcrumbSize + 1)
+  setMapPaintPropertyIfChanged(map, TRACKING_BREADCRUMB_CASING_LAYER_ID, 'line-width', breadcrumbSize + 1)
 
   ensureLayer(map, {
     id: TRACKING_BREADCRUMB_LAYER_ID,
@@ -159,7 +160,7 @@ export function syncTrackingOverlay(
       'line-join': 'round',
     },
   })
-  map.setPaintProperty(TRACKING_BREADCRUMB_LAYER_ID, 'line-width', breadcrumbSize)
+  setMapPaintPropertyIfChanged(map, TRACKING_BREADCRUMB_LAYER_ID, 'line-width', breadcrumbSize)
 
   ensureLayer(map, {
     id: TRACKING_BREADCRUMB_DOTS_LAYER_ID,
@@ -175,13 +176,13 @@ export function syncTrackingOverlay(
       'circle-opacity': 0.95,
     },
   })
-  map.setPaintProperty(TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-radius', breadcrumbDotRadius)
-  map.setPaintProperty(
+  setMapPaintPropertyIfChanged(map, TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-radius', breadcrumbDotRadius)
+  setMapPaintPropertyIfChanged(map,
     TRACKING_BREADCRUMB_DOTS_LAYER_ID,
     'circle-stroke-width',
     Math.max(1, breadcrumbDotRadius * 0.2),
   )
-  map.setPaintProperty(TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-stroke-opacity', 0.48)
+  setMapPaintPropertyIfChanged(map, TRACKING_BREADCRUMB_DOTS_LAYER_ID, 'circle-stroke-opacity', 0.48)
 
   ensureLayer(map, {
     id: TRACKING_DEVICE_ATTENTION_LAYER_ID,
@@ -272,40 +273,40 @@ export function syncTrackingOverlay(
   const breadcrumbVisibilityFilter = buildTrackingLayerFilter(hiddenBreadcrumbDeviceIds)
   const lineTrailsVisible = breadcrumbsVisible && style.breadcrumbTrailMode === 'line'
   const dotTrailsVisible = breadcrumbsVisible && style.breadcrumbTrailMode === 'dots'
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_BREADCRUMB_CASING_LAYER_ID,
     lineTrailsVisible
       ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_BREADCRUMB_LAYER_ID,
     lineTrailsVisible
       ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_BREADCRUMB_DOTS_LAYER_ID,
     dotTrailsVisible
       ? combineMapFilters(IS_BREADCRUMB_POINT_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_DEVICE_ATTENTION_LAYER_ID,
     combineMapFilters(
       combineMapFilters(IS_DEVICE_POINT_FEATURE, ['==', ['get', 'attention'], true]),
       currentLocationVisibilityFilter,
     ),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_DEVICE_HALO_LAYER_ID,
     combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_DEVICE_LAYER_ID,
     combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     TRACKING_DEVICE_LABEL_LAYER_ID,
     combineMapFilters(IS_DEVICE_POINT_FEATURE, currentLocationVisibilityFilter),
   )

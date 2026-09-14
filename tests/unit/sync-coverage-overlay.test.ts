@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { LayerSpecification } from 'maplibre-gl'
 
 import {
   isCoverageOverlayAttached,
@@ -7,6 +8,18 @@ import {
 } from '../../src/features/tracking/sync-coverage-overlay'
 
 describe('Candidate B coverage overlay [DON-276]', () => {
+  it('does not redraw unchanged coverage filters during idle sync [AUD-04]', async () => {
+    const map = createMap()
+    const catalog = { missionId: 'idle-control', periods: [{ periodKey: 'period', revisionDigest: 'one' }], delivered: [] }
+    const first = await syncCoverageOverlay(map, catalog)
+    first.commit()
+    first.finalize()
+    map.setFilter.mockClear()
+    const second = await syncCoverageOverlay(map, catalog)
+    second.commit()
+    second.finalize()
+    expect(map.setFilter).not.toHaveBeenCalled()
+  })
   it('replaces an equal revision for a new renderer activation before attesting recovery', async () => {
     const map = createMap()
     const first = await syncCoverageOverlay(map, {
@@ -506,7 +519,7 @@ function createMap(): CoverageOverlayMap & {
   readonly markSourceLoaded: (sourceId: string) => void
 } {
   const sources = new Map<string, { readonly tiles?: readonly string[] }>()
-  const layers = new Map<string, unknown>()
+  const layers = new Map<string, LayerSpecification>()
   const loadedSources = new Set<string>()
   const sourceListeners = new Set<(event: { readonly sourceId: string }) => void>()
   const removeSource = vi.fn((id: string) => { sources.delete(id) })
@@ -523,7 +536,14 @@ function createMap(): CoverageOverlayMap & {
     addLayer: (layer) => { layers.set(layer.id, layer) },
     getLayer: (id) => layers.get(id),
     removeLayer: (id) => { layers.delete(id) },
-    setFilter: vi.fn(),
+    getFilter: (id) => {
+      const layer = layers.get(id)
+      return layer !== undefined && 'filter' in layer ? layer.filter : undefined
+    },
+    setFilter: vi.fn((id, filter) => {
+      const layer = layers.get(id)
+      if (layer !== undefined) layers.set(id, { ...layer, filter } as LayerSpecification)
+    }),
     isSourceLoaded: (id: string) => loadedSources.has(id),
     on: (_event: 'sourcedata', listener: (event: { readonly sourceId: string }) => void) => {
       sourceListeners.add(listener)

@@ -3,6 +3,7 @@ import type {
   CanvasSourceSpecification,
   ExpressionSpecification,
   LayerSpecification,
+  Map as MapLibreMap,
   SourceSpecification,
 } from 'maplibre-gl'
 import {
@@ -11,6 +12,7 @@ import {
 } from './coverage-tile-protocol'
 import { TRACKING_BREADCRUMB_CASING_LAYER_ID } from './sync-tracking-overlay'
 import { buildCoverageLayerFilter } from '../layers/map-layer-filters'
+import { setMapFilterIfChanged } from '../map/map-style-writes'
 
 export type CoverageOverlayMap = {
   readonly addSource: (
@@ -22,7 +24,8 @@ export type CoverageOverlayMap = {
   readonly addLayer: (layer: LayerSpecification, beforeId?: string) => unknown
   readonly getLayer: (id: string) => unknown
   readonly removeLayer: (id: string) => void
-  readonly setFilter: (id: string, filter: ExpressionSpecification | null) => void
+  readonly getFilter: MapLibreMap['getFilter']
+  readonly setFilter: (id: string, filter: Parameters<MapLibreMap['setFilter']>[1]) => void
   readonly isSourceLoaded?: (id: string) => boolean
   readonly on?: (
     event: 'sourcedata' | 'error',
@@ -513,7 +516,7 @@ function applyCoverageFilters(
     const geometryFilter: ExpressionSpecification = [
       '==', ['geometry-type'], geometryKinds[index]!,
     ]
-    map.setFilter(layerId, omissionFilter === null
+    setMapFilterIfChanged(map, layerId, omissionFilter === null
       ? geometryFilter
       : ['all', geometryFilter, omissionFilter])
   }
