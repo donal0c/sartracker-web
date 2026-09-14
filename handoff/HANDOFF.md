@@ -5,16 +5,15 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 ## Baseline and active lane
 
 Current `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
-`302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). This branch starts
-from that clean exact head and contains the bounded follow-up for DON-254 / Train
-D's packaged participant-progress observation at exact head
-`9bd9adc9d38ee573a152ee42c57c13b8da04c803`, tree
-`fc107e851cc07dc9ee3b7b2c475dee862025e7f8`. Earlier PR31/native-runtime and
+`302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). PR32's current exact
+head is `51e5a7eb6a05fc75bc6382c73cf7245da9dfa364`, tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. Earlier PR31/native-runtime and
 Train D failures remain historical evidence in the linked assurance records.
 
 The repair is deliberately narrow: when tracking durably advances a participant
 backfill checkpoint, it refreshes the participant projection for the same still-
-active mission. It does not alter participant completeness, Finish refusal,
+active mission, and waits for participant-scope hydration before admitting
+durable history. It does not alter participant completeness, Finish refusal,
 provider scheduling, diagnostics, the strict `<200 ms` gate, release, or field
 acceptance.
 
@@ -33,35 +32,27 @@ existing diagnostic custody gate rejected deliberate provider-503/retry and
 close-time transport warnings before restart. No diagnostic allowlist or gate was
 relaxed; the full receipt remains retained.
 
-Source checks: focused tracking runtime 94/94, participant/runtime wiring 60/60,
-TypeScript build, changed-file lint, and package build pass. Full source tests
-were 5,069/5,070; one unrelated `<200 ms` assertion measured 226.0 ms under
-parallel local contention and passed in isolation at 47.2 ms. The gate remains
-unchanged. CI run `34866228521` passed through correctness, responsiveness,
-browser, build, and replay gates, then failed before Train D at the unrelated
-packaged native-runtime diagnostic gate on two launch-time Vulkan stderr entries;
-the exact clean package and source identity passed, and Train D was skipped.
-The required manual exact-head workflow `34877445512` ran on the repaired clean
-head/tree above. Its packaged receipt records `AUD-08=pass`, `AUD-09=pass`,
-`restart=pass`, and `scenarioResult=pass`. It still records
-`diagnosticResult=fail`/`result=fail`: restart close emitted the exact
-`Tracking history stopped before transport completed` warning not yet covered by
-the narrow Train D diagnostic patterns, and Linux emitted the two known Vulkan
-startup stderr lines. This is a harness/environment diagnostic boundary, not a
-new participant or restart product failure; packaged qualification remains
-**NOT_PROVEN** until the diagnostic boundary is resolved and rerun. The receipt
-and evidence are retained under `/tmp/sar-train-d-ci-34877445512-xowlWF`.
-
-Source checks on the current head: the affected Train D harness tests pass 26/26,
-changed-file lint, TypeScript build and diff checks pass. Donal owns merge; no
-merge, release, deployment, or team contact is authorized by this handoff.
+Source checks on the current head: focused Train D/runtime tests pass 132/132,
+changed-file lint, TypeScript build and diff checks pass. Ordinary PR CI
+`34899741326` passed. Required manual run `34902500983` is exact-head clean and
+passed strict `<200 ms`, `AUD-08`, `AUD-09`, restart, `scenarioResult`,
+`diagnosticResult`, and the independent receipt validator; its receipt result is
+`pass`. The run then failed in the unrelated packaged archive-lifecycle smoke:
+the unchanged strict continuity gate recorded `current_fix_continuity_gate_breached`
+with a 205 ms cleanup gap. Failure evidence is retained under
+`/tmp/sar-train-d-ci-34902500983-9FmgLG`, including
+`tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json`.
+Do not relax that gate or relabel the workflow green. PR32 remains draft/open and
+not merge-ready; Donal owns merge, and no merge, release, deployment, or team
+contact is authorized by this handoff.
 
 ## Limits
 
-DON-254 remains In Progress; release HOLD. Strict `<200 ms`, 960k replay,
-tracking soak, archive lifecycle, installer/field acceptance and official-map
-distribution are outside this lane. Pre-attachment renderer diagnostics remain
-unobserved; capture timestamps are not event-origin timestamps.
+DON-254 remains In Progress; release HOLD. The current Train D receipt is
+positive, but the manual workflow remains failed by the archive-lifecycle
+continuity blocker above. Installer/field acceptance and official-map
+distribution remain outside this lane. Pre-attachment renderer diagnostics
+remain unobserved; capture timestamps are not event-origin timestamps.
 The historical 204.046 ms concurrent read, incomplete 239.509 ms attribution,
 baseline settings/browser gaps, and WAR-11 macOS/CI failures remain retained.
 No credentials or licensed map bytes were read.

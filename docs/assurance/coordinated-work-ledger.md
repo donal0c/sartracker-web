@@ -83,6 +83,18 @@ harness/environment diagnostic boundary, not a product scenario failure; retain
 the exact receipt and keep Train D packaged qualification, merge and release
 **NOT_PROVEN/HOLD**. No gate was relaxed.
 
+The follow-up manual run `34902500983` ran on exact clean PR32 head
+`51e5a7eb6a05fc75bc6382c73cf7245da9dfa364` / tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. It passed strict `<200 ms`,
+AUD-08, AUD-09, restart, `scenarioResult`, `diagnosticResult`, the independent
+receipt validator, and the receipt records `diagnosticBlockers=[]` / `result=pass`.
+The overall workflow failed later at the unchanged packaged archive-lifecycle
+continuity gate: `current_fix_continuity_gate_breached`, measured cleanup gap
+205 ms. Retain the exact failure JSON under
+`/tmp/sar-train-d-ci-34902500983-9FmgLG`; this is an independent liveness
+blocker, not a Train D product failure or permission to change the strict gate.
+PR32 remains draft/open and merge/release **NOT_READY/HOLD**.
+
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
 PR31 is rebased onto it. Claude review superseded earlier readiness and green
 CI34845492157. The [review disposition](findings/pr31-claude-review.md) records

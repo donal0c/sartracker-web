@@ -66,12 +66,33 @@ and no timing, diagnostic, release or field gate was relaxed. Train D packaged
 qualification is therefore **NOT_PROVEN**, not green or merge-ready. The full
 receipt is retained under `/tmp/sar-train-d-ci-34877445512-xowlWF`.
 
-The current harness commit `9bd9adc9` is locally verified by 26/26 affected unit
-tests, changed-file lint, TypeScript build and diff checks. The next bounded gate
-is an explicit decision on the teardown-cancellation classification and the
-separate Linux Vulkan diagnostic boundary, followed by another exact-head manual
-run if those boundaries are resolved. No merge, release, deployment or team
-contact follows from this receipt.
+The current harness/runtime head `51e5a7eb` is locally verified by the focused
+Train D/runtime tests (132/132), changed-file lint, TypeScript build and diff
+checks. The required manual run below resolves the two narrow diagnostic
+boundaries without weakening the global diagnostic gate.
+
+## Latest exact-head manual result — 2026-09-14
+
+Manual workflow [`34902500983`](https://github.com/donal0c/sartracker-web/actions/runs/34902500983)
+ran on exact clean head `51e5a7eb6a05fc75bc6382c73cf7245da9dfa364` / tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. Strict `<200 ms`, the packaged
+participant-progress/Search Operations step, and the independent receipt
+validator passed. The retained Train D receipt records `AUD-08=pass`,
+`AUD-09=pass`, `restart=pass`, `scenarioResult=pass`, `diagnosticResult=pass`,
+`diagnosticBlockers=[]`, and `result=pass`; source identity is exact and clean.
+
+The workflow is not green overall. A later, unrelated packaged archive-lifecycle
+smoke failed its existing strict continuity gate with
+`current_fix_continuity_gate_breached` and an observed 205 ms cleanup gap. The
+failure is an external liveness/instrumentation result, not a Train D scenario
+failure; the PR diff does not change the archive smoke or its `<200 ms` threshold.
+The failure JSON and complete evidence are retained under
+`/tmp/sar-train-d-ci-34902500983-9FmgLG`, specifically
+`tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json`.
+Do not relax or relabel that gate. Train D receipt evidence is positive, but PR32
+remains **NOT_MERGE_READY/HOLD** until the independent archive-lifecycle blocker
+is resolved by its owner and a complete required workflow is green. No merge,
+release, deployment, or team contact follows from this run.
 
 ## Contract and risk
 
