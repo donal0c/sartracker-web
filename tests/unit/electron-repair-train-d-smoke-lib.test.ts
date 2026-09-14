@@ -415,6 +415,94 @@ describe('Repair Train D packaged smoke gates', () => {
     expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist(context))).not.toThrow()
   })
 
+  it('accepts the exact shutdown cancellation only after all scenarios and teardown', () => {
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET', path: '/api/positions', deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z', to: '2026-09-13T05:00:00.000Z',
+        isHistory: true, status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+      platform: 'linux',
+      productScenariosPassed: true,
+      teardownRequestedAt: '2026-09-14T18:26:59.750Z',
+    }
+    const message = 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: Tracking history stopped before transport completed.}'
+    const makeDiagnostics = (overrides: Record<string, unknown> = {}) => {
+      const diagnostics = createDiagnosticState()
+      appendBoundedDiagnostic(diagnostics, 'consoleWarnings', {
+        message,
+        url: 'file:///app/index.html',
+        at: '2026-09-14T18:26:59.770Z',
+        teardownRequestedAt: context.teardownRequestedAt,
+        ...overrides,
+      }, { phase: 'close', type: 'console.warning', source: 'renderer-console' })
+      return diagnostics
+    }
+
+    expect(() => assertNoUnexpectedDiagnostics(makeDiagnostics(), createSmokeDiagnosticAllowlist(context))).not.toThrow()
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics({ at: '2026-09-14T18:26:59.749Z' }),
+      createSmokeDiagnosticAllowlist(context),
+    )).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics(),
+      createSmokeDiagnosticAllowlist({ ...context, productScenariosPassed: false }),
+    )).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics({ teardownRequestedAt: null }),
+      createSmokeDiagnosticAllowlist(context),
+    )).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics({ message: message.replace('stopped', 'completed') }),
+      createSmokeDiagnosticAllowlist(context),
+    )).toThrow(/unexpected packaged diagnostics/i)
+  })
+
+  it('accepts only the ordered canonical Linux Vulkan startup pair', () => {
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET', path: '/api/positions', deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z', to: '2026-09-13T05:00:00.000Z',
+        isHistory: true, status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+      platform: 'linux',
+    }
+    const first = '[14455:0914/182657.328392:ERROR:gpu/vulkan/vulkan_instance.cc:200] vkCreateInstance() failed: -9'
+    const second = '[14455:0914/182657.328621:ERROR:gpu/ipc/service/gpu_init.cc:1366] Failed to create and initialize Vulkan implementation.'
+    const makeDiagnostics = (messages: string[]) => {
+      const diagnostics = createDiagnosticState()
+      for (const message of messages) {
+        appendBoundedDiagnostic(diagnostics, 'processStderr', { message }, {
+          phase: 'launch', type: 'stderr', source: 'main-process-stderr',
+        })
+      }
+      return diagnostics
+    }
+
+    const valid = makeDiagnostics([first, second])
+    expect(() => assertNoUnexpectedDiagnostics(valid, createSmokeDiagnosticAllowlist({
+      ...context, processStderr: valid.processStderr,
+    }))).not.toThrow()
+
+    for (const messages of [
+      [second, first],
+      [first, second, 'unrecognized GPU stderr'],
+      [first, second.replace('Vulkan implementation.', 'Vulkan implementation changed.')],
+    ]) {
+      const diagnostics = makeDiagnostics(messages)
+      expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist({
+        ...context, processStderr: diagnostics.processStderr,
+      }))).toThrow(/unexpected packaged diagnostics/i)
+    }
+
+    const nonLinux = makeDiagnostics([first, second])
+    expect(() => assertNoUnexpectedDiagnostics(nonLinux, createSmokeDiagnosticAllowlist({
+      ...context, platform: 'darwin', processStderr: nonLinux.processStderr,
+    }))).toThrow(/unexpected packaged diagnostics/i)
+  })
+
   it('rejects a pass receipt that omits package, cleanup, or B-history evidence', () => {
     const receipt = minimalReceipt()
     expect(() => validateSmokeReceipt(receipt)).toThrow(/ASAR|history covered|profile|all Train D scenarios/i)

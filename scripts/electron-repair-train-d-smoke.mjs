@@ -1096,6 +1096,12 @@ async function closeLaunch(launch, report, provider = null) {
       assertNoUnexpectedDiagnostics(launch.diagnostics, createSmokeDiagnosticAllowlist({
         historyHoldEvidence: provider?.historyHoldEvidence?.(),
         providerOrigin: provider?.origin,
+        platform: process.platform,
+        productScenariosPassed: allTrainDScenariosPassed(report.scenarioResults),
+        teardownRequestedAt: launch.teardownRequestedAt,
+        processStderr: launch.diagnostics.processStderr,
+        processStderrCount: launch.diagnostics.counts.processStderr,
+        processStderrTruncated: launch.diagnostics.truncated.processStderr,
       }))
     } catch (diagnosticError) {
       recordDiagnosticFailure(report, diagnosticError, launch)
@@ -1235,13 +1241,32 @@ function messageOf(error) {
 
 /** Validates all captured launch diagnostics against the smoke context. */
 function assertNoUnexpectedDiagnosticsForReport(report) {
-  const allowlist = createSmokeDiagnosticAllowlist({
+  for (const launch of report.launches) {
+    const diagnostics = launch.close?.diagnostics
+    assertNoUnexpectedDiagnostics(diagnostics, createReportLaunchDiagnosticAllowlist(report, launch))
+  }
+}
+
+/** Returns whether all three Train D product scenarios completed successfully. */
+function allTrainDScenariosPassed(scenarioResults) {
+  return scenarioResults?.aud08 === 'pass'
+    && scenarioResults?.aud09 === 'pass'
+    && scenarioResults?.restart === 'pass'
+}
+
+/** Builds a fail-closed diagnostic allowlist for one captured launch. */
+function createReportLaunchDiagnosticAllowlist(report, launch) {
+  const diagnostics = launch.close?.diagnostics
+  return createSmokeDiagnosticAllowlist({
     historyHoldEvidence: report.provider?.historyHoldEvidence,
     providerOrigin: report.provider?.origin,
+    platform: process.platform,
+    productScenariosPassed: allTrainDScenariosPassed(report.scenarioResults),
+    teardownRequestedAt: launch.close?.requestedAt ?? null,
+    processStderr: diagnostics?.processStderr ?? [],
+    processStderrCount: diagnostics?.counts?.processStderr,
+    processStderrTruncated: diagnostics?.truncated?.processStderr,
   })
-  for (const launch of report.launches) {
-    assertNoUnexpectedDiagnostics(launch.close?.diagnostics, allowlist)
-  }
 }
 
 /** Retains diagnostic blockers independently of the scenario result fields. */
@@ -1252,18 +1277,32 @@ function recordDiagnosticFailure(report, error, launch = null) {
   if (report.diagnosticBlockers.some((blocker) => blocker.launch === label && blocker.error === message)) return
   const blocker = { launch: label, error: message, unexpected: null, rawEvents: null }
   const diagnosticSources = launch === null
-    ? report.launches.map((entry) => ({ label: entry.label, diagnostics: entry.close?.diagnostics }))
-    : [{ label, diagnostics: launch.diagnostics }]
+    ? report.launches.map((entry) => ({
+      label: entry.label,
+      diagnostics: entry.close?.diagnostics,
+      allowlist: createReportLaunchDiagnosticAllowlist(report, entry),
+    }))
+    : [{
+      label,
+      diagnostics: launch.diagnostics,
+      allowlist: createSmokeDiagnosticAllowlist({
+        historyHoldEvidence: report.provider?.historyHoldEvidence,
+        providerOrigin: report.provider?.origin,
+        platform: process.platform,
+        productScenariosPassed: allTrainDScenariosPassed(report.scenarioResults),
+        teardownRequestedAt: launch.teardownRequestedAt,
+        processStderr: launch.diagnostics.processStderr,
+        processStderrCount: launch.diagnostics.counts.processStderr,
+        processStderrTruncated: launch.diagnostics.truncated.processStderr,
+      }),
+    }]
   const unexpected = {}
   const rawEvents = {}
   for (const source of diagnosticSources) {
     const diagnostics = source.diagnostics
     if (diagnostics === undefined || diagnostics === null) continue
     try {
-      unexpected[source.label] = collectUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist({
-        historyHoldEvidence: report.provider?.historyHoldEvidence,
-        providerOrigin: report.provider?.origin,
-      })).unexpected
+      unexpected[source.label] = collectUnexpectedDiagnostics(diagnostics, source.allowlist).unexpected
     } catch {
       rawEvents[source.label] = Array.isArray(diagnostics.unexpectedEvents)
         ? diagnostics.unexpectedEvents : []

@@ -14,6 +14,9 @@ const KNOWN_BASEMAP_ORIGINS = Object.freeze([
   'https://tile.opentopomap.org',
   'https://services.arcgisonline.com',
 ])
+const TRAIN_D_SHUTDOWN_CANCELLATION = 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: Tracking history stopped before transport completed.}'
+const LINUX_VULKAN_INSTANCE_FAILURE = /^\[\d+:\d{4}\/\d{6}\.\d{6}:ERROR:gpu\/vulkan\/vulkan_instance\.cc:200\] vkCreateInstance\(\) failed: -9$/u
+const LINUX_VULKAN_INITIALIZATION_FAILURE = /^\[\d+:\d{4}\/\d{6}\.\d{6}:ERROR:gpu\/ipc\/service\/gpu_init\.cc:1366\] Failed to create and initialize Vulkan implementation\.$/u
 
 /**
  * The packaged smoke has a small, explicit diagnostic allowlist. Network
@@ -403,6 +406,42 @@ export function assertNoUnexpectedDiagnostics(
   return result
 }
 
+/** Returns whether a shutdown cancellation was captured after the owned close request. */
+export function isExpectedTrainDShutdownCancellation(entry, context = {}) {
+  if (entry?.message !== TRAIN_D_SHUTDOWN_CANCELLATION
+    || entry?.type !== 'console.warning'
+    || entry?.source !== 'renderer-console'
+    || entry?.phase !== 'close'
+    || context.productScenariosPassed !== true) return false
+  const requestedAt = typeof context.teardownRequestedAt === 'string' ? context.teardownRequestedAt : ''
+  const entryRequestedAt = typeof entry.teardownRequestedAt === 'string' ? entry.teardownRequestedAt : ''
+  const observedAt = typeof entry.at === 'string' ? entry.at : ''
+  const requestedMs = Date.parse(requestedAt)
+  const entryRequestedMs = Date.parse(entryRequestedAt)
+  const observedMs = Date.parse(observedAt)
+  return requestedAt !== ''
+    && entryRequestedAt === requestedAt
+    && Number.isFinite(requestedMs)
+    && Number.isFinite(entryRequestedMs)
+    && entryRequestedMs === requestedMs
+    && Number.isFinite(observedMs)
+    && observedMs >= requestedMs
+}
+
+/** Returns whether the complete stderr sample is the canonical Linux Vulkan startup pair. */
+export function isExpectedLinuxVulkanStartupPair(entries, context = {}) {
+  if (context.platform !== 'linux'
+    || !Array.isArray(entries)
+    || context.processStderrTruncated === true
+    || (Number.isSafeInteger(context.processStderrCount) && context.processStderrCount !== entries.length)) return false
+  const launchEntries = entries.filter((entry) => entry?.phase === 'launch'
+    && entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr')
+  return launchEntries.length === 2
+    && LINUX_VULKAN_INSTANCE_FAILURE.test(launchEntries[0]?.message ?? '')
+    && LINUX_VULKAN_INITIALIZATION_FAILURE.test(launchEntries[1]?.message ?? '')
+}
+
 /** Returns the contextual allowlist for the deliberate device-22 history hold. */
 export function createSmokeDiagnosticAllowlist(context = {}) {
   const providerOrigin = typeof context.providerOrigin === 'string' ? context.providerOrigin : ''
@@ -426,6 +465,7 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
     && /^Tracking breadcrumb fetch failed for device\. \{deviceId: (?:11|22), .* error: (?:HTTP 503: Service Unavailable|Mission history evidence scope closed before transport admission\.)\}$/u.test(entry?.message ?? '')
   const reconciliationFailureWarning = (entry) => rendererWarning(entry)
     && /^Tracking breadcrumb reconciliation failed for device\. \{deviceId: (?:11|22), .* error: (?:Mission history evidence scope closed before transport admission\.|Participant selection is unavailable; tracking history cannot be persisted safely\.|HTTP 503: Service Unavailable)\}$/u.test(entry?.message ?? '')
+  const shutdownCancellationWarning = (entry) => isExpectedTrainDShutdownCancellation(entry, context)
   const finishFenceError = (entry) => entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && entry?.phase === 'aud08'
@@ -445,6 +485,14 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
     && entry?.phase === 'aud08'
     && (/^\s+at normalizeAuthorizedCoverageCatalogInput \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')
       || /^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? ''))
+  const linuxVulkanStartupStderr = (entry) => isExpectedLinuxVulkanStartupPair(
+    context.processStderr,
+    context,
+  ) && entry?.phase === 'launch'
+    && entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && (LINUX_VULKAN_INSTANCE_FAILURE.test(entry?.message ?? '')
+      || LINUX_VULKAN_INITIALIZATION_FAILURE.test(entry?.message ?? ''))
   const inspectorCloseStderr = (entry) => entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && entry?.phase === 'close'
@@ -457,12 +505,14 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
       participantSelectionWarning,
       transportFailureWarning,
       reconciliationFailureWarning,
+      shutdownCancellationWarning,
     ]) : Object.freeze([]),
     processStderr: allowHistoryWarning ? Object.freeze([
       finishFenceError,
       finishFenceStack,
       coverageRevisionMovedError,
       coverageRevisionMovedStack,
+      linuxVulkanStartupStderr,
       inspectorCloseStderr,
     ]) : Object.freeze([]),
   }
