@@ -6,17 +6,12 @@ import { describe, expect, it } from 'vitest'
 const require = createRequire(import.meta.url)
 const {
   decodeOfficialMapTile,
-  createOfficialMapTileDecoder,
   normalizeOfficialMapTileFormat,
 } = require('../../electron/official-map-tile-decoder.cjs') as {
   readonly decodeOfficialMapTile: (
     bytes: Uint8Array,
     format: string,
     nativeImage: NativeImageApi,
-  ) => boolean
-  readonly createOfficialMapTileDecoder: (nativeImage: NativeImageApi) => (
-    bytes: Uint8Array,
-    format: string,
   ) => boolean
   readonly normalizeOfficialMapTileFormat: (format: unknown) => string | null
 }
@@ -54,8 +49,8 @@ describe('Electron official map tile decoder', () => {
     ['jpeg', JPEG_TILE],
     ['webp', WEBP_TILE],
   ] as const)('accepts an opaque %s tile only at the native boundary', (format, signature) => {
-    const decoder = createOfficialMapTileDecoder(createNativeImageApi({ width: 256, height: 256 }))
-    expect(decoder(format === 'png' ? VALID_PNG : signature, format)).toBe(true)
+    const nativeImage = createNativeImageApi({ width: 256, height: 256 })
+    expect(decodeOfficialMapTile(format === 'png' ? VALID_PNG : signature, format, nativeImage)).toBe(true)
   })
 
   it('accepts the larger supported square tile size', () => {

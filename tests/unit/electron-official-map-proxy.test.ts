@@ -60,6 +60,11 @@ const { createElectronOfficialMapProxy, NO_COVERAGE_TILE_BASE64 } = (await impor
       readonly close: () => void
     }
   }) => {
+    readonly checkOfficialMapView: (input: {
+      readonly mapId: 'official_discovery_topo'
+      readonly bounds: { readonly west: number; readonly south: number; readonly east: number; readonly north: number }
+      readonly zoom: number
+    }) => Promise<{ readonly status: string }>
     readonly fetchOfficialMapTile: (url: string) => Promise<{
       readonly contentType: string
       readonly bytesBase64: string
@@ -143,6 +148,105 @@ describe('Electron official map proxy', () => {
     } finally {
       proxy.close()
       warning.mockRestore()
+    }
+  })
+
+  it('reuses a decoded proof for the same package identity and tile, then evicts it on invalidation', async () => {
+    const decodeTile = vi.fn(() => true)
+    const isCurrent = vi.fn(() => true)
+    const readTile = vi.fn(() => ({status: 'hit' as const, bytes: NO_COVERAGE_TILE_BYTES}))
+    const proxy = createElectronOfficialMapProxy({
+      loadSettings: async () => createSettingsWithPackage('/synthetic/package.mbtiles'),
+      fetch: vi.fn() as never,
+      createMbtilesReader: () => ({readTile, close: vi.fn()}),
+      decodeOfficialMapTile: decodeTile,
+      isPackageCurrent: isCurrent,
+    })
+    const url = 'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png'
+    try {
+      await proxy.fetchOfficialMapTile(url)
+      await proxy.fetchOfficialMapTile(url)
+      expect(decodeTile).toHaveBeenCalledOnce()
+      expect(isCurrent).toHaveBeenCalledTimes(4)
+
+      proxy.invalidateSettings()
+      await proxy.fetchOfficialMapTile(url)
+      expect(decodeTile).toHaveBeenCalledTimes(2)
+      expect(isCurrent).toHaveBeenCalledTimes(6)
+    } finally {
+      proxy.close()
+    }
+  })
+
+  it('bounds decoded proofs and evicts the oldest inserted tile', async () => {
+    const decodeTile = vi.fn(() => true)
+    const proxy = createElectronOfficialMapProxy({
+      loadSettings: async () => createSettingsWithPackage('/synthetic/package.mbtiles'),
+      fetch: vi.fn() as never,
+      createMbtilesReader: () => ({
+        readTile: () => ({status: 'hit' as const, bytes: NO_COVERAGE_TILE_BYTES}),
+        close: vi.fn(),
+      }),
+      decodeOfficialMapTile: decodeTile,
+      isPackageCurrent: () => true,
+    })
+    const tileUrl = (x: number) =>
+      `sartracker-official-map://tile/official_discovery_topo/12/${x}/1344.png`
+    try {
+      for (let x = 1935; x < 1935 + 257; x += 1) {
+        await proxy.fetchOfficialMapTile(tileUrl(x))
+      }
+      expect(decodeTile).toHaveBeenCalledTimes(257)
+      await proxy.fetchOfficialMapTile(tileUrl(1935))
+      expect(decodeTile).toHaveBeenCalledTimes(258)
+    } finally {
+      proxy.close()
+    }
+  })
+
+  it('does not churn a reader when only attestation property order changes', async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-official-fingerprint-'))
+    const packagePath = path.join(tempDir, 'reeks.mbtiles')
+    createMbtilesPackage(packagePath, [{z: 12, x: 1935, xyzY: 1352, bytes: NO_COVERAGE_TILE_BYTES}])
+    const inspected = await inspectFixturePackage(packagePath)
+    const reordered = {
+      version: inspected.version,
+      schemaVersion: inspected.schemaVersion,
+      decoderPolicy: inspected.decoderPolicy,
+      identity: inspected.identity,
+      sha256: inspected.sha256,
+    }
+    let loadCount = 0
+    const loadSettings = vi.fn(async () => ({
+      ...DEFAULT_APP_SETTINGS,
+      officialMaps: {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        packages: [createReadyPackage(packagePath, loadCount++ === 0 ? inspected : reordered)],
+      },
+    }))
+    const createReader = vi.fn(() => ({
+      readTile: () => ({status: 'hit' as const, bytes: NO_COVERAGE_TILE_BYTES}),
+      close: vi.fn(),
+    }))
+    const proxy = createElectronOfficialMapProxy({
+      loadSettings,
+      fetch: vi.fn() as never,
+      createMbtilesReader: createReader,
+      decodeOfficialMapTile: () => true,
+      isPackageCurrent: () => true,
+    })
+    try {
+      await proxy.fetchOfficialMapTile(
+        'sartracker-official-map://tile/official_discovery_topo/12/1935/1352.png',
+      )
+      await expect(proxy.checkOfficialMapView({
+        mapId: 'official_discovery_topo',
+        bounds: xyzTileBounds(12, 1935, 1352),
+        zoom: 12,
+      })).resolves.toMatchObject({status: 'complete'})
+      expect(createReader).toHaveBeenCalledOnce()
+    } finally {
+      proxy.close()
     }
   })
 
@@ -516,6 +620,29 @@ describe('Electron official map proxy', () => {
     expect(fetchMock.mock.calls[0]![0]).not.toContain('field-secret')
   })
 
+  it.each(['oversized', 'malformed'])('fails closed for a %s local row instead of silently falling back', async rowKind => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), `sartracker-official-${rowKind}-row-`))
+    const packagePath = path.join(tempDir, 'reeks.mbtiles')
+    createRawTilePackage(packagePath, rowKind === 'oversized'
+      ? Buffer.alloc(4 * 1024 * 1024 + 1, 7)
+      : 'not-a-binary-tile')
+    const fetchMock = vi.fn()
+    const proxy = createElectronOfficialMapProxy({
+      fetch: fetchMock as never,
+      loadSettings: async () => createSettingsWithFallbackPackage(packagePath),
+      decodeOfficialMapTile: () => true,
+      isPackageCurrent: () => true,
+    })
+    try {
+      await expect(proxy.fetchOfficialMapTile(
+        'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png',
+      )).rejects.toThrow('Official map package is unreadable.')
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      proxy.close()
+    }
+  })
+
   it('returns a visible no-coverage tile for local package misses when no online fallback is configured [DON-240]', async () => {
     const readTile = vi.fn().mockReturnValue({ status: 'miss' })
     const fetchMock = vi.fn()
@@ -708,6 +835,26 @@ function createMbtilesPackage(
   }
 }
 
+/** Creates a minimal synthetic tile table whose row payload can exercise reader guards. */
+function createRawTilePackage(packagePath: string, tileData: Uint8Array | string): void {
+  const db = new Database(packagePath)
+  try {
+    db.exec(`
+      CREATE TABLE tiles (
+        zoom_level INTEGER NOT NULL,
+        tile_column INTEGER NOT NULL,
+        tile_row INTEGER NOT NULL,
+        tile_data
+      );
+    `)
+    db.prepare(
+      'INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)',
+    ).run(12, 1935, xyzToTmsY(12, 1344), tileData)
+  } finally {
+    db.close()
+  }
+}
+
 function createSettingsWithPackage(
   packagePath: string,
   overrides: {
@@ -737,6 +884,36 @@ function createSettingsWithPackage(
         },
       ],
     },
+  }
+}
+
+/** Builds settings with an online source so local package failures cannot fall through silently. */
+function createSettingsWithFallbackPackage(packagePath: string) {
+  const settings = createSettingsWithPackage(packagePath)
+  return {
+    ...settings,
+    officialMaps: {
+      ...settings.officialMaps,
+      sourceType: 'mapgenie_file',
+      sourcePath: '/synthetic/mapgenie-source.txt',
+      status: 'configured',
+      availableSources: ['official_discovery_topo'],
+    },
+  }
+}
+
+/** Converts one XYZ tile coordinate into a view footprint just inside its boundaries. */
+function xyzTileBounds(z: number, x: number, y: number) {
+  const dimension = 2 ** z
+  const longitude = (column: number) => (column / dimension) * 360 - 180
+  const latitude = (row: number) =>
+    (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / dimension))) * 180) / Math.PI
+  const epsilon = 1e-7
+  return {
+    west: longitude(x) + epsilon,
+    south: latitude(y + 1) + epsilon,
+    east: longitude(x + 1) - epsilon,
+    north: latitude(y) - epsilon,
   }
 }
 

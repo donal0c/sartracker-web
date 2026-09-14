@@ -8,6 +8,7 @@ const { qualifyOfficialMapView, readViewTileRange } = require('./official-map-vi
 const OFFICIAL_MAP_TILE_PATTERN = /^\/?tile\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.png$/
 const WEB_MERCATOR_HALF_WORLD_METRES = 20037508.342789244
 const TILE_SIZE = 256
+const MAX_DECODED_TILE_PROOFS = 256
 // The missing-coverage image is generated from bounded RGBA pixels and tested by real decoders.
 const { NO_COVERAGE_TILE_BASE64 } = require('./official-map-no-coverage.cjs')
 const SOURCE_NAMES = {
@@ -276,6 +277,7 @@ function createMbtilesReaderCache(options) {
   const isCurrent = options.isPackageCurrent ?? (mapPackage =>
     isPackageIdentityCurrent(mapPackage.packagePath, mapPackage.attestation))
   const readers = new Map()
+  const decodedProofs = new Map()
 
   return {
     synchronize: (packages) => {
@@ -294,6 +296,7 @@ function createMbtilesReaderCache(options) {
         }
         closeReader(entry.reader)
         readers.delete(packagePath)
+        clearDecodedProofs(packagePath)
       }
     },
     readTile: async (mapPackage, tile) => {
@@ -301,6 +304,7 @@ function createMbtilesReaderCache(options) {
         const stale = readers.get(mapPackage.packagePath)
         if (stale !== undefined) closeReader(stale.reader)
         readers.delete(mapPackage.packagePath)
+        clearDecodedProofs(mapPackage.packagePath)
         return { status: 'package_error' }
       }
 
@@ -309,6 +313,7 @@ function createMbtilesReaderCache(options) {
       if (existing !== undefined && existing.fingerprint !== fingerprint) {
         closeReader(existing.reader)
         readers.delete(mapPackage.packagePath)
+        clearDecodedProofs(mapPackage.packagePath)
       }
 
       let entry = readers.get(mapPackage.packagePath)
@@ -326,19 +331,34 @@ function createMbtilesReaderCache(options) {
 
       try {
         const row = await entry.reader.readTile(tile)
-        if (row.status === 'hit' && (!(await decodeTile(row.bytes, mapPackage.tileFormat)) || !isCurrent(mapPackage))) {
-          closeReader(entry.reader)
-          readers.delete(mapPackage.packagePath)
-          return { status: 'package_error' }
+        if (row.status === 'hit') {
+          const proofKey = decodedProofKey(mapPackage.packagePath, fingerprint, tile)
+          if (!decodedProofs.has(proofKey)) {
+            if (!(await decodeTile(row.bytes, mapPackage.tileFormat))) {
+              closeReader(entry.reader)
+              readers.delete(mapPackage.packagePath)
+              clearDecodedProofs(mapPackage.packagePath)
+              return { status: 'package_error' }
+            }
+            rememberDecodedProof(proofKey)
+          }
+          if (!isCurrent(mapPackage)) {
+            closeReader(entry.reader)
+            readers.delete(mapPackage.packagePath)
+            clearDecodedProofs(mapPackage.packagePath)
+            return { status: 'package_error' }
+          }
         }
         if (row.status === 'package_error') {
           closeReader(entry.reader)
           readers.delete(mapPackage.packagePath)
+          clearDecodedProofs(mapPackage.packagePath)
         }
         return row
       } catch {
         closeReader(entry.reader)
         readers.delete(mapPackage.packagePath)
+        clearDecodedProofs(mapPackage.packagePath)
         return { status: 'package_error' }
       }
     },
@@ -347,7 +367,27 @@ function createMbtilesReaderCache(options) {
         closeReader(entry.reader)
       }
       readers.clear()
+      decodedProofs.clear()
     },
+  }
+
+  /** Records a successful decode proof with bounded insertion-order eviction. */
+  function rememberDecodedProof(key) {
+    decodedProofs.delete(key)
+    decodedProofs.set(key, true)
+    while (decodedProofs.size > MAX_DECODED_TILE_PROOFS) {
+      const oldest = decodedProofs.keys().next().value
+      if (oldest === undefined) break
+      decodedProofs.delete(oldest)
+    }
+  }
+
+  /** Drops every decoded proof tied to a package path before its reader is withdrawn. */
+  function clearDecodedProofs(packagePath) {
+    const prefix = `${packagePath}\0`
+    for (const key of decodedProofs.keys()) {
+      if (key.startsWith(prefix)) decodedProofs.delete(key)
+    }
   }
 }
 
@@ -406,8 +446,27 @@ function fingerprintOfficialMapPackage(mapPackage) {
     maxZoom: mapPackage.maxZoom,
     bounds: mapPackage.bounds,
     verifiedAt: mapPackage.verifiedAt,
-    attestation: mapPackage.attestation,
+    attestation: canonicalAttestation(mapPackage.attestation),
   })
+}
+
+/** Serializes attestation fields in a stable order for reader-cache identity. */
+function canonicalAttestation(attestation) {
+  if (attestation === undefined || attestation === null || typeof attestation !== 'object' || Array.isArray(attestation)) {
+    return attestation
+  }
+  return {
+    version: attestation.version,
+    schemaVersion: attestation.schemaVersion,
+    decoderPolicy: attestation.decoderPolicy,
+    identity: attestation.identity,
+    sha256: attestation.sha256,
+  }
+}
+
+/** Builds a cache key scoped to one package fingerprint and tile address. */
+function decodedProofKey(packagePath, fingerprint, tile) {
+  return `${packagePath}\0${fingerprint}\0${tile.mapId}:${tile.z}:${tile.x}:${tile.y}`
 }
 
 function closeReader(reader) {

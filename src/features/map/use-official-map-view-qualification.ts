@@ -4,7 +4,7 @@ import { isOfficialMapId, type RenderableMapId } from '../../lib/map-config'
 import { createCheckingOfflineMapCoverage, createUncheckedOfflineMapCoverage,
   createUnavailableOfflineMapCoverage, type OfflineMapCoverage } from './offline-map-coverage'
 import { officialMapViewKey, readOfficialMapViewRequest, type OfficialMapViewQualification } from './official-map-view-qualification'
-import { refreshOfficialMapRaster } from './official-map-raster-refresh'
+import { refreshOfficialMapRaster, type OfficialMapRasterRecovery } from './official-map-raster-refresh'
 
 type State = {
   readonly mapId: RenderableMapId
@@ -15,6 +15,8 @@ type State = {
 /** Keeps a native tile check bound to one unchanged view and package generation. */
 export function useOfficialMapViewQualification(activeMapId: RenderableMapId, mapRef: RefObject<maplibregl.Map | null>) {
   const generation = useRef(0)
+  const tileFailureSequence = useRef(0)
+  const retryRasterForCheck = useRef<(() => boolean) | null>(null)
   const [state, setState] = useState<State>(() => ({mapId: activeMapId, qualification: null,
     coverage: createUncheckedOfflineMapCoverage()}))
   const stateRef = useRef(state)
@@ -30,8 +32,12 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
   }, [activeMapId, publishState])
   /** Preserves a published negative result only for a redundant tile failure in the same view. */
   const invalidateOnTileFailure = useCallback(() => {
+    tileFailureSequence.current += 1
     const current = stateRef.current
     const status = current.coverage.status
+    // A negative native result still explains this unchanged view. A positive
+    // result is separately rejected if a rendering failure occurred in flight.
+    if (current.mapId === activeMapId && status === 'checking') return
     const preservePublishedNegative = current.mapId === activeMapId &&
       current.qualification === null &&
       (status === 'missing' || status === 'partial' || status === 'error' || status === 'unavailable')
@@ -42,13 +48,16 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
   useEffect(() => {
     const map = mapRef.current
     let refreshPending = false
+    let failedAttempts = 0
     let revision = Date.now()
+    const recovery: OfficialMapRasterRecovery = { pending: false }
     /** Retries only the invalidated raster when its style becomes available. */
     function refreshRaster(): void {
-      if (!refreshPending || map === null || !isOfficialMapId(activeMapId)) return
+      if (!refreshPending || failedAttempts >= 3 || map === null || !isOfficialMapId(activeMapId)) return
       refreshPending = false
-      try { refreshPending = !refreshOfficialMapRaster(map, activeMapId, revision) }
+      try { refreshPending = !refreshOfficialMapRaster(map, activeMapId, revision, recovery) }
       catch {
+        failedAttempts += 1
         refreshPending = true
         publishState({mapId: activeMapId, qualification: null,
           coverage: createUnavailableOfflineMapCoverage('Offline map changed but could not be refreshed. Switch maps before relying on it.')})
@@ -59,8 +68,14 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
       invalidate()
       window.dispatchEvent(new Event('sartracker:settings-updated'))
       revision += 1
+      failedAttempts = 0
       refreshPending = true
       refreshRaster()
+    }
+    retryRasterForCheck.current = () => {
+      failedAttempts = 0
+      refreshRaster()
+      return !refreshPending
     }
     map?.on('movestart', invalidate)
     map?.on('styledata', refreshRaster)
@@ -69,6 +84,7 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
     window.addEventListener('focus', invalidate)
     const unsubscribe = window.sartrackerElectron?.onOfficialMapPackagesChanged?.(packagesChanged)
     return () => {
+      retryRasterForCheck.current = null
       generation.current += 1
       map?.off('movestart', invalidate)
       map?.off('styledata', refreshRaster)
@@ -83,8 +99,12 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
     const map = mapRef.current
     if (!isOfficialMapId(activeMapId) || map === null) return
     const requestGeneration = ++generation.current
+    const requestTileFailureSequence = tileFailureSequence.current
     publishState({mapId: activeMapId, qualification: null, coverage: createCheckingOfflineMapCoverage()})
     try {
+      if (retryRasterForCheck.current?.() === false) {
+        throw new Error('Offline map could not be refreshed. Switch maps before relying on it.')
+      }
       const request = readOfficialMapViewRequest(activeMapId, map)
       const nativeCheck = window.sartrackerElectron?.checkOfficialMapView
       if (nativeCheck === undefined) throw new Error('Official offline tile checks require the Electron app.')
@@ -93,6 +113,10 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
           officialMapViewKey(request) !== officialMapViewKey(readOfficialMapViewRequest(activeMapId, map))) return
       if (officialMapViewKey(result) !== officialMapViewKey(request)) throw new Error('Offline map check returned a different view. Check View again.')
       const complete = result.status === 'complete' && result.totalTiles > 0 && result.usableTiles === result.totalTiles
+      if (complete && requestTileFailureSequence !== tileFailureSequence.current) {
+        invalidate()
+        return
+      }
       publishState({mapId: activeMapId, qualification: complete ? result : null, coverage: {
         status: complete ? 'complete' : result.status === 'partial' ? 'partial' : result.status === 'error' ? 'error' : 'missing',
         tone: complete ? 'success' : 'danger',
@@ -105,7 +129,7 @@ export function useOfficialMapViewQualification(activeMapId: RenderableMapId, ma
       publishState({mapId: activeMapId, qualification: null, coverage: createUnavailableOfflineMapCoverage(
         error instanceof Error ? error.message : 'Offline map check failed. Keep an alternative map available.')})
     }
-  }, [activeMapId, mapRef, publishState])
+  }, [activeMapId, invalidate, mapRef, publishState])
 
   return {check,
     qualification: state.mapId === activeMapId ? state.qualification : null,

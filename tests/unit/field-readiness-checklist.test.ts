@@ -63,6 +63,13 @@ function createInput(overrides?: Partial<FieldReadinessInput>): FieldReadinessIn
 }
 
 describe('field readiness checklist', () => {
+  it('explains an unsupported tilted view without claiming the map is absent', () => {
+    const input = { ...createInput({ viewBounds: null }),
+      viewUnavailableReason: 'Return to a flat map view before checking offline coverage.' }
+    const result = buildFieldReadinessChecklist(input)
+    expect(result.verdict).toBe('not_ready')
+    expect(result.items.find(item => item.id === 'view_covered')?.detail).toBe(input.viewUnavailableReason)
+  })
   it('does not certify saved metadata without a fresh native current-view check', () => {
     const result = buildFieldReadinessChecklist(createInput({ qualification: undefined }))
     expect(result.verdict).toBe('not_ready')

@@ -1,0 +1,30 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/use-official-map-view-qualification.test.tsx (12 tests | 1 failed) 24ms
+     × keeps a new negative result fail-closed after a queued bare tile failure follows package reset 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/use-official-map-view-qualification.test.tsx > official view qualification lifecycle > keeps a new negative result fail-closed after a queued bare tile failure follows package reset
+AssertionError: expected 'unavailable' to be 'missing' // Object.is equality
+
+Expected: "missing"
+Received: "unavailable"
+
+ ❯ tests/unit/use-official-map-view-qualification.test.tsx:284:37
+    282|
+    283|     await act(async () => latest!.check())
+    284|     expect(latest!.coverage.status).toBe('missing')
+       |                                     ^
+    285|     await act(async () => window.dispatchEvent(new Event('sartracker:o…
+    286|     expect(latest!.coverage.status).toBe('missing')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 27 passed (28)
+   Start at  08:12:46
+   Duration  661ms (transform 113ms, setup 0ms, import 326ms, tests 44ms, environment 1.33s)
+

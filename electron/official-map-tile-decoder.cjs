@@ -6,6 +6,10 @@ const WEBP_RIFF_SIGNATURE = Buffer.from('RIFF', 'ascii')
 const WEBP_FORMAT_SIGNATURE = Buffer.from('WEBP', 'ascii')
 const TILE_SIZES = new Set([256, 512])
 const MAX_TILE_BYTES = 4 * 1024 * 1024
+const ADAM7_PASSES = Object.freeze([
+  [0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4],
+  [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2],
+])
 
 const FORMAT_ALIASES = new Map([
   ['png', 'png'],
@@ -72,11 +76,6 @@ function decodeOfficialMapTile(bytes, format, nativeImage = resolveElectronNativ
   } catch {
     return false
   }
-}
-
-/** Creates a reusable decoder closure for an Electron nativeImage API. */
-function createOfficialMapTileDecoder(nativeImage = resolveElectronNativeImage()) {
-  return (bytes, format) => decodeOfficialMapTile(bytes, format, nativeImage)
 }
 
 /** Normalizes the persisted MBTiles format or MIME type to the decoder policy. */
@@ -304,17 +303,8 @@ function expectedPngScanlineLength(header) {
   if (header.interlaceMethod === 0) {
     return (Math.ceil((header.width * bitsPerPixel) / 8) + 1) * header.height
   }
-  const passes = [
-    [0, 0, 8, 8],
-    [4, 0, 8, 8],
-    [0, 4, 4, 8],
-    [2, 0, 4, 4],
-    [0, 2, 2, 4],
-    [1, 0, 2, 2],
-    [0, 1, 1, 2],
-  ]
   let length = 0
-  for (const [startX, startY, stepX, stepY] of passes) {
+  for (const [startX, startY, stepX, stepY] of ADAM7_PASSES) {
     const width = header.width <= startX ? 0 : Math.ceil((header.width - startX) / stepX)
     const height = header.height <= startY ? 0 : Math.ceil((header.height - startY) / stepY)
     if (width > 0 && height > 0) {
@@ -342,17 +332,8 @@ function hasValidPngFilters(scanlines, header) {
   if (header.interlaceMethod === 0) {
     return assertRows(0, header.width, header.height) === scanlines.length
   }
-  const passes = [
-    [0, 0, 8, 8],
-    [4, 0, 8, 8],
-    [0, 4, 4, 8],
-    [2, 0, 4, 4],
-    [0, 2, 2, 4],
-    [1, 0, 2, 2],
-    [0, 1, 1, 2],
-  ]
   let offset = 0
-  for (const [startX, startY, stepX, stepY] of passes) {
+  for (const [startX, startY, stepX, stepY] of ADAM7_PASSES) {
     const width = header.width <= startX ? 0 : Math.ceil((header.width - startX) / stepX)
     const height = header.height <= startY ? 0 : Math.ceil((header.height - startY) / stepY)
     if (width > 0 && height > 0) {
@@ -485,7 +466,6 @@ function crc32(bytes) {
 }
 
 module.exports = {
-  createOfficialMapTileDecoder,
   decodeOfficialMapTile,
   normalizeOfficialMapTileFormat,
 }

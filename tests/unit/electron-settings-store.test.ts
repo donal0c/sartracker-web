@@ -43,7 +43,12 @@ const { createElectronSettingsStore } = require('../../electron/settings-store.c
 
 type ElectronSettingsStore = {
   readonly loadAppSettings: () => Promise<typeof DEFAULT_APP_SETTINGS>
-  readonly saveAppSettings: (input: ReturnType<typeof createSettingsDraft>) => Promise<typeof DEFAULT_APP_SETTINGS>
+  readonly saveAppSettings: (
+    input: ReturnType<typeof createSettingsDraft>,
+    options?: {
+      readonly withOfficialMapMutation?: <T>(operation: () => Promise<T>) => Promise<T>
+    },
+  ) => Promise<typeof DEFAULT_APP_SETTINGS>
   readonly loadRuntimeBootstrapSettings: (forceConnect?: boolean) => Promise<{
     readonly autosaveIntervalMs: number
     readonly trackingPollIntervalMs: number
@@ -423,6 +428,83 @@ describe('electron settings store', () => {
     expect(rawSettings).not.toContain('tile-bytes')
   })
 
+  it('reuses a trusted unchanged package validation on an unrelated settings save', async () => {
+    let decodeCalls = 0
+    const store = await createStore({
+      backend: 'gnome_libsecret',
+      decodeOfficialMapTile: () => {
+        decodeCalls += 1
+        return true
+      },
+    })
+    const packagePath = path.join(userDataPath!, 'reeks-standard-60km-z16.mbtiles')
+    createMbtilesPackage(packagePath)
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.officialMaps.packages = [
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath,
+      },
+    ]
+
+    await store.saveAppSettings(draft)
+    const firstSaveDecodeCalls = decodeCalls
+    const loaded = await store.loadAppSettings()
+    loaded.missionDefaults.autoRefreshIntervalSeconds = 45
+    const saved = await store.saveAppSettings(loaded)
+
+    expect(firstSaveDecodeCalls).toBeGreaterThan(0)
+    expect(decodeCalls).toBe(firstSaveDecodeCalls)
+    expect(saved.officialMaps.packages[0]).toMatchObject({
+      status: 'ready',
+      packagePath,
+      attestation: {
+        version: 1,
+        schemaVersion: 1,
+        decoderPolicy: 'native-raster-256-or-512-opaque-v1',
+        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        identity: expect.any(String),
+      },
+    })
+  })
+
+  it('guards only package-changing or stale-package saves inside the serialized save', async () => {
+    let mutationCalls = 0
+    const withOfficialMapMutation = async <T,>(operation: () => Promise<T>): Promise<T> => {
+      mutationCalls += 1
+      return operation()
+    }
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const ordinaryDraft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+
+    await store.saveAppSettings(ordinaryDraft, { withOfficialMapMutation })
+    expect(mutationCalls).toBe(0)
+
+    const packagePath = path.join(userDataPath!, 'reeks-standard-60km-z16.mbtiles')
+    createMbtilesPackage(packagePath)
+    const packageDraft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    packageDraft.officialMaps.packages = [
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath,
+      },
+    ]
+    await store.saveAppSettings(packageDraft, { withOfficialMapMutation })
+    expect(mutationCalls).toBe(1)
+
+    const unchanged = createSettingsDraft(await store.loadAppSettings())
+    unchanged.missionDefaults.autoRefreshIntervalSeconds = 45
+    await store.saveAppSettings(unchanged, { withOfficialMapMutation })
+    expect(mutationCalls).toBe(1)
+
+    await writeFile(packagePath, 'replacement package bytes', 'utf8')
+    const stale = createSettingsDraft(await store.loadAppSettings())
+    await store.saveAppSettings(stale, { withOfficialMapMutation })
+    expect(mutationCalls).toBe(2)
+  })
+
   it('keeps missing and invalid local official map packages visible without throwing', async () => {
     const verifiedAt = '2026-06-05T10:11:12.000Z'
     const store = await createStore({
@@ -474,6 +556,27 @@ describe('electron settings store', () => {
         message: 'Official map package could not be read as MBTiles.',
       }),
     ])
+  })
+
+  it('retains a sanitized package validation reason for malformed metadata', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const packagePath = path.join(userDataPath!, 'missing-format.mbtiles')
+    createMalformedMbtilesPackage(packagePath)
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.officialMaps.packages = [
+      {
+        sourceType: 'mbtiles',
+        mapId: 'official_discovery_topo',
+        packagePath,
+      },
+    ]
+
+    const saved = await store.saveAppSettings(draft)
+
+    expect(saved.officialMaps.packages[0]).toMatchObject({
+      status: 'invalid',
+      message: 'Official map package metadata is invalid.',
+    })
   })
 
   it('removes app-owned official map package files when the registration is removed', async () => {
@@ -771,6 +874,31 @@ function createMbtilesPackage(packagePath: string): void {
     )
     insertTile.run(9, 246, 166, NO_COVERAGE_TILE_BYTES)
     insertTile.run(16, 31514, 21318, NO_COVERAGE_TILE_BYTES)
+  } finally {
+    db.close()
+  }
+}
+
+/** Creates a structurally valid package whose required format metadata is missing. */
+function createMalformedMbtilesPackage(packagePath: string): void {
+  const db = new Database(packagePath)
+  try {
+    db.exec(`
+      CREATE TABLE metadata (name TEXT NOT NULL, value TEXT NOT NULL);
+      CREATE TABLE tiles (
+        zoom_level INTEGER NOT NULL,
+        tile_column INTEGER NOT NULL,
+        tile_row INTEGER NOT NULL,
+        tile_data BLOB NOT NULL
+      );
+    `)
+    const insertMetadata = db.prepare('INSERT INTO metadata (name, value) VALUES (?, ?)')
+    insertMetadata.run('bounds', '-10.25,51.85,-9.45,52.35')
+    insertMetadata.run('minzoom', '12')
+    insertMetadata.run('maxzoom', '12')
+    db.prepare(
+      'INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)',
+    ).run(12, 1935, 2743, Buffer.from('tile'))
   } finally {
     db.close()
   }

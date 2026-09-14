@@ -8,6 +8,7 @@ type TestWindow = Window & {
   __SARTRACKER_MAP__: MapLibreMap
   __WAR11_MUTATE_RASTER__: (variant: Variant | 'missing', repeat?: boolean) => void
   __WAR11_GPU__: {latest: {sampledPixels: number[][]} | null; cleanup: () => void}
+  __WAR11_RESTORE_SOURCE__: () => void
 }
 const palettes = {a: [[44, 62, 103], [114, 210, 182]], b: [[36, 79, 69], [240, 201, 77]]}
 
@@ -157,4 +158,51 @@ test('same-path A to B replacement clears old pixels while unrelated overlay is 
     await release()
     await page.evaluate(() => (window as TestWindow).__WAR11_GPU__.cleanup())
   }
+})
+
+test('Check View recovers a failed raster reconstruction without restoring stale imagery', async ({page}, testInfo) => {
+  await openSyntheticMap(page, 'a')
+  const before = await readContext(page)
+  try {
+    await page.evaluate(() => {
+      const host = window as TestWindow
+      const map = host.__SARTRACKER_MAP__
+      const addSource = map.addSource
+      map.addSource = function (id, source) {
+        if (id === 'official_discovery_topo') throw new Error('Synthetic source reconstruction failure')
+        return addSource.call(this, id, source)
+      }
+      host.__WAR11_RESTORE_SOURCE__ = () => { map.addSource = addSource }
+      host.__WAR11_MUTATE_RASTER__('b')
+    })
+    await expect(page.getByTestId('field-readiness-checklist')).not.toContainText('Field ready')
+    await expectPalette(page, 'none')
+    await page.screenshot({path: testInfo.outputPath('reconstruction-failed.png'), fullPage: true})
+    await page.evaluate(() => (window as TestWindow).__WAR11_RESTORE_SOURCE__())
+    await page.getByTestId('check-offline-map-coverage').click()
+    await expectPalette(page, 'b')
+    await expect(page.getByTestId('field-readiness-checklist')).toContainText('Field ready')
+    expect(await readContext(page)).toEqual(before)
+    await page.screenshot({path: testInfo.outputPath('reconstruction-recovered.png'), fullPage: true})
+  } finally {
+    await page.evaluate(() => {
+      const host = window as TestWindow
+      host.__WAR11_RESTORE_SOURCE__?.()
+      host.__WAR11_GPU__.cleanup()
+    })
+  }
+})
+
+test('a tilted view explains how to recover offline qualification', async ({page}) => {
+  await openSyntheticMap(page, 'a')
+  try {
+    await page.evaluate(() => (window as TestWindow).__SARTRACKER_MAP__.jumpTo({pitch: 30}))
+    await expect(page.getByTestId('field-readiness-checklist')).not.toContainText('Field ready')
+    await expect(page.getByTestId('field-readiness-checklist')).toContainText('Return to a flat map view')
+    await page.getByTestId('check-offline-map-coverage').click()
+    await expect(page.getByTestId('field-readiness-checklist')).not.toContainText('Field ready')
+    await page.evaluate(() => (window as TestWindow).__SARTRACKER_MAP__.jumpTo({pitch: 0}))
+    await page.getByTestId('check-offline-map-coverage').click()
+    await expect(page.getByTestId('field-readiness-checklist')).toContainText('Field ready')
+  } finally { await page.evaluate(() => (window as TestWindow).__WAR11_GPU__.cleanup()) }
 })

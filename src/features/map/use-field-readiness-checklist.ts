@@ -85,6 +85,7 @@ export function useFieldReadinessChecklist(
     const map = mapRef.current
     let viewBounds: { west: number; south: number; east: number; north: number } | null = null
     let viewZoom: number | undefined
+    let viewUnavailableReason: string | undefined
 
     if (map !== null) {
       try {
@@ -96,8 +97,9 @@ export function useFieldReadinessChecklist(
           north: bounds.getNorth(),
         }
         viewZoom = readOfficialMapViewRequest(activeBasemapId, map).zoom
-      } catch {
+      } catch (error) {
         viewBounds = null
+        viewUnavailableReason = error instanceof Error ? error.message : 'Map view could not be checked. Reset the map and retry.'
       }
     }
 
@@ -106,6 +108,7 @@ export function useFieldReadinessChecklist(
       officialMaps: state.settings.officialMaps,
       viewBounds,
       viewZoom,
+      viewUnavailableReason,
       qualification,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps

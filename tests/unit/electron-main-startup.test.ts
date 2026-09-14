@@ -970,7 +970,7 @@ describe('Electron main startup', () => {
     expect(officialMapProxy.withPackageMutation).toHaveBeenCalledOnce()
   })
 
-  it('invalidates the official map tile cache after saving settings [DON-240]', async () => {
+  it('guards map settings changes without interrupting unrelated saves [DON-7]', async () => {
     const officialMapProxy = {
       close: vi.fn(),
       fetchOfficialMapTile: vi.fn(),
@@ -1004,6 +1004,15 @@ describe('Electron main startup', () => {
       },
     })
 
+    expect(officialMapProxy.withPackageMutation).not.toHaveBeenCalled()
+    await saveSettingsHandler(createPackagedSenderEvent(), {
+      ...DEFAULT_APP_SETTINGS,
+      officialMaps: {
+        ...DEFAULT_APP_SETTINGS.officialMaps,
+        sourceType: 'mapgenie_file',
+        sourcePath: '/synthetic-missing-provider.json',
+      },
+    })
     expect(officialMapProxy.withPackageMutation).toHaveBeenCalledOnce()
   })
 

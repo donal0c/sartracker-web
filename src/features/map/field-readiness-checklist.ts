@@ -27,6 +27,7 @@ export type FieldReadinessInput = {
   readonly officialMaps: OfficialMapSettings
   readonly viewBounds: { readonly west: number; readonly south: number; readonly east: number; readonly north: number } | null
   readonly viewZoom?: number | undefined
+  readonly viewUnavailableReason?: string | undefined
   readonly qualification?: OfficialMapViewQualification | null | undefined
 }
 
@@ -123,7 +124,7 @@ function checkViewCoverage(input: FieldReadinessInput): FieldReadinessCheckItem 
       id: 'view_covered',
       label: 'Current view covered',
       passed: false,
-      detail: 'Map view is not available. Open the map and check coverage.',
+      detail: input.viewUnavailableReason ?? 'Map view is not available. Open the map and check coverage.',
     }
   }
 

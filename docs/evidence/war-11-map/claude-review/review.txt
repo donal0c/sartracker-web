@@ -1,0 +1,36 @@
+Code review(max · 15 findings)
+electron/settings-store.cjs
+  ● 627 [correctness]   validateOfficialMapPackage re-runs exhaustive per-tile decoding for every package on every settings save, with a 120s worker timeout and no short-circuit on the persisted attestation.
+  ● 717 [correctness]   validateOfficialMapPackage's catch discards every specific OfficialMapPackageError message and always writes 'Official map package could not be read as MBTiles.'
+electron/official-map-package.cjs
+  ● 368 [correctness]   assertNoSqliteSidecars fails closed on a -wal/-shm/-journal file, but the app's own readonly Database open creates <path>-shm for a WAL-mode MBTiles, permanently demoting the package.
+  ●  47 [correctness]   Zoom validation now demands exact equality between declared metadata zoom and the zoom levels actually present; the readZoomValue() fallback that derived zooms from the tiles was deleted with no migration.
+electron/official-map-tile-decoder.cjs
+  ● 139 [correctness]   hasVisiblePixel rejects any tile whose alpha channel is entirely zero, and a single rejection fails the WHOLE package at both import and runtime.
+electron/official-map-proxy.cjs
+  ● 377 [correctness]   Miss detection changed from `row?.tileData === undefined` to `row === undefined`, and non-Buffer tileData is now package_error; with the new SQL CASE rewriting tiles >4 MiB to NULL, one bad row takes the whole basemap down and suppresses the configured online fallback.
+  ● 329 [efficiency]    Every tile served to the map runs a full synchronous image decode plus two isPackageIdentityCurrent() calls (~10 blocking fs syscalls) on the Electron main process, with no cache.
+  ●  34 [efficiency]    A 1 Hz setInterval performs synchronous filesystem stats for every ready package on the Electron main process for the app's lifetime, and the whole guarantee silently disappears if options.onPackagesChanged is absent.
+  ●  87 [efficiency]    checkOfficialMapView streams a full SHA-256 of the entire package on every Check View press, but verifyPackageAttestation is already bracketed by isPackageIdentityCurrent before AND after hashing, so the hash cannot detect anything the cheap identity check missed.
+electron/main.cjs
+  ● 746 [correctness]   SAVE_SETTINGS_CHANNEL is wrapped in officialMapProxy.withPackageMutation, which holds mutationDepth > 0 for the entire save while fetchOfficialMapTile hard-throws for every tile, and emits two packages-changed notifications per save.
+src/features/map/official-map-raster-refresh.ts
+  ●  17 [correctness]   Every failure path in refreshOfficialMapRaster is unrecoverable: a throw after the layer was removed makes the next call report SUCCESS with the official raster permanently gone, while a throw before removal retries forever on every styledata tick.
+src/features/map/use-official-map-view-qualification.ts
+  ●  32 [correctness]   invalidateOnTileFailure preserves state only for already-published negative statuses; a tile failure arriving while status is 'checking' falls through to invalidate(), which bumps generation.current and silently kills the in-flight check.
+src/features/map/use-field-readiness-checklist.ts
+  ●  98 [correctness]   readOfficialMapViewRequest throws when map.getPitch() !== 0, and this caller's catch resets viewBounds to null, converting a tilted map into a false 'view unavailable' verdict.
+src/features/map/offline-map-readiness.ts
+  ● 154 [correctness]   describeReadyOfficialPackage returns status 'limited', tone 'warning' in BOTH branches, so a fully validated package is visually identical to an unvalidated one and can never produce tone 'success'.
+tests/unit/use-official-map-view-qualification.test.tsx
+  ●  14 [test-coverage] Every mock map in this suite stubs `getStyle: () => undefined` (lines 14, 62, 247), which makes refreshOfficialMapRaster return at its first guard in all cases, so the raster-eviction path — this PR's entire purpose — is never exercised.
+
+Headline: the PR hardens validation so aggressively that several normal-but-imperfect MBTiles packages now get permanently marked invalid, and the hardening runs on hot paths (every settings save, every served tile, every second). The top four findings are the inverse of the PR's goal — they destroy or blank the offline basemap mid-mission.
+
+Three items that didn't make the finding cap:
+
+- Attestation key-order trap (official-map-proxy.cjs:409) — official-map-package.cjs:67 emits {…, sha256, identity}, settings-store.cjs:750 rebuilds it as {…, identity, sha256}, and the fingerprint is JSON.stringify. The proxy only ever sees the settings-store ordering today, so no reader churn now — but it's live bait for any future path.
+- Duplicated logic — the "is this attestation valid" predicate exists in five places with different rules (the two renderer copies never check identity); crc32/createCrcTable and the Adam7 pass table are byte-identical duplicates across the new files.
+- Dead paths — map-view.tsx now routes official maps to officialView.check, so checkOfficialMapCoverage/describeOfficialOfflineMapCoverage are unreachable for official maps, yet this PR still updated their operator-facing copy. createOfficialMapTileDecoder is used only by its own test.
+
+Refuted during verification, so they don't get re-raised: the round(cameraZoom + 1) source-zoom math is correct for 256px rasters; better-sqlite3 tolerates the nested .get() during .iterate(); mapRef.current is assigned before the qualification effect; map.resize() does fire movestart (so no stuck spinner); eslint, tsc --noEmit and the 67 new unit tests are green.

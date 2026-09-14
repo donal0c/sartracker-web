@@ -25,6 +25,8 @@ const PROVIDER_URL_CREDENTIALS_ERROR =
 const DEFAULT_INTERVAL_SECONDS = 30
 const MIN_INTERVAL_SECONDS = 5
 const MAX_INTERVAL_SECONDS = 3600
+const MAX_OFFICIAL_MAP_ERROR_MESSAGE_LENGTH = 256
+const SAFE_OFFICIAL_MAP_ERROR_MESSAGE = /^Official map package [A-Za-z0-9 .,'()\-]+\.$/u
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
   missionDefaults: Object.freeze({
@@ -100,37 +102,46 @@ function createElectronSettingsStore(options) {
   }
 
   /** Serializes atomic settings replacements so roster history cannot be lost by concurrent saves. */
-  function saveAppSettings(input) {
-    const operation = saveTail.then(() => persistAppSettings(input))
+  function saveAppSettings(input, options = {}) {
+    const operation = saveTail.then(() => persistAppSettings(input, options))
     saveTail = operation.catch(() => undefined)
     return operation
   }
 
   /** Persists a settings revision and its local roster provenance in the same atomic file. */
-  async function persistAppSettings(input) {
+  async function persistAppSettings(input, options) {
     const existingSecretPresent = await hasSecret(input.dataSource.authMode)
     validateSettingsDraft(input, existingSecretPresent)
     const previous = await readSettings(settingsPath)
 
-    const next = {
-      missionDefaults: normalizeMissionDefaults(input.missionDefaults),
-      dataSource: normalizeDataSource(input.dataSource),
-      officialMaps: await normalizeOfficialMaps(input.officialMaps, now, decodeTile),
-      weather: normalizeWeather(input.weather),
-    }
-    const history = [...previous.adminRosterHistory]
-    if (JSON.stringify(previous.missionDefaults.adminRoster) !== JSON.stringify(next.missionDefaults.adminRoster)) {
-      if (history.length >= 10_000) throw new Error('Administrator roster history is full. Contact support before changing it.')
-      history.push({ recordedAt: now().toISOString(), authority: 'trusted_local_settings',
-        previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster })
-    }
-    if (history.length > 0) next.adminRosterHistory = history
+    const persist = async () => {
+      const next = {
+        missionDefaults: normalizeMissionDefaults(input.missionDefaults),
+        dataSource: normalizeDataSource(input.dataSource),
+        officialMaps: await normalizeOfficialMaps(input.officialMaps, now, decodeTile, previous.officialMaps),
+        weather: normalizeWeather(input.weather),
+      }
+      const history = [...previous.adminRosterHistory]
+      if (JSON.stringify(previous.missionDefaults.adminRoster) !== JSON.stringify(next.missionDefaults.adminRoster)) {
+        if (history.length >= 10_000) throw new Error('Administrator roster history is full. Contact support before changing it.')
+        history.push({ recordedAt: now().toISOString(), authority: 'trusted_local_settings',
+          previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster })
+      }
+      if (history.length > 0) next.adminRosterHistory = history
 
-    await updateSecrets(input.dataSource)
-    await writeJsonAtomically(settingsPath, next)
-    await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
+      await updateSecrets(input.dataSource)
+      await writeJsonAtomically(settingsPath, next)
+      await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
 
-    return toView(next, await hasSecret(next.dataSource.authMode))
+      return toView(next, await hasSecret(next.dataSource.authMode))
+    }
+
+    const withOfficialMapMutation = options?.withOfficialMapMutation
+    if (shouldGuardOfficialMapMutation(input.officialMaps, previous.officialMaps) &&
+        typeof withOfficialMapMutation === 'function') {
+      return withOfficialMapMutation(persist)
+    }
+    return persist()
   }
 
   async function loadRuntimeBootstrapSettings(forceConnect = false) {
@@ -531,10 +542,15 @@ function baseUrlIncludesCredentials(baseUrl) {
   }
 }
 
-async function normalizeOfficialMaps(input, now, decodeTile) {
+async function normalizeOfficialMaps(input, now, decodeTile, previousOfficialMaps) {
   const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
   const sourcePath = readOptionalString(input?.sourcePath).trim()
-  const packages = await normalizeOfficialMapPackages(input?.packages, now, decodeTile)
+  const packages = await normalizeOfficialMapPackages(
+    input?.packages,
+    now,
+    decodeTile,
+    previousOfficialMaps?.packages,
+  )
 
   if (sourceType === 'none') {
     return {
@@ -605,13 +621,14 @@ function normalizePersistedOfficialMaps(input) {
   }
 }
 
-async function normalizeOfficialMapPackages(input, now, decodeTile) {
+async function normalizeOfficialMapPackages(input, now, decodeTile, previousPackages) {
   if (!Array.isArray(input)) {
     return []
   }
 
   const output = []
   const seen = new Set()
+  const trustedPreviousPackages = Array.isArray(previousPackages) ? previousPackages : []
   for (const candidate of input) {
     const parsed = readObject(candidate)
     const packagePath = readOptionalString(parsed.packagePath).trim()
@@ -624,9 +641,103 @@ async function normalizeOfficialMapPackages(input, now, decodeTile) {
       continue
     }
     seen.add(dedupeKey)
+    const previousPackage = findReusableOfficialMapPackage(mapId, packagePath, trustedPreviousPackages)
+    if (previousPackage !== undefined) {
+      output.push({
+        ...previousPackage,
+        id: createOfficialMapPackageId(mapId, packagePath),
+        sourceType: 'mbtiles',
+        mapId,
+        packagePath,
+        message: packageStatusMessage(mapId, 'ready'),
+      })
+      continue
+    }
     output.push(await validateOfficialMapPackage({ mapId, packagePath, now, decodeTile }))
   }
   return output
+}
+
+/** Decides whether the serialized settings operation must hold the package mutation guard. */
+function shouldGuardOfficialMapMutation(input, previousOfficialMaps) {
+  const nextSourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const nextSourcePath = nextSourceType === 'mapgenie_file'
+    ? readOptionalString(input?.sourcePath).trim()
+    : ''
+  const previousSourceType = previousOfficialMaps?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const previousSourcePath = previousSourceType === 'mapgenie_file'
+    ? readOptionalString(previousOfficialMaps?.sourcePath).trim()
+    : ''
+  if (nextSourceType !== previousSourceType || nextSourcePath !== previousSourcePath) {
+    return true
+  }
+
+  const nextKeys = readOfficialMapPackageKeys(input?.packages)
+  const previousPackages = Array.isArray(previousOfficialMaps?.packages)
+    ? previousOfficialMaps.packages
+    : []
+  const previousKeys = previousPackages.map((mapPackage) => [mapPackage.mapId, mapPackage.packagePath])
+  if (
+    nextKeys.length !== previousKeys.length ||
+    nextKeys.some(([mapId, packagePath], index) =>
+      previousKeys[index]?.[0] !== mapId || previousKeys[index]?.[1] !== packagePath)
+  ) {
+    return true
+  }
+
+  return nextKeys.some(([mapId, packagePath]) =>
+    findReusableOfficialMapPackage(mapId, packagePath, previousPackages) === undefined)
+}
+
+/** Returns the normalized package identities from an untrusted settings draft. */
+function readOfficialMapPackageKeys(input) {
+  if (!Array.isArray(input)) return []
+  const seen = new Set()
+  const keys = []
+  for (const candidate of input) {
+    const parsed = readObject(candidate)
+    const packagePath = readOptionalString(parsed.packagePath).trim()
+    if (packagePath === '') continue
+    const mapId = readOfficialMapId(parsed.mapId)
+    const key = `${mapId}\0${packagePath}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    keys.push([mapId, packagePath])
+  }
+  return keys
+}
+
+/** Reuses only metadata from a prior persisted package whose current identity is still trusted. */
+function findReusableOfficialMapPackage(mapId, packagePath, previousPackages) {
+  return previousPackages.find((storedPackage) =>
+    storedPackage?.status === 'ready' &&
+    storedPackage.mapId === mapId &&
+    storedPackage.packagePath === packagePath &&
+    isReusableOfficialMapMetadata(storedPackage) &&
+    isPackageIdentityCurrent(packagePath, storedPackage.attestation))
+}
+
+/** Confirms the persisted fields came from a complete package inspection before reuse. */
+function isReusableOfficialMapMetadata(mapPackage) {
+  const bounds = readOfficialMapBounds(mapPackage.bounds)
+  return (
+    bounds !== null &&
+    Number.isSafeInteger(mapPackage.minZoom) &&
+    mapPackage.minZoom >= 0 &&
+    mapPackage.minZoom <= 30 &&
+    Number.isSafeInteger(mapPackage.maxZoom) &&
+    mapPackage.maxZoom >= mapPackage.minZoom &&
+    mapPackage.maxZoom <= 30 &&
+    Number.isSafeInteger(mapPackage.tileCount) &&
+    mapPackage.tileCount > 0 &&
+    ['png', 'jpg', 'jpeg', 'webp'].includes(mapPackage.tileFormat) &&
+    Number.isSafeInteger(mapPackage.sizeBytes) &&
+    mapPackage.sizeBytes > 0 &&
+    typeof mapPackage.createdAt === 'string' &&
+    Number.isFinite(Date.parse(mapPackage.createdAt)) &&
+    typeof mapPackage.verifiedAt === 'string' &&
+    Number.isFinite(Date.parse(mapPackage.verifiedAt))
+  )
 }
 
 function normalizePersistedOfficialMapPackages(input) {
@@ -717,9 +828,20 @@ async function validateOfficialMapPackage(input) {
     return {
       ...base,
       status: 'invalid',
-      message: 'Official map package could not be read as MBTiles.',
+      message: safeOfficialMapPackageErrorMessage(error),
     }
   }
+}
+
+/** Preserves only the already-sanitized package errors safe for operator display. */
+function safeOfficialMapPackageErrorMessage(error) {
+  const message = typeof error?.message === 'string' ? error.message : ''
+  return message.length <= MAX_OFFICIAL_MAP_ERROR_MESSAGE_LENGTH &&
+    SAFE_OFFICIAL_MAP_ERROR_MESSAGE.test(message) &&
+    message !== 'Official map package verification failed.' &&
+    message !== 'Official map package could not be verified.'
+    ? message
+    : 'Official map package could not be read as MBTiles.'
 }
 
 async function removeDeletedAppOwnedOfficialMapPackages(previousPackages, nextPackages, userDataPath) {

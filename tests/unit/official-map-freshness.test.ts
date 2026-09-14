@@ -163,7 +163,7 @@ describe('official map freshness and required-view qualification', () => {
       status: 'invalid',
       bounds: null,
       tileCount: 0,
-      message: 'Official map package could not be read as MBTiles.',
+      message: 'Official map package tile decoder rejected a tile.',
     })
     expect(buildFieldReadinessChecklist({
       activeMapId: 'official_discovery_topo',

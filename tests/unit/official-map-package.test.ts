@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3') as (new (filename: string) => {
   readonly close: () => void
   readonly exec: (sql: string) => void
+  readonly pragma: (sql: string, options?: { readonly simple?: boolean }) => unknown
   readonly prepare: (sql: string) => {
     readonly run: (...params: readonly unknown[]) => unknown
   }
@@ -160,6 +161,21 @@ describe('official map package attestation', () => {
     await expect(
       inspectOfficialMapPackage(invalidPath, { decodeTile: () => true }),
     ).rejects.toThrow()
+  })
+
+  it('rejects WAL packages before readonly inspection creates SQLite sidecars', async () => {
+    const packagePath = await createPackage()
+    const database = new Database(packagePath)
+    database.pragma('journal_mode = WAL', { simple: true })
+    database.close()
+    await rm(`${packagePath}-wal`, { force: true })
+    await rm(`${packagePath}-shm`, { force: true })
+    await expect(readdir(path.dirname(packagePath))).resolves.toEqual([path.basename(packagePath)])
+
+    await expect(
+      inspectOfficialMapPackage(packagePath, { decodeTile: () => true }),
+    ).rejects.toThrow('Official map package uses SQLite WAL mode.')
+    await expect(readdir(path.dirname(packagePath))).resolves.toEqual([path.basename(packagePath)])
   })
 
   it('rejects oversized payloads before passing bytes to the decoder', async () => {

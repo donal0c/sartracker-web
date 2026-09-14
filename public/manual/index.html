@@ -1031,7 +1031,7 @@
               <tr><td>Official package registered</td><td>A validated local offline package exists for the active map type.</td></tr>
               <tr><td>Current view covered</td><td>Check View verified every required local tile for the unchanged view and zoom, against the current package content.</td></tr>
               <tr><td>Fallback source available</td><td>A local package is registered; the panel also states whether an online MapGenie fallback is configured. This does not certify another area or a network connection.</td></tr>
-              <tr><td>Recently verified</td><td>The package has been validated (Save Settings re-validates packages automatically).</td></tr>
+              <tr><td>Recently verified</td><td>The package has been validated. Save Settings reuses validation for unchanged packages and validates new or changed files.</td></tr>
             </tbody>
           </table>
           <p>
@@ -1045,6 +1045,8 @@
             Removed or replaced packages lose their old map imagery even while other overlays
             are loading. A missing package may leave a blank map with a warning. After importing
             or reconnecting a package, check the newly displayed map with <strong>Check View</strong>.
+            If refreshing the map fails, readiness remains unavailable. <strong>Check View</strong>
+            retries the refresh; if it still fails, switch maps before relying on the display.
             When coverage or fallback checks fail but the package itself is ready, it shows
             <strong>Partially ready</strong> in amber. A diagonal hatch marks missing local coverage;
             it is not a usable map tile and never counts toward a successful offline check.

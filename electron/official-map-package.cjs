@@ -16,6 +16,7 @@ const SCHEMA_VERSION = 1
 const DECODER_POLICY = 'native-raster-256-or-512-opaque-v1'
 const SUPPORTED_FORMATS = new Set(['png', 'jpg', 'jpeg', 'webp'])
 const SQLITE_SIDECAR_SUFFIXES = Object.freeze(['-wal', '-shm', '-journal'])
+const SQLITE_HEADER = Buffer.from('SQLite format 3\0', 'ascii')
 
 /** A non-reflective failure emitted by official map package verification. */
 class OfficialMapPackageError extends Error {
@@ -39,6 +40,7 @@ async function inspectOfficialMapPackage(packagePath, options = {}) {
   }
 
   const initial = readPackageSnapshot(packagePath)
+  assertNoSqliteWal(packagePath)
   let database = null
   try {
     database = new Database(packagePath, { fileMustExist: true, readonly: true })
@@ -376,6 +378,36 @@ function assertNoSqliteSidecars(packagePath) {
       }
       if (error?.code !== 'ENOENT') {
         throw packageFailure('Official map package sidecar could not be inspected.')
+      }
+    }
+  }
+}
+
+/** Rejects SQLite WAL files before readonly better-sqlite3 access can create sidecars. */
+function assertNoSqliteWal(packagePath) {
+  let fileDescriptor = null
+  try {
+    fileDescriptor = fs.openSync(packagePath, fs.constants.O_RDONLY)
+    const header = Buffer.alloc(SQLITE_HEADER.length + 4)
+    const bytesRead = fs.readSync(fileDescriptor, header, 0, header.length, 0)
+    if (
+      bytesRead === header.length &&
+      header.subarray(0, SQLITE_HEADER.length).equals(SQLITE_HEADER) &&
+      (header[18] === 2 || header[19] === 2)
+    ) {
+      throw packageFailure('Official map package uses SQLite WAL mode.')
+    }
+  } catch (error) {
+    if (error instanceof OfficialMapPackageError) {
+      throw error
+    }
+    throw packageFailure('Official map package could not be read.')
+  } finally {
+    if (fileDescriptor !== null) {
+      try {
+        fs.closeSync(fileDescriptor)
+      } catch {
+        // The package is already rejected or will be opened by SQLite next.
       }
     }
   }

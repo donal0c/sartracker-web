@@ -1,0 +1,102 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/official-map-review-regressions.test.tsx (5 tests | 5 failed) 16ms
+     × recreates both raster parts after an addSource failure removed the previous parts 9ms
+     × bounds failed automatic refresh attempts instead of retrying on every style event 4ms
+     × publishes an in-flight missing result despite a tile failure 2ms
+     × publishes an in-flight partial result despite a tile failure 1ms
+     × publishes an in-flight error result despite a tile failure 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/official-map-review-regressions.test.tsx > Claude map lifecycle regressions > recreates both raster parts after an addSource failure removed the previous parts
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ tests/unit/official-map-review-regressions.test.tsx:64:36
+     62|       harness.state.failAddSource = false
+     63|       await act(async () => harness.listeners.get('styledata')?.())
+     64|       expect(harness.state.source).toBe(true)
+       |                                    ^
+     65|       expect(harness.state.layers).toEqual(['official_discovery_topo-l…
+     66|     } finally { await harness.close() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/official-map-review-regressions.test.tsx > Claude map lifecycle regressions > bounds failed automatic refresh attempts instead of retrying on every style event
+AssertionError: expected 21 to be less than or equal to 3
+ ❯ tests/unit/official-map-review-regressions.test.tsx:77:57
+     75|         await act(async () => harness.listeners.get('styledata')?.())
+     76|       }
+     77|       expect(harness.map.removeLayer.mock.calls.length).toBeLessThanOr…
+       |                                                         ^
+     78|       expect(harness.latest.coverage.status).toBe('unavailable')
+     79|     } finally { await harness.close() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/official-map-review-regressions.test.tsx > Claude map lifecycle regressions > publishes an in-flight missing result despite a tile failure
+AssertionError: expected 'unchecked' to be 'missing' // Object.is equality
+
+Expected: "missing"
+Received: "unchecked"
+
+ ❯ tests/unit/official-map-review-regressions.test.tsx:94:46
+     92|         await pending
+     93|       })
+     94|       expect(harness.latest.coverage.status).toBe(status)
+       |                                              ^
+     95|       expect(harness.latest.qualification).toBeNull()
+     96|     } finally { await harness.close() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/official-map-review-regressions.test.tsx > Claude map lifecycle regressions > publishes an in-flight partial result despite a tile failure
+AssertionError: expected 'unchecked' to be 'partial' // Object.is equality
+
+Expected: "partial"
+Received: "unchecked"
+
+ ❯ tests/unit/official-map-review-regressions.test.tsx:94:46
+     92|         await pending
+     93|       })
+     94|       expect(harness.latest.coverage.status).toBe(status)
+       |                                              ^
+     95|       expect(harness.latest.qualification).toBeNull()
+     96|     } finally { await harness.close() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/official-map-review-regressions.test.tsx > Claude map lifecycle regressions > publishes an in-flight error result despite a tile failure
+AssertionError: expected 'unchecked' to be 'error' // Object.is equality
+
+Expected: "error"
+Received: "unchecked"
+
+ ❯ tests/unit/official-map-review-regressions.test.tsx:94:46
+     92|         await pending
+     93|       })
+     94|       expect(harness.latest.coverage.status).toBe(status)
+       |                                              ^
+     95|       expect(harness.latest.qualification).toBeNull()
+     96|     } finally { await harness.close() }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)
+   Start at  08:11:44
+   Duration  703ms (transform 47ms, setup 0ms, import 123ms, tests 16ms, environment 489ms)
+
+npm notice
+npm notice New major version of npm available! 10.9.8 -> 12.0.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+npm notice To update run: npm install -g npm@12.0.2
+npm notice

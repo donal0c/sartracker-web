@@ -743,7 +743,9 @@ function registerIpcHandlers(
   })
   ipcMain.handle(SAVE_SETTINGS_CHANNEL, (event, input) => {
     validateIpcSender(event)
-    return officialMapProxy.withPackageMutation(() => settingsStore.saveAppSettings(input))
+    return settingsStore.saveAppSettings(input, {
+      withOfficialMapMutation: (operation) => officialMapProxy.withPackageMutation(operation),
+    })
   })
   ipcMain.handle(TEST_TRACKING_CONNECTION_CHANNEL, (event, input) => {
     validateIpcSender(event)

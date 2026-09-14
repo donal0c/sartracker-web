@@ -23,22 +23,28 @@ automatically and require affected integration verification.
 
 ## Verification and next action
 
-Pre-rebase head `e2a31ed657a22d5ff329d2d9dfa9968a3627bcc6` passed
-[Linux CI34783712783](https://github.com/donal0c/sartracker-web/actions/runs/34783712783):
-456 files / 4,849 tests / six existing qualification skips, four browser flows,
-and packaged map smoke. Downloaded evidence was digest/head/tree verified.
-Replacement imagery changed; passive/final removal had 289/289 transparent pixels;
-final Check View reported 0/15 missing and Not field ready. Child exit 0/null,
-no escalation. This is scoped Linux synthetic-package proof at the pre-rebase head.
+Claude review remediation is active; PR28 readiness is withdrawn and draft status
+restored. Integrated CI34812540230 passed at `3ecb7b8a` (4,943 tests, six existing
+skips, four browser flows and packaged map smoke), but does not cover the new
+repairs. See [review disposition](../docs/assurance/findings/pr28-claude-review.md).
+Local repairs and source/browser/independent review are complete; fresh exact-head
+CI evidence remains required. No local Electron/build or merge is authorized.
 
-Post-rebase: 126 affected controls across nine files and four Chromium flows pass;
-TypeScript, targeted lint, main/preload syntax and independent integration review
-pass. Map blobs remain unchanged. Default actionlint's external-linter orchestration
-timed out; workflow-only actionlint and all 32 shell steps checked serially pass.
-Next: push with the expected remote-head lease and watch fresh CI.
-Keep PR28 draft until the affected evidence is complete. No local Electron/build,
-merge or release is authorized. The manual describes package versus current-view
-proof and clearing removed/replaced imagery while other overlays remain pending.
+Prior integrated head `3ecb7b8a` passed Linux CI34812540230: 467 files /
+4,943 tests / six existing qualification skips, four browser flows and packaged
+map smoke. Evidence ZIP10335243404 was digest/head/tree verified; A/B imagery
+changed, passive/final removal had 289 transparent samples, final Check View was
+0/15 missing and Not field ready, and child exit was clean (0/null).
+This remains historical scoped Linux proof, superseded for the review repairs.
+
+Current local fixes cover persisted-validation reuse, conditional settings mutation,
+WAL preflight, bounded decoded-proof reuse, raster reconstruction recovery and
+negative-result races. Stable correctness passes 468 files / 4,956 tests / six
+existing skips; six synthetic Chromium flows, typecheck, lint and independent
+reviews pass. The first full run's stale message expectation failure is retained.
+Next: push this reviewed repair and verify fresh exact-head CI. No local Electron,
+package build, merge or release. Default local actionlint previously timed out;
+workflow-only parsing and all 32 shell steps checked serially passed.
 
 Detailed history, clean red/green and all failed receipts remain in
 [WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md).
