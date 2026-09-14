@@ -1,8 +1,16 @@
 const { createCoverageOwnerLifecycle } = require('./coverage-owner-lifecycle.cjs')
+const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+
+const MAX_DIAGNOSTIC_TEXT_LENGTH = 500
 
 /** Registers sender-scoped coverage read and cancellation handlers. */
 function registerCoverageIpcHandlers(input) {
-  input = { ...input, ownerLifecycle: createCoverageOwnerLifecycle() }
+  input = {
+    ...input,
+    ownerLifecycle: input.ownerLifecycle ?? createCoverageOwnerLifecycle({
+      onFailure: input.onLifecycleFailure,
+    }),
+  }
   const ownedStages = new Map()
   registerCoverageReadHandler(
     input,
@@ -37,9 +45,12 @@ function registerCoverageTileHandlers(input) {
     input.validateIpcSender(event)
     const scopedRequestId = scopeCoverageRequestId(event, requestId)
     const cancelDestroyedSender = () => {
-      void input.missionStore.cancelCoverageTileRead(scopedRequestId).catch(() => undefined)
+      requestCoverageCancellation(input, 'cancelCoverageTileRead', scopedRequestId)
     }
-    const releaseOwner = input.ownerLifecycle.subscribe(event.sender, cancelDestroyedSender)
+    const releaseOwner = createSafeRelease(input, input.ownerLifecycle.subscribe(
+      event.sender,
+      cancelDestroyedSender,
+    ), 'tile read lifecycle subscription')
     try {
       return await input.missionStore.readCoverageTile(payload, scopedRequestId)
     } finally {
@@ -62,20 +73,42 @@ function registerCoverageCatalogHandler(input, ownedStages) {
     const senderId = event.sender.id
     let destroyed = false
     let ownedActivationId = null
+    let releaseListeners = () => undefined
     const senderGone = () => {
       if (destroyed) return
       destroyed = true
-      void input.missionStore.cancelCoverageQuery(scopedRequestId).catch(() => undefined)
+      requestCoverageCancellation(input, 'cancelCoverageQuery', scopedRequestId)
       for (const [activationId, owner] of ownedStages.entries()) {
         if (owner.senderId !== senderId) continue
         owner.abandoned = true
         void settleAbandonedStage(input, ownedStages, activationId, owner)
-          .catch(() => undefined)
+          .catch(error => reportLifecycleFailure(
+            input,
+            error,
+            'abandoned coverage catalog cleanup after renderer loss',
+          ))
       }
       releaseListeners()
     }
-    const releaseListeners = input.ownerLifecycle.subscribe(event.sender, senderGone)
     try {
+      try {
+        releaseListeners = createSafeRelease(input, input.ownerLifecycle.subscribe(
+          event.sender,
+          senderGone,
+        ), 'catalog lifecycle subscription')
+      } catch (error) {
+        abandonSenderStages(ownedStages, senderId)
+        try {
+          await settleAbandonedStages(input, ownedStages, senderId)
+        } catch (cleanupError) {
+          reportLifecycleFailure(
+            input,
+            cleanupError,
+            'abandoned coverage catalog cleanup after subscription failure',
+          )
+        }
+        throw error
+      }
       abandonSenderStages(ownedStages, senderId)
       await settleAbandonedStages(input, ownedStages, senderId)
       if (destroyed) throw createDestroyedRendererError()
@@ -92,7 +125,11 @@ function registerCoverageCatalogHandler(input, ownedStages) {
       ownedActivationId = activationId
       if (destroyed) {
         await settleAbandonedStage(input, ownedStages, activationId, owner)
-          .catch(() => undefined)
+          .catch(error => reportLifecycleFailure(
+            input,
+            error,
+            'abandoned coverage catalog cleanup after renderer loss',
+          ))
         throw createDestroyedRendererError()
       }
       return result
@@ -216,9 +253,82 @@ function readActivationId(value) {
 
 /** Creates the fail-closed error for a renderer lost during catalog staging. */
 function createDestroyedRendererError() {
-  const error = new Error('Coverage renderer was destroyed during catalog staging.')
+  const error = new Error(
+    'coverage-cancelled: Coverage renderer was destroyed during catalog staging.',
+  )
   error.name = 'AbortError'
   return error
+}
+
+/** Requests one optional cooperative cancellation without leaking synchronous or async failures. */
+function requestCoverageCancellation(input, methodName, requestId) {
+  let cancellation
+  try {
+    const cancel = input.missionStore?.[methodName]
+    if (typeof cancel !== 'function') {
+      throw new Error(`Coverage cancellation method ${methodName} is unavailable.`)
+    }
+    cancellation = cancel.call(input.missionStore, requestId)
+  } catch (error) {
+    reportLifecycleFailure(input, error, `${methodName} after renderer loss`)
+    return
+  }
+  void Promise.resolve(cancellation).catch(error => {
+    reportLifecycleFailure(input, error, `${methodName} after renderer loss`)
+  })
+}
+
+/** Makes one lifecycle release idempotent and keeps release failures out of IPC finally blocks. */
+function createSafeRelease(input, release, phase) {
+  if (typeof release !== 'function') {
+    const error = new TypeError(`Coverage ${phase} did not return a release function.`)
+    reportLifecycleFailure(input, error, phase)
+    throw error
+  }
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    try {
+      release()
+    } catch (error) {
+      reportLifecycleFailure(input, error, phase)
+    }
+  }
+}
+
+/** Reports one lifecycle failure through the optional runtime diagnostic hook. */
+function reportLifecycleFailure(input, error, phase) {
+  const failure = error instanceof Error ? error : new Error(String(error))
+  if (typeof input.onLifecycleFailure !== 'function') {
+    try {
+      const message = sanitizeDiagnosticText(failure.message)
+        .slice(0, MAX_DIAGNOSTIC_TEXT_LENGTH)
+      console.error(`Coverage renderer lifecycle failure: ${message}`)
+    } catch {
+      // A missing diagnostic sink must never rethrow into an IPC or EventEmitter callback.
+    }
+    return
+  }
+  try {
+    const result = input.onLifecycleFailure(failure, { phase })
+    if (result !== undefined) {
+      void Promise.resolve(result).catch(reportLifecycleFailureToConsole)
+    }
+  } catch (reportError) {
+    reportLifecycleFailureToConsole(reportError)
+  }
+}
+
+/** Provides a final process diagnostic when the supplied runtime reporter fails. */
+function reportLifecycleFailureToConsole(error) {
+  try {
+    const message = sanitizeDiagnosticText(error instanceof Error ? error.message : String(error))
+      .slice(0, MAX_DIAGNOSTIC_TEXT_LENGTH)
+    console.error(`Coverage renderer lifecycle diagnostic failed: ${message}`)
+  } catch {
+    // Diagnostics are best-effort and cannot be allowed to escape lifecycle cleanup.
+  }
 }
 
 /** Registers one named read while sharing renderer lifecycle cancellation. */
@@ -227,9 +337,12 @@ function registerCoverageReadHandler(input, channel, read) {
     input.validateIpcSender(event)
     const scopedRequestId = scopeCoverageRequestId(event, requestId)
     const cancelDestroyedSender = () => {
-      void input.missionStore.cancelCoverageQuery(scopedRequestId).catch(() => undefined)
+      requestCoverageCancellation(input, 'cancelCoverageQuery', scopedRequestId)
     }
-    const releaseOwner = input.ownerLifecycle.subscribe(event.sender, cancelDestroyedSender)
+    const releaseOwner = createSafeRelease(input, input.ownerLifecycle.subscribe(
+      event.sender,
+      cancelDestroyedSender,
+    ), 'coverage read lifecycle subscription')
     try {
       return await read(input.missionStore, payload, scopedRequestId)
     } finally {

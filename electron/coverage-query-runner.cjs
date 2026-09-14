@@ -26,7 +26,6 @@ function runCoverageQueryInWorker(input) {
         workerData: {
           databasePath: input.databasePath,
           query,
-          resultLimits: input.resultLimits,
         },
       })
     } catch (error) {
@@ -59,7 +58,6 @@ function runCoverageQueryInWorker(input) {
           completedResult = normalizeCoverageWorkerResult(
             query,
             message.result,
-            input.resultLimits,
           )
         } catch (error) {
           rejectAndTerminate(error)

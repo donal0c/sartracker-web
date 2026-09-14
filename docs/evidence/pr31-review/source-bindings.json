@@ -1,0 +1,31 @@
+{
+  "baseHead": "ce2656771deb4236532c38ffe5ad543b4634427f",
+  "kind": "local working-tree proof; generated version excluded",
+  "inputs": {
+    ".github/workflows/electron-linux-validation.yml": "d3ed1eedc65c31d0077069c9d7651ed961f9861b24215212522517f7191c7969",
+    "build/native-runtime-smoke-receipt.js": "9b4b6e115890c7340ae18412d7ad5a2593d59b1347945faa18692200e6aa2004",
+    "build/packaged-page-diagnostics.js": "ec8c745789e05d28c9ba4ed2a446600ebb5da889c40e568ace41bb643f25c9c7",
+    "electron/coverage-ipc.cjs": "5110b39201b6762fc3ebd25c863a285e77c5f442e7134a6a1717712fc9352473",
+    "electron/coverage-owner-lifecycle.cjs": "dadf8ef32d52074bf1dd2e64a86d5aedf7e32354cd144e57507c7b0f164344cd",
+    "electron/coverage-query-runner.cjs": "2887f7943dd8eab84c110d255545f62de941200da57d1f5e66d5c1e123448659",
+    "electron/coverage-query-worker.cjs": "eadc1bf36756d6541ea3c78ecef940c1f0ca812be9d6f1ae245fbf0ab933ae9b",
+    "electron/mission-store.cjs": "1052bdeba260dd5a4c0aec5d090df06af8aec648d253865675682adaac1e1674",
+    "public/manual/index.html": "5bd6309233ad9a19b43a505e729f30bd79a904d6994b105b037b3b7988e716bc",
+    "scripts/electron-native-runtime-smoke.mjs": "0527921ba6a3dbbca9d6ab7005e2422433d6f03f8d71c52dfd676bf27116b57b",
+    "scripts/electron-repair-train-d-smoke.mjs": "4d25b8b067b8f19773572ac855f068ae7df120e6dfb7713aaf1e950ab63b2270",
+    "src/features/tracking/coverage-controller.ts": "92f94045a30c3484a339665d73d44a2fe74f120b4306dd6dca25881b33aab6d2",
+    "src/features/tracking/coverage-diagnostics.ts": "8a98e7754800aace7313d2bc9501ce66d3f17e1742ec19b676758bd4e2f5056d",
+    "src/features/tracking/coverage-tile-protocol.ts": "cbcffa6612f7d9c1ff9db6d3f9d8b53d8928f9fa262ada9c537f6c32079bdf5d",
+    "tests/e2e/coverage.spec.ts": "9954d008f74a4e329ac09af8105facd9f929ffaff9f9bcc8a6b4dffdb0f0bbe9",
+    "tests/fixtures/oversized-coverage-query-result-worker.cjs": "f85b983d47f100b438e79219762e1740966c1b405e97ca3dd7861d25cc3e1e4c",
+    "tests/unit/coverage-controller.test.ts": "11d97f10686cd6e107578b657a18ec5562a6bf50a727c2ee97538daefef91594",
+    "tests/unit/coverage-tile-protocol.test.ts": "c8b490c9b54424c02a9b7a45cf5dc2cda00091cfe728fe17996f5cd606099608",
+    "tests/unit/electron-coverage-ipc.test.ts": "b37f5dba60a0770c61e324aedf262b7ea0c5818e00b6c679eaab8aeeb9613b33",
+    "tests/unit/electron-coverage-mission-store.test.ts": "389c514fa474077dbd8258967294266388090f06cf2110d428adc06057c03694",
+    "tests/unit/electron-coverage-query-runner.test.ts": "75a88265afbcc32cdc33fa90370487ef54a053ced42b7c4fe3375e3d093d7df7",
+    "tests/unit/native-runtime-smoke-receipt.test.ts": "a4806e3bc694daa54a42f4de67f72a291b86ea0584ac1719feed00789d9b7b7f",
+    "tests/unit/packaged-page-diagnostics.test.ts": "6b003f05a3daae7a610f78dede75cf41689df8077a2ae14f8af3b7176a08ea29",
+    "tests/fixtures/coverage-query-cardinality-worker.cjs": "93554ffdb2d8a3d869019cc8f3e8429cbec5d2182f22aab7b8f5e0e57c835f5b",
+    "tests/unit/electron-coverage-worker-cardinality.test.ts": "0c3ff4df8cac6e4c1b51066d7fc1ebb56d5187e6ac0e469ea15efe60eca506e9"
+  }
+}

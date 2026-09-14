@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url'
 
 import { extractFile } from '@electron/asar'
 import { _electron as electron } from 'playwright'
-import { attachPackagedPageDiagnostics, createPackagedStderrCollector, sanitizePackagedDiagnosticText } from '../build/packaged-page-diagnostics.js'
+import { attachPackagedPageDiagnostics, createPackagedStderrCollector, sanitizePackagedDiagnosticText, waitForPackagedStderrDrain } from '../build/packaged-page-diagnostics.js'
 import {
   appendBoundedDiagnostic,
   assertNoUnexpectedDiagnostics,
@@ -540,6 +540,8 @@ async function launchPackaged(appPath, profile, label, report) {
   })
   launch.process = launch.app.process()
   assert.ok(launch.process !== null, `Packaged launch did not expose a child process for ${label}`)
+  assert.ok(launch.process.stderr !== null && launch.process.stderr !== undefined,
+    `Packaged launch ${label} did not expose an owned stderr stream.`)
   launch.process.once('exit', () => { launch.exitObservedAt = new Date().toISOString() })
   launch.process.on('error', (error) => {
     appendLaunchDiagnostic(launch, 'mainProcessErrors', {
@@ -548,7 +550,7 @@ async function launchPackaged(appPath, profile, label, report) {
       stack: sanitizeDiagnosticText(error.stack ?? ''),
     }, 'main-process.error', 'main-process')
   })
-  launch.process.stderr?.on('data', (chunk) => {
+  launch.process.stderr.on('data', (chunk) => {
     appendProcessStderrDiagnostics(launch, String(chunk))
   })
   report.launches.push({ label, executablePath: appPath, pid: launch.process.pid, launchedAt: new Date().toISOString() })
@@ -1068,7 +1070,7 @@ async function closeLaunch(launch, report, provider = null) {
     const exit = closed.exit
     closeError = closed.closeError
     forcedCleanup = closed.forcedCleanup
-    const stderrDrained = await waitForStderrDrain(
+    const stderrDrained = await waitForPackagedStderrDrain(
       launch.process?.stderr,
       Math.min(CLOSE_TIMEOUT_MS, remainingSmokeTime(cleanupDeadline)),
     )
@@ -1118,33 +1120,6 @@ function appendProcessStderrDiagnostics(launch, chunk) {
 /** Flushes a final stderr chunk before terminal diagnostic validation. */
 function flushProcessStderrDiagnostics(launch) {
   launch.stderrCollector?.flush()
-}
-
-/** Waits for the owned child stderr stream to finish before terminal validation. */
-function waitForStderrDrain(stream, timeoutMs) {
-  if (stream === undefined || stream === null || stream.readableEnded === true || stream.destroyed === true) {
-    return Promise.resolve(true)
-  }
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return Promise.resolve(false)
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = (value) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      stream.off?.('end', onEnd)
-      stream.off?.('close', onClose)
-      stream.off?.('error', onError)
-      resolve(value)
-    }
-    const onEnd = () => finish(true)
-    const onClose = () => finish(true)
-    const onError = () => finish(false)
-    const timer = setTimeout(() => finish(false), timeoutMs)
-    stream.once?.('end', onEnd)
-    stream.once?.('close', onClose)
-    stream.once?.('error', onError)
-  })
 }
 
 /** Waits for a bounded condition without making elapsed time part of the proof. */

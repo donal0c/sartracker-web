@@ -59,8 +59,12 @@ head.
 ## Current merged disposition
 
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
-PR31 is rebased onto it; earlier CI34834365325 is historical, and fresh exact-head
-checks control readiness. DON-254's [native-runtime repair](findings/native-runtime-repair.md)
+PR31 is rebased onto it. Claude review superseded earlier readiness and green
+CI34845492157. The [review disposition](findings/pr31-claude-review.md) records
+repaired snapshot progress, lifecycle fanout, worker bounds/join and stderr
+custody, with 5,045 source tests, seven browser flows and rebuilt macOS native
+control passing locally. Fresh exact-head checks control readiness.
+DON-254's [native-runtime repair](findings/native-runtime-repair.md)
 owns the four retained diagnostic/runtime rows below, including proved physical
 worker-exit custody on cancellation. The original source/native proof and reviews
 are retained; all 82 focused native tests pass after the documentation-only conflict

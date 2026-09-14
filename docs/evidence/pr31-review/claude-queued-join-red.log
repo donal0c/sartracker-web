@@ -1,0 +1,35 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts (34 tests | 1 failed) 3180ms
+     × rejects queued chunk reads after a wedged worker without starting another SQLite worker [DON-254] 167ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-mission-store.test.ts > Electron coverage mission-store orchestration > rejects queued chunk reads after a wedged worker without starting another SQLite worker [DON-254]
+AssertionError: expected 'still pending' to deeply equal [ ObjectContaining{…}, …(1) ]
+
+- Expected:
+[
+  ObjectContaining {
+    "message": StringMatching /worker.*did not exit/i,
+  },
+  ObjectContaining {
+    "message": StringMatching /worker.*did not exit/i,
+  },
+]
+
++ Received:
+"still pending"
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts:402:22
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 33 passed (34)
+   Start at  14:24:26
+   Duration  3.53s (transform 32ms, setup 0ms, import 55ms, tests 3.18s, environment 234ms)
+

@@ -13,10 +13,15 @@ export function validateNativeRuntimeReceipt(receipt, expectedHead) {
     'electron/coverage-query-runner.cjs', 'electron/coverage-ipc.cjs', 'electron/coverage-owner-lifecycle.cjs']) {
     assert.match(receipt.package?.inputs?.[file] ?? '', /^[a-f0-9]{64}$/u, `Missing packaged input: ${file}`)
   }
-  assert.deepEqual(receipt.ipc, { protocol: 'file:', count: 24, allEnumerated: true, serviceWorkers: 0 }, 'Native IPC control is incomplete.')
+  assert.deepEqual({ ...receipt.ipc, serviceWorkers: null }, { protocol: 'file:', count: 24, allEnumerated: true, serviceWorkers: null }, 'Native IPC control is incomplete.')
+  assert.ok(receipt.ipc.serviceWorkers === null || receipt.ipc.serviceWorkers === 0, 'Unexpected service-worker registrations.')
   assert.deepEqual(receipt.store, { added: true, kinds: ['outing', 'unassigned'], exactFixes: 1,
-    cancellation: 'AbortError', physicalExit: true }, 'Native worker snapshot/exit control is incomplete.')
+    cancellation: 'AbortError', physicalExit: true, cancellationObservedAfterExit: true,
+    liveSnapshotCount: 1, liveCurrentCount: 2, liveClaimReady: false }, 'Native worker snapshot/exit control is incomplete.')
   assert.deepEqual(receipt.close, { exit: { exitCode: 0, signal: null }, closeError: null, forcedCleanup: null }, 'Native child did not exit cleanly.')
+  assert.equal(receipt.stderrStreamAttached, true, 'Native control did not attach to the owned stderr stream.')
+  assert.ok(Array.isArray(receipt.stderr), 'Native control did not retain stderr capture.')
+  assert.equal(receipt.stderrDrained, true, 'Native control validated before stderr drained.')
   assert.equal(receipt.profileRemoved, true, 'Native control profile cleanup is not proved.')
   assertNoUnexpectedDiagnostics(receipt.diagnostics)
 }

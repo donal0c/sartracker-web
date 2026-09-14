@@ -1,0 +1,69 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts (33 tests | 1 failed) 2882ms
+     × reports a structurally moved manifest as retryable partial without caching obsolete inventory [DON-254] 65ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-mission-store.test.ts > Electron coverage mission-store orchestration > reports a structurally moved manifest as retryable partial without caching obsolete inventory [DON-254]
+AssertionError: promise resolved "{ changeSeq: 3, enumerated: true, …(5) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "backfillIncomplete": false,
++   "changeSeq": 3,
++   "chunks": [
++     {
++       "builtRev": 1,
++       "contentRev": 1,
++       "exactCount": 2,
++       "exactDigest": "5d461996bc29ec9dac1be139cd669e1327929ebf6fa2c653747282388e92f7ad",
++       "exactMaxTs": "2026-08-24T09:05:00.000Z",
++       "exactMinTs": "2026-08-24T09:00:00.000Z",
++       "fixCount": 2,
++       "fixDigest": "5d461996bc29ec9dac1be139cd669e1327929ebf6fa2c653747282388e92f7ad",
++       "key": {
++         "device_id": "device-1",
++         "period_id": "",
++         "period_kind": "unassigned",
++       },
++       "maxTs": "2026-08-24T09:05:00.000Z",
++       "minTs": "2026-08-24T09:00:00.000Z",
++     },
++   ],
++   "diagnostics": {
++     "freshChunkCount": 1,
++     "lastBuildDurationMs": null,
++     "lastEnumerationDurationMs": 21.343667000000096,
++     "oldestQueuedAt": null,
++     "pendingChunkCount": 0,
++     "pendingInvalidationCount": 0,
++     "queueDepth": 0,
++     "staleChunkCount": 0,
++   },
++   "enumerated": true,
++   "outings": [],
++   "pendingInvalidation": false,
+  }
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts:322:78
+    320|     })
+    321|     const mission = await seedMission(store)
+    322|     await expect(store.readCoverageManifest(mission.id, 'changed-struc…
+       |                                                                              ^
+    323|     const current = await store.readCoverageManifest(mission.id, 'new-…
+    324|     expect(current.chunks.map(chunk => chunk.key.period_kind).sort()).…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 32 passed (33)
+   Start at  14:23:42
+   Duration  3.36s (transform 33ms, setup 0ms, import 68ms, tests 2.88s, environment 258ms)
+

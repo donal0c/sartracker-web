@@ -9,7 +9,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { extractFile } from '@electron/asar'
 import { _electron as electron } from 'playwright'
-import { attachPackagedPageDiagnostics, createPackagedStderrCollector, sanitizePackagedDiagnosticText as sanitize } from '../build/packaged-page-diagnostics.js'
+import { attachPackagedPageDiagnostics, createPackagedStderrCollector, sanitizePackagedDiagnosticText as sanitize, waitForPackagedStderrDrain } from '../build/packaged-page-diagnostics.js'
 import { appendBoundedDiagnostic, assertNoUnexpectedDiagnostics, closeOwnedSmokeChild, createDiagnosticState, runBounded } from '../build/electron-repair-train-d-smoke-lib.js'
 import { validateNativeRuntimeReceipt } from '../build/native-runtime-smoke-receipt.js'
 
@@ -17,8 +17,12 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const executablePath = path.resolve(process.argv[2] ?? '')
 const output = path.resolve(process.argv[3] ?? 'tmp/native-runtime-repair/scoped-native')
 const diagnostics = createDiagnosticState()
-const report = { issue: 'DON-254', result: 'fail', boundary: 'packaged file startup and actual preload IPC; separately injected packaged-store snapshot/cancellation control; not Train D, timing, field or release qualification', diagnostics }
+const report = {
+  issue: 'DON-254', result: 'fail', boundary: 'packaged file startup and actual preload IPC; separately injected packaged-store snapshot/cancellation control; not Train D, timing, field or release qualification', diagnostics,
+  stderrStreamAttached: false, stderrDrained: false,
+}
 let app
+let ownedProcess
 let profile
 let phase = 'launch'
 const stderrEvents = []
@@ -67,7 +71,12 @@ async function main() {
     env: { ...process.env, SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' },
     timeout: 30_000,
   })
-  app.process().stderr?.on('data', stderrCollector.write)
+  ownedProcess = app.process()
+  assert.ok(ownedProcess !== null, 'Native runtime control did not expose an owned child process.')
+  assert.ok(ownedProcess.stderr !== null && ownedProcess.stderr !== undefined,
+    'Native runtime control requires an owned stderr stream.')
+  report.stderrStreamAttached = true
+  ownedProcess.stderr.on('data', stderrCollector.write)
   const attached = new Set()
   const attach = page => {
     if (attached.has(page)) return
@@ -98,12 +107,12 @@ async function main() {
       store.readCoverageManifest(mission.id, `native-concurrent-${index}`)))
     return { protocol: location.protocol, count: results.length,
       allEnumerated: results.every(result => result.enumerated && result.chunks.length === 0),
-      serviceWorkers: 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0 }
+      serviceWorkers: 'serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).length : null }
   })
   assert.equal(report.ipc.protocol, 'file:')
   assert.equal(report.ipc.count, 24)
   assert.equal(report.ipc.allEnumerated, true)
-  assert.equal(report.ipc.serviceWorkers, 0)
+  assert.ok(report.ipc.serviceWorkers === null || report.ipc.serviceWorkers === 0)
   phase = 'packaged-store-snapshot-and-exit'
   report.store = await app.evaluate(async ({ app: runningApp }, fixtureDirectory) => {
     const { createRequire } = process.getBuiltinModule('module')
@@ -113,24 +122,30 @@ async function main() {
     let store
     let added = false
     let cancelNext = false
+    let liveNext = false
     let physicalExit = false
     store = createElectronMissionStore({ userDataPath: fixtureDirectory,
-      runCoverageQueryInWorker: async input => {
+      runCoverageQueryInWorker: input => {
         if (input.query.kind === 'enumerate' && !added) {
           added = true
-          await store.createOuting({ mission_id: input.query.missionId, label: 'Concurrent native outing', started_at: '2026-08-24T08:30:00.000Z' })
+          return store.createOuting({ mission_id: input.query.missionId, label: 'Concurrent native outing', started_at: '2026-08-24T08:30:00.000Z' })
+            .then(() => runCoverageQueryInWorker(input))
         }
         if (cancelNext) {
           const controller = new AbortController()
           const operation = runCoverageQueryInWorker({ ...input, signal: controller.signal })
           operation.workerExited.then(() => { physicalExit = true })
           controller.abort()
-          try { await operation } catch (error) {
-            await operation.workerExited
-            throw error
-          }
+          return operation
         }
-        return runCoverageQueryInWorker(input)
+        const operation = runCoverageQueryInWorker(input)
+        if (!liveNext || input.query.kind !== 'manifest') return operation
+        liveNext = false
+        const result = operation.then(async snapshot => {
+          await store.addPositionsBulk({ mission_id: input.query.missionId, positions: [{ device_id: 'synthetic-1', source_position_id: 'native-live-fix', lat: 52.01, lon: -9.71, timestamp: '2026-08-24T09:01:00.000Z', timestamp_source: 'fix' }] })
+          return snapshot
+        })
+        return Object.assign(result, { workerExited: operation.workerExited })
       },
     })
     try {
@@ -138,12 +153,24 @@ async function main() {
       await store.upsertDevice({ mission_id: mission.id, device_id: 'synthetic-1', name: 'Synthetic device', color: '#fff', status: 'online' })
       await store.addPositionsBulk({ mission_id: mission.id, positions: [{ device_id: 'synthetic-1', source_position_id: 'native-fix', lat: 52, lon: -9.7, timestamp: '2026-08-24T09:00:00.000Z', timestamp_source: 'fix' }] })
       const manifest = await store.readCoverageManifest(mission.id, 'native-race')
+      liveNext = true
+      const live = await store.readCoverageManifest(mission.id, 'native-live-race')
+      const liveClaim = await store.readCoverageClaim({ missionId: mission.id, selectedKeys: live.chunks.map(chunk => chunk.key) })
+      const current = await store.readCoverageManifest(mission.id, 'native-current')
       cancelNext = true
       let cancellation = null
-      try { await store.readCoverageManifest(mission.id, 'native-abort') } catch (error) { cancellation = error.name }
+      let cancellationObservedAfterExit = false
+      try { await store.readCoverageManifest(mission.id, 'native-abort') } catch (error) {
+        cancellation = error.name
+        cancellationObservedAfterExit = physicalExit
+      }
       await store.prepareClose()
       return { added, kinds: manifest.chunks.map(chunk => chunk.key.period_kind).sort(),
-        exactFixes: manifest.chunks.reduce((sum, chunk) => sum + chunk.exactCount, 0), cancellation, physicalExit }
+        exactFixes: manifest.chunks.reduce((sum, chunk) => sum + chunk.exactCount, 0), cancellation, physicalExit,
+        cancellationObservedAfterExit,
+        liveSnapshotCount: live.chunks.reduce((sum, chunk) => sum + chunk.exactCount, 0),
+        liveCurrentCount: current.chunks.reduce((sum, chunk) => sum + chunk.exactCount, 0),
+        liveClaimReady: liveClaim.databaseReady }
     } finally { await store.prepareClose(); store.close() }
   }, path.join(profile, 'separate-synthetic-store'))
   assert.deepEqual(report.store.kinds, ['outing', 'unassigned'])
@@ -163,12 +190,17 @@ try {
   phase = 'close'
   if (app) {
     const now = Date.now()
-    report.close = await closeOwnedSmokeChild(app.process(), {
+    report.close = await closeOwnedSmokeChild(ownedProcess ?? app.process(), {
       owned: true, close: () => app.close(), orderlyDeadline: now + 15_000, deadline: now + 25_000,
     }).catch(error => ({ failure: sanitize(error.message) }))
     if (report.close.closeError) report.close.closeError = sanitize(report.close.closeError.message)
     if (report.close.exit?.exitCode !== 0 || report.close.forcedCleanup !== null || report.close.closeError !== null) report.result = 'fail'
   }
+  report.stderrDrained = await waitForPackagedStderrDrain(
+    ownedProcess?.stderr,
+    10_000,
+  )
+  if (!report.stderrDrained) report.result = 'fail'
   stderrCollector.flush()
   report.stderr = stderrEvents
   // These exact lines are emitted by the Playwright-attached Node inspector at

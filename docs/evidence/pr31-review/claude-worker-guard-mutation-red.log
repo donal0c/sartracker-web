@@ -1,0 +1,34 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-worker-cardinality.test.ts (3 tests | 3 failed) 80ms
+     × rejects oversized enumerate without a parent result validator 32ms
+     × rejects oversized manifest without a parent result validator 24ms
+     × rejects oversized invalidation-analysis without a parent result validator 23ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-worker-cardinality.test.ts > production coverage worker snapshot bounds before transport [DON-254] > rejects oversized enumerate without a parent result validator
+ FAIL  tests/unit/electron-coverage-worker-cardinality.test.ts > production coverage worker snapshot bounds before transport [DON-254] > rejects oversized manifest without a parent result validator
+ FAIL  tests/unit/electron-coverage-worker-cardinality.test.ts > production coverage worker snapshot bounds before transport [DON-254] > rejects oversized invalidation-analysis without a parent result validator
+AssertionError: expected 'complete' to be 'error' // Object.is equality
+
+Expected: "error"
+Received: "complete"
+
+ ❯ tests/unit/electron-coverage-worker-cardinality.test.ts:37:28
+     35|         worker.once('exit', code => code === 0 && reply !== undefined …
+     36|       })
+     37|       expect(message.type).toBe('error')
+       |                            ^
+     38|       expect(message.message).toMatch(/(item|key) list is invalid/)
+     39|     } finally { await rm(directory, { recursive: true, force: true }) }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  14:17:31
+   Duration  491ms (transform 11ms, setup 0ms, import 19ms, tests 80ms, environment 254ms)
+

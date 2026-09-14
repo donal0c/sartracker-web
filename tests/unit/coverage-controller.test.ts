@@ -18,6 +18,16 @@ const KEY_C: CoverageChunkKey = {
 }
 
 describe('coverage controller [DON-276]', () => {
+  it('keeps a moved revision partial and retries on the next coverage notification without an error loop [DON-254]', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    harness.readManifest.mockRejectedValueOnce(new Error('coverage-revision-moved: current inventory changed'))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    expect(harness.controller.getState()).toMatchObject({ status: 'partial', lastErrorClass: 'chunk_stale' })
+    expect(harness.readManifest).toHaveBeenCalledTimes(1)
+    await harness.controller.notifyChanged('mission-1', 1)
+    expect(harness.controller.getState()).toMatchObject({ status: 'complete' })
+  })
+
   it('attests delivery only after applying every selected chunk and a fresh claim', async () => {
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
 

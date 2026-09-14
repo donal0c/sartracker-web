@@ -1,9 +1,75 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it } from 'vitest'
+import { assertNoUnexpectedDiagnostics, appendBoundedDiagnostic, createDiagnosticState } from '../../build/electron-repair-train-d-smoke-lib.js'
 // @ts-expect-error JavaScript smoke helper is exercised through its runtime contract.
-import { attachPackagedPageDiagnostics, sanitizePackagedDiagnosticText, createPackagedStderrCollector } from '../../build/packaged-page-diagnostics.js'
+import {
+  attachPackagedPageDiagnostics,
+  createPackagedStderrCollector,
+  sanitizePackagedDiagnosticText,
+  waitForPackagedStderrDrain,
+} from '../../build/packaged-page-diagnostics.js'
 
 describe('streamed stderr privacy', () => {
+  it('preserves a UTF-8 code point split across Buffer chunks', () => {
+    const lines: string[] = []
+    const collector = createPackagedStderrCollector((line: string) => lines.push(line))
+    const encoded = Buffer.from('rescue\u00e9\n', 'utf8')
+    collector.write(encoded.subarray(0, encoded.length - 2))
+    collector.write(encoded.subarray(encoded.length - 2, encoded.length - 1))
+    collector.write(encoded.subarray(encoded.length - 1))
+    collector.flush()
+    expect(lines).toEqual(['rescue\u00e9'])
+  })
+
+  it('fails closed when the owned process has no stderr stream', async () => {
+    await expect(waitForPackagedStderrDrain(undefined, 100)).resolves.toBe(false)
+  })
+
+  it('fails closed when stderr was destroyed by an error before drain starts', async () => {
+    const stream = Object.assign(new EventEmitter(), {
+      readableEnded: false,
+      destroyed: true,
+      errored: new Error('stderr pipe failed'),
+    })
+    await expect(waitForPackagedStderrDrain(stream, 100)).resolves.toBe(false)
+  })
+
+  it('fails closed when stderr closes before its readable end', async () => {
+    const stream = Object.assign(new EventEmitter(), {
+      readableEnded: false,
+      destroyed: false,
+      errored: null,
+    })
+    const draining = waitForPackagedStderrDrain(stream, 100)
+    stream.emit('close')
+    await expect(draining).resolves.toBe(false)
+  })
+
+  it('waits for the stream terminal event before flushing late fatal stderr', async () => {
+    const lines: string[] = []
+    const diagnostics = createDiagnosticState()
+    const collector = createPackagedStderrCollector((line: string) => lines.push(line))
+    const stream = new EventEmitter() as EventEmitter & {
+      readableEnded: boolean
+      destroyed: boolean
+    }
+    stream.readableEnded = false
+    stream.destroyed = false
+    collector.write('safe\n')
+    const drained = waitForPackagedStderrDrain(stream, 100)
+    collector.write('fatal after child exit')
+    stream.readableEnded = true
+    stream.emit('end')
+    stream.emit('close')
+    await expect(drained).resolves.toBe(true)
+    collector.flush()
+    expect(lines).toEqual(['safe', 'fatal after child exit'])
+    appendBoundedDiagnostic(diagnostics, 'processStderr', { message: lines[1] }, {
+      phase: 'close', type: 'stderr', source: 'main-process-stderr',
+    })
+    expect(() => assertNoUnexpectedDiagnostics(diagnostics)).toThrow(/unexpected packaged diagnostics/i)
+  })
+
   it('sanitizes complete lines and the final partial line across arbitrary chunks', () => {
     const lines: string[] = []
     const collector = createPackagedStderrCollector((line: string) => lines.push(line))

@@ -1,0 +1,26 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts (31 tests | 1 failed) 2853ms
+     × bounds a failed worker join without releasing SQLite custody or allowing new reads [DON-254] 124ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-mission-store.test.ts > Electron coverage mission-store orchestration > bounds a failed worker join without releasing SQLite custody or allowing new reads [DON-254]
+AssertionError: expected 'still pending' to be an instance of Error
+ ❯ tests/unit/electron-coverage-mission-store.test.ts:328:23
+    326|     try {
+    327|       const outcome = await Promise.race([operation, new Promise(resol…
+    328|       expect(outcome).toBeInstanceOf(Error)
+       |                       ^
+    329|       expect((outcome as Error).message).toMatch(/worker.*did not exit…
+    330|       expect(() => store!.close()).toThrow(/coverage.*(worker|request)…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 30 passed (31)
+   Start at  14:20:00
+   Duration  3.27s (transform 34ms, setup 0ms, import 61ms, tests 2.85s, environment 229ms)
+

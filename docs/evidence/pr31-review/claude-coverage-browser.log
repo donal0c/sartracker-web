@@ -1,0 +1,37 @@
+
+Running 1 test using 1 worker
+
+(node:20041) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20041) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 [chromium] › tests/e2e/coverage.spec.ts:5:3 › complete mission-history coverage [DON-275] › a moving coverage revision stays partial and recovers with Retry [DON-254] (7.2s)
+
+
+  1) [chromium] › tests/e2e/coverage.spec.ts:5:3 › complete mission-history coverage [DON-275] › a moving coverage revision stays partial and recovers with Retry [DON-254] 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('coverage-partial')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByTestId('coverage-partial')[22m
+
+
+      20 |       await useCoverageStore.getState().controller?.refresh()
+      21 |     })
+    > 22 |     await expect(page.getByTestId('coverage-partial')).toBeVisible()
+         |                                                        ^
+      23 |     await expect(page.getByTestId('coverage-error')).toHaveCount(0)
+      24 |     await expect(panel).not.toContainText('All mission history shown')
+      25 |     await page.screenshot({ path: 'tmp/native-runtime-repair/claude-coverage-partial.png', fullPage: true })
+        at /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web/tests/e2e/coverage.spec.ts:22:56
+
+    Error Context: test-results/coverage-complete-mission--c5395-ecovers-with-Retry-DON-254--chromium/error-context.md
+
+  1 failed
+    [chromium] › tests/e2e/coverage.spec.ts:5:3 › complete mission-history coverage [DON-275] › a moving coverage revision stays partial and recovers with Retry [DON-254] 

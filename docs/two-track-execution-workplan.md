@@ -6,8 +6,11 @@
 
 **Current reconciliation (2026-09-14):** PR30 (Train C) is merged at
 `58c65641`, after PR27/PR28. PR31's bounded DON-254 native-runtime repair is
-rebased onto it. Earlier exact-head CI34834365325 passed; the rebased head
-requires fresh checks in [PR31](https://github.com/donal0c/sartracker-web/pull/31).
+rebased onto it. Claude review superseded earlier readiness and green CI34845492157.
+The [review disposition](assurance/findings/pr31-claude-review.md) records repaired
+snapshot progress, lifecycle fanout, worker bounds/join and stderr custody.
+Local source/browser/rebuilt native checks pass; fresh checks in
+[PR31](https://github.com/donal0c/sartracker-web/pull/31) control readiness.
 Coverage-snapshot, file-scheme registration, IPC listener and diagnostic repairs
 retain their [evidence](assurance/findings/native-runtime-repair.md).
 Train C map source and clock-bounded target ownership are retained; its

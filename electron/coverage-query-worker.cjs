@@ -32,11 +32,6 @@ function run() {
       return result
     })
     const result = readSnapshot()
-    assertCoverageWorkerResultCardinality(
-      workerData.query,
-      result,
-      workerData.resultLimits,
-    )
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, result })
   } catch (error) {
     parentPort.postMessage({

@@ -134,7 +134,6 @@ const {
   assertCoverageClaimMatchesDatabase,
   assertCoverageManifestOutings,
   assertCoverageResultInventory,
-  readCoverageQueryResultLimits,
   readCurrentCoverageInventory,
 } = require('./coverage-query-result-attestation.cjs')
 const {
@@ -346,7 +345,7 @@ function normalizeAuthorizedCoverageCatalogInput(database, value) {
       descriptor.key.period_id,
     )
     if (row === undefined || row.content_rev !== descriptor.contentRev) {
-      throw new Error('Coverage catalog chunk does not match its current revision.')
+      throw new Error('coverage-revision-moved: Coverage catalog chunk does not match its current revision.')
     }
   }
   return normalized
@@ -557,6 +556,9 @@ function createElectronMissionStore(options) {
   const outingFixSummaryControllersByRequestId = new Map()
   const coverageQueryControllersByRequestId = new Map()
   const activeCoverageRequests = new Set()
+  const activeCoverageWorkerExits = new Set()
+  let coverageWorkerFault = null
+  const coverageWorkerFaultWaiters = new Set()
   let coverageShutdownRequested = false
   const coverageTileControllersByRequestId = new Map()
   const activeGpxEvidenceImports = new Set()
@@ -1974,6 +1976,7 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
         shutdownTasks.push(activeQuery.completion)
       }
+      shutdownTasks.push(...activeCoverageWorkerExits)
       shutdownTasks.push(ingestAnomalyOutbox.dispose())
       shutdownTasks.push(archiveCorrectionAttachmentRecoveryPromise.catch(() => undefined))
       shutdownTasks.push(...activeSearchOperationPageReads)
@@ -2039,7 +2042,7 @@ function createElectronMissionStore(options) {
       if (legacyArchiveRegistryBackfillActive !== null) {
         throw new Error('Cannot close the mission store while archive registry backfill is active; call prepareClose first.')
       }
-      if (activeCoverageRequests.size > 0) {
+      if (activeCoverageRequests.size > 0 || activeCoverageWorkerExits.size > 0) {
         throw new Error('Cannot close the mission store while coverage requests are active; call prepareClose first.')
       }
       if (responsiveWriter.pendingCount > 0) {
@@ -2273,19 +2276,11 @@ function createElectronMissionStore(options) {
             signal,
             false,
           )
-          assertCoverageResultInventory(
-            db,
-            missionId,
-            enumeration.chunks,
-            (chunk) => chunk,
-            'enumeration',
-          )
           recordCoveragePerformance(missionId, {
             lastEnumerationDurationMs: performance.now() - enumerationStartedAt,
           })
           await runCoveragePublication(missionId, signal, () => {
-            assertCoverageResultInventory(db, missionId, enumeration.chunks, (chunk) => chunk, 'enumeration')
-            assertCoverageSnapshotCurrent(missionId, enumeration)
+            if (!coverageSnapshotInventoryMatches(missionId, enumeration, 'enumeration')) return { applied: false }
             return applyCoverageEnumeration(db, {
               missionId,
               expectedChangeSeq: enumeration.changeSeq,
@@ -2298,18 +2293,8 @@ function createElectronMissionStore(options) {
         const manifest = await runCoverageWorker(
           { kind: 'manifest', missionId }, signal, false,
         )
-        assertCoverageResultInventory(
-          db,
-          missionId,
-          manifest.chunks,
-          (chunk) => chunk.key,
-          'manifest',
-        )
-        assertCoverageManifestOutings(db, missionId, manifest.outings)
         const inserted = await runCoveragePublication(missionId, signal, () => {
-          assertCoverageResultInventory(db, missionId, manifest.chunks, (chunk) => chunk.key, 'manifest')
-          assertCoverageManifestOutings(db, missionId, manifest.outings)
-          assertCoverageSnapshotCurrent(missionId, manifest)
+          if (!coverageSnapshotInventoryMatches(missionId, manifest, 'manifest')) return 0
           return applyCoverageManifestInventory(db, {
             missionId,
             expectedChangeSeq: manifest.changeSeq,
@@ -2320,15 +2305,9 @@ function createElectronMissionStore(options) {
         const currentManifest = inserted === 0
           ? manifest
           : await runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
-        assertCoverageResultInventory(
-          db,
-          missionId,
-          currentManifest.chunks,
-          (chunk) => chunk.key,
-          'manifest',
-        )
-        assertCoverageManifestOutings(db, missionId, currentManifest.outings)
-        assertCoverageSnapshotCurrent(missionId, currentManifest)
+        if (!coverageSnapshotInventoryMatches(missionId, currentManifest, 'manifest')) {
+          throw new Error('coverage-revision-moved: Coverage inventory changed while loading history. Retry to read the new inventory.')
+        }
         coverageManifestBuildEvidenceByMission.set(
           missionId,
           createCoverageManifestBuildEvidence(currentManifest),
@@ -3453,11 +3432,17 @@ function createElectronMissionStore(options) {
       WHERE mission_id = ?`).get(missionId)?.change_seq ?? 0)
   }
 
-  /** Refuses to publish or cache coverage derived before a canonical mission mutation. */
-  function assertCoverageSnapshotCurrent(missionId, result) {
-    if (result.changeSeq !== readCoverageChangeSequence(missionId)) {
-      const error = new Error('Coverage snapshot changed while loading history. Retry to read current coverage.')
-      error.code = 'coverage-snapshot-changed'
+  /** Attests current metadata, allowing an older coherent snapshot without publishing obsolete inventory. */
+  function coverageSnapshotInventoryMatches(missionId, result, kind) {
+    try {
+      assertCoverageResultInventory(db, missionId, result.chunks,
+        kind === 'enumeration' ? (chunk) => chunk : (chunk) => chunk.key, kind)
+      if (kind === 'manifest') assertCoverageManifestOutings(db, missionId, result.outings)
+      return true
+    } catch (error) {
+      const structuralMismatch = /^Coverage (?:enumeration|manifest) result inventory (?:diverged from canonical metadata|omitted canonical chunks)\.$/u.test(error?.message ?? '')
+        || error?.message === 'Coverage manifest outing metadata diverged from canonical metadata.'
+      if (structuralMismatch && result.changeSeq < readCoverageChangeSequence(missionId)) return false
       throw error
     }
   }
@@ -3473,11 +3458,16 @@ function createElectronMissionStore(options) {
         signal,
         false,
       )
-      await runCoveragePublication(missionId, signal, () => applyCoverageInvalidationDrain(db, {
-        invalidationId: row.id,
-        affectedKeys: normalizeCoverageInvalidationDrain(db, row.id, analysis),
-        drainedAt: now(),
-      }))
+      await runCoveragePublication(missionId, signal, () => {
+        // Another manifest read may already have drained this exact durable row.
+        const current = db.prepare('SELECT drained_at FROM coverage_invalidations WHERE id = ?').get(row.id)
+        if (current?.drained_at !== null && current !== undefined) return
+        return applyCoverageInvalidationDrain(db, {
+          invalidationId: row.id,
+          affectedKeys: normalizeCoverageInvalidationDrain(db, row.id, analysis),
+          drainedAt: now(),
+        })
+      })
     }
   }
 
@@ -3562,6 +3552,7 @@ function createElectronMissionStore(options) {
 
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
   function runCoverageWorker(query, signal, serializeChunk) {
+    if (coverageWorkerFault !== null) throw coverageWorkerFault
     if (!serializeChunk) {
       return normalizeCoverageOperation(
         query,
@@ -3572,7 +3563,10 @@ function createElectronMissionStore(options) {
     let releaseWorkerSlot = () => undefined
     const workerSlot = new Promise((resolve) => { releaseWorkerSlot = resolve })
     coverageChunkWorkerTail = previousWorker.then(() => workerSlot)
-    return previousWorker.then(() => {
+    return waitForCoverageWorkerSlot(previousWorker, signal).catch((error) => {
+      releaseWorkerSlot()
+      throw error
+    }).then(() => {
       let operation
       try {
         operation = normalizeCoverageOperation(
@@ -3589,14 +3583,50 @@ function createElectronMissionStore(options) {
     })
   }
 
+  /** Lets queued reads fail or cancel without releasing the physical worker's slot. */
+  function waitForCoverageWorkerSlot(previousWorker, signal) {
+    if (coverageWorkerFault !== null) return Promise.reject(coverageWorkerFault)
+    return new Promise((resolve, reject) => {
+      const settle = (error) => {
+        coverageWorkerFaultWaiters.delete(failed)
+        signal?.removeEventListener('abort', aborted)
+        if (error !== undefined) reject(error)
+        else resolve()
+      }
+      const failed = () => settle(coverageWorkerFault)
+      const aborted = () => settle(createCoverageRequestAbortError())
+      coverageWorkerFaultWaiters.add(failed)
+      signal?.addEventListener('abort', aborted, { once: true })
+      if (signal?.aborted) aborted()
+      void previousWorker.then(() => settle(), settle)
+    })
+  }
+
   /** Normalizes injected and production worker operations without losing exit ownership. */
   function normalizeCoverageOperation(query, operation) {
+    const physicalExit = Promise.resolve(operation.workerExited ?? operation).catch(() => undefined)
+    activeCoverageWorkerExits.add(physicalExit)
+    void physicalExit.then(() => activeCoverageWorkerExits.delete(physicalExit))
     const normalized = Promise.resolve(operation).then((result) =>
-      normalizeCoverageWorkerResult(query, result, readCoverageQueryResultLimits(db, query)))
+      // Only transport caps belong here; live metadata can grow or shrink after
+      // the worker snapshot. Transaction-local bounds are enforced by the worker.
+      normalizeCoverageWorkerResult(query, result))
       .catch(async (error) => {
         // Cancellation settles the runner before terminate() has closed SQLite.
         // Keep request and shutdown ownership until the physical worker exit.
-        await Promise.resolve(operation.workerExited ?? operation).catch(() => undefined)
+        let timeout
+        try {
+          await Promise.race([
+            physicalExit,
+            new Promise((_, reject) => {
+              timeout = setTimeout(() => {
+                coverageWorkerFault = new Error('Coverage worker did not exit after cancellation or failure. Restart the application; the mission store remains open until the worker exits.', { cause: error })
+                for (const failed of [...coverageWorkerFaultWaiters]) failed()
+                reject(coverageWorkerFault)
+              }, gpxShutdownJoinTimeoutMs)
+            }),
+          ])
+        } finally { clearTimeout(timeout) }
         throw error
       })
     Object.defineProperty(normalized, 'workerExited', {

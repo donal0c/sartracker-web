@@ -11,10 +11,12 @@ function receipt() {
       'electron/mission-store.cjs', 'electron/coverage-query-worker.cjs', 'electron/coverage-query-runner.cjs',
       'electron/coverage-ipc.cjs', 'electron/coverage-owner-lifecycle.cjs',
     ].map(file => [file, 'c'.repeat(64)])) },
-    ipc: { protocol: 'file:', count: 24, allEnumerated: true, serviceWorkers: 0 },
-    store: { added: true, kinds: ['outing', 'unassigned'], exactFixes: 1, cancellation: 'AbortError', physicalExit: true },
+    ipc: { protocol: 'file:', count: 24, allEnumerated: true, serviceWorkers: null as number | null },
+    store: { added: true, kinds: ['outing', 'unassigned'], exactFixes: 1, cancellation: 'AbortError', physicalExit: true,
+      cancellationObservedAfterExit: true, liveSnapshotCount: 1, liveCurrentCount: 2, liveClaimReady: false },
     close: { exit: { exitCode: 0, signal: null }, closeError: null, forcedCleanup: null },
-    diagnostics: createDiagnosticState(), profileRemoved: true,
+    diagnostics: createDiagnosticState(), stderr: [], stderrStreamAttached: true,
+    stderrDrained: true, profileRemoved: true,
   }
 }
 
@@ -35,5 +37,24 @@ describe('native runtime terminal evidence [DON-254]', () => {
     value.store.physicalExit = true
     value.ipc.count = 23
     expect(() => validateNativeRuntimeReceipt(value)).toThrow(/IPC/i)
+  })
+
+  it('rejects missing live-ingest progress or cancellation-exit ordering evidence', () => {
+    const value = receipt()
+    value.store.liveClaimReady = true
+    expect(() => validateNativeRuntimeReceipt(value)).toThrow(/worker/i)
+    value.store.liveClaimReady = false
+    value.store.cancellationObservedAfterExit = false
+    expect(() => validateNativeRuntimeReceipt(value)).toThrow(/worker/i)
+  })
+
+  it('rejects a receipt without owned stderr capture and terminal drain evidence', () => {
+    const value = receipt()
+    Reflect.deleteProperty(value, 'stderrStreamAttached')
+    expect(() => validateNativeRuntimeReceipt(value)).toThrow(/stderr/i)
+
+    value.stderrStreamAttached = true
+    value.stderrDrained = false
+    expect(() => validateNativeRuntimeReceipt(value)).toThrow(/stderr/i)
   })
 })

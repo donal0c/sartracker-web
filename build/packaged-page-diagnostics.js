@@ -46,8 +46,20 @@ export function sanitizePackagedDiagnosticText(value) {
 
 /** Assembles bounded raw lines before redaction so chunk boundaries cannot expose secrets. */
 export function createPackagedStderrCollector(append) {
+  const decoder = new TextDecoder('utf-8')
   let pending = ''
   let oversized = false
+  const consume = (text) => {
+    for (const character of text) {
+      if (character === '\n') finish()
+      else if (!oversized) {
+        if (pending.length + character.length > 8_192) {
+          pending = ''
+          oversized = true
+        } else pending += character
+      }
+    }
+  }
   const finish = () => {
     if (oversized) append('Diagnostic stderr line exceeded 8192 characters; content omitted')
     else if (pending !== '') append(sanitizePackagedDiagnosticText(pending.replace(/\r$/u, '')))
@@ -56,16 +68,46 @@ export function createPackagedStderrCollector(append) {
   }
   return {
     write(chunk) {
-      for (const character of String(chunk)) {
-        if (character === '\n') finish()
-        else if (!oversized) {
-          if (pending.length + character.length > 8_192) {
-            pending = ''
-            oversized = true
-          } else pending += character
-        }
-      }
+      const bytes = typeof chunk === 'string'
+        ? Buffer.from(chunk, 'utf8')
+        : Buffer.isBuffer(chunk) ? chunk
+          : ArrayBuffer.isView(chunk)
+            ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+            : Buffer.from(String(chunk), 'utf8')
+      consume(decoder.decode(bytes, { stream: true }))
     },
-    flush: finish,
+    flush() {
+      consume(decoder.decode())
+      finish()
+    },
   }
+}
+
+/** Waits for a present stderr stream to finish before terminal validation. */
+export function waitForPackagedStderrDrain(stream, timeoutMs) {
+  if (stream === null || typeof stream !== 'object') return Promise.resolve(false)
+  if (stream.errored !== null && stream.errored !== undefined) return Promise.resolve(false)
+  if (stream.readableEnded === true) return Promise.resolve(true)
+  if (stream.destroyed === true) return Promise.resolve(false)
+  if (typeof stream.once !== 'function' || typeof stream.off !== 'function') return Promise.resolve(false)
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      stream.off('end', onEnd)
+      stream.off('close', onClose)
+      stream.off('error', onError)
+      resolve(value)
+    }
+    const onEnd = () => finish(true)
+    const onClose = () => finish(stream.readableEnded === true)
+    const onError = () => finish(false)
+    const timer = setTimeout(() => finish(false), timeoutMs)
+    stream.once('end', onEnd)
+    stream.once('close', onClose)
+    stream.once('error', onError)
+  })
 }

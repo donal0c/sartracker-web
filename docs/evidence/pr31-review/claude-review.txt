@@ -1,0 +1,34 @@
+Verdict
+
+The lifecycle ref-counting and the sanitization line-assembly are genuinely well-built. But the PR's headline native fix is untested, and its new change-sequence fence is too strict to survive live tracking. Not mergeable as-is — which is consistent with the PR not requesting merge.
+
+Must fix
+
+1. assertCoverageSnapshotCurrent will reject coverage reads during normal tracking. change_seq is bumped by recordAcceptedCoveragePositions, called from addPosition/addPositionsBulk — the ordinary Traccar ingest path. So any fix landing during a worker run fails the whole readCoverageManifest. On a large mission with multi-second enumeration and several polling devices this can starve indefinitely; the renderer has no backoff and classifies the error as unknown. It also bypasses the ledger's existing graceful snapshotMoved pending path, and the third call site (mission-store.cjs:2331) runs outside any transaction after publication already committed. (I verified the bump path directly.)
+
+2. Callback fan-out has no try/catch — coverage-owner-lifecycle.cjs:22. One synchronous throw becomes an uncaught main-process exception and silently drops cancellation for every remaining in-flight op on that renderer. Reachable: cancelCoverageTileRead is optional in the contract and never existence-checked.
+
+3. The in-snapshot cardinality fix has zero coverage. Deleting it leaves mission-store, IPC, attestation and native-smoke suites all green. Only the parent-side re-read is pinned. assertCoverageSnapshotCurrent also survives per-call-site deletion — enumeration (:2288) is uncovered, and the two manifest sites mutually mask.
+
+4. The shrink-side race is reintroduced. normalizeCoverageOperation now reads limits on the main thread after the worker resolves, so a concurrent delete false-rejects with the generic, non-retryable "item list is invalid". invalidation-analysis is strictly worse than before: a concurrently drained invalidation yields maxAffectedKeys: 0 and a guaranteed hard failure.
+
+Should fix
+
+- isDestroyed() fails open on render-process-gone — Electron keeps it false after a renderer crash, so a queued IPC re-subscribes a once listener that won't fire until the WebContents is actually destroyed, leaving a query uncancelled for potentially the whole window lifetime.
+- The new throw sits outside the catalog handler's try, skipping abandonSenderStages/settleAbandonedStages exactly in the case that cleanup exists for; the next sync then fails "already has an unsettled stage".
+- Unbounded workerExited join — a worker wedged in a synchronous native SQLite call defeats terminate(), turning the 30s timeout into an open-ended wait that also stalls coverageChunkWorkerTail and prepareClose().
+- Multi-byte UTF-8 split corrupts redaction — String(chunk) at packaged-page-diagnostics.js:59 with no setEncoding/StringDecoder on scripts/electron-native-runtime-smoke.mjs:70. A split injects U+FFFD and can break the keyword match that redacts the secret. Tests only feed strings, never Buffers. (Verified.)
+- Two green-but-blind smoke paths — stderr?.on yields an evidence-free result: "pass" if the stream is absent; stderr arriving between exit and stream close lands in the receipt after assertNoUnexpectedDiagnostics runs, so a fatal final line can sit inside a pass.
+- Concurrent same-sender release ordering untested — making release() detach unconditionally while siblings are in flight stays green. Highest-risk gap, since it orphans SQLite-holding workers on renderer crash.
+
+Notes
+
+- error.name = 'AbortError' doesn't survive IPC serialization (structuredClone yields 'Error'), so a benign abort records as a real delivery failure at coverage-tile-protocol.ts:56.
+- coverage-ipc.cjs:5 unconditionally clobbers a caller-supplied ownerLifecycle — should be ??.
+- Dead resultLimits plumbing in coverage-query-worker.cjs and coverage-query-runner.cjs:29,62 now reads a permanently-undefined field and falls back to the generic 100k ceiling, making the bound look doubly-defended when it isn't.
+- TDZ hazard: senderGone now references releaseListeners declared after it. Not reachable today, but one change away from an uncaught main-process ReferenceError.
+- coverage-snapshot-changed and "Coverage renderer is already destroyed" each appear exactly once in the repo — thrown, with no downstream classification and no manual entry. (Verified.)
+- CI provenance: the PR body calls run 34834365325 "Exact-head", but it ran on 59451c1a, which is not an ancestor of ce265677 (74 files differ). The DON-254 patch survived the rebase byte-identical, but the combined tree is unvalidated and gh pr checks is still pending. The assurance doc states this correctly; only the PR body contradicts itself.
+- The service-worker guard is not a regression, but its smoke evidence is tautological — the serviceWorkers: 0 check takes the : 0 fallback under file: and would pass against the old code too. public/sw.js is the only tile-caching implementation, advertised in the manual at lines 968 and 2297 with no Electron carve-out or Known Gaps entry.
+
+Full per-agent detail is in scratchpad/pr31-review/

@@ -53,12 +53,17 @@ export function summarizeCoverageDiagnostics(input: {
 /** Classifies coverage failures without retaining raw error text. */
 export function classifyCoverageError(error: unknown): CoverageErrorClass {
   const message = error instanceof Error ? error.message.toLowerCase() : ''
-  if (error instanceof Error && error.name === 'AbortError') return 'cancelled'
-  if (message.includes('chunk-stale')) return 'chunk_stale'
+  if (isCoverageCancellation(error)) return 'cancelled'
+  if (message.includes('chunk-stale') || message.includes('coverage-revision-moved:')) return 'chunk_stale'
   if (message.includes('timed out') || message.includes('timeout')) return 'timeout'
   if (message.includes('worker')) return 'worker'
   if (message.includes('unavailable') || message.includes('not available')) {
     return 'runtime_unavailable'
   }
   return 'unknown'
+}
+
+/** Recognizes native cancellation even when Electron preserves only its message. */
+export function isCoverageCancellation(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.message.includes('coverage-cancelled:'))
 }

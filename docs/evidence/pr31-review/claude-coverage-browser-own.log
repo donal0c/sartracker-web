@@ -1,0 +1,21 @@
+[2m[WebServer] [22m(node:20436) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+(node:20437) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:20437) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/coverage.spec.ts:5:3 › complete mission-history coverage [DON-275] › a moving coverage revision stays partial and recovers with Retry [DON-254] (2.3s)
+  ✓  2 [chromium] › tests/e2e/coverage.spec.ts:31:3 › complete mission-history coverage [DON-275] › AUD-14 uses structured completeness state instead of connection-warning wording (2.0s)
+  ✓  3 [chromium] › tests/e2e/coverage.spec.ts:61:3 › complete mission-history coverage [DON-275] › live Breadcrumbs visibility does not hide Mission History or change its checked participants (2.4s)
+  ✓  4 [chromium] › tests/e2e/coverage.spec.ts:76:3 › complete mission-history coverage [DON-275] › shows all mission history by default and keeps live positions independent of omissions (3.1s)
+  ✓  5 [chromium] › tests/e2e/coverage.spec.ts:117:3 › complete mission-history coverage [DON-275] › reports an honest decrease, retains partial coverage, retries, and resets delivery on reload (16.5s)
+  ✓  6 [chromium] › tests/e2e/coverage.spec.ts:183:3 › complete mission-history coverage [DON-275] › reattaches complete mission history after a basemap style change (2.0s)
+  ✓  7 [chromium] › tests/e2e/coverage.spec.ts:200:3 › complete mission-history coverage [DON-275] › leaves the existing browser surface unchanged while the coverage flag is off (493ms)
+
+  7 passed (29.7s)

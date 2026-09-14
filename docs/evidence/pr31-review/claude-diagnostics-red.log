@@ -1,0 +1,82 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts (7 tests | 3 failed) 13ms
+     × preserves a UTF-8 code point split across Buffer chunks 6ms
+     × fails closed when the owned process has no stderr stream 0ms
+     × waits for the stream terminal event before flushing late fatal stderr 0ms
+ ❯ tests/unit/native-runtime-smoke-receipt.test.ts (8 tests | 1 failed) 8ms
+     × rejects a receipt without owned stderr capture and terminal drain evidence 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/native-runtime-smoke-receipt.test.ts > native runtime terminal evidence [DON-254] > rejects a receipt without owned stderr capture and terminal drain evidence
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/native-runtime-smoke-receipt.test.ts:44:55
+     42|     const value = receipt()
+     43|     Reflect.deleteProperty(value, 'stderrStreamAttached')
+     44|     expect(() => validateNativeRuntimeReceipt(value)).toThrow(/stderr/…
+       |                                                       ^
+     45|
+     46|     value.stderrStreamAttached = true
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > streamed stderr privacy > preserves a UTF-8 code point split across Buffer chunks
+AssertionError: expected [ 'rescue\ufffd\ufffd' ] to deeply equal [ 'rescueé' ]
+
+- Expected
++ Received
+
+  [
+-   "rescueé",
++   "rescue��",
+  ]
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:20:19
+     18|     collector.write(encoded.subarray(encoded.length - 1))
+     19|     collector.flush()
+     20|     expect(lines).toEqual(['rescue\u00e9'])
+       |                   ^
+     21|   })
+     22|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > streamed stderr privacy > fails closed when the owned process has no stderr stream
+TypeError: waitForPackagedStderrDrain is not a function
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:24:18
+     22|
+     23|   it('fails closed when the owned process has no stderr stream', async…
+     24|     await expect(waitForPackagedStderrDrain(undefined, 100)).resolves.…
+       |                  ^
+     25|   })
+     26|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > streamed stderr privacy > waits for the stream terminal event before flushing late fatal stderr
+TypeError: waitForPackagedStderrDrain is not a function
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:37:21
+     35|     stream.destroyed = false
+     36|     collector.write('safe\n')
+     37|     const drained = waitForPackagedStderrDrain(stream, 100)
+       |                     ^
+     38|     collector.write('fatal after child exit')
+     39|     stream.emit('close')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 11 passed (15)
+   Start at  14:15:00
+   Duration  647ms (transform 74ms, setup 0ms, import 89ms, tests 21ms, environment 1.01s)
+

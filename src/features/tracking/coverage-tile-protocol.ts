@@ -1,4 +1,5 @@
 import type { AddProtocolAction } from 'maplibre-gl'
+import { isCoverageCancellation } from './coverage-diagnostics'
 
 export const COVERAGE_TILE_PROTOCOL = 'sartracker-coverage'
 
@@ -86,7 +87,7 @@ function createAbortError(): Error {
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError'
+  return isCoverageCancellation(error)
 }
 
 /** Creates one MapLibre template without using a mission-global revision. */

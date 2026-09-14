@@ -1,0 +1,28 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts (32 tests | 1 failed) 3092ms
+     × keeps a structurally moved enumeration pending and recovers on the next read [DON-254] 38ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-mission-store.test.ts > Electron coverage mission-store orchestration > keeps a structurally moved enumeration pending and recovers on the next read [DON-254]
+Error: Coverage enumeration result inventory omitted canonical chunks.
+ ❯ assertCoverageResultInventory electron/coverage-query-result-attestation.cjs:34:11
+ ❯ electron/mission-store.cjs:2278:11
+ ❯ tests/unit/electron-coverage-mission-store.test.ts:299:22
+    297|     })
+    298|     const mission = await seedMission(store)
+    299|     const snapshot = await store.readCoverageManifest(mission.id, 'str…
+       |                      ^
+    300|     expect(snapshot.enumerated).toBe(false)
+    301|     expect((await store.readCoverageClaim({ missionId: mission.id,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 31 passed (32)
+   Start at  14:21:12
+   Duration  3.81s (transform 43ms, setup 0ms, import 85ms, tests 3.09s, environment 522ms)
+
