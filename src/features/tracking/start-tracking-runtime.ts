@@ -398,6 +398,7 @@ export async function startTrackingRuntime(
     | null = null
   let participantBackfillInFlight = false
   let participantBackfillTask: Promise<void> | null = null
+  const participantScopeWaiters = new Set<() => void>()
   let acceptingRuntimeUpdates = true
   /** Clears only this runtime's advisory status before another runtime takes ownership. */
   const clearBreadcrumbTransferStatus = () => {
@@ -620,6 +621,7 @@ export async function startTrackingRuntime(
           if (!acceptingRuntimeUpdates) throw new Error('Tracking generation stopped before history request recording.')
           const mission = await dependencies.missionStore.getActiveMission()
           if (mission?.id !== input.expectedMissionId) throw new Error('Mission changed before history request was recorded.')
+          await waitForParticipantScopeReady(input.expectedMissionId)
           const scoped = scopeHistoryPersistenceInput({ ...input, phase: 'initial', reconciledUntil: input.requestedUntil, positions: [] })
           if (scoped.historyFrom === null) throw new Error('No authorized mission history exists in this request window.')
           requestedFrom = scoped.historyFrom
@@ -722,6 +724,7 @@ export async function startTrackingRuntime(
                     'Tracking history mission changed before the wave could be persisted.',
                   )
                 }
+                await waitForParticipantScopeReady(firstInput.expectedMissionId)
                 const scopedInputs = inputs.map(scopeHistoryPersistenceInput)
                 const positions = scopedInputs.flatMap(({ positions: scopedPositions }) =>
                   scopedPositions.map((position) => ({
@@ -801,6 +804,7 @@ export async function startTrackingRuntime(
               'Tracking history mission changed before the chunk could be persisted.',
             )
           }
+          await waitForParticipantScopeReady(input.expectedMissionId)
           const scopedInput = scopeHistoryPersistenceInput(input)
           const positions = scopedInput.positions.map((position) => ({
             source_position_id: position.id,
@@ -1156,6 +1160,7 @@ export async function startTrackingRuntime(
       clearBreadcrumbTransferStatus()
       if (clearActiveBreadcrumbTransferStatus === clearBreadcrumbTransferStatus) clearActiveBreadcrumbTransferStatus = null
       acceptingRuntimeUpdates = false
+      for (const cancel of participantScopeWaiters) cancel()
       pendingMissionCache = null
       deferredOperationalSnapshot = null
       unsubscribeMissionWake()
@@ -1771,6 +1776,57 @@ export async function startTrackingRuntime(
         input.reconciledUntil,
       ),
     }
+  }
+
+  /** Waits for an in-flight participant refresh before admitting durable history. */
+  async function waitForParticipantScopeReady(expectedMissionId: string): Promise<void> {
+    const status = readParticipationScopeStatus()
+    if (status === 'ready') return
+    if (status === 'error' || dependencies.subscribeParticipationScope === undefined) {
+      throw new Error(
+        'Participant selection is unavailable; tracking history cannot be persisted safely.',
+      )
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      let settled = false
+      let unsubscribeScope: () => void = () => undefined
+      let unsubscribeMission: () => void = () => undefined
+      const settle = (error?: Error): void => {
+        if (settled) return
+        settled = true
+        participantScopeWaiters.delete(cancel)
+        unsubscribeScope()
+        unsubscribeMission()
+        if (error === undefined) resolve()
+        else reject(error)
+      }
+      const cancel = (): void => settle(new Error(
+        'Tracking runtime stopped while participant selection was loading.',
+      ))
+      const observe = (): void => {
+        if (!acceptingRuntimeUpdates) {
+          cancel()
+          return
+        }
+        if (useMissionStore.getState().currentMission?.id !== expectedMissionId) {
+          settle(new Error('Mission changed before participant selection became ready.'))
+          return
+        }
+        const nextStatus = readParticipationScopeStatus()
+        if (nextStatus === 'ready') {
+          settle()
+        } else if (nextStatus === 'error') {
+          settle(new Error(
+            'Participant selection is unavailable; tracking history cannot be persisted safely.',
+          ))
+        }
+      }
+      participantScopeWaiters.add(cancel)
+      unsubscribeScope = dependencies.subscribeParticipationScope!(observe)
+      unsubscribeMission = useMissionStore.subscribe(observe)
+      observe()
+    })
   }
 
   /** Treats a missing scope as unavailable while retaining legacy test/runtime compatibility. */

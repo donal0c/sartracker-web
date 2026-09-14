@@ -211,6 +211,69 @@ describe('startTrackingRuntime', () => {
     useCoverageStore.setState({ historyAdmissionFailures: {} })
   })
 
+  it('waits for participant scope hydration before recording history admission', async () => {
+    setActiveMission()
+    let scopeStatus: 'loading' | 'ready' = 'loading'
+    let notifyScopeChanged = () => undefined
+    const persist = vi.fn().mockResolvedValue({
+      changedPositionCount: 0,
+      insertedPositionCount: 0,
+      skippedAmbiguousLegacyAdoptionCount: 0,
+    })
+    const scope = createParticipationScope({
+      participants: [{
+        id: 'participant-1', mission_id: 'mission-1', kind: 'device',
+        traccar_device_id: 'alpha', mission_team_id: null, traccar_group_id: null,
+        team_name: null, provenance: 'explicit',
+        effective_from: '2026-04-06T08:00:00.000Z',
+        added_at: '2026-04-06T08:00:00.000Z', added_by: 'Coordinator',
+        removed_at: null, removed_by: null,
+      }],
+      membershipEvents: [],
+    })
+    let hooks!: { persistHistoryRequest: (input: TrackingHistoryRequestInput) => Promise<void> }
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, value) => {
+        hooks = value
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        persistTrackingPositionsBulk: persist,
+      }),
+      applySnapshot: vi.fn(), applyStatus: vi.fn(), writeCache: false,
+      missionModelEnabled: true,
+      readParticipationScope: () => scope,
+      readParticipationScopeStatus: () => scopeStatus,
+      subscribeParticipationScope: (listener) => {
+        notifyScopeChanged = listener
+        return () => undefined
+      },
+    })
+    let settled = false
+    const pending = hooks.persistHistoryRequest({
+      expectedMissionId: 'mission-1', deviceId: 'alpha',
+      historyFrom: '2026-08-08T08:00:00.000Z', requestedUntil: '2026-08-08T10:00:00.000Z',
+    }).finally(() => { settled = true })
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(settled).toBe(false)
+    expect(persist).not.toHaveBeenCalled()
+    scopeStatus = 'ready'
+    notifyScopeChanged()
+    await pending
+
+    expect(persist).toHaveBeenCalledWith({
+      mission_id: 'mission-1', positions: [], checkpoints: [], requests: [{
+        device_id: 'alpha', history_from: '2026-08-08T08:00:00.000Z',
+        requested_until: '2026-08-08T10:00:00.000Z',
+      }],
+    })
+    await stop()
+  })
+
   afterEach(() => {
     useMissionStore.setState(useMissionStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
