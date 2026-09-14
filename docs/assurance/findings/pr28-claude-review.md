@@ -19,7 +19,7 @@ launch/build, merge or release is authorized.
 | C07 | Synchronous decode and filesystem work per tile | Confirmed cost, not a measured responsiveness failure. Added a 256-entry same-identity decoded-proof cache with insertion-order eviction; freshness checks remain. Cold-path/main-process performance qualification remains separate. This is not an LRU cache or a strict responsiveness pass. |
 | C08 | Optional callback disables 1 Hz monitor | Production always supplies the callback; no production monitoring gap reproduced. Per-request identity checks remain. Lifetime synchronous polling cost is retained performance work, not claimed fixed. |
 | C09 | SHA-256 Check View is redundant | Refuted safety claim: filesystem identity does not compare content with the attested digest. Before/after identity checks bracket the hash against mutation. I/O cost is real; removing content verification would weaken the contract. |
-| C10 | Every settings save holds map mutation window | Confirmed and repaired. The decision runs inside the serialized settings save: unchanged map settings bypass the guard; source/package changes and stale identities hold it. Main IPC and settings regressions cover both branches; import retains its guard. |
+| C10 | Every settings save holds map mutation window | Confirmed and repaired. The decision runs inside the serialized settings save: unchanged map settings bypass the guard; registered source path, safe provider metadata, package changes and stale identities hold it. Main IPC and settings regressions cover both branches; import retains its guard. Non-persisted provider edits remain outside this qualification, as recorded below. |
 | C11 | Partial raster failure loses reconstruction / retries forever | Confirmed by two failing mounted-hook regressions: absent source stays absent; 21 retries for 21 events. Recovery intent now survives partial mutation and automatic failures are bounded; explicit Check View retries. |
 | C12 | Tile error kills pending negative check | Confirmed by three failing regressions (missing/partial/error became unchecked). Negative results now settle; positive results still withdraw when a tile failure occurred in flight. Movement/package generation checks remain. |
 | C13 | Tilt reports view unavailable | Supported-view restriction retained: qualification covers flat views only. Misleading message confirmed and repaired to show the actual flat-view recovery instruction. No broader coverage claim added. |
@@ -80,3 +80,25 @@ The final inspector selection adds 11 passing tests to the 122-test focused run.
 TypeScript project build-mode checking (no emit), targeted ESLint and diff checks
 pass. No application build or local Electron was run. Fresh CI remains required;
 the historical CI receipts are not relabelled as proof of these repairs.
+
+Post-push C10 follow-up: a synthetic same-path provider-file replacement changed
+persisted service availability/status without entering the mutation guard. The
+source path comparison alone was insufficient. CI34819550032 at `220366e5` was
+cancelled as superseded; it is not a passing repair receipt. Source-only metadata
+must be normalized and compared inside the serialized save before deciding the
+guard, while package inspection stays inside the guarded operation. The synthetic
+red is retained in `c10-source-metadata-red.log`; a clean follow-up pass is required.
+
+Follow-up independent review accepts the serialized snapshot/guard placement.
+Its fingerprint covers the persisted safe provider metadata, not provider passwords
+or service URLs. Those non-persisted values are read again when a network tile is
+requested, but same-path edits to them alone are not proven to evict resident
+renderer tiles. No provider/credential freshness claim is made; that separate
+qualification remains a release limitation, rather than adding secret-derived
+state or expanding the licensed-provider boundary in this offline-map repair.
+
+Final C10 follow-up verification: 27 settings tests pass after the retained
+one-failure/26-pass red. Clean full correctness passes 468 files / 4,957 tests /
+six existing skips in 498.41 seconds. Syntax, targeted lint, diff check and
+independent review pass. Renderer source is unchanged, so the six-flow Chromium
+evidence remains applicable; fresh CI will repeat it against the committed tree.

@@ -113,12 +113,19 @@ function createElectronSettingsStore(options) {
     const existingSecretPresent = await hasSecret(input.dataSource.authMode)
     validateSettingsDraft(input, existingSecretPresent)
     const previous = await readSettings(settingsPath)
+    const sourceMetadata = await readOfficialMapSourceMetadata(input.officialMaps)
 
     const persist = async () => {
       const next = {
         missionDefaults: normalizeMissionDefaults(input.missionDefaults),
         dataSource: normalizeDataSource(input.dataSource),
-        officialMaps: await normalizeOfficialMaps(input.officialMaps, now, decodeTile, previous.officialMaps),
+        officialMaps: await normalizeOfficialMaps(
+          input.officialMaps,
+          now,
+          decodeTile,
+          previous.officialMaps,
+          sourceMetadata,
+        ),
         weather: normalizeWeather(input.weather),
       }
       const history = [...previous.adminRosterHistory]
@@ -137,7 +144,7 @@ function createElectronSettingsStore(options) {
     }
 
     const withOfficialMapMutation = options?.withOfficialMapMutation
-    if (shouldGuardOfficialMapMutation(input.officialMaps, previous.officialMaps) &&
+    if (shouldGuardOfficialMapMutation(input.officialMaps, previous.officialMaps, sourceMetadata) &&
         typeof withOfficialMapMutation === 'function') {
       return withOfficialMapMutation(persist)
     }
@@ -542,9 +549,7 @@ function baseUrlIncludesCredentials(baseUrl) {
   }
 }
 
-async function normalizeOfficialMaps(input, now, decodeTile, previousOfficialMaps) {
-  const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
-  const sourcePath = readOptionalString(input?.sourcePath).trim()
+async function normalizeOfficialMaps(input, now, decodeTile, previousOfficialMaps, sourceMetadata) {
   const packages = await normalizeOfficialMapPackages(
     input?.packages,
     now,
@@ -552,50 +557,9 @@ async function normalizeOfficialMaps(input, now, decodeTile, previousOfficialMap
     previousOfficialMaps?.packages,
   )
 
-  if (sourceType === 'none') {
-    return {
-      ...DEFAULT_APP_SETTINGS.officialMaps,
-      packages,
-    }
-  }
-
-  if (sourcePath === '') {
-    return {
-      ...DEFAULT_APP_SETTINGS.officialMaps,
-      sourceType: 'mapgenie_file',
-      status: 'missing',
-      message: 'Choose the MapGenie source file before enabling official maps.',
-      packages,
-    }
-  }
-
-  try {
-    const metadata = parseMapGenieSourceDetails(await fs.readFile(sourcePath, 'utf8'))
-    return {
-      sourceType: 'mapgenie_file',
-      sourcePath,
-      ...metadata,
-      packages,
-    }
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return {
-        ...DEFAULT_APP_SETTINGS.officialMaps,
-        sourceType: 'mapgenie_file',
-        sourcePath,
-        status: 'missing',
-        message: 'MapGenie source file was not found.',
-        packages,
-      }
-    }
-    return {
-      ...DEFAULT_APP_SETTINGS.officialMaps,
-      sourceType: 'mapgenie_file',
-      sourcePath,
-      status: 'invalid',
-      message: 'MapGenie source file could not be read.',
-      packages,
-    }
+  return {
+    ...sourceMetadata,
+    packages,
   }
 }
 
@@ -659,7 +623,7 @@ async function normalizeOfficialMapPackages(input, now, decodeTile, previousPack
 }
 
 /** Decides whether the serialized settings operation must hold the package mutation guard. */
-function shouldGuardOfficialMapMutation(input, previousOfficialMaps) {
+function shouldGuardOfficialMapMutation(input, previousOfficialMaps, nextSourceMetadata) {
   const nextSourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
   const nextSourcePath = nextSourceType === 'mapgenie_file'
     ? readOptionalString(input?.sourcePath).trim()
@@ -669,6 +633,10 @@ function shouldGuardOfficialMapMutation(input, previousOfficialMaps) {
     ? readOptionalString(previousOfficialMaps?.sourcePath).trim()
     : ''
   if (nextSourceType !== previousSourceType || nextSourcePath !== previousSourcePath) {
+    return true
+  }
+  if (nextSourceType === 'mapgenie_file' &&
+      officialMapSourceFingerprint(nextSourceMetadata) !== officialMapSourceFingerprint(previousOfficialMaps)) {
     return true
   }
 
@@ -687,6 +655,61 @@ function shouldGuardOfficialMapMutation(input, previousOfficialMaps) {
 
   return nextKeys.some(([mapId, packagePath]) =>
     findReusableOfficialMapPackage(mapId, packagePath, previousPackages) === undefined)
+}
+
+/** Reads the source metadata snapshot used to decide whether cached map state must be invalidated. */
+async function readOfficialMapSourceMetadata(input) {
+  const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const sourcePath = readOptionalString(input?.sourcePath).trim()
+  if (sourceType === 'none') {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType,
+      sourcePath: '',
+    }
+  }
+  if (sourcePath === '') {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType,
+      sourcePath,
+      status: 'missing',
+      message: 'Choose the MapGenie source file before enabling official maps.',
+    }
+  }
+
+  try {
+    const metadata = parseMapGenieSourceDetails(await fs.readFile(sourcePath, 'utf8'))
+    return {
+      sourceType,
+      sourcePath,
+      ...metadata,
+    }
+  } catch (error) {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType,
+      sourcePath,
+      status: error?.code === 'ENOENT' ? 'missing' : 'invalid',
+      message: error?.code === 'ENOENT'
+        ? 'MapGenie source file was not found.'
+        : 'MapGenie source file could not be read.',
+    }
+  }
+}
+
+/** Returns the persisted source fields that can change proxy fallback and renderer validity. */
+function officialMapSourceFingerprint(source) {
+  const parsed = readObject(source)
+  return JSON.stringify({
+    sourceType: parsed.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none',
+    sourcePath: readOptionalString(parsed.sourcePath).trim(),
+    status: readOptionalString(parsed.status),
+    username: readOptionalString(parsed.username).trim(),
+    availableSources: readOfficialMapSources(parsed.availableSources),
+    serviceCount: Number.isFinite(Number(parsed.serviceCount)) ? Number(parsed.serviceCount) : 0,
+    message: readOptionalString(parsed.message).trim(),
+  })
 }
 
 /** Returns the normalized package identities from an untrusted settings draft. */

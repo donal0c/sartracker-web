@@ -1,0 +1,37 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/electron-settings-store.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/electron-settings-store.test.ts (27 tests | 1 failed) 191ms
+     × guards same-path source metadata changes while bypassing an unchanged configured save 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-settings-store.test.ts > electron settings store > guards same-path source metadata changes while bypassing an unchanged configured save
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ tests/unit/electron-settings-store.test.ts:540:27
+    538|       availableSources: ['official_discovery_topo', 'official_premium_…
+    539|     })
+    540|     expect(mutationCalls).toBe(2)
+       |                           ^
+    541|
+    542|     await writeFile(sourcePath, 'Username: mountainrescue_org\nbasemap…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 26 passed (27)
+   Start at  09:00:02
+   Duration  590ms (transform 28ms, setup 0ms, import 42ms, tests 191ms, environment 228ms)
+

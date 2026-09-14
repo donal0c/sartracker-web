@@ -505,6 +505,51 @@ describe('electron settings store', () => {
     expect(mutationCalls).toBe(2)
   })
 
+  it('guards same-path source metadata changes while bypassing an unchanged configured save', async () => {
+    let mutationCalls = 0
+    const withOfficialMapMutation = async <T,>(operation: () => Promise<T>): Promise<T> => {
+      mutationCalls += 1
+      return operation()
+    }
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const sourcePath = path.join(userDataPath!, 'mountainrescue_org.txt')
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.officialMaps.sourceType = 'mapgenie_file'
+    draft.officialMaps.sourcePath = sourcePath
+
+    await writeFile(sourcePath, 'Username: mountainrescue_org\ndiscovery ITM\n', 'utf8')
+    const initial = await store.saveAppSettings(draft, { withOfficialMapMutation })
+    expect(initial.officialMaps).toMatchObject({
+      status: 'configured',
+      availableSources: ['official_discovery_topo'],
+    })
+
+    const unchanged = createSettingsDraft(await store.loadAppSettings())
+    unchanged.missionDefaults.autoRefreshIntervalSeconds = 45
+    await store.saveAppSettings(unchanged, { withOfficialMapMutation })
+    expect(mutationCalls).toBe(1)
+
+    await writeFile(sourcePath, 'Username: mountainrescue_org\ndiscovery ITM\nbasemap_premium ITM\n', 'utf8')
+    const addedSource = createSettingsDraft(await store.loadAppSettings())
+    addedSource.missionDefaults.autoRefreshIntervalSeconds = 50
+    const configuredAgain = await store.saveAppSettings(addedSource, { withOfficialMapMutation })
+    expect(configuredAgain.officialMaps).toMatchObject({
+      status: 'configured',
+      availableSources: ['official_discovery_topo', 'official_premium_basemap'],
+    })
+    expect(mutationCalls).toBe(2)
+
+    await writeFile(sourcePath, 'Username: mountainrescue_org\nbasemap_premium ITM\n', 'utf8')
+    const removedSource = createSettingsDraft(await store.loadAppSettings())
+    removedSource.missionDefaults.autoRefreshIntervalSeconds = 55
+    const invalidated = await store.saveAppSettings(removedSource, { withOfficialMapMutation })
+    expect(invalidated.officialMaps).toMatchObject({
+      status: 'invalid',
+      availableSources: ['official_premium_basemap'],
+    })
+    expect(mutationCalls).toBe(3)
+  })
+
   it('keeps missing and invalid local official map packages visible without throwing', async () => {
     const verifiedAt = '2026-06-05T10:11:12.000Z'
     const store = await createStore({

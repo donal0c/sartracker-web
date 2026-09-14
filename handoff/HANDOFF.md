@@ -42,7 +42,13 @@ WAL preflight, bounded decoded-proof reuse, raster reconstruction recovery and
 negative-result races. Stable correctness passes 468 files / 4,956 tests / six
 existing skips; six synthetic Chromium flows, typecheck, lint and independent
 reviews pass. The first full run's stale message expectation failure is retained.
-Next: push this reviewed repair and verify fresh exact-head CI. No local Electron,
+Repair `220366e5` is pushed. A post-push synthetic probe found same-path provider
+metadata changes bypassed the new save guard; a source-snapshot comparison fixes
+that locally. Follow-up correctness passes 468 files / 4,957 tests / six existing
+skips, settings 27/27 and independent review pass; unchanged browser evidence is
+reused. CI34819550032 was cancelled as superseded. Next: push follow-up and verify
+fresh exact-head CI. Same-path non-persisted provider URL/password edits remain
+outside this offline freshness proof. No local Electron,
 package build, merge or release. Default local actionlint previously timed out;
 workflow-only parsing and all 32 shell steps checked serially passed.
 
