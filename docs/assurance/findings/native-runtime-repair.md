@@ -4,6 +4,13 @@ Bounded repair from master `cda87aa03f27eb69532ae9506aa9e719cef7e364`.
 Baseline Linux run 34826211836 is independently confirmed green. This record
 does not supersede the historical Train D failure or qualify a release.
 
+Rebased on 2026-09-14 onto PR30 merge `58c65641483bbdb83515d8793bb1abce1e5755c4`.
+Only handoff/workplan conflicted. Range-diff confirms the executable/test/manual/
+workflow patch is unchanged; 82 focused native controls pass after rebase.
+CI34834365325, the saved source bindings and packaged receipts below describe the
+earlier head, not the combined candidate. PR31's new exact-head checks must pass
+before renewing readiness; no new package or release claim follows from rebase.
+
 ## Contract and scope
 
 Coverage results must use bounds consistent with their SQLite snapshot, remain
@@ -55,7 +62,9 @@ Full serial correctness passes 469 files / 4,969 tests / six unchanged
 qualification-only skips. Seven subsequently added native receipt validator
 controls pass separately. Lint, app build/typecheck/bundle budgets, focused strict
 test types and actionlint (without external shellcheck/pyflakes) pass. Final broad
-review is clear; exact-head Linux CI remains pending, so PR readiness is pending.
+review is clear. [PR31](https://github.com/donal0c/sartracker-web/pull/31) retains
+the live exact-head Linux CI result, artifact inspection and readiness comment;
+the local evidence here alone is insufficient to claim PR readiness.
 
 ### Review dispositions
 

@@ -58,11 +58,13 @@ head.
 
 ## Current merged disposition
 
-2026-09-14 native follow-up: PR28 is merged at `cda87aa0` with green baseline
-CI34826211836. DON-254's [native-runtime repair](findings/native-runtime-repair.md)
+2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
+PR31 is rebased onto it; earlier CI34834365325 is historical, and fresh exact-head
+checks control readiness. DON-254's [native-runtime repair](findings/native-runtime-repair.md)
 owns the four retained diagnostic/runtime rows below, including proved physical
-worker-exit custody on cancellation. Source red/green controls pass; full
-correctness, scoped packaged proof and independent reviews are active. Historical
+worker-exit custody on cancellation. The original source/native proof and reviews
+are retained; all 82 focused native tests pass after the documentation-only conflict
+resolution, and range-diff preserves the runtime patch. Historical
 failures remain retained, DON-254 stays In Progress, and release remains HOLD.
 The older PR28-active paragraphs are superseded only as to merge state.
 

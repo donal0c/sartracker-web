@@ -5,7 +5,8 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 ## Baseline and active lane
 
 Master is `58c65641483bbdb83515d8793bb1abce1e5755c4`: PR30 (Train C) is
-merged after PR27/PR28. Earlier baseline CI34826211836 remains historical. Prior WAR-11 source/browser/native
+merged after PR27/PR28. Earlier baseline CI34826211836 remains historical.
+Prior WAR-11 source/browser/native
 failures and limits remain in [WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md);
 Train D's original failed native attempt remains in its
 [repair record](../docs/assurance/findings/repair-train-d.md).
@@ -21,6 +22,11 @@ and earlier failures. Broader DON-264/DON-6 acceptance and AUD-12 remain open.
 
 ## Verification and next action
 
+PR31 is rebased onto merged PR30. Only handoff/workplan conflicted; code, tests,
+manual and workflow changes retain the same patch. All 82 focused native tests
+pass after rebase. Earlier CI34834365325 is historical; fresh exact-head CI is
+required before renewing readiness. The checks linked below own that result.
+
 Red/green controls reproduce the original enumeration error, unsupported
 file-scheme registration, 24-listener pressure, early shutdown settlement and
 same-inventory stale manifests. Affected 60 tests and seven independent native
@@ -28,7 +34,9 @@ receipt controls pass; lint/build/types pass. Full correctness passes 469 files 
 4,969 tests / six existing qualification skips. Final broad review is clear.
 Persistence and IPC focused reviews are clear; diagnostic
 review repairs are verified, including split-chunk stderr redaction (35 affected
-diagnostic/receipt tests pass). No merge readiness claim before exact-head CI.
+diagnostic/receipt tests pass). [PR31](https://github.com/donal0c/sartracker-web/pull/31)
+contains the committed repair; its checks and evidence comment hold the live
+exact-head Linux result and readiness. Do not infer readiness from local tests.
 
 macOS packaged scoped control passes on the same ASAR used for the failed
 Train D attempt: 24 real preload coverage reads, separate packaged-store
@@ -38,8 +46,9 @@ Train D still fails: expected one pending member, observed 2/2; provider 503
 warnings and a moved-snapshot rejection remain retained. No diagnostic gate
 was relaxed. See [native repair evidence](../docs/assurance/findings/native-runtime-repair.md).
 
-Next: commit/push PR, inspect fresh exact-head
-Linux CI/artifacts and reconcile with current master. Donal owns merge.
+Next: inspect PR31's latest exact-head Linux CI/artifact evidence and reconcile
+with current master before any merge decision. Donal owns merge. This branch
+does not qualify or publish a release; remaining Train D work stays separate.
 
 ## Limits
 
