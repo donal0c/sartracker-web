@@ -35,9 +35,13 @@ Source checks: focused tracking runtime 94/94, participant/runtime wiring 60/60,
 TypeScript build, changed-file lint, and package build pass. Full source tests
 were 5,069/5,070; one unrelated `<200 ms` assertion measured 226.0 ms under
 parallel local contention and passed in isolation at 47.2 ms. The gate remains
-unchanged. CI exact-head qualification, independent review, and the complete
-restart path remain next. Donal owns merge; no merge, release, deployment, or
-team contact is authorized by this handoff.
+unchanged. CI run `34866228521` passed through correctness, responsiveness,
+browser, build, and replay gates, then failed before Train D at the unrelated
+packaged native-runtime diagnostic gate on two launch-time Vulkan stderr entries;
+the exact clean package and source identity passed, and Train D was skipped.
+The exact-head Train D scenario and complete restart path therefore remain
+**NOT_PROVEN**. Donal owns merge; no merge, release, deployment, or team contact
+is authorized by this handoff.
 
 ## Limits
 

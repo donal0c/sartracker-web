@@ -38,6 +38,14 @@ The original exact-master workflow receipt, local receipt and screenshots remain
 retained outside the repository. Exact-head CI, independent review, and a clean
 complete Train D run remain required before qualification or merge.
 
+PR32's exact-head run `34866228521` passed correctness, strict responsiveness,
+rendered regressions, build, and 960k replay, but failed before Train D in the
+unrelated packaged native-runtime control because two launch-time Vulkan stderr
+entries were rejected by the existing diagnostic custody gate. Source/package
+identity was exact and clean; the Train D validator and scenario were skipped.
+This is retained as an environment/diagnostic-gate boundary, not as a product
+failure or allowlist change.
+
 ## Contract and risk
 
 SAR-QA-001/002/008 require complete mission history, immediate current positions

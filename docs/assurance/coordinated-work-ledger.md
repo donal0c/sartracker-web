@@ -68,7 +68,10 @@ regression. Local repaired packaged evidence records AUD-08 and AUD-09 pass;
 restart is not proven because the existing diagnostic custody gate rejected
 deliberate provider-503/retry and close-time transport warnings. No diagnostic,
 responsiveness, release, or field gate was relaxed. Exact-head CI and review
-are required before any merge decision.
+are required before any merge decision. PR32's exact-head run `34866228521`
+passed through replay and the pre-packaged controls, then failed at the
+unrelated packaged native-runtime diagnostic gate on two launch-time Vulkan
+stderr entries; Train D was skipped and remains not proven in Linux CI.
 
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
 PR31 is rebased onto it. Claude review superseded earlier readiness and green
