@@ -36,10 +36,243 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
       readonly cancelCoverageTileRead?: (requestId: string) => Promise<boolean>
     }
     readonly validateIpcSender: (event: unknown) => void
+    readonly ownerLifecycle?: {
+      readonly subscribe: (sender: unknown, onGone: () => void) => () => void
+    }
+    readonly onLifecycleFailure?: (error: unknown) => void
   }) => void
+}
+const { createCoverageOwnerLifecycle } = require('../../electron/coverage-owner-lifecycle.cjs') as {
+  readonly createCoverageOwnerLifecycle: (options?: {
+    readonly onFailure?: (error: unknown) => void
+  }) => {
+    readonly subscribe: (sender: unknown, onGone: () => void) => () => void
+  }
 }
 
 describe('coverage IPC ownership [DON-276]', () => {
+  it('continues sibling lifecycle cancellation after one callback throws and reports it [DON-254]', () => {
+    const sender = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      isCrashed: () => false,
+      getProcessId: () => 701,
+    })
+    const onFailure = vi.fn()
+    const lifecycle = createCoverageOwnerLifecycle({ onFailure })
+    const first = vi.fn(() => { throw new Error('first lifecycle callback failed') })
+    const second = vi.fn()
+
+    lifecycle.subscribe(sender, first)
+    lifecycle.subscribe(sender, second)
+
+    expect(() => sender.emit('render-process-gone')).not.toThrow()
+    expect(first).toHaveBeenCalledOnce()
+    expect(second).toHaveBeenCalledOnce()
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'first lifecycle callback failed',
+    }), expect.objectContaining({ phase: 'coverage renderer lifecycle callback' }))
+  })
+
+  it('rejects a queued subscription until a new renderer process identity appears [DON-254]', async () => {
+    let processId = 702
+    const sender = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      isCrashed: () => false,
+      getProcessId: () => processId,
+    })
+    const lifecycle = createCoverageOwnerLifecycle()
+    let queuedError: unknown = null
+    lifecycle.subscribe(sender, () => {
+      queueMicrotask(() => {
+        try {
+          lifecycle.subscribe(sender, vi.fn())
+        } catch (error) {
+          queuedError = error
+        }
+      })
+    })
+
+    sender.emit('render-process-gone')
+    await Promise.resolve()
+    expect(queuedError).toMatchObject({
+      name: 'AbortError',
+      message: expect.stringMatching(/^coverage-cancelled:/u),
+    })
+    expect(sender.listenerCount('destroyed')).toBe(0)
+    expect(sender.listenerCount('render-process-gone')).toBe(0)
+
+    processId = 703
+    const release = lifecycle.subscribe(sender, vi.fn())
+    expect(sender.listenerCount('render-process-gone')).toBe(1)
+    release()
+  })
+
+  it('fails closed for a renderer already marked crashed [DON-254]', () => {
+    const sender = Object.assign(new EventEmitter(), {
+      isDestroyed: () => false,
+      isCrashed: () => true,
+      getProcessId: () => 703,
+    })
+    const lifecycle = createCoverageOwnerLifecycle()
+
+    expect(() => lifecycle.subscribe(sender, vi.fn())).toThrowError(expect.objectContaining({
+      name: 'AbortError',
+      message: expect.stringMatching(/^coverage-cancelled:/u),
+    }))
+    expect(sender.listenerCount('destroyed')).toBe(0)
+    expect(sender.listenerCount('render-process-gone')).toBe(0)
+  })
+
+  it('cleans an existing stage when lifecycle subscription fails and preserves the supplied lifecycle [DON-254]', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const subscriptionError = Object.assign(new Error('renderer lifecycle subscription failed'), {
+      name: 'AbortError',
+    })
+    const release = vi.fn()
+    const ownerLifecycle = {
+      subscribe: vi.fn()
+        .mockReturnValueOnce(release)
+        .mockImplementationOnce(() => { throw subscriptionError }),
+    }
+    const syncCoverageTileCatalog = vi.fn().mockResolvedValue({
+      activationId: 'coverage-stage-subscription-failure', periods: [], delivered: [],
+    })
+    const discardCoverageTileCatalog = vi.fn().mockResolvedValue(true)
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore: {
+        readCoverageManifest: vi.fn(), readCoverageChunk: vi.fn(), readCoverageClaim: vi.fn(),
+        syncCoverageTileCatalog,
+        activateCoverageTileCatalog: vi.fn(), finalizeCoverageTileCatalog: vi.fn(),
+        discardCoverageTileCatalog, cancelCoverageQuery: vi.fn(),
+      },
+      ownerLifecycle,
+      validateIpcSender: vi.fn(),
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 704 })
+
+    await expect(handlers.get('catalog')?.(
+      { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-subscription-stage',
+    )).resolves.toMatchObject({ activationId: 'coverage-stage-subscription-failure' })
+    await expect(handlers.get('catalog')?.(
+      { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-subscription-failure',
+    )).rejects.toBe(subscriptionError)
+    expect(ownerLifecycle.subscribe).toHaveBeenCalledTimes(2)
+    expect(discardCoverageTileCatalog).toHaveBeenCalledWith({
+      activationId: 'coverage-stage-subscription-failure',
+    })
+    expect(release).toHaveBeenCalledOnce()
+    expect(syncCoverageTileCatalog).toHaveBeenCalledOnce()
+  })
+
+  it('surfaces optional tile cancellation failure without throwing from renderer loss [DON-254]', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const onLifecycleFailure = vi.fn()
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      tileChannels: { read: 'tile-read', cancel: 'tile-cancel' },
+      cancelChannel: 'cancel', onLifecycleFailure,
+      missionStore: {
+        readCoverageManifest: vi.fn(), readCoverageChunk: vi.fn(), readCoverageClaim: vi.fn(),
+        syncCoverageTileCatalog: vi.fn(), cancelCoverageQuery: vi.fn(),
+        readCoverageTile: vi.fn().mockResolvedValue(new Uint8Array([1])),
+      },
+      validateIpcSender: vi.fn(),
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 705 })
+    const operation = handlers.get('tile-read')?.(
+      { sender }, { z: 8 }, 'tile-optional-cancel',
+    )
+
+    expect(() => sender.emit('render-process-gone')).not.toThrow()
+    await expect(operation).resolves.toEqual(new Uint8Array([1]))
+    await vi.waitFor(() => expect(onLifecycleFailure).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('cancelCoverageTileRead'),
+    }), expect.objectContaining({ phase: 'cancelCoverageTileRead after renderer loss' })))
+  })
+
+  it('does not stage a catalog when the renderer is lost during listener registration [DON-254]', async () => {
+    class SynchronousGoneSender extends EventEmitter {
+      override once(
+        eventName: string | symbol,
+        listener: (...args: readonly unknown[]) => void,
+      ): this {
+        if (eventName === 'render-process-gone') {
+          listener({ reason: 'clean-exit' })
+          return this
+        }
+        return super.once(eventName, listener as never)
+      }
+    }
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const syncCoverageTileCatalog = vi.fn()
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      activationChannels: { activate: 'activate', finalize: 'finalize', discard: 'discard' },
+      cancelChannel: 'cancel', missionStore: {
+        readCoverageManifest: vi.fn(), readCoverageChunk: vi.fn(), readCoverageClaim: vi.fn(),
+        syncCoverageTileCatalog,
+        activateCoverageTileCatalog: vi.fn(), finalizeCoverageTileCatalog: vi.fn(),
+        discardCoverageTileCatalog: vi.fn(), cancelCoverageQuery: vi.fn().mockResolvedValue(false),
+      },
+      validateIpcSender: vi.fn(),
+    })
+    const sender = Object.assign(new SynchronousGoneSender(), {
+      id: 706,
+      isDestroyed: () => false,
+      isCrashed: () => false,
+      getProcessId: () => 706,
+    })
+
+    await expect(handlers.get('catalog')?.(
+      { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-registration-loss',
+    )).rejects.toMatchObject({
+      name: 'AbortError',
+      message: expect.stringMatching(/^coverage-cancelled:/u),
+    })
+    expect(syncCoverageTileCatalog).not.toHaveBeenCalled()
+  })
+
+  it('shares lifecycle listeners across concurrent reads and cancels each owner once [DON-254]', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const pending = new Map<string, (value: unknown) => void>()
+    const read = vi.fn((_query: unknown, requestId: string) => new Promise(resolve => {
+      pending.set(requestId, resolve)
+    }))
+    const cancel = vi.fn(async (requestId: string) => {
+      pending.get(requestId)?.(null)
+      return true
+    })
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      tileChannels: { read: 'tile', cancel: 'cancel-tile' },
+      cancelChannel: 'cancel', validateIpcSender: vi.fn(),
+      missionStore: {
+        readCoverageManifest: read, readCoverageChunk: read, readCoverageClaim: read,
+        syncCoverageTileCatalog: vi.fn(), cancelCoverageQuery: cancel,
+        readCoverageTile: read, cancelCoverageTileRead: cancel,
+      },
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 71 })
+    const requests = Array.from({ length: 24 }, (_, index) => handlers.get(
+      ['manifest', 'chunk', 'claim', 'tile'][index % 4],
+    )!({ sender }, {}, `concurrent-${index}`))
+    const counts = ['destroyed', 'render-process-gone'].map(event => sender.listenerCount(event))
+    sender.emit('render-process-gone')
+    sender.emit('destroyed')
+    await Promise.all(requests)
+
+    expect(counts).toEqual([1, 1])
+    expect(cancel).toHaveBeenCalledTimes(24)
+    expect(sender.listenerCount('destroyed')).toBe(0)
+    expect(sender.listenerCount('render-process-gone')).toBe(0)
+  })
+
   it('scopes request and cancellation IDs to the owning renderer', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     let rejectQuery: (error: Error) => void = () => undefined

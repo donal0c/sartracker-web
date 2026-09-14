@@ -4,8 +4,9 @@ describe('service worker registration', () => {
   const originalServiceWorker = navigator.serviceWorker
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     if (originalServiceWorker === undefined) {
-      delete (navigator as Navigator & { serviceWorker?: ServiceWorkerContainer }).serviceWorker
+      Reflect.deleteProperty(navigator, 'serviceWorker')
       return
     }
 
@@ -15,7 +16,21 @@ describe('service worker registration', () => {
     })
   })
 
-  it('registers the service worker when supported', async () => {
+  it.each(['file:', 'data:', 'about:'])('does not register in unsupported %s contexts', async (protocol) => {
+    const register = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('location', { protocol })
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { register },
+    })
+
+    await registerServiceWorker()
+
+    expect(register).not.toHaveBeenCalled()
+  })
+
+  it.each(['http:', 'https:'])('registers the service worker in supported %s contexts', async (protocol) => {
+    vi.stubGlobal('location', { protocol })
     const register = vi.fn().mockResolvedValue(undefined)
 
     Object.defineProperty(navigator, 'serviceWorker', {

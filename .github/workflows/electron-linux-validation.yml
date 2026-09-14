@@ -209,6 +209,16 @@ jobs:
           npx playwright test --config playwright.train-c.config.ts --project=chromium --workers=1 2>&1 \
             | tee tmp/electron-validation-evidence/train-c/playwright.log
 
+      - name: Coverage partial and recovery browser regressions
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/electron-validation-evidence/native-coverage-browser
+          npx playwright test tests/e2e/coverage.spec.ts --project=chromium --workers=1 2>&1 \
+            | tee tmp/electron-validation-evidence/native-coverage-browser/playwright.log
+          cp tmp/native-runtime-repair/claude-coverage-partial.png \
+            tmp/native-runtime-repair/claude-coverage-recovered.png \
+            tmp/electron-validation-evidence/native-coverage-browser/
+
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging
         # deliberately omits this flag until the programme's final gate.
@@ -282,6 +292,19 @@ jobs:
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
+
+      - name: Packaged native coverage runtime control
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/electron-native-runtime-smoke.mjs \
+              tmp/electron-dist/linux-unpacked/sartracker-web \
+              tmp/electron-validation-evidence/native-runtime
 
       - name: Packaged official map qualification and freshness smoke
         env:

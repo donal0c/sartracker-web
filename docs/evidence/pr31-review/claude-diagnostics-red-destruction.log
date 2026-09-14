@@ -1,0 +1,53 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts (9 tests | 2 failed) 8ms
+     × fails closed when stderr was destroyed by an error before drain starts 2ms
+     × fails closed when stderr closes before its readable end 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > streamed stderr privacy > fails closed when stderr was destroyed by an error before drain starts
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:34:58
+     32|       errored: new Error('stderr pipe failed'),
+     33|     })
+     34|     await expect(waitForPackagedStderrDrain(stream, 100)).resolves.toB…
+       |                                                          ^
+     35|   })
+     36|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > streamed stderr privacy > fails closed when stderr closes before its readable end
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:45:27
+     43|     const draining = waitForPackagedStderrDrain(stream, 100)
+     44|     stream.emit('close')
+     45|     await expect(draining).resolves.toBe(false)
+       |                           ^
+     46|   })
+     47|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 7 passed (9)
+   Start at  14:22:40
+   Duration  339ms (transform 30ms, setup 0ms, import 38ms, tests 8ms, environment 232ms)
+

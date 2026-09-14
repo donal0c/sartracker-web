@@ -1,0 +1,28 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > continues sibling lifecycle cancellation after one callback throws and reports it [DON-254] 2ms
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > rejects a queued subscription until a new renderer process identity appears [DON-254] 1ms
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > fails closed for a renderer already marked crashed [DON-254] 0ms
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > cleans an existing stage when lifecycle subscription fails and preserves the supplied lifecycle [DON-254] 1ms
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > surfaces optional tile cancellation failure without throwing from renderer loss [DON-254] 1ms
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > does not stage a catalog when the renderer is lost during listener registration [DON-254] 0ms
+ ✓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > shares lifecycle listeners across concurrent reads and cancels each owner once [DON-254] 0ms
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > scopes request and cancellation IDs to the owning renderer
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > removes lifecycle listeners after normal completion
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > scopes tile reads to their renderer and cancels only the destroyed owner
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > owns staged catalogs until activation and discards them when the renderer dies
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > settles an abandoned stage before a replacement renderer can synchronize
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > retains ownership after activation and releases it only after finalization
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > retains stage ownership when non-terminal activation fails and is retried
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > retains stage ownership when a terminal transition fails before retry
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > settles the same renderer's failed stage before a new catalog retry
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > settles the retrying renderer before stale tokens from a lost generation
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > sweeps past a stale preferred token to settle the live abandoned stage
+ ↓ tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > routes chunk and claim reads through their named mission-store methods
+
+ Test Files  1 passed (1)
+      Tests  7 passed | 12 skipped (19)
+   Start at  14:33:52
+   Duration  413ms (transform 27ms, setup 0ms, import 35ms, tests 6ms, environment 236ms)
+

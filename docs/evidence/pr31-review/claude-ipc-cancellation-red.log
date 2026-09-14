@@ -1,0 +1,36 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/coverage-tile-protocol.test.ts (7 tests | 1 failed) 8ms
+     × does not report renderer-loss cancellation as a delivery failure after IPC drops the error name [DON-254] 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/coverage-tile-protocol.test.ts > Candidate B MapLibre protocol [DON-276] > does not report renderer-loss cancellation as a delivery failure after IPC drops the error name [DON-254]
+AssertionError: expected Error: Error invoking remote method: cove… to match object { name: 'AbortError' }
+
+- Expected
++ Received
+
+- {
+-   "name": "AbortError",
++ Error {
++   "message": "Error invoking remote method: coverage-cancelled: Renderer process ended.",
+  }
+
+ ❯ tests/unit/coverage-tile-protocol.test.ts:20:34
+     18|     const [, loader] = addProtocol.mock.calls[0]!
+     19|     const url = createCoverageTileUrl('mission-1', 'unassigned\u0000',…
+     20|     await expect(loader({ url })).rejects.toMatchObject({ name: 'Abort…
+       |                                  ^
+     21|     expect(onFailure).not.toHaveBeenCalled()
+     22|     unregister()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 passed (7)
+   Start at  14:28:52
+   Duration  325ms (transform 17ms, setup 0ms, import 24ms, tests 8ms, environment 236ms)
+

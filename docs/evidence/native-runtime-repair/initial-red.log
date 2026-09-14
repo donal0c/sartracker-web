@@ -1,0 +1,55 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/register-service-worker.test.ts tests/unit/electron-coverage-mission-store.test.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts (26 tests | 1 failed) 2409ms
+     × accepts canonical inventory added after dispatch and before the worker snapshot [DON-254] 47ms
+ ❯ tests/unit/register-service-worker.test.ts (5 tests | 3 failed) 4ms
+     × does not register in unsupported file: contexts 2ms
+     × does not register in unsupported data: contexts 0ms
+     × does not register in unsupported about: contexts 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-mission-store.test.ts > Electron coverage mission-store orchestration > accepts canonical inventory added after dispatch and before the worker snapshot [DON-254]
+Error: Coverage query worker failed: Coverage enumeration result is invalid: item list is invalid.
+ ❯ Worker.<anonymous> electron/coverage-query-runner.cjs:69:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/register-service-worker.test.ts > service worker registration > does not register in unsupported file: contexts
+ FAIL  tests/unit/register-service-worker.test.ts > service worker registration > does not register in unsupported data: contexts
+ FAIL  tests/unit/register-service-worker.test.ts > service worker registration > does not register in unsupported about: contexts
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "/sw.js",
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/register-service-worker.test.ts:29:26
+     27|     await registerServiceWorker()
+     28|
+     29|     expect(register).not.toHaveBeenCalled()
+       |                          ^
+     30|   })
+     31|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 27 passed (31)
+   Start at  11:02:47
+   Duration  3.13s (transform 39ms, setup 0ms, import 78ms, tests 2.41s, environment 507ms)
+

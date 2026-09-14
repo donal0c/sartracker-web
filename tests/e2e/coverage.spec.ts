@@ -2,6 +2,35 @@ import { expect, test, type Page } from '@playwright/test'
 import { seedCoverageMission } from './helpers/coverage-test-setup'
 
 test.describe('complete mission-history coverage [DON-275]', () => {
+  test('a moving coverage revision stays partial and recovers with Retry [DON-254]', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await seedCoverageMission(page)
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('All mission history shown')
+    await page.evaluate(async () => {
+      const [{ getBrowserHarnessStore }, { useCoverageStore }] = await Promise.all([
+        import('/src/features/browser-validation/browser-harness-store.ts'),
+        import('/src/features/tracking/coverage-store.ts'),
+      ])
+      const store = getBrowserHarnessStore()
+      const original = store.readCoverageManifest
+      Object.defineProperty(store, 'readCoverageManifest', { configurable: true, value: async () => {
+        Object.defineProperty(store, 'readCoverageManifest', { configurable: true, value: original })
+        throw new Error('coverage-revision-moved: Coverage inventory changed while loading history.')
+      } })
+      await useCoverageStore.getState().controller?.refresh()
+    })
+    await expect(page.getByTestId('coverage-partial')).toBeVisible()
+    await expect(page.getByTestId('coverage-error')).toHaveCount(0)
+    await expect(panel).not.toContainText('All mission history shown')
+    await panel.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await panel.screenshot({ path: 'tmp/native-runtime-repair/claude-coverage-partial.png' })
+    await page.getByTestId('coverage-retry').click()
+    await expect(panel).toContainText('All mission history shown')
+    await panel.evaluate(element => element.scrollIntoView({ block: 'center' }))
+    await panel.screenshot({ path: 'tmp/native-runtime-repair/claude-coverage-recovered.png' })
+  })
+
   test('AUD-14 uses structured completeness state instead of connection-warning wording', async ({ page }) => {
     await seedCoverageMission(page)
     const panel = page.getByTestId('coverage-status-panel')

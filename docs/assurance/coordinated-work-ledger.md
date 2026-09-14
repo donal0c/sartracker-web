@@ -58,6 +58,20 @@ head.
 
 ## Current merged disposition
 
+2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
+PR31 is rebased onto it. Claude review superseded earlier readiness and green
+CI34845492157. The [review disposition](findings/pr31-claude-review.md) records
+repaired snapshot progress, lifecycle fanout, worker bounds/join and stderr
+custody, with 5,045 source tests, seven browser flows and rebuilt macOS native
+control passing locally. Fresh exact-head checks control readiness.
+DON-254's [native-runtime repair](findings/native-runtime-repair.md)
+owns the four retained diagnostic/runtime rows below, including proved physical
+worker-exit custody on cancellation. The original source/native proof and reviews
+are retained; all 82 focused native tests pass after the documentation-only conflict
+resolution, and range-diff preserves the runtime patch. Historical
+failures remain retained, DON-254 stays In Progress, and release remains HOLD.
+The older PR28-active paragraphs are superseded only as to merge state.
+
 Current baseline is `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`: Donal merged
 [PR27](https://github.com/donal0c/sartracker-web/pull/27) on 2026-09-14, after
 PR25/PR26. DON-267 is Done; DON-254 remains In Progress and release HOLD.

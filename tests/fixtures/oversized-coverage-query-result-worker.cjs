@@ -15,12 +15,12 @@ parentPort.postMessage({
       freshChunkCount: 0,
       pendingInvalidationCount: 0,
     },
-    outings: [{
+    outings: Array(100_001).fill({
       id: 'outing-1',
       label: 'Outing 1',
       started_at: '2026-08-24T10:00:00.000Z',
       ended_at: '2026-08-24T11:00:00.000Z',
-    }],
+    }),
     chunks: [],
   },
 })

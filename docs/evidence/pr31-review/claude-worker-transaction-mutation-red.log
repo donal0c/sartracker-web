@@ -1,0 +1,30 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-worker-cardinality.test.ts (4 tests | 1 failed) 81ms
+     × checks snapshot within the worker without a parent result validator 21ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-worker-cardinality.test.ts > production coverage worker snapshot bounds before transport [DON-254] > checks snapshot within the worker without a parent result validator
+AssertionError: expected 'error' to be 'complete' // Object.is equality
+
+Expected: "complete"
+Received: "error"
+
+ ❯ tests/unit/electron-coverage-worker-cardinality.test.ts:39:28
+     37|         worker.once('exit', code => code === 0 && reply !== undefined …
+     38|       })
+     39|       expect(message.type).toBe(control === 'snapshot' ? 'complete' : …
+       |                            ^
+     40|       if (control !== 'snapshot') expect(message.message).toMatch(/(it…
+     41|     } finally { await rm(directory, { recursive: true, force: true }) }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  14:31:58
+   Duration  454ms (transform 12ms, setup 0ms, import 19ms, tests 81ms, environment 229ms)
+

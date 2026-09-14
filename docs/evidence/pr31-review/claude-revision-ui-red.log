@@ -1,0 +1,38 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/coverage-controller.test.ts (58 tests | 1 failed) 6518ms
+     × keeps a moved revision partial and retries on the next coverage notification without an error loop [DON-254] 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/coverage-controller.test.ts > coverage controller [DON-276] > keeps a moved revision partial and retries on the next coverage notification without an error loop [DON-254]
+AssertionError: expected { status: 'error', …(13) } to match object { status: 'partial', …(1) }
+(12 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "lastErrorClass": "chunk_stale",
+-   "status": "partial",
++   "lastErrorClass": "unknown",
++   "status": "error",
+  }
+
+ ❯ tests/unit/coverage-controller.test.ts:25:43
+     23|     harness.readManifest.mockRejectedValueOnce(new Error('coverage-rev…
+     24|     await harness.controller.updateContext({ missionId: 'mission-1', r…
+     25|     expect(harness.controller.getState()).toMatchObject({ status: 'par…
+       |                                           ^
+     26|     expect(harness.readManifest).toHaveBeenCalledTimes(1)
+     27|     await harness.controller.notifyChanged('mission-1', 1)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 57 passed (58)
+   Start at  14:18:53
+   Duration  6.92s (transform 83ms, setup 0ms, import 97ms, tests 6.52s, environment 239ms)
+

@@ -1,0 +1,45 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/electron-coverage-ipc.test.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+(node:93172) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 destroyed listeners added to [EventEmitter]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:93172) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 render-process-gone listeners added to [EventEmitter]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+ ❯ tests/unit/electron-coverage-ipc.test.ts (13 tests | 1 failed) 64ms
+     × shares lifecycle listeners across concurrent reads and cancels each owner once [DON-254] 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-ipc.test.ts > coverage IPC ownership [DON-276] > shares lifecycle listeners across concurrent reads and cancels each owner once [DON-254]
+AssertionError: expected [ 24, 24 ] to deeply equal [ 1, 1 ]
+
+- Expected
++ Received
+
+  [
+-   1,
+-   1,
++   24,
++   24,
+  ]
+
+ ❯ tests/unit/electron-coverage-ipc.test.ts:73:20
+     71|     await Promise.all(requests)
+     72|
+     73|     expect(counts).toEqual([1, 1])
+       |                    ^
+     74|     expect(cancel).toHaveBeenCalledTimes(24)
+     75|     expect(sender.listenerCount('destroyed')).toBe(0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 passed (13)
+   Start at  11:03:55
+   Duration  417ms (transform 23ms, setup 0ms, import 30ms, tests 64ms, environment 254ms)
+

@@ -7,7 +7,7 @@ import type {
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
-import { classifyCoverageError, type CoverageErrorClass } from './coverage-diagnostics'
+import { classifyCoverageError, isCoverageCancellation, type CoverageErrorClass } from './coverage-diagnostics'
 import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
 import { coverageChunkIdentity } from './coverage-identity'
@@ -464,6 +464,14 @@ export function createCoverageController(input: {
       if (state.status === 'inactive') return
       if (controller.signal.aborted || isAbortError(error)) {
         publish(withFinalizedCatalog(asPartialState(state), finalizedCatalog))
+        return
+      }
+      if (classifyCoverageError(error) === 'chunk_stale') {
+        // A newer revision is normal during tracking. Keep existing coverage
+        // partial; the next change notification or explicit Retry resumes it.
+        publish({ ...withFinalizedCatalog(asPartialState(state), finalizedCatalog),
+          lastErrorClass: 'chunk_stale',
+        })
         return
       }
       publish({
@@ -1115,5 +1123,5 @@ function normalizeContext(context: CoverageContext): NormalizedCoverageContext {
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError'
+  return isCoverageCancellation(error)
 }

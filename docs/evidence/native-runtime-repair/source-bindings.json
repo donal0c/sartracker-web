@@ -1,0 +1,23 @@
+{
+  "baseline": "cda87aa03f27eb69532ae9506aa9e719cef7e364",
+  "proof": "local working source; CI later binds committed head",
+  "files": {
+    ".github/workflows/electron-linux-validation.yml": "fdf6c0d1febf405a3aa1b0cb4bccc08f462c79723cce87b1c5e3fa16673188e5",
+    "build/electron-repair-train-d-smoke-lib.js": "b6a1fc88059bac4640820cd33cd177bf7f06c65855eb5cebb3947bd3ccc67a01",
+    "build/native-runtime-smoke-receipt.js": "2c800618428a2d3e2260af76f24e692308a50536b8fffd0c3a2b84f7ac38dfcf",
+    "build/packaged-page-diagnostics.js": "25c769408540c32f227d217709e6f78160a1b8c7dce2d3127ac3aaade1de3304",
+    "electron/coverage-ipc.cjs": "e93af59dd375b627f9d65592f7708005ae73757d3750a83bb3a306f4c0809eb6",
+    "electron/coverage-owner-lifecycle.cjs": "942e2505a0905632621ecf5d45d7de6c488a24eeb2577aa84683910341868904",
+    "electron/coverage-query-worker.cjs": "ab619def01c296c5906560530237ae759f1ad17701e3d4324c7c8f814ece8f81",
+    "electron/mission-store.cjs": "6985a3eeb8436825317f036b32bb476a94234e4999fc2bc721e2559ec82a036a",
+    "scripts/electron-native-runtime-smoke.mjs": "a023ead8e64cf0202153de3d61dab09fb3e08af353a7b32288cc630e5e2791cf",
+    "scripts/electron-repair-train-d-smoke.mjs": "93e55a6850d491e65cc54989621d2ae0e4c821726526f533addf00c0c2f3febb",
+    "src/lib/register-service-worker.ts": "a1d9120dce81c399cd5182bfed7648afdc275cc54ff265576ee37c86f3c6a6f7",
+    "tests/unit/electron-coverage-ipc.test.ts": "d5f0365320e1671c09f42ab28670302c3b49f6a2a3099555aa6052a202970213",
+    "tests/unit/electron-coverage-mission-store.test.ts": "9a5e24d152334de0d42d621bb4a8877334255af76b04743bbca07307cbfbdbaf",
+    "tests/unit/electron-repair-train-d-smoke-lib.test.ts": "16500dcbdf83da6896a55c3f637a42ed68ec9bc077854f5aca7acb1e317af87e",
+    "tests/unit/native-runtime-smoke-receipt.test.ts": "1cee15553c5ab6c1cc4bab6e6f08f6d029546cb2b5a9e82608a209d3c7f1c541",
+    "tests/unit/packaged-page-diagnostics.test.ts": "d5b2de3fa6cf7635ec3ac505f702a5ccc52fc58cbe70d4de6da2c46d23dacf7a",
+    "tests/unit/register-service-worker.test.ts": "de1d65102dfb42fa3f9761b61b8c8cc91503c0d1e3bdbda360da1843e7ad019b"
+  }
+}

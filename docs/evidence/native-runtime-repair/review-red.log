@@ -1,0 +1,82 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/packaged-page-diagnostics.test.ts tests/unit/electron-repair-train-d-smoke-lib.test.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-repair-train-d-smoke-lib.test.ts (24 tests | 2 failed) 17ms
+     × rejects missing elapsed capture timing even for expected diagnostics [DON-254] 4ms
+     × rejects absent teardown boundaries from otherwise passing receipts [DON-254] 1ms
+ ❯ tests/unit/packaged-page-diagnostics.test.ts (2 tests | 1 failed) 4ms
+     × redacts credentials and local identity from retained stacks and URLs 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-repair-train-d-smoke-lib.test.ts > Repair Train D packaged smoke gates > rejects missing elapsed capture timing even for expected diagnostics [DON-254]
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-repair-train-d-smoke-lib.test.ts:43:62
+     41|     const entry = diagnostics.consoleErrors[0] as Record<string, unkno…
+     42|     delete entry.elapsedMs
+     43|     expect(() => assertNoUnexpectedDiagnostics(diagnostics)).toThrow(/…
+       |                                                              ^
+     44|   })
+     45|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/electron-repair-train-d-smoke-lib.test.ts > Repair Train D packaged smoke gates > rejects absent teardown boundaries from otherwise passing receipts [DON-254]
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/unit/electron-repair-train-d-smoke-lib.test.ts:47:59
+     45|
+     46|   it('rejects absent teardown boundaries from otherwise passing receip…
+     47|     expect(() => validateSmokeReceipt(completeReceipt())).toThrow(/tea…
+       |                                                           ^
+     48|   })
+     49|   it.each(['cooperative', 'term', 'kill'] as const)('closes an owned c…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > packaged renderer diagnostic custody [DON-254] > redacts credentials and local identity from retained stacks and URLs
+AssertionError: expected 'at https://synthetic-user:synthetic-p…' not to contain 'synthetic-user'
+
+- Expected
++ Received
+
+- synthetic-user
++ at https://synthetic-user:synthetic-password@example.test/script.js
++ at /Users/synthetic-operator/app/script.js
++ Authorization: Bearer synthetic-bearer
++ api-key=synthetic-key
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:12:29
+     10|     const sanitized = sanitizePackagedDiagnosticText(raw)
+     11|     for (const secret of ['synthetic-user', 'synthetic-password', 'syn…
+     12|       expect(sanitized).not.toContain(secret)
+       |                             ^
+     13|     }
+     14|     expect(sanitized).toContain('example.test/script.js')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed | 23 passed (26)
+   Start at  11:14:00
+   Duration  711ms (transform 37ms, setup 0ms, import 51ms, tests 21ms, environment 510ms)
+

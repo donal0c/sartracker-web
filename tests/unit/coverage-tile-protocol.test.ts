@@ -8,6 +8,20 @@ import {
 describe('Candidate B MapLibre protocol [DON-276]', () => {
   afterEach(() => Reflect.deleteProperty(window, 'sartrackerElectron'))
 
+  it('does not report renderer-loss cancellation as a delivery failure after IPC drops the error name [DON-254]', async () => {
+    const addProtocol = vi.fn()
+    const onFailure = vi.fn()
+    Object.defineProperty(window, 'sartrackerElectron', { configurable: true, value: {
+      missionStore: { readCoverageTile: vi.fn().mockRejectedValue(new Error('Error invoking remote method: coverage-cancelled: Renderer process ended.')) },
+    } })
+    const unregister = registerCoverageTileProtocol({ addProtocol, removeProtocol: vi.fn() }, onFailure)
+    const [, loader] = addProtocol.mock.calls[0]!
+    const url = createCoverageTileUrl('mission-1', 'unassigned\u0000', 'revision-1').replace('{z}', '0').replace('{x}', '0').replace('{y}', '0')
+    await expect(loader({ url })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(onFailure).not.toHaveBeenCalled()
+    unregister()
+  })
+
   it('parses a revision-bound period URL and returns worker PBF bytes', async () => {
     const addProtocol = vi.fn()
     const readCoverageTile = vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]))
