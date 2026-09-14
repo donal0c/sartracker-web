@@ -1,0 +1,18 @@
+
+/Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/unit/official-map-review-regressions.test.tsx
+  38:30  error  '_request' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  45:22  error  Error: Cannot reassign variables declared outside of the component/hook
+
+Variable `latest` is declared outside of the component/hook. Reassigning this value during render is a form of side effect, which can cause unpredictable behavior depending on when the component happens to re-render. If this variable is used in rendering, use useState instead. Otherwise, consider updating it in an effect. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#side-effects-must-run-outside-of-render).
+
+/Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/unit/official-map-review-regressions.test.tsx:45:22
+  43 |   let latest: ReturnType<typeof useOfficialMapViewQualification> | undefined
+  44 |   const mapRef = { current: map } as never
+> 45 |   function Probe() { latest = useOfficialMapViewQualification(id, mapRef); return null }
+     |                      ^^^^^^ `latest` cannot be reassigned
+  46 |   const root = createRoot(document.createElement('div'))
+  47 |   await act(async () => root.render(<Probe />))
+  48 |   return { state, map, listeners, nativeCheck, get latest() { return latest! },  react-hooks/globals
+
+✖ 2 problems (2 errors, 0 warnings)
+

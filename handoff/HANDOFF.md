@@ -1,51 +1,77 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-13. Read after `CLAUDE.md`.
+Updated 2026-09-14. Read after `CLAUDE.md`.
 
-## Current state
+## Current baseline and active work
 
-Master is `2b2bf8e605e27123c9e454598828d71cb7c062aa`; PR25/26 are merged.
-DON-267 is Done. DON-254 remains In Progress; release remains HOLD.
-[PR27](https://github.com/donal0c/sartracker-web/pull/27), Repair Train D
-(`codex/repair-train-d`, AUD-08/DON-271 and AUD-09/DON-279), is **not ready to merge**.
-Earlier readiness at `e3eac2b68d2bf67c3bbe71e0116a3c64e6c62764` is withdrawn after
-Claude review. Follow-up fixes are verified locally; exact-head PR checks and
-reviews control the next decision. Preserve the retained qualification failures.
-Train C rebases after Train D merges. Donal owns merge; no merge is authorized here.
+Master is `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`: Donal merged
+[PR27](https://github.com/donal0c/sartracker-web/pull/27) on 2026-09-14.
+Train D's participant completeness, audited legacy roster recovery (SAR-QA-022)
+and stable Search Operations pagination are integrated. Removing participants
+never clears required history; legacy recovery preserves the NULL snapshot and
+appends audit evidence. See [Train D](../docs/assurance/findings/repair-train-d.md)
+and [review disposition](../docs/assurance/findings/pr27-claude-review.md).
+Its native qualification failure remains retained; merge is not release proof.
 
-## Active work and decision
+Active: WAR-11 / DON-7 / DON-76, draft
+[PR28](https://github.com/donal0c/sartracker-web/pull/28), branch
+`codex/war-11-offline-map-freshness`. Rebased onto the merged master.
+Scope remains MAP-01/02/03 + AUD-11: validated package identity/content,
+actual current-view tile checks, reader/raster invalidation and valid missing hatch.
+The only rebase conflict was this handoff; shared main/preload/CI changes merged
+automatically and require affected integration verification.
 
-The [Claude review disposition](../docs/assurance/findings/pr27-claude-review.md)
-records each finding, reproductions and the pending decision. Confirmed fixes cover
-backdated group scope/scheduling, corrupt-row isolation, drawing retirement parity,
-progress display, input types and an uploaded NOT RUN qualification receipt.
-Generation fallback is intentional immutable-archive compatibility; a native test
-now covers cascade invalidation. Removing a participant never clears required history.
+## Verification and next action
 
-**Approved by Donal:** audited coordinator recovery for missing legacy membership,
-including explicitly attested empty scope (SAR-QA-022). Implementation preserves the
-NULL snapshot and appends an audit event; supplied members require the original
-history window. Native/restart/archive checks and independent native/shared and
-UI/IPC reviews pass. No new local build or Electron run was performed.
+Claude review remediation is active; PR28 readiness is withdrawn and draft status
+restored. Integrated CI34812540230 passed at `3ecb7b8a` (4,943 tests, six existing
+skips, four browser flows and packaged map smoke), but does not cover the new
+repairs. See [review disposition](../docs/assurance/findings/pr28-claude-review.md).
+Local repairs and source/browser/independent review are complete; fresh exact-head
+CI evidence remains required. No local Electron/build or merge is authorized.
 
-## Verification and next actions
+Prior integrated head `3ecb7b8a` passed Linux CI34812540230: 467 files /
+4,943 tests / six existing qualification skips, four browser flows and packaged
+map smoke. Evidence ZIP10335243404 was digest/head/tree verified; A/B imagery
+changed, passive/final removal had 289 transparent samples, final Check View was
+0/15 missing and Not field ready, and child exit was clean (0/null).
+This remains historical scoped Linux proof, superseded for the review repairs.
 
-Full serial correctness: 4,825 tests / 458 files pass; six existing exclusions.
-Affected Chromium: 26/26 pass, with inspected screenshots and retained traces.
-Lint, typecheck, workflow and syntax checks pass. A stale drawing-delete assertion
-was corrected to verify visible removal plus retained retirement; production inputs
-were unchanged after the full source cycle. PR checks are separate from packaged acceptance.
-The [original Train D record](../docs/assurance/findings/repair-train-d.md) retains
-earlier full-source/browser/CI proof. Native attempt 1 remains FAILED.
-Do not repeat native runs on unchanged baseline blockers. Existing gate requirements
-remain; source binding also changed quoted Git syntax and exported the expected tree.
+Current local fixes cover persisted-validation reuse, conditional settings mutation,
+WAL preflight, bounded decoded-proof reuse, raster reconstruction recovery and
+negative-result races. Stable correctness passes 468 files / 4,956 tests / six
+existing skips; six synthetic Chromium flows, typecheck, lint and independent
+reviews pass. The first full run's stale message expectation failure is retained.
+Repair `220366e5` is pushed. A post-push synthetic probe found same-path provider
+metadata changes bypassed the new save guard; a source-snapshot comparison fixes
+that locally. Follow-up correctness passes 468 files / 4,957 tests / six existing
+skips, settings 27/27 and independent review pass; unchanged browser evidence is
+reused. CI34819550032 was cancelled as superseded. Next: push follow-up and verify
+fresh exact-head CI. Same-path non-persisted provider URL/password edits remain
+outside this offline freshness proof. No local Electron,
+package build, merge or release. Default local actionlint previously timed out;
+workflow-only parsing and all 32 shell steps checked serially passed.
+
+Detailed history, clean red/green and all failed receipts remain in
+[WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md).
+Three macOS failures and Linux failures34776633574/34779414995/34782626004 remain
+failed. The last was a stale workflow text assertion, corrected without runtime
+change; its validation gap is recorded. The mixed-input browser run is excluded.
 
 ## Remaining limits
 
-DON-254 retains the coverage result-bound race, three baseline settings failures,
-unresolved 204.046 ms concurrent SQLite read and incomplete 239.509 ms attribution.
-Strict responsiveness, replay/soak, provider, field and publication qualification
-remain separate. Use the [coordinated ledger](../docs/assurance/coordinated-work-ledger.md),
-[two-track queue](../docs/two-track-execution-workplan.md) and
-[testing cadence](../docs/testing-and-review-cadence.md). Earlier history is in
-[the archive](archive/pre-war06-repair-20260913.md).
+Release HOLD; DON-254 and DON-7/DON-76 remain In Progress. Strict `<200 ms`,
+960k replay, tracking soak, archive lifecycle and installer/field qualification
+are not established by the green map CI. Train D's deferred packaged gate is
+NOT RUN. The 41 renderer diagnostics lack sufficient request attribution.
+Original decoder crash PID80389 remains ours with native cause unconfirmed;
+raw crash/process evidence stays private under `tmp/war-11/crash/`.
+
+Retain DON-254's coverage result-bound race, baseline settings failures,
+204.046 ms concurrent SQLite read and incomplete 239.509 ms attribution.
+No private/licensed tiles or credentials were read; Windows, distribution,
+provider and BCP-17 qualification remain separate. Follow the
+[two-track queue](../docs/two-track-execution-workplan.md),
+[coordinated ledger](../docs/assurance/coordinated-work-ledger.md) and
+[testing cadence](../docs/testing-and-review-cadence.md).
+Older history is in [the archive](archive/pre-war06-repair-20260913.md).

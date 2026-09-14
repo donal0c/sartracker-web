@@ -2,7 +2,9 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createHash } = require('node:crypto')
 
-const Database = require('better-sqlite3')
+const { isPackageIdentityCurrent } = require('./official-map-package.cjs')
+const { inspectOfficialMapPackageInWorker } = require('./official-map-package-inspector.cjs')
+const { decodeOfficialMapTile } = require('./official-map-tile-decoder.cjs')
 
 const SETTINGS_FILE_NAME = 'settings.json'
 // Legacy keyring-encrypted secret file (beta.5 and earlier). Read-only now:
@@ -23,6 +25,8 @@ const PROVIDER_URL_CREDENTIALS_ERROR =
 const DEFAULT_INTERVAL_SECONDS = 30
 const MIN_INTERVAL_SECONDS = 5
 const MAX_INTERVAL_SECONDS = 3600
+const MAX_OFFICIAL_MAP_ERROR_MESSAGE_LENGTH = 256
+const SAFE_OFFICIAL_MAP_ERROR_MESSAGE = /^Official map package [A-Za-z0-9 .,'()\-]+\.$/u
 
 const DEFAULT_APP_SETTINGS = Object.freeze({
   missionDefaults: Object.freeze({
@@ -81,6 +85,7 @@ function createElectronSettingsStore(options) {
   const fetchFn = options.fetchFn ?? fetch
   const platform = options.platform ?? process.platform
   const now = options.now ?? (() => new Date())
+  const decodeTile = options.decodeOfficialMapTile ?? decodeOfficialMapTile
   let saveTail = Promise.resolve()
 
   return {
@@ -92,41 +97,58 @@ function createElectronSettingsStore(options) {
 
   async function loadAppSettings() {
     const persisted = await readSettings(settingsPath)
+    persisted.officialMaps.packages = persisted.officialMaps.packages.map(revalidateOfficialMapPackage)
     return toView(persisted, await hasSecret(persisted.dataSource.authMode))
   }
 
   /** Serializes atomic settings replacements so roster history cannot be lost by concurrent saves. */
-  function saveAppSettings(input) {
-    const operation = saveTail.then(() => persistAppSettings(input))
+  function saveAppSettings(input, options = {}) {
+    const operation = saveTail.then(() => persistAppSettings(input, options))
     saveTail = operation.catch(() => undefined)
     return operation
   }
 
   /** Persists a settings revision and its local roster provenance in the same atomic file. */
-  async function persistAppSettings(input) {
+  async function persistAppSettings(input, options) {
     const existingSecretPresent = await hasSecret(input.dataSource.authMode)
     validateSettingsDraft(input, existingSecretPresent)
     const previous = await readSettings(settingsPath)
+    const sourceMetadata = await readOfficialMapSourceMetadata(input.officialMaps)
 
-    const next = {
-      missionDefaults: normalizeMissionDefaults(input.missionDefaults),
-      dataSource: normalizeDataSource(input.dataSource),
-      officialMaps: await normalizeOfficialMaps(input.officialMaps, now),
-      weather: normalizeWeather(input.weather),
+    const persist = async () => {
+      const next = {
+        missionDefaults: normalizeMissionDefaults(input.missionDefaults),
+        dataSource: normalizeDataSource(input.dataSource),
+        officialMaps: await normalizeOfficialMaps(
+          input.officialMaps,
+          now,
+          decodeTile,
+          previous.officialMaps,
+          sourceMetadata,
+        ),
+        weather: normalizeWeather(input.weather),
+      }
+      const history = [...previous.adminRosterHistory]
+      if (JSON.stringify(previous.missionDefaults.adminRoster) !== JSON.stringify(next.missionDefaults.adminRoster)) {
+        if (history.length >= 10_000) throw new Error('Administrator roster history is full. Contact support before changing it.')
+        history.push({ recordedAt: now().toISOString(), authority: 'trusted_local_settings',
+          previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster })
+      }
+      if (history.length > 0) next.adminRosterHistory = history
+
+      await updateSecrets(input.dataSource)
+      await writeJsonAtomically(settingsPath, next)
+      await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
+
+      return toView(next, await hasSecret(next.dataSource.authMode))
     }
-    const history = [...previous.adminRosterHistory]
-    if (JSON.stringify(previous.missionDefaults.adminRoster) !== JSON.stringify(next.missionDefaults.adminRoster)) {
-      if (history.length >= 10_000) throw new Error('Administrator roster history is full. Contact support before changing it.')
-      history.push({ recordedAt: now().toISOString(), authority: 'trusted_local_settings',
-        previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster })
+
+    const withOfficialMapMutation = options?.withOfficialMapMutation
+    if (shouldGuardOfficialMapMutation(input.officialMaps, previous.officialMaps, sourceMetadata) &&
+        typeof withOfficialMapMutation === 'function') {
+      return withOfficialMapMutation(persist)
     }
-    if (history.length > 0) next.adminRosterHistory = history
-
-    await updateSecrets(input.dataSource)
-    await writeJsonAtomically(settingsPath, next)
-    await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
-
-    return toView(next, await hasSecret(next.dataSource.authMode))
+    return persist()
   }
 
   async function loadRuntimeBootstrapSettings(forceConnect = false) {
@@ -527,55 +549,17 @@ function baseUrlIncludesCredentials(baseUrl) {
   }
 }
 
-async function normalizeOfficialMaps(input, now) {
-  const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
-  const sourcePath = readOptionalString(input?.sourcePath).trim()
-  const packages = await normalizeOfficialMapPackages(input?.packages, now)
+async function normalizeOfficialMaps(input, now, decodeTile, previousOfficialMaps, sourceMetadata) {
+  const packages = await normalizeOfficialMapPackages(
+    input?.packages,
+    now,
+    decodeTile,
+    previousOfficialMaps?.packages,
+  )
 
-  if (sourceType === 'none') {
-    return {
-      ...DEFAULT_APP_SETTINGS.officialMaps,
-      packages,
-    }
-  }
-
-  if (sourcePath === '') {
-    return {
-      ...DEFAULT_APP_SETTINGS.officialMaps,
-      sourceType: 'mapgenie_file',
-      status: 'missing',
-      message: 'Choose the MapGenie source file before enabling official maps.',
-      packages,
-    }
-  }
-
-  try {
-    const metadata = parseMapGenieSourceDetails(await fs.readFile(sourcePath, 'utf8'))
-    return {
-      sourceType: 'mapgenie_file',
-      sourcePath,
-      ...metadata,
-      packages,
-    }
-  } catch (error) {
-    if (error?.code === 'ENOENT') {
-      return {
-        ...DEFAULT_APP_SETTINGS.officialMaps,
-        sourceType: 'mapgenie_file',
-        sourcePath,
-        status: 'missing',
-        message: 'MapGenie source file was not found.',
-        packages,
-      }
-    }
-    return {
-      ...DEFAULT_APP_SETTINGS.officialMaps,
-      sourceType: 'mapgenie_file',
-      sourcePath,
-      status: 'invalid',
-      message: 'MapGenie source file could not be read.',
-      packages,
-    }
+  return {
+    ...sourceMetadata,
+    packages,
   }
 }
 
@@ -601,13 +585,14 @@ function normalizePersistedOfficialMaps(input) {
   }
 }
 
-async function normalizeOfficialMapPackages(input, now) {
+async function normalizeOfficialMapPackages(input, now, decodeTile, previousPackages) {
   if (!Array.isArray(input)) {
     return []
   }
 
   const output = []
   const seen = new Set()
+  const trustedPreviousPackages = Array.isArray(previousPackages) ? previousPackages : []
   for (const candidate of input) {
     const parsed = readObject(candidate)
     const packagePath = readOptionalString(parsed.packagePath).trim()
@@ -620,9 +605,162 @@ async function normalizeOfficialMapPackages(input, now) {
       continue
     }
     seen.add(dedupeKey)
-    output.push(await validateOfficialMapPackage({ mapId, packagePath, now }))
+    const previousPackage = findReusableOfficialMapPackage(mapId, packagePath, trustedPreviousPackages)
+    if (previousPackage !== undefined) {
+      output.push({
+        ...previousPackage,
+        id: createOfficialMapPackageId(mapId, packagePath),
+        sourceType: 'mbtiles',
+        mapId,
+        packagePath,
+        message: packageStatusMessage(mapId, 'ready'),
+      })
+      continue
+    }
+    output.push(await validateOfficialMapPackage({ mapId, packagePath, now, decodeTile }))
   }
   return output
+}
+
+/** Decides whether the serialized settings operation must hold the package mutation guard. */
+function shouldGuardOfficialMapMutation(input, previousOfficialMaps, nextSourceMetadata) {
+  const nextSourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const nextSourcePath = nextSourceType === 'mapgenie_file'
+    ? readOptionalString(input?.sourcePath).trim()
+    : ''
+  const previousSourceType = previousOfficialMaps?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const previousSourcePath = previousSourceType === 'mapgenie_file'
+    ? readOptionalString(previousOfficialMaps?.sourcePath).trim()
+    : ''
+  if (nextSourceType !== previousSourceType || nextSourcePath !== previousSourcePath) {
+    return true
+  }
+  if (nextSourceType === 'mapgenie_file' &&
+      officialMapSourceFingerprint(nextSourceMetadata) !== officialMapSourceFingerprint(previousOfficialMaps)) {
+    return true
+  }
+
+  const nextKeys = readOfficialMapPackageKeys(input?.packages)
+  const previousPackages = Array.isArray(previousOfficialMaps?.packages)
+    ? previousOfficialMaps.packages
+    : []
+  const previousKeys = previousPackages.map((mapPackage) => [mapPackage.mapId, mapPackage.packagePath])
+  if (
+    nextKeys.length !== previousKeys.length ||
+    nextKeys.some(([mapId, packagePath], index) =>
+      previousKeys[index]?.[0] !== mapId || previousKeys[index]?.[1] !== packagePath)
+  ) {
+    return true
+  }
+
+  return nextKeys.some(([mapId, packagePath]) =>
+    findReusableOfficialMapPackage(mapId, packagePath, previousPackages) === undefined)
+}
+
+/** Reads the source metadata snapshot used to decide whether cached map state must be invalidated. */
+async function readOfficialMapSourceMetadata(input) {
+  const sourceType = input?.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none'
+  const sourcePath = readOptionalString(input?.sourcePath).trim()
+  if (sourceType === 'none') {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType,
+      sourcePath: '',
+    }
+  }
+  if (sourcePath === '') {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType,
+      sourcePath,
+      status: 'missing',
+      message: 'Choose the MapGenie source file before enabling official maps.',
+    }
+  }
+
+  try {
+    const metadata = parseMapGenieSourceDetails(await fs.readFile(sourcePath, 'utf8'))
+    return {
+      sourceType,
+      sourcePath,
+      ...metadata,
+    }
+  } catch (error) {
+    return {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      sourceType,
+      sourcePath,
+      status: error?.code === 'ENOENT' ? 'missing' : 'invalid',
+      message: error?.code === 'ENOENT'
+        ? 'MapGenie source file was not found.'
+        : 'MapGenie source file could not be read.',
+    }
+  }
+}
+
+/** Returns the persisted source fields that can change proxy fallback and renderer validity. */
+function officialMapSourceFingerprint(source) {
+  const parsed = readObject(source)
+  return JSON.stringify({
+    sourceType: parsed.sourceType === 'mapgenie_file' ? 'mapgenie_file' : 'none',
+    sourcePath: readOptionalString(parsed.sourcePath).trim(),
+    status: readOptionalString(parsed.status),
+    username: readOptionalString(parsed.username).trim(),
+    availableSources: readOfficialMapSources(parsed.availableSources),
+    serviceCount: Number.isFinite(Number(parsed.serviceCount)) ? Number(parsed.serviceCount) : 0,
+    message: readOptionalString(parsed.message).trim(),
+  })
+}
+
+/** Returns the normalized package identities from an untrusted settings draft. */
+function readOfficialMapPackageKeys(input) {
+  if (!Array.isArray(input)) return []
+  const seen = new Set()
+  const keys = []
+  for (const candidate of input) {
+    const parsed = readObject(candidate)
+    const packagePath = readOptionalString(parsed.packagePath).trim()
+    if (packagePath === '') continue
+    const mapId = readOfficialMapId(parsed.mapId)
+    const key = `${mapId}\0${packagePath}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    keys.push([mapId, packagePath])
+  }
+  return keys
+}
+
+/** Reuses only metadata from a prior persisted package whose current identity is still trusted. */
+function findReusableOfficialMapPackage(mapId, packagePath, previousPackages) {
+  return previousPackages.find((storedPackage) =>
+    storedPackage?.status === 'ready' &&
+    storedPackage.mapId === mapId &&
+    storedPackage.packagePath === packagePath &&
+    isReusableOfficialMapMetadata(storedPackage) &&
+    isPackageIdentityCurrent(packagePath, storedPackage.attestation))
+}
+
+/** Confirms the persisted fields came from a complete package inspection before reuse. */
+function isReusableOfficialMapMetadata(mapPackage) {
+  const bounds = readOfficialMapBounds(mapPackage.bounds)
+  return (
+    bounds !== null &&
+    Number.isSafeInteger(mapPackage.minZoom) &&
+    mapPackage.minZoom >= 0 &&
+    mapPackage.minZoom <= 30 &&
+    Number.isSafeInteger(mapPackage.maxZoom) &&
+    mapPackage.maxZoom >= mapPackage.minZoom &&
+    mapPackage.maxZoom <= 30 &&
+    Number.isSafeInteger(mapPackage.tileCount) &&
+    mapPackage.tileCount > 0 &&
+    ['png', 'jpg', 'jpeg', 'webp'].includes(mapPackage.tileFormat) &&
+    Number.isSafeInteger(mapPackage.sizeBytes) &&
+    mapPackage.sizeBytes > 0 &&
+    typeof mapPackage.createdAt === 'string' &&
+    Number.isFinite(Date.parse(mapPackage.createdAt)) &&
+    typeof mapPackage.verifiedAt === 'string' &&
+    Number.isFinite(Date.parse(mapPackage.verifiedAt))
+  )
 }
 
 function normalizePersistedOfficialMapPackages(input) {
@@ -655,6 +793,7 @@ function normalizePersistedOfficialMapPackages(input) {
         sizeBytes: readNonNegativeInteger(parsed.sizeBytes),
         createdAt: readOptionalString(parsed.createdAt).trim(),
         verifiedAt: readOptionalString(parsed.verifiedAt).trim(),
+        attestation: readOfficialMapAttestation(parsed.attestation),
         message:
           readOptionalString(parsed.message).trim() ||
           packageStatusMessage(mapId, status),
@@ -691,13 +830,14 @@ async function validateOfficialMapPackage(input) {
       }
     }
 
-    const metadata = readMbtilesMetadata(input.packagePath)
+    const metadata = await inspectOfficialMapPackageInWorker(input.packagePath, {
+      decodeTile: input.decodeTile,
+      now: input.now,
+    })
     return {
       ...base,
       ...metadata,
       status: 'ready',
-      sizeBytes: stats.size,
-      createdAt: toIsoTimestamp(stats.birthtime),
       message: packageStatusMessage(input.mapId, 'ready'),
     }
   } catch (error) {
@@ -711,9 +851,20 @@ async function validateOfficialMapPackage(input) {
     return {
       ...base,
       status: 'invalid',
-      message: 'Official map package could not be read as MBTiles.',
+      message: safeOfficialMapPackageErrorMessage(error),
     }
   }
+}
+
+/** Preserves only the already-sanitized package errors safe for operator display. */
+function safeOfficialMapPackageErrorMessage(error) {
+  const message = typeof error?.message === 'string' ? error.message : ''
+  return message.length <= MAX_OFFICIAL_MAP_ERROR_MESSAGE_LENGTH &&
+    SAFE_OFFICIAL_MAP_ERROR_MESSAGE.test(message) &&
+    message !== 'Official map package verification failed.' &&
+    message !== 'Official map package could not be verified.'
+    ? message
+    : 'Official map package could not be read as MBTiles.'
 }
 
 async function removeDeletedAppOwnedOfficialMapPackages(previousPackages, nextPackages, userDataPath) {
@@ -737,47 +888,19 @@ function isAppOwnedOfficialMapPackagePath(packagePath, userDataPath) {
   return packagePath === libraryDirectory || packagePath.startsWith(`${libraryDirectory}${path.sep}`)
 }
 
-function readMbtilesMetadata(packagePath) {
-  const db = new Database(packagePath, { readonly: true, fileMustExist: true })
-  try {
-    const tableRows = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('metadata', 'tiles')")
-      .all()
-    const tableNames = new Set(tableRows.map((row) => row.name))
-    if (!tableNames.has('metadata') || !tableNames.has('tiles')) {
-      throw new Error('MBTiles metadata and tiles tables are required.')
-    }
-
-    const metadataRows = db.prepare('SELECT name, value FROM metadata').all()
-    const metadata = new Map(
-      metadataRows.map((row) => [String(row.name).toLowerCase(), String(row.value)]),
-    )
-    const tileCount = readNonNegativeInteger(db.prepare('SELECT COUNT(*) AS count FROM tiles').get()?.count)
-    if (tileCount === 0) {
-      throw new Error('MBTiles package has no tiles.')
-    }
-
-    const zoomRange = db
-      .prepare('SELECT MIN(zoom_level) AS minZoom, MAX(zoom_level) AS maxZoom FROM tiles')
-      .get()
-    return {
-      bounds: readOfficialMapBounds(metadata.get('bounds')),
-      minZoom: readZoomValue(metadata.get('minzoom'), zoomRange?.minZoom),
-      maxZoom: readZoomValue(metadata.get('maxzoom'), zoomRange?.maxZoom),
-      tileCount,
-      tileFormat: readOptionalString(metadata.get('format')).trim().toLowerCase(),
-    }
-  } finally {
-    db.close()
-  }
+/** Reads only an attestation issued by the current content-validation contract. */
+function readOfficialMapAttestation(input) {
+  if (input?.version !== 1 || input.schemaVersion !== 1 || input.decoderPolicy !== 'native-raster-256-or-512-opaque-v1' || typeof input.identity !== 'string' || input.identity.length === 0 ||
+      input.identity.length > 1024 || typeof input.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(input.sha256)) return undefined
+  return {version: 1, schemaVersion: 1, decoderPolicy: input.decoderPolicy, identity: input.identity, sha256: input.sha256}
 }
 
-function readZoomValue(primary, fallback) {
-  const value = Number(primary)
-  if (Number.isInteger(value) && value >= 0) {
-    return value
-  }
-  return readOptionalNumber(fallback)
+/** A persisted ready label is withdrawn as soon as its filesystem identity no longer matches. */
+function revalidateOfficialMapPackage(mapPackage) {
+  if (mapPackage.status !== 'ready') return mapPackage
+  if (isPackageIdentityCurrent(mapPackage.packagePath, mapPackage.attestation)) return mapPackage
+  return {...mapPackage, status: 'invalid', verifiedAt: '', attestation: undefined,
+    message: 'Offline package is missing, changed or unverified. Save Settings to validate it again.'}
 }
 
 function readOfficialMapBounds(input) {

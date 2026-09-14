@@ -1,0 +1,9 @@
+{
+  "schema": "war11-committed-source-binding-v1",
+  "committedSourceHead": "bfc37b747e69267ca48d32b16c9cb48815aaa537",
+  "committedTree": "21dbe7f7ea4526226f4c6d1f4e1c426008d95551",
+  "frozenManifestSha256": "40473e68aaa93d56baa2361ed24c09c750b710efb663c98fc06d534a2ea7fb90",
+  "manifestCheckoutHeadAtFreeze": "2b2bf8e605e27123c9e454598828d71cb7c062aa",
+  "matchedCommittedInputs": 1173,
+  "explanation": "The immutable manifest was generated before the repair commit, while checkout HEAD was the base. Every recorded input now matches the named committed source head. Documentation-only descendants may reuse this executable proof with explicit unchanged-input checks."
+}

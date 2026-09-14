@@ -1,0 +1,89 @@
+[2m[WebServer] [22m(node:18886) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+(node:18887) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18887) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (loaded) (4.2s)
+  ✘  2 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (pending overlay) (12.3s)
+(node:19038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:19038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:142:1 › same-path A to B replacement clears old pixels while unrelated overlay is pending (12.3s)
+
+
+  1) [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (pending overlay) 
+
+    Error: Expected only none raster pixels
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+    Call Log:
+    - Timeout 10000ms exceeded while waiting on the predicate
+
+      76 | /** Samples inside MapLibre's real render callback, independently of global loaded state. */
+      77 | async function expectPalette(page: Page, expected: Variant | 'none'): Promise<void> {
+    > 78 |   await expect.poll(() => page.evaluate(({palettes, expected}) => {
+         |   ^
+      79 |     const latest = (window as TestWindow).__WAR11_GPU__.latest
+      80 |     if (latest === null) return false
+      81 |     const has = (variant: 'a' | 'b') => latest.sampledPixels.some(pixel =>
+        at expectPalette (/Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/e2e/official-map-raster-freshness.spec.ts:78:3)
+        at /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/e2e/official-map-raster-freshness.spec.ts:124:7
+
+    Error Context: tmp/war-11/raster-freshness-baseline-red-artifacts/official-map-raster-freshn-b6c2d-t-recovers-pending-overlay--chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    tmp/war-11/raster-freshness-baseline-red-artifacts/official-map-raster-freshn-b6c2d-t-recovers-pending-overlay--chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace tmp/war-11/raster-freshness-baseline-red-artifacts/official-map-raster-freshn-b6c2d-t-recovers-pending-overlay--chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:142:1 › same-path A to B replacement clears old pixels while unrelated overlay is pending 
+
+    Error: Expected only b raster pixels
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+    Call Log:
+    - Timeout 10000ms exceeded while waiting on the predicate
+
+      76 | /** Samples inside MapLibre's real render callback, independently of global loaded state. */
+      77 | async function expectPalette(page: Page, expected: Variant | 'none'): Promise<void> {
+    > 78 |   await expect.poll(() => page.evaluate(({palettes, expected}) => {
+         |   ^
+      79 |     const latest = (window as TestWindow).__WAR11_GPU__.latest
+      80 |     if (latest === null) return false
+      81 |     const has = (variant: 'a' | 'b') => latest.sampledPixels.some(pixel =>
+        at expectPalette (/Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/e2e/official-map-raster-freshness.spec.ts:78:3)
+        at /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web/tests/e2e/official-map-raster-freshness.spec.ts:149:5
+
+    Error Context: tmp/war-11/raster-freshness-baseline-red-artifacts/official-map-raster-freshn-7a9ac-nrelated-overlay-is-pending-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    tmp/war-11/raster-freshness-baseline-red-artifacts/official-map-raster-freshn-7a9ac-nrelated-overlay-is-pending-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace tmp/war-11/raster-freshness-baseline-red-artifacts/official-map-raster-freshn-7a9ac-nrelated-overlay-is-pending-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:116:3 › external removal clears resident raster and reimport recovers (pending overlay) 
+    [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:142:1 › same-path A to B replacement clears old pixels while unrelated overlay is pending 
+  1 passed (30.4s)

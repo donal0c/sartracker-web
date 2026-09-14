@@ -1,0 +1,37 @@
+{
+  "schema": "sartracker-war11-official-map-qualification-failure-v1",
+  "error": "Automatic removed package withdrawal evidence read timed out.",
+  "closeError": null,
+  "failureScreenshot": "workflow-failure.png",
+  "failureScreenshotAttempted": true,
+  "failureScreenshotError": null,
+  "failureScreenshotLimitation": null,
+  "captureCleanupBoundary": "If bounded render lifecycle cleanup fails, owned Electron app teardown is the final cleanup boundary.",
+  "styleSettlementDiagnostics": {
+    "styleDataCount": 1,
+    "latest": {
+      "styleDataCount": 1,
+      "sourceId": "official_discovery_topo",
+      "template": "sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png",
+      "camera": {
+        "center": [
+          -9.7,
+          51.97
+        ],
+        "zoom": 12,
+        "bearing": 0,
+        "pitch": 0
+      }
+    },
+    "cleaned": true,
+    "listenerActive": false
+  },
+  "rendererDiagnosticsArtifact": "renderer-diagnostics.json",
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "teardownActions": [],
+  "cleanExit": true,
+  "evidenceDir": "/home/runner/work/sartracker-web/sartracker-web/tmp/electron-validation-evidence/official-map-qualification/run-Ydig7v"
+}

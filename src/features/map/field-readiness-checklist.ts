@@ -1,5 +1,6 @@
 import { getRenderableMapLabel, isOfficialMapId, type RenderableMapId } from '../../lib/map-config'
 import type { OfficialMapPackageSettings, OfficialMapSettings } from '../settings/settings-types'
+import { officialMapViewKey, type OfficialMapViewQualification } from './official-map-view-qualification'
 
 export type FieldReadinessVerdict = 'ready' | 'not_ready'
 
@@ -25,6 +26,9 @@ export type FieldReadinessInput = {
   readonly activeMapId: RenderableMapId
   readonly officialMaps: OfficialMapSettings
   readonly viewBounds: { readonly west: number; readonly south: number; readonly east: number; readonly north: number } | null
+  readonly viewZoom?: number | undefined
+  readonly viewUnavailableReason?: string | undefined
+  readonly qualification?: OfficialMapViewQualification | null | undefined
 }
 
 /**
@@ -38,7 +42,7 @@ export function buildFieldReadinessChecklist(input: FieldReadinessInput): FieldR
   const packageCheck = checkPackageReady(input.activeMapId, input.officialMaps)
   items.push(packageCheck)
 
-  const coverageCheck = checkViewCoverage(input.activeMapId, input.officialMaps, input.viewBounds)
+  const coverageCheck = checkViewCoverage(input)
   items.push(coverageCheck)
 
   const fallbackCheck = checkSourceFallback(input.activeMapId, input.officialMaps)
@@ -62,7 +66,7 @@ export function buildFieldReadinessChecklist(input: FieldReadinessInput): FieldR
         ? 'Not field ready'
         : 'Partially ready',
     summaryDetail: allPassed
-      ? `${mapLabel}: official offline maps are ready for field use.`
+      ? `${mapLabel}: local tiles checked for this view at tile z${input.viewZoom}. Recheck after moving or changing maps; other areas and zooms are not certified.`
       : criticalFailed
         ? `${mapLabel}: no ready offline package. Import or reconnect before field deployment.`
         : `${mapLabel}: some checks did not pass. Review items below before relying on offline maps.`,
@@ -113,17 +117,14 @@ function checkPackageReady(
   }
 }
 
-function checkViewCoverage(
-  activeMapId: RenderableMapId,
-  officialMaps: OfficialMapSettings,
-  viewBounds: FieldReadinessInput['viewBounds'],
-): FieldReadinessCheckItem {
+function checkViewCoverage(input: FieldReadinessInput): FieldReadinessCheckItem {
+  const {activeMapId, officialMaps, viewBounds, viewZoom, qualification} = input
   if (viewBounds === null) {
     return {
       id: 'view_covered',
       label: 'Current view covered',
       passed: false,
-      detail: 'Map view is not available. Open the map and check coverage.',
+      detail: input.viewUnavailableReason ?? 'Map view is not available. Open the map and check coverage.',
     }
   }
 
@@ -138,19 +139,27 @@ function checkViewCoverage(
   }
 
   const [west, south, east, north] = readyPackage.bounds
-  const covered =
+  const boundsCovered =
     viewBounds.west >= west &&
     viewBounds.east <= east &&
     viewBounds.south >= south &&
     viewBounds.north <= north
+  const covered = boundsCovered && isOfficialMapId(activeMapId) && viewZoom !== undefined &&
+    qualification?.status === 'complete' && qualification.totalTiles > 0 &&
+    qualification.usableTiles === qualification.totalTiles &&
+    officialMapViewKey(qualification) === officialMapViewKey({mapId: activeMapId, bounds: viewBounds, zoom: viewZoom}) &&
+    qualification.packageIdentities.length > 0 && qualification.packageIdentities.every(identity =>
+      officialMaps.packages.some(mapPackage => mapPackage.id === identity.id && mapPackage.status === 'ready' &&
+        mapPackage.attestation?.sha256 === identity.sha256))
 
   return {
     id: 'view_covered',
     label: 'Current view covered',
     passed: covered,
     detail: covered
-      ? 'The visible operational area is inside the offline package bounds.'
-      : 'The visible area extends beyond the offline package. Pan to the mission area or use a broader package.',
+      ? qualification.message
+      : !boundsCovered ? 'The visible area extends beyond the offline package. Pan to the mission area or use a broader package.' :
+        'Use Check View to verify actual local tiles for the current area and zoom. Saved bounds alone do not prove coverage.',
   }
 }
 

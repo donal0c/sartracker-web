@@ -22,6 +22,8 @@ const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
+const CHECK_OFFICIAL_MAP_VIEW_CHANNEL = 'sartracker:check-official-map-view'
+const OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL = 'sartracker:official-map-packages-changed'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
 const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
@@ -1311,6 +1313,14 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   fetchOfficialMapTile(url) {
     return ipcRenderer.invoke(FETCH_OFFICIAL_MAP_TILE_CHANNEL, url)
+  },
+  checkOfficialMapView(input) {
+    return ipcRenderer.invoke(CHECK_OFFICIAL_MAP_VIEW_CHANNEL, input)
+  },
+  onOfficialMapPackagesChanged(listener) {
+    const handler = () => listener()
+    ipcRenderer.on(OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL, handler)
+    return () => ipcRenderer.removeListener(OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL, handler)
   },
   onCoverageChanged(listener) {
     const handler = (_event, payload) => listener(payload)

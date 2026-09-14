@@ -1,0 +1,105 @@
+{
+  "run": 34783712783,
+  "conclusion": "success",
+  "sourceBinding": {
+    "schema": "sartracker-electron-linux-source-binding-v1",
+    "repositoryHead": "e2a31ed657a22d5ff329d2d9dfa9968a3627bcc6",
+    "repositoryTree": "a7ad6f1e45f0762cea04f387586a49bf070157d6",
+    "repositoryDirty": false
+  },
+  "evidenceArtifact": 10325779062,
+  "verifiedZipSha256": "94ef10ceda0439f3c56b0ee24294e7234953ce8a4072d0423d5665287454382c",
+  "asarSha256": "1d5e27046232765a473cda4a983ae6748d85f9cdce98037c7621969e2537ef69",
+  "checks": {
+    "complete": {
+      "mapId": "official_discovery_topo",
+      "bounds": {
+        "west": -9.931640525,
+        "south": 51.99841048239033,
+        "east": -9.8437501,
+        "north": 52.05249037600099
+      },
+      "zoom": 12,
+      "status": "complete",
+      "totalTiles": 1,
+      "usableTiles": 1,
+      "checkedAt": "2026-09-13T21:48:05.293Z",
+      "packageIdentities": [
+        {
+          "id": "official_discovery_topo-539ad4019e90",
+          "sha256": "25eabe6508716a3daf860ce736cbd83a407c24de88eac921f5c9812e926367d4"
+        }
+      ],
+      "message": "Every required local tile is readable and usable for this view and tile zoom."
+    },
+    "completeOperatorCheck": {
+      "text": "Current view tiles verified\nCHECK VIEW\n\n15/15 local tiles at tile z12. Every required local tile is readable and usable for this view and tile zoom."
+    },
+    "replacementOperatorCheck": {
+      "text": "Current view tiles verified\nCHECK VIEW\n\n15/15 local tiles at tile z12. Every required local tile is readable and usable for this view and tile zoom."
+    },
+    "missing": {
+      "mapId": "official_discovery_topo",
+      "bounds": {
+        "west": -9.931640525,
+        "south": 51.99841048239033,
+        "east": -9.8437501,
+        "north": 52.05249037600099
+      },
+      "zoom": 12,
+      "status": "missing",
+      "totalTiles": 1,
+      "usableTiles": 0,
+      "checkedAt": "2026-09-13T21:48:06.712Z",
+      "packageIdentities": [
+        {
+          "id": "official_discovery_topo-0720a0625941",
+          "sha256": "fac71be28a6795395679de6622ec647a51cd62532507a09cecf01f93a8de8a3a"
+        }
+      ],
+      "message": "Required local tiles are missing or unusable. Keep an alternative map available."
+    },
+    "invalidOperatorCheck": {
+      "text": "Official offline coverage incomplete\nCHECK VIEW\n\n0/15 local tiles at tile z12. Required local tiles are missing or unusable. Keep an alternative map available."
+    },
+    "removed": {
+      "mapId": "official_discovery_topo",
+      "bounds": {
+        "west": -9.931640525,
+        "south": 51.99841048239033,
+        "east": -9.8437501,
+        "north": 52.05249037600099
+      },
+      "zoom": 12,
+      "status": "missing",
+      "totalTiles": 1,
+      "usableTiles": 0,
+      "checkedAt": "2026-09-13T21:48:11.988Z",
+      "packageIdentities": [],
+      "message": "Required local tiles are missing or unusable. Keep an alternative map available."
+    },
+    "removedOperatorCheck": {
+      "text": "Official offline coverage incomplete\nCHECK VIEW\n\n0/15 local tiles at tile z12. Required local tiles are missing or unusable. Keep an alternative map available."
+    },
+    "staleReplacementServedOldContent": false
+  },
+  "processExit": {
+    "exit": {
+      "code": 0,
+      "signal": null
+    },
+    "teardownActions": [],
+    "cleanExit": true
+  },
+  "visualReview": "Replacement B visible; passive removal and final removal blank, not field ready; finalCheckView0/15missing. Personally inspected three full screenshots.",
+  "skipped": [
+    "strict<200ms",
+    "960k replay",
+    "tracking soak",
+    "archive lifecycle",
+    "archive lifecycle terminal verifier"
+  ],
+  "next": "PR27 owner merge then rebase/affected exact-head validation. PR28draft. No localElectron.",
+  "postRebaseBase": "2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3",
+  "postRebaseNote": "Pre-rebase evidence retained for unchanged map blobs; combined runtime still requires new CI."
+}

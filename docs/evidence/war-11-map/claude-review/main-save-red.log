@@ -1,0 +1,38 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/electron-main-startup.test.ts (40 tests | 1 failed | 39 skipped) 95ms
+     × guards map settings changes without interrupting unrelated saves [DON-7] 95ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-main-startup.test.ts > Electron main startup > guards map settings changes without interrupting unrelated saves [DON-7]
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      [Function anonymous],
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/electron-main-startup.test.ts:1007:54
+    1005|     })
+    1006|
+    1007|     expect(officialMapProxy.withPackageMutation).not.toHaveBeenCalled()
+       |                                                      ^
+    1008|     await saveSettingsHandler(createPackagedSenderEvent(), {
+    1009|       ...DEFAULT_APP_SETTINGS,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 39 skipped (40)
+   Start at  08:24:12
+   Duration  423ms (transform 36ms, setup 0ms, import 44ms, tests 95ms, environment 226ms)
+

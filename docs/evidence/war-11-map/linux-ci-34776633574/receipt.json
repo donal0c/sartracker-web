@@ -1,0 +1,94 @@
+{
+  "schema": "war11-linux-ci-failure-v1",
+  "runId": 34776633574,
+  "runUrl": "https://github.com/donal0c/sartracker-web/actions/runs/34776633574",
+  "headSha": "bfc37b747e69267ca48d32b16c9cb48815aaa537",
+  "outcome": "FAILED",
+  "failedStage": "Packaged official map qualification and freshness smoke",
+  "laterPackagedStages": "SKIPPED after failed map smoke",
+  "releaseQualification": "Strict <200ms and 960k release gates NOT RUN",
+  "evidenceArtifactId": 10323652674,
+  "evidenceArtifactSha256": "3035d8b6ffc0a57fa0200a687bc5baa75c753f3ad3bad75b22424290173ebe29",
+  "packageArtifactId": 10323707588,
+  "packageArtifactSha256": "44e8f9f3db3ddabbb211745d7490af899d9ea4469d16a18e53d62c2772fa6380",
+  "error": "Initial synthetic map render did not produce expected variant within 10-second evidence deadline.",
+  "renderEvidence": {
+    "capturedAtRender": true,
+    "capturePhase": "map-render-callback",
+    "frameCount": 150,
+    "canvasWidth": 1040,
+    "canvasHeight": 766,
+    "mapLoaded": true,
+    "officialSourceLoaded": true,
+    "selectedSourceId": "official_discovery_topo",
+    "renderer": "ANGLE (Mesa, llvmpipe (LLVM 15.0.7 256 bits), OpenGL 4.5)",
+    "sourceCount": 10,
+    "selectedSource": {
+      "type": "raster",
+      "tiles": [
+        "sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png"
+      ]
+    },
+    "viewport": {
+      "west": -9.789263916016608,
+      "south": 51.92947710247219,
+      "east": -9.610736083985387,
+      "north": 52.01048628689014,
+      "zoom": 12
+    }
+  },
+  "pixelSummary": {
+    "sampleCount": 289,
+    "allSamples": [
+      233,
+      231,
+      224,
+      255
+    ]
+  },
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "teardownActions": [],
+  "cleanExit": true,
+  "failureJsonSha256": "abc6d7154aee78854e92a81cafdc620375b8ebf4c27262d68b1e2255532bbb5c",
+  "screenshotSha256": "68efde009e8bedc3648bd1eba506ded8f2fc928f694f67a2a4252040b7e2db4e",
+  "diagnostics": {
+    "consoleEntries": 42,
+    "pageErrors": 0,
+    "blockedResourceMessages": 40,
+    "blockedRequestUrls": "not retained; remain unclassified",
+    "serviceWorker": "file:///sw.js registration error/warning, source-attributed not allowlisted"
+  },
+  "limits": [
+    "Intermediate native camera event order was not recorded.",
+    "Final viewport12 differs from requested synthetic fixture camera11.",
+    "Source ordering race reproduced; local Chromium separately observed safe callback ordering.",
+    "No local Electron rerun or production/fixture change."
+  ],
+  "packageSafetyReceiptSha256": "400e95a108e24776041c4b6a8770161136b1950a2b6bc933b5a83481e0903b7d",
+  "packageInventories": [
+    {
+      "format": "appimage",
+      "asarSha256": "1a6467972b3df2a94fff558c75c2a2b856c952933e424f5a5a69a8ee095507d9"
+    },
+    {
+      "format": "deb",
+      "asarSha256": "1a6467972b3df2a94fff558c75c2a2b856c952933e424f5a5a69a8ee095507d9"
+    },
+    {
+      "format": "linux-unpacked",
+      "asarSha256": "1a6467972b3df2a94fff558c75c2a2b856c952933e424f5a5a69a8ee095507d9"
+    }
+  ],
+  "nativeProbe": {
+    "electron": "40.10.0",
+    "abi": "143",
+    "arch": "x64",
+    "betterSqlite3": "12.10.0",
+    "sqlite": "3.53.1",
+    "integrity": "ok",
+    "value": 42
+  }
+}

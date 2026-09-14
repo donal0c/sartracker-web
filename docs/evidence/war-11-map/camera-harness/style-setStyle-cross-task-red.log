@@ -1,0 +1,46 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/electron-official-map-qualification-smoke-lib.test.ts (22 tests | 1 failed | 21 skipped) 6ms
+     × does not accept synchronous setStyle styledata after an install-task gap 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-official-map-qualification-smoke-lib.test.ts > official map qualification smoke fixtures > does not accept synchronous setStyle styledata after an install-task gap
+AssertionError: expected { styleDataCount: 1, …(3) } to be null
+
+- Expected:
+null
+
++ Received:
+{
+  "camera": {
+    "bearing": 0,
+    "center": [
+      -9.7,
+      51.97,
+    ],
+    "pitch": 0,
+    "zoom": 12,
+  },
+  "sourceId": "official_discovery_topo",
+  "styleDataCount": 1,
+  "template": "sartracker-official-map://tile/official_discovery_topo/{z}/{x}/{y}.png",
+}
+
+ ❯ tests/unit/electron-official-map-qualification-smoke-lib.test.ts:208:28
+    206|       applyMapStylePreservingCamera(map, sourceStyle)
+    207|       await Promise.resolve()
+    208|       expect(state.latest).toBeNull()
+       |                            ^
+    209|     } finally {
+    210|       state.cleanup?.()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 21 skipped (22)
+   Start at  20:51:37
+   Duration  491ms (transform 41ms, setup 0ms, import 97ms, tests 6ms, environment 248ms)
+

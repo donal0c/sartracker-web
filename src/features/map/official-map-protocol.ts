@@ -20,7 +20,12 @@ export function registerOfficialMapProtocol(registry: ProtocolRegistry): () => v
       throw new Error('Electron official map bridge is not available.')
     }
 
-    const response = await bridge.fetchOfficialMapTile(request.url)
+    let response
+    try { response = await bridge.fetchOfficialMapTile(request.url) }
+    catch (error) {
+      window.dispatchEvent(new Event('sartracker:official-map-tile-failed'))
+      throw error
+    }
     return {
       data: base64ToArrayBuffer(response.bytesBase64),
     }

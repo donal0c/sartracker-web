@@ -1,0 +1,15 @@
+{
+  "guards": 1,
+  "before": {
+    "status": "configured",
+    "availableSources": [
+      "official_discovery_topo"
+    ]
+  },
+  "after": {
+    "status": "invalid",
+    "availableSources": [
+      "official_premium_basemap"
+    ]
+  }
+}

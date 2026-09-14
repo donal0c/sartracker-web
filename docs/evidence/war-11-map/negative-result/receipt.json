@@ -1,0 +1,16 @@
+{
+  "schema": "war11-negative-result-repair-v1",
+  "finalSourceManifestSha256": "40473e68aaa93d56baa2361ed24c09c750b710efb663c98fc06d534a2ea7fb90",
+  "files": {
+    "use-official-map-view-qualification-red.log": "17f4880f4fc0be5ca361cd4e4969366be74481dafd5537ea760a156be4e3ebba",
+    "browser-negative-result-red.log": "6caab643fb87b89eac2e3d98292e10a7cab6ba177f81035a87c58cf57adfb77c",
+    "browser-negative-result-final.log": "91ce6e67231a88e9ae68af06ba9286cc701140c36aebca9ec6a112de1f07c792",
+    "browser-negative-result-retained.png": "8be217f84689887496dd6ce2ee3fd8992600efeef7e059de826096e1fa4866c9"
+  },
+  "limits": [
+    "Chromium uses mocked native bridge; actual React/MapLibre state is exercised.",
+    "Native attempt3 event order was not captured.",
+    "Final repair has no packaged run.",
+    "Bare tile-failure events have no source/package-generation identity."
+  ]
+}

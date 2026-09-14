@@ -1,0 +1,30 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/field-readiness-checklist.test.ts (23 tests | 1 failed) 16ms
+     × explains an unsupported tilted view without claiming the map is absent 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/field-readiness-checklist.test.ts > field readiness checklist > explains an unsupported tilted view without claiming the map is absent
+AssertionError: expected 'Map view is not available. Open the m…' to be 'Return to a flat map view before chec…' // Object.is equality
+
+Expected: "Return to a flat map view before checking offline coverage."
+Received: "Map view is not available. Open the map and check coverage."
+
+ ❯ tests/unit/field-readiness-checklist.test.ts:71:75
+     69|     const result = buildFieldReadinessChecklist(input)
+     70|     expect(result.verdict).toBe('not_ready')
+     71|     expect(result.items.find(item => item.id === 'view_covered')?.deta…
+       |                                                                           ^
+     72|   })
+     73|   it('does not certify saved metadata without a fresh native current-v…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 22 passed (23)
+   Start at  08:13:08
+   Duration  370ms (transform 26ms, setup 0ms, import 35ms, tests 16ms, environment 253ms)
+

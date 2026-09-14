@@ -195,6 +195,13 @@ jobs:
           npx playwright install --with-deps chromium
           npx playwright test --config playwright.war06.config.ts --project=chromium --workers=1
 
+      - name: WAR-11 rendered offline map freshness regressions
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/electron-validation-evidence/war11-browser
+          npx playwright test --config playwright.war11.config.ts --project=chromium --workers=1 2>&1 \
+            | tee tmp/electron-validation-evidence/war11-browser/playwright.log
+
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging
         # deliberately omits this flag until the programme's final gate.
@@ -268,6 +275,19 @@ jobs:
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
+
+      - name: Packaged official map qualification and freshness smoke
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            npm run electron:smoke:official-map-qualification -- \
+              --app tmp/electron-dist/linux-unpacked/sartracker-web \
+              --evidence-dir tmp/electron-validation-evidence/official-map-qualification
 
       - name: Packaged GPX fidelity and custody smoke
         env:
@@ -602,6 +622,10 @@ jobs:
             tmp/electron-validation-evidence
             tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
+            test-results/war11-map-freshness
+            tmp/war-11/browser-view-checked.png
+            tmp/war-11/browser-package-removed.png
+            tmp/war-11/browser-negative-result-retained.png
             tmp/beta-artifacts/tracking-soak-ci
             tmp/breadcrumb-pr5-evidence
             tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json

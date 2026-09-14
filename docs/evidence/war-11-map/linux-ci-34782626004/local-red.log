@@ -1,0 +1,57 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/electron-linux-renderer-workflows.test.ts (8 tests | 1 failed) 16ms
+     × checks out and proves the exact PR head before packaged PR6 archive qualification 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-linux-renderer-workflows.test.ts > Linux Electron renderer workflows [DON-260] > checks out and proves the exact PR head before packaged PR6 archive qualification
+AssertionError: expected 'set -euo pipefail\nACTUAL_SOURCE_SHA=…' to contain 'git rev-parse HEAD^{tree}'
+
+- Expected
++ Received
+
+- git rev-parse HEAD^{tree}
++ set -euo pipefail
++ ACTUAL_SOURCE_SHA="$(git rev-parse HEAD)"
++ SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
++ SOURCE_DIRTY="$(git status --porcelain --untracked-files=all)"
++ if [ "$ACTUAL_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]; then
++   echo "::error::Checked-out source head does not match EXPECTED_SOURCE_SHA."
++   exit 1
++ fi
++ if [ -n "$SOURCE_DIRTY" ]; then
++   echo "::error::Checked-out source tree is not clean."
++   exit 1
++ fi
++ mkdir -p tmp/electron-validation-evidence
++ export ACTUAL_SOURCE_SHA SOURCE_TREE_SHA
++ node --input-type=module <<'NODE' \
++   > tmp/electron-validation-evidence/source-binding.json
++ const binding = {
++   schema: 'sartracker-electron-linux-source-binding-v1',
++   repositoryHead: process.env.ACTUAL_SOURCE_SHA,
++   repositoryTree: process.env.SOURCE_TREE_SHA,
++   repositoryDirty: false,
++ }
++ process.stdout.write(`${JSON.stringify(binding, null, 2)}\n`)
++ NODE
++
+
+ ❯ tests/unit/electron-linux-renderer-workflows.test.ts:197:25
+    195|     expect(checkout.with).toMatchObject({ ref: '${{ env.EXPECTED_SOURC…
+    196|     expect(binding.run).toContain('git rev-parse HEAD')
+    197|     expect(binding.run).toContain('git rev-parse HEAD^{tree}')
+       |                         ^
+    198|     expect(binding.run).toContain('git status --porcelain')
+    199|     expect(binding.run).toContain('source-binding.json')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  22:22:36
+   Duration  562ms (transform 20ms, setup 0ms, import 28ms, tests 16ms, environment 447ms)
+

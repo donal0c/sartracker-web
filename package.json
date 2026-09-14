@@ -15,6 +15,7 @@
     "electron:dist:win": "node scripts/electron-package.mjs --win nsis --x64 --publish never",
     "electron:release:publish": "node scripts/electron-release-publish.mjs",
     "electron:smoke:official-offline": "node scripts/electron-official-map-offline-smoke.mjs",
+    "electron:smoke:official-map-qualification": "node scripts/electron-official-map-qualification-smoke.mjs",
     "electron:smoke:bad-secret": "node scripts/electron-bad-secret-smoke.mjs",
     "electron:smoke:gpx-fidelity": "node scripts/electron-gpx-fidelity-smoke.mjs",
     "electron:smoke:legacy-recovery": "node scripts/electron-legacy-object-recovery-smoke.mjs",

@@ -968,8 +968,8 @@
             Public fallback maps still use <strong>viewed tile caching</strong>. Official Discovery maps
             use local MBTiles packages in Electron builds when a package is registered. Open
             <strong>Maps</strong> and use <strong>Check View</strong> before relying on the current
-            area: the app will report whether the view is inside the registered official offline area
-            or outside it.
+            area: the app checks the actual local tiles needed at the current zoom. Package bounds
+            alone do not establish offline coverage.
           </p>
         </section>
 
@@ -990,10 +990,10 @@
             <li>Click <strong>Choose MapGenie File</strong> and select the source details file from the USB. The app extracts safe metadata (username, available sources, service count) without storing credentials.</li>
             <li>Click <strong>Add Discovery Package</strong> and select a prepared <code>.mbtiles</code> package. The app copies the package into its own storage — you can remove the USB afterward.</li>
             <li>Do not select raw Discovery source files such as <code>Discovery_National.zip</code>, <code>Discovery_RGB_95pct_C70_high30.1953.tif</code>, <code>relief_byte.tif</code>, or <code>Slope_30plus.tif</code> with <strong>Add Discovery Package</strong>. The beta expects an admin-prepared <code>.mbtiles</code> package.</li>
-            <li>Click <strong>Save Settings</strong>. The app validates the copied package and reports its status as ready, missing, or unreadable.</li>
+            <li>Click <strong>Save Settings</strong>. The app checks the package database and tile images, records a content fingerprint, and reports its status. Wait for validation to finish.</li>
             <li>Switch to <strong>Discovery Topo</strong> in the <strong>Maps</strong> menu. The map renders from the local offline package.</li>
-            <li>Open the <strong>Maps</strong> menu and check the <strong>Field Readiness</strong> panel. All items should show green ticks.</li>
-            <li>Use <strong>Check View</strong> over your intended mission area to confirm it falls inside the offline package bounds.</li>
+            <li>Use <strong>Maps → Check View</strong> over your intended mission area. A successful check verifies every required local tile for that view and zoom.</li>
+            <li>Check the <strong>Field Readiness</strong> panel. A green result applies only to the checked view; repeat <strong>Check View</strong> after panning, zooming, or changing maps.</li>
           </ol>
 
           <h3>Package Types</h3>
@@ -1013,7 +1013,9 @@
             When you import a <code>.mbtiles</code> package, the app copies it into its own internal
             storage directory. The original USB or source disk is no longer needed after import.
             Packages can be removed from <strong>Settings → Official Maps</strong> by clicking the
-            remove button on each package card.
+            remove button on each package card. Removing or replacing a package withdraws its
+            readiness result and refreshes the displayed map. A changed file must be validated again
+            with <strong>Save Settings</strong> before it can be used as a ready package.
           </p>
 
           <h3>Field Readiness Checklist</h3>
@@ -1027,24 +1029,39 @@
             </thead>
             <tbody>
               <tr><td>Official package registered</td><td>A validated local offline package exists for the active map type.</td></tr>
-              <tr><td>Current view covered</td><td>The visible operational area is inside the offline package bounds.</td></tr>
-              <tr><td>Fallback source available</td><td>An online MapGenie source or a sufficient local package is available if the operator leaves the primary area.</td></tr>
-              <tr><td>Recently verified</td><td>The package has been validated (Save Settings re-validates packages automatically).</td></tr>
+              <tr><td>Current view covered</td><td>Check View verified every required local tile for the unchanged view and zoom, against the current package content.</td></tr>
+              <tr><td>Fallback source available</td><td>A local package is registered; the panel also states whether an online MapGenie fallback is configured. This does not certify another area or a network connection.</td></tr>
+              <tr><td>Recently verified</td><td>The package has been validated. Save Settings reuses validation for unchanged packages and validates new or changed files.</td></tr>
             </tbody>
           </table>
           <p>
             When all items pass, the panel shows <strong>Field ready</strong> with a green indicator.
+            This applies only to the checked view and zoom, not the whole mission area or all zoom levels.
+            Moving the map, changing packages, returning focus to the app, or a tile-load failure
+            clears that result. Use <strong>Check View</strong> again before relying on it.
+            An incomplete or unavailable check stays visible if another tile fails in the same
+            unchanged view. After fixing the package, use <strong>Check View</strong> again.
             When the package is missing or unregistered, it shows <strong>Not field ready</strong> in red.
+            Removed or replaced packages lose their old map imagery even while other overlays
+            are loading. A missing package may leave a blank map with a warning. After importing
+            or reconnecting a package, check the newly displayed map with <strong>Check View</strong>.
+            If refreshing the map fails, readiness remains unavailable. <strong>Check View</strong>
+            retries the refresh; if it still fails, switch maps before relying on the display.
             When coverage or fallback checks fail but the package itself is ready, it shows
-            <strong>Partially ready</strong> in amber — pan to your mission area or import a broader package.
+            <strong>Partially ready</strong> in amber. A diagonal hatch marks missing local coverage;
+            it is not a usable map tile and never counts toward a successful offline check.
+            If the check asks for a smaller view or a flat map, zoom in or reset the map tilt and retry.
           </p>
 
           <h3>Readiness Certificate Export</h3>
           <p>
             In <strong>Settings → Official Maps</strong>, click <strong>Export Readiness Certificate</strong>
             to save a text file with sanitized package metadata: map type, status, zoom range, tile count,
-            size, coverage bounds, and verification timestamps. This certificate is suitable for
-            pre-mission audit without exposing private paths or credentials.
+            size, coverage bounds, verification timestamps, and content fingerprints. The exported
+            <strong>Official Map Package Validation Certificate</strong> describes package validation;
+            it does not certify the current view, other zoom levels, or field acceptance. It excludes
+            private paths and credentials. The bounds check in Settings likewise checks only metadata;
+            use <strong>Maps → Check View</strong> for actual local tile coverage.
           </p>
 
           <h3>Troubleshooting</h3>

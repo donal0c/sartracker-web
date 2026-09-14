@@ -561,6 +561,36 @@ integrity evidence only: the isolated probes remain deliberately red, no
 shipping repair occurred, and broad packaged, live-provider, platform-matrix,
 scale, soak, and field proof remain WAR-12 work.
 
+### WAR-11 official-map qualification and freshness repair
+
+DON-7 / DON-76 covers only WAR-04 MAP-01/02/03 and AUD-11. Package content/identity
+validation, actual current-view tile checks, reader/raster invalidation and valid
+missing-coverage hatch are implemented. [PR28](https://github.com/donal0c/sartracker-web/pull/28)
+remains draft. PR27 merged as `2ab581e0` on 2026-09-14; this map branch is rebased
+onto that master. Integrated CI34812540230 passed at `3ecb7b8a`, but Claude review
+then withdrew readiness. Confirmed settings/proxy/raster repairs are now under
+verification: 468 files / 4,956 correctness tests / six existing skips, six
+synthetic browser flows, typecheck, lint and independent review pass. See
+[Claude review disposition](assurance/findings/pr28-claude-review.md).
+
+Pre-rebase head `e2a31ed657a22d5ff329d2d9dfa9968a3627bcc6` passed Linux
+CI34783712783: 456 files / 4,849 tests / six existing qualification skips, four
+browser flows and packaged map smoke. Downloaded source-bound evidence verifies
+replacement imagery, removal with no sampled stale pixels, final 0/15 missing /
+Not field ready and clean child exit. This is scoped pre-rebase Linux proof.
+
+[The remediation record](assurance/findings/war-11-offline-map-remediation.md)
+retains all three macOS failures, three earlier Linux failures, the excluded
+mixed-input browser run and subsequent red/green repairs. Global style completion
+no longer blocks removal/replacement raster invalidation; the dedicated four-flow
+browser gate precedes CI packaging. No original readiness deadline was relaxed.
+
+Next: complete stable review verification, push reviewed repairs and watch
+fresh exact-head CI. No local Electron/build or merge. DON-7/DON-76 remain In
+Progress; release HOLD. Unattributed renderer diagnostics, strict responsiveness,
+960k replay, tracking soak, archive/installer/field, licensed/private provider,
+Windows, distribution and BCP-17 qualification remain separate.
+
 ### Breadcrumb And Mission-History Programme
 
 The locked domain model is in

@@ -4,12 +4,14 @@
 withdraws earlier readiness and records the approved SAR-QA-022 recovery and review
 corrections. Evidence below is historical; no merge or release readiness is implied.
 
-Status: [PR27](https://github.com/donal0c/sartracker-web/pull/27) open for scoped
-merge review; implementation `cc989877a850ed349269bdf4cb562dfd7c4846dc`.
-The PR retains current exact-head CI/review receipts. Base:
-`2b2bf8e605e27123c9e454598828d71cb7c062aa`, after merged PR25/PR26.
+Current status (2026-09-14): Donal merged
+[PR27](https://github.com/donal0c/sartracker-web/pull/27) as
+`2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3` from reviewed head `39eed654`.
+The implementation/evidence below begins at historical `cc989877a850ed349269bdf4cb562dfd7c4846dc`
+on base `2b2bf8e605e27123c9e454598828d71cb7c062aa`; later review corrections
+remain in the linked disposition. Merge does not establish packaged qualification.
 Owners: DON-271 / AUD-08 and DON-279 / AUD-09; DON-254 retains qualification.
-Train D merges before parallel Train C. Donal owns merge; release HOLD remains.
+Train C can now integrate the merged Train D baseline. Release HOLD remains.
 
 ## Contract and risk
 

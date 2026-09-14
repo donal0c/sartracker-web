@@ -26,6 +26,13 @@ function createReadyPackage(
     createdAt: '2026-05-15T10:30:00.000Z',
     verifiedAt: '2026-06-01T14:00:00.000Z',
     message: 'Package verified and ready.',
+    attestation: {
+      version: 1,
+      schemaVersion: 1,
+      decoderPolicy: 'native-raster-256-or-512-opaque-v1',
+      sha256: 'a'.repeat(64),
+      identity: 'synthetic-identity',
+    },
     ...overrides,
   }
 }
@@ -156,13 +163,13 @@ describe('official map manifest', () => {
     const viewOutsideBounds = { west: -8.0, south: 53.0, east: -7.0, north: 54.0 }
     const viewPartiallyOutside = { west: -11.0, south: 51.0, east: -9.5, north: 52.0 }
 
-    it('reports covered when the view is fully inside package bounds', () => {
+    it('reports metadata bounds as unchecked when the view is fully inside', () => {
       const result = checkManifestCoverage(createReadyPackage(), viewInsideBounds)
 
-      expect(result.status).toBe('covered')
-      expect(result.tone).toBe('success')
-      expect(result.label).toBe('View covered')
-      expect(result.detail).toContain('fully inside')
+      expect(result.status).toBe('unknown')
+      expect(result.tone).toBe('neutral')
+      expect(result.label).toBe('Bounds include view — tiles not checked')
+      expect(result.detail).toContain('Bounds include view — tiles not checked. Use Maps > Check View')
     })
 
     it('reports outside when the view extends beyond package bounds', () => {
@@ -174,12 +181,12 @@ describe('official map manifest', () => {
       expect(result.detail).toContain('extends beyond')
     })
 
-    it('reports covered when the view exactly matches package bounds', () => {
+    it('reports metadata bounds as unchecked when the view exactly matches package bounds', () => {
       const exactBounds = { west: -10.8, south: 51.2, east: -9.2, north: 52.5 }
       const result = checkManifestCoverage(createReadyPackage(), exactBounds)
 
-      expect(result.status).toBe('covered')
-      expect(result.tone).toBe('success')
+      expect(result.status).toBe('unknown')
+      expect(result.tone).toBe('neutral')
     })
 
     it('reports outside when the view partially overlaps', () => {
@@ -257,11 +264,12 @@ describe('official map manifest', () => {
     it('generates human-readable report text', () => {
       const cert = buildReadinessCertificate([createReadyPackage()], generatedAt)
 
-      expect(cert.reportText).toContain('SAR Tracker — Official Map Readiness Certificate')
+      expect(cert.reportText).toContain('SAR Tracker — Official Map Package Validation Certificate')
       expect(cert.reportText).toContain('Packages registered: 1')
-      expect(cert.reportText).toContain('Packages ready: 1')
+      expect(cert.reportText).toContain('Packages validated: 1')
       expect(cert.reportText).toContain('Discovery Topo')
-      expect(cert.reportText).toContain('Ready')
+      expect(cert.reportText).toContain('Validated package')
+      expect(cert.reportText).toContain(`SHA-256: ${'a'.repeat(64)}`)
     })
 
     it('includes safety disclaimer in the report', () => {
@@ -320,10 +328,21 @@ describe('official map manifest', () => {
       ]
       const cert = buildReadinessCertificate(packages, generatedAt)
 
-      expect(cert.entries[0]!.status).toBe('Ready')
+      expect(cert.entries[0]!.status).toBe('Validated package')
       expect(cert.entries[1]!.status).toBe('Missing')
       expect(cert.entries[2]!.status).toBe('Unreadable')
       expect(cert.entries[3]!.status).toBe('Pending validation')
+    })
+
+    it('does not count a persisted ready package without an attestation as validated', () => {
+      const cert = buildReadinessCertificate(
+        [createReadyPackage({ attestation: undefined })],
+        generatedAt,
+      )
+
+      expect(cert.readyCount).toBe(0)
+      expect(cert.entries[0]!.status).toBe('Validation required')
+      expect(cert.entries[0]!.sha256).toBe('Not recorded')
     })
 
     it('reports size in human-readable format', () => {

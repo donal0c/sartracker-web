@@ -1,0 +1,47 @@
+{
+  "schema": "war11-packaged-attempt3-public-evidence-v1",
+  "outcome": "FAILED",
+  "startedAt": "2026-09-13T18:38:07.080155+00:00",
+  "endedAt": "2026-09-13T18:38:27.158233+00:00",
+  "runnerPid": 82761,
+  "runnerExitCode": 1,
+  "electronPid": 82764,
+  "electronExit": {
+    "code": 0,
+    "signal": null
+  },
+  "teardownActions": [],
+  "newOrChangedCrashReports": {},
+  "remainingSarNativeProcesses": [],
+  "binding": {
+    "at": "2026-09-13T18:37:56.858Z",
+    "manifestSha256": "e03956eee680af49afc16eb6b76f4a6c94652ba61f9ed89ad86441ab701555bd",
+    "parentManifestSha256": "05a1c7f5945177235319d1464d75edc5296d60e910349fb41bc08afe41385cc7",
+    "originalManifestSha256": "aea9f7d58f61c42833cc08a58b2d4518908772aa33aef05b52f16241bf8a435a",
+    "changedHarnessFiles": [
+      "build/electron-official-map-qualification-smoke-lib.js",
+      "scripts/electron-official-map-qualification-smoke.mjs",
+      "tests/unit/electron-official-map-qualification-smoke-lib.test.ts"
+    ],
+    "unchangedSourceCount": 1170,
+    "asarSha256": "bebfdf95e6c6a2e1a98703c7337a4ccead4c862501b91658057b3cea996a8542",
+    "bundleManifestSha256": "789347de06dc5c3ea33d3bc7a67cbf0c0cb186c8306c38740f00879b8c857298",
+    "matchedRuntimeEntryCount": 240,
+    "bundleFileCount": 330
+  },
+  "failure": "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('basemap-offline-coverage').getByText('/Current view tiles verified|Official offline coverage incomplete|Coverage check unavailable/u') to be visible\u001b[22m\n",
+  "rawFailureSha256": "98902cbb60093e12df0a3401b88da057dee9b368da09f575cd725f1052dd2829",
+  "rawRendererDiagnosticsSha256": "4ab7bf4ac58cb0317ce95619e8f1b4954846f21ccb8aba92a40179c4db1bcc33",
+  "screenshots": {
+    "03-automatic-removed-map.png": "78272012ce3a8ce1a3f222a0ee7db7ddfe836bc41473f31f3d796a18082fe7c1",
+    "workflow-failure.png": "48261d94b5bd435c168adfaa367754398689a4b14cefb8918fb115903a81ab60",
+    "02-synthetic-replacement-map.png": "1120715a93dbf83be730ce8c64e75dd11053a210d1d3c8de765ba140da90f5a7"
+  },
+  "limits": [
+    "Final removed-package operator coverage result assertion failed.",
+    "Original native event ordering was not captured.",
+    "38 blocked resource request URLs absent; messages remain unclassified.",
+    "Artifact predates subsequent negative-result repair. No packaged verification of that repair.",
+    "Original decoder crash cause remains unconfirmed."
+  ]
+}

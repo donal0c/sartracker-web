@@ -1,0 +1,24 @@
+{
+  "parentHead": "220366e58a468130701825c2fe40eb1b9f584c93",
+  "sourceBlobs": {
+    "electron/settings-store.cjs": "6eb2fb19f9c28952610554239ebe908653b43618",
+    "tests/unit/electron-settings-store.test.ts": "37a7bf825a532750ced3a22dfb3e2a1232e708bb"
+  },
+  "checks": {
+    "correctness": "468 files / 4957 passed / 6 existing skips / 498.41s",
+    "settings": "27 passed",
+    "independentReview": "accepted with non-persisted provider edits excluded from freshness proof",
+    "browser": "unchanged renderer; six-flow evidence reused, fresh CI required",
+    "ci34819550032": "cancelled as superseded",
+    "localElectron": "NOT RUN",
+    "release": "HOLD"
+  },
+  "evidenceSha256": {
+    "c10-source-metadata-red.log": "d524e15b4273c6f752025323668eb5bd18b079d317bcdfdd3107152ebd8bd2be",
+    "c10-source-metadata-red-vitest.log": "db5afa469de5f9638c07d1ef9b96939c86614a9c1d2eeed4f14f67a9ab7a65a0",
+    "c10-source-metadata-green.log": "3069cca83fa738e701aab52f9ca56a4b41d618bcb8b9500cd06acd098b62f801",
+    "c10-source-metadata-lint.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "c10-full-correctness-green.log": "cb01a15f8b345434a6bebbbdbf3cbeb4ed7a59b070cec6fff564638769f46aef",
+    "ci-superseded-result.json": "c0b7b3178448bb5a349f2c5a0f89696fe8e3e9eca895ec846782a7704370334d"
+  }
+}

@@ -58,19 +58,15 @@ head.
 
 ## Current merged disposition
 
-Current baseline is `2b2bf8e605e27123c9e454598828d71cb7c062aa`: PR25 and PR26
-are merged, DON-267 is Done, DON-254 is In Progress and release remains HOLD.
-Train D owns AUD-08 / DON-271 and AUD-09 / DON-279 on `codex/repair-train-d`.
-Parallel Train C owns map repairs; intended merge order is D first, then C
-rebased onto it. Both begin with current-head red proof and retain the strict
-<200 ms gate and separate final-candidate qualification. D has current-base
-red/green and focused native/browser proof. Full source correctness passes
-4,785 tests, and 23 affected browser flows pass. Packaged attempt 1 remains
-FAILED; re-add, backup and restart were not reached. Corrected harness tests
-pass 22/22; independent harness recheck is clear. Exact-head CI/review attestations remain pending
-in [PR27](https://github.com/donal0c/sartracker-web/pull/27) and
-[its record](findings/repair-train-d.md).
-No repair acceptance is claimed. Earlier open-PR/status statements below are
+Current baseline is `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`: Donal merged
+[PR27](https://github.com/donal0c/sartracker-web/pull/27) on 2026-09-14, after
+PR25/PR26. DON-267 is Done; DON-254 remains In Progress and release HOLD.
+Train D's AUD-08 / DON-271 and AUD-09 / DON-279 implementation is integrated.
+Its [record](findings/repair-train-d.md) and review disposition retain earlier
+source/browser proof and failed native attempt. Packaged qualification remains
+deferred, not passing. PR28 map work is rebased onto this master and awaits
+affected integration CI/review. The strict <200 ms gate and final-candidate
+qualification remain separate. Earlier open-PR/status statements below are
 historical receipts, superseded by this reconciliation.
 
 Separate follow-up candidate: the DON-229, DON-228 and large hosted history
@@ -189,10 +185,44 @@ implementation alone.
 | `AUD-05` ending an outing during successful GPX import leaves stale importing UI | P2 | **Merged in PR19 at `d20bae5f`** | `DON-274` Done / `DON-270` original completed history; generation-owned import settlement, stale-page/error containment | Red/green interleavings, truthful completion and native custody; [Train B record](findings/repair-train-b.md). Late-refresh failure now retains the settled import error |
 | `AUD-04` equal map-style writes cause continuous idle redraw | P2 | **Repair train C — map interaction/rendering** | `DON-264` / `DON-254`; coordinate with `WAR-04` map remediation and start after the active visibility/map batch | Causal browser performance test, quiet-idle control, no lost overlay synchronization, frame-budget proof |
 | `AUD-06` repeated Go To can be ignored/lose its target during style loading | P2 | **Repair train C** | `DON-6` / `DON-254`; same map target/style lifecycle | Red/green repeated navigation and style-load tests plus rendered target verification |
-| `AUD-11` built-in no-coverage PNG is invalid | P2 | **Repair train C** | `DON-7` / `DON-76`; combine with the WAR-04 map qualification/freshness train without conflating it with imported-tile corruption | Real image-decoder oracle and fail-visible no-coverage workflow |
+| `AUD-11` built-in no-coverage PNG is invalid | P2 | **WAR-11 bounded repair active; not closed** | `DON-7` / `DON-76`; only MAP-01/02/03 + AUD-11, separate from Train C's other rows | Real decoder and synthetic hatch controls pass; packaged attempt 3 proves replacement/readiness and passive removal but final Check View fails. Subsequent negative-result repair has browser/unit proof only; [exact disposition](findings/war-11-offline-map-remediation.md) |
 | `AUD-12` Clear Alias retains the alias | P3 | **Repair train C or next bounded UI batch** | `DON-6`; include only if the chosen train already owns the layer catalog, otherwise keep separately queued | Store/controller red/green test and visible cleared state |
 | `AUD-08` re-added-group backfill reports complete with a required member pending | P2 | **Repair train D — mission progress/review correctness** | `DON-271` / `DON-254`; align with `MIS-003` and do not weaken Finish refusal | Native participant/backfill regression proving progress cannot lead completion truth |
 | `AUD-09` backup invalidates Search Operations pagination and blocks recording | P2 | **Repair train D** | `DON-279` / `DON-254`; Mission Review/pagination lifecycle after Team Feedback Batch 2 | Native backup/page-generation red/green proof and rendered recovery without a full Review reset |
+
+WAR-11 preserves all three failed packaged runs and the original decoder-test crash
+whose native cause remains unconfirmed. No fourth native attempt or rebuild is
+authorized. Current negative-result repair retains fail-closed output after a
+redundant tile failure; view/source/package changes and positive proof still
+invalidate. Bare tile-failure events carry no source/package-generation identity;
+do not claim event attribution. The final source cycle/review controls scoped PR
+readiness; packaged qualification and release remain HOLD. Draft PR28's Linux
+CI `34776633574` failed initial map rendering at the wrong camera zoom after
+source/build/package/SQLite/GPU checks passed; subsequent packaged gates skipped.
+A harness-only style-restoration sequencing correction passes 39 focused tests
+and exact-diff review; fresh CI remains required. Preserve its original
+10-second readiness deadline and the separate macOS failure evidence;
+no further local Electron launch or rebuild is authorized.
+
+Subsequent Linux CI `34779414995` failed passive removal with stale replacement
+raster. A real Chromium pending-source reproduction confirmed an independent
+MAP-03 defect: global style readiness could starve official-raster eviction.
+Structural availability and explicit mutation postconditions repair it without
+waiting for other sources. Clean red/green, 23 focused controls, four browser
+flows, independent safety review and full 456-file / 4,849-test correctness pass
+(six existing qualification skips) are retained. A separately reviewed CI-only
+delta gates these flows before packaging. Fresh exact-head CI remains required;
+PR28 stays draft and DON-7/DON-76 remain In Progress. Exact native event cause
+of that failed run remains unrecorded.
+
+Update 2026-09-14: subsequent pre-rebase CI34783712783 at `e2a31ed6` passed
+4,849 tests, four browser flows and the packaged map smoke. Downloaded exact
+head/tree-bound evidence showed replacement content, no sampled stale pixels
+after removal, final 0/15 missing / Not field ready and clean child exit. Prior
+failures remain retained. PR27 is now merged as `2ab581e0`; PR28 is rebased onto
+that master and undergoing affected integration verification before fresh CI.
+The 41 insufficiently attributed renderer diagnostics and skipped strict/scale/
+soak/archive qualifications remain limits; scoped map proof is not release proof.
 
 The audit's additional measured concerns are not silently discarded. Attachment
 base64 frame cost, Traccar oversize-response buffering, GPX hit-test cost,

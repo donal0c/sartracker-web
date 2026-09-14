@@ -1,0 +1,194 @@
+[
+  {
+    "name": "Bind exact source head and tree",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Verify complete legacy recovery evidence manifest",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Install Linux Electron runtime deps",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Install npm deps",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Lint",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Full correctness unit gate",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "WAR-02B bounded property and mutation gate",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "WAR-02B controlled rebreak proof",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Strict responsiveness qualification (<200 ms)",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Record PR qualification boundary",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Electron responsiveness attribution controls",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Production web build and bundle budgets",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "WAR-06 rendered mission boundary regressions",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "WAR-11 rendered offline map freshness regressions",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Build Electron Linux artifacts",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Restore exact source tree after packaging",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Qualify mission evidence replay at the normal 960k envelope",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Inspect artifacts and native SQLite module",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Attest Mesa llvmpipe renderer",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged official map qualification and freshness smoke",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged GPX fidelity and custody smoke",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged bounded breadcrumb transport causal proof",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged WAR-06 mission cache restart proof",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged participant progress and Search Operations backup proof",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Independently validate Repair Train D packaged receipt",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Record deferred Repair Train D packaged qualification",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged legacy object recovery observer proof",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Verify legacy recovery terminal report",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged tracking soak (CI profile)",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Packaged archive lifecycle smoke",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Verify archive lifecycle terminal evidence",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  },
+  {
+    "name": "Launch AppImage smoke",
+    "exit": 0,
+    "stdout": "[]\n",
+    "stderr": ""
+  }
+]

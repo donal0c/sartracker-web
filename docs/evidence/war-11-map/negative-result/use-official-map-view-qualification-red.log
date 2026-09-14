@@ -1,0 +1,30 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/use-official-map-view-qualification.test.tsx (5 tests | 1 failed) 16ms
+     × retains an explicit negative result when a tile failure arrives after Check View 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/use-official-map-view-qualification.test.tsx > official view qualification lifecycle > retains an explicit negative result when a tile failure arrives after Check View
+AssertionError: expected 'unchecked' to be 'missing' // Object.is equality
+
+Expected: "missing"
+Received: "unchecked"
+
+ ❯ tests/unit/use-official-map-view-qualification.test.tsx:86:37
+     84|     expect(latest!.coverage.status).toBe('missing')
+     85|     await act(async () => window.dispatchEvent(new Event('sartracker:o…
+     86|     expect(latest!.coverage.status).toBe('missing')
+       |                                     ^
+     87|     await act(async () => root.unmount())
+     88|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  19:42:52
+   Duration  460ms (transform 44ms, setup 0ms, import 117ms, tests 16ms, environment 260ms)
+

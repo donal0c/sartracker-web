@@ -71,6 +71,13 @@ export type OfficialMapPackageSettings = {
   readonly createdAt: string
   readonly verifiedAt: string
   readonly message: string
+  readonly attestation?: {
+    readonly version: 1
+    readonly schemaVersion: 1
+    readonly decoderPolicy: 'native-raster-256-or-512-opaque-v1'
+    readonly sha256: string
+    readonly identity: string
+  }
 }
 
 export type OfficialMapSettings = {

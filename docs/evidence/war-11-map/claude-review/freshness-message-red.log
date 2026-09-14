@@ -1,0 +1,39 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/73c7/sartracker-web
+
+ ❯ tests/unit/official-map-freshness.test.ts (5 tests | 1 failed) 175ms
+     × rejects an undecodable tile package during explicit Save validation 26ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/official-map-freshness.test.ts > official map freshness and required-view qualification > rejects an undecodable tile package during explicit Save validation
+AssertionError: expected { …(14) } to match object { status: 'invalid', …(3) }
+(10 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "bounds": null,
+-   "message": "Official map package could not be read as MBTiles.",
++   "message": "Official map package tile decoder rejected a tile.",
+    "status": "invalid",
+    "tileCount": 0,
+  }
+
+ ❯ tests/unit/official-map-freshness.test.ts:162:44
+    160|     const saved = await store.saveAppSettings(createPackageDraft(packa…
+    161|
+    162|     expect(saved.officialMaps.packages[0]).toMatchObject({
+       |                                            ^
+    163|       status: 'invalid',
+    164|       bounds: null,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 passed (5)
+   Start at  08:36:05
+   Duration  746ms (transform 32ms, setup 0ms, import 54ms, tests 175ms, environment 272ms)
+

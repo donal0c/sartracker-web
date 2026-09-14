@@ -1,0 +1,23 @@
+[2m[WebServer] [22m(node:27729) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m[WebServer] [22m(node:27779) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[2m[WebServer] [22m(Use `node --trace-warnings ...` to show where the warning was created)
+[2m[WebServer] [22mBrowserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[2m[WebServer] [22m  npx update-browserslist-db@latest
+[2m[WebServer] [22m  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 4 tests using 1 worker
+
+(node:27787) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:27787) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/official-map-qualification.spec.ts:14:1 › official map readiness follows checked tiles, movement, and package removal (3.9s)
+  ✓  2 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:118:3 › external removal clears resident raster and reimport recovers (loaded) (5.3s)
+  ✓  3 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:118:3 › external removal clears resident raster and reimport recovers (pending overlay) (3.8s)
+  ✓  4 [chromium] › tests/e2e/official-map-raster-freshness.spec.ts:144:1 › same-path A to B replacement clears old pixels while unrelated overlay is pending (3.2s)
+
+  4 passed (18.6s)

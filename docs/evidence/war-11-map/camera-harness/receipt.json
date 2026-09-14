@@ -1,0 +1,52 @@
+{
+  "schema": "war11-camera-harness-source-v1",
+  "createdAt": "2026-09-13T19:58:45.968979+00:00",
+  "reviewBase": "bfc37b747e69267ca48d32b16c9cb48815aaa537",
+  "sourceInputs": {
+    "build/electron-official-map-qualification-smoke-lib.js": "18530f17d8d5f6235795ef034352e59f043a505355e41504e8bccac06749f4cf",
+    "scripts/electron-official-map-qualification-smoke.mjs": "b1532410140360e9369faf4e2e894e6c6e20315b070e79ccf9dc2307958c4a23",
+    "tests/unit/electron-official-map-qualification-smoke-lib.test.ts": "1c2ecf8b77d78dc6dfe764e36e2bfd85f6ffc93ed06544d89a3c0d7975c0cb5a"
+  },
+  "priorManifestSha256": "40473e68aaa93d56baa2361ed24c09c750b710efb663c98fc06d534a2ea7fb90",
+  "changedInputsFromPrior": [
+    "build/electron-official-map-qualification-smoke-lib.js",
+    "scripts/electron-official-map-qualification-smoke.mjs",
+    "tests/unit/electron-official-map-qualification-smoke-lib.test.ts"
+  ],
+  "unchangedPriorInputs": 1170,
+  "scope": "Only smoke harness/library/unit inputs changed; production application, fixture extent and 10-second readiness deadline unchanged.",
+  "focusedCommand": "npx vitest run tests/unit/electron-official-map-qualification-smoke-lib.test.ts tests/unit/use-official-map-view-qualification.test.tsx --no-file-parallelism",
+  "focusedResult": {
+    "files": 2,
+    "passed": 39,
+    "harness": 27,
+    "hook": 12
+  },
+  "staticChecks": [
+    "node --check both smoke modules",
+    "targeted ESLint",
+    "npx tsc -b",
+    "git diff --check"
+  ],
+  "provenance": {
+    "sourceOrder": "Two new synchronous-event controls failed before their respective corrections. Cross-task control caught the first timer-based correction.",
+    "initialCameraTests": "No independent pre-implementation red captured.",
+    "selectionCoordinatorTests": "Added after implementation; no pre-fix red receipt. Post-implementation isolated sensitivity controls below are not TDD."
+  },
+  "selectionSensitivity": {
+    "command": "npx vitest run --config tmp/war-11/selection-rebreak/vitest.config.mts --no-file-parallelism -t 'operator-selection|install or settlement|expired selection'",
+    "unchangedControl": "3 selected tests passed",
+    "noCleanupMutation": "Replace first if (observerAttempted) with if (false): 2 selected assertions fail, 1 passes",
+    "noDeadlineMutation": "Replace expired-deadline throw with return 15000: 1 selected assertion fails, 2 pass",
+    "combinedExit": 1,
+    "combinedResult": "3 expected failures, 6 passes, 72 filtered skips; 3 file copies",
+    "workingSourceMutation": false
+  },
+  "logs": {
+    "style-setStyle-sync-red.log": "ec418c25df12ff013eb598c38ac3687dd58edafe611ff32fc100073a55fa0eb9",
+    "style-setStyle-cross-task-red.log": "a568528cc41cd7b4d830b66fe235b0c5742f7d743880d100491ac960c70389b6",
+    "focused-green.log": "7169f61586f10a18c9ea751a73286976de442b842e121f0f97febb0b63476768",
+    "selection-sensitivity.log": "402f08f2e67be0e662b776758be6e9a765bb77d1c558a3fe59197969935181d5"
+  },
+  "native": "No further local Electron launch or build; fresh remote CI required."
+}
