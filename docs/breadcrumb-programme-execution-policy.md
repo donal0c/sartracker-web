@@ -9,6 +9,11 @@ semantics remain governed by
 exact words and question history governed by
 `docs/breadcrumb-team-question-and-answer-ledger.md`.
 
+Model routing amendment (2026-09-14):
+`docs/model-routing-and-agent-execution-policy.md` supersedes every fixed-model
+or default-Fable instruction below. The delivery, complexity, review,
+requirements, and qualification rules in this document remain binding.
+
 ## Delivery Decision
 
 - Deliver the programme through six substantial, coherent PRs. The fourth is
@@ -44,11 +49,10 @@ exact words and question history governed by
 Complexity combines implementation breadth, safety impact, persistence risk,
 failure-mode difficulty, and the difficulty of proving the result.
 
-Donal's coordination workflow now fixes the implementation executor for every
-approved slice at **GPT-5.6 Sol with high reasoning** in a fresh Codex task.
-Complexity continues to determine planning depth and independent exact-head PR
-review allocation; it no longer automatically changes the implementation
-model. See `docs/breadcrumb-programme-coordination-workflow.md`.
+Choose the implementation executor and reasoning effort under
+`docs/model-routing-and-agent-execution-policy.md`. Complexity continues to
+determine planning depth and independent exact-head PR review allocation, but
+does not automatically select the implementation model.
 
 | Score | Independent PR reviews |
 | --- | ---: |
@@ -66,11 +70,12 @@ merely to reduce review cost after implementation has started.
 
 The binding operating loop is
 `docs/breadcrumb-programme-coordination-workflow.md`. Codex coordinates and
-guards requirements; fresh bounded Fable planning is the default when a new
-plan is genuinely needed; Donal explicitly authorizes every implementation
-task; and each approved complete PR is delegated to one fresh GPT-5.6 Sol high
-task. BCP units remain internal planning and TDD checkpoints inside that task.
-No team question is sent until it passes the ledger's duplicate-question gate.
+guards requirements; Donal explicitly authorizes every implementation task;
+and each approved complete PR is delegated to one fresh, correctly routed
+owner task. Separate planning is used only when uncertainty warrants it, and
+Fable is not a default. BCP units remain internal planning and TDD checkpoints
+inside the owning task. No team question is sent until it passes the ledger's
+duplicate-question gate.
 
 ## PR And Slice Scores
 

@@ -4,6 +4,12 @@ Date: 2026-08-22
 
 Status: **Locked by Donal for the Breadcrumb and Mission-History Programme.**
 
+Model routing amendment (2026-09-14):
+`docs/model-routing-and-agent-execution-policy.md` supersedes the fixed-Sol and
+default-Fable instructions retained in older programme history. Requirements,
+approval, review, evidence, and merge authority in this workflow remain
+binding.
+
 This is the operating workflow for planning, implementation delegation, review
 iteration, and requirements control. It supplements
 `docs/breadcrumb-programme-execution-policy.md`; it does not replace the domain
@@ -19,18 +25,16 @@ Linear, ADRs, or model output never outrank the team's recorded words there.
 - **Donal** owns the approval gates. No implementation task starts until Donal
   explicitly says to proceed with that planned slice.
 - **Codex in this task** is the programme coordinator and chief of staff. It
-  maintains continuity, prepares bounded Fable planning work, checks every plan
-  and implementation against team requirements, creates implementation tasks
-  only after approval, follows their progress, and keeps the repository and
-  Linear state coherent.
-- **Fable** is the bounded architecture and implementation-planning adviser. It
-  does not implement, mutate Linear/GitHub, or run expensive qualification
-  unless Donal explicitly changes that scope.
-- **One fresh Codex task using GPT-5.6 Sol with high reasoning** implements each
-  approved complete PR through proof, the allocated independent exact-head
-  reviews, remediation and clean required rechecks. BCP units are internal
-  planning and strict-TDD checkpoints inside that task, not separate
-  implementation tasks.
+  maintains continuity, prepares bounded planning work when it is genuinely
+  needed, checks every plan and implementation against team requirements,
+  creates implementation tasks only after approval, follows their progress,
+  and keeps the repository and Linear state coherent.
+- **One fresh, correctly routed Codex owner task** implements each approved
+  complete PR through proof, the allocated independent exact-head reviews,
+  remediation and clean required rechecks. Model, effort and bounded
+  delegation follow `docs/model-routing-and-agent-execution-policy.md`. BCP
+  units are internal planning and strict-TDD checkpoints inside that task, not
+  separate implementation tasks.
 - **Donal owns final approval and merge.** The implementation task owns the
   programme's allocated baseline reviews and may not defer them to Donal.
   Donal may request additional review after that clean baseline.
@@ -72,28 +76,20 @@ implementation agent may identify a possible ambiguity, but they cannot turn
 an already-answered domain point into a new team question. The coordinator
 must perform this gate personally.
 
-## Cost-Conscious Fable Policy
+## Cost-Conscious Planning Policy
 
-- Default to **one fresh, bounded Fable instance per planning slice**. This
-  avoids repeatedly paying for a large accumulated conversation context.
-- Reuse an existing Fable session only when the new task materially depends on
-  its unresolved reasoning and that continuity is cheaper and safer than a
-  concise fresh source packet.
-- Use the normal `fable5` medium-effort launcher unless Donal explicitly asks
-  for high effort. Run the required AWS launcher preflight before a fresh job.
-- Give Fable only the exact branch/SHA, relevant requirements, governing docs,
-  current code seams, known evidence, and one bounded deliverable.
-- One initial planning pass and, only if genuinely required, one focused
-  correction pass is the normal maximum. Do not run open-ended planning loops.
-- Store the completed artifact under `tmp/agent-mail/` with a completion
-  sentinel. Codex reads it fully, checks it against requirements and current
-  code, and owns the final synthesis.
-- Do not call Fable merely to repeat an already accepted plan. BCP-01 is already
-  sufficiently planned in
-  `tmp/agent-mail/fable-breadcrumb-pr1-design-20260822.md`; no additional Fable
-  run is required before Donal's BCP-01 implementation approval. BCP-02 and
-  BCP-05 receive fresh current-code planning passes after their predecessors
-  change the checkout.
+- Do not force a separate planning model for clear, bounded work. The owning
+  implementation model should inspect current code and form a short plan.
+- When separate planning is justified, use one fresh, bounded task with the
+  exact branch/SHA, requirements, governing docs, current seams, known
+  evidence, and one deliverable.
+- Reuse an existing planning task only when unresolved reasoning is genuinely
+  necessary and cheaper than a concise fresh source packet.
+- Fable is not part of the default workflow. Use it only when Donal explicitly
+  requests it. Route Codex planning through
+  `docs/model-routing-and-agent-execution-policy.md`.
+- One planning pass and, only if required, one focused correction pass is the
+  normal maximum. Do not run open-ended planning loops.
 
 ## PR Implementation Cycle
 
@@ -104,9 +100,10 @@ inspects the relevant current seams, and decides whether the accepted plan is
 still current. It updates the plan only when code, evidence, or team decisions
 have changed.
 
-### 2. Plan With Fable
+### 2. Plan When Needed
 
-When a fresh plan is needed, Codex sends one bounded task containing:
+When a fresh plan is needed, Codex sends one correctly routed bounded task
+containing:
 
 - goal and non-goals;
 - exact requirement trace using canonical `SAR-QA-*` IDs;
@@ -129,12 +126,13 @@ an explicit go-ahead. Preparing a plan is not implementation authority.
 
 ### 4. Create The Implementation Task
 
-After approval, Codex creates one new Codex task using **GPT-5.6 Sol, high
-reasoning** for the complete PR. The task receives a self-contained execution
-packet containing:
+After approval, Codex creates one new Codex owner task using the model and
+reasoning effort selected under
+`docs/model-routing-and-agent-execution-policy.md` for the complete PR. The
+task receives a self-contained execution packet containing:
 
 - exact branch and starting SHA;
-- relevant requirements and accepted Fable artifact;
+- relevant requirements and any accepted planning artifact;
 - goal, non-goals, invariants, and file boundaries;
 - strict TDD sequence and focused commands;
 - documentation, manual, Linear, commit, and push obligations;

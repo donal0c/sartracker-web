@@ -4,59 +4,34 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 
 ## Current baseline and active work
 
-Master is `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3`: Donal merged
-[PR27](https://github.com/donal0c/sartracker-web/pull/27) on 2026-09-14.
-Train D's participant completeness, audited legacy roster recovery (SAR-QA-022)
-and stable Search Operations pagination are integrated. Removing participants
-never clears required history; legacy recovery preserves the NULL snapshot and
-appends audit evidence. See [Train D](../docs/assurance/findings/repair-train-d.md)
-and [review disposition](../docs/assurance/findings/pr27-claude-review.md).
-Its native qualification failure remains retained; merge is not release proof.
+Model routing: `docs/model-routing-and-agent-execution-policy.md` is now the
+current authority for Luna, Sol, Astra, reasoning effort, bounded delegation,
+escalation, and cost control. It supersedes fixed-Sol and default-Fable wording
+without weakening requirements, review, evidence, merge, or release gates.
 
-Active: WAR-11 / DON-7 / DON-76, draft
-[PR28](https://github.com/donal0c/sartracker-web/pull/28), branch
-`codex/war-11-offline-map-freshness`. Rebased onto the merged master.
-Scope remains MAP-01/02/03 + AUD-11: validated package identity/content,
-actual current-view tile checks, reader/raster invalidation and valid missing hatch.
-The only rebase conflict was this handoff; shared main/preload/CI changes merged
-automatically and require affected integration verification.
+Master is `cda87aa03f27eb69532ae9506aa9e719cef7e364`. Donal merged
+[PR27](https://github.com/donal0c/sartracker-web/pull/27) and
+[PR28](https://github.com/donal0c/sartracker-web/pull/28) on 2026-09-14.
+Train D participant completeness, audited legacy roster recovery (SAR-QA-022),
+stable Search Operations pagination, and WAR-11 offline-map package
+qualification/freshness are integrated. The merged-head Linux pipeline
+[34826211836](https://github.com/donal0c/sartracker-web/actions/runs/34826211836)
+passed. Its explicit skips remain limits, not release proof.
+
+Active next lanes are the native-runtime/packaged-qualification blocker repair
+and Repair Train C map interaction/rendering repair. They are separate Astra
+Low owner tasks with only bounded independent Luna X-High delegation.
 
 ## Verification and next action
 
-Claude review remediation is active; PR28 readiness is withdrawn and draft status
-restored. Integrated CI34812540230 passed at `3ecb7b8a` (4,943 tests, six existing
-skips, four browser flows and packaged map smoke), but does not cover the new
-repairs. See [review disposition](../docs/assurance/findings/pr28-claude-review.md).
-Local repairs and source/browser/independent review are complete; fresh exact-head
-CI evidence remains required. No local Electron/build or merge is authorized.
-
-Prior integrated head `3ecb7b8a` passed Linux CI34812540230: 467 files /
-4,943 tests / six existing qualification skips, four browser flows and packaged
-map smoke. Evidence ZIP10335243404 was digest/head/tree verified; A/B imagery
-changed, passive/final removal had 289 transparent samples, final Check View was
-0/15 missing and Not field ready, and child exit was clean (0/null).
-This remains historical scoped Linux proof, superseded for the review repairs.
-
-Current local fixes cover persisted-validation reuse, conditional settings mutation,
-WAL preflight, bounded decoded-proof reuse, raster reconstruction recovery and
-negative-result races. Stable correctness passes 468 files / 4,956 tests / six
-existing skips; six synthetic Chromium flows, typecheck, lint and independent
-reviews pass. The first full run's stale message expectation failure is retained.
-Repair `220366e5` is pushed. A post-push synthetic probe found same-path provider
-metadata changes bypassed the new save guard; a source-snapshot comparison fixes
-that locally. Follow-up correctness passes 468 files / 4,957 tests / six existing
-skips, settings 27/27 and independent review pass; unchanged browser evidence is
-reused. CI34819550032 was cancelled as superseded. Next: push follow-up and verify
-fresh exact-head CI. Same-path non-persisted provider URL/password edits remain
-outside this offline freshness proof. No local Electron,
-package build, merge or release. Default local actionlint previously timed out;
-workflow-only parsing and all 32 shell steps checked serially passed.
-
-Detailed history, clean red/green and all failed receipts remain in
-[WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md).
-Three macOS failures and Linux failures34776633574/34779414995/34782626004 remain
-failed. The last was a stale workflow text assertion, corrected without runtime
-change; its validation gap is recorded. The mixed-input browser run is excluded.
+Run 34826211836 passed full correctness, property/mutation controls, renderer
+attribution, web build/budgets, WAR-06 and WAR-11 browser regressions, Electron
+packaging, packaged map/GPX/breadcrumb/WAR-06/legacy-recovery smokes, native
+SQLite inspection, llvmpipe attestation, AppImage launch, and artifact upload.
+The strict 200 ms qualification, 960k replay, dedicated Train D packaged proof,
+tracking soak, archive lifecycle, and field acceptance were skipped or remain
+separate. Next: complete and merge the two active bounded repair lanes, then
+rerun the affected exact-head packaged qualification. Do not release.
 
 ## Remaining limits
 

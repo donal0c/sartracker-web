@@ -31,9 +31,12 @@ Breadcrumb and Mission-History Programme defined in
 `docs/breadcrumb-programme-execution-policy.md` uses six substantial feature
 branches and PRs. No programme implementation is committed directly to
 `master`. This exception lasts through BCP-17 and does not change the default
-for unrelated work. Programme planning, Donal's approval gate, fresh Sol-high
-implementation tasks, cost-conscious Fable use, and requirements control follow
-`docs/breadcrumb-programme-coordination-workflow.md`.
+for unrelated work. Programme planning, Donal's approval gate, requirements
+control, and PR ownership follow
+`docs/breadcrumb-programme-coordination-workflow.md`. All new model selection,
+reasoning-effort, delegation, escalation, and cost decisions follow
+`docs/model-routing-and-agent-execution-policy.md`; that current policy
+supersedes older fixed-Sol and default-Fable wording.
 
 ## Project Intent
 
