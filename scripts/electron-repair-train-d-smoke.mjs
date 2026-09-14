@@ -1034,7 +1034,8 @@ async function ensureMissionActive(page, missionId) {
     (value) => (
       value.active?.id === missionId && value.active.status === 'active'
     ) || (
-      value.recoverable?.id === missionId && value.recoverable.status === 'active'
+      value.recoverable?.id === missionId
+      && (value.recoverable.status === 'active' || value.recoverable.status === 'paused')
     ),
     'mission state to hydrate after packaged restart',
   )

@@ -339,6 +339,58 @@ describe('Repair Train D packaged smoke gates', () => {
     }))).toThrow(/unexpected packaged diagnostics/i)
   })
 
+  it('accepts the packaged Train D diagnostics caused by the deliberate history hold and close', () => {
+    const diagnostics = createDiagnosticState()
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET',
+        path: '/api/positions',
+        deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z',
+        to: '2026-09-13T05:00:00.000Z',
+        isHistory: true,
+        status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+    }
+    const rendererWarning = (message: string, phase: string) => appendBoundedDiagnostic(
+      diagnostics,
+      'consoleWarnings',
+      { message, url: 'file:///app/index.html' },
+      { phase, type: 'console.warning', source: 'renderer-console' },
+    )
+    rendererWarning(
+      'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: HTTP 503: Service Unavailable}',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb fetch failed for device. {deviceId: 11, deviceName: Repair Train D B, error: Mission history evidence scope closed before transport admission.}',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb reconciliation failed for device. {deviceId: 11, deviceName: Repair Train D B, retryDelayMs: 1000, error: Mission history evidence scope closed before transport admission.}',
+      'aud08',
+    )
+    rendererWarning(
+      'Participant history backfill pass failed; it will retry. Error: HTTP 503: Service Unavailable\n    at start-tracking-runtime.js:1:2',
+      'close',
+    )
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.",
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at finishMission (/app/electron/mission-store.cjs:5667:3)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: 'Debugger ending on ws://127.0.0.1:39841/3986e37b-356e-480d-9960-8cd0095ac4ff',
+    }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: 'For help, see: https://nodejs.org/en/docs/inspector',
+    }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
+
+    expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist(context))).not.toThrow()
+  })
+
   it('rejects a pass receipt that omits package, cleanup, or B-history evidence', () => {
     const receipt = minimalReceipt()
     expect(() => validateSmokeReceipt(receipt)).toThrow(/ASAR|history covered|profile|all Train D scenarios/i)

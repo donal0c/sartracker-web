@@ -408,14 +408,48 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
   const providerOrigin = typeof context.providerOrigin === 'string' ? context.providerOrigin : ''
   const allowHistoryWarning = isBoundedHistoryHoldRequest(context.historyHoldEvidence)
     && /^http:\/\/127\.0\.0\.1:\d+$/u.test(providerOrigin)
+  const trainDPhase = (entry) => entry?.phase === 'aud08'
+    || entry?.phase === 'aud09'
+    || entry?.phase === 'close'
+    || entry?.phase === 'restart'
+  const rendererWarning = (entry) => entry?.type === 'console.warning'
+    && entry?.source === 'renderer-console'
+    && entry?.url.startsWith('file:')
+    && trainDPhase(entry)
+  const historyRetryWarning = (entry) => rendererWarning(entry)
+    && ((entry?.message === 'Participant history backfill pass failed; it will retry.'
+      && (entry?.phase === 'aud08' || entry?.phase === 'restart'))
+      || entry?.message.startsWith('Participant history backfill pass failed; it will retry. Error: HTTP 503: Service Unavailable'))
+  const transportFailureWarning = (entry) => rendererWarning(entry)
+    && /^Tracking breadcrumb fetch failed for device\. \{deviceId: (?:11|22), .* error: (?:HTTP 503: Service Unavailable|Mission history evidence scope closed before transport admission\.)\}$/u.test(entry?.message ?? '')
+  const reconciliationFailureWarning = (entry) => rendererWarning(entry)
+    && /^Tracking breadcrumb reconciliation failed for device\. \{deviceId: (?:11|22), .* error: Mission history evidence scope closed before transport admission\.\}$/u.test(entry?.message ?? '')
+  const finishFenceError = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'aud08'
+    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing."
+  const finishFenceStack = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'aud08'
+    && (/^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? '')
+      || /^\s+at sqliteTransaction \(.*\/better-sqlite3\/lib\/methods\/transaction\.js:\d+:\d+\)$/u.test(entry?.message ?? '')
+      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? ''))
+  const inspectorCloseStderr = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'close'
+    && (/^Debugger ending on ws:\/\/127\.0\.0\.1:\d+\/[0-9a-f-]+$/u.test(entry?.message ?? '')
+      || entry?.message === 'For help, see: https://nodejs.org/en/docs/inspector')
   return {
     ...DEFAULT_DIAGNOSTIC_ALLOWLIST,
     consoleWarnings: allowHistoryWarning ? Object.freeze([
-      (entry) => entry?.message === 'Participant history backfill pass failed; it will retry.'
-        && entry?.type === 'console.warning'
-        && entry?.source === 'renderer-console'
-        && (entry?.phase === 'aud08' || entry?.phase === 'restart')
-        && entry?.url.startsWith('file:'),
+      historyRetryWarning,
+      transportFailureWarning,
+      reconciliationFailureWarning,
+    ]) : Object.freeze([]),
+    processStderr: allowHistoryWarning ? Object.freeze([
+      finishFenceError,
+      finishFenceStack,
+      inspectorCloseStderr,
     ]) : Object.freeze([]),
   }
 }
