@@ -543,7 +543,6 @@ function createElectronMissionStore(options) {
     options.runOutingFixSummaryInWorker ?? runOutingFixSummaryInWorker
   const coverageQueryRunner =
     options.runCoverageQueryInWorker ?? runCoverageQueryInWorker
-  const coverageQueryRunnerValidatesResults = coverageQueryRunner === runCoverageQueryInWorker
   const coverageTileRunner = options.coverageTileRunner ?? createCoverageTileRunner({
     databasePath,
     cacheDirectory: path.join(options.userDataPath, COVERAGE_TILE_CACHE_DIRECTORY_NAME),
@@ -2286,6 +2285,7 @@ function createElectronMissionStore(options) {
           })
           await runCoveragePublication(missionId, signal, () => {
             assertCoverageResultInventory(db, missionId, enumeration.chunks, (chunk) => chunk, 'enumeration')
+            assertCoverageSnapshotCurrent(missionId, enumeration)
             return applyCoverageEnumeration(db, {
               missionId,
               expectedChangeSeq: enumeration.changeSeq,
@@ -2309,6 +2309,7 @@ function createElectronMissionStore(options) {
         const inserted = await runCoveragePublication(missionId, signal, () => {
           assertCoverageResultInventory(db, missionId, manifest.chunks, (chunk) => chunk.key, 'manifest')
           assertCoverageManifestOutings(db, missionId, manifest.outings)
+          assertCoverageSnapshotCurrent(missionId, manifest)
           return applyCoverageManifestInventory(db, {
             missionId,
             expectedChangeSeq: manifest.changeSeq,
@@ -2327,6 +2328,7 @@ function createElectronMissionStore(options) {
           'manifest',
         )
         assertCoverageManifestOutings(db, missionId, currentManifest.outings)
+        assertCoverageSnapshotCurrent(missionId, currentManifest)
         coverageManifestBuildEvidenceByMission.set(
           missionId,
           createCoverageManifestBuildEvidence(currentManifest),
@@ -3451,6 +3453,15 @@ function createElectronMissionStore(options) {
       WHERE mission_id = ?`).get(missionId)?.change_seq ?? 0)
   }
 
+  /** Refuses to publish or cache coverage derived before a canonical mission mutation. */
+  function assertCoverageSnapshotCurrent(missionId, result) {
+    if (result.changeSeq !== readCoverageChangeSequence(missionId)) {
+      const error = new Error('Coverage snapshot changed while loading history. Retry to read current coverage.')
+      error.code = 'coverage-snapshot-changed'
+      throw error
+    }
+  }
+
   /** Drains each durable outing invalidation through worker analysis and bounded applies. */
   async function drainCoverageInvalidations(missionId, signal) {
     const pending = db.prepare(`SELECT id FROM coverage_invalidations
@@ -3551,12 +3562,10 @@ function createElectronMissionStore(options) {
 
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
   function runCoverageWorker(query, signal, serializeChunk) {
-    const resultLimits = readCoverageQueryResultLimits(db, query)
     if (!serializeChunk) {
       return normalizeCoverageOperation(
         query,
-        coverageQueryRunner({ databasePath, query, signal, resultLimits }),
-        resultLimits,
+        coverageQueryRunner({ databasePath, query, signal }),
       )
     }
     const previousWorker = coverageChunkWorkerTail
@@ -3568,8 +3577,7 @@ function createElectronMissionStore(options) {
       try {
         operation = normalizeCoverageOperation(
           query,
-          coverageQueryRunner({ databasePath, query, signal, resultLimits }),
-          resultLimits,
+          coverageQueryRunner({ databasePath, query, signal }),
         )
       } catch (error) {
         releaseWorkerSlot()
@@ -3582,11 +3590,15 @@ function createElectronMissionStore(options) {
   }
 
   /** Normalizes injected and production worker operations without losing exit ownership. */
-  function normalizeCoverageOperation(query, operation, resultLimits) {
-    const normalized = coverageQueryRunnerValidatesResults
-      ? Promise.resolve(operation)
-      : Promise.resolve(operation).then((result) =>
-          normalizeCoverageWorkerResult(query, result, resultLimits))
+  function normalizeCoverageOperation(query, operation) {
+    const normalized = Promise.resolve(operation).then((result) =>
+      normalizeCoverageWorkerResult(query, result, readCoverageQueryResultLimits(db, query)))
+      .catch(async (error) => {
+        // Cancellation settles the runner before terminate() has closed SQLite.
+        // Keep request and shutdown ownership until the physical worker exit.
+        await Promise.resolve(operation.workerExited ?? operation).catch(() => undefined)
+        throw error
+      })
     Object.defineProperty(normalized, 'workerExited', {
       value: operation.workerExited ?? operation,
     })

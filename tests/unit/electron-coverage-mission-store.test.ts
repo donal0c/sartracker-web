@@ -207,6 +207,90 @@ afterEach(async () => {
 })
 
 describe('Electron coverage mission-store orchestration', () => {
+  it('rejects a manifest whose snapshot moved without changing inventory [DON-254]', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-sequence-'))
+    let changed = false
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: async (input) => {
+        const result = await runRealCoverageQueryInWorker(input)
+        if (input.query.kind === 'manifest' && !changed) {
+          changed = true
+          await store!.addPositionsBulk({ mission_id: String(input.query.missionId), positions: [{
+            source_position_id: 'concurrent-fix', device_id: 'device-1', lat: 52.02, lon: -9.72,
+            timestamp: '2026-08-24T09:06:00.000Z', timestamp_source: 'fix',
+          }] })
+        }
+        return result
+      },
+    })
+    const mission = await seedMission(store)
+    await expect(store.readCoverageManifest(mission.id, 'moved-snapshot'))
+      .rejects.toThrow(/coverage.*snapshot.*changed/i)
+    expect(changed).toBe(true)
+    const current = await store.readCoverageManifest(mission.id, 'fresh-snapshot')
+    expect(current.chunks[0].exactCount).toBe(3)
+  })
+
+  it('joins physical coverage worker exit after cancellation before shutdown [DON-254]', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-exit-'))
+    let exitWorker = () => undefined
+    const exited = new Promise<void>(resolve => { exitWorker = resolve })
+    let started = false
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: (input) => {
+        started = true
+        const operation = new Promise<Record<string, unknown>>((_resolve, reject) => {
+          input.signal!.addEventListener('abort', () => {
+            reject(Object.assign(new Error('Controlled cancellation'), { name: 'AbortError' }))
+          }, { once: true })
+        })
+        return Object.assign(operation, { workerExited: exited })
+      },
+    })
+    const mission = await seedMission(store)
+    const observed = store.readCoverageManifest(mission.id, 'exit-custody').catch(error => error)
+    await vi.waitFor(() => expect(started).toBe(true))
+    let closed = false
+    const closing = store.prepareClose().then(() => { closed = true })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(closed).toBe(false)
+    } finally {
+      exitWorker()
+      await closing
+      await expect(observed).resolves.toMatchObject({ name: 'AbortError' })
+    }
+  })
+
+  it('accepts canonical inventory added after parent bound capture and before the worker snapshot [DON-254]', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-race-'))
+    let changed = false
+    store = createElectronMissionStore({
+      userDataPath: directory,
+      runCoverageQueryInWorker: async (input) => {
+        if (input.query.kind === 'enumerate' && !changed) {
+          changed = true
+          await store!.createOuting({
+            mission_id: String(input.query.missionId),
+            label: 'Concurrent outing',
+            started_at: '2026-08-24T08:30:00.000Z',
+          })
+        }
+        return runRealCoverageQueryInWorker(input)
+      },
+    })
+    const mission = await seedMission(store)
+
+    const manifest = await store.readCoverageManifest(mission.id, 'snapshot-race')
+
+    expect(changed).toBe(true)
+    expect(manifest.chunks.map((chunk) => chunk.key.period_kind).sort())
+      .toEqual(['outing', 'unassigned'])
+    expect(manifest.enumerated).toBe(true)
+  })
+
   it('refuses derived coverage publication after finalization without changing archived membership', async () => {
     store = await createStore()
     const mission = await seedMission(store)

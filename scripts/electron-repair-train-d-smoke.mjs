@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 
 import { extractFile } from '@electron/asar'
 import { _electron as electron } from 'playwright'
+import { attachPackagedPageDiagnostics, createPackagedStderrCollector, sanitizePackagedDiagnosticText } from '../build/packaged-page-diagnostics.js'
 import {
   appendBoundedDiagnostic,
   assertNoUnexpectedDiagnostics,
@@ -96,6 +97,7 @@ async function main() {
     },
     runnerPath,
     runnerSha256: await sha256File(runnerPath),
+    diagnosticHelperSha256: await sha256File(path.join(projectRoot, 'build/packaged-page-diagnostics.js')),
     executablePath: path.resolve(options.appPath),
     evidenceDirectory: evidenceDir,
     profile,
@@ -511,9 +513,12 @@ async function launchPackaged(appPath, profile, label, report) {
     process: null,
     diagnostics: createDiagnosticState(),
     screenshots: [],
-    stderrBuffer: '',
+    stderrCollector: null,
     attachedPages: new Set(),
     diagnosticPhase: 'launch',
+    diagnosticStartedAt: performance.now(),
+    teardownRequestedAt: null,
+    exitObservedAt: null,
     close: null,
   }
   assertBeforeDeadline(`${label} launch`)
@@ -535,9 +540,12 @@ async function launchPackaged(appPath, profile, label, report) {
   })
   launch.process = launch.app.process()
   assert.ok(launch.process !== null, `Packaged launch did not expose a child process for ${label}`)
+  launch.process.once('exit', () => { launch.exitObservedAt = new Date().toISOString() })
   launch.process.on('error', (error) => {
     appendLaunchDiagnostic(launch, 'mainProcessErrors', {
       message: sanitizeDiagnosticText(error.message),
+      name: sanitizeDiagnosticText(error.name),
+      stack: sanitizeDiagnosticText(error.stack ?? ''),
     }, 'main-process.error', 'main-process')
   })
   launch.process.stderr?.on('data', (chunk) => {
@@ -576,41 +584,19 @@ async function launchPackaged(appPath, profile, label, report) {
 function attachPageDiagnostics(launch, page) {
   if (launch.attachedPages.has(page)) return
   launch.attachedPages.add(page)
-  page.on('console', (message) => {
-    const messageText = sanitizeDiagnosticText(message.text())
-    const location = message.location()
-    const entry = {
-      message: messageText,
-      url: sanitizeDiagnosticText(location.url ?? ''),
-      lineNumber: location.lineNumber ?? null,
-      columnNumber: location.columnNumber ?? null,
-    }
-    if (message.type() === 'error') {
-      appendLaunchDiagnostic(launch, 'consoleErrors', entry, 'console.error', 'renderer-console')
-    } else if (message.type() === 'warning') {
-      appendLaunchDiagnostic(launch, 'consoleWarnings', entry, 'console.warning', 'renderer-console')
-    }
-  })
-  page.on('pageerror', (error) => {
-    appendLaunchDiagnostic(launch, 'pageErrors', {
-      message: sanitizeDiagnosticText(error.message),
-    }, 'pageerror', 'renderer-page')
-  })
-  page.on('requestfailed', (request) => {
-    const failure = request.failure()
-    if (failure !== null) {
-      appendLaunchDiagnostic(launch, 'networkFailures', {
-        message: sanitizeDiagnosticText(failure.errorText),
-        errorText: failure.errorText,
-        url: sanitizeDiagnosticText(request.url()),
-      }, 'requestfailed', 'renderer-network')
-    }
-  })
+  attachPackagedPageDiagnostics(page, (field, entry, type, source) => {
+    appendLaunchDiagnostic(launch, field, entry, type, source)
+  }, sanitizeDiagnosticText)
 }
 
 /** Appends one launch diagnostic with the current smoke phase and source. */
 function appendLaunchDiagnostic(launch, field, entry, type, source) {
-  appendBoundedDiagnostic(launch.diagnostics, field, entry, {
+  const raw = typeof entry === 'string' ? { message: entry } : entry
+  appendBoundedDiagnostic(launch.diagnostics, field, {
+    ...raw,
+    elapsedMs: performance.now() - launch.diagnosticStartedAt,
+    teardownRequestedAt: launch.teardownRequestedAt,
+  }, {
     phase: launch.diagnosticPhase,
     type,
     source,
@@ -1067,6 +1053,7 @@ async function ensureMissionActive(page, missionId) {
 /** Closes the packaged app and requires an orderly zero exit. */
 async function closeLaunch(launch, report, provider = null) {
   launch.diagnosticPhase = 'close'
+  launch.teardownRequestedAt ??= new Date().toISOString()
   let closeError = null
   let forcedCleanup = null
   const previousOperationDeadline = operationDeadline
@@ -1089,6 +1076,9 @@ async function closeLaunch(launch, report, provider = null) {
     flushProcessStderrDiagnostics(launch)
     const closeEvidence = {
       requested: 'playwright ElectronApplication.close()',
+      requestedAt: launch.teardownRequestedAt,
+      exitObservedAt: launch.exitObservedAt,
+      stderrDrainedAt: stderrDrained ? new Date().toISOString() : null,
       graceful: closeError === null && forcedCleanup === null && exit !== null && exit.exitCode === 0,
       forcedCleanup,
       exitCode: exit?.exitCode ?? null,
@@ -1119,20 +1109,15 @@ async function closeLaunch(launch, report, provider = null) {
 
 /** Stores complete stderr lines while retaining a partial final chunk for close. */
 function appendProcessStderrDiagnostics(launch, chunk) {
-  launch.stderrBuffer += sanitizeDiagnosticText(chunk)
-  const lines = launch.stderrBuffer.split(/\r?\n/u)
-  launch.stderrBuffer = lines.pop() ?? ''
-  for (const line of lines) {
-    if (line !== '') appendLaunchDiagnostic(launch, 'processStderr', { message: line }, 'stderr', 'main-process-stderr')
-  }
+  launch.stderrCollector ??= createPackagedStderrCollector((message) => {
+    appendLaunchDiagnostic(launch, 'processStderr', { message }, 'stderr', 'main-process-stderr')
+  })
+  launch.stderrCollector.write(chunk)
 }
 
 /** Flushes a final stderr chunk before terminal diagnostic validation. */
 function flushProcessStderrDiagnostics(launch) {
-  if (launch.stderrBuffer !== '') {
-    appendLaunchDiagnostic(launch, 'processStderr', { message: launch.stderrBuffer }, 'stderr', 'main-process-stderr')
-    launch.stderrBuffer = ''
-  }
+  launch.stderrCollector?.flush()
 }
 
 /** Waits for the owned child stderr stream to finish before terminal validation. */
@@ -1368,10 +1353,7 @@ async function boundedAppEvaluate(app, pageFunction, argument, description) {
 
 /** Redacts credentials and sensitive query values from process diagnostics. */
 function sanitizeDiagnosticText(value) {
-  return value
-    .replace(/(authorization\s*:\s*basic\s+)[^\s]+/gi, '$1[redacted]')
-    .replace(/((?:password|passwd|secret|token|secretInput)=)[^&\s]+/gi, '$1[redacted]')
-    .slice(0, 2_000)
+  return sanitizePackagedDiagnosticText(value)
 }
 
 /** Bounds diagnostic formatting so timeout failures remain readable. */

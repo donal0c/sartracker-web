@@ -1,0 +1,48 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/packaged-page-diagnostics.test.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts (1 test | 1 failed) 5ms
+     × retains error identity, frame context and request type without inferring a script cause 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/packaged-page-diagnostics.test.ts > packaged renderer diagnostic custody [DON-254] > retains error identity, frame context and request type without inferring a script cause
+AssertionError: expected { field: 'pageErrors', …(3) } to match object { field: 'pageErrors', …(2) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "entry": {
+      "message": "An unknown error occurred when fetching the script.",
+-     "name": "NetworkError",
+-     "pageUrl": "file:///app/index.html",
+-     "stack": "NetworkError: unknown script
+-  at file:///app/assets/main.js:12:4",
+    },
+    "field": "pageErrors",
+    "source": "renderer-page",
+  }
+
+ ❯ tests/unit/packaged-page-diagnostics.test.ts:21:23
+     19|       url: () => 'file:///app/assets/worker.js', resourceType: () => '…
+     20|     })
+     21|     expect(events[0]).toMatchObject({ field: 'pageErrors', source: 're…
+       |                       ^
+     22|       name: 'NetworkError', stack: error.stack, pageUrl: 'file:///app/…
+     23|       message: error.message,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  11:06:26
+   Duration  367ms (transform 14ms, setup 0ms, import 21ms, tests 5ms, environment 272ms)
+

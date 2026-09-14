@@ -1,0 +1,38 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts tests/unit/electron-coverage-mission-store.test.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/f32d/sartracker-web
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts (27 tests | 1 failed) 2570ms
+     × joins physical coverage worker exit after cancellation before shutdown [DON-254] 108ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/electron-coverage-mission-store.test.ts > Electron coverage mission-store orchestration > joins physical coverage worker exit after cancellation before shutdown [DON-254]
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/electron-coverage-mission-store.test.ts:234:22
+    232|     try {
+    233|       await new Promise(resolve => setTimeout(resolve, 20))
+    234|       expect(closed).toBe(false)
+       |                      ^
+    235|     } finally {
+    236|       exitWorker()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 26 passed (27)
+   Start at  11:05:29
+   Duration  3.04s (transform 33ms, setup 0ms, import 73ms, tests 2.57s, environment 258ms)
+

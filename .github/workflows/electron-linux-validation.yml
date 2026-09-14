@@ -283,6 +283,19 @@ jobs:
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
 
+      - name: Packaged native coverage runtime control
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/electron-native-runtime-smoke.mjs \
+              tmp/electron-dist/linux-unpacked/sartracker-web \
+              tmp/electron-validation-evidence/native-runtime
+
       - name: Packaged official map qualification and freshness smoke
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'

@@ -1,5 +1,8 @@
+const { createCoverageOwnerLifecycle } = require('./coverage-owner-lifecycle.cjs')
+
 /** Registers sender-scoped coverage read and cancellation handlers. */
 function registerCoverageIpcHandlers(input) {
+  input = { ...input, ownerLifecycle: createCoverageOwnerLifecycle() }
   const ownedStages = new Map()
   registerCoverageReadHandler(
     input,
@@ -36,13 +39,11 @@ function registerCoverageTileHandlers(input) {
     const cancelDestroyedSender = () => {
       void input.missionStore.cancelCoverageTileRead(scopedRequestId).catch(() => undefined)
     }
-    event.sender.once('destroyed', cancelDestroyedSender)
-    event.sender.once('render-process-gone', cancelDestroyedSender)
+    const releaseOwner = input.ownerLifecycle.subscribe(event.sender, cancelDestroyedSender)
     try {
       return await input.missionStore.readCoverageTile(payload, scopedRequestId)
     } finally {
-      event.sender.removeListener('destroyed', cancelDestroyedSender)
-      event.sender.removeListener('render-process-gone', cancelDestroyedSender)
+      releaseOwner()
     }
   })
   input.ipcMain.handle(input.tileChannels.cancel, (event, requestId) => {
@@ -61,10 +62,6 @@ function registerCoverageCatalogHandler(input, ownedStages) {
     const senderId = event.sender.id
     let destroyed = false
     let ownedActivationId = null
-    const releaseListeners = () => {
-      event.sender.removeListener('destroyed', senderGone)
-      event.sender.removeListener('render-process-gone', senderGone)
-    }
     const senderGone = () => {
       if (destroyed) return
       destroyed = true
@@ -77,8 +74,7 @@ function registerCoverageCatalogHandler(input, ownedStages) {
       }
       releaseListeners()
     }
-    event.sender.once('destroyed', senderGone)
-    event.sender.once('render-process-gone', senderGone)
+    const releaseListeners = input.ownerLifecycle.subscribe(event.sender, senderGone)
     try {
       abandonSenderStages(ownedStages, senderId)
       await settleAbandonedStages(input, ownedStages, senderId)
@@ -233,13 +229,11 @@ function registerCoverageReadHandler(input, channel, read) {
     const cancelDestroyedSender = () => {
       void input.missionStore.cancelCoverageQuery(scopedRequestId).catch(() => undefined)
     }
-    event.sender.once('destroyed', cancelDestroyedSender)
-    event.sender.once('render-process-gone', cancelDestroyedSender)
+    const releaseOwner = input.ownerLifecycle.subscribe(event.sender, cancelDestroyedSender)
     try {
       return await read(input.missionStore, payload, scopedRequestId)
     } finally {
-      event.sender.removeListener('destroyed', cancelDestroyedSender)
-      event.sender.removeListener('render-process-gone', cancelDestroyedSender)
+      releaseOwner()
     }
   })
 }

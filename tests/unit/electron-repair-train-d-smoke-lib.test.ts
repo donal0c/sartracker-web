@@ -32,6 +32,22 @@ class FakeChild extends EventEmitter {
 }
 
 describe('Repair Train D packaged smoke gates', () => {
+  it('rejects missing elapsed capture timing even for expected diagnostics [DON-254]', () => {
+    const diagnostics = createDiagnosticState()
+    appendBoundedDiagnostic(diagnostics, 'consoleErrors', {
+      message: 'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT',
+      url: 'https://tile.openstreetmap.org/1/2/3.png',
+    }, { phase: 'launch', type: 'console.error', source: 'renderer-console' })
+    const entry = diagnostics.consoleErrors[0] as Record<string, unknown>
+    delete entry.elapsedMs
+    expect(() => assertNoUnexpectedDiagnostics(diagnostics)).toThrow(/diagnostic/i)
+  })
+
+  it('rejects absent teardown boundaries from otherwise passing receipts [DON-254]', () => {
+    const receipt = completeReceipt()
+    Reflect.deleteProperty(receipt.launches[0].close, 'requestedAt')
+    expect(() => validateSmokeReceipt(receipt)).toThrow(/teardown.*timing/i)
+  })
   it.each(['cooperative', 'term', 'kill'] as const)('closes an owned child after scenario exhaustion: %s', async (mode) => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
@@ -411,6 +427,9 @@ function completeReceipt() {
   const backupPath = `${profile}/mission-store.backup.sqlite`
   const diagnostics = () => createDiagnosticState()
   const close = () => ({
+    requestedAt: '2026-09-14T10:00:00.000Z',
+    exitObservedAt: '2026-09-14T10:00:01.000Z',
+    stderrDrainedAt: '2026-09-14T10:00:02.000Z',
     graceful: true,
     exitCode: 0,
     signal: null,

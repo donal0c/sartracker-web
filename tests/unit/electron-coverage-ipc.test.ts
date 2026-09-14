@@ -40,6 +40,42 @@ const { registerCoverageIpcHandlers } = require('../../electron/coverage-ipc.cjs
 }
 
 describe('coverage IPC ownership [DON-276]', () => {
+  it('shares lifecycle listeners across concurrent reads and cancels each owner once [DON-254]', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
+    const pending = new Map<string, (value: unknown) => void>()
+    const read = vi.fn((_query: unknown, requestId: string) => new Promise(resolve => {
+      pending.set(requestId, resolve)
+    }))
+    const cancel = vi.fn(async (requestId: string) => {
+      pending.get(requestId)?.(null)
+      return true
+    })
+    registerCoverageIpcHandlers({
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler as never) },
+      readChannels: { manifest: 'manifest', chunk: 'chunk', claim: 'claim', catalog: 'catalog' },
+      tileChannels: { read: 'tile', cancel: 'cancel-tile' },
+      cancelChannel: 'cancel', validateIpcSender: vi.fn(),
+      missionStore: {
+        readCoverageManifest: read, readCoverageChunk: read, readCoverageClaim: read,
+        syncCoverageTileCatalog: vi.fn(), cancelCoverageQuery: cancel,
+        readCoverageTile: read, cancelCoverageTileRead: cancel,
+      },
+    })
+    const sender = Object.assign(new EventEmitter(), { id: 71 })
+    const requests = Array.from({ length: 24 }, (_, index) => handlers.get(
+      ['manifest', 'chunk', 'claim', 'tile'][index % 4],
+    )!({ sender }, {}, `concurrent-${index}`))
+    const counts = ['destroyed', 'render-process-gone'].map(event => sender.listenerCount(event))
+    sender.emit('render-process-gone')
+    sender.emit('destroyed')
+    await Promise.all(requests)
+
+    expect(counts).toEqual([1, 1])
+    expect(cancel).toHaveBeenCalledTimes(24)
+    expect(sender.listenerCount('destroyed')).toBe(0)
+    expect(sender.listenerCount('render-process-gone')).toBe(0)
+  })
+
   it('scopes request and cancellation IDs to the owning renderer', async () => {
     const handlers = new Map<string, (event: unknown, ...args: readonly unknown[]) => unknown>()
     let rejectQuery: (error: Error) => void = () => undefined

@@ -1,6 +1,7 @@
 const { parentPort, threadId, workerData } = require('node:worker_threads')
 
 const Database = require('better-sqlite3')
+const { readCoverageQueryResultLimits } = require('./coverage-query-result-attestation.cjs')
 const {
   assertCoverageWorkerResultCardinality,
 } = require('./coverage-query-result-envelope.cjs')
@@ -24,8 +25,12 @@ function run() {
       fileMustExist: true,
     })
     database.pragma('query_only = ON')
-    const readSnapshot = database.transaction(() =>
-      executeCoverageQuery(database, workerData.query))
+    const readSnapshot = database.transaction(() => {
+      const snapshotLimits = readCoverageQueryResultLimits(database, workerData.query)
+      const result = executeCoverageQuery(database, workerData.query)
+      assertCoverageWorkerResultCardinality(workerData.query, result, snapshotLimits)
+      return result
+    })
     const result = readSnapshot()
     assertCoverageWorkerResultCardinality(
       workerData.query,

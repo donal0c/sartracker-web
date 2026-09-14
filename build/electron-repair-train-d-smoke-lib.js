@@ -58,6 +58,7 @@ export function createDiagnosticState() {
     sequenceLog: [],
     nextSequence: 1,
     lastTimestampMs: 0,
+    captureStartedAt: performance.now(),
   }
 }
 
@@ -121,6 +122,9 @@ function normalizeDiagnosticEntry(diagnostics, field, entry, metadata = {}) {
     field,
     sequence,
     at: new Date(timestampMs).toISOString(),
+    elapsedMs: raw.elapsedMs ?? (performance.now() - diagnostics.captureStartedAt),
+    teardownRequestedAt: raw.teardownRequestedAt ?? null,
+    timeBasis: 'collector-receipt',
     phase: typeof metadata.phase === 'string' && metadata.phase !== ''
       ? metadata.phase : (typeof raw.phase === 'string' && raw.phase !== '' ? raw.phase : 'unknown'),
     type: typeof metadata.type === 'string' && metadata.type !== ''
@@ -348,6 +352,10 @@ function isDiagnosticEventShape(entry, field) {
     && Number.isSafeInteger(entry.sequence)
     && typeof entry.at === 'string'
     && Number.isFinite(Date.parse(entry.at))
+    && Number.isFinite(entry.elapsedMs) && entry.elapsedMs >= 0
+    && entry.timeBasis === 'collector-receipt'
+    && (entry.teardownRequestedAt === null
+      || (typeof entry.teardownRequestedAt === 'string' && Number.isFinite(Date.parse(entry.teardownRequestedAt))))
     && typeof entry.phase === 'string'
     && typeof entry.type === 'string'
     && typeof entry.source === 'string'
@@ -657,6 +665,12 @@ export function validateSmokeReceipt(receipt, options = {}) {
     }
     if (launch.close?.graceful !== true || launch.close?.exitCode !== 0 || launch.close?.signal !== null) {
       throw new Error(`Packaged smoke launch ${String(launch.label)} did not close cleanly.`)
+    }
+    const closeTimes = [launch.close.requestedAt, launch.close.exitObservedAt, launch.close.stderrDrainedAt]
+      .map(value => typeof value === 'string' ? Date.parse(value) : NaN)
+    if (closeTimes.some(value => !Number.isFinite(value))
+      || closeTimes[1] < closeTimes[0] || closeTimes[2] < closeTimes[1]) {
+      throw new Error('Packaged smoke teardown timing is missing or out of order.')
     }
     assertNoUnexpectedDiagnostics(launch.close?.diagnostics, createSmokeDiagnosticAllowlist({
       historyHoldEvidence: receipt.provider?.historyHoldEvidence,
