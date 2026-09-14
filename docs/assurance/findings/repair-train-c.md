@@ -2,7 +2,9 @@
 
 2026-09-14; baseline `cda87aa03f27eb69532ae9506aa9e719cef7e364` (merged PR28).
 Scope: AUD-04 / DON-264 and AUD-06 / DON-6. Local repair and independent review
-are complete; exact-head CI remains required. No release readiness claim.
+are complete in [PR30](https://github.com/donal0c/sartracker-web/pull/30).
+The [current required checks](https://github.com/donal0c/sartracker-web/pull/30/checks)
+control terminal CI/package readiness. No release readiness claim.
 
 ## Contract and ownership
 
@@ -67,7 +69,8 @@ synthetic background. No licensed imagery is used. Navigation attempt 4 passes
 in 22.4 seconds. The final affected unit/integration run passes 11 files / 77 tests.
 
 Local red/green logs are retained under `tmp/train-c/`; current independent
-review dispositions follow. Final source/build pass; exact-head CI remains pending.
+review dispositions follow. Final source/build pass; use the current PR checks
+above for the terminal CI result, not this pre-CI snapshot.
 
 ## Independent review dispositions
 
@@ -95,8 +98,12 @@ review dispositions follow. Final source/build pass; exact-head CI remains pendi
 5. **Independent final production recheck:** a separate reviewer who authored
    no production changes reports no concrete defect in the current getter,
    overlay, request-lifetime or camera-token scope. This is a same-run Codex
-   independent review, not external approval. Exact-commit attestation and CI
-   remain pending.
+   independent review, not external approval. Both source and evidence reviewers
+   subsequently attested exact implementation commit
+   `8747c1f65d6638d3d4d7f10eab3c335609ba6e93`, tree
+   `a6194ce52f6639d9d9ca99394e5cac47d2569329`, clean against origin. No valid
+   finding remains. Later documentation-only updates preserve that executable
+   and test evidence. Current PR checks remain the CI authority.
 
 ## Verification boundaries
 

@@ -8,8 +8,10 @@
 Branch `codex/repair-train-c` owns AUD-04 / DON-264 and AUD-06 / DON-6 only.
 Redundant style writes, target lifetime and stale camera restoration have
 red/green source/browser evidence in [Train C](assurance/findings/repair-train-c.md).
-Final source cycle and independent reviews pass; exact-head CI remains required
-before merge readiness. AUD-12 stays deferred; broader DON-264/DON-6 work and all native-runtime,
+Final source cycle and independent exact-head reviews pass at `8747c1f6`;
+[PR30 checks](https://github.com/donal0c/sartracker-web/pull/30/checks) control
+terminal CI/package readiness. Donal owns merge. AUD-12 stays deferred; broader
+DON-264/DON-6 work and all native-runtime,
 strict timing and release qualification remain separate. Earlier D/PR28 readiness
 statements below are historical; the handoff owns current operating state.
 

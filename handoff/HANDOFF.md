@@ -8,7 +8,8 @@ Master is `cda87aa03f27eb69532ae9506aa9e719cef7e364`, including merged PR27
 (Train D) and PR28 (official-map freshness). Refreshed against origin on
 2026-09-14. Earlier PR28 draft/review statuses are historical.
 
-Repair Train C is active on `codex/repair-train-c`: AUD-04 equal overlay
+Repair Train C is in [PR30](https://github.com/donal0c/sartracker-web/pull/30),
+branch `codex/repair-train-c`: AUD-04 equal overlay
 writes and AUD-06 repeated Go To/style-loading target loss. Current-style
 getter guards preserve real overlay changes; active target ownership survives
 pending acknowledgement. New navigation cancels stale basemap camera restores.
@@ -25,8 +26,13 @@ Owner inspected the rendered target screenshots. The initial full source run
 was interrupted for the review-discovered stale camera restoration defect;
 the final stable source cycle passes 471 files / 4,970 tests with six existing
 qualification skips. Lint, TypeScript/build/bundle budgets, workflow syntax and
-independent source/evidence reviews pass. Exact-head CI remains required.
-Commit/push and open the PR, then verify CI; Donal owns merge.
+independent source/evidence reviews pass. Both reviewers attest implementation
+commit `8747c1f65d6638d3d4d7f10eab3c335609ba6e93` and tree
+`a6194ce52f6639d9d9ca99394e5cac47d2569329`. Later changes are documentation only.
+The [current PR30 checks](https://github.com/donal0c/sartracker-web/pull/30/checks)
+control CI/package readiness; use their terminal result rather than older status
+snapshots. Donal may merge after those required checks are green. No further
+implementation or local qualification is queued in Train C.
 
 ## Remaining limits
 
