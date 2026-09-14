@@ -8,7 +8,7 @@ import { useMapTargetStore } from '../../src/features/map/map-target-store'
 import { useMapLocationTarget } from '../../src/features/map/use-map-location-target'
 import { applyMapStylePreservingCamera } from '../../src/features/map/apply-map-style-preserving-camera'
 
-type MapEventName = 'idle' | 'style.load' | 'styledata' | 'styledataloading'
+type MapEventName = 'idle' | 'style.load' | 'styledata' | 'styledataloading' | 'movestart' | 'error' | 'remove'
 type MapEventListener = () => void
 type StyleLayer = { readonly id: string }
 const reactActEnvironment = globalThis as typeof globalThis & {
@@ -61,7 +61,7 @@ describe('useMapLocationTarget', () => {
       center: [-9.531912, 52.275681],
       zoom: 14,
       essential: true,
-    })
+    }, { coordinateNavigation: true })
   })
 
   it('prevents delayed basemap restoration from overwriting a newer Go To [AUD-06]', () => {
@@ -93,6 +93,10 @@ describe('useMapLocationTarget', () => {
     harness.replaceStyle({ styleLoaded: true, styleLayers: [{ id: 'base-layer' }] })
     harness.emit('style.load')
 
+    expect(harness.jumpTo).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: [-9.530912, 52.274681],
+    }), expect.anything())
+
     expect(harness.addSource).toHaveBeenCalledTimes(2)
     expect(harness.addLayer).toHaveBeenCalledTimes(4)
     expect(harness.addSource.mock.calls.at(-1)?.[1]).toMatchObject({
@@ -107,6 +111,18 @@ describe('useMapLocationTarget', () => {
         ],
       },
     })
+  })
+
+  it('settles at the destination when basemap replacement interrupts an in-flight Go To', () => {
+    const harness = createMapHarness({ styleLoaded: true, styleLayers: [{ id: 'base' }] })
+    renderHook(harness.map)
+    act(() => useMapTargetStore.getState().queueTarget(52.274681, -9.530912))
+    // Harness getCenter remains at an intermediate frame, not the flyTo destination.
+    applyMapStylePreservingCamera(harness.map, { version: 8, sources: {}, layers: [] })
+    harness.emit('style.load')
+    expect(harness.jumpTo).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: [-9.530912, 52.274681], zoom: 14,
+    }), expect.anything())
   })
 
   it('attaches only the latest repeated Go To once a loading style becomes usable [AUD-06]', () => {
@@ -145,6 +161,38 @@ describe('useMapLocationTarget', () => {
     })
   })
 
+  it('keeps an attachment pending when a layer add is a silent no-op, then attaches after retry', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const harness = createMapHarness({
+      styleLoaded: true,
+      styleLayers: [{ id: 'base-layer' }],
+    })
+    harness.addLayer.mockImplementationOnce(() => undefined)
+    renderHook(harness.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.274681, -9.530912, 'Retrying target')
+    })
+
+    expect(useMapTargetStore.getState().activeTarget).toMatchObject({
+      attached: false,
+      expiresAt: 30_000,
+    })
+    expect(harness.map.getSource('coordinate-target')).toBeDefined()
+    expect(harness.map.getLayer('coordinate-target-ring')).toBeUndefined()
+    expect(harness.map.getLayer('coordinate-target-dot')).toBeDefined()
+
+    harness.emit('idle')
+
+    expect(useMapTargetStore.getState().activeTarget).toMatchObject({
+      attached: true,
+      expiresAt: 8_000,
+    })
+    expect(harness.map.getLayer('coordinate-target-ring')).toBeDefined()
+    expect(harness.map.getLayer('coordinate-target-dot')).toBeDefined()
+  })
+
   it('does not resurrect an expired target when a later style event arrives [AUD-06]', () => {
     vi.useFakeTimers()
     const harness = createMapHarness({
@@ -170,21 +218,166 @@ describe('useMapLocationTarget', () => {
     expect(harness.addSource).toHaveBeenCalledOnce()
   })
 
+  it('does not fly or restore a stale target after unmount at 4 seconds and remount at 60 seconds [AUD-06]', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const firstMap = createMapHarness({ styleLoaded: false, styleLayers: [] })
+    renderHook(firstMap.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.274681, -9.530912, 'Stale target')
+      vi.advanceTimersByTime(4_000)
+    })
+    expect(firstMap.flyTo).toHaveBeenCalledOnce()
+    expect(firstMap.addSource).not.toHaveBeenCalled()
+
+    unmountHook()
+    vi.setSystemTime(60_000)
+
+    const remountedMap = createMapHarness({
+      styleLoaded: true,
+      styleLayers: [{ id: 'base-layer' }],
+    })
+    renderHook(remountedMap.map, 2)
+
+    expect(useMapTargetStore.getState().activeTarget).toBeNull()
+    expect(remountedMap.flyTo).not.toHaveBeenCalled()
+    expect(remountedMap.addSource).not.toHaveBeenCalled()
+    expect(remountedMap.addLayer).not.toHaveBeenCalled()
+    expect(remountedMap.map.getSource('coordinate-target')).toBeUndefined()
+    expect(remountedMap.map.getLayer('coordinate-target-ring')).toBeUndefined()
+    expect(remountedMap.map.getLayer('coordinate-target-dot')).toBeUndefined()
+  })
+
+  it('replays an active target onto a recreated map without extending its original deadline [AUD-06]', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const firstMap = createMapHarness({
+      styleLoaded: true,
+      styleLayers: [{ id: 'base-layer' }],
+    })
+    renderHook(firstMap.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.274681, -9.530912, 'Recreated target')
+    })
+    const firstTarget = useMapTargetStore.getState().activeTarget
+    expect(firstTarget).toMatchObject({ attached: true, expiresAt: 8_000 })
+
+    act(() => {
+      vi.advanceTimersByTime(4_000)
+    })
+    const recreatedMap = createMapHarness({
+      styleLoaded: true,
+      styleLayers: [{ id: 'replacement-layer' }],
+    })
+    renderHook(recreatedMap.map, 2)
+
+    expect(recreatedMap.flyTo).toHaveBeenCalledWith({
+      center: [-9.530912, 52.274681],
+      zoom: 14,
+      essential: true,
+    }, { coordinateNavigation: true })
+    expect(recreatedMap.addSource).toHaveBeenCalledOnce()
+    expect(recreatedMap.addLayer).toHaveBeenCalledTimes(2)
+    expect(useMapTargetStore.getState().activeTarget).toMatchObject({
+      id: firstTarget?.id,
+      attached: true,
+      expiresAt: 8_000,
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(3_999)
+    })
+    expect(useMapTargetStore.getState().isTargetCurrent(firstTarget!.id)).toBe(true)
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(useMapTargetStore.getState().activeTarget).toBeNull()
+  })
+
+  it('expires an unattached request after 30 seconds when no style becomes usable, with no late resurrection [AUD-06]', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const harness = createMapHarness({ styleLoaded: false, styleLayers: [] })
+    renderHook(harness.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.274681, -9.530912, 'Unattached target')
+    })
+    const target = useMapTargetStore.getState().activeTarget
+    expect(target).toMatchObject({ attached: false, expiresAt: 30_000 })
+    expect(harness.addSource).not.toHaveBeenCalled()
+
+    act(() => {
+      vi.advanceTimersByTime(30_000)
+    })
+    expect(useMapTargetStore.getState().activeTarget).toBeNull()
+
+    harness.replaceStyle({ styleLoaded: true, styleLayers: [{ id: 'late-layer' }] })
+    harness.emit('style.load')
+    harness.emit('idle')
+
+    expect(harness.addSource).not.toHaveBeenCalled()
+    expect(harness.addLayer).not.toHaveBeenCalled()
+    expect(target).not.toBeNull()
+  })
+
+  it('rejects an expired target before its queued timer flushes, so a later style event cannot attach it [AUD-06]', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(0)
+    const harness = createMapHarness({ styleLoaded: false, styleLayers: [] })
+    renderHook(harness.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.274681, -9.530912, 'Clock-expired target')
+    })
+    const targetId = useMapTargetStore.getState().activeTarget!.id
+
+    act(() => {
+      vi.setSystemTime(30_001)
+    })
+    expect(useMapTargetStore.getState().isTargetCurrent(targetId)).toBe(false)
+    expect(useMapTargetStore.getState().activeTarget).toBeNull()
+
+    harness.replaceStyle({ styleLoaded: true, styleLayers: [{ id: 'late-layer' }] })
+    harness.emit('style.load')
+    harness.emit('idle')
+
+    expect(harness.addSource).not.toHaveBeenCalled()
+    expect(harness.addLayer).not.toHaveBeenCalled()
+  })
+
   /** Mounts the target hook against a minimal map reference. */
-  function renderHook(map: maplibregl.Map): void {
-    host = document.createElement('div')
-    document.body.append(host)
-    root = createRoot(host)
+  function renderHook(map: maplibregl.Map, mapReadyVersion = 1): void {
+    if (root === null) {
+      host = document.createElement('div')
+      document.body.append(host)
+      root = createRoot(host)
+    }
     const mapRef = { current: map } as RefObject<maplibregl.Map | null>
     act(() => {
-      root?.render(React.createElement(TargetProbe, { mapRef }))
+      root?.render(React.createElement(TargetProbe, { mapRef, mapReadyVersion }))
     })
+  }
+
+  /** Unmounts the hook while leaving the target store available for a remount. */
+  function unmountHook(): void {
+    if (root !== null) {
+      act(() => root?.unmount())
+    }
+    root = null
+    host?.remove()
+    host = null
   }
 })
 
 /** Exercises the target hook without introducing a component rendering surface. */
-function TargetProbe(props: { readonly mapRef: RefObject<maplibregl.Map | null> }): null {
-  useMapLocationTarget({ mapRef: props.mapRef })
+function TargetProbe(props: {
+  readonly mapRef: RefObject<maplibregl.Map | null>
+  readonly mapReadyVersion: number
+}): null {
+  useMapLocationTarget({ mapRef: props.mapRef, mapReadyVersion: props.mapReadyVersion })
   return null
 }
 

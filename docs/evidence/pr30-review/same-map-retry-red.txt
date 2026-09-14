@@ -1,0 +1,47 @@
+[WebServer] (node:52053) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 1 test using 1 worker
+
+(node:52055) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52055) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 12:30:46 PM [vite] (client) [console.error] Basemap style could not be applied. Choose another basemap.
+  ✘  1 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:86:1 › basemap application failure stays visible until the operator chooses another map (6.7s)
+
+
+  1) [chromium] › tests/e2e/map-navigation-recovery.spec.ts:86:1 › basemap application failure stays visible until the operator chooses another map
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    Call Log:
+    - Timeout 5000ms exceeded while waiting on the predicate
+
+      104 |   await page.getByTestId('basemap-menu-toggle').click()
+      105 |   await page.getByTestId('basemap-btn-esri_topo').click()
+    > 106 |   await expect.poll(() => page.evaluate(() =>
+          |   ^
+      107 |     Object.keys(window.__SARTRACKER_MAP__!.getStyle().sources).some((id) => id.includes('esri_topo')),
+      108 |   )).toBe(true)
+      109 |   await expect(page.getByTestId('map-health-degraded').filter({ hasText: 'Choose another basemap' })).toBeHidden()
+        at /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web/tests/e2e/map-navigation-recovery.spec.ts:106:3
+
+    Error Context: test-results/train-c/map-navigation-recovery-ba-4deb3-perator-chooses-another-map-chromium/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/train-c/map-navigation-recovery-ba-4deb3-perator-chooses-another-map-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/train-c/map-navigation-recovery-ba-4deb3-perator-chooses-another-map-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/e2e/map-navigation-recovery.spec.ts:86:1 › basemap application failure stays visible until the operator chooses another map

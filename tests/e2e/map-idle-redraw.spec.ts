@@ -150,6 +150,8 @@ async function installBaselineTrackingModule(page: Page): Promise<void> {
   await page.route('**/src/features/tracking/sync-tracking-overlay.ts*', async (route) => {
     const response = await route.fetch()
     const transformedSource = await response.text()
+    // Match Vite's served transformation, which collapses multiline source calls.
+    // A transformer formatting change must fail this countercontrol loudly below.
     const filterCallCount = transformedSource.match(/setMapFilterIfChanged\(map, /g)?.length ?? 0
     const paintCallCount = transformedSource.match(/setMapPaintPropertyIfChanged\(map, /g)?.length ?? 0
     if (filterCallCount === 0 || paintCallCount === 0) {

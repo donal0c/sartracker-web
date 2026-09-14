@@ -1,0 +1,16 @@
+[WebServer] (node:52330) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 1 test using 1 worker
+
+(node:52331) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:52331) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] 12:31:19 PM [vite] (client) [console.error] Basemap style could not be applied. Choose another basemap.
+  ✓  1 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:86:1 › basemap application failure stays visible until the operator chooses another map (2.0s)
+
+  1 passed (3.0s)

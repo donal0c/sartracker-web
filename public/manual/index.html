@@ -1693,8 +1693,12 @@
             should become an operational marker. <strong>Go To Location</strong> keeps the converted
             point available, so a marker can still be created after the map moves to that location.
             You can use Go To repeatedly. If the map style is loading, the latest target waits
-            for the map to become available. Its red ring remains for eight seconds after it
-            first appears and is restored if you change basemaps during that time.
+            for the map to become available, for up to 30 seconds. Its red ring remains for
+            up to eight seconds after it first appears, within that 30-second limit, and is
+            restored if you change basemaps during that time. If the request expires before
+            the map is available, use Go To again. Panning or zooming the map takes control
+            away from Go To. If a basemap cannot be applied, a warning stays visible;
+            select the map again to retry, or choose another basemap.
           </p>
           <p>
             <strong>Casualty required fields:</strong> casualty markers require

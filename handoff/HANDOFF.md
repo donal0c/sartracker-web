@@ -2,49 +2,46 @@
 
 Updated 2026-09-14. Read after `CLAUDE.md`.
 
-## Current baseline and active work
+## Baseline and active work
 
-Master is `cda87aa03f27eb69532ae9506aa9e719cef7e364`, including merged PR27
-(Train D) and PR28 (official-map freshness). Refreshed against origin on
-2026-09-14. Earlier PR28 draft/review statuses are historical.
+Master is `cda87aa03f27eb69532ae9506aa9e719cef7e364`, including merged
+PR27 (Train D) and PR28 (official-map freshness), freshly checked on 2026-09-14.
 
-Repair Train C is in [PR30](https://github.com/donal0c/sartracker-web/pull/30),
-branch `codex/repair-train-c`: AUD-04 equal overlay
-writes and AUD-06 repeated Go To/style-loading target loss. Current-style
-getter guards preserve real overlay changes; active target ownership survives
-pending acknowledgement. New navigation cancels stale basemap camera restores.
-No layer-catalog files are needed, so AUD-12 remains deferred. DON-264's broader
-persistent-warning feature and DON-6's full parity acceptance remain open.
+[PR30](https://github.com/donal0c/sartracker-web/pull/30), branch
+`codex/repair-train-c`, repairs AUD-04 / DON-264 and AUD-06 / DON-6.
+Claude's review superseded its original readiness verdict. The valid findings
+are corrected: safe missing-layer reads and structural equality, camera
+destination ownership through style changes, bounded style failure cleanup,
+explicit retry and store-owned target expiry across teardown. Requests expire
+within 30 seconds, shortened to eight seconds after verified attachment.
+Operator gestures release camera ownership; actual overlay changes still apply.
 
 ## Verification and next action
 
-Red/green evidence and accepted review corrections are in
-[Train C](../docs/assurance/findings/repair-train-c.md).
-Focused source tests, three synthetic rendered map regressions, five existing
-overlay browser flows and review-strengthened navigation rechecks pass.
-Owner inspected the rendered target screenshots. The initial full source run
-was interrupted for the review-discovered stale camera restoration defect;
-the final stable source cycle passes 471 files / 4,970 tests with six existing
-qualification skips. Lint, TypeScript/build/bundle budgets, workflow syntax and
-independent source/evidence reviews pass. Both reviewers attest implementation
-commit `8747c1f65d6638d3d4d7f10eab3c335609ba6e93` and tree
-`a6194ce52f6639d9d9ca99394e5cac47d2569329`. Later changes are documentation only.
+The [Claude-review disposition](../docs/assurance/findings/pr30-claude-review.md)
+owns current evidence; the [original record](../docs/assurance/findings/repair-train-c.md)
+retains earlier findings and failures. Stable local correctness passes
+**473 files / 4,997 tests / six existing qualification skips**. Lint,
+TypeScript/Vite build/bundle budgets and six rendered Chromium regressions pass.
+Owner inspected synthetic screenshots. Targeted independent source review is
+clear; the updated packaged-smoke observation has 27 passing source tests.
+An earlier full run was interrupted for the no-op health correction, not passed.
+
 The [current PR30 checks](https://github.com/donal0c/sartracker-web/pull/30/checks)
-control CI/package readiness; use their terminal result rather than older status
-snapshots. Donal may merge after those required checks are green. No further
-implementation or local qualification is queued in Train C.
+control new-head CI/package readiness. The old green CI on `01fb1c24` is
+historical. Follow the new check to terminal completion before restoring
+PR readiness. Donal owns merge; no merge or release is included here.
+The manual and Linear review receipts are current. Broader DON-264 warning
+work and DON-6 parity acceptance remain open. AUD-12 remains deferred.
 
 ## Remaining limits
 
 Release remains HOLD. Strict `<200 ms`, replay/soak, installer/field and
-official-map distribution qualification are separate. Train D's deferred
-packaged gate remains NOT RUN. Earlier map/native failures and diagnostic
-attribution gaps remain retained; this renderer repair does not close them.
-Electron coverage IPC, service-worker registration, mission-store enumeration
-and diagnostic custody remain owned by the parallel native-runtime task.
+official-map distribution qualification remain separate. Train D's deferred
+packaged gate remains NOT RUN. Native coverage IPC, service-worker registration,
+mission enumeration and diagnostic custody are unchanged.
 
 See the [coordinated ledger](../docs/assurance/coordinated-work-ledger.md),
 [two-track queue](../docs/two-track-execution-workplan.md), and
 [testing cadence](../docs/testing-and-review-cadence.md).
-The previous handoff and its detailed historical failures are retained
-[here](archive/pre-train-c-20260914.md).
+Earlier detailed history is [archived](archive/pre-train-c-20260914.md).

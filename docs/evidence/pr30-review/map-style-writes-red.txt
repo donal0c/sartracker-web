@@ -1,0 +1,80 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/map-style-writes.test.ts (5 tests | 3 failed) 5ms
+     × does not throw or write when MapLibre has not created the requested layer 2ms
+     × matches MapLibre structural equality and top-level unset semantics 1ms
+     × does not collapse MapLibre-distinct undefined, null, or NaN values 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/map-style-writes.test.ts > conditional map style writes > does not throw or write when MapLibre has not created the requested layer
+AssertionError: expected [Function] to not throw an error but 'TypeError: missing filter layer' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"TypeError: missing filter layer"
+
+ ❯ tests/unit/map-style-writes.test.ts:49:75
+     47|     }
+     48|
+     49|     expect(() => setMapFilterIfChanged(map, 'not-yet-created', null)).…
+       |                                                                           ^
+     50|     expect(map.getFilter).not.toHaveBeenCalled()
+     51|     expect(map.setFilter).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/unit/map-style-writes.test.ts > conditional map style writes > matches MapLibre structural equality and top-level unset semantics
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "trail",
+      "line-gradient",
+      Object {
+        "base": 2,
+        "stops": Array [
+          Array [
+            0,
+            1,
+          ],
+        ],
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/map-style-writes.test.ts:69:38
+     67|       base: 2,
+     68|     })
+     69|     expect(map.setPaintProperty).not.toHaveBeenCalled()
+       |                                      ^
+     70|
+     71|     paint = undefined
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/unit/map-style-writes.test.ts > conditional map style writes > does not collapse MapLibre-distinct undefined, null, or NaN values
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/map-style-writes.test.ts:94:27
+     92|
+     93|     setMapFilterIfChanged(map, 'target', ['literal', ['alpha', null]])
+     94|     expect(map.setFilter).toHaveBeenCalledOnce()
+       |                           ^
+     95|
+     96|     setMapPaintPropertyIfChanged(map, 'target', 'line-width', Number.N…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 2 passed (5)
+   Start at  12:21:34
+   Duration  412ms (transform 14ms, setup 0ms, import 20ms, tests 5ms, environment 247ms)

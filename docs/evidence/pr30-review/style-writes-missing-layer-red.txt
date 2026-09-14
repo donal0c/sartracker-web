@@ -1,0 +1,133 @@
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/map-style-writes.test.ts (5 tests | 3 failed) 6ms
+     × does not throw or write when MapLibre has not created the requested layer 2ms
+     × matches MapLibre structural equality and top-level unset semantics 1ms
+     × does not collapse MapLibre-distinct undefined, null, or NaN values 0ms
+ ❯ tests/unit/map-style-write-missing-layers.test.ts (3 tests | 3 failed) 6ms
+     × continues marker visibility synchronization after one symbol layer is rejected 3ms
+     × completes GPX synchronization when its line layer is not yet available 2ms
+     × continues helicopter visibility synchronization after its symbol layer is rejected 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/map-style-write-missing-layers.test.ts > overlay synchronization with transiently missing layers > continues marker visibility synchronization after one symbol layer is rejected
+TypeError: Missing layer mission-markers-symbol-ipp_lkp
+ ❯ Object.<anonymous> tests/unit/map-style-write-missing-layers.test.ts:39:15
+     37|       const layer = layers.get(layerId)
+     38|       if (layer === undefined) {
+     39|         throw new TypeError(`Missing layer ${layerId}`)
+       |               ^
+     40|       }
+     41|       return layer.filter
+ ❯ setMapFilterIfChanged src/features/map/map-style-writes.ts:15:26
+ ❯ syncMarkerOverlay src/features/markers/sync-marker-overlay.ts:88:5
+ ❯ tests/unit/map-style-write-missing-layers.test.ts:57:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/unit/map-style-write-missing-layers.test.ts > overlay synchronization with transiently missing layers > completes GPX synchronization when its line layer is not yet available
+AssertionError: expected [Function] to not throw an error but 'TypeError: Missing layer mission-gpx-…' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"TypeError: Missing layer mission-gpx-imports-line"
+
+ ❯ tests/unit/map-style-write-missing-layers.test.ts:78:60
+     76|     const map = createMockMap(['mission-gpx-imports-line'])
+     77|
+     78|     expect(() => syncGpxOverlay(map as never, [], [])).not.toThrow()
+       |                                                            ^
+     79|     expect(map.setFilter).not.toHaveBeenCalled()
+     80|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/unit/map-style-write-missing-layers.test.ts > overlay synchronization with transiently missing layers > continues helicopter visibility synchronization after its symbol layer is rejected
+TypeError: Missing layer mission-helicopters-symbol
+ ❯ Object.<anonymous> tests/unit/map-style-write-missing-layers.test.ts:39:15
+     37|       const layer = layers.get(layerId)
+     38|       if (layer === undefined) {
+     39|         throw new TypeError(`Missing layer ${layerId}`)
+       |               ^
+     40|       }
+     41|       return layer.filter
+ ❯ setMapFilterIfChanged src/features/map/map-style-writes.ts:15:26
+ ❯ syncHelicopterOverlay src/features/helicopters/sync-helicopter-overlay.ts:70:3
+ ❯ tests/unit/map-style-write-missing-layers.test.ts:85:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/unit/map-style-writes.test.ts > conditional map style writes > does not throw or write when MapLibre has not created the requested layer
+AssertionError: expected [Function] to not throw an error but 'TypeError: missing filter layer' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"TypeError: missing filter layer"
+
+ ❯ tests/unit/map-style-writes.test.ts:49:75
+     47|     }
+     48|
+     49|     expect(() => setMapFilterIfChanged(map, 'not-yet-created', null)).…
+       |                                                                           ^
+     50|     expect(map.getFilter).not.toHaveBeenCalled()
+     51|     expect(map.setFilter).not.toHaveBeenCalled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/unit/map-style-writes.test.ts > conditional map style writes > matches MapLibre structural equality and top-level unset semantics
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "trail",
+      "line-gradient",
+      Object {
+        "base": 2,
+        "stops": Array [
+          Array [
+            0,
+            1,
+          ],
+        ],
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/map-style-writes.test.ts:69:38
+     67|       base: 2,
+     68|     })
+     69|     expect(map.setPaintProperty).not.toHaveBeenCalled()
+       |                                      ^
+     70|
+     71|     paint = undefined
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  tests/unit/map-style-writes.test.ts > conditional map style writes > does not collapse MapLibre-distinct undefined, null, or NaN values
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/map-style-writes.test.ts:94:27
+     92|
+     93|     setMapFilterIfChanged(map, 'target', ['literal', ['alpha', null]])
+     94|     expect(map.setFilter).toHaveBeenCalledOnce()
+       |                           ^
+     95|
+     96|     setMapPaintPropertyIfChanged(map, 'target', 'line-width', Number.N…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  6 failed | 27 passed (33)
+   Start at  12:23:08
+   Duration  447ms (transform 135ms, setup 0ms, import 165ms, tests 56ms, environment 836ms)

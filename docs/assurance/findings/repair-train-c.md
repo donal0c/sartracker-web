@@ -1,8 +1,10 @@
 # Repair Train C — map interaction and rendering
 
 2026-09-14; baseline `cda87aa03f27eb69532ae9506aa9e719cef7e364` (merged PR28).
-Scope: AUD-04 / DON-264 and AUD-06 / DON-6. Local repair and independent review
-are complete in [PR30](https://github.com/donal0c/sartracker-web/pull/30).
+Scope: AUD-04 / DON-264 and AUD-06 / DON-6 in
+[PR30](https://github.com/donal0c/sartracker-web/pull/30). Claude's later review
+supersedes the original readiness verdict below. Current corrections and proof
+are in the [review disposition](pr30-claude-review.md).
 The [current required checks](https://github.com/donal0c/sartracker-web/pull/30/checks)
 control terminal CI/package readiness. No release readiness claim.
 
@@ -15,10 +17,12 @@ identity. Existing overlay retries and style-readiness behavior remain intact.
 
 Every Go To action has a unique process-local request identity. The latest
 request remains active while style structure is unavailable, attaches when
-available, survives replacement styles and expires after eight seconds from
-initial attachment. The pending acknowledgement cannot own the marker lifetime.
-Pending basemap camera restoration is cancelled by a newer navigation request;
-only the latest style restoration may run. Ordinary camera preservation remains.
+available, and survives replacement styles. It expires within 30 seconds of
+acceptance, shortened to eight seconds from confirmed attachment. The store owns
+that deadline across map teardown. Live navigation destinations own restoration
+through style changes; operator gestures relinquish that camera ownership.
+Ordinary camera preservation remains. The former cancellation-only approach and
+unbounded waiting lifetime are superseded by the review correction.
 Coordinate conversion, persistence and official-map readiness are unchanged.
 
 No Electron coverage IPC, service-worker registration, native mission-store
@@ -39,8 +43,9 @@ official-map distribution and release qualification remain outside this PR.
   expiry/no-resurrection control already passed. ID derivation traces to
   `3fcee5cb1`; the pending-owned listener and immediate acknowledgement trace
   to `b48e0fa88`. These are source provenance, not a historical packaged bisect.
-- Focused repaired tests: tracking/drawing/style helpers 32 pass; coverage 19
-  pass; navigation 5 pass. Existing tracking test expected a redundant setter
+- The retained focused receipt records 11 files / 77 tests. The former
+  32/19/5 sub-breakdown was not independently traceable and is withdrawn.
+  An existing tracking test expected a redundant setter
   call; its first repaired run failed and was corrected to inspect actual
   current filter state. No behavior assertion was removed.
 - Navigation browser attempt 1 failed because the test's Close locator matched
@@ -72,7 +77,7 @@ Local red/green logs are retained under `tmp/train-c/`; current independent
 review dispositions follow. Final source/build pass; use the current PR checks
 above for the terminal CI result, not this pre-CI snapshot.
 
-## Independent review dispositions
+## Original independent review dispositions (historical)
 
 1. **Accepted, stale basemap camera restore:** reviewer traced the production
    helper's delayed `jumpTo(oldSnapshot)` overwriting newer Go To. Owner reproduced
@@ -102,21 +107,23 @@ above for the terminal CI result, not this pre-CI snapshot.
    subsequently attested exact implementation commit
    `8747c1f65d6638d3d4d7f10eab3c335609ba6e93`, tree
    `a6194ce52f6639d9d9ca99394e5cac47d2569329`, clean against origin. No valid
-   finding remains. Later documentation-only updates preserve that executable
-   and test evidence. Current PR checks remain the CI authority.
+   finding was identified in that review. Claude's subsequent findings invalidate
+   that readiness judgment; the linked remediation record owns their disposition.
+   Later documentation-only updates preserve the historical executable/test
+   evidence, not a claim that the reviewed behavior was defect-free.
 
 ## Verification boundaries
 
 Browser receipts and synthetic screenshots are retained under
 [`docs/evidence/repair-train-c/`](../../evidence/repair-train-c/).
-The three Train C flows run in ordinary CI on isolated port 1435 and are uploaded
+The Train C flows run in ordinary CI on isolated port 1435 with retries disabled and are uploaded
 with traces/screenshots. The baseline substitution is an intentionally failing
 local causal check; its failure excerpt is retained in the repository.
 No local packaged rebuild was selected: this change affects shared renderer
 logic, while ordinary CI retains its existing native/package/AppImage and
 official-map smoke checks. Those checks must finish before PR readiness.
 
-## Stable local closeout
+## Original stable local closeout (historical)
 
 - `npm run test:correctness -- --no-file-parallelism`: **471 files / 4,970
   passed / six existing qualification skips**, 516.46 seconds, exit 0.

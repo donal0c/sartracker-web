@@ -1,0 +1,140 @@
+
+> sartracker-web@0.1.0-beta.12.11 test
+> vitest run tests/unit/use-map-location-target.test.ts tests/unit/map-style-camera-completion.test.ts --no-file-parallelism
+
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/use-map-location-target.test.ts (6 tests | 2 failed) 18ms
+     × restores the active target after a style replacement completes [AUD-06] 4ms
+     × settles at the destination when basemap replacement interrupts an in-flight Go To 1ms
+ ❯ tests/unit/map-style-camera-completion.test.ts (3 tests | 3 failed) 5ms
+     × ignores overlay styledata and restores only when the replacement style loads 3ms
+     × observes inline style.load fired synchronously inside setStyle 0ms
+     × disposes listeners when the map is removed before completion 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/map-style-camera-completion.test.ts > basemap camera completion boundary > ignores overlay styledata and restores only when the replacement style loads
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "bearing": 20,
+        "center": Array [
+          -9.7,
+          52,
+        ],
+        "pitch": 30,
+        "zoom": 13,
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/map-style-camera-completion.test.ts:28:28
+     26|     applyMapStylePreservingCamera(map as unknown as MapLibreMap, style)
+     27|     map.fire('styledata')
+     28|     expect(map.jumpTo).not.toHaveBeenCalled()
+       |                            ^
+     29|     map.fire('style.load')
+     30|     expect(map.jumpTo).toHaveBeenCalledOnce()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/unit/map-style-camera-completion.test.ts > basemap camera completion boundary > observes inline style.load fired synchronously inside setStyle
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/map-style-camera-completion.test.ts:38:24
+     36|     map.setStyle.mockImplementation(() => map.fire('style.load'))
+     37|     applyMapStylePreservingCamera(map as unknown as MapLibreMap, style)
+     38|     expect(map.jumpTo).toHaveBeenCalledOnce()
+       |                        ^
+     39|   })
+     40|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/unit/map-style-camera-completion.test.ts > basemap camera completion boundary > disposes listeners when the map is removed before completion
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/unit/map-style-camera-completion.test.ts:45:38
+     43|     applyMapStylePreservingCamera(map as unknown as MapLibreMap, style)
+     44|     map.fire('remove')
+     45|     expect(map.listens('styledata')).toBe(false)
+       |                                      ^
+     46|     expect(map.listens('style.load')).toBe(false)
+     47|     map.fire('style.load')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/unit/use-map-location-target.test.ts > useMapLocationTarget > restores the active target after a style replacement completes [AUD-06]
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…}, Anything ]
+
+- Expected:
+[
+  ObjectContaining {
+    "center": [
+      -9.530912,
+      52.274681,
+    ],
+  },
+  Anything,
+]
+
++ Received:
+undefined
+
+ ❯ tests/unit/use-map-location-target.test.ts:96:28
+     94|     harness.emit('style.load')
+     95|
+     96|     expect(harness.jumpTo).toHaveBeenLastCalledWith(expect.objectConta…
+       |                            ^
+     97|       center: [-9.530912, 52.274681],
+     98|     }), expect.anything())
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/unit/use-map-location-target.test.ts > useMapLocationTarget > settles at the destination when basemap replacement interrupts an in-flight Go To
+AssertionError: expected last "vi.fn()" call to have been called with [ ObjectContaining{…}, Anything ]
+
+- Expected:
+[
+  ObjectContaining {
+    "center": [
+      -9.530912,
+      52.274681,
+    ],
+    "zoom": 14,
+  },
+  Anything,
+]
+
++ Received:
+undefined
+
+ ❯ tests/unit/use-map-location-target.test.ts:123:28
+    121|     applyMapStylePreservingCamera(harness.map, { version: 8, sources: …
+    122|     harness.emit('style.load')
+    123|     expect(harness.jumpTo).toHaveBeenLastCalledWith(expect.objectConta…
+       |                            ^
+    124|       center: [-9.530912, 52.274681], zoom: 14,
+    125|     }), expect.anything())
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  5 failed | 4 passed (9)
+   Start at  12:21:38
+   Duration  748ms (transform 41ms, setup 0ms, import 128ms, tests 22ms, environment 475ms)

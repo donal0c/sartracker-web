@@ -1,20 +1,18 @@
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import { useMapTargetStore } from './map-target-store'
 import { ensureGeoJsonSource } from './map-overlay-primitives'
 import { registerMapStyleSync } from './map-style-sync'
-import { cancelPendingMapStyleCameraRestore } from './apply-map-style-preserving-camera'
+import { navigateMapToTarget } from './map-camera-navigation'
 
 const TARGET_SOURCE_ID = 'coordinate-target'
 const TARGET_RING_LAYER_ID = 'coordinate-target-ring'
 const TARGET_DOT_LAYER_ID = 'coordinate-target-dot'
-const TARGET_CLEAR_DELAY_MS = 8000
-const TARGET_ZOOM = 14
 
 type UseMapLocationTargetOptions = {
   readonly mapRef: RefObject<maplibregl.Map | null>
-  readonly mapReadyVersion?: number
+  readonly mapReadyVersion: number
 }
 
 type CoordinateTargetLayerSpecs = {
@@ -26,44 +24,32 @@ type CoordinateTargetLayerSpecs = {
  * Handles coordinate-tool go-to requests and renders the temporary target marker.
  */
 export function useMapLocationTarget(options: UseMapLocationTargetOptions): void {
-  const activeTarget = useMapTargetStore((state) => state.activeTarget)
-  const clearPendingTarget = useMapTargetStore((state) => state.clearPendingTarget)
-  const clearActiveTarget = useMapTargetStore((state) => state.clearActiveTarget)
-  const lastAppliedTargetIdRef = useRef<number | null>(null)
+  const targetId = useMapTargetStore((state) => state.activeTarget?.id ?? null)
 
   useEffect(() => {
     const map = options.mapRef.current
     if (map === null) {
       return
     }
-    let timeout: number | null = null
-    if (activeTarget !== null && lastAppliedTargetIdRef.current !== activeTarget.id) {
-      cancelPendingMapStyleCameraRestore(map)
-      lastAppliedTargetIdRef.current = activeTarget.id
-      map.flyTo({
-        center: [activeTarget.longitude, activeTarget.latitude],
-        zoom: Math.max(map.getZoom(), TARGET_ZOOM),
-        essential: true,
-      })
-    }
+    const store = useMapTargetStore.getState()
+    const activeTarget = targetId !== null && store.isTargetCurrent(targetId) ? store.activeTarget : null
+    const releaseCamera = activeTarget === null ? undefined : navigateMapToTarget(
+      map, [activeTarget.longitude, activeTarget.latitude],
+      () => useMapTargetStore.getState().isTargetCurrent(activeTarget.id),
+    )
     const dispose = registerMapStyleSync(map, () => {
-      if (activeTarget === null) {
+      if (activeTarget === null || !useMapTargetStore.getState().isTargetCurrent(activeTarget.id)) {
         clearCoordinateTargetOverlay(map)
         return
       }
       ensureCoordinateTargetOverlay(map, activeTarget.longitude, activeTarget.latitude, activeTarget.id)
-      clearPendingTarget(activeTarget.id)
-      if (timeout === null) {
-        timeout = window.setTimeout(() => {
-          clearActiveTarget(activeTarget.id)
-        }, TARGET_CLEAR_DELAY_MS)
-      }
+      useMapTargetStore.getState().markTargetAttached(activeTarget.id)
     })
     return () => {
       dispose()
-      if (timeout !== null) window.clearTimeout(timeout)
+      releaseCamera?.()
     }
-  }, [activeTarget, clearActiveTarget, clearPendingTarget, options.mapRef, options.mapReadyVersion])
+  }, [targetId, options.mapRef, options.mapReadyVersion])
 }
 
 /** Restores the request marker without rewriting unchanged source data on idle. */
@@ -95,6 +81,14 @@ function ensureCoordinateTargetOverlay(
 
   if (!map.getLayer(TARGET_DOT_LAYER_ID)) {
     map.addLayer(createCoordinateTargetLayerSpecs().dotLayer)
+  }
+
+  if (
+    map.getSource(TARGET_SOURCE_ID) === undefined ||
+    map.getLayer(TARGET_RING_LAYER_ID) === undefined ||
+    map.getLayer(TARGET_DOT_LAYER_ID) === undefined
+  ) {
+    throw new Error('Coordinate target overlay attachment is incomplete; the source, ring, and dot must be visible before attaching the request.')
   }
 }
 

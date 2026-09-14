@@ -21,9 +21,10 @@ type LayerSpec = {
   layout?: Record<string, unknown>
 }
 
-function createMockMap() {
+function createMockMap(options: { readonly missingLayerIds?: readonly string[] } = {}) {
   const layers = new Map<string, LayerSpec>()
   const sources = new Map<string, unknown>()
+  const missingLayerIds = new Set(options.missingLayerIds ?? [])
   const sourceHandles = new Map<string, {
     readonly setData: ReturnType<typeof vi.fn>
     readonly updateData: ReturnType<typeof vi.fn>
@@ -38,6 +39,9 @@ function createMockMap() {
       return sourceHandles.get(id)
     }),
     addLayer: vi.fn((spec: LayerSpec) => {
+      if (missingLayerIds.has(spec.id)) {
+        return
+      }
       layers.set(spec.id, spec)
     }),
     addSource: vi.fn((id: string, config: unknown) => {
@@ -228,6 +232,24 @@ describe('tracking overlay marker configuration', () => {
         assertNoLegacyTypeSelector(layer.filter)
       }
     })
+  })
+
+  it('continues applying device visibility when a paint layer is temporarily missing [AUD-04]', async () => {
+    map = createMockMap({ missingLayerIds: ['tracking-breadcrumbs-casing'] })
+    const { syncTrackingOverlay } = await import('../../src/features/tracking/sync-tracking-overlay')
+    const snapshot = {
+      devices: [],
+      positions: [],
+      breadcrumbs: [],
+      connectionHealth: { status: 'connected' as const, lastSuccessfulPoll: null },
+    }
+
+    syncTrackingOverlay(map as never, snapshot, ['alpha'], [], true)
+
+    const deviceFilter = map.setFilter.mock.calls.find(
+      ([layerId]) => layerId === 'tracking-devices-circle',
+    )?.[1]
+    expect(JSON.stringify(deviceFilter)).toContain('alpha')
   })
 
   describe('device circle markers', () => {

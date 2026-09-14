@@ -56,7 +56,7 @@ export function isSyntheticTargetCamera(camera, targetTile = SYNTHETIC_TARGET_TI
     && Math.abs(center[1] - expectedCenter[1]) <= 1e-8
 }
 
-/** Installs a bounded observer for the production styledata restoration boundary. */
+/** Installs a bounded observer for the production style.load restoration boundary. */
 export function installOfficialMapStyleSettlementCapture({ key, sourceId, deadlineAt, runtime }) {
   const targetWindow = runtime?.window ?? globalThis.window
   const map = runtime?.map ?? targetWindow.__SARTRACKER_MAP__
@@ -65,6 +65,9 @@ export function installOfficialMapStyleSettlementCapture({ key, sourceId, deadli
   const previous = targetWindow[key]
   previous?.cleanup?.()
   const state = {
+    styleLoadCount: 0,
+    // Retain the report field consumed by the packaged smoke script while
+    // making the observed completion event explicit in the test state.
     styleDataCount: 0,
     latest: null,
     timer: null,
@@ -79,7 +82,7 @@ export function installOfficialMapStyleSettlementCapture({ key, sourceId, deadli
       && template.startsWith(`${canonicalTemplate}?revision=`)
       && /^\d+$/u.test(template.slice(`${canonicalTemplate}?revision=`.length)))
   const cleanup = () => {
-    map.off('styledata', onStyleData)
+    map.off('style.load', onStyleLoad)
     if (state.timer !== null) targetWindow.clearTimeout(state.timer)
     state.timer = null
     restoreSetStyle()
@@ -88,16 +91,16 @@ export function installOfficialMapStyleSettlementCapture({ key, sourceId, deadli
   const capture = () => {
     if (Date.now() >= deadlineAt) return
     // The source may already be present when this observer is installed, but
-    // that does not prove that a pending production styledata restoration has
+    // that does not prove that a pending production style.load restoration has
     // run. Require the observed event before accepting the camera snapshot.
-    if (state.cleaned || state.latest !== null || state.styleDataCount === 0) return
+    if (state.cleaned || state.latest !== null || state.styleLoadCount === 0) return
     const style = map.getStyle?.()
     const source = style?.sources?.[sourceId]
     const template = source?.type === 'raster' && Array.isArray(source.tiles) ? source.tiles[0] : undefined
     if (source?.type !== 'raster' || !isCanonicalTemplate(template)) return
     const center = map.getCenter?.()
     state.latest = {
-      styleDataCount: state.styleDataCount,
+      styleLoadCount: state.styleLoadCount,
       sourceId,
       template,
       camera: center === undefined ? null : {
@@ -113,16 +116,18 @@ export function installOfficialMapStyleSettlementCapture({ key, sourceId, deadli
     const enqueue = targetWindow.queueMicrotask ?? ((callback) => Promise.resolve().then(callback))
     enqueue(capture)
   }
-  function onStyleData() {
-    state.styleDataCount += 1
-    if (!state.setStyleReturned || state.setStyleInProgress) return
+  function onStyleLoad() {
+    state.styleLoadCount += 1
+    // Keep the legacy diagnostic field populated for the packaged report.
+    state.styleDataCount = state.styleLoadCount
     // MapLibre's Evented listeners run synchronously. Queue the read so the
-    // production once('styledata') camera restoration has already run.
+    // production style.load camera restoration has already run, including when
+    // an inline style emits style.load during setStyle itself.
     queueCapture()
   }
   state.cleanup = cleanup
   targetWindow[key] = state
-  map.on('styledata', onStyleData)
+  map.on('style.load', onStyleLoad)
   const originalSetStyle = map.setStyle
   function restoreSetStyle() {
     if (map.setStyle === wrappedSetStyle) map.setStyle = originalSetStyle
