@@ -27,6 +27,15 @@ Working-tree verification is in progress; earlier green statements below are his
 
 **Active reconciliation (2026-09-13):** baseline
 `2b2bf8e605e27123c9e454598828d71cb7c062aa` includes merged PR25 and PR26.
+Current reconciliation (2026-09-14): origin/master is
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb` after PR31. Manual packaged
+workflow `34860711436` reproduced the AUD-08 renderer/native progress split;
+the bounded follow-up repair is on `codex/don-254-train-d-participant-refresh`.
+Local repaired packaging passes AUD-08 and AUD-09, but restart is not proven
+because the unchanged diagnostic custody gate fails on deliberate provider
+503/retry and close-time warnings. Exact-head CI/review remain required; no
+release or merge qualification is claimed.
+
 DON-267 is Done; DON-254 is In Progress; release remains HOLD. Train D owns
 AUD-08 / DON-271 and AUD-09 / DON-279 on `codex/repair-train-d`; parallel Train C
 owns map repairs. Merge D first, then rebase C. Reproduce both D defects red,

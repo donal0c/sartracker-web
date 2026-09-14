@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-13
+Updated: 2026-09-14
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -57,6 +57,18 @@ head.
   may invent a new operational requirement.
 
 ## Current merged disposition
+
+2026-09-14 exact-master Train D follow-up: origin/master is
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
+`302e684ec4c60ad66a0afb45898e2a552e3cf974`. Manual workflow `34860711436`
+reproduced AUD-08's renderer/native projection split: persisted participant
+truth was 1/2 while the renderer displayed 2/2. The repair adds a bounded
+tracking-to-participant refresh callback, covered by a red/green runtime
+regression. Local repaired packaged evidence records AUD-08 and AUD-09 pass;
+restart is not proven because the existing diagnostic custody gate rejected
+deliberate provider-503/retry and close-time transport warnings. No diagnostic,
+responsiveness, release, or field gate was relaxed. Exact-head CI and review
+are required before any merge decision.
 
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
 PR31 is rebased onto it. Claude review superseded earlier readiness and green

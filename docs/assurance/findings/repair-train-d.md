@@ -13,6 +13,31 @@ remain in the linked disposition. Merge does not establish packaged qualificatio
 Owners: DON-271 / AUD-08 and DON-279 / AUD-09; DON-254 retains qualification.
 Train C can now integrate the merged Train D baseline. Release HOLD remains.
 
+## Exact-master packaged follow-up — 2026-09-14
+
+Manual workflow `34860711436` ran on exact merged master
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb` / tree
+`302e684ec4c60ad66a0afb45898e2a552e3cf974`. It reproduced the retained AUD-08
+observation: native IPC reported the re-added group at 1/2 completed while the
+renderer continued to display 2/2 pending. The native completeness calculation
+and Finish refusal were therefore correct; the missing refresh notification was
+the production defect at the tracking/participant projection seam.
+
+The bounded repair refreshes the participant runtime after a durable checkpoint
+write, guarded so a stale backfill cannot switch the view to another mission. A
+red unit regression in `tests/unit/start-tracking-runtime.test.ts` failed before
+the callback and passes after it. A repaired local macOS arm64 package records
+`aud08=pass` and `aud09=pass`, with screenshots showing the visible 1/1 complete
+state and the Search Operations backup surface. Restart remains **NOT_PROVEN**:
+the same receipt failed its existing diagnostic custody gate on deliberate
+provider-503/retry and close-time transport warnings before restart. The
+diagnostic gate was not weakened, and this local result is not Linux CI,
+release, or field qualification.
+
+The original exact-master workflow receipt, local receipt and screenshots remain
+retained outside the repository. Exact-head CI, independent review, and a clean
+complete Train D run remain required before qualification or merge.
+
 ## Contract and risk
 
 SAR-QA-001/002/008 require complete mission history, immediate current positions

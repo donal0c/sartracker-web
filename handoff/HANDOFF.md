@@ -4,49 +4,40 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
-Master is `58c65641483bbdb83515d8793bb1abce1e5755c4`: PR30 (Train C) is
-merged after PR27/PR28. Earlier baseline CI34826211836 remains historical.
-Prior WAR-11 source/browser/native
-failures and limits remain in [WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md);
-Train D's original failed native attempt remains in its
-[repair record](../docs/assurance/findings/repair-train-d.md).
+Current `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
+`302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). This branch starts
+from that clean exact head and contains the bounded follow-up for DON-254 / Train
+D's packaged participant-progress observation. Earlier PR31/native-runtime and
+Train D failures remain historical evidence in the linked assurance records.
 
-Active: DON-254 bounded native-runtime repair on
-`codex/don-254-native-runtime-repair`. Scope: snapshot-consistent coverage
-bounds/live revision progress, shared renderer lifecycle listeners, physical worker
-exit on cancellation, supported service-worker protocols and diagnostic custody.
-Merged Train C owns map renderer/style/navigation repairs, including bounded
-target expiry across clock corrections. Its [review disposition](../docs/assurance/findings/pr30-claude-review.md)
-and [original record](../docs/assurance/findings/repair-train-c.md) retain evidence
-and earlier failures. Broader DON-264/DON-6 acceptance and AUD-12 remain open.
+The repair is deliberately narrow: when tracking durably advances a participant
+backfill checkpoint, it refreshes the participant projection for the same still-
+active mission. It does not alter participant completeness, Finish refusal,
+provider scheduling, diagnostics, the strict `<200 ms` gate, release, or field
+acceptance.
 
 ## Verification and next action
 
-PR31 is rebased onto merged PR30. Claude review superseded earlier readiness
-and CI34845492157. The [review disposition](../docs/assurance/findings/pr31-claude-review.md)
-records live-ingest progress, structural partial/retry outcomes, isolated lifecycle
-cancellation, bounded physical joins, worker-local mutation controls and complete
-stderr custody. Independent re-review found no introduced P1/P2 blocker.
+Manual exact-master workflow `34860711436` (head
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb`) reproduced the original failure at
+packaged AUD-08: the native store was `1/2`, but the renderer remained `2/2`;
+AUD-09 and restart were not reached. A red unit regression reproduced the same
+refresh seam, then passed after the callback repair.
 
-Local correctness: 476 files / 5,045 passing tests / six qualification skips;
-172 affected tests, seven coverage browser flows and visually checked partial /
-Retry recovery pass. Final lifecycle edit has a subsequent 19-test pass; final
-lint, build/package and workflow lint pass. Rebuilt macOS ASAR `ebd6cd7e` passes
-24 preload reads, separate packaged-store live-ingest/snapshot/cancellation
-controls and drained code-zero shutdown. Module/harness hashes were independently
-matched. This is working-tree evidence, not clean CI or default-app cancellation
-qualification. [PR31](https://github.com/donal0c/sartracker-web/pull/31)'s checks
-and latest evidence comment own the live exact-head Linux result and readiness.
+Local repaired macOS arm64 package evidence (`/tmp/sar-train-d-local-666c`)
+shows `aud08=pass` and `aud09=pass`, including the visible `complete for 1/1`
+state and Search Operations backup proof. Restart is **NOT_PROVEN** because the
+existing diagnostic custody gate rejected deliberate provider-503/retry and
+close-time transport warnings before restart. No diagnostic allowlist or gate was
+relaxed; the full receipt remains retained.
 
-The original Train D attempt remains FAILED: expected one pending member,
-observed 2/2; AUD09/restart NOT RUN. Original ASAR `a5e09019`, provider 503 warnings
-and moved-snapshot rejection remain retained in the
-[native repair evidence](../docs/assurance/findings/native-runtime-repair.md).
-No diagnostic or release gate was relaxed.
-
-Next: inspect PR31's latest exact-head Linux CI/artifact evidence and reconcile
-with current master before any merge decision. Donal owns merge. This branch
-does not qualify or publish a release; remaining Train D work stays separate.
+Source checks: focused tracking runtime 94/94, participant/runtime wiring 60/60,
+TypeScript build, changed-file lint, and package build pass. Full source tests
+were 5,069/5,070; one unrelated `<200 ms` assertion measured 226.0 ms under
+parallel local contention and passed in isolation at 47.2 ms. The gate remains
+unchanged. CI exact-head qualification, independent review, and the complete
+restart path remain next. Donal owns merge; no merge, release, deployment, or
+team contact is authorized by this handoff.
 
 ## Limits
 

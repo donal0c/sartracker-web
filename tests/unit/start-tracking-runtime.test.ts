@@ -2154,6 +2154,7 @@ describe('startTrackingRuntime', () => {
         return []
       })
       const upsertParticipantBackfillCheckpoint = vi.fn(() => checkpointWrite.promise)
+      const notifyParticipantBackfillChange = vi.fn()
       const complete = vi.fn()
       const beginMissionEvidenceObservation = vi.fn((missionId: string) => ({ missionId, complete }))
       const checkpoint = {
@@ -2188,6 +2189,7 @@ describe('startTrackingRuntime', () => {
           activeDeviceIdsAt: () => ['1'], operationalDeviceIdsAt: () => ['1'],
           filterSnapshot: (snapshot) => snapshot, filterEvidenceSnapshot: (snapshot) => snapshot,
         }),
+        notifyParticipantBackfillChange,
       })
       try {
         await hooks.onSnapshot({ devices: [], positions: [], breadcrumbs: [] })
@@ -2221,11 +2223,14 @@ describe('startTrackingRuntime', () => {
         }))
         expect(stopped).toBe(false)
         expect(complete).not.toHaveBeenCalled()
+        expect(notifyParticipantBackfillChange).not.toHaveBeenCalled()
         expect(getBreadcrumbsWithReport.mock.calls[0]?.[3]).toMatchObject({ aborted: false })
         checkpointWrite.resolve()
         await stopping
         expect(stopped).toBe(true)
         expect(complete).toHaveBeenCalledOnce()
+        expect(notifyParticipantBackfillChange).toHaveBeenCalledOnce()
+        expect(notifyParticipantBackfillChange).toHaveBeenCalledWith('mission-1')
       } finally {
         persistence.resolve()
         checkpointWrite.resolve()

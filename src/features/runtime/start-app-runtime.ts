@@ -503,6 +503,10 @@ export async function startAppRuntime(
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>
         useParticipantStore.getState().controller?.reportRosterError(message),
+      notifyParticipantBackfillChange: async (missionId) => {
+        if (resolveParticipantMissionId(useMissionStore.getState()) !== missionId) return
+        await coreFeatureRuntimes.participantRuntimeController?.refreshMission(missionId)
+      },
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
           changedPositionCount,

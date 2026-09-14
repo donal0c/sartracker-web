@@ -328,6 +328,8 @@ export type StartTrackingRuntimeDependencies = {
   ) => () => void
   readonly recordTrackingPollDiagnostic?: (entry: TrackingPollLedgerEntry) => void
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+  /** Refreshes the participant projection after a durable backfill checkpoint changes. */
+  readonly notifyParticipantBackfillChange?: (missionId: string) => void | Promise<void>
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => ParticipationScope
   readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
@@ -1415,6 +1417,12 @@ export async function startTrackingRuntime(
         updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
         signal: participantBackfillAbortController.signal,
       })
+      const currentMission = await dependencies.missionStore.getActiveMission()
+      if (
+        currentMission?.id === checkpoint.mission_id
+      ) {
+        await dependencies.notifyParticipantBackfillChange?.(checkpoint.mission_id)
+      }
     } finally {
       observation.complete()
     }
