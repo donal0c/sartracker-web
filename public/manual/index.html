@@ -836,6 +836,9 @@
             Otherwise the row shows <strong>unknown historical group scope</strong> without a completion count.
             Required history must cover the whole selected time window without gaps before Finish can
             succeed. Missing checkpoints or an unknown older starting roster keep the mission open.
+            After each durable history chunk, the Participants panel refreshes its completed-member count
+            from saved mission evidence, so the visible progress cannot remain stale while tracking retries
+            an incomplete member.
             An invalid stored roster displays an error on that participant while other participants remain
             visible; Finish remains unavailable until the roster is repaired.
             For an unknown legacy roster, use <strong>Resolve legacy roster</strong>, including for a removed

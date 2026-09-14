@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-13
+Updated: 2026-09-14
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -57,6 +57,43 @@ head.
   may invent a new operational requirement.
 
 ## Current merged disposition
+
+2026-09-14 exact-master Train D follow-up: origin/master is
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
+`302e684ec4c60ad66a0afb45898e2a552e3cf974`. Manual workflow `34860711436`
+reproduced AUD-08's renderer/native projection split: persisted participant
+truth was 1/2 while the renderer displayed 2/2. The repair adds a bounded
+tracking-to-participant refresh callback, covered by a red/green runtime
+regression. Local repaired packaged evidence records AUD-08 and AUD-09 pass;
+restart is not proven because the existing diagnostic custody gate rejected
+deliberate provider-503/retry and close-time transport warnings. No diagnostic,
+responsiveness, release, or field gate was relaxed. Exact-head CI and review
+are required before any merge decision. PR32's exact-head run `34866228521`
+passed through replay and the pre-packaged controls, then failed at the
+unrelated packaged native-runtime diagnostic gate on two launch-time Vulkan
+stderr entries; Train D was skipped and remains not proven in Linux CI.
+
+Latest required manual Train D run `34877445512` is exact-head clean at
+`9bd9adc9d38ee573a152ee42c57c13b8da04c803` / tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8`. All three packaged scenarios pass
+(`AUD-08`, `AUD-09`, restart), but the receipt is failed because the diagnostic
+gate rejects one expected restart teardown-cancellation warning and the two
+known Linux Electron Vulkan startup stderr entries. Classify this as a bounded
+harness/environment diagnostic boundary, not a product scenario failure; retain
+the exact receipt and keep Train D packaged qualification, merge and release
+**NOT_PROVEN/HOLD**. No gate was relaxed.
+
+The follow-up manual run `34902500983` ran on exact clean PR32 head
+`51e5a7eb6a05fc75bc6382c73cf7245da9dfa364` / tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. It passed strict `<200 ms`,
+AUD-08, AUD-09, restart, `scenarioResult`, `diagnosticResult`, the independent
+receipt validator, and the receipt records `diagnosticBlockers=[]` / `result=pass`.
+The overall workflow failed later at the unchanged packaged archive-lifecycle
+continuity gate: `current_fix_continuity_gate_breached`, measured cleanup gap
+205 ms. Retain the exact failure JSON under
+`/tmp/sar-train-d-ci-34902500983-9FmgLG`; this is an independent liveness
+blocker, not a Train D product failure or permission to change the strict gate.
+PR32 remains draft/open and merge/release **NOT_READY/HOLD**.
 
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
 PR31 is rebased onto it. Claude review superseded earlier readiness and green

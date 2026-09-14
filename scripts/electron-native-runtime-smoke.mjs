@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { extractFile } from '@electron/asar'
 import { _electron as electron } from 'playwright'
 import { attachPackagedPageDiagnostics, createPackagedStderrCollector, sanitizePackagedDiagnosticText as sanitize, waitForPackagedStderrDrain } from '../build/packaged-page-diagnostics.js'
-import { appendBoundedDiagnostic, assertNoUnexpectedDiagnostics, closeOwnedSmokeChild, createDiagnosticState, runBounded } from '../build/electron-repair-train-d-smoke-lib.js'
+import { appendBoundedDiagnostic, assertNoUnexpectedDiagnostics, closeOwnedSmokeChild, createDiagnosticState, createLinuxVulkanStartupDiagnosticAllowlist, runBounded } from '../build/electron-repair-train-d-smoke-lib.js'
 import { validateNativeRuntimeReceipt } from '../build/native-runtime-smoke-receipt.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -206,7 +206,14 @@ try {
   // These exact lines are emitted by the Playwright-attached Node inspector at
   // disconnect. Retain them separately; application warnings/errors still fail.
   report.inspectorTransport = report.stderr.filter(isInspectorTransport)
-  try { assertNoUnexpectedDiagnostics(diagnostics) } catch (error) { report.result = 'fail'; report.diagnosticFailure = sanitize(error.message) }
+  try {
+    assertNoUnexpectedDiagnostics(diagnostics, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: process.platform,
+      processStderr: diagnostics.processStderr,
+      processStderrCount: diagnostics.counts.processStderr,
+      processStderrTruncated: diagnostics.truncated.processStderr,
+    }))
+  } catch (error) { report.result = 'fail'; report.diagnosticFailure = sanitize(error.message) }
   report.profileRemoved = false
   if (profile && (!app || report.close?.exit !== null && report.close?.exit !== undefined)) {
     await rm(profile, { recursive: true, force: true })

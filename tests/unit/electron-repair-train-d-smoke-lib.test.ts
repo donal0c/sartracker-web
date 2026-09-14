@@ -10,6 +10,7 @@ import {
   createSmokeDeadline,
   createSmokeDeadlines,
   closeOwnedSmokeChild,
+  createLinuxVulkanStartupDiagnosticAllowlist,
   evaluateSmokeResults,
   historyRequestCoversWindow,
   remainingSmokeTime,
@@ -339,6 +340,193 @@ describe('Repair Train D packaged smoke gates', () => {
     }))).toThrow(/unexpected packaged diagnostics/i)
   })
 
+  it('accepts the packaged Train D diagnostics caused by the deliberate history hold and close', () => {
+    const diagnostics = createDiagnosticState()
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET',
+        path: '/api/positions',
+        deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z',
+        to: '2026-09-13T05:00:00.000Z',
+        isHistory: true,
+        status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+    }
+    const rendererWarning = (message: string, phase: string) => appendBoundedDiagnostic(
+      diagnostics,
+      'consoleWarnings',
+      { message, url: 'file:///app/index.html' },
+      { phase, type: 'console.warning', source: 'renderer-console' },
+    )
+    rendererWarning(
+      'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: HTTP 503: Service Unavailable}',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb fetch failed for device. {deviceId: 11, deviceName: Repair Train D B, error: Mission history evidence scope closed before transport admission.}',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb reconciliation failed for device. {deviceId: 11, deviceName: Repair Train D B, retryDelayMs: 1000, error: Mission history evidence scope closed before transport admission.}',
+      'aud08',
+    )
+    rendererWarning(
+      'History request target could not be saved; retrieval will retry without a completeness claim. Error: Participant selection is unavailable; tracking history cannot be persisted safely.\n    at start-tracking-runtime.js:1:2',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb reconciliation failed for device. {deviceId: 22, deviceName: Repair Train D A, retryDelayMs: 1000, error: Participant selection is unavailable; tracking history cannot be persisted safely.}',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb reconciliation failed for device. {deviceId: 22, deviceName: Repair Train D A, retryDelayMs: 1000, error: HTTP 503: Service Unavailable}',
+      'aud08',
+    )
+    rendererWarning(
+      'Participant history backfill pass failed; it will retry. Error: HTTP 503: Service Unavailable\n    at start-tracking-runtime.js:1:2',
+      'close',
+    )
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.",
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at finishMission (/app/electron/mission-store.cjs:5667:3)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: "Error occurred in handler for 'sartracker:mission-store:sync-coverage-tile-catalog': Error: coverage-revision-moved: Coverage catalog chunk does not match its current revision.",
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at normalizeAuthorizedCoverageCatalogInput (/app/electron/mission-store.cjs:348:13)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at /app/electron/mission-store.cjs:2402:33',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at /app/electron/mission-store.cjs:3351:48',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: 'Debugger ending on ws://127.0.0.1:39841/3986e37b-356e-480d-9960-8cd0095ac4ff',
+    }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: 'For help, see: https://nodejs.org/en/docs/inspector',
+    }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
+
+    expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist(context))).not.toThrow()
+  })
+
+  it('accepts the exact shutdown cancellation only after all scenarios and teardown', () => {
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET', path: '/api/positions', deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z', to: '2026-09-13T05:00:00.000Z',
+        isHistory: true, status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+      platform: 'linux',
+      productScenariosPassed: true,
+      teardownRequestedAt: '2026-09-14T18:26:59.750Z',
+    }
+    const message = 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: Tracking history stopped before transport completed.}'
+    const makeDiagnostics = (overrides: Record<string, unknown> = {}) => {
+      const diagnostics = createDiagnosticState()
+      appendBoundedDiagnostic(diagnostics, 'consoleWarnings', {
+        message,
+        url: 'file:///app/index.html',
+        at: '2026-09-14T18:26:59.770Z',
+        teardownRequestedAt: context.teardownRequestedAt,
+        ...overrides,
+      }, { phase: 'close', type: 'console.warning', source: 'renderer-console' })
+      return diagnostics
+    }
+
+    expect(() => assertNoUnexpectedDiagnostics(makeDiagnostics(), createSmokeDiagnosticAllowlist(context))).not.toThrow()
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics({ at: '2026-09-14T18:26:59.749Z' }),
+      createSmokeDiagnosticAllowlist(context),
+    )).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics(),
+      createSmokeDiagnosticAllowlist({ ...context, productScenariosPassed: false }),
+    )).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics({ teardownRequestedAt: null }),
+      createSmokeDiagnosticAllowlist(context),
+    )).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(
+      makeDiagnostics({ message: message.replace('stopped', 'completed') }),
+      createSmokeDiagnosticAllowlist(context),
+    )).toThrow(/unexpected packaged diagnostics/i)
+  })
+
+  it('accepts only the ordered canonical Linux Vulkan startup pair', () => {
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET', path: '/api/positions', deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z', to: '2026-09-13T05:00:00.000Z',
+        isHistory: true, status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+      platform: 'linux',
+    }
+    const first = '[14455:0914/182657.328392:ERROR:gpu/vulkan/vulkan_instance.cc:200] vkCreateInstance() failed: -9'
+    const second = '[14455:0914/182657.328621:ERROR:gpu/ipc/service/gpu_init.cc:1366] Failed to create and initialize Vulkan implementation.'
+    const makeDiagnostics = (messages: string[]) => {
+      const diagnostics = createDiagnosticState()
+      for (const message of messages) {
+        appendBoundedDiagnostic(diagnostics, 'processStderr', { message }, {
+          phase: 'launch', type: 'stderr', source: 'main-process-stderr',
+        })
+      }
+      return diagnostics
+    }
+
+    const valid = makeDiagnostics([first, second])
+    expect(() => assertNoUnexpectedDiagnostics(valid, createSmokeDiagnosticAllowlist({
+      ...context, processStderr: valid.processStderr,
+    }))).not.toThrow()
+    expect(() => assertNoUnexpectedDiagnostics(valid, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: 'linux', processStderr: valid.processStderr,
+      processStderrCount: valid.counts.processStderr,
+      processStderrTruncated: valid.truncated.processStderr,
+    }))).not.toThrow()
+
+    for (const messages of [
+      [second, first],
+      [first, second, 'unrecognized GPU stderr'],
+      [first, second.replace('Vulkan implementation.', 'Vulkan implementation changed.')],
+    ]) {
+      const diagnostics = makeDiagnostics(messages)
+      expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist({
+        ...context, processStderr: diagnostics.processStderr,
+      }))).toThrow(/unexpected packaged diagnostics/i)
+      expect(() => assertNoUnexpectedDiagnostics(diagnostics, createLinuxVulkanStartupDiagnosticAllowlist({
+        platform: 'linux', processStderr: diagnostics.processStderr,
+        processStderrCount: diagnostics.counts.processStderr,
+        processStderrTruncated: diagnostics.truncated.processStderr,
+      }))).toThrow(/unexpected packaged diagnostics/i)
+    }
+
+    const nonLinux = makeDiagnostics([first, second])
+    expect(() => assertNoUnexpectedDiagnostics(nonLinux, createSmokeDiagnosticAllowlist({
+      ...context, platform: 'darwin', processStderr: nonLinux.processStderr,
+    }))).toThrow(/unexpected packaged diagnostics/i)
+    expect(() => assertNoUnexpectedDiagnostics(nonLinux, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: 'darwin', processStderr: nonLinux.processStderr,
+      processStderrCount: nonLinux.counts.processStderr,
+      processStderrTruncated: nonLinux.truncated.processStderr,
+    }))).toThrow(/unexpected packaged diagnostics/i)
+
+    const missingTiming = makeDiagnostics([first, second])
+    Reflect.deleteProperty(missingTiming.processStderr[1], 'elapsedMs')
+    expect(() => assertNoUnexpectedDiagnostics(missingTiming, createLinuxVulkanStartupDiagnosticAllowlist({
+      platform: 'linux', processStderr: missingTiming.processStderr,
+      processStderrCount: missingTiming.counts.processStderr,
+      processStderrTruncated: missingTiming.truncated.processStderr,
+    }))).toThrow(/diagnostic/i)
+  })
+
   it('rejects a pass receipt that omits package, cleanup, or B-history evidence', () => {
     const receipt = minimalReceipt()
     expect(() => validateSmokeReceipt(receipt)).toThrow(/ASAR|history covered|profile|all Train D scenarios/i)
@@ -346,10 +534,25 @@ describe('Repair Train D packaged smoke gates', () => {
 
   it('accepts a complete receipt and the narrowly contextual expected history warning', () => {
     const receipt = completeReceipt()
+    receipt.runtime = { platform: 'linux' }
     appendBoundedDiagnostic(receipt.launches[0].close.diagnostics, 'consoleWarnings', {
       message: 'Participant history backfill pass failed; it will retry.',
       url: 'file:///app/index.html',
     }, { phase: 'aud08', type: 'console.warning', source: 'renderer-console' })
+    appendBoundedDiagnostic(receipt.launches[0].close.diagnostics, 'consoleWarnings', {
+      message: 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: Tracking history stopped before transport completed.}',
+      url: 'file:///app/index.html',
+      at: '2026-09-14T10:00:00.001Z',
+      teardownRequestedAt: '2026-09-14T10:00:00.000Z',
+    }, { phase: 'close', type: 'console.warning', source: 'renderer-console' })
+    for (const message of [
+      '[14455:0914/182657.328392:ERROR:gpu/vulkan/vulkan_instance.cc:200] vkCreateInstance() failed: -9',
+      '[14455:0914/182657.328621:ERROR:gpu/ipc/service/gpu_init.cc:1366] Failed to create and initialize Vulkan implementation.',
+    ]) {
+      appendBoundedDiagnostic(receipt.launches[0].close.diagnostics, 'processStderr', { message }, {
+        phase: 'launch', type: 'stderr', source: 'main-process-stderr',
+      })
+    }
 
     expect(validateSmokeReceipt(receipt)).toBe(true)
   })

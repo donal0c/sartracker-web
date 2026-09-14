@@ -14,6 +14,9 @@ const KNOWN_BASEMAP_ORIGINS = Object.freeze([
   'https://tile.opentopomap.org',
   'https://services.arcgisonline.com',
 ])
+const TRAIN_D_SHUTDOWN_CANCELLATION = 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: Tracking history stopped before transport completed.}'
+const LINUX_VULKAN_INSTANCE_FAILURE = /^\[\d+:\d{4}\/\d{6}\.\d{6}:ERROR:gpu\/vulkan\/vulkan_instance\.cc:200\] vkCreateInstance\(\) failed: -9$/u
+const LINUX_VULKAN_INITIALIZATION_FAILURE = /^\[\d+:\d{4}\/\d{6}\.\d{6}:ERROR:gpu\/ipc\/service\/gpu_init\.cc:1366\] Failed to create and initialize Vulkan implementation\.$/u
 
 /**
  * The packaged smoke has a small, explicit diagnostic allowlist. Network
@@ -403,19 +406,129 @@ export function assertNoUnexpectedDiagnostics(
   return result
 }
 
+/** Returns whether a shutdown cancellation was captured after the owned close request. */
+export function isExpectedTrainDShutdownCancellation(entry, context = {}) {
+  if (entry?.message !== TRAIN_D_SHUTDOWN_CANCELLATION
+    || entry?.type !== 'console.warning'
+    || entry?.source !== 'renderer-console'
+    || entry?.phase !== 'close'
+    || context.productScenariosPassed !== true) return false
+  const requestedAt = typeof context.teardownRequestedAt === 'string' ? context.teardownRequestedAt : ''
+  const entryRequestedAt = typeof entry.teardownRequestedAt === 'string' ? entry.teardownRequestedAt : ''
+  const observedAt = typeof entry.at === 'string' ? entry.at : ''
+  const requestedMs = Date.parse(requestedAt)
+  const entryRequestedMs = Date.parse(entryRequestedAt)
+  const observedMs = Date.parse(observedAt)
+  return requestedAt !== ''
+    && entryRequestedAt === requestedAt
+    && Number.isFinite(requestedMs)
+    && Number.isFinite(entryRequestedMs)
+    && entryRequestedMs === requestedMs
+    && Number.isFinite(observedMs)
+    && observedMs >= requestedMs
+}
+
+/** Returns whether the complete stderr sample is the canonical Linux Vulkan startup pair. */
+export function isExpectedLinuxVulkanStartupPair(entries, context = {}) {
+  if (context.platform !== 'linux'
+    || !Array.isArray(entries)
+    || context.processStderrTruncated === true
+    || (Number.isSafeInteger(context.processStderrCount) && context.processStderrCount !== entries.length)) return false
+  const launchEntries = entries.filter((entry) => entry?.phase === 'launch'
+    && entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr')
+  return launchEntries.length === 2
+    && LINUX_VULKAN_INSTANCE_FAILURE.test(launchEntries[0]?.message ?? '')
+    && LINUX_VULKAN_INITIALIZATION_FAILURE.test(launchEntries[1]?.message ?? '')
+}
+
+/** Builds a narrowly scoped allowlist for the packaged Linux startup control. */
+export function createLinuxVulkanStartupDiagnosticAllowlist(context = {}) {
+  const expectedPair = isExpectedLinuxVulkanStartupPair(context.processStderr, context)
+  const startupStderr = (entry) => expectedPair
+    && entry?.phase === 'launch'
+    && entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && (LINUX_VULKAN_INSTANCE_FAILURE.test(entry?.message ?? '')
+      || LINUX_VULKAN_INITIALIZATION_FAILURE.test(entry?.message ?? ''))
+  return {
+    ...DEFAULT_DIAGNOSTIC_ALLOWLIST,
+    processStderr: Object.freeze([startupStderr]),
+  }
+}
+
 /** Returns the contextual allowlist for the deliberate device-22 history hold. */
 export function createSmokeDiagnosticAllowlist(context = {}) {
   const providerOrigin = typeof context.providerOrigin === 'string' ? context.providerOrigin : ''
   const allowHistoryWarning = isBoundedHistoryHoldRequest(context.historyHoldEvidence)
     && /^http:\/\/127\.0\.0\.1:\d+$/u.test(providerOrigin)
+  const trainDPhase = (entry) => entry?.phase === 'aud08'
+    || entry?.phase === 'aud09'
+    || entry?.phase === 'close'
+    || entry?.phase === 'restart'
+  const rendererWarning = (entry) => entry?.type === 'console.warning'
+    && entry?.source === 'renderer-console'
+    && entry?.url.startsWith('file:')
+    && trainDPhase(entry)
+  const historyRetryWarning = (entry) => rendererWarning(entry)
+    && ((entry?.message === 'Participant history backfill pass failed; it will retry.'
+      && (entry?.phase === 'aud08' || entry?.phase === 'restart'))
+      || entry?.message.startsWith('Participant history backfill pass failed; it will retry. Error: HTTP 503: Service Unavailable'))
+  const participantSelectionWarning = (entry) => rendererWarning(entry)
+    && entry?.message.startsWith('History request target could not be saved; retrieval will retry without a completeness claim. Error: Participant selection is unavailable; tracking history cannot be persisted safely.')
+  const transportFailureWarning = (entry) => rendererWarning(entry)
+    && /^Tracking breadcrumb fetch failed for device\. \{deviceId: (?:11|22), .* error: (?:HTTP 503: Service Unavailable|Mission history evidence scope closed before transport admission\.)\}$/u.test(entry?.message ?? '')
+  const reconciliationFailureWarning = (entry) => rendererWarning(entry)
+    && /^Tracking breadcrumb reconciliation failed for device\. \{deviceId: (?:11|22), .* error: (?:Mission history evidence scope closed before transport admission\.|Participant selection is unavailable; tracking history cannot be persisted safely\.|HTTP 503: Service Unavailable)\}$/u.test(entry?.message ?? '')
+  const shutdownCancellationWarning = (entry) => isExpectedTrainDShutdownCancellation(entry, context)
+  const finishFenceError = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'aud08'
+    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing."
+  const finishFenceStack = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'aud08'
+    && (/^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? '')
+      || /^\s+at sqliteTransaction \(.*\/better-sqlite3\/lib\/methods\/transaction\.js:\d+:\d+\)$/u.test(entry?.message ?? '')
+      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? ''))
+  const coverageRevisionMovedError = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'aud08'
+    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:sync-coverage-tile-catalog': Error: coverage-revision-moved: Coverage catalog chunk does not match its current revision."
+  const coverageRevisionMovedStack = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'aud08'
+    && (/^\s+at normalizeAuthorizedCoverageCatalogInput \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')
+      || /^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? ''))
+  const linuxVulkanStartupStderr = (entry) => isExpectedLinuxVulkanStartupPair(
+    context.processStderr,
+    context,
+  ) && entry?.phase === 'launch'
+    && entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && (LINUX_VULKAN_INSTANCE_FAILURE.test(entry?.message ?? '')
+      || LINUX_VULKAN_INITIALIZATION_FAILURE.test(entry?.message ?? ''))
+  const inspectorCloseStderr = (entry) => entry?.type === 'stderr'
+    && entry?.source === 'main-process-stderr'
+    && entry?.phase === 'close'
+    && (/^Debugger ending on ws:\/\/127\.0\.0\.1:\d+\/[0-9a-f-]+$/u.test(entry?.message ?? '')
+      || entry?.message === 'For help, see: https://nodejs.org/en/docs/inspector')
   return {
     ...DEFAULT_DIAGNOSTIC_ALLOWLIST,
     consoleWarnings: allowHistoryWarning ? Object.freeze([
-      (entry) => entry?.message === 'Participant history backfill pass failed; it will retry.'
-        && entry?.type === 'console.warning'
-        && entry?.source === 'renderer-console'
-        && (entry?.phase === 'aud08' || entry?.phase === 'restart')
-        && entry?.url.startsWith('file:'),
+      historyRetryWarning,
+      participantSelectionWarning,
+      transportFailureWarning,
+      reconciliationFailureWarning,
+      shutdownCancellationWarning,
+    ]) : Object.freeze([]),
+    processStderr: allowHistoryWarning ? Object.freeze([
+      finishFenceError,
+      finishFenceStack,
+      coverageRevisionMovedError,
+      coverageRevisionMovedStack,
+      linuxVulkanStartupStderr,
+      inspectorCloseStderr,
     ]) : Object.freeze([]),
   }
 }
@@ -659,6 +772,10 @@ export function validateSmokeReceipt(receipt, options = {}) {
   if (receipt.provider?.heldHistoryRequests < 1 || !historyHoldEvidence) {
     throw new Error('Packaged smoke receipt does not constrain the deliberate device-22 history hold.')
   }
+  const productScenariosPassed = scenarioResults.aud08 === 'pass'
+    && scenarioResults.aud09 === 'pass'
+    && scenarioResults.restart === 'pass'
+  const platform = receipt.runtime?.platform ?? process.platform
   for (const launch of receipt.launches) {
     if (!Number.isSafeInteger(launch?.pid) || launch.pid < 1) {
       throw new Error(`Packaged smoke launch ${String(launch?.label)} has no child pid.`)
@@ -672,9 +789,16 @@ export function validateSmokeReceipt(receipt, options = {}) {
       || closeTimes[1] < closeTimes[0] || closeTimes[2] < closeTimes[1]) {
       throw new Error('Packaged smoke teardown timing is missing or out of order.')
     }
-    assertNoUnexpectedDiagnostics(launch.close?.diagnostics, createSmokeDiagnosticAllowlist({
+    const diagnostics = launch.close?.diagnostics
+    assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist({
       historyHoldEvidence: receipt.provider?.historyHoldEvidence,
       providerOrigin: receipt.provider?.origin,
+      platform,
+      productScenariosPassed,
+      teardownRequestedAt: launch.close?.requestedAt ?? null,
+      processStderr: diagnostics?.processStderr ?? [],
+      processStderrCount: diagnostics?.counts?.processStderr,
+      processStderrTruncated: diagnostics?.truncated?.processStderr,
     }))
   }
 

@@ -4,56 +4,55 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
-Master is `58c65641483bbdb83515d8793bb1abce1e5755c4`: PR30 (Train C) is
-merged after PR27/PR28. Earlier baseline CI34826211836 remains historical.
-Prior WAR-11 source/browser/native
-failures and limits remain in [WAR-11 remediation](../docs/assurance/findings/war-11-offline-map-remediation.md);
-Train D's original failed native attempt remains in its
-[repair record](../docs/assurance/findings/repair-train-d.md).
+Current `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
+`302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). PR32's current exact
+head is `51e5a7eb6a05fc75bc6382c73cf7245da9dfa364`, tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. Earlier PR31/native-runtime and
+Train D failures remain historical evidence in the linked assurance records.
 
-Active: DON-254 bounded native-runtime repair on
-`codex/don-254-native-runtime-repair`. Scope: snapshot-consistent coverage
-bounds/live revision progress, shared renderer lifecycle listeners, physical worker
-exit on cancellation, supported service-worker protocols and diagnostic custody.
-Merged Train C owns map renderer/style/navigation repairs, including bounded
-target expiry across clock corrections. Its [review disposition](../docs/assurance/findings/pr30-claude-review.md)
-and [original record](../docs/assurance/findings/repair-train-c.md) retain evidence
-and earlier failures. Broader DON-264/DON-6 acceptance and AUD-12 remain open.
+The repair is deliberately narrow: when tracking durably advances a participant
+backfill checkpoint, it refreshes the participant projection for the same still-
+active mission, and waits for participant-scope hydration before admitting
+durable history. It does not alter participant completeness, Finish refusal,
+provider scheduling, diagnostics, the strict `<200 ms` gate, release, or field
+acceptance.
 
 ## Verification and next action
 
-PR31 is rebased onto merged PR30. Claude review superseded earlier readiness
-and CI34845492157. The [review disposition](../docs/assurance/findings/pr31-claude-review.md)
-records live-ingest progress, structural partial/retry outcomes, isolated lifecycle
-cancellation, bounded physical joins, worker-local mutation controls and complete
-stderr custody. Independent re-review found no introduced P1/P2 blocker.
+Manual exact-master workflow `34860711436` (head
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb`) reproduced the original failure at
+packaged AUD-08: the native store was `1/2`, but the renderer remained `2/2`;
+AUD-09 and restart were not reached. A red unit regression reproduced the same
+refresh seam, then passed after the callback repair.
 
-Local correctness: 476 files / 5,045 passing tests / six qualification skips;
-172 affected tests, seven coverage browser flows and visually checked partial /
-Retry recovery pass. Final lifecycle edit has a subsequent 19-test pass; final
-lint, build/package and workflow lint pass. Rebuilt macOS ASAR `ebd6cd7e` passes
-24 preload reads, separate packaged-store live-ingest/snapshot/cancellation
-controls and drained code-zero shutdown. Module/harness hashes were independently
-matched. This is working-tree evidence, not clean CI or default-app cancellation
-qualification. [PR31](https://github.com/donal0c/sartracker-web/pull/31)'s checks
-and latest evidence comment own the live exact-head Linux result and readiness.
+Local repaired macOS arm64 package evidence (`/tmp/sar-train-d-local-666c`)
+shows `aud08=pass` and `aud09=pass`, including the visible `complete for 1/1`
+state and Search Operations backup proof. Restart is **NOT_PROVEN** because the
+existing diagnostic custody gate rejected deliberate provider-503/retry and
+close-time transport warnings before restart. No diagnostic allowlist or gate was
+relaxed; the full receipt remains retained.
 
-The original Train D attempt remains FAILED: expected one pending member,
-observed 2/2; AUD09/restart NOT RUN. Original ASAR `a5e09019`, provider 503 warnings
-and moved-snapshot rejection remain retained in the
-[native repair evidence](../docs/assurance/findings/native-runtime-repair.md).
-No diagnostic or release gate was relaxed.
-
-Next: inspect PR31's latest exact-head Linux CI/artifact evidence and reconcile
-with current master before any merge decision. Donal owns merge. This branch
-does not qualify or publish a release; remaining Train D work stays separate.
+Source checks on the current head: focused Train D/runtime tests pass 132/132,
+changed-file lint, TypeScript build and diff checks pass. Ordinary PR CI
+`34899741326` passed. Required manual run `34902500983` is exact-head clean and
+passed strict `<200 ms`, `AUD-08`, `AUD-09`, restart, `scenarioResult`,
+`diagnosticResult`, and the independent receipt validator; its receipt result is
+`pass`. The run then failed in the unrelated packaged archive-lifecycle smoke:
+the unchanged strict continuity gate recorded `current_fix_continuity_gate_breached`
+with a 205 ms cleanup gap. Failure evidence is retained under
+`/tmp/sar-train-d-ci-34902500983-9FmgLG`, including
+`tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json`.
+Do not relax that gate or relabel the workflow green. PR32 remains draft/open and
+not merge-ready; Donal owns merge, and no merge, release, deployment, or team
+contact is authorized by this handoff.
 
 ## Limits
 
-DON-254 remains In Progress; release HOLD. Strict `<200 ms`, 960k replay,
-tracking soak, archive lifecycle, installer/field acceptance and official-map
-distribution are outside this lane. Pre-attachment renderer diagnostics remain
-unobserved; capture timestamps are not event-origin timestamps.
+DON-254 remains In Progress; release HOLD. The current Train D receipt is
+positive, but the manual workflow remains failed by the archive-lifecycle
+continuity blocker above. Installer/field acceptance and official-map
+distribution remain outside this lane. Pre-attachment renderer diagnostics
+remain unobserved; capture timestamps are not event-origin timestamps.
 The historical 204.046 ms concurrent read, incomplete 239.509 ms attribution,
 baseline settings/browser gaps, and WAR-11 macOS/CI failures remain retained.
 No credentials or licensed map bytes were read.

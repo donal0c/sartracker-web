@@ -180,6 +180,10 @@ export async function startMissionBrowserHarness(): Promise<void> {
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>
         useParticipantStore.getState().controller?.reportRosterError(message),
+      notifyParticipantBackfillChange: async (missionId) => {
+        if (useMissionStore.getState().currentMission?.id !== missionId) return
+        await useParticipantStore.getState().controller?.refreshMission(missionId)
+      },
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       notifyDurablePositionChange: (changedPositionCount) => {

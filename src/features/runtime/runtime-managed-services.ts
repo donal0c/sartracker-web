@@ -122,6 +122,7 @@ type CreateManagedRuntimeServicesDependencies = {
     ) => () => void
     readonly recordTrackingPollDiagnostic?: typeof recordTrackingPollLedgerEntry
     readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+    readonly notifyParticipantBackfillChange?: (missionId: string) => void | Promise<void>
     readonly missionModelEnabled?: boolean
     readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
     readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
@@ -182,6 +183,7 @@ type CreateManagedRuntimeServicesDependencies = {
   readonly readTrackingRuntimeConfig: () => RuntimeBootstrapSettings['trackingConfig']
   readonly createTrackingCache: () => TrackingCache
   readonly notifyDurablePositionChange?: (changedPositionCount: number) => void
+  readonly notifyParticipantBackfillChange?: (missionId: string) => void | Promise<void>
   readonly recordMissionEvidenceLoss?:
     | ((
         missionId: string,
@@ -304,6 +306,9 @@ export async function createManagedRuntimeServices(
       ...(dependencies.notifyDurablePositionChange === undefined
         ? {}
         : { notifyDurablePositionChange: dependencies.notifyDurablePositionChange }),
+      ...(dependencies.notifyParticipantBackfillChange === undefined
+        ? {}
+        : { notifyParticipantBackfillChange: dependencies.notifyParticipantBackfillChange }),
       ...(dependencies.runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: dependencies.runtimeSettings.trackingDisabledReason }),
