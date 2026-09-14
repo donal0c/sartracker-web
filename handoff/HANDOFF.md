@@ -13,7 +13,8 @@ Claude's review superseded its original readiness verdict. The valid findings
 are corrected: safe missing-layer reads and structural equality, camera
 destination ownership through style changes, bounded style failure cleanup,
 explicit retry and store-owned target expiry across teardown. Requests expire
-within 30 seconds, shortened to eight seconds after verified attachment.
+within 30 seconds, shortened to eight seconds after verified attachment; the
+earliest wall-clock/monotonic deadline prevents backward clock changes extending it.
 Operator gestures release camera ownership; actual overlay changes still apply.
 
 ## Verification and next action
@@ -21,11 +22,12 @@ Operator gestures release camera ownership; actual overlay changes still apply.
 The [Claude-review disposition](../docs/assurance/findings/pr30-claude-review.md)
 owns current evidence; the [original record](../docs/assurance/findings/repair-train-c.md)
 retains earlier findings and failures. Stable local correctness passes
-**473 files / 4,997 tests / six existing qualification skips**. Lint,
+**473 files / 4,999 tests / six existing qualification skips**. Lint,
 TypeScript/Vite build/bundle budgets and six rendered Chromium regressions pass.
 Owner inspected synthetic screenshots. Targeted independent source review is
 clear; the updated packaged-smoke observation has 27 passing source tests.
 An earlier full run was interrupted for the no-op health correction, not passed.
+CI on f7da1d8b was cancelled for the clock correction; its replacement is required.
 
 The [current PR30 checks](https://github.com/donal0c/sartracker-web/pull/30/checks)
 control new-head CI/package readiness. The old green CI on `01fb1c24` is

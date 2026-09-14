@@ -129,4 +129,14 @@ describe('map target store', () => {
       label: 'Second target',
     })
   })
+
+  it.each([false, true])('does not extend target lifetime when the system clock moves backward (attached=%s)', (attached) => {
+    useMapTargetStore.getState().queueTarget(52.274681, -9.530912)
+    const target = useMapTargetStore.getState().activeTarget!
+    if (attached) useMapTargetStore.getState().markTargetAttached(target.id)
+    vi.setSystemTime(-60_000)
+    vi.advanceTimersByTime(attached ? ATTACHED_LIFETIME_MS : REQUEST_LIFETIME_MS)
+    expect(useMapTargetStore.getState().activeTarget).toBeNull()
+    expect(useMapTargetStore.getState().isTargetCurrent(target.id)).toBe(false)
+  })
 })

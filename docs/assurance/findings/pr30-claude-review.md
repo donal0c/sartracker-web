@@ -28,8 +28,9 @@ hook now requires it and tests map replacement. Its layer-order and sampled-zoom
 comments do not establish new regressions in this diff. Existing transparent-ring
 placement and minimum zoom policy are retained; no operational occlusion was
 reproduced. Removing pendingTarget also removes the obsolete acknowledgement
-write. Deadline checks cover late timers and remounts; they are absolute-time
-checks, not a responsiveness or sleep-duration qualification claim.
+write. Deadline checks cover late timers and remounts using the earliest of
+wall-clock and monotonic deadlines; these are not a responsiveness or
+sleep-duration qualification claim.
 
 ## Additional corrections found during remediation
 
@@ -44,6 +45,15 @@ checks, not a responsiveness or sleep-duration qualification claim.
   incomplete attachment logs and retries through the existing synchronizer.
 - Operator gestures release navigation camera ownership. Style changes then
   preserve the operator's newer view. Expired requests cannot supply a camera.
+- A final backward-clock control failed for both pending and attached requests:
+  wall time alone could extend their lifetime. Expiry now uses the earlier of
+  wall-clock and monotonic deadlines, including attachment caps. The two controls
+  and affected hook/camera tests pass (23 total); an independent bounded review
+  found no defect in that delta. CI 34840058380 on f7da1d8b was cancelled as
+  superseded, not passed. Fresh full correctness passes **473 files / 4,999 tests /
+  six existing qualification skips**, 515.89 seconds, exit 0. Fresh lint/build and
+  the affected rendered expiry recheck pass. The remaining camera/browser proof
+  is reused from f7da1d8b because those executable inputs are unchanged.
 
 ## Verification and boundaries
 
@@ -61,7 +71,7 @@ Final affected source checks pass 50 camera/hook/smoke tests; the final six-case
 Chromium run passes with retries disabled (36.3 seconds). Lint and TypeScript /
 Vite build / bundle budgets pass. The first full source run was interrupted for
 the independent review's no-op health correction and is not counted as green.
-Its final stable replacement passed **473 files / 4,997 tests / six existing
+Its initial stable replacement passed **473 files / 4,997 tests / six existing
 qualification skips**, 480.62 seconds, exit 0. Independent read-only camera/navigation
 review found no remaining material defect after that correction; the reviewer
 also reran the eight camera-completion tests. A separate review confirmed the
