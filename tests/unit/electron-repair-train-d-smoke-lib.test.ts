@@ -372,6 +372,18 @@ describe('Repair Train D packaged smoke gates', () => {
       'aud08',
     )
     rendererWarning(
+      'History request target could not be saved; retrieval will retry without a completeness claim. Error: Participant selection is unavailable; tracking history cannot be persisted safely.\n    at start-tracking-runtime.js:1:2',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb reconciliation failed for device. {deviceId: 22, deviceName: Repair Train D A, retryDelayMs: 1000, error: Participant selection is unavailable; tracking history cannot be persisted safely.}',
+      'aud08',
+    )
+    rendererWarning(
+      'Tracking breadcrumb reconciliation failed for device. {deviceId: 22, deviceName: Repair Train D A, retryDelayMs: 1000, error: HTTP 503: Service Unavailable}',
+      'aud08',
+    )
+    rendererWarning(
       'Participant history backfill pass failed; it will retry. Error: HTTP 503: Service Unavailable\n    at start-tracking-runtime.js:1:2',
       'close',
     )
@@ -380,6 +392,18 @@ describe('Repair Train D packaged smoke gates', () => {
     }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
     appendBoundedDiagnostic(diagnostics, 'processStderr', {
       message: '    at finishMission (/app/electron/mission-store.cjs:5667:3)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: "Error occurred in handler for 'sartracker:mission-store:sync-coverage-tile-catalog': Error: coverage-revision-moved: Coverage catalog chunk does not match its current revision.",
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at normalizeAuthorizedCoverageCatalogInput (/app/electron/mission-store.cjs:348:13)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at /app/electron/mission-store.cjs:2402:33',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at /app/electron/mission-store.cjs:3351:48',
     }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
     appendBoundedDiagnostic(diagnostics, 'processStderr', {
       message: 'Debugger ending on ws://127.0.0.1:39841/3986e37b-356e-480d-9960-8cd0095ac4ff',
