@@ -57,6 +57,15 @@ service-worker registration, listener pressure and unassigned script diagnostic
 recorded in the [coordinated ledger](assurance/coordinated-work-ledger.md).
 These are bounded follow-ups, not permission to expand either active train.
 
+Latest manual Train D run `34877445512` on exact head
+`9bd9adc9d38ee573a152ee42c57c13b8da04c803` / tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8` passes AUD-08, AUD-09 and restart,
+but fails the diagnostic receipt on one expected close-time transport
+cancellation warning plus the known Linux Vulkan startup stderr. This is not a
+product scenario failure or release qualification. Keep the receipt retained,
+do not merge or release, and resolve the diagnostic boundary before another
+exact-head manual run.
+
 **Historical reconciliation:** PR26/WAR-06 is merged at
 `8f93f8d1cc4554178706e23401ecd496d1193195`. PR25's observer repair is reconciled
 onto it with unchanged recovery test inputs and both packaged CI steps retained;

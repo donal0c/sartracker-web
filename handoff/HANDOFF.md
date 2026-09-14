@@ -7,7 +7,9 @@ Updated 2026-09-14. Read after `CLAUDE.md`.
 Current `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
 `302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). This branch starts
 from that clean exact head and contains the bounded follow-up for DON-254 / Train
-D's packaged participant-progress observation. Earlier PR31/native-runtime and
+D's packaged participant-progress observation at exact head
+`9bd9adc9d38ee573a152ee42c57c13b8da04c803`, tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8`. Earlier PR31/native-runtime and
 Train D failures remain historical evidence in the linked assurance records.
 
 The repair is deliberately narrow: when tracking durably advances a participant
@@ -39,9 +41,20 @@ unchanged. CI run `34866228521` passed through correctness, responsiveness,
 browser, build, and replay gates, then failed before Train D at the unrelated
 packaged native-runtime diagnostic gate on two launch-time Vulkan stderr entries;
 the exact clean package and source identity passed, and Train D was skipped.
-The exact-head Train D scenario and complete restart path therefore remain
-**NOT_PROVEN**. Donal owns merge; no merge, release, deployment, or team contact
-is authorized by this handoff.
+The required manual exact-head workflow `34877445512` ran on the repaired clean
+head/tree above. Its packaged receipt records `AUD-08=pass`, `AUD-09=pass`,
+`restart=pass`, and `scenarioResult=pass`. It still records
+`diagnosticResult=fail`/`result=fail`: restart close emitted the exact
+`Tracking history stopped before transport completed` warning not yet covered by
+the narrow Train D diagnostic patterns, and Linux emitted the two known Vulkan
+startup stderr lines. This is a harness/environment diagnostic boundary, not a
+new participant or restart product failure; packaged qualification remains
+**NOT_PROVEN** until the diagnostic boundary is resolved and rerun. The receipt
+and evidence are retained under `/tmp/sar-train-d-ci-34877445512-xowlWF`.
+
+Source checks on the current head: the affected Train D harness tests pass 26/26,
+changed-file lint, TypeScript build and diff checks pass. Donal owns merge; no
+merge, release, deployment, or team contact is authorized by this handoff.
 
 ## Limits
 

@@ -46,6 +46,33 @@ identity was exact and clean; the Train D validator and scenario were skipped.
 This is retained as an environment/diagnostic-gate boundary, not as a product
 failure or allowlist change.
 
+## Latest exact-head manual qualification — 2026-09-14
+
+The required manual workflow [`34877445512`](https://github.com/donal0c/sartracker-web/actions/runs/34877445512)
+ran on exact clean head `9bd9adc9d38ee573a152ee42c57c13b8da04c803` / tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8`. All pre-Train-D gates passed,
+including strict `<200 ms`, and the receipt's packaged scenarios all passed:
+`AUD-08=pass`, `AUD-09=pass`, `restart=pass`, `scenarioResult=pass`.
+
+The overall receipt remains failed because `diagnosticResult=fail`. The restart
+close observed the exact renderer warning `Tracking history stopped before
+transport completed`, which is an expected teardown cancellation but is not yet
+covered by the narrow Train D allowlist. The same restart also emitted the two
+known Linux Electron Vulkan startup stderr lines (`vkCreateInstance() failed: -9`
+and `Failed to create and initialize Vulkan implementation.`), previously
+retained as an environment/diagnostic-custody boundary in the native-runtime
+gate. The source/tree attestation is exact and clean; no product scenario failed,
+and no timing, diagnostic, release or field gate was relaxed. Train D packaged
+qualification is therefore **NOT_PROVEN**, not green or merge-ready. The full
+receipt is retained under `/tmp/sar-train-d-ci-34877445512-xowlWF`.
+
+The current harness commit `9bd9adc9` is locally verified by 26/26 affected unit
+tests, changed-file lint, TypeScript build and diff checks. The next bounded gate
+is an explicit decision on the teardown-cancellation classification and the
+separate Linux Vulkan diagnostic boundary, followed by another exact-head manual
+run if those boundaries are resolved. No merge, release, deployment or team
+contact follows from this receipt.
+
 ## Contract and risk
 
 SAR-QA-001/002/008 require complete mission history, immediate current positions

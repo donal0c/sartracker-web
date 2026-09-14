@@ -73,6 +73,16 @@ passed through replay and the pre-packaged controls, then failed at the
 unrelated packaged native-runtime diagnostic gate on two launch-time Vulkan
 stderr entries; Train D was skipped and remains not proven in Linux CI.
 
+Latest required manual Train D run `34877445512` is exact-head clean at
+`9bd9adc9d38ee573a152ee42c57c13b8da04c803` / tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8`. All three packaged scenarios pass
+(`AUD-08`, `AUD-09`, restart), but the receipt is failed because the diagnostic
+gate rejects one expected restart teardown-cancellation warning and the two
+known Linux Electron Vulkan startup stderr entries. Classify this as a bounded
+harness/environment diagnostic boundary, not a product scenario failure; retain
+the exact receipt and keep Train D packaged qualification, merge and release
+**NOT_PROVEN/HOLD**. No gate was relaxed.
+
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
 PR31 is rebased onto it. Claude review superseded earlier readiness and green
 CI34845492157. The [review disposition](findings/pr31-claude-review.md) records
