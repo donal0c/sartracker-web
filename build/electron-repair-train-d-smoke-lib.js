@@ -772,6 +772,10 @@ export function validateSmokeReceipt(receipt, options = {}) {
   if (receipt.provider?.heldHistoryRequests < 1 || !historyHoldEvidence) {
     throw new Error('Packaged smoke receipt does not constrain the deliberate device-22 history hold.')
   }
+  const productScenariosPassed = scenarioResults.aud08 === 'pass'
+    && scenarioResults.aud09 === 'pass'
+    && scenarioResults.restart === 'pass'
+  const platform = receipt.runtime?.platform ?? process.platform
   for (const launch of receipt.launches) {
     if (!Number.isSafeInteger(launch?.pid) || launch.pid < 1) {
       throw new Error(`Packaged smoke launch ${String(launch?.label)} has no child pid.`)
@@ -785,9 +789,16 @@ export function validateSmokeReceipt(receipt, options = {}) {
       || closeTimes[1] < closeTimes[0] || closeTimes[2] < closeTimes[1]) {
       throw new Error('Packaged smoke teardown timing is missing or out of order.')
     }
-    assertNoUnexpectedDiagnostics(launch.close?.diagnostics, createSmokeDiagnosticAllowlist({
+    const diagnostics = launch.close?.diagnostics
+    assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist({
       historyHoldEvidence: receipt.provider?.historyHoldEvidence,
       providerOrigin: receipt.provider?.origin,
+      platform,
+      productScenariosPassed,
+      teardownRequestedAt: launch.close?.requestedAt ?? null,
+      processStderr: diagnostics?.processStderr ?? [],
+      processStderrCount: diagnostics?.counts?.processStderr,
+      processStderrTruncated: diagnostics?.truncated?.processStderr,
     }))
   }
 

@@ -534,10 +534,25 @@ describe('Repair Train D packaged smoke gates', () => {
 
   it('accepts a complete receipt and the narrowly contextual expected history warning', () => {
     const receipt = completeReceipt()
+    receipt.runtime = { platform: 'linux' }
     appendBoundedDiagnostic(receipt.launches[0].close.diagnostics, 'consoleWarnings', {
       message: 'Participant history backfill pass failed; it will retry.',
       url: 'file:///app/index.html',
     }, { phase: 'aud08', type: 'console.warning', source: 'renderer-console' })
+    appendBoundedDiagnostic(receipt.launches[0].close.diagnostics, 'consoleWarnings', {
+      message: 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: Tracking history stopped before transport completed.}',
+      url: 'file:///app/index.html',
+      at: '2026-09-14T10:00:00.001Z',
+      teardownRequestedAt: '2026-09-14T10:00:00.000Z',
+    }, { phase: 'close', type: 'console.warning', source: 'renderer-console' })
+    for (const message of [
+      '[14455:0914/182657.328392:ERROR:gpu/vulkan/vulkan_instance.cc:200] vkCreateInstance() failed: -9',
+      '[14455:0914/182657.328621:ERROR:gpu/ipc/service/gpu_init.cc:1366] Failed to create and initialize Vulkan implementation.',
+    ]) {
+      appendBoundedDiagnostic(receipt.launches[0].close.diagnostics, 'processStderr', { message }, {
+        phase: 'launch', type: 'stderr', source: 'main-process-stderr',
+      })
+    }
 
     expect(validateSmokeReceipt(receipt)).toBe(true)
   })
