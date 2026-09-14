@@ -1,0 +1,19 @@
+
+> sartracker-web@0.1.0-beta.12.11 test:correctness
+> vitest run --config vitest.correctness.config.ts --no-file-parallelism
+
+Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.
+
+ RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":9}},"maximumHeartbeatGapMs":12.859749999999622,"parentThreadId":0,"failure":null}
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":12}},"maximumHeartbeatGapMs":14.78099999999904,"parentThreadId":0,"failure":null}
+Legacy recovery completion observation: {"outcome":{"value":{"workerThreadId":28}},"maximumHeartbeatGapMs":11.364083000000392,"parentThreadId":0,"failure":null}
+GPX current-write diagnostics: {"maximumWriteMs":31.65099999999802,"largestWriteProcessCpuMs":1.703,"maximumHeartbeatGapMs":14.548209000000497,"sequence":1034}
+Startup SQLite contention: {"maximumGapMs":11.735833999999954,"processCpuMs":10.148}
+Startup SQLite contention: {"maximumGapMs":11.491625000000113,"processCpuMs":5.952}
+
+ Test Files  473 passed (473)
+      Tests  4999 passed | 6 skipped (5005)
+   Start at  13:02:47
+   Duration  515.89s (transform 4.03s, setup 0ms, import 14.08s, tests 347.03s, environment 124.73s)

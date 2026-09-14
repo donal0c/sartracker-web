@@ -54,13 +54,16 @@ export function useMapInstance(): MapInstanceController {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const previousBasemapIdRef = useRef<RenderableMapId | null>(null)
+  const previousStyleRetryVersionRef = useRef(0)
   const activeBasemapIdRef = useRef<RenderableMapId>(initialBasemapId)
   const lastLoggedMapHealthRef = useRef<string | null>(null)
   const tileHealthTrackerRef = useRef(createTileHealthTracker())
+  const styleFailureRef = useRef<string | null>(null)
   const hoverCoordinateFrameRef = useRef<number | null>(null)
   const pendingHoverCoordinateRef = useRef<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
   const [activeBasemapId, setActiveBasemapId] = useState<RenderableMapId>(initialBasemapId)
   const [mapReadyVersion, setMapReadyVersion] = useState(0)
+  const [styleRetryVersion, setStyleRetryVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
   const [mapHealth, setMapHealth] = useState<MapHealth>(() =>
     createLoadingMapHealth(getRenderableMapLabel(initialBasemapId)),
@@ -78,8 +81,13 @@ export function useMapInstance(): MapInstanceController {
 
   function handleBasemapChange(nextBasemapId: RenderableMapId) {
     const previousBasemapId = activeBasemapIdRef.current
+    if (nextBasemapId === previousBasemapId) {
+      if (styleFailureRef.current === null) return
+      setStyleRetryVersion((version) => version + 1)
+    }
     activeBasemapIdRef.current = nextBasemapId
     tileHealthTrackerRef.current.reset()
+    styleFailureRef.current = null
     setMapHealth(createLoadingMapHealth(getRenderableMapLabel(nextBasemapId)))
     setActiveBasemapId(nextBasemapId)
     void recordDiagnosticEvent({
@@ -136,6 +144,7 @@ export function useMapInstance(): MapInstanceController {
       })
     })
     map.on('idle', () => {
+      if (styleFailureRef.current !== null) return
       const tracker = tileHealthTrackerRef.current
       setMapHealth((current) => {
         if (current.status === 'degraded') {
@@ -222,13 +231,23 @@ export function useMapInstance(): MapInstanceController {
   useEffect(() => {
     const map = mapRef.current
 
-    if (map === null || previousBasemapIdRef.current === activeBasemapId) {
+    if (map === null || (previousBasemapIdRef.current === activeBasemapId &&
+        previousStyleRetryVersionRef.current === styleRetryVersion)) {
       return
     }
 
-    applyMapStylePreservingCamera(map, style)
     previousBasemapIdRef.current = activeBasemapId
-  }, [activeBasemapId, style])
+    previousStyleRetryVersionRef.current = styleRetryVersion
+    return applyMapStylePreservingCamera(map, style, {
+      onFailure: (message) => {
+        styleFailureRef.current = message
+        setMapHealth(createDegradedMapHealth(getRenderableMapLabel(activeBasemapId), message))
+      },
+      onUnchanged: () => {
+        setMapHealth(createReadyMapHealth(getRenderableMapLabel(activeBasemapId)))
+      },
+    })
+  }, [activeBasemapId, style, styleRetryVersion])
 
   return {
     activeBasemapId,

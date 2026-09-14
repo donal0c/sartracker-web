@@ -1,3 +1,4 @@
+import { setMapFilterIfChanged } from '../map/map-style-writes'
 import type maplibregl from 'maplibre-gl'
 
 import type { GpxTrackImport } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -39,5 +40,5 @@ export function syncGpxOverlay(
       'line-join': 'round',
     },
   })
-  map.setFilter(GPX_LINE_LAYER_ID, buildGpxLayerFilter(hiddenImportIds))
+  setMapFilterIfChanged(map, GPX_LINE_LAYER_ID, buildGpxLayerFilter(hiddenImportIds))
 }

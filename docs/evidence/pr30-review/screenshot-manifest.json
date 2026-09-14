@@ -1,0 +1,26 @@
+[
+  {
+    "screenshot": "navigation-wins-camera-restore.png",
+    "testOutput": "test-results/train-c/map-navigation-recovery-ne-ed986-emap-camera-restore-AUD-06--chromium/navigation-wins-camera-restore.png",
+    "sha256": "2656d6c745090d43e7434d0c5bab66f8eea626b3737a77e8d7c18a5d68fca3fc",
+    "scope": "synthetic Chromium final rendered frame; geometry assertions and trace establish scenario"
+  },
+  {
+    "screenshot": "navigation-switch-during-flight.png",
+    "testOutput": "test-results/train-c/map-navigation-recovery-ba-c3bad--at-the-destination-AUD-06--chromium/navigation-switch-during-flight.png",
+    "sha256": "ff0654d39c86671d6335303307e43b93e41be171a1fd6416c72329bee9a1f0a9",
+    "scope": "synthetic Chromium final rendered frame; geometry assertions and trace establish scenario"
+  },
+  {
+    "screenshot": "navigation-loaded.png",
+    "testOutput": "test-results/train-c/map-navigation-recovery-la-c1c4a-equested-coordinate-AUD-06--chromium/navigation-loaded.png",
+    "sha256": "348e54292aecf35ac84ee92257e969b6759c543265548c783558e754a5c6771b",
+    "scope": "synthetic Chromium final rendered frame; geometry assertions and trace establish scenario"
+  },
+  {
+    "screenshot": "navigation-repeated.png",
+    "testOutput": "test-results/train-c/map-navigation-recovery-la-c1c4a-equested-coordinate-AUD-06--chromium/navigation-repeated.png",
+    "sha256": "8f18231c85bfdd0e05062d249e9d9e876f254787f24a4c00b200c04d0b9faea7",
+    "scope": "synthetic Chromium final rendered frame; geometry assertions and trace establish scenario"
+  }
+]

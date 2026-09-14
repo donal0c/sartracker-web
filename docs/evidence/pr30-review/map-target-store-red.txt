@@ -1,0 +1,10 @@
+Agent-recorded red summary, not raw Vitest output.
+Command: npx vitest run tests/unit/map-target-store.test.ts
+
+Test Files 1 failed (6 tests | 5 failed)
+- accepted requests had no expiresAt/attached fields
+- markTargetAttached was missing
+- isTargetCurrent was missing
+- the stale timer/repeated attachment cases could not execute
+
+This is the intentional red state before implementing the store-owned lifetime.

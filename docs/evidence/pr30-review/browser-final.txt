@@ -1,0 +1,21 @@
+[WebServer] (node:54827) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 6 tests using 1 worker
+
+(node:54828) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:54828) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/map-idle-redraw.spec.ts:55:3 › AUD-04 MapLibre idle redraw regression › keeps quiet idle free of redundant style writes and preserves live overlay sync (5.0s)
+  ✓  2 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:3:1 › new Go To wins over a delayed production basemap camera restore [AUD-06] (3.3s)
+  ✓  3 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:44:1 › basemap replacement during animated Go To settles at the destination [AUD-06] (1.6s)
+  ✓  4 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:68:1 › a never-loaded target expires and cannot reappear when the map recovers [AUD-06] (937ms)
+[WebServer] 12:37:45 PM [vite] (client) [console.error] Basemap style could not be applied. Choose another basemap.
+  ✓  5 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:86:1 › basemap application failure stays visible until the operator chooses another map (1.6s)
+  ✓  6 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:112:1 › latest repeated Go To survives delayed style loading and renders at the requested coordinate [AUD-06] (21.9s)
+
+  6 passed (36.3s)

@@ -42,6 +42,7 @@ function createMockMap() {
     filters,
     layerOrder,
     getLayer: vi.fn((id: string) => (layers.has(id) ? { id } : undefined)),
+    getFilter: vi.fn((id: string) => layers.get(id)?.filter),
     getSource: vi.fn((id: string) => (sources.has(id) ? { setData: vi.fn() } : undefined)),
     addLayer: vi.fn((spec: LayerSpec, beforeId?: string) => {
       layers.set(spec.id, spec)
@@ -56,6 +57,8 @@ function createMockMap() {
     }),
     setFilter: vi.fn((id: string, filter: unknown) => {
       filters.set(id, filter)
+      const layer = layers.get(id)
+      if (layer !== undefined) layers.set(id, { ...layer, filter })
     }),
   }
 }
@@ -94,6 +97,12 @@ describe('drawing overlay layer configuration', () => {
     for (const [, filter] of map.filters) {
       assertNoLegacyTypeSelector(filter)
     }
+  })
+
+  it('does not repeat unchanged drawing filter writes on idle [AUD-04]', () => {
+    map.setFilter.mockClear()
+    syncDrawingOverlay(map as never, [], [], VISIBLE_TYPES, null)
+    expect(map.setFilter).not.toHaveBeenCalled()
   })
 
   it('restricts the visible point layer to intentional geometry points only', () => {

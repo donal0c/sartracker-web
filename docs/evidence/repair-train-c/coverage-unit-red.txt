@@ -1,0 +1,56 @@
+RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/sync-coverage-overlay.test.ts (19 tests | 1 failed | 18 skipped) 5ms
+     × does not redraw unchanged coverage filters during idle sync [AUD-04] 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/sync-coverage-overlay.test.ts > Candidate B coverage overlay [DON-276] > does not redraw unchanged coverage filters during idle sync [AUD-04]
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 2 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      "coverage-706572696f64-1-line",
+      Array [
+        "==",
+        Array [
+          "geometry-type",
+        ],
+        "LineString",
+      ],
+    ]
+
+  2nd vi.fn() call:
+
+    Array [
+      "coverage-706572696f64-1-point",
+      Array [
+        "==",
+        Array [
+          "geometry-type",
+        ],
+        "Point",
+      ],
+    ]
+
+
+Number of calls: 2
+
+ ❯ tests/unit/sync-coverage-overlay.test.ts:20:31
+     18|     second.commit()
+     19|     second.finalize()
+     20|     expect(map.setFilter).not.toHaveBeenCalled()
+       |                               ^
+     21|   })
+     22|   it('replaces an equal revision for a new renderer activation before …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 18 skipped (19)
+   Start at  11:05:36
+   Duration  491ms (transform 53ms, setup 0ms, import 69ms, tests 5ms, environment 267ms)

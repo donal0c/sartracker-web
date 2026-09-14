@@ -1,0 +1,16 @@
+[WebServer] (node:18002) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+[WebServer]   npx update-browserslist-db@latest
+[WebServer]   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+Running 2 tests using 1 worker
+
+(node:18007) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:18007) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:3:1 › new Go To wins over a delayed production basemap camera restore [AUD-06] (3.9s)
+  ✓  2 [chromium] › tests/e2e/map-navigation-recovery.spec.ts:39:1 › latest repeated Go To survives delayed style loading and renders at the requested coordinate [AUD-06] (21.9s)
+
+  2 passed (27.5s)

@@ -1,3 +1,4 @@
+import { setMapFilterIfChanged } from '../map/map-style-writes'
 import type maplibregl from 'maplibre-gl'
 
 import { buildMarkerLayerFilter } from '../layers/map-layer-filters'
@@ -84,14 +85,14 @@ export async function syncMarkerOverlay(
       markerTypeVisibility[markerType],
       hiddenMarkerIds,
     )
-    map.setFilter(symbolLayerId, typeFilter)
-    map.setFilter(labelLayerId, typeFilter)
+    setMapFilterIfChanged(map, symbolLayerId, typeFilter)
+    setMapFilterIfChanged(map, labelLayerId, typeFilter)
   }
 
   const visibleTypeFilters = MARKER_TYPES.filter((type) => markerTypeVisibility[type]).map((type) =>
     buildMarkerLayerFilter(type, true, hiddenMarkerIds),
   )
-  map.setFilter(
+  setMapFilterIfChanged(map,
     MARKER_HITBOX_LAYER_ID,
     visibleTypeFilters.length === 0
       ? ['==', ['get', 'markerId'], '__hidden__']

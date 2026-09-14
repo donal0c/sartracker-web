@@ -74,12 +74,15 @@ describe('official map qualification smoke fixtures', () => {
       if (ordering === 'target-before-restoration') map.jumpTo(targetCamera)
       await new Promise((resolve) => setTimeout(resolve, 0))
       if (ordering === 'restoration-before-target') {
-        map.fire('styledata')
+        map.fire('style.load')
         await Promise.resolve()
       } else {
         await Promise.resolve()
         expect(state.latest).toBeNull()
         map.fire('styledata')
+        await Promise.resolve()
+        expect(state.latest).toBeNull()
+        map.fire('style.load')
         await Promise.resolve()
       }
       expect(state.latest?.camera).toEqual({center: defaultCamera.center, zoom: defaultCamera.zoom, bearing: 0, pitch: 0})
@@ -92,7 +95,7 @@ describe('official map qualification smoke fixtures', () => {
     },
   )
 
-  it('does not accept an already-present source until styledata has crossed the observer', async () => {
+  it('does not accept an already-present source until style.load has crossed the observer', async () => {
     const evented = new Evented()
     const camera = {center: [-9.7, 51.97] as [number, number], zoom: 12}
     const style = {
@@ -124,11 +127,14 @@ describe('official map qualification smoke fixtures', () => {
     expect(state.latest).toBeNull()
     map.fire('styledata')
     await Promise.resolve()
-    expect(state.latest?.styleDataCount).toBe(1)
+    expect(state.latest).toBeNull()
+    map.fire('style.load')
+    await Promise.resolve()
+    expect(state.latest?.styleLoadCount).toBe(1)
     expect(state.cleaned).toBe(true)
   })
 
-  it('waits past a synchronous setStyle styledata event before accepting restoration', async () => {
+  it('observes a synchronous setStyle style.load event after helper registration', async () => {
     const evented = new Evented()
     let camera = {center: [-9.7, 51.97] as [number, number], zoom: 12}
     let style = {sources: {}}
@@ -148,9 +154,8 @@ describe('official map qualification smoke fixtures', () => {
       getStyle: () => style,
       setStyle: () => {
         style = sourceStyle
-        // Countercontrols the production helper's registration order: the
-        // event occurs before its once listener is registered.
-        map.fire('styledata')
+        // Exercises the production helper's listener-before-setStyle order.
+        map.fire('style.load')
       },
       jumpTo: (next: typeof camera) => { camera = next },
     })
@@ -160,23 +165,19 @@ describe('official map qualification smoke fixtures', () => {
       deadlineAt: Date.now() + 1_000,
       runtime: {window: globalThis, map},
     })
-    const defaultCamera = {...camera}
     const targetCamera = {center: [-9.8876953125, 52.02545042919566] as [number, number], zoom: 11}
     try {
       applyMapStylePreservingCamera(map, sourceStyle)
       map.jumpTo(targetCamera)
       await Promise.resolve()
-      expect(state.latest).toBeNull()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      map.fire('styledata')
-      await Promise.resolve()
-      expect(state.latest?.camera).toEqual({center: defaultCamera.center, zoom: defaultCamera.zoom, bearing: 0, pitch: 0})
+      expect(state.latest?.styleLoadCount).toBe(1)
+      expect(state.latest?.camera).toEqual({center: targetCamera.center, zoom: 11, bearing: 0, pitch: 0})
     } finally {
       state.cleanup?.()
     }
   })
 
-  it('does not accept synchronous setStyle styledata after an install-task gap', async () => {
+  it('does not accept synchronous setStyle styledata before style.load', async () => {
     const evented = new Evented()
     let style = {sources: {}}
     const sourceStyle = {
@@ -287,7 +288,7 @@ describe('official map qualification smoke fixtures', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(state.cleaned).toBe(true)
     expect(timers.size).toBe(0)
-    expect(state.styleDataCount).toBe(0)
+    expect(state.styleLoadCount).toBe(0)
   })
 
   it('does not admit a frame after the absolute style deadline when timer cleanup is delayed', async () => {

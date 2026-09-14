@@ -1,0 +1,44 @@
+RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/use-map-location-target.test.ts (5 tests | 1 failed | 4 skipped) 11ms
+     × prevents delayed basemap restoration from overwriting a newer Go To [AUD-06] 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/use-map-location-target.test.ts > useMapLocationTarget > prevents delayed basemap restoration from overwriting a newer Go To [AUD-06]
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array [
+      Object {
+        "bearing": 0,
+        "center": Array [
+          -9.74,
+          51.99,
+        ],
+        "pitch": 0,
+        "zoom": 10,
+      },
+    ]
+
+
+Number of calls: 1
+
+ ❯ tests/unit/use-map-location-target.test.ts:76:32
+     74|     expect(harness.flyTo).toHaveBeenCalledOnce()
+     75|     harness.emit('styledata')
+     76|     expect(harness.jumpTo).not.toHaveBeenCalled()
+       |                                ^
+     77|   })
+     78|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+   Start at  11:21:24
+   Duration  780ms (transform 31ms, setup 0ms, import 75ms, tests 11ms, environment 436ms)

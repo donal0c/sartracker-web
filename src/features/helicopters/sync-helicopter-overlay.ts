@@ -1,3 +1,4 @@
+import { setMapFilterIfChanged } from '../map/map-style-writes'
 import type maplibregl from 'maplibre-gl'
 
 import type {
@@ -66,8 +67,8 @@ export async function syncHelicopterOverlay(
   })
 
   const filter = buildHelicopterLayerFilter(slotVisibility, hiddenHelicopterIds)
-  map.setFilter(HELICOPTER_SYMBOL_LAYER_ID, filter)
-  map.setFilter(HELICOPTER_LABEL_LAYER_ID, filter)
+  setMapFilterIfChanged(map, HELICOPTER_SYMBOL_LAYER_ID, filter)
+  setMapFilterIfChanged(map, HELICOPTER_LABEL_LAYER_ID, filter)
 }
 
 async function ensureHelicopterImages(map: maplibregl.Map, signal: AbortSignal): Promise<void> {

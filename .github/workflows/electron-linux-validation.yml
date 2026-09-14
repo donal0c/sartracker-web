@@ -202,6 +202,13 @@ jobs:
           npx playwright test --config playwright.war11.config.ts --project=chromium --workers=1 2>&1 \
             | tee tmp/electron-validation-evidence/war11-browser/playwright.log
 
+      - name: Train C rendered map interaction regressions
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/electron-validation-evidence/train-c
+          npx playwright test --config playwright.train-c.config.ts --project=chromium --workers=1 2>&1 \
+            | tee tmp/electron-validation-evidence/train-c/playwright.log
+
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging
         # deliberately omits this flag until the programme's final gate.
@@ -623,6 +630,7 @@ jobs:
             tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
             test-results/war11-map-freshness
+            test-results/train-c
             tmp/war-11/browser-view-checked.png
             tmp/war-11/browser-package-removed.png
             tmp/war-11/browser-negative-result-retained.png

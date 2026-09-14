@@ -69,6 +69,7 @@ export function useMapController(): MapController {
   })
   useMapLocationTarget({
     mapRef: mapInstance.mapRef,
+    mapReadyVersion: mapInstance.mapReadyVersion,
   })
 
   return {

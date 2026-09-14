@@ -1,0 +1,45 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: map-idle-redraw.spec.ts >> AUD-04 MapLibre idle redraw regression >> keeps quiet idle free of redundant style writes and preserves live overlay sync
+- Location: tests/e2e/map-idle-redraw.spec.ts:55:3
+
+# Error details
+
+```
+Error: {"writeCount":24,"writes":[{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-casing","property":"line-width"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-line","property":"line-width"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-dots","property":"circle-radius"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-dots","property":"circle-stroke-width"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-dots","property":"circle-stroke-opacity"},{"method":"setFilter","layerId":"tracking-breadcrumbs-casing"},{"method":"setFilter","layerId":"tracking-breadcrumbs-line"},{"method":"setFilter","layerId":"tracking-breadcrumbs-dots"},{"method":"setFilter","layerId":"tracking-devices-attention"},{"method":"setFilter","layerId":"tracking-devices-halo"},{"method":"setFilter","layerId":"tracking-devices-circle"},{"method":"setFilter","layerId":"tracking-devices-label"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-casing","property":"line-width"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-line","property":"line-width"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-dots","property":"circle-radius"},{"method":"setPaintProperty","layerId":"tracking-breadcrumbs-dots","property":"circle-stroke-width"}],"renderEvents":43}
+
+expect(received).toBe(expected) // Object.is equality
+
+Expected: 0
+Received: 24
+```
+
+# Page snapshot
+
+```yaml
+- main [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - img "Mountain Rescue team logo" [ref=e8]
+      - generic [ref=e9]: MR
+      - generic [ref=e10]:
+        - paragraph [ref=e11]: Mountain Rescue
+        - heading "SAR Tracker" [level=1] [ref=e12]
+        - paragraph [ref=e13]: 0.1.0-beta.12.11+sha.c51e4b3537c4b026f7079dd40193a894cedcdd9f
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]: Mission
+        - generic [ref=e17]: active
+      - paragraph [ref=e18]: AUD-04 idle redraw
+      - paragraph [ref=e19]: Started 11:15:59 AM
+    - generic [ref=e20]:
+      - paragraph [ref=e21]: Elapsed
+      - paragraph [ref=e22]: 00:00:01
+    - generic [ref=e23]:
+      - paragraph [ref=e24]: Active

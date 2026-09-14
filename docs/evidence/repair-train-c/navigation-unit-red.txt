@@ -1,0 +1,90 @@
+RUN  v4.1.3 /Users/donalocallaghan/.codex/worktrees/2073/sartracker-web
+
+ ❯ tests/unit/map-target-store.test.ts (1 test | 1 failed) 3ms
+     × keeps request IDs unique after a completed target has been cleared [AUD-06] 2ms
+stderr | tests/unit/use-map-location-target.test.ts > useMapLocationTarget > applies a repeated Go To after the prior target has expired [AUD-06]
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/use-map-location-target.test.ts > useMapLocationTarget > applies a repeated Go To after the prior target has expired [AUD-06]
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/use-map-location-target.test.ts > useMapLocationTarget > restores the active target after a style replacement completes [AUD-06]
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/use-map-location-target.test.ts > useMapLocationTarget > restores the active target after a style replacement completes [AUD-06]
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/use-map-location-target.test.ts > useMapLocationTarget > attaches only the latest repeated Go To once a loading style becomes usable [AUD-06]
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+The current testing environment is not configured to support act(...)
+
+stderr | tests/unit/use-map-location-target.test.ts > useMapLocationTarget > attaches only the latest repeated Go To once a loading style becomes usable [AUD-06]
+The current testing environment is not configured to support act(...)
+
+ ❯ tests/unit/use-map-location-target.test.ts (4 tests | 3 failed) 16ms
+     × applies a repeated Go To after the prior target has expired [AUD-06] 10ms
+     × restores the active target after a style replacement completes [AUD-06] 2ms
+     × attaches only the latest repeated Go To once a loading style becomes usable [AUD-06] 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/map-target-store.test.ts > map target store > keeps request IDs unique after a completed target has been cleared [AUD-06]
+AssertionError: expected 1 to be greater than 1
+ ❯ tests/unit/map-target-store.test.ts:23:30
+     21|     const secondTarget = useMapTargetStore.getState().activeTarget
+     22|     expect(secondTarget).not.toBeNull()
+     23|     expect(secondTarget!.id).toBeGreaterThan(firstTarget!.id)
+       |                              ^
+     24|   })
+     25| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/unit/use-map-location-target.test.ts > useMapLocationTarget > applies a repeated Go To after the prior target has expired [AUD-06]
+AssertionError: expected "vi.fn()" to be called 2 times, but got 1 times
+ ❯ tests/unit/use-map-location-target.test.ts:48:27
+     46|     })
+     47|
+     48|     expect(harness.flyTo).toHaveBeenCalledTimes(2)
+       |                           ^
+     49|     expect(harness.flyTo).toHaveBeenLastCalledWith({
+     50|       center: [-9.531912, 52.275681],
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/unit/use-map-location-target.test.ts > useMapLocationTarget > restores the active target after a style replacement completes [AUD-06]
+AssertionError: expected "vi.fn()" to be called 2 times, but got 1 times
+ ❯ tests/unit/use-map-location-target.test.ts:73:31
+     71|     harness.emit('style.load')
+     72|
+     73|     expect(harness.addSource).toHaveBeenCalledTimes(2)
+       |                               ^
+     74|     expect(harness.addLayer).toHaveBeenCalledTimes(4)
+     75|     expect(harness.addSource.mock.calls.at(-1)?.[1]).toMatchObject({
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/unit/use-map-location-target.test.ts > useMapLocationTarget > attaches only the latest repeated Go To once a loading style becomes usable [AUD-06]
+AssertionError: expected "vi.fn()" to be called once, but got 0 times
+ ❯ tests/unit/use-map-location-target.test.ts:108:31
+    106|     harness.emit('style.load')
+    107|
+    108|     expect(harness.addSource).toHaveBeenCalledOnce()
+       |                               ^
+    109|     expect(harness.addSource.mock.calls[0]?.[1]).toMatchObject({
+    110|       type: 'geojson',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 1 passed (5)
+   Start at  11:07:34
+   Duration  418ms (transform 31ms, setup 0ms, import 81ms, tests 19ms, environment 547ms)
