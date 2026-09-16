@@ -5,9 +5,10 @@ Updated 2026-09-16. Read after `CLAUDE.md`.
 ## Baseline and active lane
 
 Current `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
-`302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). PR32's current exact
-head is `050c74d4f785dcc9597b412c94f7ea1d5a54c5bf`, tree
-`8594df3b10fe2450074f22d97c25ceca49d225f5`. Earlier PR31/native-runtime and
+`302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). PR32's remediation
+code commit is `cbf6d7d9602d9b1d891a630d20cfdb696fd5dd9d`, tree
+`a221e7a239fd6f635af892fa3b4e09f3eeafc09e`; the final PR head also contains
+the handoff record below. Earlier PR31/native-runtime and
 Train D failures remain historical evidence in the linked assurance records.
 
 The current remediation adds a bounded participant-scope admission deadline,
