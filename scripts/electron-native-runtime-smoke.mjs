@@ -19,6 +19,7 @@ const output = path.resolve(process.argv[3] ?? 'tmp/native-runtime-repair/scoped
 const diagnostics = createDiagnosticState()
 const report = {
   issue: 'DON-254', result: 'fail', boundary: 'packaged file startup and actual preload IPC; separately injected packaged-store snapshot/cancellation control; not Train D, timing, field or release qualification', diagnostics,
+  runtime: { platform: process.platform },
   stderrStreamAttached: false, stderrDrained: false,
 }
 let app
