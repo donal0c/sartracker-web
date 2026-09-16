@@ -274,6 +274,63 @@ describe('startTrackingRuntime', () => {
     await stop()
   })
 
+  it('times out participant scope admission without wedging the shared persistence lane [DON-254]', async () => {
+    vi.useFakeTimers()
+    try {
+      setActiveMission()
+      let scopeStatus: 'loading' | 'ready' = 'loading'
+      let hooks!: { persistHistoryChunk: (input: TrackingHistoryChunkPersistenceInput) => Promise<{ readonly changed: boolean }> }
+      const persistTrackingHistoryBatch = vi.fn().mockResolvedValue([])
+      const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
+      const scope = createParticipationScope({ participants: [], membershipEvents: [] })
+      const stop = await startTrackingRuntime({
+        config: { baseUrl: 'http://test:8082' },
+        createClient: vi.fn().mockReturnValue({}),
+        createPoller: vi.fn().mockImplementation((_client, value) => {
+          hooks = value
+          return { start: vi.fn(), stop: vi.fn() }
+        }),
+        cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+        missionStore: createMissionStoreStub({
+          getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+          persistTrackingHistoryBatch,
+        }),
+        applySnapshot: vi.fn(),
+        applyStatus: vi.fn(),
+        missionModelEnabled: true,
+        readParticipationScope: () => scope,
+        readParticipationScopeMissionId: () => 'mission-1',
+        readParticipationScopeStatus: () => scopeStatus,
+        subscribeParticipationScope: () => () => undefined,
+        participantScopeReadyTimeoutMs: 25,
+        recordMissionEvidenceLoss,
+      })
+      const input: TrackingHistoryChunkPersistenceInput = {
+        phase: 'initial',
+        expectedMissionId: 'mission-1',
+        deviceId: 'device-1',
+        historyFrom: '2026-08-23T08:00:00.000Z',
+        reconciledUntil: '2026-08-23T10:00:00.000Z',
+        positions: [],
+      }
+
+      const timedOut = hooks.persistHistoryChunk(input)
+      const timeoutExpectation = expect(timedOut).rejects.toThrow('Participant selection is unavailable')
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(26)
+      await timeoutExpectation
+
+      scopeStatus = 'ready'
+      await expect(hooks.persistHistoryChunk(input)).resolves.toEqual({ changed: false })
+      expect(persistTrackingHistoryBatch).toHaveBeenCalledOnce()
+      expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce()
+      await stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   afterEach(() => {
     useMissionStore.setState(useMissionStore.getInitialState())
     useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
@@ -484,6 +541,37 @@ describe('startTrackingRuntime', () => {
       const stop = await startPromise
       stop()
     }
+  })
+
+  it('does not turn checkpoint-only scope updates into immediate poll storms [DON-254]', async () => {
+    setActiveMission()
+    let notifyScope: ((reason?: 'scope' | 'status') => void) | undefined
+    const requestPollNow = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => ({
+        start: vi.fn(), stop: vi.fn(), requestPollNow: requestPollNow,
+        hooks,
+      })),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => createParticipationScope({ participants: [], membershipEvents: [] }),
+      readParticipationScopeStatus: () => 'ready',
+      subscribeParticipationScope: (listener) => {
+        notifyScope = listener
+        return () => undefined
+      },
+    })
+
+    notifyScope?.('scope')
+    expect(requestPollNow).not.toHaveBeenCalled()
+    notifyScope?.('status')
+    expect(requestPollNow).toHaveBeenCalledOnce()
+    await stop()
   })
 
   it('drops a participant discovery response after its runtime stops [DON-271]', async () => {
@@ -2292,8 +2380,7 @@ describe('startTrackingRuntime', () => {
         await stopping
         expect(stopped).toBe(true)
         expect(complete).toHaveBeenCalledOnce()
-        expect(notifyParticipantBackfillChange).toHaveBeenCalledOnce()
-        expect(notifyParticipantBackfillChange).toHaveBeenCalledWith('mission-1')
+        expect(notifyParticipantBackfillChange).not.toHaveBeenCalled()
       } finally {
         persistence.resolve()
         checkpointWrite.resolve()

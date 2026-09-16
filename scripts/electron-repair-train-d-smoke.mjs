@@ -29,6 +29,7 @@ import {
   createSmokeDeadlines,
   evaluateSmokeResults,
   historyRequestCoversWindow,
+  isMissionReadyForRecovery,
   isBoundedHistoryHoldRequest,
   remainingSmokeTime,
   runBounded,
@@ -1031,12 +1032,7 @@ async function ensureMissionActive(page, missionId) {
         recoverable: await store.getRecoverableMission(),
       }
     }, undefined, 'read restart mission recovery state'),
-    (value) => (
-      value.active?.id === missionId && value.active.status === 'active'
-    ) || (
-      value.recoverable?.id === missionId
-      && (value.recoverable.status === 'active' || value.recoverable.status === 'paused')
-    ),
+    (value) => isMissionReadyForRecovery(value, missionId),
     'mission state to hydrate after packaged restart',
   )
   if (state.active?.id === missionId && state.active.status === 'active') return

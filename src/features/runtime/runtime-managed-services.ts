@@ -125,8 +125,11 @@ type CreateManagedRuntimeServicesDependencies = {
     readonly notifyParticipantBackfillChange?: (missionId: string) => void | Promise<void>
     readonly missionModelEnabled?: boolean
     readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
+    readonly readParticipationScopeMissionId?: () => string | null
     readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
-    readonly subscribeParticipationScope?: (listener: () => void) => () => void
+    readonly subscribeParticipationScope?: (
+      listener: (reason?: 'scope' | 'status') => void,
+    ) => () => void
     readonly applyParticipantRoster?: (
       devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
       options?: { readonly complete: boolean },
@@ -199,8 +202,11 @@ type CreateManagedRuntimeServicesDependencies = {
   ) => () => void
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => import('../participants/participation-scope').ParticipationScope
+  readonly readParticipationScopeMissionId?: () => string | null
   readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
-  readonly subscribeParticipationScope?: (listener: () => void) => () => void
+  readonly subscribeParticipationScope?: (
+    listener: (reason?: 'scope' | 'status') => void,
+  ) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
     options?: { readonly complete: boolean },
@@ -288,6 +294,9 @@ export async function createManagedRuntimeServices(
       ...(dependencies.readParticipationScope === undefined
         ? {}
         : { readParticipationScope: dependencies.readParticipationScope }),
+      ...(dependencies.readParticipationScopeMissionId === undefined
+        ? {}
+        : { readParticipationScopeMissionId: dependencies.readParticipationScopeMissionId }),
       ...(dependencies.readParticipationScopeStatus === undefined
         ? {}
         : { readParticipationScopeStatus: dependencies.readParticipationScopeStatus }),

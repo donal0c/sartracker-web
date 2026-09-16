@@ -66,8 +66,10 @@ truth was 1/2 while the renderer displayed 2/2. The repair adds a bounded
 tracking-to-participant refresh callback, covered by a red/green runtime
 regression. Local repaired packaged evidence records AUD-08 and AUD-09 pass;
 restart is not proven because the existing diagnostic custody gate rejected
-deliberate provider-503/retry and close-time transport warnings. No diagnostic,
-responsiveness, release, or field gate was relaxed. Exact-head CI and review
+deliberate provider-503/retry and close-time transport warnings. This historical
+note predates the current PR32 blocker-remediation pass, which deliberately
+changes the Train D diagnostic classifiers while retaining the global
+fail-closed gate and strict responsiveness threshold. Exact-head CI and review
 are required before any merge decision. PR32's exact-head run `34866228521`
 passed through replay and the pre-packaged controls, then failed at the
 unrelated packaged native-runtime diagnostic gate on two launch-time Vulkan

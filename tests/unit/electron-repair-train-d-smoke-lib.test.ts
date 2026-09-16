@@ -395,18 +395,6 @@ describe('Repair Train D packaged smoke gates', () => {
       message: '    at finishMission (/app/electron/mission-store.cjs:5667:3)',
     }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
     appendBoundedDiagnostic(diagnostics, 'processStderr', {
-      message: "Error occurred in handler for 'sartracker:mission-store:sync-coverage-tile-catalog': Error: coverage-revision-moved: Coverage catalog chunk does not match its current revision.",
-    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
-    appendBoundedDiagnostic(diagnostics, 'processStderr', {
-      message: '    at normalizeAuthorizedCoverageCatalogInput (/app/electron/mission-store.cjs:348:13)',
-    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
-    appendBoundedDiagnostic(diagnostics, 'processStderr', {
-      message: '    at /app/electron/mission-store.cjs:2402:33',
-    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
-    appendBoundedDiagnostic(diagnostics, 'processStderr', {
-      message: '    at /app/electron/mission-store.cjs:3351:48',
-    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
-    appendBoundedDiagnostic(diagnostics, 'processStderr', {
       message: 'Debugger ending on ws://127.0.0.1:39841/3986e37b-356e-480d-9960-8cd0095ac4ff',
     }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
     appendBoundedDiagnostic(diagnostics, 'processStderr', {
@@ -414,6 +402,43 @@ describe('Repair Train D packaged smoke gates', () => {
     }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
 
     expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist(context))).not.toThrow()
+  })
+
+  it('fails closed for control-device 503s, repeated hold warnings, and unpaired coverage errors', () => {
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET', path: '/api/positions', deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z', to: '2026-09-13T05:00:00.000Z',
+        isHistory: true, status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+    }
+    const control503 = createDiagnosticState()
+    appendBoundedDiagnostic(control503, 'consoleWarnings', {
+      message: 'Tracking breadcrumb fetch failed for device. {deviceId: 11, deviceName: Repair Train D B, error: HTTP 503: Service Unavailable}',
+      url: 'file:///app/index.html',
+    }, { phase: 'aud08', type: 'console.warning', source: 'renderer-console' })
+    expect(() => assertNoUnexpectedDiagnostics(control503, createSmokeDiagnosticAllowlist(context)))
+      .toThrow(/unexpected packaged diagnostics/i)
+
+    const repeatedHold = createDiagnosticState()
+    for (let index = 0; index < 3; index += 1) {
+      appendBoundedDiagnostic(repeatedHold, 'consoleWarnings', {
+        message: 'Tracking breadcrumb fetch failed for device. {deviceId: 22, deviceName: Repair Train D A, error: HTTP 503: Service Unavailable}',
+        url: 'file:///app/index.html',
+      }, { phase: 'aud08', type: 'console.warning', source: 'renderer-console' })
+    }
+    expect(() => assertNoUnexpectedDiagnostics(repeatedHold, createSmokeDiagnosticAllowlist(context)))
+      .toThrow(/unexpected packaged diagnostics/i)
+
+    const unpairedCoverageError = createDiagnosticState()
+    appendBoundedDiagnostic(unpairedCoverageError, 'processStderr', {
+      message: "Error occurred in handler for 'sartracker:mission-store:sync-coverage-tile-catalog': Error: coverage-revision-moved: Coverage catalog chunk does not match its current revision.",
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    expect(() => assertNoUnexpectedDiagnostics(
+      unpairedCoverageError,
+      createSmokeDiagnosticAllowlist({ ...context, processStderr: unpairedCoverageError.processStderr }),
+    )).toThrow(/unexpected packaged diagnostics/i)
   })
 
   it('accepts the exact shutdown cancellation only after all scenarios and teardown', () => {

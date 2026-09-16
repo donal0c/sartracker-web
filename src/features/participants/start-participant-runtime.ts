@@ -51,6 +51,7 @@ type StartParticipantRuntimeDependencies = {
 
 export type ParticipantRuntimeController = {
   readonly refreshMission: (missionId: string | null) => Promise<void>
+  readonly refreshBackfillCheckpoints: (missionId: string) => Promise<void>
   readonly applyRoster: (
     devices: readonly NormalizedTrackingDevice[],
     observedAt?: string,
@@ -104,6 +105,7 @@ export async function startParticipantRuntime(
   let membershipWriteError: string | null = null
   let error: string | null = null
   let refreshToken = 0
+  let backfillRefreshToken = 0
   let missionGeneration = 0
   let selectionGeneration = 0
   let lastReconciledMissionGeneration = -1
@@ -123,6 +125,7 @@ export async function startParticipantRuntime(
 
   const controller: ParticipantRuntimeController = {
     refreshMission: async (missionId) => {
+      backfillRefreshToken += 1
       const previousMissionId = activeMissionId
       const missionChanged = activeMissionId !== missionId
       if (missionChanged) {
@@ -179,6 +182,23 @@ export async function startParticipantRuntime(
           loading = false
           publishRuntime()
         }
+      }
+    },
+    refreshBackfillCheckpoints: async (missionId) => {
+      if (activeMissionId !== missionId) return
+      const token = ++backfillRefreshToken
+      try {
+        const nextCheckpoints = await dependencies.participantStore
+          .listParticipantBackfillCheckpoints(missionId)
+        if (activeMissionId !== missionId || token !== backfillRefreshToken) return
+        backfillCheckpoints = nextCheckpoints
+        publishRuntime()
+      } catch (runtimeError) {
+        if (activeMissionId === missionId && token === backfillRefreshToken) {
+          error = toErrorMessage(runtimeError)
+          publishRuntime()
+        }
+        throw runtimeError
       }
     },
     applyRoster: async (devices, observedAt = now().toISOString(), options = { complete: true }) => {

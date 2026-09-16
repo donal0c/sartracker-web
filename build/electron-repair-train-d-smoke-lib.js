@@ -462,6 +462,19 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
   const providerOrigin = typeof context.providerOrigin === 'string' ? context.providerOrigin : ''
   const allowHistoryWarning = isBoundedHistoryHoldRequest(context.historyHoldEvidence)
     && /^http:\/\/127\.0\.0\.1:\d+$/u.test(providerOrigin)
+  const boundedPattern = (predicate, maximum) => {
+    const decisions = new Map()
+    let matches = 0
+    return (entry) => {
+      const key = entry?.sequence
+      if (Number.isSafeInteger(key) && decisions.has(key)) return decisions.get(key)
+      const matchesPredicate = predicate(entry)
+      const allowed = matchesPredicate && matches < maximum
+      if (matchesPredicate) matches += 1
+      if (Number.isSafeInteger(key)) decisions.set(key, allowed)
+      return allowed
+    }
+  }
   const trainDPhase = (entry) => entry?.phase === 'aud08'
     || entry?.phase === 'aud09'
     || entry?.phase === 'close'
@@ -476,57 +489,56 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
       || entry?.message.startsWith('Participant history backfill pass failed; it will retry. Error: HTTP 503: Service Unavailable'))
   const participantSelectionWarning = (entry) => rendererWarning(entry)
     && entry?.message.startsWith('History request target could not be saved; retrieval will retry without a completeness claim. Error: Participant selection is unavailable; tracking history cannot be persisted safely.')
-  const transportFailureWarning = (entry) => rendererWarning(entry)
-    && /^Tracking breadcrumb fetch failed for device\. \{deviceId: (?:11|22), .* error: (?:HTTP 503: Service Unavailable|Mission history evidence scope closed before transport admission\.)\}$/u.test(entry?.message ?? '')
-  const reconciliationFailureWarning = (entry) => rendererWarning(entry)
-    && /^Tracking breadcrumb reconciliation failed for device\. \{deviceId: (?:11|22), .* error: (?:Mission history evidence scope closed before transport admission\.|Participant selection is unavailable; tracking history cannot be persisted safely\.|HTTP 503: Service Unavailable)\}$/u.test(entry?.message ?? '')
-  const shutdownCancellationWarning = (entry) => isExpectedTrainDShutdownCancellation(entry, context)
-  const finishFenceError = (entry) => entry?.type === 'stderr'
+  const transportFailureWarning = boundedPattern((entry) => rendererWarning(entry)
+    && /^Tracking breadcrumb fetch failed for device\. \{deviceId: 22, deviceName: Repair Train D A, error: (?:HTTP 503: Service Unavailable|Mission history evidence scope closed before transport admission\.)\}$/u.test(entry?.message ?? ''), 2)
+  const reconciliationFailureWarning = boundedPattern((entry) => rendererWarning(entry)
+    && /^Tracking breadcrumb reconciliation failed for device\. \{deviceId: 22, deviceName: Repair Train D A, retryDelayMs: 1000, error: (?:Mission history evidence scope closed before transport admission\.|Participant selection is unavailable; tracking history cannot be persisted safely\.|HTTP 503: Service Unavailable)\}$/u.test(entry?.message ?? ''), 2)
+  const controlTransportScopeClosureWarning = boundedPattern((entry) => rendererWarning(entry)
+    && entry?.phase === 'aud08'
+    && entry?.message === 'Tracking breadcrumb fetch failed for device. {deviceId: 11, deviceName: Repair Train D B, error: Mission history evidence scope closed before transport admission.}', 1)
+  const controlReconciliationScopeClosureWarning = boundedPattern((entry) => rendererWarning(entry)
+    && entry?.phase === 'aud08'
+    && entry?.message === 'Tracking breadcrumb reconciliation failed for device. {deviceId: 11, deviceName: Repair Train D B, retryDelayMs: 1000, error: Mission history evidence scope closed before transport admission.}', 1)
+  const shutdownCancellationWarning = boundedPattern(
+    (entry) => isExpectedTrainDShutdownCancellation(entry, context), 1,
+  )
+  const finishFenceError = boundedPattern((entry) => entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && entry?.phase === 'aud08'
-    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing."
-  const finishFenceStack = (entry) => entry?.type === 'stderr'
+    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.", 1)
+  const finishFenceStack = boundedPattern((entry) => entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && entry?.phase === 'aud08'
     && (/^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? '')
       || /^\s+at sqliteTransaction \(.*\/better-sqlite3\/lib\/methods\/transaction\.js:\d+:\d+\)$/u.test(entry?.message ?? '')
-      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? ''))
-  const coverageRevisionMovedError = (entry) => entry?.type === 'stderr'
-    && entry?.source === 'main-process-stderr'
-    && entry?.phase === 'aud08'
-    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:sync-coverage-tile-catalog': Error: coverage-revision-moved: Coverage catalog chunk does not match its current revision."
-  const coverageRevisionMovedStack = (entry) => entry?.type === 'stderr'
-    && entry?.source === 'main-process-stderr'
-    && entry?.phase === 'aud08'
-    && (/^\s+at normalizeAuthorizedCoverageCatalogInput \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')
-      || /^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? ''))
-  const linuxVulkanStartupStderr = (entry) => isExpectedLinuxVulkanStartupPair(
+      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')), 3)
+  const linuxVulkanStartupStderr = boundedPattern((entry) => isExpectedLinuxVulkanStartupPair(
     context.processStderr,
     context,
   ) && entry?.phase === 'launch'
     && entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && (LINUX_VULKAN_INSTANCE_FAILURE.test(entry?.message ?? '')
-      || LINUX_VULKAN_INITIALIZATION_FAILURE.test(entry?.message ?? ''))
-  const inspectorCloseStderr = (entry) => entry?.type === 'stderr'
+      || LINUX_VULKAN_INITIALIZATION_FAILURE.test(entry?.message ?? '')), 2)
+  const inspectorCloseStderr = boundedPattern((entry) => entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && entry?.phase === 'close'
     && (/^Debugger ending on ws:\/\/127\.0\.0\.1:\d+\/[0-9a-f-]+$/u.test(entry?.message ?? '')
-      || entry?.message === 'For help, see: https://nodejs.org/en/docs/inspector')
+      || entry?.message === 'For help, see: https://nodejs.org/en/docs/inspector'), 2)
   return {
     ...DEFAULT_DIAGNOSTIC_ALLOWLIST,
     consoleWarnings: allowHistoryWarning ? Object.freeze([
-      historyRetryWarning,
-      participantSelectionWarning,
+      boundedPattern(historyRetryWarning, 2),
+      boundedPattern(participantSelectionWarning, 1),
       transportFailureWarning,
       reconciliationFailureWarning,
+      controlTransportScopeClosureWarning,
+      controlReconciliationScopeClosureWarning,
       shutdownCancellationWarning,
     ]) : Object.freeze([]),
     processStderr: allowHistoryWarning ? Object.freeze([
       finishFenceError,
       finishFenceStack,
-      coverageRevisionMovedError,
-      coverageRevisionMovedStack,
       linuxVulkanStartupStderr,
       inspectorCloseStderr,
     ]) : Object.freeze([]),
@@ -596,6 +608,13 @@ export function evaluateSmokeResults(scenarioResults, diagnosticResult) {
     scenarioResult,
     result: scenarioResult === 'pass' && diagnosticResult === 'pass' ? 'pass' : 'fail',
   }
+}
+
+/** Returns whether a packaged mission is already active or safely recoverable. */
+export function isMissionReadyForRecovery(value, missionId) {
+  return (value?.active?.id === missionId && value.active.status === 'active')
+    || (value?.recoverable?.id === missionId
+      && (value.recoverable.status === 'active' || value.recoverable.status === 'paused'))
 }
 
 /** Returns the remaining time before a smoke deadline, clamped at zero. */

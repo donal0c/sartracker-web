@@ -140,6 +140,7 @@ type PersistedPositionKeyCache = {
 }
 
 const MAX_RESTART_BREADCRUMBS_PER_DEVICE = 5_000
+const DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS = 5_000
 const TRACKING_CACHE_MISSION_WARNING =
   'Tracking cache could not be matched to this mission; waiting for fresh current positions.'
 
@@ -332,8 +333,11 @@ export type StartTrackingRuntimeDependencies = {
   readonly notifyParticipantBackfillChange?: (missionId: string) => void | Promise<void>
   readonly missionModelEnabled?: boolean
   readonly readParticipationScope?: () => ParticipationScope
+  readonly readParticipationScopeMissionId?: () => string | null
   readonly readParticipationScopeStatus?: () => 'loading' | 'ready' | 'error'
-  readonly subscribeParticipationScope?: (listener: () => void) => () => void
+  readonly subscribeParticipationScope?: (
+    listener: (reason?: 'scope' | 'status') => void,
+  ) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly TrackingSnapshot['devices'][number][],
     options?: { readonly complete: boolean },
@@ -342,6 +346,8 @@ export type StartTrackingRuntimeDependencies = {
     groups: readonly NormalizedTraccarGroup[],
   ) => void | Promise<void>
   readonly applyParticipantRosterError?: (message: string | null) => void
+  /** Test-only override for the bounded participant-scope admission deadline. */
+  readonly participantScopeReadyTimeoutMs?: number
   readonly now?: () => Date
 }
 
@@ -399,6 +405,8 @@ export async function startTrackingRuntime(
   let participantBackfillInFlight = false
   let participantBackfillTask: Promise<void> | null = null
   const participantScopeWaiters = new Set<() => void>()
+  const participantScopeReadyTimeoutMs = dependencies.participantScopeReadyTimeoutMs
+    ?? DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS
   let acceptingRuntimeUpdates = true
   /** Clears only this runtime's advisory status before another runtime takes ownership. */
   const clearBreadcrumbTransferStatus = () => {
@@ -1120,7 +1128,7 @@ export async function startTrackingRuntime(
       }
     },
   )
-  const unsubscribeParticipationScope = dependencies.subscribeParticipationScope?.(() => {
+  const unsubscribeParticipationScope = dependencies.subscribeParticipationScope?.((reason = 'scope') => {
     if (!acceptingRuntimeUpdates || runtimeGeneration !== activeTrackingRuntimeGeneration) return
     if (readParticipationScopeStatus() === 'ready') {
       publishDeferredOperationalSnapshot()
@@ -1130,7 +1138,7 @@ export async function startTrackingRuntime(
           logger.warn('Deferred mission evidence settlement failed.', error)
         })
       }
-      poller.requestPollNow?.()
+      if (reason === 'status') poller.requestPollNow?.()
     }
     refreshTrackingStatus()
   }) ?? (() => undefined)
@@ -1177,6 +1185,13 @@ export async function startTrackingRuntime(
       }
     },
     async () => {
+      try {
+        if (participantBackfillTask !== null) await participantBackfillTask
+      } finally {
+        participantBackfillAbortController.abort()
+      }
+    },
+    async () => {
       const canPersist = (missionId: string): boolean =>
         readParticipationScopeStatus() === 'ready' &&
         useMissionStore.getState().currentMission?.id === missionId
@@ -1191,13 +1206,6 @@ export async function startTrackingRuntime(
     async () => {
       await trackingCacheWriteLane.settle(producersStopped())
       if (!producersStopped()) throw new Error('Tracking cache admission remains open until producers stop.')
-    },
-    async () => {
-      try {
-        if (participantBackfillTask !== null) await participantBackfillTask
-      } finally {
-        participantBackfillAbortController.abort()
-      }
     },
     () => {
       if (!producersStopped() || !evidenceSettled) throw new Error('Tracking evidence ownership remains active for shutdown retry.')
@@ -1424,6 +1432,8 @@ export async function startTrackingRuntime(
       })
       const currentMission = await dependencies.missionStore.getActiveMission()
       if (
+        acceptingRuntimeUpdates &&
+        runtimeGeneration === activeTrackingRuntimeGeneration &&
         currentMission?.id === checkpoint.mission_id
       ) {
         await dependencies.notifyParticipantBackfillChange?.(checkpoint.mission_id)
@@ -1790,12 +1800,14 @@ export async function startTrackingRuntime(
 
     await new Promise<void>((resolve, reject) => {
       let settled = false
+      let timeout: ReturnType<typeof setTimeout> | null = null
       let unsubscribeScope: () => void = () => undefined
       let unsubscribeMission: () => void = () => undefined
       const settle = (error?: Error): void => {
         if (settled) return
         settled = true
         participantScopeWaiters.delete(cancel)
+        if (timeout !== null) clearTimeout(timeout)
         unsubscribeScope()
         unsubscribeMission()
         if (error === undefined) resolve()
@@ -1804,12 +1816,18 @@ export async function startTrackingRuntime(
       const cancel = (): void => settle(new Error(
         'Tracking runtime stopped while participant selection was loading.',
       ))
+      const timeoutWait = (): void => settle(new Error(
+        'Participant selection is unavailable; tracking history cannot be persisted safely.',
+      ))
       const observe = (): void => {
         if (!acceptingRuntimeUpdates) {
           cancel()
           return
         }
-        if (useMissionStore.getState().currentMission?.id !== expectedMissionId) {
+        const participantMissionId = dependencies.readParticipationScopeMissionId === undefined
+          ? useMissionStore.getState().currentMission?.id ?? null
+          : dependencies.readParticipationScopeMissionId()
+        if (participantMissionId !== expectedMissionId) {
           settle(new Error('Mission changed before participant selection became ready.'))
           return
         }
@@ -1825,6 +1843,7 @@ export async function startTrackingRuntime(
       participantScopeWaiters.add(cancel)
       unsubscribeScope = dependencies.subscribeParticipationScope!(observe)
       unsubscribeMission = useMissionStore.subscribe(observe)
+      timeout = setTimeout(timeoutWait, participantScopeReadyTimeoutMs)
       observe()
     })
   }

@@ -1,18 +1,23 @@
-import { readFileSync } from 'node:fs'
-
 import { describe, expect, it } from 'vitest'
+import { isMissionReadyForRecovery } from '../../build/electron-repair-train-d-smoke-lib.js'
 
 describe('Repair Train D packaged smoke script', () => {
-  const source = readFileSync('scripts/electron-repair-train-d-smoke.mjs', 'utf8')
-
-  it('accepts a paused recoverable mission before using the operator Resume control', () => {
-    const ensureMissionActive = source.slice(
-      source.indexOf('async function ensureMissionActive('),
-      source.indexOf('/** Closes the packaged app', source.indexOf('async function ensureMissionActive(')),
-    )
-
-    expect(ensureMissionActive).toContain("value.recoverable.status === 'paused'")
-    expect(ensureMissionActive).toContain("value.recoverable.status === 'active'")
-    expect(ensureMissionActive).toContain("getByRole('button', { name: 'Resume', exact: true })")
+  it('accepts active and paused recoverable missions while rejecting unrelated states', () => {
+    expect(isMissionReadyForRecovery({
+      active: null,
+      recoverable: { id: 'mission-1', status: 'paused' },
+    }, 'mission-1')).toBe(true)
+    expect(isMissionReadyForRecovery({
+      active: null,
+      recoverable: { id: 'mission-1', status: 'active' },
+    }, 'mission-1')).toBe(true)
+    expect(isMissionReadyForRecovery({
+      active: null,
+      recoverable: { id: 'mission-1', status: 'finished' },
+    }, 'mission-1')).toBe(false)
+    expect(isMissionReadyForRecovery({
+      active: null,
+      recoverable: { id: 'other-mission', status: 'paused' },
+    }, 'mission-1')).toBe(false)
   })
 })

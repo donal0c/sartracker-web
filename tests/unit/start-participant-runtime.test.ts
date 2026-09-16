@@ -4,6 +4,7 @@ import { startParticipantRuntime } from '../../src/features/participants/start-p
 import type {
   GroupMembershipEvent,
   MissionParticipant,
+  ParticipantBackfillCheckpoint,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 const GROUP_PARTICIPANT: MissionParticipant = {
@@ -33,6 +34,36 @@ const INITIAL_MEMBERSHIP: GroupMembershipEvent = {
 }
 
 describe('startParticipantRuntime [DON-271]', () => {
+  it('refreshes backfill checkpoints without entering the participant loading state', async () => {
+    const checkpoint: ParticipantBackfillCheckpoint = {
+      mission_id: 'mission-1',
+      traccar_device_id: 'device-1',
+      window_from: '2026-08-23T08:00:00.000Z',
+      window_to: '2026-08-23T10:00:00.000Z',
+      reconciled_until: '2026-08-23T10:00:00.000Z',
+      completed: 1,
+      updated_at: '2026-08-23T11:00:00.000Z',
+    }
+    const store = createStore()
+    store.listParticipantBackfillCheckpoints
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([checkpoint])
+    const states: Array<{ readonly loading: boolean; readonly backfillCheckpoints: readonly ParticipantBackfillCheckpoint[] }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+
+    await runtime.refreshMission('mission-1')
+    states.length = 0
+
+    await runtime.refreshBackfillCheckpoints('mission-1')
+
+    expect(states.at(-1)).toMatchObject({ loading: false, backfillCheckpoints: [checkpoint] })
+    expect(store.listMissionParticipants).toHaveBeenCalledTimes(1)
+    expect(store.listParticipantBackfillCheckpoints).toHaveBeenCalledTimes(2)
+  })
+
   it('hydrates one immutable participation scope for current and history filtering', async () => {
     const states: Array<{ readonly scope: { includesAt: (id: string, at: string) => boolean } }> = []
     const runtime = await startParticipantRuntime({

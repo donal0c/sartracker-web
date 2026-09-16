@@ -94,6 +94,28 @@ remains **NOT_MERGE_READY/HOLD** until the independent archive-lifecycle blocker
 is resolved by its owner and a complete required workflow is green. No merge,
 release, deployment, or team contact follows from this run.
 
+## Current blocker-remediation pass — 2026-09-16
+
+The blocker review identified a false PR claim, an unbounded participant-scope
+wait inside the serialized tracking-persistence lane, a full participant refresh
+after every backfill checkpoint, shutdown evidence loss, and overly broad Train D
+diagnostic allowances. The remediation on PR32 addresses those seams by adding a
+bounded five-second scope-admission deadline with stop cancellation, using one
+participant-mission resolver, refreshing only backfill checkpoints, draining the
+backfill before settling shutdown evidence, and suppressing checkpoint-only
+immediate polls.
+
+The packaged diagnostic classifier is intentionally stricter than the prior head:
+device-22 history warnings are exact and occurrence-bounded; device-11 HTTP 503
+warnings are not allowlisted; the device-11 scope-closure control is exact and
+separately bounded; and the unpaired coverage-revision allowance is removed.
+The global unexpected-diagnostic gate and strict `<200 ms` responsiveness gate
+remain in force. Focused source verification is 158/158, but packaged
+qualification is **NOT_PROVEN** until the required workflow reruns on the new
+clean remediation head. The earlier positive Train D receipt is not evidence for
+this changed tree, and its workflow still had the independent 205 ms
+archive-lifecycle continuity failure.
+
 ## Contract and risk
 
 SAR-QA-001/002/008 require complete mission history, immediate current positions
