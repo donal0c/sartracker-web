@@ -1,21 +1,25 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-14. Read after `CLAUDE.md`.
+Updated 2026-09-16. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
 Current `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
 `302e684ec4c60ad66a0afb45898e2a552e3cf974` (PR31 merged). PR32's current exact
-head is `51e5a7eb6a05fc75bc6382c73cf7245da9dfa364`, tree
-`b48c51919a499d15129b64f5c79ecb428dd0da45`. Earlier PR31/native-runtime and
+head is `cbf6d7d9602d9b1d891a630d20cfdb696fd5dd9d`, tree
+`a221e7a239fd6f635af892fa3b4e09f3eeafc09e`. Earlier PR31/native-runtime and
 Train D failures remain historical evidence in the linked assurance records.
 
-The repair is deliberately narrow: when tracking durably advances a participant
-backfill checkpoint, it refreshes the participant projection for the same still-
-active mission, and waits for participant-scope hydration before admitting
-durable history. It does not alter participant completeness, Finish refusal,
-provider scheduling, diagnostics, the strict `<200 ms` gate, release, or field
-acceptance.
+The current remediation adds a bounded participant-scope admission deadline,
+uses the participant-scope mission resolver consistently, refreshes only
+backfill checkpoints without entering the full participant loading state, drains
+backfill before shutdown evidence settlement, and suppresses checkpoint-only
+immediate poll requests. The packaged Train D diagnostic classifiers were also
+changed deliberately: device-22 history warnings are exact and occurrence-
+bounded, device-11 503s remain failures, the exact device-11 scope-closure
+control is separately constrained, and the unpaired coverage-revision
+allowance was removed. The global unexpected-diagnostic gate and strict `<200
+ms` threshold were not relaxed.
 
 ## Verification and next action
 
@@ -27,24 +31,26 @@ refresh seam, then passed after the callback repair.
 
 Local repaired macOS arm64 package evidence (`/tmp/sar-train-d-local-666c`)
 shows `aud08=pass` and `aud09=pass`, including the visible `complete for 1/1`
-state and Search Operations backup proof. Restart is **NOT_PROVEN** because the
-existing diagnostic custody gate rejected deliberate provider-503/retry and
-close-time transport warnings before restart. No diagnostic allowlist or gate was
-relaxed; the full receipt remains retained.
+state and Search Operations backup proof. That receipt predates the current
+classifier/runtime remediation and is not current-head qualification evidence.
 
-Source checks on the current head: focused Train D/runtime tests pass 132/132,
-changed-file lint, TypeScript build and diff checks pass. Ordinary PR CI
-`34899741326` passed. Required manual run `34902500983` is exact-head clean and
-passed strict `<200 ms`, `AUD-08`, `AUD-09`, restart, `scenarioResult`,
-`diagnosticResult`, and the independent receipt validator; its receipt result is
-`pass`. The run then failed in the unrelated packaged archive-lifecycle smoke:
+Source checks on the remediation working tree: focused participant/tracking/
+Train D tests pass 158/158, changed-file lint, TypeScript build and diff checks
+pass. The full unit suite completed 5,078/5,079 tests; its sole failure was an
+existing host-timing observation at 258.3 ms, and the isolated 93-test file
+rerun passed. Required manual run `34902500983` is evidence for the previous
+clean code head only; it passed its Train D receipt but then failed in the
+unrelated packaged archive-lifecycle smoke:
 the unchanged strict continuity gate recorded `current_fix_continuity_gate_breached`
 with a 205 ms cleanup gap. Failure evidence is retained under
 `/tmp/sar-train-d-ci-34902500983-9FmgLG`, including
 `tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json`.
-Do not relax that gate or relabel the workflow green. PR32 remains draft/open and
-not merge-ready; Donal owns merge, and no merge, release, deployment, or team
-contact is authorized by this handoff.
+Do not relax that gate or relabel the workflow green. The required packaged
+workflow must be rerun on the new clean remediation head; the old positive Train
+D receipt cannot qualify this changed tree, especially after removing the
+unpaired coverage-revision allowance. PR32 remains draft/open and not
+merge-ready; Donal owns merge, and no merge, release, deployment, or team contact
+is authorized by this handoff.
 
 ## Limits
 
