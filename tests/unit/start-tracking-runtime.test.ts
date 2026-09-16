@@ -831,6 +831,67 @@ describe('startTrackingRuntime', () => {
     stop()
   })
 
+  it('starts participant backfill when participant scope becomes ready without waiting for another poll', async () => {
+    const checkpoint = {
+      mission_id: 'mission-1',
+      traccar_device_id: '11',
+      window_from: '2026-04-06T08:00:00.000Z',
+      window_to: '2026-04-06T10:00:00.000Z',
+      reconciled_until: '2026-04-06T08:00:00.000Z',
+      completed: 0,
+      updated_at: '2026-04-06T10:00:00.000Z',
+    }
+    const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [], rejected: [] })
+    const persistTrackingHistoryBatch = vi.fn().mockResolvedValue([])
+    const upsertParticipantBackfillCheckpoint = vi.fn().mockResolvedValue(undefined)
+    let scopeStatus: 'loading' | 'ready' = 'loading'
+    let notifyScopeChanged: ((reason?: 'scope' | 'status') => void) | undefined
+
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({ getBreadcrumbsWithReport }),
+      createPoller: vi.fn().mockReturnValue({
+        start: vi.fn(), stop: vi.fn(), requestPollNow: vi.fn(),
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([checkpoint]),
+        upsertParticipantBackfillCheckpoint,
+        persistTrackingHistoryBatch,
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => createParticipationScope({ participants: [], membershipEvents: [] }),
+      readParticipationScopeMissionId: () => 'mission-1',
+      readParticipationScopeStatus: () => scopeStatus,
+      subscribeParticipationScope: (listener) => {
+        notifyScopeChanged = listener
+        return () => undefined
+      },
+    })
+
+    scopeStatus = 'ready'
+    notifyScopeChanged?.('status')
+
+    await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledWith(
+      '11',
+      new Date(checkpoint.reconciled_until),
+      new Date(checkpoint.window_to),
+      expect.any(AbortSignal),
+    ))
+    expect(persistTrackingHistoryBatch).toHaveBeenCalledOnce()
+    expect(upsertParticipantBackfillCheckpoint).toHaveBeenCalledWith(expect.objectContaining({
+      mission_id: checkpoint.mission_id,
+      traccar_device_id: checkpoint.traccar_device_id,
+      reconciled_until: checkpoint.window_to,
+      completed: true,
+    }))
+
+    await stop()
+  })
+
   it('preserves raw tracking cache data and warns when participant scope hydration fails', async () => {
     setActiveMission()
     const cacheWrite = vi.fn().mockImplementation(async (contents: string) => contents)

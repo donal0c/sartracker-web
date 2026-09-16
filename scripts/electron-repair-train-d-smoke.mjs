@@ -755,7 +755,7 @@ async function runAud08({ launch, provider, evidenceDir }) {
     () => provider.historyRequestsFor(SUCCESS_DEVICE_ID),
     (requests) => requests.some((request) => request.status === 200
       && historyRequestCoversWindow(request, readdWindow)),
-    'successful device 11 history request covering the re-add window',
+    `successful device 11 history request covering the re-add window ${readdWindow.from}..${readdWindow.to}`,
   )
   const successfulRequest = successfulHistoryRequest.find((request) => request.status === 200
     && historyRequestCoversWindow(request, readdWindow))

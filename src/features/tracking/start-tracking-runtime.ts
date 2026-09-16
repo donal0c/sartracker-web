@@ -1138,7 +1138,10 @@ export async function startTrackingRuntime(
           logger.warn('Deferred mission evidence settlement failed.', error)
         })
       }
-      if (reason === 'status') poller.requestPollNow?.()
+      if (reason === 'status') {
+        poller.requestPollNow?.()
+        scheduleParticipantBackfill()
+      }
     }
     refreshTrackingStatus()
   }) ?? (() => undefined)
