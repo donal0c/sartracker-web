@@ -67,7 +67,11 @@ async function main() {
       throw new Error('Runtime startup fault shell appeared for an undecryptable stored secret.')
     }
 
-    await page.getByText(UNDECRYPTABLE_SECRET_WARNING).waitFor({ state: 'attached', timeout: 15_000 })
+    const trackingWarning = page.getByTestId('tracking-warning')
+    await trackingWarning.waitFor({ state: 'attached', timeout: 15_000 })
+    if (await trackingWarning.textContent() !== UNDECRYPTABLE_SECRET_WARNING) {
+      throw new Error('Packaged tracking warning did not match the expected bad-secret recovery message.')
+    }
     await page.screenshot({ path: path.join(evidenceDir, '01-bad-secret-started.png'), fullPage: true })
 
     await page.getByTestId('open-settings-workspace').click({ force: true })

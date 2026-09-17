@@ -2,7 +2,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
 
-const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+const { sanitizeDiagnosticText, sanitizeDiagnosticValue } = require('./diagnostic-sanitizer.cjs')
 const { formatStorageDiagnostics } = require('./storage-diagnostics-format.cjs')
 
 const TRACKING_CACHE_FILE_NAME = 'tracking-cache.json'
@@ -85,7 +85,14 @@ function createElectronRuntimeFiles(options) {
   }
 
   async function buildReport(contents) {
-    const settings = await options.loadSettings()
+    let settings = null
+    try {
+      settings = await options.loadSettings()
+    } catch {
+      // Startup support export must survive the same corrupt settings that
+      // caused the fault shell. The report states the unavailable boundary
+      // instead of substituting apparently valid settings.
+    }
     return buildElectronDiagnosticsReport({
       contents,
       settings,
@@ -169,12 +176,16 @@ function formatRuntimeLog(logEntries) {
     return lines.join('\n')
   }
   for (const entry of entries) {
-    lines.push(sanitizeDiagnosticsText(JSON.stringify(entry)))
+    // Re-sanitize on export as well as on write so support bundles remain safe
+    // when a profile contains logs persisted by an older app version.
+    lines.push(sanitizeDiagnosticsText(JSON.stringify(sanitizeDiagnosticValue(entry))))
   }
   return lines.join('\n')
 }
 
 function buildElectronDiagnosticsReport(input) {
+  const dataSource = input.settings?.dataSource
+  const officialMaps = input.settings?.officialMaps
   return [
     '[electron]',
     `electron: ${input.versions.electron}`,
@@ -185,13 +196,16 @@ function buildElectronDiagnosticsReport(input) {
     `userData path: ${sanitizeDiagnosticsText(input.userDataPath)}`,
     `safeStorage backend: ${input.safeStorageBackend}`,
     `credential storage: local-file`,
-    `provider url: ${redactUrlCredentials(input.settings.dataSource.baseUrl) || 'not configured'}`,
-    `auth mode: ${input.settings.dataSource.authMode}`,
-    `secret present: ${input.settings.dataSource.secretPresent ? 'yes' : 'no'}`,
-    `official maps: ${input.settings.officialMaps?.status ?? 'not_configured'}`,
-    `official map source type: ${input.settings.officialMaps?.sourceType ?? 'none'}`,
-    `official map services: ${input.settings.officialMaps?.serviceCount ?? 0}`,
-    ...formatOfficialMapPackages(input.settings.officialMaps?.packages),
+    `settings status: ${input.settings === null ? 'unavailable' : 'loaded'}`,
+    `provider url: ${redactUrlCredentials(dataSource?.baseUrl) || 'not configured'}`,
+    `auth mode: ${readDiagnosticsValue(dataSource?.authMode, 'unknown')}`,
+    `secret present: ${
+      dataSource === undefined ? 'unknown' : dataSource.secretPresent === true ? 'yes' : 'no'
+    }`,
+    `official maps: ${officialMaps?.status ?? 'unknown'}`,
+    `official map source type: ${officialMaps?.sourceType ?? 'unknown'}`,
+    `official map services: ${officialMaps?.serviceCount ?? 0}`,
+    ...formatOfficialMapPackages(officialMaps?.packages),
     '',
     '[support-report]',
     sanitizeDiagnosticsText(input.contents),
@@ -340,7 +354,26 @@ function sanitizeDiagnosticsText(contents) {
 }
 
 function redactUrlCredentials(input) {
-  return sanitizeDiagnosticText(readDiagnosticsValue(input, ''))
+  const value = readDiagnosticsValue(input, '')
+  if (value === '') {
+    return ''
+  }
+  try {
+    const parsed = new URL(value)
+    if (parsed.username !== '' || parsed.password !== '') {
+      parsed.username = '[redacted]'
+      parsed.password = ''
+    }
+    if (parsed.search !== '') {
+      parsed.search = '?[redacted]'
+    }
+    if (parsed.hash !== '') {
+      parsed.hash = '#[redacted]'
+    }
+    return sanitizeDiagnosticText(parsed.toString().replace(/\/$/, ''))
+  } catch {
+    return '[invalid provider URL]'
+  }
 }
 
 module.exports = {

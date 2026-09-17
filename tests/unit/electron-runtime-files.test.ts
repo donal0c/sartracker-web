@@ -174,6 +174,24 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('event loop peak delay ms: 5500')
   })
 
+  it('exports startup support evidence when settings cannot be loaded [WAR04-SET-03]', async () => {
+    const files = await createRuntimeFiles({
+      loadSettings: async () => {
+        throw new SyntaxError('corrupt settings')
+      },
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'startup-fault-support.txt',
+      contents: 'Startup failed while loading settings.',
+    })
+    const report = await readFile(exportPath, 'utf8')
+
+    expect(report).toContain('Startup failed while loading settings.')
+    expect(report).toContain('settings status: unavailable')
+    expect(report).not.toContain('corrupt settings')
+  })
+
   it('exports a time-framed support bundle around a known incident time', async () => {
     const files = await createRuntimeFiles({
       readRecentCrashes: async () => [
@@ -416,12 +434,47 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('no runtime log entries recorded')
   })
 
+  it('redacts precise coordinates from previously persisted runtime-log entries during export', async () => {
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [{
+        ts: '2026-09-17T12:00:00.000Z',
+        event: 'legacy-position',
+        latitude: 52.123456,
+        nested: { longitude: -9.123456 },
+      }],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain('52.123456')
+    expect(bundle).not.toContain('-9.123456')
+    expect(bundle).toContain('[coordinate-redacted]')
+  })
+
   async function createRuntimeFiles(
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>
       readonly readRecentLog?: () => Promise<readonly unknown[]>
       readonly readStorageDiagnostics?: () => Promise<Record<string, unknown>>
       readonly baseUrl?: string
+      readonly loadSettings?: () => Promise<{
+        readonly dataSource: {
+          readonly baseUrl: string
+          readonly authMode: string
+          readonly secretPresent: boolean
+        }
+        readonly officialMaps?: {
+          readonly status?: string
+          readonly sourceType?: string
+          readonly sourcePath?: string
+          readonly serviceCount?: number
+          readonly packages?: readonly never[]
+        }
+      }>
     } = {},
   ) {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-runtime-'))
@@ -437,7 +490,7 @@ describe('electron runtime files', () => {
       },
       platform: 'linux',
       safeStorageBackend: () => 'gnome_libsecret',
-      loadSettings: async () => ({
+      loadSettings: logOverrides.loadSettings ?? (async () => ({
         dataSource: {
           baseUrl: logOverrides.baseUrl ?? 'https://kmrtsar.eu',
           authMode: 'basic',
@@ -476,7 +529,7 @@ describe('electron runtime files', () => {
             },
           ],
         },
-      }),
+      })),
     })
   }
 })

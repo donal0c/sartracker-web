@@ -4,9 +4,9 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-17):** PR32 merged at
-`c467f65db8036f1db23652fc0fc7c76369717885`; there are no open implementation
-pull requests. PR33 is the documentation-only reconciliation for this queue.
+**Current reconciliation (2026-09-17):** PR33 merged at
+`67300313ab2bc800f9522f54e8de443fcb97fcae`. The six-finding WAR-11
+settings/privacy repair is active from that exact baseline.
 Its validated implementation head `58ea2900` passed required Linux workflow
 `35177287167`, including strict responsiveness, rendered/browser, packaged
 Train D, tracking-soak, archive-lifecycle and AppImage boundaries. Ordinary PR
@@ -15,9 +15,8 @@ Release, deployment, BCP-17/WAR-12, field and human acceptance remain HOLD.
 
 The coordinated next queue is:
 
-1. repair the six confirmed WAR-04 settings/startup and diagnostics/privacy
-   findings (`WAR04-SET-01..03`, `WAR04-PRV-01..03`) in one bounded WAR-11
-   train;
+1. finish review, CI and merge for the bounded six-finding WAR-11
+   settings/privacy repair (`WAR04-SET-01..03`, `WAR04-PRV-01..03`);
 2. permit WAR-03 coordinate/geodesy test hardening in parallel because it is
    production-ownership-disjoint;
 3. retain the team map-administration/distribution workflow

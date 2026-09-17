@@ -53,6 +53,31 @@ describe('diagnostic event log', () => {
     expect(JSON.stringify(events)).not.toContain('field-secret')
   })
 
+  it('recursively sanitizes coordinates, secrets, and private paths inside nested renderer fields [WAR04-PRV-03]', async () => {
+    await recordDiagnosticEvent({
+      ts: '2026-09-17T11:00:00.000Z',
+      level: 'warn',
+      category: 'tracking',
+      event: 'nested_tracking_fault',
+      fields: {
+        context: {
+          position: { latitude: 52.0599, longitude: -9.5045 },
+          authorization: 'Bearer field-secret',
+          profilePath: '/Users/operator/Library/Application Support/SAR Tracker',
+        },
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).toContain('[coordinate-redacted]')
+    expect(serialized).toContain('[redacted]')
+    expect(serialized).toContain('/Users/[redacted]')
+    expect(serialized).not.toContain('52.0599')
+    expect(serialized).not.toContain('-9.5045')
+    expect(serialized).not.toContain('field-secret')
+    expect(serialized).not.toContain('operator')
+  })
+
   it('writes Electron breadcrumbs through the preload bridge while keeping browser fallback history', async () => {
     const recordDiagnosticEventBridge = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(window, 'sartrackerElectron', {

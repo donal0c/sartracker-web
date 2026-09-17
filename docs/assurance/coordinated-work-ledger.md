@@ -58,11 +58,9 @@ head.
 
 ## Post-PR32 coordinated disposition — 2026-09-17
 
-`origin/master` is `c467f65db8036f1db23652fc0fc7c76369717885`, the merge of
-PR32. There are no open implementation pull requests; PR33 is the docs-only
-reconciliation carrying this record. Required PR32 Linux workflow `35177287167`,
-ordinary workflow `35179847412`, and post-merge master workflow `35199520928`
-passed. Release, deployment, BCP-17/WAR-12, official-map distribution, field
+`origin/master` is `67300313ab2bc800f9522f54e8de443fcb97fcae`, the merge of
+PR33. The bounded WAR-11 settings/privacy repair is active from that exact
+baseline. Release, deployment, BCP-17/WAR-12, official-map distribution, field
 and human acceptance remain HOLD.
 
 The original deep-audit ledger now has thirteen of fourteen confirmed groups
@@ -72,12 +70,15 @@ a P3 alias-clearing UI/store defect. Repair Trains C and D, including
 `AUD-11`, are merged; the historical rows and failed receipts below remain
 evidence, not current open-PR state.
 
-WAR-04 still contributes six confirmed production-repair inputs:
+WAR-04 contributes six confirmed production-repair inputs:
 `WAR04-SET-01..03` (credential/bootstrap and atomic settings consistency) and
 `WAR04-PRV-01..03` (diagnostics/support-output privacy and recursive
-allow-listing). The next recommended production repair is one bounded WAR-11
-train for that seam. WAR-03 coordinate/geodesy proof may run beside it because
-its test ownership is disjoint. The team map administration/distribution lane
+allow-listing). A bounded WAR-11 candidate now takes all six joined probes from
+red to green and adds ordinary regressions; exact-head review, CI and merge are
+still required. See
+[the repair record](findings/war-11-settings-privacy-repair.md). WAR-03
+coordinate/geodesy proof may run beside it because its test ownership is
+disjoint. The team map administration/distribution lane
 (`DON-144`/`DON-7`/`DON-76`) must not be implemented in parallel with that
 Settings train until exact overlap is checked.
 

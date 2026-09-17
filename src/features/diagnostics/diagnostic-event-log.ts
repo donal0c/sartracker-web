@@ -172,7 +172,31 @@ function sanitizeValue(value: unknown): string | number | boolean | null {
   if (typeof value === 'string') {
     return anonymizePath(value).slice(0, 240)
   }
-  return JSON.stringify(value).slice(0, 240)
+  return JSON.stringify(sanitizeNestedValue(value)).slice(0, 240)
+}
+
+function sanitizeNestedValue(value: unknown, key = ''): unknown {
+  if (SECRET_KEY_PATTERN.test(key)) {
+    return '[redacted]'
+  }
+  if (COORDINATE_KEY_PATTERN.test(key)) {
+    return '[coordinate-redacted]'
+  }
+  if (typeof value === 'string') {
+    return anonymizePath(value)
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeNestedValue(item))
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([nestedKey, nestedValue]) => [
+        nestedKey,
+        sanitizeNestedValue(nestedValue, nestedKey),
+      ]),
+    )
+  }
+  return value
 }
 
 function anonymizePath(value: string): string {

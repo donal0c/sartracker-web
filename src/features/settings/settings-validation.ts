@@ -84,7 +84,12 @@ export function validateSettingsDraft(
       const parsed = new URL(draft.dataSource.baseUrl)
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         errors.baseUrl = 'Provider URL must use http or https.'
-      } else if (parsed.username !== '' || parsed.password !== '') {
+      } else if (
+        parsed.username !== '' ||
+        parsed.password !== '' ||
+        containsCredentialParameters(parsed.search.slice(1)) ||
+        containsCredentialParameters(parsed.hash.slice(1))
+      ) {
         errors.baseUrl = PROVIDER_URL_CREDENTIALS_ERROR
       } else {
         const hostedUrlError = getHostedTraccarBaseUrlError(draft.dataSource.baseUrl, context)
@@ -133,6 +138,31 @@ export function validateSettingsDraft(
   validateWeatherLinks(draft.weather.links, errors)
 
   return errors
+}
+
+function containsCredentialParameters(value: string): boolean {
+  if (value === '') {
+    return false
+  }
+  const credentialKeyPattern = /^(?:session|password|secret|token|credential|api[-_]?key|authorization|(?:access|auth|refresh|id)[-_]?token)$/i
+  for (const [rawKey] of new URLSearchParams(value)) {
+    let key = rawKey
+    for (let index = 0; index < 3; index += 1) {
+      if (credentialKeyPattern.test(key)) {
+        return true
+      }
+      try {
+        const decoded = decodeURIComponent(key)
+        if (decoded === key) {
+          break
+        }
+        key = decoded
+      } catch {
+        break
+      }
+    }
+  }
+  return false
 }
 
 function isNumberInRange(value: number | undefined, minimum: number, maximum: number): boolean {

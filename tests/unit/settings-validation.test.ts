@@ -124,6 +124,25 @@ describe('settings validation', () => {
     })
   })
 
+  it.each([
+    'https://kmrtsar.eu/api?session=field-secret',
+    'https://kmrtsar.eu/api#token=field-secret',
+    'https://kmrtsar.eu/api?ses%2573ion=field-secret',
+    'https://kmrtsar.eu/api?access_token=field-secret',
+    'https://kmrtsar.eu/api#auth_token=field-secret',
+    'https://kmrtsar.eu/api?refresh-token=field-secret',
+  ])('rejects provider credentials hidden in query or fragment parameters [WAR04-PRV-02]', (baseUrl) => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = baseUrl
+    draft.dataSource.email = 'ops@example.com'
+    draft.dataSource.secretInput = 'secret'
+
+    expect(validateSettingsDraft(draft)).toMatchObject({
+      baseUrl: 'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.',
+    })
+  })
+
   it('normalizes roster input into unique trimmed names', () => {
     expect(normalizeRosterInput(' Alice \nBob\nAlice\n\nCharlie  ')).toEqual([
       'Alice',

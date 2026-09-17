@@ -94,6 +94,9 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('[tracking-poll-ledger]')
     expect(snapshot.supportReport).toContain('"failureKind":"timeout"')
     expect(snapshot.supportReport).not.toContain('52.0599')
+    expect(snapshot.supportReport).not.toContain('/tmp/browser-harness')
+    expect(snapshot.supportReport).toContain('database path: [profile]/mission-store.sqlite')
+    expect(snapshot.supportReport).toContain('backup path: [profile]/mission-store.backup.sqlite')
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
@@ -237,7 +240,7 @@ describe('diagnostics model', () => {
       ...createSettings(),
       dataSource: {
         ...createSettings().dataSource,
-        baseUrl: 'https://operator:field-secret@kmrtsar.eu',
+        baseUrl: 'https://operator:field-secret@kmrtsar.eu/api?session=query-secret#token=fragment-secret',
       },
     } satisfies AppSettings
     const snapshot = buildDiagnosticsSnapshot({
@@ -271,11 +274,15 @@ describe('diagnostics model', () => {
 
     expect(snapshot.configurationRows).toContainEqual({
       label: 'Provider URL',
-      value: 'https://[redacted]@kmrtsar.eu',
+      value: 'https://[redacted]@kmrtsar.eu/api?[redacted]#[redacted]',
     })
-    expect(snapshot.supportReport).toContain('provider url: https://[redacted]@kmrtsar.eu')
+    expect(snapshot.supportReport).toContain(
+      'provider url: https://[redacted]@kmrtsar.eu/api?[redacted]#[redacted]',
+    )
     expect(snapshot.supportReport).not.toContain('operator')
     expect(snapshot.supportReport).not.toContain('field-secret')
+    expect(snapshot.supportReport).not.toContain('query-secret')
+    expect(snapshot.supportReport).not.toContain('fragment-secret')
   })
 
   it('reports per-device breadcrumb render budgets and warnings [DON-159]', () => {

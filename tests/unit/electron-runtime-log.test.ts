@@ -102,6 +102,23 @@ describe('electron runtime log', () => {
     expect(serialized).toContain('[redacted]')
   })
 
+  it('recursively redacts precise coordinate fields before persistence [WAR04-PRV-03]', async () => {
+    const log = await createLog()
+    await log.appendDurable({
+      level: 'warn',
+      event: 'coordinate_probe',
+      fields: {
+        latitude: 52.123456,
+        context: { longitude: -9.123456 },
+      },
+    })
+
+    const serialized = JSON.stringify(await log.readRecent())
+    expect(serialized).not.toContain('52.123456')
+    expect(serialized).not.toContain('-9.123456')
+    expect(serialized).toContain('[coordinate-redacted]')
+  })
+
   it('redacts archive passphrases and recovery codes before structured runtime logs touch disk [DON-248]', async () => {
     const passphraseSentinel = 'Runtime-Archive-Passphrase-Sentinel-9!'
     const recoveryCodeSentinel = 'RUNTIME-RECOVERY-SENTINEL-7Z'
