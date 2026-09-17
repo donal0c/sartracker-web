@@ -174,12 +174,17 @@ export async function startMissionBrowserHarness(): Promise<void> {
       applyStatus: applyTrackingStatus,
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
+      readParticipationScopeMissionId: () => useMissionStore.getState().currentMission?.id ?? null,
       applyParticipantRoster: (devices, options) =>
         useParticipantStore.getState().controller?.applyRoster(devices, undefined, options),
       applyParticipantGroups: (groups) =>
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>
         useParticipantStore.getState().controller?.reportRosterError(message),
+      notifyParticipantBackfillChange: async (missionId) => {
+        if (useMissionStore.getState().currentMission?.id !== missionId) return
+        await useParticipantStore.getState().controller?.refreshBackfillCheckpoints(missionId)
+      },
       recordDiagnosticEvent,
       recordTrackingPollDiagnostic: recordTrackingPollLedgerEntry,
       notifyDurablePositionChange: (changedPositionCount) => {

@@ -4,6 +4,27 @@
 withdraws earlier readiness and records the approved SAR-QA-022 recovery and review
 corrections. Evidence below is historical; no merge or release readiness is implied.
 
+## Current PR32 merge disposition — 2026-09-17
+
+PR32 is **merge-ready within the scoped repair boundary**. The validated
+implementation head is `58ea29005b17a34e69f52ad44966a42f9c63d0aa` / tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`. Required manual Linux workflow
+[`35177287167`](https://github.com/donalocallaghan/sartracker-web/actions/runs/35177287167)
+passed full source correctness, strict `<200 ms` responsiveness, rendered and
+packaged controls, AUD-08, AUD-09, restart, diagnostics, independent receipt
+validation, tracking soak, archive lifecycle and AppImage smoke. The receipt
+is exact-head and clean with `result=pass`, `AUD-08=pass`, `AUD-09=pass`,
+`restart=pass`, `diagnosticResult=pass`, and no blockers or failures. Ordinary
+PR validation [`35179847412`](https://github.com/donalocallaghan/sartracker-web/actions/runs/35179847412)
+also passed. Later branch commits are documentation-only and preserve the
+qualified executable, test and configuration trees; the testing cadence permits
+reuse of that evidence without restarting qualification for a changed SHA.
+
+This merge disposition does not qualify a release. BCP-17, final-candidate
+qualification, deployment, installer/field acceptance and human acceptance
+remain HOLD. The historical macOS packaged smoke's unpaired
+`coverage-revision-moved` diagnostic remains retained and unallowlisted.
+
 Current status (2026-09-14): Donal merged
 [PR27](https://github.com/donal0c/sartracker-web/pull/27) as
 `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3` from reviewed head `39eed654`.
@@ -12,6 +33,108 @@ on base `2b2bf8e605e27123c9e454598828d71cb7c062aa`; later review corrections
 remain in the linked disposition. Merge does not establish packaged qualification.
 Owners: DON-271 / AUD-08 and DON-279 / AUD-09; DON-254 retains qualification.
 Train C can now integrate the merged Train D baseline. Release HOLD remains.
+
+## Exact-master packaged follow-up — 2026-09-14
+
+Manual workflow `34860711436` ran on exact merged master
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb` / tree
+`302e684ec4c60ad66a0afb45898e2a552e3cf974`. It reproduced the retained AUD-08
+observation: native IPC reported the re-added group at 1/2 completed while the
+renderer continued to display 2/2 pending. The native completeness calculation
+and Finish refusal were therefore correct; the missing refresh notification was
+the production defect at the tracking/participant projection seam.
+
+The bounded repair refreshes the participant runtime after a durable checkpoint
+write, guarded so a stale backfill cannot switch the view to another mission. A
+red unit regression in `tests/unit/start-tracking-runtime.test.ts` failed before
+the callback and passes after it. A repaired local macOS arm64 package records
+`aud08=pass` and `aud09=pass`, with screenshots showing the visible 1/1 complete
+state and the Search Operations backup surface. Restart remains **NOT_PROVEN**:
+the same receipt failed its existing diagnostic custody gate on deliberate
+provider-503/retry and close-time transport warnings before restart. The
+diagnostic gate was not weakened, and this local result is not Linux CI,
+release, or field qualification.
+
+The original exact-master workflow receipt, local receipt and screenshots remain
+retained outside the repository. Exact-head CI, independent review, and a clean
+complete Train D run remain required before qualification or merge.
+
+PR32's exact-head run `34866228521` passed correctness, strict responsiveness,
+rendered regressions, build, and 960k replay, but failed before Train D in the
+unrelated packaged native-runtime control because two launch-time Vulkan stderr
+entries were rejected by the existing diagnostic custody gate. Source/package
+identity was exact and clean; the Train D validator and scenario were skipped.
+This is retained as an environment/diagnostic-gate boundary, not as a product
+failure or allowlist change.
+
+## Latest exact-head manual qualification — 2026-09-14
+
+The required manual workflow [`34877445512`](https://github.com/donal0c/sartracker-web/actions/runs/34877445512)
+ran on exact clean head `9bd9adc9d38ee573a152ee42c57c13b8da04c803` / tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8`. All pre-Train-D gates passed,
+including strict `<200 ms`, and the receipt's packaged scenarios all passed:
+`AUD-08=pass`, `AUD-09=pass`, `restart=pass`, `scenarioResult=pass`.
+
+The overall receipt remains failed because `diagnosticResult=fail`. The restart
+close observed the exact renderer warning `Tracking history stopped before
+transport completed`, which is an expected teardown cancellation but is not yet
+covered by the narrow Train D allowlist. The same restart also emitted the two
+known Linux Electron Vulkan startup stderr lines (`vkCreateInstance() failed: -9`
+and `Failed to create and initialize Vulkan implementation.`), previously
+retained as an environment/diagnostic-custody boundary in the native-runtime
+gate. The source/tree attestation is exact and clean; no product scenario failed,
+and no timing, diagnostic, release or field gate was relaxed. Train D packaged
+qualification is therefore **NOT_PROVEN**, not green or merge-ready. The full
+receipt is retained under `/tmp/sar-train-d-ci-34877445512-xowlWF`.
+
+The current harness/runtime head `51e5a7eb` is locally verified by the focused
+Train D/runtime tests (132/132), changed-file lint, TypeScript build and diff
+checks. The required manual run below resolves the two narrow diagnostic
+boundaries without weakening the global diagnostic gate.
+
+## Latest exact-head manual result — 2026-09-14
+
+Manual workflow [`34902500983`](https://github.com/donal0c/sartracker-web/actions/runs/34902500983)
+ran on exact clean head `51e5a7eb6a05fc75bc6382c73cf7245da9dfa364` / tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. Strict `<200 ms`, the packaged
+participant-progress/Search Operations step, and the independent receipt
+validator passed. The retained Train D receipt records `AUD-08=pass`,
+`AUD-09=pass`, `restart=pass`, `scenarioResult=pass`, `diagnosticResult=pass`,
+`diagnosticBlockers=[]`, and `result=pass`; source identity is exact and clean.
+
+The workflow is not green overall. A later, unrelated packaged archive-lifecycle
+smoke failed its existing strict continuity gate with
+`current_fix_continuity_gate_breached` and an observed 205 ms cleanup gap. The
+failure is an external liveness/instrumentation result, not a Train D scenario
+failure; the PR diff does not change the archive smoke or its `<200 ms` threshold.
+The failure JSON and complete evidence are retained under
+`/tmp/sar-train-d-ci-34902500983-9FmgLG`, specifically
+`tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json`.
+Do not relax or relabel that gate. This historical result was not merge evidence
+for the later remediation head; the current exact-head workflow and scoped merge
+disposition are recorded above. Release, deployment, and field qualification
+remain separate and on HOLD.
+
+## Current blocker-remediation pass — 2026-09-16
+
+The blocker review identified a false PR claim, an unbounded participant-scope
+wait inside the serialized tracking-persistence lane, a full participant refresh
+after every backfill checkpoint, shutdown evidence loss, and overly broad Train D
+diagnostic allowances. The remediation on PR32 addresses those seams by adding a
+bounded five-second scope-admission deadline with stop cancellation, using one
+participant-mission resolver, refreshing only backfill checkpoints, draining the
+backfill before settling shutdown evidence, and suppressing checkpoint-only
+immediate polls.
+
+The packaged diagnostic classifier is intentionally stricter than the prior head:
+device-22 history warnings are exact and occurrence-bounded; device-11 HTTP 503
+warnings are not allowlisted; the device-11 scope-closure control is exact and
+separately bounded; and the unpaired coverage-revision allowance is removed.
+The global unexpected-diagnostic gate and strict `<200 ms` responsiveness gate
+remain in force. Focused source verification was 158/158 at this historical
+checkpoint. The required workflow has since rerun on the clean remediation head
+and passed; the current scoped merge disposition above supersedes this interim
+NOT_PROVEN status. Release and BCP-17 qualification remain HOLD.
 
 ## Contract and risk
 

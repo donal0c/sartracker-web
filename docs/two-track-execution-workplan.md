@@ -27,6 +27,15 @@ Working-tree verification is in progress; earlier green statements below are his
 
 **Active reconciliation (2026-09-13):** baseline
 `2b2bf8e605e27123c9e454598828d71cb7c062aa` includes merged PR25 and PR26.
+Current reconciliation (2026-09-14): origin/master is
+`6abde36e1e293f8731784fe3fab293f11ce5e7eb` after PR31. Manual packaged
+workflow `34860711436` reproduced the AUD-08 renderer/native progress split;
+the bounded follow-up repair is on `codex/don-254-train-d-participant-refresh`.
+Local repaired packaging passes AUD-08 and AUD-09, but restart is not proven
+because the unchanged diagnostic custody gate fails on deliberate provider
+503/retry and close-time warnings. Exact-head CI/review remain required; no
+release or merge qualification is claimed.
+
 DON-267 is Done; DON-254 is In Progress; release remains HOLD. Train D owns
 AUD-08 / DON-271 and AUD-09 / DON-279 on `codex/repair-train-d`; parallel Train C
 owns map repairs. Merge D first, then rebase C. Reproduce both D defects red,
@@ -47,6 +56,33 @@ DON-254 must address the proven coverage metadata/snapshot race, packaged
 service-worker registration, listener pressure and unassigned script diagnostic
 recorded in the [coordinated ledger](assurance/coordinated-work-ledger.md).
 These are bounded follow-ups, not permission to expand either active train.
+
+Latest manual Train D run `34877445512` on exact head
+`9bd9adc9d38ee573a152ee42c57c13b8da04c803` / tree
+`fc107e851cc07dc9ee3b7b2c475dee862025e7f8` passes AUD-08, AUD-09 and restart,
+but fails the diagnostic receipt on one expected close-time transport
+cancellation warning plus the known Linux Vulkan startup stderr. This is not a
+product scenario failure or release qualification. Keep the receipt retained,
+do not merge or release, and resolve the diagnostic boundary before another
+exact-head manual run.
+
+That historical follow-up manual run was `34902500983` on exact clean PR32 head
+`51e5a7eb6a05fc75bc6382c73cf7245da9dfa364` / tree
+`b48c51919a499d15129b64f5c79ecb428dd0da45`. The Train D receipt and independent
+validator pass (`AUD-08`, `AUD-09`, restart, `scenarioResult`,
+`diagnosticResult`, `diagnosticBlockers=[]`, `result=pass`), but the complete
+workflow fails later in the unchanged packaged archive-lifecycle continuity
+gate at a measured 205 ms cleanup gap. Preserve that failure evidence, do not
+relax the strict `<200 ms` gate. It is superseded for PR32's scoped merge
+decision by the exact implementation-head qualification in workflow
+`35177287167`, which passed the previously incomplete boundaries. PR32 is
+merge-ready within scope; release, deployment, BCP-17 and field qualification
+remain HOLD.
+
+The latest PR32 branch descendants are documentation-only and preserve the
+qualified executable/test/configuration trees. The repository's testing cadence
+therefore reuses the exact implementation-head evidence rather than launching
+another full qualification run solely because the documentation SHA changed.
 
 **Historical reconciliation:** PR26/WAR-06 is merged at
 `8f93f8d1cc4554178706e23401ecd496d1193195`. PR25's observer repair is reconciled

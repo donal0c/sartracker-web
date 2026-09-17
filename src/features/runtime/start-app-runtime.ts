@@ -478,6 +478,8 @@ export async function startAppRuntime(
           }),
       missionModelEnabled: isMissionModelEnabled(),
       readParticipationScope: () => useParticipantStore.getState().scope,
+      readParticipationScopeMissionId: () =>
+        resolveParticipantMissionId(useMissionStore.getState()),
       readParticipationScopeStatus: () => {
         const missionState = useMissionStore.getState()
         const missionId = resolveParticipantMissionId(missionState)
@@ -490,12 +492,12 @@ export async function startAppRuntime(
       },
       subscribeParticipationScope: (listener) =>
         useParticipantStore.subscribe((state, previousState) => {
-          if (
-            state.scope !== previousState.scope ||
-            state.activeMissionId !== previousState.activeMissionId ||
+          const statusChanged = state.activeMissionId !== previousState.activeMissionId ||
             state.loading !== previousState.loading ||
             state.error !== previousState.error
-          ) listener()
+          const scopeChanged = state.scope !== previousState.scope
+          if (statusChanged) listener('status')
+          else if (scopeChanged) listener('scope')
         }),
       applyParticipantRoster: (devices, options) =>
         useParticipantStore.getState().controller?.applyRoster(devices, undefined, options),
@@ -503,6 +505,10 @@ export async function startAppRuntime(
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>
         useParticipantStore.getState().controller?.reportRosterError(message),
+      notifyParticipantBackfillChange: async (missionId) => {
+        if (resolveParticipantMissionId(useMissionStore.getState()) !== missionId) return
+        await coreFeatureRuntimes.participantRuntimeController?.refreshBackfillCheckpoints(missionId)
+      },
       notifyDurablePositionChange: (changedPositionCount) => {
         useExactBreadcrumbDotStore.getState().controller?.notifyDurableChange(
           changedPositionCount,

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error JavaScript evidence validator is exercised through its runtime contract.
 import { validateNativeRuntimeReceipt } from '../../build/native-runtime-smoke-receipt.js'
-import { createDiagnosticState } from '../../build/electron-repair-train-d-smoke-lib.js'
+import {
+  appendBoundedDiagnostic,
+  createDiagnosticState,
+} from '../../build/electron-repair-train-d-smoke-lib.js'
 
 /** Supplies one complete synthetic terminal control, never a packaged proof. */
 function receipt() {
@@ -24,6 +27,23 @@ describe('native runtime terminal evidence [DON-254]', () => {
   it('accepts the complete bounded proof and checks exact source when requested', () => {
     expect(() => validateNativeRuntimeReceipt(receipt(), 'a'.repeat(40))).not.toThrow()
     expect(() => validateNativeRuntimeReceipt(receipt(), 'd'.repeat(40))).toThrow(/source/i)
+  })
+  it('accepts only the canonical Linux Vulkan startup pair in packaged stderr', () => {
+    const value = receipt()
+    value.runtime = { platform: 'linux' }
+    for (const message of [
+      '[12974:0916/222400.492761:ERROR:gpu/vulkan/vulkan_instance.cc:200] vkCreateInstance() failed: -9',
+      '[12974:0916/222400.492993:ERROR:gpu/ipc/service/gpu_init.cc:1366] Failed to create and initialize Vulkan implementation.',
+    ]) {
+      appendBoundedDiagnostic(value.diagnostics, 'processStderr', { message }, {
+        phase: 'launch', type: 'stderr', source: 'main-process-stderr',
+      })
+    }
+
+    expect(() => validateNativeRuntimeReceipt(value)).not.toThrow()
+
+    value.diagnostics.processStderr[1].message = 'unexpected packaged stderr'
+    expect(() => validateNativeRuntimeReceipt(value)).toThrow(/unexpected packaged diagnostics/i)
   })
   it.each(['ipc', 'store', 'close', 'package', 'diagnostics'] as const)('rejects omitted %s evidence', field => {
     const value = receipt()

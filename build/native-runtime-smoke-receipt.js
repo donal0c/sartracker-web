@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
-import { assertNoUnexpectedDiagnostics } from './electron-repair-train-d-smoke-lib.js'
+import {
+  assertNoUnexpectedDiagnostics,
+  createLinuxVulkanStartupDiagnosticAllowlist,
+} from './electron-repair-train-d-smoke-lib.js'
 
 /** Independently rejects incomplete, stale-source or unclean native control receipts. */
 export function validateNativeRuntimeReceipt(receipt, expectedHead) {
@@ -23,5 +26,10 @@ export function validateNativeRuntimeReceipt(receipt, expectedHead) {
   assert.ok(Array.isArray(receipt.stderr), 'Native control did not retain stderr capture.')
   assert.equal(receipt.stderrDrained, true, 'Native control validated before stderr drained.')
   assert.equal(receipt.profileRemoved, true, 'Native control profile cleanup is not proved.')
-  assertNoUnexpectedDiagnostics(receipt.diagnostics)
+  assertNoUnexpectedDiagnostics(receipt.diagnostics, createLinuxVulkanStartupDiagnosticAllowlist({
+    platform: receipt.runtime?.platform,
+    processStderr: receipt.diagnostics.processStderr,
+    processStderrCount: receipt.diagnostics.counts.processStderr,
+    processStderrTruncated: receipt.diagnostics.truncated.processStderr,
+  }))
 }
