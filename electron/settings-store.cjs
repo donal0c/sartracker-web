@@ -273,6 +273,12 @@ function createElectronSettingsStore(options) {
       }
       return typeof entry.secret === 'string' && entry.secret !== ''
     }
+    // Generated settings prove that an app-owned credential entry previously
+    // existed. Its absence is loss/mismatch, never permission to resurrect a
+    // stale beta.5 secret.
+    if (readCredentialGeneration(expectedGeneration) !== undefined) {
+      return false
+    }
     // No app-owned entry yet: fall back to the legacy file's presence so the
     // Settings "stored secret present" view is accurate before first migration.
     const legacy = await readLegacySecrets()
@@ -293,6 +299,10 @@ function createElectronSettingsStore(options) {
       // cleared the secret; do not migrate from the legacy file.
       const secret = typeof entry.secret === 'string' && entry.secret !== '' ? entry.secret : null
       return { value: secret }
+    }
+
+    if (readCredentialGeneration(expectedGeneration) !== undefined) {
+      return { value: null, unsafeReason: MISMATCHED_CREDENTIAL_MESSAGE }
     }
 
     return migrateLegacySecret(authMode)

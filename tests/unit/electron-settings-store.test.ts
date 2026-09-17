@@ -891,6 +891,23 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toContain('could not be read')
   })
 
+  it('fails closed when current generated credentials are missing instead of resurrecting a legacy secret', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret', platform: 'darwin' })
+    await seedLegacySecret(userDataPath!, 'basic', 'stale-legacy-secret')
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.dataSource.providerType = 'traccar_http'
+    draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+    draft.dataSource.email = 'sean'
+    draft.dataSource.secretInput = 'current-secret'
+    await store.saveAppSettings(draft)
+    await rm(path.join(userDataPath!, 'credentials.json'))
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('do not match')
+  })
+
   it('starts without tracking when only an undecryptable legacy secrets.json exists', async () => {
     const decryptString = vi.fn(() => 'must-not-run')
     const store = createElectronSettingsStore({

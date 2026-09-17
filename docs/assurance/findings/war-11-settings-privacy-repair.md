@@ -48,6 +48,9 @@ legacy secret, support export recursively redacts coordinates already written
 by older versions, and common OAuth-style query/fragment keys such as
 `access_token`, `auth_token`, and `refresh-token` are rejected. The expanded
 focused regression set passes 66/66 tests; lint and the production build pass.
+A second review pass also proved that deleting a generated current credential
+could revive a stale legacy secret; generated settings now make any missing
+matching credential fail closed, with a dedicated restart regression.
 
 The repository's required stable source gate then passed in serial correctness
 mode: 477 files passed, 5,067 tests passed and the six explicitly separated
