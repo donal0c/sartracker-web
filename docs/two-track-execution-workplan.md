@@ -51,9 +51,11 @@ predicate during first-launch synchronous SQLite close (`512.449076 ms`), while
 later exact-head run `35242591823` passed on the same close-path production
 files. The retained [finding](assurance/findings/legacy-recovery-close-path-20260917.md)
 attributes the risk to the worker leaving a large WAL for the main connection
-to checkpoint during close. A bounded worker-side `synchronous=FULL`
-non-blocking `wal_checkpoint(PASSIVE)` repair is under exact-head review and Linux CI; this
-does not qualify a candidate or authorize BCP-17/WAR-12.
+to checkpoint during close. The bounded worker-side `synchronous=FULL`
+non-blocking `wal_checkpoint(PASSIVE)` repair passed exact-head Linux workflow
+`35263861712` on PR36's reviewed code head, and independent Astra follow-up
+found no actionable issues. This does not qualify a candidate or authorize
+BCP-17/WAR-12.
 
 ## Locked path to the next team beta — 2026-09-17
 

@@ -94,8 +94,9 @@ Both are now covered by failing-first tests and repaired in the current head.
 
 ## Remaining proof and limits
 
-The current draft head must still receive the completed independent follow-up
-review and exact-head Linux CI. Linux packaged evidence is the decisive next
-check because the original failure was platform/filesystem-sensitive. No
-release, deployment, merge, candidate mode, BCP-17/WAR-12 run or SAR-team
-contact is authorized by this finding.
+The exact-head Linux workflow [35263861712](https://github.com/donal0c/sartracker-web/actions/runs/35263861712)
+passed at the reviewed code head with the packaged report source-clean and
+the legacy recovery proof green. The independent Astra follow-up reported no
+actionable findings. The PR remains DRAFT because this evidence is not release
+qualification and no release, deployment, merge, candidate mode, BCP-17/WAR-12
+run or SAR-team contact is authorized by this finding.

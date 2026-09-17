@@ -80,10 +80,12 @@ Next: the bounded DON-254 close-path repair is on this branch in draft
 The repair checkpoints the legacy backfill WAL in its worker with `FULL`
 durability before completion, while retaining the strict `<200 ms` predicate.
 The first failed PR35 Linux receipt and later passing receipt remain retained;
-the initial Astra P1/P2 findings were repaired, and the follow-up found two
-additional P2 validation gaps now repaired in the working tree. The new exact-
-head Linux CI and completed follow-up review are still required. Do not start
-BCP-17/WAR-12 before candidate freeze and Donal's explicit phase-6 discussion.
+the initial Astra P1/P2 findings and the follow-up's two P2 validation gaps
+were repaired. Exact-head Linux workflow
+[35263861712](https://github.com/donal0c/sartracker-web/actions/runs/35263861712)
+passed, and the completed Astra follow-up found no actionable findings. PR36
+remains DRAFT; do not start BCP-17/WAR-12 before candidate freeze and Donal's
+explicit phase-6 discussion.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
