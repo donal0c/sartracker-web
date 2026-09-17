@@ -45,6 +45,14 @@ describe('startParticipantRuntime [DON-271]', () => {
       updated_at: '2026-08-23T11:00:00.000Z',
     }
     const store = createStore()
+    const refreshedParticipant = {
+      ...GROUP_PARTICIPANT,
+      backfill_member_count: 1,
+      backfill_completed_count: 1,
+    }
+    store.listMissionParticipants
+      .mockResolvedValueOnce([GROUP_PARTICIPANT])
+      .mockResolvedValueOnce([refreshedParticipant])
     store.listParticipantBackfillCheckpoints
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([checkpoint])
@@ -60,7 +68,8 @@ describe('startParticipantRuntime [DON-271]', () => {
     await runtime.refreshBackfillCheckpoints('mission-1')
 
     expect(states.at(-1)).toMatchObject({ loading: false, backfillCheckpoints: [checkpoint] })
-    expect(store.listMissionParticipants).toHaveBeenCalledTimes(1)
+    expect(states.at(-1)?.participants).toEqual([refreshedParticipant])
+    expect(store.listMissionParticipants).toHaveBeenCalledTimes(2)
     expect(store.listParticipantBackfillCheckpoints).toHaveBeenCalledTimes(2)
   })
 

@@ -186,11 +186,19 @@ export async function startParticipantRuntime(
     },
     refreshBackfillCheckpoints: async (missionId) => {
       if (activeMissionId !== missionId) return
+      const missionRefreshVersion = refreshToken
       const token = ++backfillRefreshToken
       try {
-        const nextCheckpoints = await dependencies.participantStore
-          .listParticipantBackfillCheckpoints(missionId)
-        if (activeMissionId !== missionId || token !== backfillRefreshToken) return
+        const [nextParticipants, nextCheckpoints] = await Promise.all([
+          dependencies.participantStore.listMissionParticipants(missionId),
+          dependencies.participantStore.listParticipantBackfillCheckpoints(missionId),
+        ])
+        if (
+          activeMissionId !== missionId ||
+          token !== backfillRefreshToken ||
+          missionRefreshVersion !== refreshToken
+        ) return
+        participants = nextParticipants
         backfillCheckpoints = nextCheckpoints
         publishRuntime()
       } catch (runtimeError) {
