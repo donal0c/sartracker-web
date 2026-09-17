@@ -24,6 +24,10 @@ const REQUIRED_RELEASE_GATES = Object.freeze([
   'scale-and-soak', 'fault-recovery', 'archive-restore', 'diagnostics-privacy',
   'advisory-judge', 'original-machine', 'publication-and-rollback',
 ])
+const REQUIRED_AUTHORITIES = Object.freeze([
+  ...Array.from({ length: 22 }, (_, index) => `SAR-QA-${String(index + 1).padStart(3, '0')}`),
+  'DON-254', 'DON-255',
+])
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u
 const SAFE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/u
 
@@ -64,6 +68,11 @@ export function compileCoverageRegistry(input) {
   const releaseGates = requireCanonicalInventory(input.releaseGates, REQUIRED_RELEASE_GATES, 'releaseGates')
   validateUniqueOwnership(contracts, programmeChanges, 'programmeChanges', 'programme change')
   validateUniqueOwnership(contracts, releaseGates, 'releaseGates', 'release gate')
+  const coveredAuthorities = new Set(contracts.flatMap((contract) => contract.authorities))
+  const missingAuthorities = REQUIRED_AUTHORITIES.filter((authority) => !coveredAuthorities.has(authority))
+  if (missingAuthorities.length > 0) {
+    throw new Error(`Qualification authority coverage is invalid: missing=${missingAuthorities.join(',')}.`)
+  }
 
   return Object.freeze({
     schema: input.schema,
@@ -314,6 +323,9 @@ function requireCanonicalInventory(actualValue, expectedValue, field) {
 }
 
 function validateUniqueOwnership(contracts, requiredValues, field, label) {
+  const unexpected = unique(contracts.flatMap((contract) => contract[field]))
+    .filter((value) => !requiredValues.includes(value))
+  if (unexpected.length > 0) throw new Error(`Qualification ${label} inventory contains unexpected values: ${unexpected.join(',')}.`)
   for (const value of requiredValues) {
     const owners = contracts.filter((contract) => contract[field].includes(value)).map((contract) => contract.id)
     if (owners.length !== 1) {

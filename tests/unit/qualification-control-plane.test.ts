@@ -48,6 +48,16 @@ describe('qualification control plane', () => {
     const missingChange = structuredClone(registry)
     missingChange.programmeChanges = missingChange.programmeChanges.filter((change: string) => change !== 'BCP-17')
     expect(() => compileCoverageRegistry(missingChange)).toThrow(/missing=BCP-17/u)
+
+    const missingAuthority = structuredClone(registry)
+    for (const contract of missingAuthority.contracts) {
+      contract.authorities = contract.authorities.filter((authority: string) => authority !== 'SAR-QA-022')
+    }
+    expect(() => compileCoverageRegistry(missingAuthority)).toThrow(/missing=SAR-QA-022/u)
+
+    const inventedGate = structuredClone(registry)
+    inventedGate.contracts[0].releaseGates.push('invented-release-gate')
+    expect(() => compileCoverageRegistry(inventedGate)).toThrow(/unexpected values/u)
   })
 
   it('keeps final candidate execution disabled until the separately authorized campaign', async () => {
