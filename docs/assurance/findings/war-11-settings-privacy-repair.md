@@ -41,6 +41,14 @@ tests raw, fragment and double-encoded credential parameter keys. Lint and the
 production build pass with the lockfile dependency graph installed by
 `npm ci`.
 
+An independent exact-head review then found four missed cases. Tests-first
+repairs now prove that legacy credential migration remains coherent across a
+second startup, a corrupt app-owned credential file cannot resurrect a stale
+legacy secret, support export recursively redacts coordinates already written
+by older versions, and common OAuth-style query/fragment keys such as
+`access_token`, `auth_token`, and `refresh-token` are rejected. The expanded
+focused regression set passes 66/66 tests; lint and the production build pass.
+
 The repository's required stable source gate then passed in serial correctness
 mode: 477 files passed, 5,067 tests passed and the six explicitly separated
 wall-clock qualification cases were skipped as designed. This is correctness

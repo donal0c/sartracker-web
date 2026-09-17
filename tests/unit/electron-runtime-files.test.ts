@@ -434,6 +434,27 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('no runtime log entries recorded')
   })
 
+  it('redacts precise coordinates from previously persisted runtime-log entries during export', async () => {
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [{
+        ts: '2026-09-17T12:00:00.000Z',
+        event: 'legacy-position',
+        latitude: 52.123456,
+        nested: { longitude: -9.123456 },
+      }],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain('52.123456')
+    expect(bundle).not.toContain('-9.123456')
+    expect(bundle).toContain('[coordinate-redacted]')
+  })
+
   async function createRuntimeFiles(
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>

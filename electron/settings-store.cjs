@@ -329,7 +329,10 @@ function createElectronSettingsStore(options) {
       return { value: null, unsafeReason: UNDECRYPTABLE_SECRET_MESSAGE }
     }
 
-    await writeCredential(authMode, decrypted)
+    // Legacy settings have no credential generation. Keep the migrated pair
+    // coherent by writing a generation-less authoritative entry; the next
+    // operator credential save upgrades both files to a shared generation.
+    await writeMigratedCredential(authMode, decrypted)
     return { value: decrypted }
   }
 
@@ -355,6 +358,16 @@ function createElectronSettingsStore(options) {
     }
     await writeJsonAtomically(credentialsPath, next, { mode: CREDENTIAL_FILE_MODE })
     return generation
+  }
+
+  async function writeMigratedCredential(authMode, secret) {
+    const next = {
+      version: CREDENTIALS_FILE_VERSION,
+      traccar: {
+        [authMode]: { secret },
+      },
+    }
+    await writeJsonAtomically(credentialsPath, next, { mode: CREDENTIAL_FILE_MODE })
   }
 
   async function testTraccarConnection(dataSource, secret) {
@@ -444,9 +457,9 @@ function readAdminRosterHistory(value) {
 }
 
 /**
- * Reads the app-owned local credential file. A missing or corrupt file must
- * never block mission startup, so any read/parse failure degrades to an empty
- * credential set (tracking is then disabled with a clear warning).
+ * Reads the app-owned local credential file. Absence permits one-time legacy
+ * migration; corruption must remain distinguishable and disable tracking so a
+ * stale legacy credential can never be resurrected.
  */
 async function readCredentials(credentialsPath) {
   let raw
@@ -463,7 +476,7 @@ async function readCredentials(credentialsPath) {
     const parsed = readObject(JSON.parse(raw))
     return { ...parsed, traccar: readObject(parsed.traccar) }
   } catch {
-    return { version: CREDENTIALS_FILE_VERSION, traccar: {} }
+    return { version: CREDENTIALS_FILE_VERSION, traccar: {}, readError: true }
   }
 }
 
@@ -612,7 +625,7 @@ function containsCredentialParameters(value) {
   if (value === '') {
     return false
   }
-  const credentialKeyPattern = /^(?:session|password|secret|token|credential|api[-_]?key|authorization)$/i
+  const credentialKeyPattern = /^(?:session|password|secret|token|credential|api[-_]?key|authorization|(?:access|auth|refresh|id)[-_]?token)$/i
   const parameters = new URLSearchParams(value)
   for (const [rawKey] of parameters) {
     let key = rawKey

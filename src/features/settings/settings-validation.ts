@@ -144,7 +144,7 @@ function containsCredentialParameters(value: string): boolean {
   if (value === '') {
     return false
   }
-  const credentialKeyPattern = /^(?:session|password|secret|token|credential|api[-_]?key|authorization)$/i
+  const credentialKeyPattern = /^(?:session|password|secret|token|credential|api[-_]?key|authorization|(?:access|auth|refresh|id)[-_]?token)$/i
   for (const [rawKey] of new URLSearchParams(value)) {
     let key = rawKey
     for (let index = 0; index < 3; index += 1) {

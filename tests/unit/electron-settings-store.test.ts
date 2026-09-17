@@ -292,6 +292,9 @@ describe('electron settings store', () => {
       'https://kmrtsar.eu/api?session=secret',
       'https://kmrtsar.eu/api?ses%73ion=secret',
       'https://kmrtsar.eu/api#token=secret',
+      'https://kmrtsar.eu/api?access_token=secret',
+      'https://kmrtsar.eu/api#auth_token=secret',
+      'https://kmrtsar.eu/api?refresh-token=secret',
     ]) {
       const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
       draft.dataSource.providerType = 'traccar_http'
@@ -849,11 +852,43 @@ describe('electron settings store', () => {
       email: 'sean',
       password: 'legacy-secret',
     })
+    // Migration must remain coherent on every later startup, not only the
+    // bootstrap that performed the migration.
+    const restartedRuntime = await store.loadRuntimeBootstrapSettings(true)
+    expect(restartedRuntime.trackingConfig).toEqual({
+      baseUrl: 'https://kmrtsar.eu',
+      email: 'sean',
+      password: 'legacy-secret',
+    })
     // New local credential file now holds the secret...
     const rawCredentials = await readFile(path.join(userDataPath!, 'credentials.json'), 'utf8')
     expect(rawCredentials).toContain('legacy-secret')
     // ...and the legacy secrets.json is left untouched (decision (a)).
     await expect(access(path.join(userDataPath!, 'secrets.json'))).resolves.toBeUndefined()
+  })
+
+  it('fails closed when credentials.json is corrupt instead of resurrecting a legacy secret', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret', platform: 'darwin' })
+    await seedLegacySecret(userDataPath!, 'basic', 'stale-legacy-secret')
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+    await writeFile(path.join(userDataPath!, 'credentials.json'), '{not-json', 'utf8')
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('could not be read')
   })
 
   it('starts without tracking when only an undecryptable legacy secrets.json exists', async () => {
