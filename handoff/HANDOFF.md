@@ -5,9 +5,12 @@ Updated 2026-09-17. Read after `CLAUDE.md`.
 ## Baseline and active lane
 
 `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb`. PR32 is draft,
-open, and still HOLD/not merge-ready. Its current head is
-`58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
-`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`.
+open, and still HOLD/not merge-ready. Its latest branch head is the
+documentation-only handoff commit `3ce5528436cb5cc3ea3687e9ef1d562898becd28`
+with tree `3267ae5518ca00aeb5efab7ad53e2e07fd7d0374`. The validated
+implementation head remains `58ea29005b17a34e69f52ad44966a42f9c63d0aa` with
+tree `c890c1fd2f713a195b2ec56132e4ac6c7b38e954`; no source or test changes were
+made after that qualification.
 
 The DON-254 remediation now has bounded participant-scope admission, one
 consistent participant-mission resolver, checkpoint-only projection refresh,
@@ -29,8 +32,9 @@ unit file is 100/100, and full correctness is 477/477 files, 5,058 passed, 6
 skipped. The red-first regressions prove durable-device admission, 2-hour-plus-
 tail continuation, and participant projection refresh without a loading flap.
 
-Required Linux packaged workflow `35177287167` passed on the exact clean head
-`58ea29005b17a34e69f52ad44966a42f9c63d0aa`. Full correctness, WAR-02B, strict responsiveness, production build,
+Required Linux packaged workflow `35177287167` passed on the exact clean
+implementation head `58ea29005b17a34e69f52ad44966a42f9c63d0aa`. Full
+correctness, WAR-02B, strict responsiveness, production build,
 all rendered/browser gates, Linux packaging, packaged mission replay, native
 runtime/renderer/coverage controls, map freshness, GPX custody, breadcrumb
 causal proof, restart/recovery, participant progress and Search Operations
