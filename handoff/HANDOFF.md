@@ -6,8 +6,8 @@ Updated 2026-09-17. Read after `CLAUDE.md`.
 
 `origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb`. PR32 is draft,
 open, and still HOLD/not merge-ready. Its current head is
-`932b96780ca2f90ab618f169074beee0e46e734f` with tree
-`41398941f823fad64b5855f08364d37d7bf5929c`.
+`58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`.
 
 The DON-254 remediation now has bounded participant-scope admission, one
 consistent participant-mission resolver, checkpoint-only projection refresh,
@@ -28,20 +28,22 @@ checks pass; the participant runtime unit file is 32/32, the tracking runtime
 unit file is 100/100, and full correctness is 477/477 files, 5,058 passed, 6
 skipped. The red-first regressions prove durable-device admission, 2-hour-plus-
 tail continuation, and participant projection refresh without a loading flap.
-PR-only run `35170961888` passed the previous exact head `6f046668` but skipped
-strict responsiveness and packaged Train D, so it is not package qualification
-for the current head.
 
-Manual exact-head run `35172295699` on `6f046668` passed all source, build,
-rendered, and packaging gates, then failed packaged AUD-08 because the UI kept
-the group projection at `2/2` pending even though device 11's durable
-checkpoint had completed. Its receipt also failed diagnostics after the timeout
-caused repeated deliberate device-22 retries. The projection fix and bounded
-four-frame finish-fence allowance are now on `932b9678`; the required Linux
-packaged workflow must be rerun on this exact clean head and its receipt must
-pass independently. A local macOS packaged smoke reached AUD-08/AUD-09 but
-hit an unpaired `coverage-revision-moved` diagnostic, which remains a failure
-and is not Linux qualification evidence.
+Required Linux packaged workflow `35177287167` passed on the exact clean head
+`58ea29005b17a34e69f52ad44966a42f9c63d0aa`. Full correctness, WAR-02B, strict responsiveness, production build,
+all rendered/browser gates, Linux packaging, packaged mission replay, native
+runtime/renderer/coverage controls, map freshness, GPX custody, breadcrumb
+causal proof, restart/recovery, participant progress and Search Operations
+backup, tracking soak, archive lifecycle, AppImage smoke, and independent Train
+D receipt validation all passed. The uploaded receipt reports `result=pass`,
+AUD-08/AUD-09/restart=`pass`, `diagnosticResult=pass`, no blockers or failures,
+and an exact-head clean-tree proof for `58ea29005b17a34e69f52ad44966a42f9c63d0aa` / tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`.
+
+The earlier manual macOS smoke's unpaired `coverage-revision-moved` diagnostic
+remains a failure and was not re-allowlisted; it is not Linux qualification
+evidence. The hosted packaged result is bounded smoke evidence only, not BCP-17,
+release, field, timing, or human-acceptance qualification.
 
 ## Limits
 
