@@ -95,7 +95,26 @@ continuity gate: `current_fix_continuity_gate_breached`, measured cleanup gap
 205 ms. Retain the exact failure JSON under
 `/tmp/sar-train-d-ci-34902500983-9FmgLG`; this is an independent liveness
 blocker, not a Train D product failure or permission to change the strict gate.
-PR32 remains draft/open and merge/release **NOT_READY/HOLD**.
+At that historical stage, PR32 remained draft/open and merge/release
+**NOT_READY/HOLD**; the current scoped merge disposition is recorded below.
+
+## Current PR32 merge disposition — 2026-09-17
+
+PR32 is **merge-ready within the scoped repair boundary** on validated
+implementation head `58ea29005b17a34e69f52ad44966a42f9c63d0aa` / tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`. Required manual workflow
+`35177287167` passed the strict source, rendered, packaged, Train D receipt,
+tracking-soak and archive-lifecycle boundaries; the exact clean receipt reports
+`result=pass`, AUD-08/AUD-09/restart pass, `diagnosticResult=pass`, and no
+blockers or failures. Ordinary PR workflow `35179847412` also passed. The
+documentation-only descendants after the qualified implementation head do not
+invalidate this evidence under the testing-and-review cadence, and no
+executable, test or configuration input changed.
+
+Release, deployment, BCP-17, final-candidate, installer/field and human
+acceptance remain HOLD. The historical macOS unpaired
+`coverage-revision-moved` diagnostic remains retained and unallowlisted. Donal
+owns the merge decision; this ledger does not authorize an automatic merge.
 
 2026-09-14 native follow-up: PR30 is merged at `58c65641` after PR27/PR28.
 PR31 is rebased onto it. Claude review superseded earlier readiness and green

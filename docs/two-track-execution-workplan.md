@@ -66,15 +66,23 @@ product scenario failure or release qualification. Keep the receipt retained,
 do not merge or release, and resolve the diagnostic boundary before another
 exact-head manual run.
 
-That follow-up manual run is `34902500983` on exact clean PR32 head
+That historical follow-up manual run was `34902500983` on exact clean PR32 head
 `51e5a7eb6a05fc75bc6382c73cf7245da9dfa364` / tree
 `b48c51919a499d15129b64f5c79ecb428dd0da45`. The Train D receipt and independent
 validator pass (`AUD-08`, `AUD-09`, restart, `scenarioResult`,
 `diagnosticResult`, `diagnosticBlockers=[]`, `result=pass`), but the complete
 workflow fails later in the unchanged packaged archive-lifecycle continuity
 gate at a measured 205 ms cleanup gap. Preserve that failure evidence, do not
-relax the strict `<200 ms` gate, and keep PR32 draft/open and merge/release
-HOLD until the independent blocker is resolved and a complete workflow is green.
+relax the strict `<200 ms` gate. It is superseded for PR32's scoped merge
+decision by the exact implementation-head qualification in workflow
+`35177287167`, which passed the previously incomplete boundaries. PR32 is
+merge-ready within scope; release, deployment, BCP-17 and field qualification
+remain HOLD.
+
+The latest PR32 branch descendants are documentation-only and preserve the
+qualified executable/test/configuration trees. The repository's testing cadence
+therefore reuses the exact implementation-head evidence rather than launching
+another full qualification run solely because the documentation SHA changed.
 
 **Historical reconciliation:** PR26/WAR-06 is merged at
 `8f93f8d1cc4554178706e23401ecd496d1193195`. PR25's observer repair is reconciled

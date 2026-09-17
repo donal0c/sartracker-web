@@ -4,6 +4,27 @@
 withdraws earlier readiness and records the approved SAR-QA-022 recovery and review
 corrections. Evidence below is historical; no merge or release readiness is implied.
 
+## Current PR32 merge disposition — 2026-09-17
+
+PR32 is **merge-ready within the scoped repair boundary**. The validated
+implementation head is `58ea29005b17a34e69f52ad44966a42f9c63d0aa` / tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`. Required manual Linux workflow
+[`35177287167`](https://github.com/donalocallaghan/sartracker-web/actions/runs/35177287167)
+passed full source correctness, strict `<200 ms` responsiveness, rendered and
+packaged controls, AUD-08, AUD-09, restart, diagnostics, independent receipt
+validation, tracking soak, archive lifecycle and AppImage smoke. The receipt
+is exact-head and clean with `result=pass`, `AUD-08=pass`, `AUD-09=pass`,
+`restart=pass`, `diagnosticResult=pass`, and no blockers or failures. Ordinary
+PR validation [`35179847412`](https://github.com/donalocallaghan/sartracker-web/actions/runs/35179847412)
+also passed. Later branch commits are documentation-only and preserve the
+qualified executable, test and configuration trees; the testing cadence permits
+reuse of that evidence without restarting qualification for a changed SHA.
+
+This merge disposition does not qualify a release. BCP-17, final-candidate
+qualification, deployment, installer/field acceptance and human acceptance
+remain HOLD. The historical macOS packaged smoke's unpaired
+`coverage-revision-moved` diagnostic remains retained and unallowlisted.
+
 Current status (2026-09-14): Donal merged
 [PR27](https://github.com/donal0c/sartracker-web/pull/27) as
 `2ab581e0acfa7e0e4be587ea0064e19bea4a7ee3` from reviewed head `39eed654`.
@@ -89,10 +110,10 @@ failure; the PR diff does not change the archive smoke or its `<200 ms` threshol
 The failure JSON and complete evidence are retained under
 `/tmp/sar-train-d-ci-34902500983-9FmgLG`, specifically
 `tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json`.
-Do not relax or relabel that gate. Train D receipt evidence is positive, but PR32
-remains **NOT_MERGE_READY/HOLD** until the independent archive-lifecycle blocker
-is resolved by its owner and a complete required workflow is green. No merge,
-release, deployment, or team contact follows from this run.
+Do not relax or relabel that gate. This historical result was not merge evidence
+for the later remediation head; the current exact-head workflow and scoped merge
+disposition are recorded above. Release, deployment, and field qualification
+remain separate and on HOLD.
 
 ## Current blocker-remediation pass — 2026-09-16
 
@@ -110,11 +131,10 @@ device-22 history warnings are exact and occurrence-bounded; device-11 HTTP 503
 warnings are not allowlisted; the device-11 scope-closure control is exact and
 separately bounded; and the unpaired coverage-revision allowance is removed.
 The global unexpected-diagnostic gate and strict `<200 ms` responsiveness gate
-remain in force. Focused source verification is 158/158, but packaged
-qualification is **NOT_PROVEN** until the required workflow reruns on the new
-clean remediation head. The earlier positive Train D receipt is not evidence for
-this changed tree, and its workflow still had the independent 205 ms
-archive-lifecycle continuity failure.
+remain in force. Focused source verification was 158/158 at this historical
+checkpoint. The required workflow has since rerun on the clean remediation head
+and passed; the current scoped merge disposition above supersedes this interim
+NOT_PROVEN status. Release and BCP-17 qualification remain HOLD.
 
 ## Contract and risk
 

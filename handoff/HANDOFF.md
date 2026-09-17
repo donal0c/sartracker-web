@@ -4,13 +4,12 @@ Updated 2026-09-17. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
-`origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb`. PR32 is draft,
-open, and still HOLD/not merge-ready. Its latest branch head is the
-documentation-only handoff commit `3ce5528436cb5cc3ea3687e9ef1d562898becd28`
-with tree `3267ae5518ca00aeb5efab7ad53e2e07fd7d0374`. The validated
-implementation head remains `58ea29005b17a34e69f52ad44966a42f9c63d0aa` with
-tree `c890c1fd2f713a195b2ec56132e4ac6c7b38e954`; no source or test changes were
-made after that qualification.
+`origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb`. PR32 is open and
+merge-ready within its scoped repair boundary. Its latest branch commits are
+documentation-only descendants of the validated implementation head
+`58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`; no source, test, or configuration
+changes were made after that qualification.
 
 The DON-254 remediation now has bounded participant-scope admission, one
 consistent participant-mission resolver, checkpoint-only projection refresh,
@@ -44,6 +43,11 @@ AUD-08/AUD-09/restart=`pass`, `diagnosticResult=pass`, no blockers or failures,
 and an exact-head clean-tree proof for `58ea29005b17a34e69f52ad44966a42f9c63d0aa` / tree
 `c890c1fd2f713a195b2ec56132e4ac6c7b38e954`.
 
+This is sufficient evidence for PR32's scoped merge decision. The later
+documentation-only descendants do not invalidate the executable/test evidence
+under the repository's testing cadence; they preserve the qualified source and
+test trees.
+
 The earlier manual macOS smoke's unpaired `coverage-revision-moved` diagnostic
 remains a failure and was not re-allowlisted; it is not Linux qualification
 evidence. The hosted packaged result is bounded smoke evidence only, not BCP-17,
@@ -51,11 +55,12 @@ release, field, timing, or human-acceptance qualification.
 
 ## Limits
 
-Release remains on HOLD. Do not mark PR32 ready, merge, release, deploy, or
-contact the SAR team from this handoff. Installer/field acceptance, official
-map distribution, and human acceptance remain unproven. No credentials or
-licensed map bytes were read. Linear was not mutated because no Linear
-connector is available in this task.
+PR32 is merge-ready, but do not merge it from this handoff. Release, deployment,
+BCP-17, installer/field acceptance, official map distribution, and human
+acceptance remain on HOLD/unproven. The historical macOS unpaired
+`coverage-revision-moved` diagnostic remains retained and unallowlisted. No
+credentials or licensed map bytes were read. Linear was not mutated because no
+Linear connector is available in this task.
 
 Follow the [two-track queue](../docs/two-track-execution-workplan.md),
 [coordinated ledger](../docs/assurance/coordinated-work-ledger.md), and
