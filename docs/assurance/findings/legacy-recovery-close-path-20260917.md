@@ -52,8 +52,10 @@ The repair adds `electron/legacy-evidence-backfill-checkpoint.cjs`. After the
 worker's final metadata update and before its completion message, it disables
 the worker connection's busy wait, sets that connection to `synchronous=FULL`
 and requires `wal_checkpoint(PASSIVE)` to report a non-busy, complete
-checkpoint. Invalid, busy or incomplete status throws and the existing worker
-failure path surfaces the failure instead of claiming settlement. The main
+checkpoint. The worker connection has `busy_timeout=0`; a bounded retry window
+with brief event-loop yields absorbs a concurrent main write without blocking
+it, while persistent reader/busy contention still throws. The existing worker
+failure path surfaces that failure instead of claiming settlement. The main
 store's `WAL` and `synchronous=FULL` settings are unchanged. Completion now
 also carries the validated checkpoint receipt, so the runner cannot settle a
 worker that omits the production checkpoint call. The smoke/terminal validator
@@ -61,8 +63,9 @@ binds the helper as the seventh implicated production file.
 
 ## Verification completed on this branch
 
-- Checkpoint, runner and completion-contract tests — 14 passed, including a
-  real SQLite live-reader contention case that fails closed in under 200 ms.
+- Checkpoint, runner and completion-contract tests — 15 passed, including a
+  real SQLite live-reader contention case that fails closed in under 200 ms
+  and a transient concurrent-writer retry.
 - Real-worker mission evidence integration suite — 93 passed, including the
   production checkpoint receipt before worker settlement.
 - Focused source regression set — 205 tests passed across the checkpoint,

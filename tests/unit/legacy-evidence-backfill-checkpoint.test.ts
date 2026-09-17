@@ -17,11 +17,11 @@ const { checkpointLegacyEvidenceWal } = require(
 ) as {
   checkpointLegacyEvidenceWal(database: {
     pragma(sql: string): unknown
-  }): Readonly<{ busy: number; log: number; checkpointed: number }>
+  }): Promise<Readonly<{ busy: number; log: number; checkpointed: number }>>
 }
 
 describe('legacy evidence backfill WAL checkpoint [DON-254]', () => {
-  it('uses FULL synchronous mode before requiring a fully checkpointed WAL', () => {
+  it('uses FULL synchronous mode before requiring a fully checkpointed WAL', async () => {
     const database = {
       pragma: vi.fn((sql: string) => {
         if (sql === 'busy_timeout') {
@@ -34,7 +34,7 @@ describe('legacy evidence backfill WAL checkpoint [DON-254]', () => {
       }),
     }
 
-    expect(checkpointLegacyEvidenceWal(database)).toEqual({ busy: 0, log: 0, checkpointed: 0 })
+    await expect(checkpointLegacyEvidenceWal(database)).resolves.toEqual({ busy: 0, log: 0, checkpointed: 0 })
     expect(database.pragma.mock.calls).toEqual([
       ['busy_timeout', { simple: true }],
       ['busy_timeout = 0'],
@@ -44,7 +44,24 @@ describe('legacy evidence backfill WAL checkpoint [DON-254]', () => {
     ])
   })
 
-  it('fails closed when SQLite cannot fully checkpoint the WAL', () => {
+  it('retries a transient concurrent writer before completing the checkpoint', async () => {
+    let attempts = 0
+    const database = {
+      pragma: vi.fn((sql: string) => {
+        if (sql === 'busy_timeout') return 5000
+        if (sql === 'wal_checkpoint(PASSIVE)') {
+          attempts += 1
+          return [{ busy: 0, log: attempts === 1 ? 12 : 12, checkpointed: attempts === 1 ? 10 : 12 }]
+        }
+        return undefined
+      }),
+    }
+
+    await expect(checkpointLegacyEvidenceWal(database)).resolves.toEqual({ busy: 0, log: 12, checkpointed: 12 })
+    expect(attempts).toBe(2)
+  })
+
+  it('fails closed when SQLite cannot fully checkpoint the WAL', async () => {
     const database = {
       pragma: vi.fn((sql: string) => {
         if (sql === 'busy_timeout') return 5000
@@ -53,7 +70,7 @@ describe('legacy evidence backfill WAL checkpoint [DON-254]', () => {
       }),
     }
 
-    expect(() => checkpointLegacyEvidenceWal(database)).toThrow(/checkpoint.*busy|incomplete/iu)
+    await expect(checkpointLegacyEvidenceWal(database)).rejects.toThrow(/checkpoint.*busy|incomplete/iu)
   })
 
   it('fails fast instead of waiting behind a live reader checkpoint boundary', async () => {
@@ -74,7 +91,7 @@ describe('legacy evidence backfill WAL checkpoint [DON-254]', () => {
       }
 
       const started = performance.now()
-      expect(() => checkpointLegacyEvidenceWal(writer)).toThrow(/checkpoint.*busy|incomplete/iu)
+      await expect(checkpointLegacyEvidenceWal(writer)).rejects.toThrow(/checkpoint.*busy|incomplete/iu)
       expect(performance.now() - started).toBeLessThan(200)
     } finally {
       reader.exec('ROLLBACK')
