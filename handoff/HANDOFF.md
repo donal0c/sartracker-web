@@ -37,8 +37,12 @@ ownership.
    several WAR-11 repair trains are complete/merged. WAR-04's three
    settings/startup findings (`WAR04-SET-01..03`) and three diagnostics/privacy
    findings (`WAR04-PRV-01..03`) now have a bounded repair candidate with joined
-   red-to-green, 5,074-test serial correctness, packaged macOS recovery, lint
-   and build evidence; exact-head Linux CI and merge remain required.
+   red-to-green, 5,074-test serial correctness, packaged macOS recovery, lint,
+   build, and exact-head Linux CI evidence. The first Linux attempt had one
+   transient 222.6 ms packaged observer timing excursion; rerun 35228305218
+   passed the same proof. PR34 is open, non-draft, conflict-free, and reports
+   `mergeable=MERGEABLE`; GitHub still reports `mergeStateStatus=BLOCKED` under
+   the owner-only master ruleset, so merge remains a separate action.
    WAR-03,
    WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted. WAR-05 needs the real
    Mint machine/tester. WAR-12 is the final frozen-candidate qualification and
@@ -68,11 +72,12 @@ machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
 Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
 `DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: complete required review/CI for the
-[settings/privacy repair](../docs/assurance/findings/war-11-settings-privacy-repair.md),
-then reconcile and dry-run the qualification control plane. Do not freeze the
-candidate or start final WAR-12 qualification until both gates and any newly
-confirmed release-blocking repairs are complete.
+Next: merge the exact-head
+[settings/privacy repair](../docs/assurance/findings/war-11-settings-privacy-repair.md)
+when the owner-only master rule is exercised, then reconcile and dry-run the
+qualification control plane. Do not freeze the candidate or start final WAR-12
+qualification until both gates and any newly confirmed release-blocking repairs
+are complete.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
