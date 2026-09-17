@@ -11,9 +11,10 @@ WAL during synchronous store close. The checkpoint is deliberately
 non-blocking: it does not take a truncation lock that could stall an operator
 write behind a live reader.
 
-This is a repair and evidence disposition, not release qualification. The
-release, candidate freeze, BCP-17/WAR-12 and field-acceptance holds remain in
-force until the exact draft head has passed its required review and CI gates.
+This is a repair and evidence disposition, not release qualification. Review,
+CI and merge readiness close only this repair boundary. The release,
+BCP-17/WAR-12 and field-acceptance holds remain in force after merge; candidate
+freeze follows the separate blocker reconciliation in the locked release plan.
 
 ## Retained CI receipts
 
