@@ -25,11 +25,11 @@ qualification, candidate freeze, package proof, or release authority.
 
 ## Local rehearsal
 
-The clean source head `2dca16490aa0dd277d19643625b3d2a77beb9302`
-(tree `1760887a150b01e61f64faca2cbab43c99415f55`) ran:
+The clean source head `61696c4b553b98dd6c86bc9c422464ba59a58143`
+(tree `064b5f9914f17e6da64e1d15e56de01802309b40`) ran:
 
 ```text
-npm run qualification:dry-run -- --output /tmp/sartracker-qualification-dry-run-3
+npm run qualification:dry-run -- --output /tmp/sartracker-qualification-dry-run-4
 ```
 
 The runner compiled 30 contracts and 40 uniquely owned release-critical
@@ -37,7 +37,7 @@ hazards, bound the source, registry, both validator scripts and the outing
 fixture, wrote the packet/manifest/seal/anchor, and independently verified the
 sealed bytes. It returned `DRY_RUN_ONLY` and `releaseEligible: false`; all 30
 product contracts remain deliberately `not-run`. Manifest SHA-256:
-`7a4059786d31386baaa53bc712494c985cbba396c7fb6f014df982b3ceec0749`.
+`bd176f968710365d8c3be4f98b1f65af6e8b15ba657f0100d11264d5900247c0`.
 
 Focused tests pass 6/6, including self-omitted canonical obligations, disabled
 candidate execution, judge non-authority, mandatory anchor, closed evidence
