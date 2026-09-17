@@ -146,6 +146,9 @@ const TRACKING_CACHE_MISSION_WARNING =
 
 export type TrackingRuntimeMissionStore = {
   readonly getActiveMission: () => Promise<{ readonly id: string } | null>
+  readonly listDevices?: (missionId: string) => Promise<readonly {
+    readonly device_id: string
+  }[]>
   readonly listPositions: (missionId: string) => Promise<readonly {
     readonly id?: string
     readonly source_position_id?: string | null
@@ -1416,6 +1419,12 @@ export async function startTrackingRuntime(
     ) ?? []
     const checkpoint = checkpoints.find((candidate) => candidate.completed !== 1)
     if (checkpoint === undefined) return
+    if (dependencies.missionStore.listDevices !== undefined) {
+      const devices = await dependencies.missionStore.listDevices(activeMission.id)
+      const durableDeviceIds = new Set(devices.map((device) => device.device_id))
+      if (checkpoints.some((candidate) =>
+        candidate.completed !== 1 && !durableDeviceIds.has(candidate.traccar_device_id))) return
+    }
     const observation = dependencies.beginMissionEvidenceObservation?.(
       checkpoint.mission_id,
     ) ?? { missionId: checkpoint.mission_id, complete: () => undefined }
@@ -1459,6 +1468,7 @@ export async function startTrackingRuntime(
         dependencies.notifyDurablePositionChange,
         dependencies.missionModelEnabled !== true,
       )
+      scheduleParticipantBackfill()
     })
   }
 
