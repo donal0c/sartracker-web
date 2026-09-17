@@ -45,6 +45,16 @@ unmet; `DON-271` and `DON-279` remain correctly Done, `DON-7`/`DON-76` and
 `DON-247` are In Progress, and `DON-144` is Todo. The older reconciliation
 paragraphs below are historical evidence, not the current baton.
 
+**DON-254 close-path disposition (2026-09-17):** the first PR35 Linux receipt
+`35221533225` failed the unchanged strict `<200 ms` independent main-loop
+predicate during first-launch synchronous SQLite close (`512.449076 ms`), while
+later exact-head run `35242591823` passed on the same close-path production
+files. The retained [finding](assurance/findings/legacy-recovery-close-path-20260917.md)
+attributes the risk to the worker leaving a large WAL for the main connection
+to checkpoint during close. A bounded worker-side `synchronous=FULL`
+`wal_checkpoint(TRUNCATE)` repair is under exact-head review and Linux CI; this
+does not qualify a candidate or authorize BCP-17/WAR-12.
+
 ## Locked path to the next team beta — 2026-09-17
 
 The next delivery milestone is one extensively qualified, controlled internal

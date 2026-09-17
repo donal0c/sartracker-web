@@ -35,6 +35,7 @@ const PROBE_TIMEOUT_MS = 60_000
 const IMPLICATED_PACKAGED_FILES = [
   'electron/legacy-evidence-backfill-runner.cjs',
   'electron/legacy-evidence-backfill-worker.cjs',
+  'electron/legacy-evidence-backfill-checkpoint.cjs',
   'electron/mission-evidence-version-store.cjs',
   'electron/mission-store.cjs',
   'electron/mission-worker.cjs',
@@ -243,7 +244,7 @@ async function main() {
 async function recordPackagedIdentity() {
   const archivePath = await evaluatePackaged(({ app: electronApp }) => electronApp.getAppPath())
   assert.ok(archivePath.endsWith('.asar'), `Packaged app path was not an ASAR: ${archivePath}`)
-  report.packaged = { bindingScope: 'ASAR identity and six implicated production source files; local dirty probe sources are hashed separately', executableSha256: await sha256File(executablePath), asarSha256: await sha256File(archivePath), files: {} }
+  report.packaged = { bindingScope: 'ASAR identity and seven implicated production source files; local dirty probe sources are hashed separately', executableSha256: await sha256File(executablePath), asarSha256: await sha256File(archivePath), files: {} }
   for (const file of IMPLICATED_PACKAGED_FILES) {
     const checkout = await readFile(path.join(projectRoot, file))
     const packaged = extractFile(archivePath, file)

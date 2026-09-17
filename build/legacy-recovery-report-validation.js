@@ -12,6 +12,7 @@ const SOURCE_FILES = {
 const PACKAGED_FILES = [
   'electron/legacy-evidence-backfill-runner.cjs',
   'electron/legacy-evidence-backfill-worker.cjs',
+  'electron/legacy-evidence-backfill-checkpoint.cjs',
   'electron/mission-evidence-version-store.cjs',
   'electron/mission-store.cjs',
   'electron/mission-worker.cjs',
@@ -108,7 +109,7 @@ function validateProbeHashes(report, projectRoot, failures) {
   }
 }
 
-/** Checks packaged identity and all six production source hashes. */
+/** Checks packaged identity and all seven production source hashes. */
 function validatePackagedIdentity(report, projectRoot, failures) {
   const packaged = objectValue(report.packaged)
   if (packaged === null) {

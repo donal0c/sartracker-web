@@ -8,6 +8,7 @@ const {
   backfillLegacyEventProvenance,
 } = require('./mission-event-provenance-backfill.cjs')
 const { backfillLegacyGpxRevisions } = require('./mission-store.cjs')
+const { checkpointLegacyEvidenceWal } = require('./legacy-evidence-backfill-checkpoint.cjs')
 
 const BACKFILL_TURN_DELAY_MS = 4
 
@@ -46,6 +47,7 @@ async function run() {
     }
     database.prepare(`DELETE FROM metadata
       WHERE key = 'legacy_evidence_backfill_failure'`).run()
+    checkpointLegacyEvidenceWal(database)
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId })
   } catch (error) {
     const message = safeMessage(error?.message ?? error)

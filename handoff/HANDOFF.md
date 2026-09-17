@@ -73,12 +73,14 @@ machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
 Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
 `DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: review and merge the
-[qualification control plane](../docs/assurance/qualification-control-plane-dry-run.md)
-on merged PR34. Its local non-candidate rehearsal is deliberately
-release-ineligible. Retain and disposition the first PR35 Linux run's 512 ms
-synchronous SQLite close rejection before candidate freeze. Do not start
-BCP-17/WAR-12 before the freeze and Donal's explicit phase-6 discussion.
+Next: the bounded DON-254 close-path repair is on this branch from merged PR35
+head `ea4b92eb82646b12b2d8ad2307e242ed8049d35c`; see
+[the retained disposition](../docs/assurance/findings/legacy-recovery-close-path-20260917.md).
+The repair checkpoints the legacy backfill WAL in its worker with `FULL`
+durability before completion, while retaining the strict `<200 ms` predicate.
+The first failed PR35 Linux receipt and later passing receipt remain retained;
+exact-head Linux CI and independent review are still required. Do not start
+BCP-17/WAR-12 before candidate freeze and Donal's explicit phase-6 discussion.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
