@@ -511,7 +511,7 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
     && entry?.phase === 'aud08'
     && (/^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? '')
       || /^\s+at sqliteTransaction \(.*\/better-sqlite3\/lib\/methods\/transaction\.js:\d+:\d+\)$/u.test(entry?.message ?? '')
-      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')), 3)
+      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')), 4)
   const linuxVulkanStartupStderr = boundedPattern((entry) => isExpectedLinuxVulkanStartupPair(
     context.processStderr,
     context,

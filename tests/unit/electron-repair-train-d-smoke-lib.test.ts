@@ -392,7 +392,16 @@ describe('Repair Train D packaged smoke gates', () => {
       message: "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.",
     }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
     appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at /app/electron/mission-store.cjs:5650:13',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at sqliteTransaction (/app/node_modules/better-sqlite3/lib/methods/transaction.js:65:24)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
       message: '    at finishMission (/app/electron/mission-store.cjs:5667:3)',
+    }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
+    appendBoundedDiagnostic(diagnostics, 'processStderr', {
+      message: '    at /app/electron/mission-store.cjs:3037:60',
     }, { phase: 'aud08', type: 'stderr', source: 'main-process-stderr' })
     appendBoundedDiagnostic(diagnostics, 'processStderr', {
       message: 'Debugger ending on ws://127.0.0.1:39841/3986e37b-356e-480d-9960-8cd0095ac4ff',
