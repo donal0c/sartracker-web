@@ -37,22 +37,22 @@ ownership.
 3. **WAR:** WAR-01, WAR-13A, WAR-04, WAR-04B, WAR-02A, WAR-02B, WAR-06 and
    several WAR-11 repair trains are complete/merged. WAR-04's three
    settings/startup findings (`WAR04-SET-01..03`) and three diagnostics/privacy
-   findings (`WAR04-PRV-01..03`) now have a bounded repair candidate with joined
+   findings (`WAR04-PRV-01..03`) are merged through
+   [PR34](https://github.com/donal0c/sartracker-web/pull/34) with joined
    red-to-green, 5,074-test serial correctness, packaged macOS recovery, lint,
    build, and exact-head Linux CI evidence. The first Linux attempt had one
    transient 222.6 ms packaged observer timing excursion; rerun 35228305218
-   passed the same proof. PR34 is open, non-draft, conflict-free, and reports
-   `mergeable=MERGEABLE`; GitHub still reports `mergeStateStatus=BLOCKED` under
-   the owner-only master ruleset, so merge remains a separate action.
+   passed the same proof. The final merged repair head `f7cb1503` passed
+   workflow `35235173989` before merge commit `2850e0a5`.
    WAR-03,
    WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted. WAR-05 needs the real
    Mint machine/tester. WAR-12 is the final frozen-candidate qualification and
    WAR-13B starts only after an internal beta is published.
 
 The [locked release train](../docs/two-track-execution-workplan.md#locked-path-to-the-next-team-beta--2026-09-17)
-now controls the route to the next team build. Finish and merge the bounded
-WAR-11 settings/privacy repair, then reconcile and dry-run the model-judged
-qualification design.
+now controls the route to the next team build. The bounded WAR-11
+settings/privacy repair is merged; next reconcile and dry-run the model-judged
+qualification design on that exact baseline.
 Remaining WAR investigations may run as bounded analysis lanes; any confirmed
 absolute blocker or P1/P2 joins the repair boundary. The prepared private
 MBTiles route is sufficient for this beta; the raw-source administration and
