@@ -21,7 +21,7 @@ const result = await runControlPlaneDryRun({
   registryPath: path.join(projectRoot, 'docs', 'assurance', 'qualification-contracts.json'),
   outputRoot,
   sourceIdentity: { sha: sourceSha, tree: sourceTree, dirty },
-  fixturePaths: [path.join(projectRoot, 'tests', 'fixtures', 'breadcrumb-qualification-ci.json')],
+  fixturePaths: [path.join(projectRoot, 'tests', 'fixtures', 'outing-window-vectors.json')],
   validatorPaths: [
     path.join(projectRoot, 'scripts', 'qualification-control-plane.mjs'),
     path.join(projectRoot, 'scripts', 'qualification', 'control-plane.mjs'),
