@@ -57,11 +57,14 @@ acceptance remain HOLD/unproven. The historical macOS unpaired
 strict `<200 ms` predicate remains unchanged; merge evidence is not a release
 qualification claim.
 
-Linear could not be reconciled in this pass because the connector requires
-reauthentication. Treat the issue statuses quoted above as repository-backed
-planning state until Linear is reauthenticated and checked live.
+Linear was reconciled live on 2026-09-17. `DON-254` had been marked Done before
+its own BCP-17 completion contract was met; it is reopened In Progress with a
+comment preserving PR32's scoped evidence and the remaining final-candidate,
+machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
+Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
+`DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: wait for post-merge `master` CI, reauthenticate/reconcile Linear, then
+Next: wait for post-merge `master` CI, then
 start only the chosen chunk(s) from the [two-track queue](../docs/two-track-execution-workplan.md)
 and [coordinated ledger](../docs/assurance/coordinated-work-ledger.md). Do not
 start WAR-12 until feature freeze and all release-blocking findings have a

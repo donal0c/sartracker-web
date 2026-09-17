@@ -31,9 +31,11 @@ The coordinated next queue is:
 
 WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires the real
 Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B starts only
-after an internal beta is published. Linear reconciliation is pending because
-the connector requires reauthentication. The older reconciliation paragraphs
-below are historical evidence, not the current baton.
+after an internal beta is published. Live Linear reconciliation on 2026-09-17
+reopened `DON-254` In Progress because its BCP-17 completion contract remains
+unmet; `DON-271` and `DON-279` remain correctly Done, `DON-7`/`DON-76` and
+`DON-247` are In Progress, and `DON-144` is Todo. The older reconciliation
+paragraphs below are historical evidence, not the current baton.
 
 **Historical reconciliation (2026-09-14):** PR30 (Train C) is merged at
 `58c65641`, after PR27/PR28. PR31's bounded DON-254 native-runtime repair is

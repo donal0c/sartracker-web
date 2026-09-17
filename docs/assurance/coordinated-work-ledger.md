@@ -85,8 +85,11 @@ Remaining team requirements are `DON-144`/`DON-7`/`DON-76`, `DON-214`,
 `DON-216`–`DON-221`, `DON-100`, and the later Marker Details simplification.
 Remaining unexecuted WAR slices are WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10;
 WAR-05 is external-machine dependent, WAR-12 is final-candidate qualification,
-and WAR-13B is post-publication field execution. Linear status reconciliation
-is pending because the connector currently requires reauthentication.
+and WAR-13B is post-publication field execution. Live Linear reconciliation on
+2026-09-17 reopened `DON-254` In Progress because the BCP-17 completion contract
+remains unmet; a Linear comment binds PR32's scoped evidence and the remaining
+final-candidate, machine, field and publication gaps. `DON-271` and `DON-279`
+remain Done; `DON-7`/`DON-76` and `DON-247` are In Progress; `DON-144` is Todo.
 
 ## Historical merged disposition
 
