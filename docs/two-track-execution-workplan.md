@@ -4,7 +4,176 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-14):** PR30 (Train C) is merged at
+**Current reconciliation (2026-09-17):** PR32 merged at
+`c467f65db8036f1db23652fc0fc7c76369717885`; there are no open implementation
+pull requests. PR33 is the documentation-only reconciliation for this queue.
+Its validated implementation head `58ea2900` passed required Linux workflow
+`35177287167`, including strict responsiveness, rendered/browser, packaged
+Train D, tracking-soak, archive-lifecycle and AppImage boundaries. Ordinary PR
+workflow `35179847412` and post-merge `master` workflow `35199520928` passed.
+Release, deployment, BCP-17/WAR-12, field and human acceptance remain HOLD.
+
+The coordinated next queue is:
+
+1. repair the six confirmed WAR-04 settings/startup and diagnostics/privacy
+   findings (`WAR04-SET-01..03`, `WAR04-PRV-01..03`) in one bounded WAR-11
+   train;
+2. permit WAR-03 coordinate/geodesy test hardening in parallel because it is
+   production-ownership-disjoint;
+3. retain the team map-administration/distribution workflow
+   (`DON-144`/`DON-7`/`DON-76`) as the next major team-facing slice, but do not
+   run its implementation concurrently with the Settings train until exact
+   file/state ownership proves no overlap;
+4. fold the sole remaining deep-audit defect, P3 `AUD-12`, into the next
+   coherent UI batch with retained team UI work rather than creating a release-
+   blocking micro-PR.
+
+WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires the real
+Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B starts only
+after an internal beta is published. Live Linear reconciliation on 2026-09-17
+reopened `DON-254` In Progress because its BCP-17 completion contract remains
+unmet; `DON-271` and `DON-279` remain correctly Done, `DON-7`/`DON-76` and
+`DON-247` are In Progress, and `DON-144` is Todo. The older reconciliation
+paragraphs below are historical evidence, not the current baton.
+
+## Locked path to the next team beta — 2026-09-17
+
+The next delivery milestone is one extensively qualified, controlled internal
+team beta. It is not completion of every retained UI, map-administration or
+future WAR item, and it is not authorization for SAR Tracker to become the sole
+operational source. `DON-254` owns qualification and `DON-255` owns publication.
+
+### Phase 0 — reconcile and establish the release baseline
+
+1. Merge or close PR33 after its documentation facts and green check are
+   verified. Start release work only from the resulting clean `master`.
+2. Record the exact baseline SHA and refresh the open-finding inventory across
+   team requirements, the deep audit and WAR. Historical failed receipts remain
+   evidence; merged repair claims are not rerun without an invalidating change.
+3. Keep the immediate prepared-MBTiles route for this beta. The unfinished raw
+   licensed-source packaging/distribution workflow (`DON-144`/`DON-7`/`DON-76`)
+   does not block candidate testing when a named tester receives the prepared
+   private package and checksum. Raw `.tif`, `.tiff` and `.zip` files remain
+   explicitly unsupported by this beta.
+
+### Phase 1 — finish the known pre-candidate repair boundary
+
+1. Repair `WAR04-SET-01..03` and `WAR04-PRV-01..03` as one bounded settings,
+   startup and diagnostics-privacy train. Reproduce each current-head defect,
+   add durable regressions, exercise the packaged boundary, and obtain the
+   risk-proportionate independent reviews before merge.
+2. Reconcile the completed post-PR6 model-judged QA design against current
+   `master`. The design was research only: it did not implement a complete
+   runner or execute qualification. Reuse the substantial current harness and
+   implement only missing release infrastructure: the requirement/hazard-to-
+   test coverage registry, exact artifact/fixture identity, one result packet,
+   deterministic release predicates, sealed evidence and the advisory fresh
+   model-judge packet.
+3. Dry-run that qualification control plane on a non-candidate build. The dry
+   run proves the harness and evidence flow; it does not qualify the product.
+4. Run the remaining assurance investigations (`WAR-03`, `WAR-07`, `WAR-08`,
+   `WAR-09`, `WAR-10`) in bounded, production-ownership-disjoint lanes where
+   capacity permits. Any confirmed absolute blocker or P1/P2 joins the pre-
+   candidate repair boundary. Lower-severity findings receive an explicit
+   owner and release disposition; investigation is not silently equated with a
+   fix.
+
+`AUD-12` and the retained non-safety UI/workflow backlog do not block this beta
+unless current-head reproduction changes their severity or demonstrates an
+absolute-blocker consequence.
+
+### Phase 2 — freeze one candidate
+
+Freeze only when all of the following are true:
+
+- all known release-blocking repairs are merged and required CI is green;
+- no required code PR remains open and the working tree, Linear, handoff and
+  ledger agree on the exact candidate SHA;
+- every confirmed P1/P2 and all five WAR-01 absolute blockers are fixed and
+  rechecked or have a policy-valid disposition where disposition is permitted;
+- the qualification coverage registry has no unexplained release-critical gap;
+- the release version, artifact names, fixture identities, platform matrix,
+  rollback artifact and stop conditions are declared before the expensive run.
+
+No unrelated feature work enters the candidate after freeze. A product change
+creates a new candidate and invalidates only the evidence whose executable or
+test inputs changed.
+
+### Phase 3 — execute BCP-17 / WAR-12 on the exact CI artifact
+
+The final campaign is serialized where resource contention could invalidate
+timing evidence. It must include:
+
+1. full deterministic correctness, property/mutation controls, lint, build,
+   strict responsiveness and all release-critical browser/operator journeys;
+2. exact source-fix-to-SQLite/read-model/render/export/replay/archive count and
+   digest oracles for the 100-device, about-12-group, 12-outing mission envelope,
+   including late/duplicate/invalid inputs, GPX variants, clues, overlaps and
+   repeated search-area passes;
+3. 960,000-position plus declared headroom, accelerated five-day and fourteen-
+   day continuous-mission runs, multi-hour packaged tracking, bounded resource
+   growth, progressive history loading and current-position priority;
+4. crash/SIGKILL, restart, power-loss-equivalent interruption, disk/permission/
+   corruption, WAL/backup/migration, archive verify/restore/replay, duplicate
+   launch, malformed settings and bad-credential recovery;
+5. packaged Ubuntu AppImage and genuinely installed `.deb`, native SQLite,
+   offline-map readiness, sanitized diagnostics, live GET-only Traccar checks
+   where required, and exact artifact/checksum/ASAR binding;
+6. fresh operator-visible model review using the same attempt's screenshots,
+   video/trace, DOM/ARIA and action record. The judge may find adjacent defects
+   or reject unclear behaviour but may never override a failed deterministic
+   predicate;
+7. a machine-readable PASS/HOLD receipt listing every contract, artifact,
+   platform, fixture, result, retained gap and evidence location.
+
+Any unexplained data discrepancy, evidence loss, false completeness, delayed or
+hidden current position, corruption, privacy leak, responsiveness failure,
+package failure or missing release-critical evidence keeps the result at HOLD.
+
+### Phase 4 — original-machine confirmation before promotion
+
+Create the draft/prerelease through the tag-driven workflow but do not promote
+it. Give the named team tester the exact CI-built candidate bytes for the
+`DON-247` original-machine check, with checksum, package type, test instructions
+and diagnostics procedure. This is candidate qualification, not general team
+rollout. Preserve the original primary process and use synthetic, replayed or
+deliberately disposable data unless the shadow-use field-admission gate has
+already passed.
+
+The original machine must exercise the previous freeze path and the principal
+mission, restart, map, tracking and diagnostics workflows. A failure or
+unexplained divergence returns to repair and creates a new candidate. A pass is
+recorded against the same artifact that will be promoted.
+
+### Phase 5 — publish and place in team hands
+
+1. Complete `npm run beta:verify`, the green tag workflow, packaged smoke
+   matrix, release notes, operator manual, rollback instructions and fresh-
+   download checksum verification. Promote only the exact tested CI artifacts.
+2. Publish as a controlled internal beta under `DON-255`; retain the previous
+   qualified beta for rollback and identify the supported package per team
+   machine.
+3. Begin structured team testing. Until the shadow-use field-admission gate is
+   complete, testing is training/synthetic/replayed/disposable only. After that
+   gate, SAR Tracker may run only beside the independent authoritative primary
+   process under `docs/assurance/shadow-use-protocol.md`; it is never silently
+   promoted to sole operational authority.
+4. Route every defect through the issue template with candidate identity,
+   platform/package, mission/profile, observed/expected behaviour and a
+   sanitized diagnostics bundle where proportionate. Any stop trigger pauses
+   that candidate; minor feedback returns to the normal post-beta queue.
+
+### Release completion definition
+
+The milestone is complete only when the same identified artifact has passed the
+final deterministic and packaged matrix, advisory operator review, original-
+machine confirmation, guarded publication and fresh-download verification, and
+the team has received the artifact, checksum, manual, map-package instructions,
+rollback path and permitted-use limits. Team acceptance and later WAR-13B field
+evidence remain separately recorded; publication alone is not operational
+proof.
+
+**Historical reconciliation (2026-09-14):** PR30 (Train C) is merged at
 `58c65641`, after PR27/PR28. PR31's bounded DON-254 native-runtime repair is
 rebased onto it. Claude review superseded earlier readiness and green CI34845492157.
 The [review disposition](assurance/findings/pr31-claude-review.md) records repaired

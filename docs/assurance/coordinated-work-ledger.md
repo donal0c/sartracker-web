@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-14
+Updated: 2026-09-17
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -56,7 +56,51 @@ head.
 - Team-domain meaning comes only from the raw/indexed Q&A. No audit or WAR task
   may invent a new operational requirement.
 
-## Current merged disposition
+## Post-PR32 coordinated disposition — 2026-09-17
+
+`origin/master` is `c467f65db8036f1db23652fc0fc7c76369717885`, the merge of
+PR32. There are no open implementation pull requests; PR33 is the docs-only
+reconciliation carrying this record. Required PR32 Linux workflow `35177287167`,
+ordinary workflow `35179847412`, and post-merge master workflow `35199520928`
+passed. Release, deployment, BCP-17/WAR-12, official-map distribution, field
+and human acceptance remain HOLD.
+
+The original deep-audit ledger now has thirteen of fourteen confirmed groups
+repaired and merged. `AUD-12` is the only unrepaired original group and remains
+a P3 alias-clearing UI/store defect. Repair Trains C and D, including
+`AUD-04`, `AUD-06`, `AUD-08`, `AUD-09` and the WAR-11 offline-map repair for
+`AUD-11`, are merged; the historical rows and failed receipts below remain
+evidence, not current open-PR state.
+
+WAR-04 still contributes six confirmed production-repair inputs:
+`WAR04-SET-01..03` (credential/bootstrap and atomic settings consistency) and
+`WAR04-PRV-01..03` (diagnostics/support-output privacy and recursive
+allow-listing). The next recommended production repair is one bounded WAR-11
+train for that seam. WAR-03 coordinate/geodesy proof may run beside it because
+its test ownership is disjoint. The team map administration/distribution lane
+(`DON-144`/`DON-7`/`DON-76`) must not be implemented in parallel with that
+Settings train until exact overlap is checked.
+
+Remaining team requirements are `DON-144`/`DON-7`/`DON-76`, `DON-214`,
+`DON-216`–`DON-221`, `DON-100`, and the later Marker Details simplification.
+Remaining unexecuted WAR slices are WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10;
+WAR-05 is external-machine dependent, WAR-12 is final-candidate qualification,
+and WAR-13B is post-publication field execution. Live Linear reconciliation on
+2026-09-17 reopened `DON-254` In Progress because the BCP-17 completion contract
+remains unmet; a Linear comment binds PR32's scoped evidence and the remaining
+final-candidate, machine, field and publication gaps. `DON-271` and `DON-279`
+remain Done; `DON-7`/`DON-76` and `DON-247` are In Progress; `DON-144` is Todo.
+
+The canonical workplan now contains the locked route to the next team beta:
+reconcile the baseline, repair the six settings/privacy findings, reconcile and
+dry-run the model-judged qualification control plane, disposition remaining
+assurance findings, freeze one candidate, execute BCP-17/WAR-12 on its exact CI
+artifact, confirm that same artifact on the original machine, then publish it
+through `DON-255`. The map raw-source administration workflow, `AUD-12` and
+lower-severity retained UI work do not block this beta unless new evidence
+changes their severity. No separate release queue is created here.
+
+## Historical merged disposition
 
 2026-09-14 exact-master Train D follow-up: origin/master is
 `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
