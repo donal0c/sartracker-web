@@ -891,6 +891,29 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toContain('could not be read')
   })
 
+  it('keeps the shell operable when the legacy credential file is corrupt', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret', platform: 'darwin' })
+    await writeFile(path.join(userDataPath!, 'secrets.json'), '{not-json', 'utf8')
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('could not be read')
+  })
+
   it('fails closed when current generated credentials are missing instead of resurrecting a legacy secret', async () => {
     const store = await createStore({ backend: 'gnome_libsecret', platform: 'darwin' })
     await seedLegacySecret(userDataPath!, 'basic', 'stale-legacy-secret')

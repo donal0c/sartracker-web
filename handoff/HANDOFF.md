@@ -37,7 +37,7 @@ ownership.
    several WAR-11 repair trains are complete/merged. WAR-04's three
    settings/startup findings (`WAR04-SET-01..03`) and three diagnostics/privacy
    findings (`WAR04-PRV-01..03`) now have a bounded repair candidate with joined
-   red-to-green, 5,067-test serial correctness, packaged macOS recovery, lint
+   red-to-green, 5,074-test serial correctness, packaged macOS recovery, lint
    and build evidence; exact-head Linux CI and merge remain required.
    WAR-03,
    WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted. WAR-05 needs the real

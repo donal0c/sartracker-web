@@ -36,7 +36,7 @@ vitest --config scripts/assurance/war-04/settings-privacy/vitest.config.ts
 ```
 
 The production regression layer adds the same boundaries to the ordinary unit
-suite. Focused result: five files / 62 tests passed. UI validation additionally
+suite. Focused result: six files / 89 tests passed. UI validation additionally
 tests raw, fragment and double-encoded credential parameter keys. Lint and the
 production build pass with the lockfile dependency graph installed by
 `npm ci`.
@@ -50,10 +50,14 @@ by older versions, and common OAuth-style query/fragment keys such as
 focused regression set passes 66/66 tests; lint and the production build pass.
 A second review pass also proved that deleting a generated current credential
 could revive a stale legacy secret; generated settings now make any missing
-matching credential fail closed, with a dedicated restart regression.
+matching credential fail closed, with a dedicated restart regression. That
+expanded review set passed 66/66 before the final migration probe. A final
+red-first migration probe found that a corrupt legacy `secrets.json` could still
+abort runtime bootstrap when the app-owned file was absent; legacy read errors
+now use the same fail-closed tracking-disabled path, with a dedicated regression.
 
 The repository's required stable source gate then passed in serial correctness
-mode: 477 files passed, 5,067 tests passed and the six explicitly separated
+mode: 477 files passed, 5,074 tests passed and the six explicitly separated
 wall-clock qualification cases were skipped as designed. This is correctness
 evidence only; strict responsiveness remains a later release gate.
 

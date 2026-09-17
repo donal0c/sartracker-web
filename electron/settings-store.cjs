@@ -282,6 +282,9 @@ function createElectronSettingsStore(options) {
     // No app-owned entry yet: fall back to the legacy file's presence so the
     // Settings "stored secret present" view is accurate before first migration.
     const legacy = await readLegacySecrets()
+    if (legacy.readError === true) {
+      return false
+    }
     return legacy[authMode]?.encrypted !== undefined
   }
 
@@ -315,6 +318,9 @@ function createElectronSettingsStore(options) {
    */
   async function migrateLegacySecret(authMode) {
     const legacy = await readLegacySecrets()
+    if (legacy.readError === true) {
+      return { value: null, unsafeReason: UNREADABLE_CREDENTIAL_MESSAGE }
+    }
     const encrypted = legacy[authMode]?.encrypted
     if (encrypted === undefined) {
       return { value: null }
@@ -347,7 +353,14 @@ function createElectronSettingsStore(options) {
   }
 
   async function readLegacySecrets() {
-    return readObject(await readJson(legacySecretsPath, {}))
+    try {
+      return readObject(await readJson(legacySecretsPath, {}))
+    } catch {
+      // A legacy credential read failure is still a credential failure. Keep
+      // the mission shell available and let runtime bootstrap report tracking
+      // as disabled instead of allowing migration to abort startup.
+      return { readError: true }
+    }
   }
 
   /**
