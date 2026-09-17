@@ -4,7 +4,38 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-14):** PR30 (Train C) is merged at
+**Current reconciliation (2026-09-17):** PR32 merged at
+`c467f65db8036f1db23652fc0fc7c76369717885`; there are no open pull requests.
+Its validated implementation head `58ea2900` passed required Linux workflow
+`35177287167`, including strict responsiveness, rendered/browser, packaged
+Train D, tracking-soak, archive-lifecycle and AppImage boundaries. Ordinary PR
+workflow `35179847412` also passed. The post-merge `master` workflow
+`35199520928` is still running, so the merged baseline is not yet described as
+green. Release, deployment, BCP-17/WAR-12, field and human acceptance remain
+HOLD.
+
+The coordinated next queue is:
+
+1. repair the six confirmed WAR-04 settings/startup and diagnostics/privacy
+   findings (`WAR04-SET-01..03`, `WAR04-PRV-01..03`) in one bounded WAR-11
+   train;
+2. permit WAR-03 coordinate/geodesy test hardening in parallel because it is
+   production-ownership-disjoint;
+3. retain the team map-administration/distribution workflow
+   (`DON-144`/`DON-7`/`DON-76`) as the next major team-facing slice, but do not
+   run its implementation concurrently with the Settings train until exact
+   file/state ownership proves no overlap;
+4. fold the sole remaining deep-audit defect, P3 `AUD-12`, into the next
+   coherent UI batch with retained team UI work rather than creating a release-
+   blocking micro-PR.
+
+WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires the real
+Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B starts only
+after an internal beta is published. Linear reconciliation is pending because
+the connector requires reauthentication. The older reconciliation paragraphs
+below are historical evidence, not the current baton.
+
+**Historical reconciliation (2026-09-14):** PR30 (Train C) is merged at
 `58c65641`, after PR27/PR28. PR31's bounded DON-254 native-runtime repair is
 rebased onto it. Claude review superseded earlier readiness and green CI34845492157.
 The [review disposition](assurance/findings/pr31-claude-review.md) records repaired

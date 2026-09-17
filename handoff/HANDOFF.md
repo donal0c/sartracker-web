@@ -4,66 +4,68 @@ Updated 2026-09-17. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
-`origin/master` is `6abde36e1e293f8731784fe3fab293f11ce5e7eb`. PR32 is open and
-merge-ready within its scoped repair boundary. Its latest branch commits are
-documentation-only descendants of the validated implementation head
-`58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
-`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`; no source, test, or configuration
-changes were made after that qualification.
+`origin/master` is `c467f65db8036f1db23652fc0fc7c76369717885`, the merge of
+[PR32](https://github.com/donal0c/sartracker-web/pull/32). There are no open
+pull requests. The post-merge `master` workflow
+[`35199520928`](https://github.com/donal0c/sartracker-web/actions/runs/35199520928)
+is still running; do not describe the merged baseline as green until it
+completes successfully.
 
-The DON-254 remediation now has bounded participant-scope admission, one
-consistent participant-mission resolver, checkpoint-only projection refresh,
-shutdown backfill draining, no checkpoint-only poll storm, strict Train D
-diagnostic classifiers, durable-device admission, and automatic continuation
-through fixed two-hour backfill chunks. Continuation requires a durable
-checkpoint read-back showing cursor progress and stops when no incomplete
-checkpoint remains. The participant refresh now reloads the durable participant
-projection and checkpoints without entering the loading state, guarded against
-an overlapping full mission refresh. The Train D finish-fence stack allowance
-is exact and bounded at four frames; no generic diagnostic, 503, or timing gate
-was relaxed.
+PR32 closed the scoped Repair Train D follow-up. Its validated implementation
+head was `58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
+`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`. Required Linux workflow
+`35177287167` passed source, strict responsiveness, rendered/browser, package,
+Train D receipt, tracking-soak, archive-lifecycle and AppImage boundaries.
+Ordinary PR workflow `35179847412` also passed. Later PR32 commits were
+documentation-only and preserved the qualified executable/test/configuration
+trees.
 
-## Verification and next action
+## Current coordinated queue
 
-Local exact-head source evidence: TypeScript build, changed-file lint, and diff
-checks pass; the participant runtime unit file is 32/32, the tracking runtime
-unit file is 100/100, and full correctness is 477/477 files, 5,058 passed, 6
-skipped. The red-first regressions prove durable-device admission, 2-hour-plus-
-tail continuation, and participant projection refresh without a loading flap.
+The three streams are one queue; parallel work requires disjoint production
+ownership.
 
-Required Linux packaged workflow `35177287167` passed on the exact clean
-implementation head `58ea29005b17a34e69f52ad44966a42f9c63d0aa`. Full
-correctness, WAR-02B, strict responsiveness, production build,
-all rendered/browser gates, Linux packaging, packaged mission replay, native
-runtime/renderer/coverage controls, map freshness, GPX custody, breadcrumb
-causal proof, restart/recovery, participant progress and Search Operations
-backup, tracking soak, archive lifecycle, AppImage smoke, and independent Train
-D receipt validation all passed. The uploaded receipt reports `result=pass`,
-AUD-08/AUD-09/restart=`pass`, `diagnosticResult=pass`, no blockers or failures,
-and an exact-head clean-tree proof for `58ea29005b17a34e69f52ad44966a42f9c63d0aa` / tree
-`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`.
+1. **Deep audit:** thirteen of fourteen confirmed `AUD-*` groups are repaired
+   and merged. Only `AUD-12` (Clear Alias retains the saved alias) remains, a
+   P3 store/controller/UI repair suitable for the next coherent UI batch.
+2. **Team requirements:** the highest-priority unfinished workflow is the
+   private Discovery-map raw-source-to-MBTiles preparation and distribution
+   path (`DON-144`/`DON-7`/`DON-76`). Also retained are Search Area manual label
+   placement (`DON-214`), map export/print (`DON-216`), external-resource model
+   (`DON-217`), evacuation/gear-log ownership (`DON-218`), privileged Settings
+   and mission unlock/recovery (`DON-219`–`DON-221`), multi-day layer grouping
+   (`DON-100`), and the later Marker Details simplification.
+3. **WAR:** WAR-01, WAR-13A, WAR-04, WAR-04B, WAR-02A, WAR-02B, WAR-06 and
+   several WAR-11 repair trains are complete/merged. WAR-04's three
+   settings/startup findings (`WAR04-SET-01..03`) and three diagnostics/privacy
+   findings (`WAR04-PRV-01..03`) remain confirmed repair inputs. WAR-03,
+   WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted. WAR-05 needs the real
+   Mint machine/tester. WAR-12 is the final frozen-candidate qualification and
+   WAR-13B starts only after an internal beta is published.
 
-This is sufficient evidence for PR32's scoped merge decision. The later
-documentation-only descendants do not invalidate the executable/test evidence
-under the repository's testing cadence; they preserve the qualified source and
-test trees.
+The recommended next production repair is a bounded WAR-11 train for the six
+confirmed WAR-04 settings/startup and diagnostics/privacy defects. A disjoint
+WAR-03 coordinate/geodesy test-hardening slice may run in parallel. Do not run
+the official-map administration/distribution implementation concurrently with
+the settings repair until exact file/state ownership proves they do not overlap.
 
-The earlier manual macOS smoke's unpaired `coverage-revision-moved` diagnostic
-remains a failure and was not re-allowlisted; it is not Linux qualification
-evidence. The hosted packaged result is bounded smoke evidence only, not BCP-17,
-release, field, timing, or human-acceptance qualification.
+## Limits and next action
 
-## Limits
+Release, deployment, BCP-17/WAR-12, official-map distribution, field and human
+acceptance remain HOLD/unproven. The historical macOS unpaired
+`coverage-revision-moved` diagnostic remains retained and unallowlisted. The
+strict `<200 ms` predicate remains unchanged; merge evidence is not a release
+qualification claim.
 
-PR32 is merge-ready, but do not merge it from this handoff. Release, deployment,
-BCP-17, installer/field acceptance, official map distribution, and human
-acceptance remain on HOLD/unproven. The historical macOS unpaired
-`coverage-revision-moved` diagnostic remains retained and unallowlisted. No
-credentials or licensed map bytes were read. Linear was not mutated because no
-Linear connector is available in this task.
+Linear could not be reconciled in this pass because the connector requires
+reauthentication. Treat the issue statuses quoted above as repository-backed
+planning state until Linear is reauthenticated and checked live.
 
-Follow the [two-track queue](../docs/two-track-execution-workplan.md),
-[coordinated ledger](../docs/assurance/coordinated-work-ledger.md), and
-[testing cadence](../docs/testing-and-review-cadence.md). Older history:
-[pre-Train C archive](archive/pre-train-c-20260914.md) and
+Next: wait for post-merge `master` CI, reauthenticate/reconcile Linear, then
+start only the chosen chunk(s) from the [two-track queue](../docs/two-track-execution-workplan.md)
+and [coordinated ledger](../docs/assurance/coordinated-work-ledger.md). Do not
+start WAR-12 until feature freeze and all release-blocking findings have a
+policy-valid disposition.
+
+Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).

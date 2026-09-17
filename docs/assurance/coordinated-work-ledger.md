@@ -56,7 +56,39 @@ head.
 - Team-domain meaning comes only from the raw/indexed Q&A. No audit or WAR task
   may invent a new operational requirement.
 
-## Current merged disposition
+## Post-PR32 coordinated disposition — 2026-09-17
+
+`origin/master` is `c467f65db8036f1db23652fc0fc7c76369717885`, the merge of
+PR32. There are no open pull requests. Required PR32 Linux workflow
+`35177287167` and ordinary workflow `35179847412` passed. Post-merge master
+workflow `35199520928` is still running; this ledger does not promote that
+pending run to green evidence. Release, deployment, BCP-17/WAR-12, official-map
+distribution, field and human acceptance remain HOLD.
+
+The original deep-audit ledger now has thirteen of fourteen confirmed groups
+repaired and merged. `AUD-12` is the only unrepaired original group and remains
+a P3 alias-clearing UI/store defect. Repair Trains C and D, including
+`AUD-04`, `AUD-06`, `AUD-08`, `AUD-09` and the WAR-11 offline-map repair for
+`AUD-11`, are merged; the historical rows and failed receipts below remain
+evidence, not current open-PR state.
+
+WAR-04 still contributes six confirmed production-repair inputs:
+`WAR04-SET-01..03` (credential/bootstrap and atomic settings consistency) and
+`WAR04-PRV-01..03` (diagnostics/support-output privacy and recursive
+allow-listing). The next recommended production repair is one bounded WAR-11
+train for that seam. WAR-03 coordinate/geodesy proof may run beside it because
+its test ownership is disjoint. The team map administration/distribution lane
+(`DON-144`/`DON-7`/`DON-76`) must not be implemented in parallel with that
+Settings train until exact overlap is checked.
+
+Remaining team requirements are `DON-144`/`DON-7`/`DON-76`, `DON-214`,
+`DON-216`–`DON-221`, `DON-100`, and the later Marker Details simplification.
+Remaining unexecuted WAR slices are WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10;
+WAR-05 is external-machine dependent, WAR-12 is final-candidate qualification,
+and WAR-13B is post-publication field execution. Linear status reconciliation
+is pending because the connector currently requires reauthentication.
+
+## Historical merged disposition
 
 2026-09-14 exact-master Train D follow-up: origin/master is
 `6abde36e1e293f8731784fe3fab293f11ce5e7eb` with tree
