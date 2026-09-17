@@ -239,8 +239,8 @@ function buildSupportReport(
     '',
     '[storage]',
     `schema version: ${input.missionStoreInfo.schema_version}`,
-    `database path: ${input.missionStoreInfo.database_path}`,
-    `backup path: ${input.missionStoreInfo.backup_path}`,
+    `database path: ${formatPrivateStoragePath(input.missionStoreInfo.database_path)}`,
+    `backup path: ${formatPrivateStoragePath(input.missionStoreInfo.backup_path)}`,
     ...(input.missionStoreInfo.ingest_evidence_health === undefined
       ? []
       : [
@@ -478,6 +478,25 @@ function redactProviderUrlCredentials(input: string): string {
   if (trimmed === '') {
     return ''
   }
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.username !== '' || parsed.password !== '') {
+      parsed.username = '[redacted]'
+      parsed.password = ''
+    }
+    if (parsed.search !== '') {
+      parsed.search = '?[redacted]'
+    }
+    if (parsed.hash !== '') {
+      parsed.hash = '#[redacted]'
+    }
+    return parsed.toString().replace(/\/$/, '').replace('%5Bredacted%5D', '[redacted]')
+  } catch {
+    return '[invalid provider URL]'
+  }
+}
 
-  return trimmed.replace(/\b(https?:\/\/)[^/\s@]+@/gi, '$1[redacted]@')
+function formatPrivateStoragePath(input: string): string {
+  const fileName = input.split(/[\\/]/).filter(Boolean).at(-1)
+  return fileName === undefined ? '[profile]' : `[profile]/${fileName}`
 }

@@ -174,6 +174,24 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('event loop peak delay ms: 5500')
   })
 
+  it('exports startup support evidence when settings cannot be loaded [WAR04-SET-03]', async () => {
+    const files = await createRuntimeFiles({
+      loadSettings: async () => {
+        throw new SyntaxError('corrupt settings')
+      },
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'startup-fault-support.txt',
+      contents: 'Startup failed while loading settings.',
+    })
+    const report = await readFile(exportPath, 'utf8')
+
+    expect(report).toContain('Startup failed while loading settings.')
+    expect(report).toContain('settings status: unavailable')
+    expect(report).not.toContain('corrupt settings')
+  })
+
   it('exports a time-framed support bundle around a known incident time', async () => {
     const files = await createRuntimeFiles({
       readRecentCrashes: async () => [
@@ -422,6 +440,20 @@ describe('electron runtime files', () => {
       readonly readRecentLog?: () => Promise<readonly unknown[]>
       readonly readStorageDiagnostics?: () => Promise<Record<string, unknown>>
       readonly baseUrl?: string
+      readonly loadSettings?: () => Promise<{
+        readonly dataSource: {
+          readonly baseUrl: string
+          readonly authMode: string
+          readonly secretPresent: boolean
+        }
+        readonly officialMaps?: {
+          readonly status?: string
+          readonly sourceType?: string
+          readonly sourcePath?: string
+          readonly serviceCount?: number
+          readonly packages?: readonly never[]
+        }
+      }>
     } = {},
   ) {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-runtime-'))
@@ -437,7 +469,7 @@ describe('electron runtime files', () => {
       },
       platform: 'linux',
       safeStorageBackend: () => 'gnome_libsecret',
-      loadSettings: async () => ({
+      loadSettings: logOverrides.loadSettings ?? (async () => ({
         dataSource: {
           baseUrl: logOverrides.baseUrl ?? 'https://kmrtsar.eu',
           authMode: 'basic',
@@ -476,7 +508,7 @@ describe('electron runtime files', () => {
             },
           ],
         },
-      }),
+      })),
     })
   }
 })

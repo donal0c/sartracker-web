@@ -1,5 +1,6 @@
 const SECRET_KEY_SOURCE = String.raw`(?:password|secret|token|credential|api[-_]?key|authorization|pass[-_]?phrase|recovery[-_]?code)`
 const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
+const COORDINATE_KEY_PATTERN = /^(?:lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
 const SECRET_JSON_KEY_PATTERN = new RegExp(
   `("${SECRET_KEY_SOURCE}"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`,
   'gi',
@@ -40,6 +41,9 @@ function sanitizeDiagnosticText(input) {
 function sanitizeDiagnosticValue(value, key = '') {
   if (SECRET_KEY_PATTERN.test(key)) {
     return '[redacted]'
+  }
+  if (COORDINATE_KEY_PATTERN.test(key)) {
+    return '[coordinate-redacted]'
   }
   if (typeof value === 'string') {
     return sanitizeDiagnosticText(value)

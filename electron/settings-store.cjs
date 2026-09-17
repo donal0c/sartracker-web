@@ -1,6 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 
 const { isPackageIdentityCurrent } = require('./official-map-package.cjs')
 const { inspectOfficialMapPackageInWorker } = require('./official-map-package-inspector.cjs')
@@ -16,10 +16,14 @@ const LEGACY_SECRETS_FILE_NAME = 'secrets.json'
 // entry is authoritative: it suppresses legacy migration so clearing a secret
 // cannot be resurrected from an old secrets.json on the next boot.
 const CREDENTIALS_FILE_NAME = 'credentials.json'
-const CREDENTIALS_FILE_VERSION = 1
+const CREDENTIALS_FILE_VERSION = 2
 const CREDENTIAL_FILE_MODE = 0o600
 const UNDECRYPTABLE_SECRET_MESSAGE =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+const UNREADABLE_CREDENTIAL_MESSAGE =
+  'Stored Traccar credentials could not be read. Tracking is disabled; check the local profile permissions and re-enter the password or token in Settings.'
+const MISMATCHED_CREDENTIAL_MESSAGE =
+  'Stored Traccar credentials do not match the saved provider settings. Tracking is disabled; re-enter the password or token in Settings.'
 const PROVIDER_URL_CREDENTIALS_ERROR =
   'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.'
 const DEFAULT_INTERVAL_SECONDS = 30
@@ -98,7 +102,10 @@ function createElectronSettingsStore(options) {
   async function loadAppSettings() {
     const persisted = await readSettings(settingsPath)
     persisted.officialMaps.packages = persisted.officialMaps.packages.map(revalidateOfficialMapPackage)
-    return toView(persisted, await hasSecret(persisted.dataSource.authMode))
+    return toView(
+      persisted,
+      await hasSecret(persisted.dataSource.authMode, persisted.credentialGeneration),
+    )
   }
 
   /** Serializes atomic settings replacements so roster history cannot be lost by concurrent saves. */
@@ -110,9 +117,12 @@ function createElectronSettingsStore(options) {
 
   /** Persists a settings revision and its local roster provenance in the same atomic file. */
   async function persistAppSettings(input, options) {
-    const existingSecretPresent = await hasSecret(input.dataSource.authMode)
-    validateSettingsDraft(input, existingSecretPresent)
     const previous = await readSettings(settingsPath)
+    const existingSecretPresent = await hasSecret(
+      input.dataSource.authMode,
+      previous.credentialGeneration,
+    )
+    validateSettingsDraft(input, existingSecretPresent)
     const sourceMetadata = await readOfficialMapSourceMetadata(input.officialMaps)
 
     const persist = async () => {
@@ -136,11 +146,20 @@ function createElectronSettingsStore(options) {
       }
       if (history.length > 0) next.adminRosterHistory = history
 
-      await updateSecrets(input.dataSource)
+      const credentialGeneration = await updateSecrets(
+        input.dataSource,
+        previous.credentialGeneration,
+      )
+      if (credentialGeneration !== undefined) {
+        next.credentialGeneration = credentialGeneration
+      }
       await writeJsonAtomically(settingsPath, next)
       await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
 
-      return toView(next, await hasSecret(next.dataSource.authMode))
+      return toView(
+        next,
+        await hasSecret(next.dataSource.authMode, next.credentialGeneration),
+      )
     }
 
     const withOfficialMapMutation = options?.withOfficialMapMutation
@@ -153,7 +172,10 @@ function createElectronSettingsStore(options) {
 
   async function loadRuntimeBootstrapSettings(forceConnect = false) {
     const persisted = await readSettings(settingsPath)
-    const secretResult = await readSecret(persisted.dataSource.authMode)
+    const secretResult = await readSecret(
+      persisted.dataSource.authMode,
+      persisted.credentialGeneration,
+    )
     const disabledReason = resolveTrackingDisabledReason({
       persisted,
       secretResult,
@@ -187,7 +209,11 @@ function createElectronSettingsStore(options) {
   }
 
   async function testTrackingConnection(input) {
-    const existingSecretPresent = await hasSecret(input.dataSource.authMode)
+    const persisted = await readSettings(settingsPath)
+    const existingSecretPresent = await hasSecret(
+      input.dataSource.authMode,
+      persisted.credentialGeneration,
+    )
     validateSettingsDraft(input, existingSecretPresent)
 
     if (input.dataSource.providerType !== 'traccar_http') {
@@ -212,33 +238,39 @@ function createElectronSettingsStore(options) {
       return nextSecret
     }
 
-    const result = await readSecret(dataSource.authMode)
+    const persisted = await readSettings(settingsPath)
+    const result = await readSecret(dataSource.authMode, persisted.credentialGeneration)
     if (result.unsafeReason !== undefined) {
       throw new Error(result.unsafeReason)
     }
     return result.value
   }
 
-  async function updateSecrets(dataSource) {
+  async function updateSecrets(dataSource, previousGeneration) {
     const secretInput = readOptionalString(dataSource.secretInput).trim()
     if (dataSource.clearSecret) {
       // Authoritative clear: persist an explicit "no secret" entry so a legacy
       // secrets.json cannot resurrect the credential on the next boot.
-      await writeCredential(dataSource.authMode, null)
-      return
+      return writeCredential(dataSource.authMode, null)
     }
 
     if (secretInput === '') {
-      return
+      return previousGeneration
     }
 
-    await writeCredential(dataSource.authMode, secretInput)
+    return writeCredential(dataSource.authMode, secretInput)
   }
 
-  async function hasSecret(authMode) {
+  async function hasSecret(authMode, expectedGeneration) {
     const credentials = await readCredentials(credentialsPath)
+    if (credentials.readError === true) {
+      return false
+    }
     const entry = credentials.traccar?.[authMode]
     if (entry !== undefined) {
+      if (!credentialGenerationMatches(entry.generation, expectedGeneration)) {
+        return false
+      }
       return typeof entry.secret === 'string' && entry.secret !== ''
     }
     // No app-owned entry yet: fall back to the legacy file's presence so the
@@ -247,10 +279,16 @@ function createElectronSettingsStore(options) {
     return legacy[authMode]?.encrypted !== undefined
   }
 
-  async function readSecret(authMode) {
+  async function readSecret(authMode, expectedGeneration) {
     const credentials = await readCredentials(credentialsPath)
+    if (credentials.readError === true) {
+      return { value: null, unsafeReason: UNREADABLE_CREDENTIAL_MESSAGE }
+    }
     const entry = credentials.traccar?.[authMode]
     if (entry !== undefined) {
+      if (!credentialGenerationMatches(entry.generation, expectedGeneration)) {
+        return { value: null, unsafeReason: MISMATCHED_CREDENTIAL_MESSAGE }
+      }
       // App-owned entry is authoritative. An explicit null means the operator
       // cleared the secret; do not migrate from the legacy file.
       const secret = typeof entry.secret === 'string' && entry.secret !== '' ? entry.secret : null
@@ -305,13 +343,18 @@ function createElectronSettingsStore(options) {
    * are dropped so only one provider credential is ever stored at a time.
    */
   async function writeCredential(authMode, secret) {
+    const generation = randomUUID()
     const next = {
       version: CREDENTIALS_FILE_VERSION,
       traccar: {
-        [authMode]: { secret: typeof secret === 'string' ? secret : null },
+        [authMode]: {
+          secret: typeof secret === 'string' ? secret : null,
+          generation,
+        },
       },
     }
     await writeJsonAtomically(credentialsPath, next, { mode: CREDENTIAL_FILE_MODE })
+    return generation
   }
 
   async function testTraccarConnection(dataSource, secret) {
@@ -367,6 +410,7 @@ function createElectronSettingsStore(options) {
 async function readSettings(settingsPath) {
   const parsed = await readJson(settingsPath, {})
   return {
+    credentialGeneration: readCredentialGeneration(parsed.credentialGeneration),
     adminRosterHistory: readAdminRosterHistory(parsed.adminRosterHistory),
     missionDefaults: normalizeMissionDefaults({
       ...DEFAULT_APP_SETTINGS.missionDefaults,
@@ -412,7 +456,7 @@ async function readCredentials(credentialsPath) {
     if (error?.code === 'ENOENT') {
       return { version: CREDENTIALS_FILE_VERSION, traccar: {} }
     }
-    throw error
+    return { version: CREDENTIALS_FILE_VERSION, traccar: {}, readError: true }
   }
 
   try {
@@ -436,7 +480,7 @@ async function readJson(filePath, fallback) {
 
 async function writeJsonAtomically(filePath, payload, options = {}) {
   await fs.mkdir(path.dirname(filePath), { recursive: true })
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
+  const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`
   const writeOptions = { encoding: 'utf8' }
   if (typeof options.mode === 'number') {
     writeOptions.mode = options.mode
@@ -532,6 +576,16 @@ function normalizeBaseUrl(baseUrl) {
   return readOptionalString(baseUrl).trim().replace(/\/+$/, '')
 }
 
+function readCredentialGeneration(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
+}
+
+function credentialGenerationMatches(actualGeneration, expectedGeneration) {
+  const actual = readCredentialGeneration(actualGeneration)
+  const expected = readCredentialGeneration(expectedGeneration)
+  return actual === expected
+}
+
 function normalizeIntervalSeconds(input) {
   const numeric = Number(input)
   if (!Number.isFinite(numeric)) {
@@ -543,10 +597,41 @@ function normalizeIntervalSeconds(input) {
 function baseUrlIncludesCredentials(baseUrl) {
   try {
     const parsed = new URL(normalizeBaseUrl(baseUrl))
-    return parsed.username !== '' || parsed.password !== ''
+    return (
+      parsed.username !== '' ||
+      parsed.password !== '' ||
+      containsCredentialParameters(parsed.search.slice(1)) ||
+      containsCredentialParameters(parsed.hash.slice(1))
+    )
   } catch {
     return false
   }
+}
+
+function containsCredentialParameters(value) {
+  if (value === '') {
+    return false
+  }
+  const credentialKeyPattern = /^(?:session|password|secret|token|credential|api[-_]?key|authorization)$/i
+  const parameters = new URLSearchParams(value)
+  for (const [rawKey] of parameters) {
+    let key = rawKey
+    for (let index = 0; index < 3; index += 1) {
+      if (credentialKeyPattern.test(key)) {
+        return true
+      }
+      try {
+        const decoded = decodeURIComponent(key)
+        if (decoded === key) {
+          break
+        }
+        key = decoded
+      } catch {
+        break
+      }
+    }
+  }
+  return false
 }
 
 async function normalizeOfficialMaps(input, now, decodeTile, previousOfficialMaps, sourceMetadata) {

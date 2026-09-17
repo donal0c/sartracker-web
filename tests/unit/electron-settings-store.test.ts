@@ -217,6 +217,62 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
   })
 
+  it('keeps the shell operable with tracking disabled when the credential file is unreadable [WAR04-SET-01]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://kmrtsar.eu',
+          authMode: 'basic',
+          email: 'sean',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+    await mkdir(path.join(userDataPath!, 'credentials.json'))
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('could not be read')
+  })
+
+  it('does not pair settings with a credential from another save generation [WAR04-SET-02]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        credentialGeneration: 'settings-generation',
+        dataSource: {
+          providerType: 'traccar_http',
+          baseUrl: 'https://old.example.invalid',
+          authMode: 'basic',
+          email: 'old@example.test',
+          autoConnect: true,
+        },
+      }),
+      'utf8',
+    )
+    await writeFile(
+      path.join(userDataPath!, 'credentials.json'),
+      JSON.stringify({
+        version: 2,
+        traccar: {
+          basic: { secret: 'new-secret', generation: 'credential-generation' },
+        },
+      }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('do not match')
+  })
+
   it('rejects Traccar provider URLs with embedded credentials before persistence [DON-207]', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
@@ -228,6 +284,26 @@ describe('electron settings store', () => {
     await expect(store.saveAppSettings(draft)).rejects.toThrow(
       /Provider URL must not include embedded credentials/,
     )
+  })
+
+  it('rejects credential-bearing provider query and fragment forms before persistence [WAR04-PRV-02]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    for (const baseUrl of [
+      'https://kmrtsar.eu/api?session=secret',
+      'https://kmrtsar.eu/api?ses%73ion=secret',
+      'https://kmrtsar.eu/api#token=secret',
+    ]) {
+      const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+      draft.dataSource.providerType = 'traccar_http'
+      draft.dataSource.baseUrl = baseUrl
+      draft.dataSource.email = 'sean'
+      draft.dataSource.secretInput = 'separate-secret'
+
+      await expect(store.saveAppSettings(draft)).rejects.toThrow(
+        /Provider URL must not include embedded credentials/,
+      )
+    }
+    await expect(access(path.join(userDataPath!, 'credentials.json'))).rejects.toThrow()
   })
 
   it('disables runtime tracking when persisted provider URLs contain embedded credentials [DON-207]', async () => {
