@@ -27,6 +27,16 @@ The coordinated next queue is:
    coherent UI batch with retained team UI work rather than creating a release-
    blocking micro-PR.
 
+**Qualification control-plane update (2026-09-17):** the historical
+post-PR6 research plan has been recovered and reconciled into a bounded core:
+C00-C29 coverage/hazard compilation, exact source/fixture/validator identity,
+deterministic fail-closed result evaluation, an oracle-blind advisory packet,
+sealed evidence and an external-anchor interface. A clean non-candidate dry
+run passes the infrastructure checks while remaining explicitly
+`releaseEligible: false`; see
+`docs/assurance/qualification-control-plane-dry-run.md`. Exact-head review, CI
+and merge remain required. This does not execute or qualify BCP-17/WAR-12.
+
 WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires the real
 Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B starts only
 after an internal beta is published. Live Linear reconciliation on 2026-09-17

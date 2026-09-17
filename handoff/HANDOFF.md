@@ -4,10 +4,11 @@ Updated 2026-09-17. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
-`origin/master` is `67300313ab2bc800f9522f54e8de443fcb97fcae`, the merge of
-[PR33](https://github.com/donal0c/sartracker-web/pull/33). Phase 1 of the locked
-release train is active on `codex/war11-settings-privacy-release-prep` from that
-exact baseline.
+`origin/master` is `2850e0a54c3ec30a95626c42a604ad183698cdd1`, the merge of
+[PR34](https://github.com/donal0c/sartracker-web/pull/34). The merged WAR-11
+settings/privacy repair head is `f7cb1503`; exact-head Linux workflow
+`35235173989` passed. The qualification control-plane implementation is being
+reconciled on that merged baseline on `codex/don-254-qualification-control-plane`.
 
 PR32 closed the scoped Repair Train D follow-up. Its validated implementation
 head was `58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
@@ -36,22 +37,22 @@ ownership.
 3. **WAR:** WAR-01, WAR-13A, WAR-04, WAR-04B, WAR-02A, WAR-02B, WAR-06 and
    several WAR-11 repair trains are complete/merged. WAR-04's three
    settings/startup findings (`WAR04-SET-01..03`) and three diagnostics/privacy
-   findings (`WAR04-PRV-01..03`) now have a bounded repair candidate with joined
+   findings (`WAR04-PRV-01..03`) are merged through
+   [PR34](https://github.com/donal0c/sartracker-web/pull/34) with joined
    red-to-green, 5,074-test serial correctness, packaged macOS recovery, lint,
    build, and exact-head Linux CI evidence. The first Linux attempt had one
    transient 222.6 ms packaged observer timing excursion; rerun 35228305218
-   passed the same proof. PR34 is open, non-draft, conflict-free, and reports
-   `mergeable=MERGEABLE`; GitHub still reports `mergeStateStatus=BLOCKED` under
-   the owner-only master ruleset, so merge remains a separate action.
+   passed the same proof. The final merged repair head `f7cb1503` passed
+   workflow `35235173989` before merge commit `2850e0a5`.
    WAR-03,
    WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted. WAR-05 needs the real
    Mint machine/tester. WAR-12 is the final frozen-candidate qualification and
    WAR-13B starts only after an internal beta is published.
 
 The [locked release train](../docs/two-track-execution-workplan.md#locked-path-to-the-next-team-beta--2026-09-17)
-now controls the route to the next team build. Finish and merge the bounded
-WAR-11 settings/privacy repair, then reconcile and dry-run the model-judged
-qualification design.
+now controls the route to the next team build. The bounded WAR-11
+settings/privacy repair is merged; next reconcile and dry-run the model-judged
+qualification design on that exact baseline.
 Remaining WAR investigations may run as bounded analysis lanes; any confirmed
 absolute blocker or P1/P2 joins the repair boundary. The prepared private
 MBTiles route is sufficient for this beta; the raw-source administration and
@@ -72,12 +73,12 @@ machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
 Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
 `DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: merge the exact-head
-[settings/privacy repair](../docs/assurance/findings/war-11-settings-privacy-repair.md)
-when the owner-only master rule is exercised, then reconcile and dry-run the
-qualification control plane. Do not freeze the candidate or start final WAR-12
-qualification until both gates and any newly confirmed release-blocking repairs
-are complete.
+Next: review and merge the
+[qualification control plane](../docs/assurance/qualification-control-plane-dry-run.md)
+on merged PR34. Its local non-candidate rehearsal is deliberately
+release-ineligible. Retain and disposition the first PR35 Linux run's 512 ms
+synchronous SQLite close rejection before candidate freeze. Do not start
+BCP-17/WAR-12 before the freeze and Donal's explicit phase-6 discussion.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
