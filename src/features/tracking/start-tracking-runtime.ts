@@ -1396,34 +1396,41 @@ export async function startTrackingRuntime(
     ) return
 
     participantBackfillInFlight = true
-    const task = runNextParticipantBackfillPass().catch((error) => {
+    let shouldScheduleNext = false
+    const task = runNextParticipantBackfillPass().then((didAdvance) => {
+      shouldScheduleNext = didAdvance
+    }).catch((error) => {
       if (!participantBackfillAbortController.signal.aborted) {
         logger.warn('Participant history backfill pass failed; it will retry.', error)
       }
     }).finally(() => {
       participantBackfillInFlight = false
       if (participantBackfillTask === task) participantBackfillTask = null
+      if (shouldScheduleNext && acceptingRuntimeUpdates &&
+        !participantBackfillAbortController.signal.aborted) {
+        scheduleParticipantBackfill()
+      }
     })
     participantBackfillTask = task
   }
 
-  async function runNextParticipantBackfillPass(): Promise<void> {
+  async function runNextParticipantBackfillPass(): Promise<boolean> {
     // Participant backfill consumes only durability acknowledgement, never returned rows.
     const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
       ?? dependencies.missionStore.persistTrackingHistoryBatch
-    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return
+    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return false
     const activeMission = await dependencies.missionStore.getActiveMission()
-    if (activeMission === null) return
+    if (activeMission === null) return false
     const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
       activeMission.id,
     ) ?? []
     const checkpoint = checkpoints.find((candidate) => candidate.completed !== 1)
-    if (checkpoint === undefined) return
+    if (checkpoint === undefined) return false
     if (dependencies.missionStore.listDevices !== undefined) {
       const devices = await dependencies.missionStore.listDevices(activeMission.id)
       const durableDeviceIds = new Set(devices.map((device) => device.device_id))
       if (checkpoints.some((candidate) =>
-        candidate.completed !== 1 && !durableDeviceIds.has(candidate.traccar_device_id))) return
+        candidate.completed !== 1 && !durableDeviceIds.has(candidate.traccar_device_id))) return false
     }
     const observation = dependencies.beginMissionEvidenceObservation?.(
       checkpoint.mission_id,
@@ -1442,6 +1449,15 @@ export async function startTrackingRuntime(
         updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
         signal: participantBackfillAbortController.signal,
       })
+      const nextCheckpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
+        checkpoint.mission_id,
+      ) ?? []
+      const nextCheckpoint = nextCheckpoints.find((candidate) =>
+        candidate.traccar_device_id === checkpoint.traccar_device_id &&
+        candidate.window_from === checkpoint.window_from)
+      const checkpointAdvanced = nextCheckpoint !== undefined && (
+        nextCheckpoint.completed !== checkpoint.completed ||
+        nextCheckpoint.reconciled_until !== checkpoint.reconciled_until)
       const currentMission = await dependencies.missionStore.getActiveMission()
       if (
         acceptingRuntimeUpdates &&
@@ -1450,6 +1466,7 @@ export async function startTrackingRuntime(
       ) {
         await dependencies.notifyParticipantBackfillChange?.(checkpoint.mission_id)
       }
+      return checkpointAdvanced && nextCheckpoints.some((candidate) => candidate.completed !== 1)
     } finally {
       observation.complete()
     }
