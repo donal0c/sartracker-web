@@ -94,9 +94,11 @@ Both are now covered by failing-first tests and repaired in the current head.
 
 ## Remaining proof and limits
 
-The exact-head Linux workflow [35263861712](https://github.com/donal0c/sartracker-web/actions/runs/35263861712)
-passed at the reviewed code head with the packaged report source-clean and
-the legacy recovery proof green. The independent Astra follow-up reported no
-actionable findings. The PR remains DRAFT because this evidence is not release
-qualification and no release, deployment, merge, candidate mode, BCP-17/WAR-12
-run or SAR-team contact is authorized by this finding.
+The final exact-head Linux workflow [35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+passed at `71b83660801f3744fc69afaedfa65dc5217e508e`: the packaged report was
+source-clean, the legacy recovery proof was green, and the worker checkpoint
+receipt was complete. The independent Astra follow-up reported no actionable
+findings on the repaired code, then confirmed that the final head was
+documentation-only. PR36 is ready for Donal's merge decision. This evidence is
+not release qualification and does not authorize release, deployment,
+candidate mode, BCP-17/WAR-12 or SAR-team contact.

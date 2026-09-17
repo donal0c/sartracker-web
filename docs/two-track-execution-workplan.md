@@ -53,9 +53,10 @@ files. The retained [finding](assurance/findings/legacy-recovery-close-path-2026
 attributes the risk to the worker leaving a large WAL for the main connection
 to checkpoint during close. The bounded worker-side `synchronous=FULL`
 non-blocking `wal_checkpoint(PASSIVE)` repair passed exact-head Linux workflow
-`35263861712` on PR36's reviewed code head, and independent Astra follow-up
-found no actionable issues. This does not qualify a candidate or authorize
-BCP-17/WAR-12.
+`35267063564` at final head `71b83660`; independent Astra review found no
+actionable issue on the repaired code and confirmed the final head was
+documentation-only. PR36 is ready for Donal's merge decision. This does not
+qualify a candidate or authorize BCP-17/WAR-12.
 
 ## Locked path to the next team beta — 2026-09-17
 

@@ -73,7 +73,7 @@ machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
 Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
 `DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: the bounded DON-254 close-path repair is on this branch in draft
+Next: the bounded DON-254 close-path repair is ready for Donal's merge decision
 [PR36](https://github.com/donal0c/sartracker-web/pull/36), from merged PR35 head
 `ea4b92eb82646b12b2d8ad2307e242ed8049d35c`; see
 [the retained disposition](../docs/assurance/findings/legacy-recovery-close-path-20260917.md).
@@ -81,11 +81,11 @@ The repair checkpoints the legacy backfill WAL in its worker with `FULL`
 durability before completion, while retaining the strict `<200 ms` predicate.
 The first failed PR35 Linux receipt and later passing receipt remain retained;
 the initial Astra P1/P2 findings and the follow-up's two P2 validation gaps
-were repaired. Exact-head Linux workflow
-[35263861712](https://github.com/donal0c/sartracker-web/actions/runs/35263861712)
-passed, and the completed Astra follow-up found no actionable findings. PR36
-remains DRAFT; do not start BCP-17/WAR-12 before candidate freeze and Donal's
-explicit phase-6 discussion.
+were repaired. Final exact-head Linux workflow
+[35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+passed at `71b83660`, and the completed Astra follow-up found no actionable
+findings and confirmed that final head was documentation-only. Do not start
+BCP-17/WAR-12 before candidate freeze and Donal's explicit phase-6 discussion.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
