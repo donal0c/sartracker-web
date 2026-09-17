@@ -41,6 +41,11 @@ tests raw, fragment and double-encoded credential parameter keys. Lint and the
 production build pass with the lockfile dependency graph installed by
 `npm ci`.
 
+The repository's required stable source gate then passed in serial correctness
+mode: 477 files passed, 5,067 tests passed and the six explicitly separated
+wall-clock qualification cases were skipped as designed. This is correctness
+evidence only; strict responsiveness remains a later release gate.
+
 The arm64 macOS Electron directory package built successfully. The existing
 packaged bad-secret smoke initially reached the correct shell and warning but
 its text locator became ambiguous because the application now exposes the same
