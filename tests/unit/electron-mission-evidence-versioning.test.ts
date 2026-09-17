@@ -206,6 +206,11 @@ function captureLegacyRecovery() {
       })}\n`)
       if ('error' in report.outcome) throw report.outcome.error
       expect(report.outcome.value.workerThreadId).not.toBe(threadId)
+      expect(report.outcome.value.checkpoint).toMatchObject({
+        busy: 0,
+        log: expect.any(Number),
+        checkpointed: expect.any(Number),
+      })
       return report
     },
   }

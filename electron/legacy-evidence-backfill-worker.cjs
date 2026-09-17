@@ -47,8 +47,8 @@ async function run() {
     }
     database.prepare(`DELETE FROM metadata
       WHERE key = 'legacy_evidence_backfill_failure'`).run()
-    checkpointLegacyEvidenceWal(database)
-    parentPort.postMessage({ type: 'complete', workerThreadId: threadId })
+    const checkpoint = checkpointLegacyEvidenceWal(database)
+    parentPort.postMessage({ type: 'complete', workerThreadId: threadId, checkpoint })
   } catch (error) {
     const message = safeMessage(error?.message ?? error)
     try {

@@ -155,6 +155,12 @@ async function main() {
   assert.equal(completion[0]?.stopped, undefined)
   assert.ok(Number.isSafeInteger(completion[0]?.workerThreadId) && completion[0].workerThreadId > 0,
     'Recovery must complete through a real production worker.')
+  assert.ok(completion[0]?.checkpoint?.busy === 0
+    && Number.isSafeInteger(completion[0].checkpoint.log)
+    && completion[0].checkpoint.log >= 0
+    && Number.isSafeInteger(completion[0].checkpoint.checkpointed)
+    && completion[0].checkpoint.checkpointed >= completion[0].checkpoint.log,
+  'Recovery completion must include a complete WAL checkpoint receipt.')
   assert.notEqual(completion[0].workerThreadId, report.firstLaunch.parentThreadId,
     'Recovery completion must identify a different thread from Electron main.')
   report.firstLaunch.mainTimer = await stopPackagedMainProbe()

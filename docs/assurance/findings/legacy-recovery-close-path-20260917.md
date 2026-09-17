@@ -7,7 +7,9 @@ legacy-object recovery shutdown path. The strict independent main-loop
 predicate remains `<200 ms` and is unchanged. The bounded repair moves the
 final durable WAL checkpoint into the backfill worker before it reports
 completion, so the Electron main process does not first encounter the large
-WAL during synchronous store close.
+WAL during synchronous store close. The checkpoint is deliberately
+non-blocking: it does not take a truncation lock that could stall an operator
+write behind a live reader.
 
 This is a repair and evidence disposition, not release qualification. The
 release, candidate freeze, BCP-17/WAR-12 and field-acceptance holds remain in
@@ -47,21 +49,25 @@ runner/filesystem-specific and was not separately instrumented by the retained
 receipt.
 
 The repair adds `electron/legacy-evidence-backfill-checkpoint.cjs`. After the
-worker's final metadata update and before its completion message, it sets its
-connection to `synchronous=FULL` and requires
-`wal_checkpoint(TRUNCATE)` to report a non-busy, complete checkpoint. Invalid,
-busy or incomplete status throws and the existing worker failure path surfaces
-the failure instead of claiming settlement. The main store's `WAL` and
-`synchronous=FULL` settings are unchanged, and the smoke/terminal validator
-now binds the helper as the seventh implicated production file.
+worker's final metadata update and before its completion message, it disables
+the worker connection's busy wait, sets that connection to `synchronous=FULL`
+and requires `wal_checkpoint(PASSIVE)` to report a non-busy, complete
+checkpoint. Invalid, busy or incomplete status throws and the existing worker
+failure path surfaces the failure instead of claiming settlement. The main
+store's `WAL` and `synchronous=FULL` settings are unchanged. Completion now
+also carries the validated checkpoint receipt, so the runner cannot settle a
+worker that omits the production checkpoint call. The smoke/terminal validator
+binds the helper as the seventh implicated production file.
 
 ## Verification completed on this branch
 
-- Failing-first unit test for the checkpoint contract, then green:
-  `npx vitest run --no-file-parallelism tests/unit/legacy-evidence-backfill-checkpoint.test.ts`
-  — 2 passed.
+- Checkpoint, runner and completion-contract tests — 14 passed, including a
+  real SQLite live-reader contention case that fails closed in under 200 ms.
+- Real-worker mission evidence integration suite — 93 passed, including the
+  production checkpoint receipt before worker settlement.
 - Focused source regression set — 205 tests passed across the checkpoint,
-  backfill runner, evidence versioning and mission-store suites.
+  backfill runner, evidence versioning and mission-store suites before the
+  review remediation; the updated slices above are the authoritative rerun.
 - Terminal-report validation set — 33 tests passed, including rejection when
   the checkpoint helper is absent from packaged identity custody.
 - `npm run lint -- --no-warn-ignored` passed.

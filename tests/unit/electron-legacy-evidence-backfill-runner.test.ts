@@ -15,6 +15,8 @@ const { startLegacyEvidenceBackfillWorker } = require(
 
 type FakeWorker = EventEmitter & { terminate(): Promise<number> }
 
+const CHECKPOINT = { busy: 0, log: 12, checkpointed: 12 }
+
 function createFakeWorker(): FakeWorker {
   const worker = new EventEmitter() as FakeWorker
   worker.terminate = vi.fn(async () => {
@@ -45,14 +47,14 @@ describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
         gpxPending: true,
       },
     })
-    worker.emit('message', { type: 'complete', workerThreadId: 17 })
+    worker.emit('message', { type: 'complete', workerThreadId: 17, checkpoint: CHECKPOINT })
     let settled = false
     void execution.completion.finally(() => { settled = true })
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(settled).toBe(false)
 
     worker.emit('exit', 0)
-    await expect(execution.completion).resolves.toEqual({ workerThreadId: 17 })
+    await expect(execution.completion).resolves.toEqual({ workerThreadId: 17, checkpoint: CHECKPOINT })
   })
 
   it('rejects malformed completion and bounds worker failure text', async () => {
@@ -65,6 +67,16 @@ describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
     malformedWorker.emit('message', { type: 'complete', workerThreadId: 'not-an-integer' })
     malformedWorker.emit('exit', 0)
     await expect(malformed.completion).rejects.toThrow(/exited.*without.*valid completion/iu)
+
+    const missingCheckpointWorker = createFakeWorker()
+    const missingCheckpoint = startLegacyEvidenceBackfillWorker({
+      databasePath: '/tmp/mission-store.sqlite',
+      objectPending: true,
+      createWorker: () => missingCheckpointWorker,
+    })
+    missingCheckpointWorker.emit('message', { type: 'complete', workerThreadId: 17 })
+    missingCheckpointWorker.emit('exit', 0)
+    await expect(missingCheckpoint.completion).rejects.toThrow(/exited.*without.*valid completion/iu)
 
     const failedWorker = createFakeWorker()
     const failed = startLegacyEvidenceBackfillWorker({

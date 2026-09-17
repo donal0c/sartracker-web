@@ -1,4 +1,7 @@
-type Completion = { readonly workerThreadId: number }
+type Completion = {
+  readonly workerThreadId: number
+  readonly checkpoint: { readonly busy: number; readonly log: number; readonly checkpointed: number }
+}
 type Outcome = { readonly value: Completion } | { readonly error: unknown }
 
 /** Observes the caller's loop until production reports completion and physical exit.
@@ -29,7 +32,21 @@ export async function observeLegacyRecoveryCompletion(completion: Promise<unknow
       || ('stopped' in value && value.stopped !== undefined)) {
       throw new Error('Legacy recovery did not report a valid worker completion.')
     }
-    outcome = { value: { workerThreadId: Number(value.workerThreadId) } }
+    const candidate = value as Record<string, unknown>
+    if (typeof candidate.checkpoint !== 'object' || candidate.checkpoint === null) {
+      throw new Error('Legacy recovery did not report a WAL checkpoint receipt.')
+    }
+    const checkpoint = candidate.checkpoint as Record<string, unknown>
+    outcome = {
+      value: {
+        workerThreadId: Number(value.workerThreadId),
+        checkpoint: {
+          busy: Number(checkpoint.busy),
+          log: Number(checkpoint.log),
+          checkpointed: Number(checkpoint.checkpointed),
+        },
+      },
+    }
   } catch (error) {
     outcome = { error }
   } finally {

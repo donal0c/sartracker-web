@@ -12,8 +12,8 @@ describe('legacy recovery completion observation [DON-254]', () => {
     void result.then(() => { settled = true })
     await vi.advanceTimersByTimeAsync(20)
     expect(settled).toBe(false)
-    complete({ workerThreadId: 7 })
-    expect(await result).toMatchObject({ outcome: { value: { workerThreadId: 7 } } })
+    complete({ workerThreadId: 7, checkpoint: { busy: 0, log: 0, checkpointed: 0 } })
+    expect(await result).toMatchObject({ outcome: { value: { workerThreadId: 7, checkpoint: { busy: 0 } } } })
     expect(vi.getTimerCount()).toBe(0)
   })
 
@@ -21,7 +21,10 @@ describe('legacy recovery completion observation [DON-254]', () => {
     vi.useFakeTimers()
     let now = 0
     vi.spyOn(performance, 'now').mockImplementation(() => now)
-    const result = observeLegacyRecoveryCompletion(Promise.resolve({ workerThreadId: 7 }))
+    const result = observeLegacyRecoveryCompletion(Promise.resolve({
+      workerThreadId: 7,
+      checkpoint: { busy: 0, log: 0, checkpointed: 0 },
+    }))
     now = 250
     const report = await result
     expect(report.maximumHeartbeatGapMs).toBe(250)
@@ -40,7 +43,7 @@ describe('legacy recovery completion observation [DON-254]', () => {
   it.each([{ stopped: true }, {}, { workerThreadId: -1 }, { workerThreadId: 1.5 }])(
     'rejects stopped or invalid completion %j', async (completion) => {
       const report = await observeLegacyRecoveryCompletion(Promise.resolve(completion))
-      expect(report.outcome).toEqual({ error: expect.objectContaining({ message: expect.stringMatching(/valid worker completion/iu) }) })
+    expect(report.outcome).toEqual({ error: expect.objectContaining({ message: expect.stringMatching(/valid worker completion|WAL checkpoint receipt/iu) }) })
     },
   )
 

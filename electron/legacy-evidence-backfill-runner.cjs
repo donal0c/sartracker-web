@@ -25,8 +25,10 @@ function startLegacyEvidenceBackfillWorker(input) {
   const completion = new Promise((resolve, reject) => {
     worker.on('message', (message) => {
       if (settled) return
-      if (message?.type === 'complete' && Number.isInteger(message.workerThreadId)) {
-        completedMessage = { workerThreadId: message.workerThreadId }
+      if (message?.type === 'complete'
+        && Number.isInteger(message.workerThreadId)
+        && isCheckpointReceipt(message.checkpoint)) {
+        completedMessage = { workerThreadId: message.workerThreadId, checkpoint: message.checkpoint }
         return
       }
       if (message?.type === 'error') {
@@ -74,6 +76,17 @@ function startLegacyEvidenceBackfillWorker(input) {
 /** Bounds arbitrary worker text before it reaches the runtime log. */
 function safeMessage(value) {
   return String(value ?? 'unknown error').replace(/[\r\n]+/gu, ' ').trim().slice(0, 500)
+}
+
+/** Accepts only a complete, non-busy checkpoint receipt from the production worker. */
+function isCheckpointReceipt(value) {
+  return value !== null
+    && typeof value === 'object'
+    && value.busy === 0
+    && Number.isSafeInteger(value.log)
+    && value.log >= 0
+    && Number.isSafeInteger(value.checkpointed)
+    && value.checkpointed >= value.log
 }
 
 module.exports = { startLegacyEvidenceBackfillWorker }

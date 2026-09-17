@@ -52,7 +52,7 @@ later exact-head run `35242591823` passed on the same close-path production
 files. The retained [finding](assurance/findings/legacy-recovery-close-path-20260917.md)
 attributes the risk to the worker leaving a large WAL for the main connection
 to checkpoint during close. A bounded worker-side `synchronous=FULL`
-`wal_checkpoint(TRUNCATE)` repair is under exact-head review and Linux CI; this
+non-blocking `wal_checkpoint(PASSIVE)` repair is under exact-head review and Linux CI; this
 does not qualify a candidate or authorize BCP-17/WAR-12.
 
 ## Locked path to the next team beta — 2026-09-17
