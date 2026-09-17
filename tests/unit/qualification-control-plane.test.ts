@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -145,5 +145,53 @@ describe('qualification control plane', () => {
     await rm(sealed.resultPath)
     await symlink(outsidePath, sealed.resultPath)
     await expect(verifySealedResult(sealed.attemptDirectory, sealed.anchorPath)).rejects.toThrow(/not a regular file/u)
+  })
+
+  it('rejects a symbolic-link evidence root before writing outside the requested boundary', async () => {
+    temporaryRoot = await mkdtemp(path.join(tmpdir(), 'sartracker-qualification-root-link-'))
+    const externalRoot = path.join(temporaryRoot, 'external')
+    const linkedRoot = path.join(temporaryRoot, 'evidence')
+    await mkdir(externalRoot)
+    await symlink(externalRoot, linkedRoot)
+
+    const registry = JSON.parse(await readFile(registryPath, 'utf8'))
+    const result = evaluateCandidate({
+      registry,
+      mode: 'dry-run',
+      identities: { source: sourceIdentity, fixtures: [], artifacts: [] },
+      contractResults: [],
+    })
+    const judgePacket = buildJudgePacket({ attemptId: 'dry-run-root-link', result })
+
+    await expect(writeSealedResult({
+      outputRoot: linkedRoot,
+      attemptId: 'dry-run-root-link',
+      result,
+      judgePacket,
+    })).rejects.toThrow(/evidence root must not be a symbolic link/u)
+    await expect(readFile(path.join(externalRoot, 'dry-run-root-link', 'result.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('rejects a sealed attempt directory replaced by a symbolic link', async () => {
+    temporaryRoot = await mkdtemp(path.join(tmpdir(), 'sartracker-qualification-attempt-link-'))
+    const registry = JSON.parse(await readFile(registryPath, 'utf8'))
+    const result = evaluateCandidate({
+      registry,
+      mode: 'dry-run',
+      identities: { source: sourceIdentity, fixtures: [], artifacts: [] },
+      contractResults: [],
+    })
+    const judgePacket = buildJudgePacket({ attemptId: 'dry-run-attempt-link', result })
+    const sealed = await writeSealedResult({
+      outputRoot: temporaryRoot,
+      attemptId: 'dry-run-attempt-link',
+      result,
+      judgePacket,
+    })
+    const movedAttempt = path.join(temporaryRoot, 'moved-attempt')
+    await rename(sealed.attemptDirectory, movedAttempt)
+    await symlink(movedAttempt, sealed.attemptDirectory)
+
+    await expect(verifySealedResult(sealed.attemptDirectory, sealed.anchorPath)).rejects.toThrow(/attempt directory must be a real directory/u)
   })
 })

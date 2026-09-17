@@ -178,9 +178,16 @@ export function buildJudgePacket({ attemptId, result, captures = [] }) {
 export async function writeSealedResult({ outputRoot, attemptId, result, judgePacket }) {
   if (!SAFE_ID_PATTERN.test(attemptId)) throw new Error('Qualification attempt id is invalid.')
   const root = path.resolve(outputRoot)
+  await rejectSymbolicLinkIfPresent(root, 'Qualification evidence root')
   await mkdir(root, { recursive: true, mode: 0o700 })
-  const attemptDirectory = path.join(root, attemptId)
+  const rootMetadata = await lstat(root)
+  if (!rootMetadata.isDirectory() || rootMetadata.isSymbolicLink()) {
+    throw new Error('Qualification evidence root must be a real directory, not a symbolic link.')
+  }
+  const canonicalRoot = await realpath(root)
+  const attemptDirectory = path.join(canonicalRoot, attemptId)
   await mkdir(attemptDirectory, { recursive: false, mode: 0o700 })
+  await requireRealDirectoryWithin(attemptDirectory, canonicalRoot, 'Qualification attempt directory')
   const resultPath = path.join(attemptDirectory, 'result.json')
   const judgePath = path.join(attemptDirectory, 'judge-packet.json')
   await writeExclusiveJson(resultPath, result)
@@ -213,10 +220,17 @@ export async function verifySealedResult(attemptDirectory, anchorPath) {
   if (typeof anchorPath !== 'string' || anchorPath === '') {
     throw new Error('Qualification external anchor is required.')
   }
-  const manifestPath = path.join(attemptDirectory, 'manifest.json')
-  const sealPath = path.join(attemptDirectory, 'seal.json')
-  await requireRegularFileWithin(manifestPath, attemptDirectory)
-  await requireRegularFileWithin(sealPath, attemptDirectory)
+  const resolvedAttemptDirectory = path.resolve(attemptDirectory)
+  const attemptParent = await realpath(path.dirname(resolvedAttemptDirectory))
+  const canonicalAttemptDirectory = await requireRealDirectoryWithin(
+    resolvedAttemptDirectory,
+    attemptParent,
+    'Qualification attempt directory',
+  )
+  const manifestPath = path.join(canonicalAttemptDirectory, 'manifest.json')
+  const sealPath = path.join(canonicalAttemptDirectory, 'seal.json')
+  await requireRegularFileWithin(manifestPath, canonicalAttemptDirectory)
+  await requireRegularFileWithin(sealPath, canonicalAttemptDirectory)
   const anchorMetadata = await lstat(anchorPath)
   if (!anchorMetadata.isFile() || anchorMetadata.isSymbolicLink()) {
     throw new Error('Qualification external anchor must be a regular file.')
@@ -231,7 +245,7 @@ export async function verifySealedResult(attemptDirectory, anchorPath) {
   const listedNames = (manifest.files ?? []).map((entry) => entry.name)
   if (new Set(listedNames).size !== listedNames.length) throw new Error('Qualification manifest contains duplicate file names.')
   const expectedNames = new Set(['manifest.json', 'seal.json', ...listedNames])
-  const actualEntries = await readdir(attemptDirectory, { withFileTypes: true })
+  const actualEntries = await readdir(canonicalAttemptDirectory, { withFileTypes: true })
   for (const entry of actualEntries) {
     if (!expectedNames.has(entry.name)) throw new Error(`Qualification attempt contains unlisted evidence: ${entry.name}.`)
     if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`Qualification evidence is not a regular file: ${entry.name}.`)
@@ -240,8 +254,8 @@ export async function verifySealedResult(attemptDirectory, anchorPath) {
   if (seal.manifestSha256 !== sha256(manifestBytes)) throw new Error('Qualification manifest seal does not match.')
   for (const entry of manifest.files ?? []) {
     if (!SAFE_ID_PATTERN.test(entry.name)) throw new Error('Qualification manifest contains an unsafe file name.')
-    await requireRegularFileWithin(path.join(attemptDirectory, entry.name), attemptDirectory)
-    const identity = await fileIdentity(path.join(attemptDirectory, entry.name))
+    await requireRegularFileWithin(path.join(canonicalAttemptDirectory, entry.name), canonicalAttemptDirectory)
+    const identity = await fileIdentity(path.join(canonicalAttemptDirectory, entry.name))
     if (identity.bytes !== entry.bytes || identity.sha256 !== entry.sha256) {
       throw new Error(`Qualification evidence changed after sealing: ${entry.name}.`)
     }
@@ -340,6 +354,28 @@ async function requireRegularFileWithin(filePath, rootPath) {
   const resolvedRoot = await realpath(rootPath)
   const resolvedFile = await realpath(filePath)
   if (path.dirname(resolvedFile) !== resolvedRoot) throw new Error('Qualification evidence escaped the attempt directory.')
+}
+
+async function rejectSymbolicLinkIfPresent(targetPath, label) {
+  try {
+    const metadata = await lstat(targetPath)
+    if (metadata.isSymbolicLink()) throw new Error(`${label} must not be a symbolic link.`)
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+}
+
+async function requireRealDirectoryWithin(directoryPath, parentPath, label) {
+  const metadata = await lstat(directoryPath)
+  if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+    throw new Error(`${label} must be a real directory, not a symbolic link.`)
+  }
+  const canonicalParent = await realpath(parentPath)
+  const canonicalDirectory = await realpath(directoryPath)
+  if (path.dirname(canonicalDirectory) !== canonicalParent) {
+    throw new Error(`${label} escaped its bound parent directory.`)
+  }
+  return canonicalDirectory
 }
 
 function sha256(value) {
