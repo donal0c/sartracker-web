@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-14
+Updated: 2026-09-17
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -59,11 +59,11 @@ head.
 ## Post-PR32 coordinated disposition — 2026-09-17
 
 `origin/master` is `c467f65db8036f1db23652fc0fc7c76369717885`, the merge of
-PR32. There are no open pull requests. Required PR32 Linux workflow
-`35177287167` and ordinary workflow `35179847412` passed. Post-merge master
-workflow `35199520928` is still running; this ledger does not promote that
-pending run to green evidence. Release, deployment, BCP-17/WAR-12, official-map
-distribution, field and human acceptance remain HOLD.
+PR32. There are no open implementation pull requests; PR33 is the docs-only
+reconciliation carrying this record. Required PR32 Linux workflow `35177287167`,
+ordinary workflow `35179847412`, and post-merge master workflow `35199520928`
+passed. Release, deployment, BCP-17/WAR-12, official-map distribution, field
+and human acceptance remain HOLD.
 
 The original deep-audit ledger now has thirteen of fourteen confirmed groups
 repaired and merged. `AUD-12` is the only unrepaired original group and remains
@@ -90,6 +90,15 @@ and WAR-13B is post-publication field execution. Live Linear reconciliation on
 remains unmet; a Linear comment binds PR32's scoped evidence and the remaining
 final-candidate, machine, field and publication gaps. `DON-271` and `DON-279`
 remain Done; `DON-7`/`DON-76` and `DON-247` are In Progress; `DON-144` is Todo.
+
+The canonical workplan now contains the locked route to the next team beta:
+reconcile the baseline, repair the six settings/privacy findings, reconcile and
+dry-run the model-judged qualification control plane, disposition remaining
+assurance findings, freeze one candidate, execute BCP-17/WAR-12 on its exact CI
+artifact, confirm that same artifact on the original machine, then publish it
+through `DON-255`. The map raw-source administration workflow, `AUD-12` and
+lower-severity retained UI work do not block this beta unless new evidence
+changes their severity. No separate release queue is created here.
 
 ## Historical merged disposition
 

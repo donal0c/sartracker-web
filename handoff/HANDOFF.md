@@ -6,10 +6,10 @@ Updated 2026-09-17. Read after `CLAUDE.md`.
 
 `origin/master` is `c467f65db8036f1db23652fc0fc7c76369717885`, the merge of
 [PR32](https://github.com/donal0c/sartracker-web/pull/32). There are no open
-pull requests. The post-merge `master` workflow
+implementation pull requests; PR33 is the documentation-only reconciliation.
+The post-merge `master` workflow
 [`35199520928`](https://github.com/donal0c/sartracker-web/actions/runs/35199520928)
-is still running; do not describe the merged baseline as green until it
-completes successfully.
+passed.
 
 PR32 closed the scoped Repair Train D follow-up. Its validated implementation
 head was `58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
@@ -43,11 +43,14 @@ ownership.
    Mint machine/tester. WAR-12 is the final frozen-candidate qualification and
    WAR-13B starts only after an internal beta is published.
 
-The recommended next production repair is a bounded WAR-11 train for the six
-confirmed WAR-04 settings/startup and diagnostics/privacy defects. A disjoint
-WAR-03 coordinate/geodesy test-hardening slice may run in parallel. Do not run
-the official-map administration/distribution implementation concurrently with
-the settings repair until exact file/state ownership proves they do not overlap.
+The [locked release train](../docs/two-track-execution-workplan.md#locked-path-to-the-next-team-beta--2026-09-17)
+now controls the route to the next team build. First merge/close this docs-only
+reconciliation, then run the bounded WAR-11 settings/privacy repair while a
+disjoint lane reconciles and dry-runs the model-judged qualification design.
+Remaining WAR investigations may run as bounded analysis lanes; any confirmed
+absolute blocker or P1/P2 joins the repair boundary. The prepared private
+MBTiles route is sufficient for this beta; the raw-source administration and
+distribution workflow remains explicitly unfinished.
 
 ## Limits and next action
 
@@ -64,11 +67,10 @@ machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
 Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
 `DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: wait for post-merge `master` CI, then
-start only the chosen chunk(s) from the [two-track queue](../docs/two-track-execution-workplan.md)
-and [coordinated ledger](../docs/assurance/coordinated-work-ledger.md). Do not
-start WAR-12 until feature freeze and all release-blocking findings have a
-policy-valid disposition.
+Next: verify and merge/close PR33, then start Phase 1 of the
+[two-track queue](../docs/two-track-execution-workplan.md). Do not freeze the
+candidate or start final WAR-12 qualification until the known release-blocking
+repair boundary and qualification-control-plane dry run are complete.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
