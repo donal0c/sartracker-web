@@ -71,18 +71,31 @@ binds the helper as the seventh implicated production file.
 - Focused source regression set — 205 tests passed across the checkpoint,
   backfill runner, evidence versioning and mission-store suites before the
   review remediation; the updated slices above are the authoritative rerun.
-- Terminal-report validation set — 33 tests passed, including rejection when
+- Terminal-report validation set — 38 tests passed, including rejection when
   the checkpoint helper is absent from packaged identity custody.
 - `npm run lint -- --no-warn-ignored` passed.
 - Rebuilt packaged macOS diagnostic smoke passed with 50,000 rows, complete
-  custody/digest checks, restart mutation and cleanup; first-launch close was
-  `1.423542 ms` and the main-loop maximum was `52.460332 ms`. This is local
+  custody/digest checks, restart mutation and cleanup; `sourceDirty=false`,
+  first-launch close was `2.008875 ms`, the close-loop maximum was
+  `52.997417 ms`, the recovery-loop maximum was `60.05725 ms`, and the
+  checkpoint receipt was `busy=0, log=946, checkpointed=946`. This is local
   packaged diagnostic evidence only, not Linux CI or production qualification.
+
+## Independent review remediation
+
+The first independent Astra high review requested changes for a potential
+blocking `TRUNCATE` checkpoint and mocked-only production-call coverage. Those
+were repaired by the PASSIVE, zero-busy-timeout checkpoint and the real worker
+completion receipt tests. The exact-head follow-up review then identified two
+additional P2 validation gaps: SQLite's legitimate busy-lock sentinel
+`busy=1, log=-1, checkpointed=-1` must retry, and the terminal report validator
+must validate the completion receipt rather than only the worker identity.
+Both are now covered by failing-first tests and repaired in the current head.
 
 ## Remaining proof and limits
 
-The draft PR must still receive an independent native Codex review and exact-
-head Linux CI. Linux packaged evidence is the decisive next check because the
-original failure was platform/filesystem-sensitive. No release, deployment,
-merge, candidate mode, BCP-17/WAR-12 run or SAR-team contact is authorized by
-this finding.
+The current draft head must still receive the completed independent follow-up
+review and exact-head Linux CI. Linux packaged evidence is the decisive next
+check because the original failure was platform/filesystem-sensitive. No
+release, deployment, merge, candidate mode, BCP-17/WAR-12 run or SAR-team
+contact is authorized by this finding.

@@ -27,7 +27,8 @@ async function checkpointLegacyEvidenceWal(database) {
       const busy = Number(row?.busy)
       const log = Number(row?.log)
       const checkpointed = Number(row?.checkpointed)
-      if (![busy, log, checkpointed].every((value) => Number.isSafeInteger(value) && value >= 0)) {
+      const busyWithoutCounters = busy === 1 && log === -1 && checkpointed === -1
+      if (!busyWithoutCounters && ![busy, log, checkpointed].every((value) => Number.isSafeInteger(value) && value >= 0)) {
         throw new Error('Legacy evidence WAL checkpoint returned an invalid SQLite status.')
       }
       lastStatus = { busy, log, checkpointed }

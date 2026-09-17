@@ -61,6 +61,25 @@ describe('legacy evidence backfill WAL checkpoint [DON-254]', () => {
     expect(attempts).toBe(2)
   })
 
+  it('retries the SQLite busy-lock status that has no checkpoint counters', async () => {
+    let attempts = 0
+    const database = {
+      pragma: vi.fn((sql: string) => {
+        if (sql === 'busy_timeout') return 5000
+        if (sql === 'wal_checkpoint(PASSIVE)') {
+          attempts += 1
+          return attempts === 1
+            ? [{ busy: 1, log: -1, checkpointed: -1 }]
+            : [{ busy: 0, log: 12, checkpointed: 12 }]
+        }
+        return undefined
+      }),
+    }
+
+    await expect(checkpointLegacyEvidenceWal(database)).resolves.toEqual({ busy: 0, log: 12, checkpointed: 12 })
+    expect(attempts).toBe(2)
+  })
+
   it('fails closed when SQLite cannot fully checkpoint the WAL', async () => {
     const database = {
       pragma: vi.fn((sql: string) => {

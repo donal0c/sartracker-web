@@ -247,7 +247,20 @@ function validateThreadIdentity(launch, failures, phase, requiresCompletion = tr
   } else if (completion.workerThreadId === launch.parentThreadId) {
     failures.push(`${phase} recovery worker reported the caller's thread.`)
   }
+  validateCheckpointReceipt(completion?.checkpoint, `${phase} WAL checkpoint receipt`, failures)
   if (completion?.stopped === true) failures.push(`${phase} recovery worker was stopped before completion.`)
+}
+
+/** Requires a completed, durable WAL checkpoint receipt from the recovery worker. */
+function validateCheckpointReceipt(value, label, failures) {
+  const checkpoint = objectValue(value)
+  if (checkpoint === null
+    || checkpoint.busy !== 0
+    || !isNonnegativeSafeInteger(checkpoint.log)
+    || !isNonnegativeSafeInteger(checkpoint.checkpointed)
+    || checkpoint.checkpointed < checkpoint.log) {
+    failures.push(`${label} is missing or incomplete.`)
+  }
 }
 
 /** Validates all exact 50,000-row custody counters and cross-phase digests. */
