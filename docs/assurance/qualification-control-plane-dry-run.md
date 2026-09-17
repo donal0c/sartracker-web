@@ -9,16 +9,19 @@ qualification, candidate freeze, package proof, or release authority.
 
 ## Implemented boundary
 
-- A compiled C00-C29 registry fails closed on missing/duplicate contracts and
-  missing/duplicate release-critical hazard ownership.
+- A compiled C00-C29 registry checks independently pinned inventories and fails
+  closed on missing/duplicate contracts, hazards, programme changes and release
+  gates.
 - Candidate evaluation separates deterministic contract results, blockers and
   advisory visual-judge concerns. A judge pass cannot override a missing or
   failed deterministic contract.
 - Source, fixture, artifact and validator inputs use exact byte identities.
 - One result packet, oracle-blind advisory judge packet, append-only manifest,
   seal and separately written anchor are emitted with exclusive creation.
-- Verification rejects post-seal mutation. Final-candidate execution is not
-  exposed by the CLI; only an explicit non-candidate dry run is available.
+- Verification requires the external anchor and a closed set of regular files;
+  it rejects post-seal mutation, extra files and symlink/path escape. Candidate
+  mode is hard-disabled in the library and CLI until phase 6 is explicitly
+  authorized and its receipt predicates are implemented.
 
 ## Local rehearsal
 
@@ -36,8 +39,9 @@ sealed bytes. It returned `DRY_RUN_ONLY` and `releaseEligible: false`; all 30
 product contracts remain deliberately `not-run`. Manifest SHA-256:
 `fb691ae5639351bc0640ef06921fbb88b6f3995c4e07d6fa2cda4f0a68ab28d3`.
 
-Focused tests pass 5/5, including missing contract, duplicate hazard ownership,
-judge non-authority and post-seal tamper controls. Lint passes.
+Focused tests pass 6/6, including self-omitted canonical obligations, disabled
+candidate execution, judge non-authority, mandatory anchor, closed evidence
+set, symlink escape and post-seal tamper controls. Lint passes.
 
 ## Remaining boundary
 
