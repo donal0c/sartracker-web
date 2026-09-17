@@ -38,6 +38,7 @@
     "test": "vitest run",
     "test:war-02b": "vitest run tests/unit/assurance/war-02b --no-file-parallelism",
     "assurance:war-02b": "node scripts/assurance/war-02b-prove-red.mjs",
+    "qualification:dry-run": "node scripts/qualification-control-plane.mjs --mode dry-run",
     "test:correctness": "vitest run --config vitest.correctness.config.ts",
     "test:responsiveness": "vitest run --config vitest.responsiveness.config.ts",
     "test:contract:dots": "vitest run tests/unit/exact-breadcrumb-dots-contract.test.ts",
