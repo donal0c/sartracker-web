@@ -60,11 +60,12 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 0 — reconcile and establish the release baseline
 
-1. Merge or close PR33 after its documentation facts and green check are
-   verified. Start release work only from the resulting clean `master`.
+1. Confirm the live merged PR35/PR36 state and start any release work only
+   from the clean `master` at `f7798a19589b5d907408080dc65e2d2739767130`.
 2. Record the exact baseline SHA and refresh the open-finding inventory across
-   team requirements, the deep audit and WAR. Historical failed receipts remain
-   evidence; merged repair claims are not rerun without an invalidating change.
+   team requirements, the deep audit and WAR. The failed PR35 timing receipt
+   remains evidence; the merged PR36 repair claim is scoped to its exact seam
+   and is not a candidate qualification claim.
 3. Keep the immediate prepared-MBTiles route for this beta. The unfinished raw
    licensed-source packaging/distribution workflow (`DON-144`/`DON-7`/`DON-76`)
    does not block candidate testing when a named tester receives the prepared
@@ -73,23 +74,23 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 1 — finish the known pre-candidate repair boundary
 
-1. Repair `WAR04-SET-01..03` and `WAR04-PRV-01..03` as one bounded settings,
-   startup and diagnostics-privacy train. Reproduce each current-head defect,
-   add durable regressions, exercise the packaged boundary, and obtain the
-   risk-proportionate independent reviews before merge.
+1. Preserve the merged `WAR04-SET-01..03`/`WAR04-PRV-01..03` and PR35/PR36
+   close-path receipts as scoped repair evidence. No failed timing or
+   contention receipt may be deleted, relabelled or used as final-candidate
+   proof.
 2. Reconcile the completed post-PR6 model-judged QA design against current
-   `master`. The design was research only: it did not implement a complete
-   runner or execute qualification. Reuse the substantial current harness and
-   implement only missing release infrastructure: the requirement/hazard-to-
-   test coverage registry, exact artifact/fixture identity, one result packet,
-   deterministic release predicates, sealed evidence and the advisory fresh
-   model-judge packet.
-3. Dry-run that qualification control plane on a non-candidate build. The dry
-   run proves the harness and evidence flow; it does not qualify the product.
+   `master`. The design and dry run prove infrastructure only; they do not
+   qualify the product. Keep the requirement/hazard-to-test coverage registry,
+   exact artifact/fixture identity, result packet, deterministic release
+   predicates, sealed evidence and advisory fresh model-judge packet bound to
+   the eventual candidate artifact.
+3. Complete the five WAR-01 absolute-blocker exit proofs and every confirmed
+   P1/P2 recheck before freeze. A scoped merged fix is not closure unless its
+   exact candidate, packaged, field or policy authority is recorded.
 4. Run the remaining assurance investigations (`WAR-03`, `WAR-07`, `WAR-08`,
    `WAR-09`, `WAR-10`) in bounded, production-ownership-disjoint lanes where
-   capacity permits. Any confirmed absolute blocker or P1/P2 joins the pre-
-   candidate repair boundary. Lower-severity findings receive an explicit
+   capacity permits. Any confirmed absolute blocker or P1/P2 joins the
+   pre-candidate repair boundary. Lower-severity findings receive an explicit
    owner and release disposition; investigation is not silently equated with a
    fix.
 
