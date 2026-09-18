@@ -2,6 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import checkpointContract from '../electron/legacy-evidence-backfill-checkpoint.cjs'
+
+const { validateLegacyEvidenceBackfillCheckpoint } = checkpointContract
 
 const EXPECTED_BASELINE_ROWS = 50_000
 const SOURCE_FILES = {
@@ -12,6 +15,7 @@ const SOURCE_FILES = {
 const PACKAGED_FILES = [
   'electron/legacy-evidence-backfill-runner.cjs',
   'electron/legacy-evidence-backfill-worker.cjs',
+  'electron/legacy-evidence-backfill-checkpoint.cjs',
   'electron/mission-evidence-version-store.cjs',
   'electron/mission-store.cjs',
   'electron/mission-worker.cjs',
@@ -108,7 +112,7 @@ function validateProbeHashes(report, projectRoot, failures) {
   }
 }
 
-/** Checks packaged identity and all six production source hashes. */
+/** Checks packaged identity and all seven production source hashes. */
 function validatePackagedIdentity(report, projectRoot, failures) {
   const packaged = objectValue(report.packaged)
   if (packaged === null) {
@@ -246,7 +250,19 @@ function validateThreadIdentity(launch, failures, phase, requiresCompletion = tr
   } else if (completion.workerThreadId === launch.parentThreadId) {
     failures.push(`${phase} recovery worker reported the caller's thread.`)
   }
+  validateCheckpointReceipt(completion?.checkpoint, `${phase} WAL checkpoint receipt`, failures)
   if (completion?.stopped === true) failures.push(`${phase} recovery worker was stopped before completion.`)
+}
+
+/** Requires a completed, durable WAL checkpoint receipt from the recovery worker. */
+function validateCheckpointReceipt(value, label, failures) {
+  const checkpoint = objectValue(value)
+  const reason = validateLegacyEvidenceBackfillCheckpoint(
+    checkpoint,
+    checkpoint?.walSidecarBytes,
+    { requireComplete: true },
+  )
+  if (reason !== null) failures.push(`${label} is missing or invalid: ${reason}`)
 }
 
 /** Validates all exact 50,000-row custody counters and cross-phase digests. */

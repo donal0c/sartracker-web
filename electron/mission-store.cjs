@@ -886,7 +886,7 @@ function createElectronMissionStore(options) {
   let legacyEvidenceBackfillWorkerStopped = !legacyEvidenceBackfillPending
   if (!legacyEvidenceBackfillPending) {
     db.prepare(`DELETE FROM metadata
-      WHERE key = 'legacy_evidence_backfill_failure'`).run()
+      WHERE key IN ('legacy_evidence_backfill_failure', 'legacy_evidence_backfill_checkpoint_warning')`).run()
   } else {
     try {
       legacyEvidenceBackfillWorker = (
@@ -903,6 +903,17 @@ function createElectronMissionStore(options) {
           if (result?.stopped !== true && !storeClosed) {
             db.prepare(`DELETE FROM metadata
               WHERE key = 'legacy_evidence_backfill_failure'`).run()
+            if (result?.checkpoint?.completed === true) {
+              db.prepare(`DELETE FROM metadata
+                WHERE key = 'legacy_evidence_backfill_checkpoint_warning'`).run()
+            } else if (typeof result?.checkpoint?.warning === 'string'
+              && result.checkpoint.warning.trim() !== '') {
+              const warning = safeEvidenceFailureReason(result.checkpoint.warning)
+              db.prepare(`INSERT INTO metadata (key, value) VALUES (
+                'legacy_evidence_backfill_checkpoint_warning', ?
+              ) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(warning)
+              console.warn(`Legacy evidence WAL checkpoint deferred: ${warning}`)
+            }
           }
         },
         (error) => {

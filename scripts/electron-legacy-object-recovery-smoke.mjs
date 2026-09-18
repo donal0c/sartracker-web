@@ -26,6 +26,9 @@ import {
 import {
   assertPostSettlementMarkerCustody,
 } from '../build/electron-legacy-object-recovery-custody.js'
+import checkpointContract from '../electron/legacy-evidence-backfill-checkpoint.cjs'
+
+const { validateLegacyEvidenceBackfillCheckpoint } = checkpointContract
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -35,6 +38,7 @@ const PROBE_TIMEOUT_MS = 60_000
 const IMPLICATED_PACKAGED_FILES = [
   'electron/legacy-evidence-backfill-runner.cjs',
   'electron/legacy-evidence-backfill-worker.cjs',
+  'electron/legacy-evidence-backfill-checkpoint.cjs',
   'electron/mission-evidence-version-store.cjs',
   'electron/mission-store.cjs',
   'electron/mission-worker.cjs',
@@ -154,6 +158,15 @@ async function main() {
   assert.equal(completion[0]?.stopped, undefined)
   assert.ok(Number.isSafeInteger(completion[0]?.workerThreadId) && completion[0].workerThreadId > 0,
     'Recovery must complete through a real production worker.')
+  assert.equal(
+    validateLegacyEvidenceBackfillCheckpoint(
+      completion[0]?.checkpoint,
+      completion[0]?.checkpoint?.walSidecarBytes,
+      { requireComplete: true },
+    ),
+    null,
+    'Recovery completion must include a physically corroborated complete WAL checkpoint receipt.',
+  )
   assert.notEqual(completion[0].workerThreadId, report.firstLaunch.parentThreadId,
     'Recovery completion must identify a different thread from Electron main.')
   report.firstLaunch.mainTimer = await stopPackagedMainProbe()
@@ -243,7 +256,7 @@ async function main() {
 async function recordPackagedIdentity() {
   const archivePath = await evaluatePackaged(({ app: electronApp }) => electronApp.getAppPath())
   assert.ok(archivePath.endsWith('.asar'), `Packaged app path was not an ASAR: ${archivePath}`)
-  report.packaged = { bindingScope: 'ASAR identity and six implicated production source files; local dirty probe sources are hashed separately', executableSha256: await sha256File(executablePath), asarSha256: await sha256File(archivePath), files: {} }
+  report.packaged = { bindingScope: 'ASAR identity and seven implicated production source files; local dirty probe sources are hashed separately', executableSha256: await sha256File(executablePath), asarSha256: await sha256File(archivePath), files: {} }
   for (const file of IMPLICATED_PACKAGED_FILES) {
     const checkout = await readFile(path.join(projectRoot, file))
     const packaged = extractFile(archivePath, file)

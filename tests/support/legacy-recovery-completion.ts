@@ -1,4 +1,18 @@
-type Completion = { readonly workerThreadId: number }
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+
+type Completion = {
+  readonly workerThreadId: number
+  readonly checkpoint: {
+    readonly busy: number | null
+    readonly log: number | null
+    readonly checkpointed: number | null
+    readonly completed: boolean
+    readonly warning?: string
+    readonly walSidecarBytes: number
+  }
+}
 type Outcome = { readonly value: Completion } | { readonly error: unknown }
 
 /** Observes the caller's loop until production reports completion and physical exit.
@@ -29,7 +43,19 @@ export async function observeLegacyRecoveryCompletion(completion: Promise<unknow
       || ('stopped' in value && value.stopped !== undefined)) {
       throw new Error('Legacy recovery did not report a valid worker completion.')
     }
-    outcome = { value: { workerThreadId: Number(value.workerThreadId) } }
+    const candidate = value as Record<string, unknown>
+    if (typeof candidate.checkpoint !== 'object' || candidate.checkpoint === null) {
+      throw new Error('Legacy recovery did not report a WAL checkpoint receipt.')
+    }
+    const checkpoint = candidate.checkpoint as Record<string, unknown>
+    const checkpointError = validateCheckpoint(checkpoint)
+    if (checkpointError !== null) throw new Error(checkpointError)
+    outcome = {
+      value: {
+        workerThreadId: Number(value.workerThreadId),
+        checkpoint: checkpoint as Completion['checkpoint'],
+      },
+    }
   } catch (error) {
     outcome = { error }
   } finally {
@@ -40,4 +66,20 @@ export async function observeLegacyRecoveryCompletion(completion: Promise<unknow
     clearTimeout(deadline)
   }
   return { outcome, maximumHeartbeatGapMs }
+}
+
+/** Validates the production completion contract without coercing malformed values into zero. */
+function validateCheckpoint(checkpoint: Record<string, unknown>): string | null {
+  const { validateLegacyEvidenceBackfillCheckpoint } = require('../../electron/legacy-evidence-backfill-checkpoint.cjs') as {
+    validateLegacyEvidenceBackfillCheckpoint(
+      value: unknown,
+      walSidecarBytes: unknown,
+      options?: { readonly requireComplete?: boolean },
+    ): string | null
+  }
+  return validateLegacyEvidenceBackfillCheckpoint(
+    checkpoint,
+    checkpoint.walSidecarBytes,
+    { requireComplete: false },
+  )
 }

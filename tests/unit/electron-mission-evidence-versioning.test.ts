@@ -206,6 +206,11 @@ function captureLegacyRecovery() {
       })}\n`)
       if ('error' in report.outcome) throw report.outcome.error
       expect(report.outcome.value.workerThreadId).not.toBe(threadId)
+      expect(report.outcome.value.checkpoint).toMatchObject({
+        busy: 0,
+        completed: true,
+        walSidecarBytes: expect.any(Number),
+      })
       return report
     },
   }
@@ -873,6 +878,59 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(recovered.prepare(`SELECT value FROM metadata
       WHERE key = 'legacy_evidence_backfill_failure'`).get()).toBeUndefined()
     recovered.close()
+  })
+
+  it('keeps evidence and lifecycle access available when only the WAL checkpoint is contended [DON-254]', async () => {
+    userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-pr36-checkpoint-warning-'))
+    const first = createElectronMissionStore({ userDataPath })
+    const mission = await first.createMission({ name: 'Checkpoint warning mission' })
+    await first.upsertMarker({ mission_id: mission.id, ...SAMPLE_MARKER })
+    first.close()
+
+    const databaseFile = path.join(userDataPath, 'mission-store.sqlite')
+    const legacyDb = openDatabase(databaseFile)
+    legacyDb.exec(`
+      UPDATE metadata SET value = '11' WHERE key = 'schema_version';
+      DROP TABLE mission_object_versions;
+      DROP TABLE legacy_mission_object_backfill_state;
+    `)
+    legacyDb.close()
+
+    store = createElectronMissionStore({
+      userDataPath,
+      startLegacyEvidenceBackfillWorker: () => ({
+        completion: Promise.resolve({
+          workerThreadId: 17,
+          checkpoint: {
+            busy: 0,
+            log: 12,
+            checkpointed: 4,
+            completed: false,
+            warning: 'reader checkpoint boundary remained active',
+            walSidecarBytes: 64,
+          },
+        }),
+        terminate: async () => undefined,
+      }),
+    })
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const inspection = openDatabase(databaseFile)
+    expect(inspection.prepare(`SELECT value FROM metadata
+      WHERE key = 'legacy_evidence_backfill_failure'`).get()).toBeUndefined()
+    expect(inspection.prepare(`SELECT value FROM metadata
+      WHERE key = 'legacy_evidence_backfill_checkpoint_warning'`).get()?.value)
+      .toMatch(/reader checkpoint boundary/iu)
+    inspection.prepare(`UPDATE legacy_mission_object_backfill_state
+      SET scanned_through_id = scan_target_id`).run()
+    inspection.close()
+
+    await expect(store.listMissionObjectVersions({ missionId: mission.id })).resolves.toEqual([])
+    await expect(store.upsertMarker({
+      mission_id: mission.id,
+      ...SAMPLE_MARKER,
+      name: 'Available during checkpoint warning',
+    })).resolves.toMatchObject({ name: 'Available during checkpoint warning' })
   })
 
   it('prepares large legacy event provenance in bounded turns and fails Replay closed meanwhile [DON-278]', async () => {

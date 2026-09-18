@@ -41,11 +41,22 @@ function syntheticReport(): JsonObject {
     custodyOracleSha256: sha256File('build/electron-legacy-object-recovery-custody.js'),
   }
   const firstLaunch = objectAt(report, 'firstLaunch')
+  const completion = (firstLaunch.workerCompletion as JsonObject[])[0]!
+  completion.checkpoint = {
+    busy: 0,
+    log: 0,
+    checkpointed: 0,
+    completed: true,
+    walSidecarBytes: 0,
+  }
   const packagedFiles = objectAt(objectAt(report, 'packaged'), 'files')
   for (const relativePath of Object.keys(packagedFiles)) {
     const hash = sha256File(relativePath)
     packagedFiles[relativePath] = { checkoutSha256: hash, packagedSha256: hash }
   }
+  const checkpointPath = 'electron/legacy-evidence-backfill-checkpoint.cjs'
+  const checkpointHash = sha256File(checkpointPath)
+  packagedFiles[checkpointPath] = { checkoutSha256: checkpointHash, packagedSha256: checkpointHash }
   const restart = objectAt(report, 'restart')
   restart.openTimer = structuredClone(objectAt(firstLaunch, 'mainTimer'))
   return report
@@ -81,6 +92,13 @@ describe('legacy recovery terminal report validation [DON-254]', () => {
     ['wrong source tree', (report: JsonObject) => { report.sourceTree = '0'.repeat(40) }],
     ['dirty source', (report: JsonObject) => { report.sourceDirty = true }],
     ['missing worker completion', (report: JsonObject) => { objectAt(report, 'firstLaunch').workerCompletion = [] }],
+    ['missing checkpoint receipt', (report: JsonObject) => { delete (objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!.checkpoint }],
+    ['incomplete checkpoint receipt', (report: JsonObject) => { objectAt((objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!, 'checkpoint').busy = 1 }],
+    ['unverifiable checkpoint receipt', (report: JsonObject) => {
+      const completion = (objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!
+      objectAt(completion, 'checkpoint').walSidecarBytes = 64
+      objectAt(completion, 'checkpoint').log = 0
+    }],
     ['worker on caller thread', (report: JsonObject) => { objectAt(report, 'firstLaunch').workerCompletion = [{ workerThreadId: objectAt(report, 'firstLaunch').parentThreadId }] }],
     ['stopped worker', (report: JsonObject) => { (objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!.stopped = true }],
     ['wrong observer realm', (report: JsonObject) => { objectAt(objectAt(report, 'firstLaunch'), 'observer').observerRealm = 'main-process' }],
@@ -154,5 +172,12 @@ describe('legacy recovery terminal report validation [DON-254]', () => {
     objectAt(files, 'electron/mission-store.cjs').packagedSha256 = '0'.repeat(64)
     expect(validateLegacyRecoveryReport(report, { expectedSourceSha, projectRoot }))
       .toEqual([expect.stringMatching(/Packaged source differs from checkout for electron\/mission-store.cjs/iu)])
+  })
+
+  it('rejects a report that does not bind the checkpoint implementation', () => {
+    const report = syntheticReport()
+    delete objectAt(objectAt(report, 'packaged'), 'files')['electron/legacy-evidence-backfill-checkpoint.cjs']
+    expect(validateLegacyRecoveryReport(report, { expectedSourceSha, projectRoot }))
+      .toEqual([expect.stringMatching(/missing for electron\/legacy-evidence-backfill-checkpoint\.cjs/iu)])
   })
 })
