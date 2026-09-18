@@ -5,15 +5,17 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
-**Post-PR36 release disposition (2026-09-18):** current `origin/master` is
-`f7798a19589b5d907408080dc65e2d2739767130`. PR36 fixes the legacy SQLite
-close-path checkpoint/contention repair boundary, but it does not close any
-WAR-01 absolute blocker. Delayed/hidden current position, silent evidence
-loss, false Complete/100%, corrupted evidence, and unbounded mission-scale
-main-process work all remain `open-blocking` until exact-candidate exit
-evidence is recorded. This overlay preserves the row-level historical
-receipts; see the [coordinated post-PR36 reconciliation](coordinated-work-ledger.md)
-for the current freeze decision.
+**Post-PR37 release disposition (2026-09-18):** current `origin/master` is
+`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, the PR37 reconciliation merge.
+PR37 merged from exact head `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`, with
+required Linux workflow `35380031004` passed. It corrects the control-plane
+record only and does not close any WAR-01 absolute blocker. Delayed/hidden
+current position, silent evidence loss, false Complete/100%, corrupted
+evidence, and unbounded mission-scale main-process work all remain
+`open-blocking` until exact-candidate exit evidence is recorded. This overlay
+preserves the row-level historical receipts; see the
+[coordinated post-PR37 reconciliation](coordinated-work-ledger.md) for the
+current freeze decision.
 
 **Repair Train B overlay (2026-09-10):** `RPL-003`/`EVD-001` source-fidelity
 and `MIS-002` import/outing settlement gaps reproduce at `302bdd04` as

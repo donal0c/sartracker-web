@@ -4,16 +4,19 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-18):** PR35 and PR36 are merged on the
-current baseline. `origin/master` is
-`f7798a19589b5d907408080dc65e2d2739767130`, the PR36 merge commit. PR36's
-exact head is `ed3c69f342a9a9f3bc60d7fb1390743f59210ad0` and required Linux
-workflow `35332400799` passed. The SQLite checkpoint/contention repair is
-fixed at that repair boundary; it is not a candidate or release qualification.
+**Current reconciliation (2026-09-18):** PR37 is merged on the current
+baseline. `origin/master` is
+`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, the PR37 merge commit. PR37's
+exact head is `1640edb2dfd558c0d26d40e41b1d6c516dea4a28` and required Linux
+workflow `35380031004` passed at that exact head. PR37 is documentation and
+control-plane reconciliation evidence only; it does not qualify a candidate,
+declare a freeze, or authorize release. The SQLite checkpoint/contention repair
+remains fixed at its PR36 repair boundary; it is not candidate or release
+qualification.
 
 The active queue is now:
 
-1. reconcile the merged PR35/PR36 receipts and all confirmed P1/P2 and WAR-01
+1. reconcile the merged PR35/PR36/PR37 receipts and all confirmed P1/P2 and WAR-01
    absolute-blocker dispositions without deleting or relabelling failed proof;
 2. investigate and disposition WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 in
    bounded lanes before candidate freeze; current evidence is insufficient for
@@ -60,8 +63,8 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 0 — reconcile and establish the release baseline
 
-1. Confirm the live merged PR35/PR36 state and start any release work only
-   from the clean `master` at `f7798a19589b5d907408080dc65e2d2739767130`.
+1. Confirm the live merged PR35/PR36/PR37 state and start any release work only
+   from the clean `master` at `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`.
 2. Record the exact baseline SHA and refresh the open-finding inventory across
    team requirements, the deep audit and WAR. The failed PR35 timing receipt
    remains evidence; the merged PR36 repair claim is scoped to its exact seam
@@ -120,10 +123,13 @@ test inputs changed.
 This is the procedure to apply after the reconciliation PR is merged. It is
 not evidence that a candidate is currently frozen.
 
-1. Reconfirm the clean `master` baseline and fill
-   `reconciliationMergeSha` with the eventual merge commit of the
-   post-PR36 reconciliation PR. The value must equal the merged PR commit,
-   not its head SHA, a workflow SHA, or the current pre-merge baseline
+1. Reconfirm the clean `master` baseline. The post-PR37 reconciliation has
+   merged, so its record is now
+   `reconciliationMergeSha=6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`. This fills the procedure's
+   post-merge value; it does not declare a candidate freeze or release. The
+   value is the merged PR commit, not PR37's head SHA
+   `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`, workflow
+   `35380031004`, or the pre-merge baseline
    `f7798a19589b5d907408080dc65e2d2739767130`.
 2. Use version `0.1.0-beta.13` and tag `electron-v0.1.0-beta.13`. The expected
    Linux artifacts are

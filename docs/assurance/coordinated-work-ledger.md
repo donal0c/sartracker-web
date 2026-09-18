@@ -56,15 +56,17 @@ head.
 - Team-domain meaning comes only from the raw/indexed Q&A. No audit or WAR task
   may invent a new operational requirement.
 
-## Post-PR36 candidate-freeze reconciliation — 2026-09-18
+## Post-PR37 candidate-freeze reconciliation — 2026-09-18
 
-`origin/master` is `f7798a19589b5d907408080dc65e2d2739767130`, the merge of
-[PR36](https://github.com/donal0c/sartracker-web/pull/36). PR35 merged at
-`ea4b92eb82646b12b2d8ad2307e242ed8049d35c`; PR36 merged from exact head
-`ed3c69f342a9a9f3bc60d7fb1390743f59210ad0`. Required PR36 Linux workflow
-[`35332400799`](https://github.com/donal0c/sartracker-web/actions/runs/35332400799)
-passed at that exact head. The close-path repair is therefore fixed at the
-repair boundary. The retained failed PR35 receipt
+`origin/master` is the PR37 merge
+[`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`](https://github.com/donal0c/sartracker-web/commit/6b0b5e0cd8ce7c58060afd740ada8a0343ca655e).
+PR37 merged from exact head
+`1640edb2dfd558c0d26d40e41b1d6c516dea4a28`; required Linux workflow
+[`35380031004`](https://github.com/donal0c/sartracker-web/actions/runs/35380031004)
+passed at that exact head. PR37 is reconciliation evidence only: it corrects
+the control-plane record and retains prior receipts; it does not fix a product
+hazard, qualify a candidate, declare a freeze, or authorize release. The
+retained failed PR35 receipt
 [`35221533225`](https://github.com/donal0c/sartracker-web/actions/runs/35221533225)
 and later passing receipt
 [`35242591823`](https://github.com/donal0c/sartracker-web/actions/runs/35242591823)
@@ -128,6 +130,268 @@ Existing coordinate golden tests and unrelated repair evidence are partial
 signals only and do not clear WAR-03. Each must be investigated and explicitly
 dispositioned before candidate freeze; none is safely deferred post-candidate.
 
+### Recovered WAR-03/07/08/09/10 launch charters
+
+The following is a recovery of the original programme scopes, not a new WAR
+programme and not execution evidence. It was reconstructed from the current
+row-level hazards in [`hazard-register.md`](hazard-register.md), the active
+queue in [`two-track-execution-workplan.md`](../two-track-execution-workplan.md),
+and the exact prior coordinator task history `01a052c8-a981-7793-bbee-d146aaff9e4d`
+(2026-08-30), with the whole-application resilience source also retained in
+tasks `01a04c34-db62-7681-a4fa-eadf9481e90a` and
+`01a04c2e-166e-7122-9aab-fb2897a9f1ec`. The task records are provenance for
+scope recovery only; the hazard register and live Linear issue state remain the
+acceptance authorities.
+
+All five launches are analysis-first and read-only. They may produce a ledger,
+reproduction, test-plan or separately authorised test-tooling PR, but they do
+not silently repair production code, change the hazard register to “cleared”,
+or turn local/CI/packaged evidence into field, human-acceptance or production
+proof. A confirmed P1/P2, absolute blocker, silent evidence loss, corrupted
+evidence, false completeness claim, or unsafe main-process stall stops the lane
+and gets a separate repair PR or explicit Donal architecture decision.
+
+#### WAR-03 — coordinate and geodesy proof
+
+- **Original objective:** harden proof around WGS84↔ITM↔TM65 round trips across
+  the Irish envelope and named tolerances; Irish Grid parse/format identities
+  and square-boundary behavior; nonfinite and out-of-range rejection at every
+  public coordinate boundary; declination direction/sign, bearings, distance,
+  LPB geometry, and bounded fuzzing of accepted coordinate text without
+  redefining product formats.
+- **Safety invariants and hazards:** `GEO-001` must preserve EPSG:2157 and
+  corrected EPSG:1641 negative-Y datum semantics, keep TM65 display-only, and
+  reject NaN/Infinity/out-of-range input. `GEO-002` must preserve true↔magnetic
+  declination (`-4.5°` true to magnetic), reject invalid coordinates/bearings/
+  radii/distances/segments, and keep geodesic measurement behavior.
+- **Production ownership:** `src/lib/coordinates.ts`,
+  `src/features/coordinates/coordinate-tool.ts`,
+  `src/features/drawings/drawing-math.ts`, and
+  `src/features/measurements/start-measurement-runtime.ts`; existing unit and
+  coordinate-converter/measurement E2E suites are the first test seams.
+- **Red and negative controls:** property-based round trips and boundary
+  tolerances; parser fuzzing within the accepted grammar; square-boundary and
+  sign-reversal cases; explicit NaN, Infinity, range, bearing, radius,
+  distance, and segment rejection; counterexamples must retain the input,
+  expected invariant and exact implementation head.
+- **Completion/disposition:** a test-first hardening PR plus updated hazard
+  dispositions only if implementation is separately authorised; otherwise a
+  read-only evidence ledger with every counterexample and residual gap. Any
+  changed coordinate behavior is escalated before repair; no UI redesign or
+  parity claim is in scope.
+- **Complexity/model:** `5/10`; recommended `GPT-5.6 Sol`, medium reasoning.
+  Independent transform/parser/geometry lanes are safe to parallelise after
+  the analysis boundary.
+- **Overlap:** shares coordinate contracts with no other WAR lane; do not absorb
+  unrelated measurement UI or release qualification. Source: coordinator task
+  `01a052c8-a981-7793-bbee-d146aaff9e4d`, charter row “Coordinate and geodesy
+  proof”, cross-checked against `GEO-001`/`GEO-002`.
+
+#### WAR-07 — Electron shell and IPC audit
+
+- **Original objective:** inventory every preload/main IPC channel and worker
+  runner for payload bounds, mission scope, generation ownership, sender trust,
+  and main-isolate cost; attack renderer reload/close/crash, app quit, second
+  instance and stale worker replies; instrument and attribute or bound the
+  retained PR4 timing outlier; revalidate after archive IPC landed.
+- **Safety invariants and hazards:** `IPC-001` requires exact sender
+  validation, fixed bounded preload channels, context isolation/sandbox,
+  navigation/new-window denial, renderer-scoped cancellation and no raw GPX
+  bytes in the renderer. `IPC-002` requires singleton and durable unclean
+  state before relaunch, an awaited renderer drain, an unexpected-loss fence
+  and fail-visible recovery. `IPC-003` requires size-dependent work to be
+  cancellable, timeout-bounded, bounded in shape, writer-prioritised and
+  joined when poisoned, without blocking Electron main.
+- **Production ownership:** `electron/main.cjs`, `electron/preload.cjs`,
+  `electron/coverage-ipc.cjs`, `electron/breadcrumb-query-ipc.cjs`,
+  `electron/mission-review-read-query-ipc.cjs`,
+  `electron/mission-replay-query-ipc.cjs`,
+  `electron/outing-fix-summary-ipc.cjs`, `electron/gpx-renderer-boundary.cjs`,
+  `electron/file-system.cjs`, `electron/mission-archive-ipc.cjs`,
+  `electron/archive-review-ipc.cjs`, and
+  `electron/renderer-teardown-coordinator.cjs`; worker/main seams are the
+  breadcrumb line/dot runners and workers, coverage query/tile runners and
+  workers, outing-summary runner/worker, mission-review runner/worker,
+  `electron/gpx-evidence-import-runner.cjs`,
+  `electron/gpx-evidence-import-worker.cjs`,
+  `electron/legacy-evidence-backfill-runner.cjs`,
+  `electron/legacy-evidence-backfill-worker.cjs`,
+  `electron/mission-replay-runner.cjs`, `electron/mission-replay-worker.cjs`,
+  `electron/search-operations-page-runner.cjs`,
+  `electron/search-operations-page-worker.cjs`,
+  `electron/mission-replay-query-ipc.cjs`,
+  `electron/mission-store.cjs`, and
+  `src/features/runtime/install-app-runtime-teardown.ts`.
+- **Red and negative controls:** malicious or wrong sender; malformed,
+  over-sized, path-like or secret-bearing payload; held renderer drain;
+  reload/close/quit/crash/duplicate launch; stale generation reply; worker that
+  never exits; response over bound; main-loop timing outlier; and archive-IPC
+  revalidation. Retain the original timing receipt even if a later rerun
+  passes.
+- **Completion/disposition:** an IPC surface inventory, attack ledger,
+  lifecycle result and residual-risk statement. This is an investigation, not
+  a repair. Any P1/P2 or absolute blocker gets a separate repair PR. No
+  exhaustive inventory or scale proof may be claimed from the existing T1–T4
+  receipts alone.
+- **Complexity/model:** `8/10`; recommended `GPT-5.6 Sol`, high reasoning.
+  Independent IPC, worker and shell lanes are safe to parallelise only when
+  the final ownership ledger has one root owner per channel.
+- **Overlap:** `IPC-003` touches the store/worker boundary also audited by
+  WAR-10; GPX renderer boundary touches WAR-08. WAR-07 owns trust, lifecycle
+  and main-isolate attribution; it must not absorb evidence-fidelity or
+  persistence remediation. Source: coordinator task
+  `01a052c8-a981-7793-bbee-d146aaff9e4d`, charter row “Electron shell and IPC
+  audit”, cross-checked against `IPC-001`–`IPC-003`.
+
+#### WAR-08 — operator-evidence surfaces audit
+
+- **Original objective:** audit markers, clues, casualties, drawings/search
+  areas, layers/visibility, helicopters, GPX consumers and measurement
+  surfaces. Prove that stored coordinate/evidence identity is what map, review,
+  export and operator workflows present within declared tolerance; make hiding
+  an explicit display choice that never mutates or implies deletion; use focused
+  Playwright/visual checks where DOM assertions are insufficient. UI taste and
+  the final QGIS parity decision are out of scope.
+- **Safety invariants and hazards:** `EVD-001` requires persisted WGS84
+  coordinates, stable IDs/types/revisions and fields to remain equal across
+  shaping, rendering, selection, filtering and review. `EVD-002` requires
+  deterministic, inspectable scope-bound visibility with omitted/static state
+  disclosed and no mutation. `EVD-003` is a separately owned persistent
+  map-health warning gap under `DON-264`, not silently absorbed. `EVD-005`
+  requires immutable, collision-safe attachment identity and archive inclusion.
+  `RPL-005` is an adjacent search-pass/outcome identity seam.
+- **Production ownership:** marker and helicopter runtime/GeoJSON shaping;
+  GPX parser/read/start/renderer boundary; layer effective visibility, map
+  filters and overlays; evidence-version/store/review/replay tabs;
+  `electron/file-system.cjs`, attachment store, archive attachment review,
+  drawing persistence and search operations only where the surface is being
+  compared.
+- **Red and negative controls:** source-vs-map/review/export mismatches;
+  hide/show/filter toggles preserving database records; duplicate/colliding or
+  mutated attachments; out-of-order/revised/undated GPX points; failed
+  persistent overlay sync; and screenshot/visual checks of the actual operator
+  surface. A console-only `EVD-003` failure remains a finding, not a pass.
+- **Completion/disposition:** an evidence ledger with each surface and hazard
+  explicitly dispositioned. A bounded low-risk repair requires its own PR;
+  deeper findings go to the next repair train. No QGIS parity, visual taste or
+  packaged/field closure may be inferred from a local browser pass.
+- **Complexity/model:** `6/10`; recommended `GPT-5.6 Sol`, high reasoning.
+  Separate markers/layers/drawings/GPX/helicopter lanes can be parallelised
+  after the source-of-truth contract is fixed.
+- **Overlap:** WAR-07 retains IPC trust/lifecycle ownership; WAR-09 owns the
+  independent truth oracle; WAR-10 owns persistence/migration/recovery. WAR-08
+  may consume their receipts but must not duplicate their implementation.
+  Source: coordinator task `01a052c8-a981-7793-bbee-d146aaff9e4d`, charter row
+  “Operator-evidence surfaces audit”, cross-checked against `EVD-001`–`EVD-005`
+  and `RPL-005`.
+
+#### WAR-09 — independent mission-truth oracle
+
+- **Original objective:** provide an independent verifier from source/GPX or
+  provider evidence through SQLite to claims. It must compare identities,
+  `fixTime`, coordinates, rejection decisions, counts, watermarks and
+  completeness without importing production read models or repairing data.
+  Seed deleted, duplicated, retimed and inflated-watermark faults and prove the
+  oracle fails; post-soak/replay/restore checks are useful extensions, while
+  the current pre-candidate queue does not permit silently deferring the lane.
+- **Safety invariants and hazards:** `RPL-001` must prevent false Complete or
+  100% claims when selected revisions, fresh renderer delivery, ledger
+  acceptance, evidence health or worker completion are absent. `RPL-002` must
+  keep replay historical, versioned and time-bounded. `RPL-004` must detect
+  incomplete/corrupt/mutable/inaccessible archives and restore failures.
+  `RPL-005`, `MIS-003`, `EVD-001` and `EVD-004` are input-contract seams where
+  the oracle must expose loss or incompleteness rather than repair it.
+- **Production ownership:** read-only copies or schema-only independent
+  queries over `electron/mission-store.cjs` output; source/GPX fixture loaders;
+  coverage/progress/ledger, replay/search and archive-review claims. The oracle
+  must not become another production read model or write path.
+- **Red and negative controls:** missing, duplicate, retimed and wrong-identity
+  source records; coordinate and `fixTime` mismatch; inflated watermark;
+  incomplete participant/evidence counts; corrupt or truncated archive/restore;
+  and seeded stale-generation claims. Assert deterministic fail-closed verdicts
+  and retain fixed-cost comparison/digest evidence.
+- **Completion/disposition:** analysis ledger first. An oracle implementation,
+  seeded-fault suite or tooling PR needs its own explicit test-tooling change;
+  it cannot be smuggled into this documentation PR. Completion is a tool
+  receipt plus seeded-fault proof and a disposition for each consumed hazard;
+  the tool never auto-repairs.
+- **Complexity/model:** `7/10`; recommended `GPT-5.6 Sol`, high reasoning.
+  Ultra-depth is conditional because one root owner must control oracle
+  semantics and verdicts.
+- **Overlap:** consumes WAR-08 surface contracts and WAR-10 persistence/archive
+  shape; serialize semantic decisions with both, while fixture/query work can
+  be prepared independently. Source: coordinator task
+  `01a052c8-a981-7793-bbee-d146aaff9e4d`, charter row “Independent mission-truth
+  oracle”, cross-checked against `RPL-001`, `RPL-002`, `RPL-004`, `RPL-005`,
+  `MIS-003` and `EVD-004`.
+
+#### WAR-10 — persistence, migration and recovery audit
+
+- **Original objective:** after archive/finalization shape landed and alongside
+  the WAR-07 dependency, attack transaction/crash atomicity, WAL/checkpoint,
+  backups, every supported migration, interrupted migration, newer-schema
+  refusal, retention and growth budgets. Reconcile `DON-249`, `DON-250` and
+  `DON-251` without duplicate work. No schema redesign, multi-GB `VACUUM` or
+  archive-format change belongs in the audit. A structural mission-store
+  finding stops for coordinator/Fable/Donal architecture planning.
+- **Safety invariants and hazards:** `PST-001` requires atomic WAL writes,
+  transactional preserving migrations and unchanged refusal of newer schemas.
+  `PST-002` requires serialised off-main backup, fixed-cost validation, unique
+  temp plus atomic rename, prior-mirror retention and surfaced failure.
+  `PST-003` requires cancellable/off-main integrity checks that do not re-freeze
+  main. `PST-004` requires explicit growth/retention/archive/recovery budgets
+  without silent purge. `PST-005` requires bounded, resumable oversized-store
+  startup without discarding originals. `MIS-001`, `RPL-004` and `IPC-003` are
+  lifecycle, archive and worker-boundary cross-checks.
+- **Production ownership:** `electron/main.cjs`,
+  `electron/mission-store.cjs`, SQLite backup runner/worker/snapshot sanity,
+  autosave status, migration/backfill code, mission finalization/archive and
+  review/outing query runners.
+- **Red and negative controls:** interruption between sync/rename; WAL
+  reader/writer/checkpoint contention; EIO/ENOSPC and failed backup validation;
+  every supported migration and newer-schema refusal with byte preservation;
+  growth slopes, latency and startup held-gate tests; oversized legacy store;
+  close/recovery and archive restore. Run on copies and never destructively
+  alter the source profile.
+- **Completion/disposition:** migration matrix, fault ledger and explicit
+  hazard/Linear dispositions. No repair is hidden in this audit. A structural
+  store finding is blocked for Donal/architecture planning; an ordinary P1/P2
+  becomes a separate WAR-11 repair PR. No production or field closure follows
+  from a unit-only or one-package result.
+- **Complexity/model:** `9/10`; recommended `GPT-5.6 Sol`, extra-high
+  reasoning. Migration, WAL, backup and recovery lanes may be parallelised only
+  on isolated copies with one owner for the final disposition.
+- **Overlap:** depends on WAR-07’s main/worker inventory and shares archive
+  claims with WAR-09; it owns persistence truth, not IPC trust or oracle
+  semantics. Source: coordinator task `01a052c8-a981-7793-bbee-d146aaff9e4d`,
+  charter row “Persistence, migration and recovery audit”, cross-checked
+  against `PST-001`–`PST-005`, `MIS-001`, `RPL-004` and `IPC-003`.
+
+#### Launch order and safe-parallelism matrix
+
+The safe default is: **WAR-03 first; WAR-07 and WAR-08 in parallel after their
+analysis boundaries are agreed; WAR-09 after WAR-08’s source/evidence contract
+is frozen; WAR-10 after WAR-07 and its archive/persistence boundary is explicit.**
+WAR-03 can run beside either lane because its production ownership is disjoint.
+WAR-07 and WAR-08 can run together only if WAR-08 excludes IPC trust/lifecycle
+implementation and both record the GPX boundary explicitly. WAR-09 and WAR-10
+may prepare read-only fixtures/copies in parallel, but semantic verdicts and
+shared archive claims are serialised. No lane may modify the same production
+file or claim another lane’s evidence.
+
+| Pair / sequence | Safe? | Boundary |
+| --- | --- | --- |
+| WAR-03 with WAR-07 or WAR-08 | Yes | Coordinates/geometry are disjoint from shell, IPC and evidence-surface ownership. |
+| WAR-07 with WAR-08 | Conditional | Separate IPC trust/lifecycle from evidence fidelity; name GPX renderer ownership before launch. |
+| WAR-08 then WAR-09 | Yes, ordered | Freeze the stored/displayed evidence contract before oracle semantics. |
+| WAR-07 then WAR-10 | Yes, ordered | WAR-10 needs the current worker/main and teardown inventory. |
+| WAR-09 with WAR-10 | Read-only preparation only | Isolate DB copies; serialise archive/completeness verdicts and any implementation. |
+
+The launch packets must name the assigned owner, exact source head, read-only
+inputs, stop condition, retained red receipts, and next disposition before work
+starts. This section restores the charter; it does not authorise BCP-17/WAR-12,
+a release, a freeze, or any product-code change.
+
 ### Freeze decision
 
 Candidate freeze is **BLOCKED / not declared**. The blockers are the five
@@ -135,7 +399,7 @@ open WAR-01 absolute blockers, the missing WAR-03/WAR-07/WAR-08/WAR-09/WAR-10
 dispositions, the unreconciled final-candidate P1/P2 proof, the dry-run's
 `releaseEligible: false`, open `DON-247` original-machine qualification, and
 the absence of beta13 artifact/fixture hashes. The merge-ready procedure,
-including the required eventual reconciliation merge SHA fill step, version,
+including the recorded reconciliation merge SHA, version,
 artifact names, Linux matrix, rollback and fail-closed stop conditions, is in
 the [two-track workplan](../two-track-execution-workplan.md).
 
