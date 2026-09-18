@@ -19,7 +19,10 @@ async function run() {
   let database
   try {
     database = new Database(workerData.databasePath)
-    database.pragma('journal_mode = WAL')
+    const journalMode = String(database.pragma('journal_mode = WAL', { simple: true }) ?? '').toLowerCase()
+    if (journalMode !== 'wal') {
+      throw new Error('Legacy evidence backfill could not enable SQLite WAL journal mode.')
+    }
     // Each turn is completely reconstructible from immutable legacy rows and
     // advances its cursor in the same transaction. NORMAL avoids making live
     // writers wait for a migration-only fsync; a lost final turn is replayed.
@@ -47,7 +50,18 @@ async function run() {
     }
     database.prepare(`DELETE FROM metadata
       WHERE key = 'legacy_evidence_backfill_failure'`).run()
-    const checkpoint = await checkpointLegacyEvidenceWal(database)
+    let checkpoint
+    try {
+      checkpoint = await checkpointLegacyEvidenceWal(database)
+    } catch (error) {
+      checkpoint = {
+        busy: null,
+        log: null,
+        checkpointed: null,
+        completed: false,
+        warning: `Legacy evidence WAL checkpoint was unavailable: ${safeMessage(error?.message ?? error)}`,
+      }
+    }
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, checkpoint })
   } catch (error) {
     const message = safeMessage(error?.message ?? error)

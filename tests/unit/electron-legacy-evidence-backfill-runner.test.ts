@@ -1,5 +1,8 @@
 import { EventEmitter } from 'node:events'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -15,7 +18,7 @@ const { startLegacyEvidenceBackfillWorker } = require(
 
 type FakeWorker = EventEmitter & { terminate(): Promise<number> }
 
-const CHECKPOINT = { busy: 0, log: 12, checkpointed: 12 }
+const CHECKPOINT = { busy: 0, log: 12, checkpointed: 12, completed: true }
 
 function createFakeWorker(): FakeWorker {
   const worker = new EventEmitter() as FakeWorker
@@ -28,10 +31,13 @@ function createFakeWorker(): FakeWorker {
 
 describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
   it('passes only the closed migration envelope to the worker', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'sartracker-runner-'))
+    const databasePath = path.join(directory, 'mission-store.sqlite')
+    await writeFile(`${databasePath}-wal`, Buffer.alloc(64))
     const worker = createFakeWorker()
     const createWorker = vi.fn(() => worker)
     const execution = startLegacyEvidenceBackfillWorker({
-      databasePath: '/tmp/mission-store.sqlite',
+      databasePath,
       eventPending: true,
       objectPending: false,
       gpxPending: true,
@@ -41,7 +47,7 @@ describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
 
     expect(createWorker).toHaveBeenCalledWith({
       workerData: {
-        databasePath: '/tmp/mission-store.sqlite',
+        databasePath,
         eventPending: true,
         objectPending: false,
         gpxPending: true,
@@ -54,7 +60,11 @@ describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
     expect(settled).toBe(false)
 
     worker.emit('exit', 0)
-    await expect(execution.completion).resolves.toEqual({ workerThreadId: 17, checkpoint: CHECKPOINT })
+    await expect(execution.completion).resolves.toEqual({
+      workerThreadId: 17,
+      checkpoint: { ...CHECKPOINT, walSidecarBytes: 64 },
+    })
+    await rm(directory, { recursive: true, force: true })
   })
 
   it('rejects malformed completion and bounds worker failure text', async () => {
@@ -76,7 +86,7 @@ describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
     })
     missingCheckpointWorker.emit('message', { type: 'complete', workerThreadId: 17 })
     missingCheckpointWorker.emit('exit', 0)
-    await expect(missingCheckpoint.completion).rejects.toThrow(/exited.*without.*valid completion/iu)
+    await expect(missingCheckpoint.completion).rejects.toThrow(/checkpoint receipt|exited.*without.*valid completion/iu)
 
     const failedWorker = createFakeWorker()
     const failed = startLegacyEvidenceBackfillWorker({
@@ -104,5 +114,63 @@ describe('legacy evidence backfill worker runner [DON-277][DON-278]', () => {
     await expect(execution.terminate()).resolves.toBeUndefined()
     await expect(execution.completion).resolves.toEqual({ stopped: true })
     expect(worker.terminate).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a self-attested empty receipt while the parent observes a non-empty WAL sidecar', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'sartracker-runner-proof-'))
+    const databasePath = path.join(directory, 'mission-store.sqlite')
+    await writeFile(`${databasePath}-wal`, Buffer.alloc(64))
+    const worker = createFakeWorker()
+    const execution = startLegacyEvidenceBackfillWorker({
+      databasePath,
+      objectPending: true,
+      createWorker: () => worker,
+    })
+
+    worker.emit('message', {
+      type: 'complete',
+      workerThreadId: 17,
+      checkpoint: { busy: 0, log: 0, checkpointed: 0, completed: true },
+    })
+    worker.emit('exit', 0)
+    await expect(execution.completion).rejects.toThrow(/WAL sidecar|receipt|corroborat/iu)
+    await rm(directory, { recursive: true, force: true })
+  })
+
+  it('settles a contended checkpoint as a non-fatal completion with telemetry', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'sartracker-runner-warning-'))
+    const databasePath = path.join(directory, 'mission-store.sqlite')
+    await writeFile(`${databasePath}-wal`, Buffer.alloc(64))
+    const worker = createFakeWorker()
+    const execution = startLegacyEvidenceBackfillWorker({
+      databasePath,
+      objectPending: true,
+      createWorker: () => worker,
+    })
+
+    worker.emit('message', {
+      type: 'complete',
+      workerThreadId: 17,
+      checkpoint: {
+        busy: 0,
+        log: 12,
+        checkpointed: 4,
+        completed: false,
+        warning: 'reader checkpoint boundary remained active',
+      },
+    })
+    worker.emit('exit', 0)
+    await expect(execution.completion).resolves.toEqual({
+      workerThreadId: 17,
+      checkpoint: {
+        busy: 0,
+        log: 12,
+        checkpointed: 4,
+        completed: false,
+        warning: 'reader checkpoint boundary remained active',
+        walSidecarBytes: 64,
+      },
+    })
+    await rm(directory, { recursive: true, force: true })
   })
 })

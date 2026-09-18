@@ -52,35 +52,49 @@ receipt.
 The repair adds `electron/legacy-evidence-backfill-checkpoint.cjs`. After the
 worker's final metadata update and before its completion message, it disables
 the worker connection's busy wait, sets that connection to `synchronous=FULL`
-and requires `wal_checkpoint(PASSIVE)` to report a non-busy, complete
-checkpoint. The worker connection has `busy_timeout=0`; a bounded retry window
-with brief event-loop yields absorbs a concurrent main write without blocking
-it, while persistent reader/busy contention still throws. The existing worker
-failure path surfaces that failure instead of claiming settlement. The main
-store's `WAL` and `synchronous=FULL` settings are unchanged. Completion now
-also carries the validated checkpoint receipt, so the runner cannot settle a
-worker that omits the production checkpoint call. The smoke/terminal validator
+and records a non-busy, complete checkpoint when SQLite permits it. The worker
+connection has `busy_timeout=0`; a bounded retry window with brief event-loop
+yields absorbs a concurrent main write without blocking it, while persistent
+reader/busy contention is returned as non-fatal telemetry. Only reconstruction
+failures remain on the fail-closed worker path. The main store's `WAL` and
+`synchronous=FULL` settings are unchanged. Completion now carries the
+validated checkpoint receipt plus a parent-process observation of the live
+`-wal` sidecar, so the runner cannot settle a fabricated complete receipt. The
+smoke/terminal validator
 binds the helper as the seventh implicated production file.
+
+## Post-review disposition — 2026-09-18
+
+The earlier implementation evidence is retained, but PR36 is not mergeable as
+written. A checkpoint contention result currently shares the reconstruction
+failure path, so a committed backfill can falsely block evidence reads/writes,
+Replay, Finish Mission, Finalize and Archive until restart. The checkpoint must
+be best-effort telemetry, with real backfill failures remaining fail-closed.
+The runner also needs a parent-process observation of the live `-wal` sidecar
+to corroborate a complete receipt; an empty `{busy:0,log:0,checkpointed:0}` is
+valid only when the sidecar is empty. The prior exact-head workflow
+[35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+therefore remains historical evidence and is not acceptance for the repaired
+candidate.
 
 ## Verification completed on this branch
 
-- Checkpoint, runner and completion-contract tests — 15 passed, including a
-  real SQLite live-reader contention case that fails closed in under 200 ms
-  and a transient concurrent-writer retry.
-- Real-worker mission evidence integration suite — 93 passed, including the
-  production checkpoint receipt before worker settlement.
-- Focused source regression set — 205 tests passed across the checkpoint,
-  backfill runner, evidence versioning and mission-store suites before the
-  review remediation; the updated slices above are the authoritative rerun.
-- Terminal-report validation set — 38 tests passed, including rejection when
-  the checkpoint helper is absent from packaged identity custody.
-- `npm run lint -- --no-warn-ignored` passed.
+- Checkpoint, runner, completion-contract and terminal-report tests — 55
+  passed, including real SQLite success, live-reader contention returning a
+  bounded non-fatal warning, transient busy-lock retry, non-WAL handling,
+  strict malformed-receipt rejection and parent-sidecar spoof rejection.
+- Real-worker mission evidence integration cases — 4 passed, including the
+  operator-access regression after checkpoint contention and three production
+  recovery receipts before worker settlement.
+- Full source suite — 5,122 tests across 483 files passed; TypeScript build,
+  lint and bundle budgets passed.
 - Rebuilt packaged macOS diagnostic smoke passed with 50,000 rows, complete
-  custody/digest checks, restart mutation and cleanup; `sourceDirty=false`,
-  first-launch close was `2.008875 ms`, the close-loop maximum was
-  `52.997417 ms`, the recovery-loop maximum was `60.05725 ms`, and the
-  checkpoint receipt was `busy=0, log=946, checkpointed=946`. This is local
-  packaged diagnostic evidence only, not Linux CI or production qualification.
+  custody/digest checks, restart mutation and cleanup; first-launch main-loop
+  maximum was `55.238292 ms`, restart open maximum was `54.829083 ms`, and the
+  complete receipt was `busy=0, log=402, checkpointed=402` with a parent-observed
+  `walSidecarBytes=4494952`. This is local packaged diagnostic evidence only;
+  the working tree was intentionally changed, so it is not Linux CI or
+  production qualification.
 
 ## Independent review remediation
 
@@ -95,11 +109,11 @@ Both are now covered by failing-first tests and repaired in the current head.
 
 ## Remaining proof and limits
 
-The final exact-head Linux workflow [35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+The prior exact-head Linux workflow [35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
 passed at `71b83660801f3744fc69afaedfa65dc5217e508e`: the packaged report was
 source-clean, the legacy recovery proof was green, and the worker checkpoint
 receipt was complete. The independent Astra follow-up reported no actionable
-findings on the repaired code, then confirmed that the final head was
-documentation-only. PR36 is ready for Donal's merge decision. This evidence is
-not release qualification and does not authorize release, deployment,
-candidate mode, BCP-17/WAR-12 or SAR-team contact.
+findings on the then-current code, but the later adversarial review identified
+the blocker recorded above. This evidence is not release qualification and
+does not authorize merge, release, deployment, candidate mode, BCP-17/WAR-12
+or SAR-team contact.

@@ -26,6 +26,9 @@ import {
 import {
   assertPostSettlementMarkerCustody,
 } from '../build/electron-legacy-object-recovery-custody.js'
+import checkpointContract from '../electron/legacy-evidence-backfill-checkpoint.cjs'
+
+const { validateLegacyEvidenceBackfillCheckpoint } = checkpointContract
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -155,12 +158,15 @@ async function main() {
   assert.equal(completion[0]?.stopped, undefined)
   assert.ok(Number.isSafeInteger(completion[0]?.workerThreadId) && completion[0].workerThreadId > 0,
     'Recovery must complete through a real production worker.')
-  assert.ok(completion[0]?.checkpoint?.busy === 0
-    && Number.isSafeInteger(completion[0].checkpoint.log)
-    && completion[0].checkpoint.log >= 0
-    && Number.isSafeInteger(completion[0].checkpoint.checkpointed)
-    && completion[0].checkpoint.checkpointed >= completion[0].checkpoint.log,
-  'Recovery completion must include a complete WAL checkpoint receipt.')
+  assert.equal(
+    validateLegacyEvidenceBackfillCheckpoint(
+      completion[0]?.checkpoint,
+      completion[0]?.checkpoint?.walSidecarBytes,
+      { requireComplete: true },
+    ),
+    null,
+    'Recovery completion must include a physically corroborated complete WAL checkpoint receipt.',
+  )
   assert.notEqual(completion[0].workerThreadId, report.firstLaunch.parentThreadId,
     'Recovery completion must identify a different thread from Electron main.')
   report.firstLaunch.mainTimer = await stopPackagedMainProbe()

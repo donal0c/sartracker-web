@@ -1,6 +1,17 @@
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+
 type Completion = {
   readonly workerThreadId: number
-  readonly checkpoint: { readonly busy: number; readonly log: number; readonly checkpointed: number }
+  readonly checkpoint: {
+    readonly busy: number | null
+    readonly log: number | null
+    readonly checkpointed: number | null
+    readonly completed: boolean
+    readonly warning?: string
+    readonly walSidecarBytes: number
+  }
 }
 type Outcome = { readonly value: Completion } | { readonly error: unknown }
 
@@ -37,14 +48,12 @@ export async function observeLegacyRecoveryCompletion(completion: Promise<unknow
       throw new Error('Legacy recovery did not report a WAL checkpoint receipt.')
     }
     const checkpoint = candidate.checkpoint as Record<string, unknown>
+    const checkpointError = validateCheckpoint(checkpoint)
+    if (checkpointError !== null) throw new Error(checkpointError)
     outcome = {
       value: {
         workerThreadId: Number(value.workerThreadId),
-        checkpoint: {
-          busy: Number(checkpoint.busy),
-          log: Number(checkpoint.log),
-          checkpointed: Number(checkpoint.checkpointed),
-        },
+        checkpoint: checkpoint as Completion['checkpoint'],
       },
     }
   } catch (error) {
@@ -57,4 +66,20 @@ export async function observeLegacyRecoveryCompletion(completion: Promise<unknow
     clearTimeout(deadline)
   }
   return { outcome, maximumHeartbeatGapMs }
+}
+
+/** Validates the production completion contract without coercing malformed values into zero. */
+function validateCheckpoint(checkpoint: Record<string, unknown>): string | null {
+  const { validateLegacyEvidenceBackfillCheckpoint } = require('../../electron/legacy-evidence-backfill-checkpoint.cjs') as {
+    validateLegacyEvidenceBackfillCheckpoint(
+      value: unknown,
+      walSidecarBytes: unknown,
+      options?: { readonly requireComplete?: boolean },
+    ): string | null
+  }
+  return validateLegacyEvidenceBackfillCheckpoint(
+    checkpoint,
+    checkpoint.walSidecarBytes,
+    { requireComplete: false },
+  )
 }

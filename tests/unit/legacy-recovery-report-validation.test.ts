@@ -42,7 +42,13 @@ function syntheticReport(): JsonObject {
   }
   const firstLaunch = objectAt(report, 'firstLaunch')
   const completion = (firstLaunch.workerCompletion as JsonObject[])[0]!
-  completion.checkpoint = { busy: 0, log: 0, checkpointed: 0 }
+  completion.checkpoint = {
+    busy: 0,
+    log: 0,
+    checkpointed: 0,
+    completed: true,
+    walSidecarBytes: 0,
+  }
   const packagedFiles = objectAt(objectAt(report, 'packaged'), 'files')
   for (const relativePath of Object.keys(packagedFiles)) {
     const hash = sha256File(relativePath)
@@ -88,6 +94,11 @@ describe('legacy recovery terminal report validation [DON-254]', () => {
     ['missing worker completion', (report: JsonObject) => { objectAt(report, 'firstLaunch').workerCompletion = [] }],
     ['missing checkpoint receipt', (report: JsonObject) => { delete (objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!.checkpoint }],
     ['incomplete checkpoint receipt', (report: JsonObject) => { objectAt((objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!, 'checkpoint').busy = 1 }],
+    ['unverifiable checkpoint receipt', (report: JsonObject) => {
+      const completion = (objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!
+      objectAt(completion, 'checkpoint').walSidecarBytes = 64
+      objectAt(completion, 'checkpoint').log = 0
+    }],
     ['worker on caller thread', (report: JsonObject) => { objectAt(report, 'firstLaunch').workerCompletion = [{ workerThreadId: objectAt(report, 'firstLaunch').parentThreadId }] }],
     ['stopped worker', (report: JsonObject) => { (objectAt(report, 'firstLaunch').workerCompletion as JsonObject[])[0]!.stopped = true }],
     ['wrong observer realm', (report: JsonObject) => { objectAt(objectAt(report, 'firstLaunch'), 'observer').observerRealm = 'main-process' }],

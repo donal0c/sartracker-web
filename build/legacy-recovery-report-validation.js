@@ -2,6 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import checkpointContract from '../electron/legacy-evidence-backfill-checkpoint.cjs'
+
+const { validateLegacyEvidenceBackfillCheckpoint } = checkpointContract
 
 const EXPECTED_BASELINE_ROWS = 50_000
 const SOURCE_FILES = {
@@ -254,13 +257,12 @@ function validateThreadIdentity(launch, failures, phase, requiresCompletion = tr
 /** Requires a completed, durable WAL checkpoint receipt from the recovery worker. */
 function validateCheckpointReceipt(value, label, failures) {
   const checkpoint = objectValue(value)
-  if (checkpoint === null
-    || checkpoint.busy !== 0
-    || !isNonnegativeSafeInteger(checkpoint.log)
-    || !isNonnegativeSafeInteger(checkpoint.checkpointed)
-    || checkpoint.checkpointed < checkpoint.log) {
-    failures.push(`${label} is missing or incomplete.`)
-  }
+  const reason = validateLegacyEvidenceBackfillCheckpoint(
+    checkpoint,
+    checkpoint?.walSidecarBytes,
+    { requireComplete: true },
+  )
+  if (reason !== null) failures.push(`${label} is missing or invalid: ${reason}`)
 }
 
 /** Validates all exact 50,000-row custody counters and cross-phase digests. */

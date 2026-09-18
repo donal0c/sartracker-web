@@ -1,5 +1,9 @@
+const fs = require('node:fs')
 const path = require('node:path')
 const { Worker } = require('./mission-worker.cjs')
+const {
+  validateLegacyEvidenceBackfillCheckpoint,
+} = require('./legacy-evidence-backfill-checkpoint.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'legacy-evidence-backfill-worker.cjs')
 
@@ -26,9 +30,28 @@ function startLegacyEvidenceBackfillWorker(input) {
     worker.on('message', (message) => {
       if (settled) return
       if (message?.type === 'complete'
-        && Number.isInteger(message.workerThreadId)
-        && isCheckpointReceipt(message.checkpoint)) {
-        completedMessage = { workerThreadId: message.workerThreadId, checkpoint: message.checkpoint }
+        && Number.isInteger(message.workerThreadId)) {
+        try {
+          const walSidecarBytes = readWalSidecarBytes(input.databasePath)
+          const validationError = validateLegacyEvidenceBackfillCheckpoint(
+            message.checkpoint,
+            walSidecarBytes,
+          )
+          if (validationError === null) {
+            completedMessage = {
+              workerThreadId: message.workerThreadId,
+              checkpoint: { ...message.checkpoint, walSidecarBytes },
+            }
+          } else {
+            workerFailure = new Error(
+              `Legacy evidence reconstruction worker reported an invalid checkpoint receipt: ${safeMessage(validationError)}`,
+            )
+          }
+        } catch (error) {
+          workerFailure = new Error(
+            `Legacy evidence reconstruction worker could not validate its checkpoint receipt: ${safeMessage(error?.message ?? error)}`,
+          )
+        }
         return
       }
       if (message?.type === 'error') {
@@ -78,15 +101,18 @@ function safeMessage(value) {
   return String(value ?? 'unknown error').replace(/[\r\n]+/gu, ' ').trim().slice(0, 500)
 }
 
-/** Accepts only a complete, non-busy checkpoint receipt from the production worker. */
-function isCheckpointReceipt(value) {
-  return value !== null
-    && typeof value === 'object'
-    && value.busy === 0
-    && Number.isSafeInteger(value.log)
-    && value.log >= 0
-    && Number.isSafeInteger(value.checkpointed)
-    && value.checkpointed >= value.log
+/** Reads the SQLite WAL sidecar without exposing the database path in errors. */
+function readWalSidecarBytes(databasePath) {
+  try {
+    const stats = fs.statSync(`${databasePath}-wal`)
+    if (!stats.isFile() || !Number.isSafeInteger(stats.size) || stats.size < 0) {
+      throw new Error('WAL sidecar is not a regular file.')
+    }
+    return stats.size
+  } catch (error) {
+    if (error?.code === 'ENOENT') return 0
+    throw new Error('WAL sidecar could not be observed.')
+  }
 }
 
 module.exports = { startLegacyEvidenceBackfillWorker }

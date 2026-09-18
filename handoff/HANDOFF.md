@@ -73,19 +73,27 @@ machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
 Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
 `DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
 
-Next: the bounded DON-254 close-path repair is ready for Donal's merge decision
-[PR36](https://github.com/donal0c/sartracker-web/pull/36), from merged PR35 head
-`ea4b92eb82646b12b2d8ad2307e242ed8049d35c`; see
-[the retained disposition](../docs/assurance/findings/legacy-recovery-close-path-20260917.md).
-The repair checkpoints the legacy backfill WAL in its worker with `FULL`
-durability before completion, while retaining the strict `<200 ms` predicate.
-The first failed PR35 Linux receipt and later passing receipt remain retained;
-the initial Astra P1/P2 findings and the follow-up's two P2 validation gaps
-were repaired. Final exact-head Linux workflow
+Next: PR36 remains unmergeable pending the checkpoint-contention repair. The
+worker-side PASSIVE checkpoint must be best-effort telemetry: a transient busy
+or reader boundary must not persist `legacy_evidence_backfill_failure`, because
+that key blocks evidence reads/writes and mission lifecycle actions until
+restart. The retained [finding](../docs/assurance/findings/legacy-recovery-close-path-20260917.md)
+records the earlier qualification evidence; it is not a current merge verdict.
+The parent runner must also corroborate a complete receipt against the live
+`-wal` sidecar, while allowing `{0,0,0}` only when the sidecar is empty. The
+strict `<200 ms` predicate and all release holds remain unchanged.
+
+The earlier exact-head Linux workflow
 [35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
-passed at `71b83660`, and the completed Astra follow-up found no actionable
-findings and confirmed that final head was documentation-only. Do not start
-BCP-17/WAR-12 before candidate freeze and Donal's explicit phase-6 discussion.
+passed at `71b83660`, but it predates this blocker repair and cannot qualify
+the current candidate. Do not start BCP-17/WAR-12 before candidate freeze and
+Donal's explicit phase-6 discussion.
+
+Current repair verification (2026-09-18): 55 focused checkpoint/runner/report
+tests, 4 real-worker evidence cases, full source suite `5,122/5,122`,
+TypeScript build, lint, bundle budgets, and rebuilt macOS packaged diagnostic
+smoke passed. The packaged smoke is local diagnostic evidence only; fresh
+Linux CI and exact-head review are still required after this repair.
 
 Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
 [earlier archive](archive/pre-war06-repair-20260913.md).
