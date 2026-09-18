@@ -2,95 +2,59 @@
 
 Updated 2026-09-18. Read after `CLAUDE.md`.
 
-## Baseline and active lane
+## Baseline and disposition
 
-`origin/master` is `f7798a19589b5d907408080dc65e2d2739767130`, the merge of
-[PR36](https://github.com/donal0c/sartracker-web/pull/36). PR35 and PR36 are
-merged; the current reconciliation is being prepared on
-`codex/post-pr36-release-readiness` as a documentation/control-plane PR.
+PR38 started from base snapshot `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`,
+the PR37 merge, from exact head
+`1640edb2dfd558c0d26d40e41b1d6c516dea4a28`. Required Linux workflow
+`35380031004` passed at that exact head. PR37 is documentation/control-plane
+reconciliation evidence only; it does not fix product hazards, qualify a
+candidate, declare a freeze, authorize release, or start BCP-17/WAR-12.
 
-PR35 merged at `ea4b92eb82646b12b2d8ad2307e242ed8049d35c` from head
-`990a7f16885984e40b53c3261f9de23e17a104ab`. Its exact-head Linux workflow
-`35242591823` passed the repaired legacy recovery boundary. The earlier exact
-head `d76bd61f7c3cfc43f102007ea7de7ef579495184` receipt
-`35221533225` failed the unchanged strict `<200 ms` predicate during first
-launch; its `512.449076 ms` main-loop maximum and all failure artifacts remain
-retained.
+`DON-254` is **In Progress**. Candidate freeze and release remain
+**BLOCKED / not declared**. The five WAR-01 absolute blockers remain
+`open-blocking`; WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted
+with no bounded receipt or authoritative disposition. The qualification dry run
+remains `releaseEligible: false`; `DON-247` original-machine qualification is
+still open.
 
-PR36 merged at `f7798a19589b5d907408080dc65e2d2739767130` from head
-`ed3c69f342a9a9f3bc60d7fb1390743f59210ad0`. Required Linux workflow
-`35332400799` passed at the exact head. It verifies the best-effort worker-side
-PASSIVE checkpoint, real-worker receipt handling, parent `-wal` observation,
-and packaged legacy recovery observer proof. It is repair/merge evidence only:
-the workflow intentionally did not execute the complete BCP-17/WAR-12 release
-matrix, including strict 960k replay, field-scale, soak, archive, or original-
-machine proof.
+## Active work and recovered charter
 
-Historical WAR-11 settings/privacy receipts remain retained: the first broad
-attempt recorded one transient `222.6 ms` packaged observer timing excursion;
-rerun [`35228305218`](https://github.com/donal0c/sartracker-web/actions/runs/35228305218)
-passed the same proof. Exact-head repair commit
-[`f7cb1503`](https://github.com/donal0c/sartracker-web/commit/f7cb15032d089df9c54c5875e4fd00c57034b39c)
-was covered by [`35235173989`](https://github.com/donal0c/sartracker-web/actions/runs/35235173989),
-and the pre-PR34 baseline packaged run
-[`35199520928`](https://github.com/donal0c/sartracker-web/actions/runs/35199520928)
-also passed. These are retained historical receipts, not final-candidate proof.
+The original WAR-03/07/08/09/10 scopes, hazard IDs, ownership seams, red
+controls, completion rules, complexity/model recommendations and provenance are
+recorded in [the coordinated ledger](../docs/assurance/coordinated-work-ledger.md).
+They were recovered from current hazard rows, the active workplan and prior
+coordinator task history; they are not new programme scope and none is accepted
+as executed evidence. Launches are analysis-first/read-only. P1/P2 or absolute
+blocker findings require a separate repair PR or Donal architecture decision.
 
-## Current disposition
+Recommended order: WAR-03 first; WAR-07 and WAR-08 in parallel only with
+explicitly disjoint ownership; WAR-09 after the evidence contract is frozen;
+WAR-10 after the WAR-07 worker/main boundary is explicit. Read-only fixture
+preparation may overlap, but shared semantic and archive dispositions are
+serialised.
 
-The SQLite checkpoint/contention blocker is fixed at the PR36 repair boundary.
-Checkpoint contention is now non-fatal telemetry; genuine reconstruction
-failures remain fail-closed. The retained
-[close-path finding](../docs/assurance/findings/legacy-recovery-close-path-20260917.md)
-records both the failed PR35 receipt and the later passing receipt. The strict
-`<200 ms` predicate is unchanged.
+## Next actions and boundaries
 
-Release and candidate freeze remain **BLOCKED / not declared**. All five
-WAR-01 absolute blockers remain `open-blocking` pending exact candidate exit
-evidence. WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 have no current bounded
-investigation receipt or authoritative disposition and therefore cannot be
-treated as cleared or safely deferred. The qualification dry run remains
-`releaseEligible: false`; it proves control-plane plumbing, not product
-qualification. `DON-254` is In Progress and `DON-247` original-machine
-qualification remains open.
+Use the ledger/workplan as the current baton. Complete the five WAR-01 exit
+proofs, the five recovered WAR dispositions, confirmed P1/P2 rechecks, exact
+candidate qualification, original-machine confirmation and same-byte
+publication evidence before any freeze or release claim. After this
+reconciliation PR merges, the candidate procedure must record its actual merge
+SHA as `reconciliationMergeSha`; do not substitute the PR38 head, PR37's head,
+or a workflow SHA.
 
-PR37 remains an open, non-draft documentation/control-plane reconciliation PR.
-Its live GitHub record is authoritative for the exact head, required checks and
-review state; this handoff intentionally does not repeat a self-referential
-head claim. No independent review has been received, and the PR does not
-authorize merge or change the blocked freeze disposition.
-
-The current authoritative reconciliation is in
-[the coordinated ledger](../docs/assurance/coordinated-work-ledger.md) and
-[the two-track workplan](../docs/two-track-execution-workplan.md). The
-candidate-freeze procedure there is a merge-ready procedure, not a claim that
-a candidate has been frozen.
-
-## Freeze prerequisites and next action
-
-Before BCP-17/WAR-12, the team must close or policy-validly disposition every
-confirmed P1/P2 and all five WAR-01 absolute blockers, complete the missing WAR
-investigations, and produce one exact candidate receipt. The eventual
-reconciliation PR merge SHA must be filled into the candidate record after
-merge; neither this PR head nor its pre-merge base may be substituted.
-
-The intended next candidate is `0.1.0-beta.13`, tag
-`electron-v0.1.0-beta.13`, using the exact CI-built AppImage, installed `.deb`,
-`SHA256SUMS`, declared fixture identities/checksums, Linux matrix, rollback
-artifact and fail-closed stop conditions recorded in the workplan. No beta13
-candidate or artifact exists yet. The last published beta12.11 remains the
-rollback reference, not current qualification evidence.
+No product code, manual, BCP-17/WAR-12 execution, release/tag/publish, or merge
+is in scope for this documentation/control-plane chunk.
 
 ## Verification snapshot
 
-For the PR36 repair branch, the retained local evidence is 55 focused
-checkpoint/runner/report tests, four real-worker cases, the full source suite
-(`5,122/5,122`), TypeScript build, lint, bundle budgets and a rebuilt macOS
-packaged diagnostic smoke. The exact merged PR36 Linux workflow is
-`35332400799`. These are scoped repair and local diagnostics; they do not
-replace candidate, field, human-acceptance or production evidence. Any PR37
-workflow result is reconciliation-PR evidence only and does not change the
-blocked freeze disposition.
+Live checks confirmed PR37 `MERGED`, exact head `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`,
+merge `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, workflow `35380031004`
+`success`, and no open PRs at the time of reconciliation. Documentation checks
+are `git diff --check`, stale-current-baseline search, and link/identifier
+inspection; product test suites are intentionally not rerun for this docs-only
+change.
 
-Older detail is archived in [pre-Train C history](archive/pre-train-c-20260914.md)
+Older detail remains in [pre-Train C history](archive/pre-train-c-20260914.md)
 and [pre-WAR-06 history](archive/pre-war06-repair-20260913.md).
