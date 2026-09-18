@@ -26,6 +26,16 @@ the workflow intentionally did not execute the complete BCP-17/WAR-12 release
 matrix, including strict 960k replay, field-scale, soak, archive, or original-
 machine proof.
 
+Historical WAR-11 settings/privacy receipts remain retained: the first broad
+attempt recorded one transient `222.6 ms` packaged observer timing excursion;
+rerun [`35228305218`](https://github.com/donal0c/sartracker-web/actions/runs/35228305218)
+passed the same proof. Exact-head repair commit
+[`f7cb1503`](https://github.com/donal0c/sartracker-web/commit/f7cb15032d089df9c54c5875e4fd00c57034b39c)
+was covered by [`35235173989`](https://github.com/donal0c/sartracker-web/actions/runs/35235173989),
+and the pre-PR34 baseline packaged run
+[`35199520928`](https://github.com/donal0c/sartracker-web/actions/runs/35199520928)
+also passed. These are retained historical receipts, not final-candidate proof.
+
 ## Current disposition
 
 The SQLite checkpoint/contention blocker is fixed at the PR36 repair boundary.
@@ -44,15 +54,11 @@ treated as cleared or safely deferred. The qualification dry run remains
 qualification. `DON-254` is In Progress and `DON-247` original-machine
 qualification remains open.
 
-PR37 is open at exact head
-`44d130824bb291c680ea521bfcaf6e788646921f`; its required Linux workflow
-`35364592238` passed (`105663963167`) on 2026-09-18. The docs-only workflow
-passed lint, correctness, WAR-02B, rendered regressions, packaging/native
-SQLite/map/GPX/breadcrumb/cache/legacy recovery checks and AppImage smoke.
-Strict responsiveness, normal 960k replay, participant/Search Operations,
-Repair Train D packaged validation, tracking soak and archive lifecycle were
-skipped and remain unqualified. GitHub reports the PR mergeable but blocked
-because no review has been received.
+PR37 remains an open, non-draft documentation/control-plane reconciliation PR.
+Its live GitHub record is authoritative for the exact head, required checks and
+review state; this handoff intentionally does not repeat a self-referential
+head claim. No independent review has been received, and the PR does not
+authorize merge or change the blocked freeze disposition.
 
 The current authoritative reconciliation is in
 [the coordinated ledger](../docs/assurance/coordinated-work-ledger.md) and
@@ -82,9 +88,9 @@ checkpoint/runner/report tests, four real-worker cases, the full source suite
 (`5,122/5,122`), TypeScript build, lint, bundle budgets and a rebuilt macOS
 packaged diagnostic smoke. The exact merged PR36 Linux workflow is
 `35332400799`. These are scoped repair and local diagnostics; they do not
-replace candidate, field, human-acceptance or production evidence. PR37's
-workflow is additional reconciliation-PR evidence only and does not change
-the blocked freeze disposition.
+replace candidate, field, human-acceptance or production evidence. Any PR37
+workflow result is reconciliation-PR evidence only and does not change the
+blocked freeze disposition.
 
 Older detail is archived in [pre-Train C history](archive/pre-train-c-20260914.md)
 and [pre-WAR-06 history](archive/pre-war06-repair-20260913.md).

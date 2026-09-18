@@ -80,6 +80,19 @@ maximum observed recovery heartbeat of 12.93 ms. These reruns are retained as
 flake observations, not permission to weaken or remove an assertion; required
 CI remains authoritative for the exact repair head.
 
+## Retained CI receipts
+
+The first broad attempt recorded one transient `222.6 ms` packaged observer
+timing excursion; rerun [`35228305218`](https://github.com/donal0c/sartracker-web/actions/runs/35228305218)
+passed the same proof. Exact-head repair commit
+[`f7cb1503`](https://github.com/donal0c/sartracker-web/commit/f7cb15032d089df9c54c5875e4fd00c57034b39c)
+was covered by [`35235173989`](https://github.com/donal0c/sartracker-web/actions/runs/35235173989),
+and the pre-PR34 baseline packaged run
+[`35199520928`](https://github.com/donal0c/sartracker-web/actions/runs/35199520928)
+also passed. The strict responsiveness step was skipped in these workflow
+receipts; they are retained repair/baseline evidence, not final-candidate
+qualification.
+
 ## Remaining boundary
 
 This repair does not change the accepted trusted-machine plaintext credential

@@ -90,6 +90,23 @@ The earlier exact-head workflow
 passed before the final adversarial review and remains historical evidence, not
 acceptance for the merged release candidate.
 
+## Superseded pre-merge blocker retained for escape analysis
+
+Before PR36 merged, the review verdict was that the implementation was not
+mergeable as written: a checkpoint contention result shared the reconstruction
+failure path and could falsely block evidence reads/writes, Replay, Finish
+Mission, Finalize and Archive until restart. The required repair was
+best-effort checkpoint telemetry with genuine backfill failures remaining
+fail-closed, plus parent observation of the live `-wal` sidecar to corroborate a
+complete receipt. The prior exact-head workflow
+[`35267063564`](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+was therefore historical evidence, not acceptance for the repaired candidate.
+
+That verdict is retained as the pre-merge escape analysis; PR36's exact-head
+workflow and merged boundary above supersede it only for the scoped repair
+implementation. It does not become release, candidate, field or human-
+acceptance evidence.
+
 ## Verification completed on this branch
 
 - Checkpoint, runner, completion-contract and terminal-report tests — 55
@@ -127,6 +144,7 @@ passed at `71b83660801f3744fc69afaedfa65dc5217e508e`: the packaged report was
 source-clean, the legacy recovery proof was green, and the worker checkpoint
 receipt was complete. The independent Astra follow-up reported no actionable
 findings on the then-current code, but the later adversarial review identified
-the blocker recorded above. This evidence is not release qualification and
-does not authorize merge, release, deployment, candidate mode, BCP-17/WAR-12
-or SAR-team contact.
+the pre-merge blocker retained in the superseded section above. PR36 addressed
+that scoped repair boundary; this evidence is not release qualification and
+does not authorize release, deployment, candidate mode, BCP-17/WAR-12 or
+SAR-team contact.
