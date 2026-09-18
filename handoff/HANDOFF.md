@@ -1,99 +1,78 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-17. Read after `CLAUDE.md`.
+Updated 2026-09-18. Read after `CLAUDE.md`.
 
 ## Baseline and active lane
 
-`origin/master` is `2850e0a54c3ec30a95626c42a604ad183698cdd1`, the merge of
-[PR34](https://github.com/donal0c/sartracker-web/pull/34). The merged WAR-11
-settings/privacy repair head is `f7cb1503`; exact-head Linux workflow
-`35235173989` passed. The qualification control-plane implementation is being
-reconciled on that merged baseline on `codex/don-254-qualification-control-plane`.
+`origin/master` is `f7798a19589b5d907408080dc65e2d2739767130`, the merge of
+[PR36](https://github.com/donal0c/sartracker-web/pull/36). PR35 and PR36 are
+merged; the current reconciliation is being prepared on
+`codex/post-pr36-release-readiness` as a documentation/control-plane PR.
 
-PR32 closed the scoped Repair Train D follow-up. Its validated implementation
-head was `58ea29005b17a34e69f52ad44966a42f9c63d0aa` with tree
-`c890c1fd2f713a195b2ec56132e4ac6c7b38e954`. Required Linux workflow
-`35177287167` passed source, strict responsiveness, rendered/browser, package,
-Train D receipt, tracking-soak, archive-lifecycle and AppImage boundaries.
-Ordinary PR workflow `35179847412` also passed. Later PR32 commits were
-documentation-only and preserved the qualified executable/test/configuration
-trees.
+PR35 merged at `ea4b92eb82646b12b2d8ad2307e242ed8049d35c` from head
+`990a7f16885984e40b53c3261f9de23e17a104ab`. Its exact-head Linux workflow
+`35242591823` passed the repaired legacy recovery boundary. The earlier exact
+head `d76bd61f7c3cfc43f102007ea7de7ef579495184` receipt
+`35221533225` failed the unchanged strict `<200 ms` predicate during first
+launch; its `512.449076 ms` main-loop maximum and all failure artifacts remain
+retained.
 
-## Current coordinated queue
+PR36 merged at `f7798a19589b5d907408080dc65e2d2739767130` from head
+`ed3c69f342a9a9f3bc60d7fb1390743f59210ad0`. Required Linux workflow
+`35332400799` passed at the exact head. It verifies the best-effort worker-side
+PASSIVE checkpoint, real-worker receipt handling, parent `-wal` observation,
+and packaged legacy recovery observer proof. It is repair/merge evidence only:
+the workflow intentionally did not execute the complete BCP-17/WAR-12 release
+matrix, including strict 960k replay, field-scale, soak, archive, or original-
+machine proof.
 
-The three streams are one queue; parallel work requires disjoint production
-ownership.
+## Current disposition
 
-1. **Deep audit:** thirteen of fourteen confirmed `AUD-*` groups are repaired
-   and merged. Only `AUD-12` (Clear Alias retains the saved alias) remains, a
-   P3 store/controller/UI repair suitable for the next coherent UI batch.
-2. **Team requirements:** the highest-priority unfinished workflow is the
-   private Discovery-map raw-source-to-MBTiles preparation and distribution
-   path (`DON-144`/`DON-7`/`DON-76`). Also retained are Search Area manual label
-   placement (`DON-214`), map export/print (`DON-216`), external-resource model
-   (`DON-217`), evacuation/gear-log ownership (`DON-218`), privileged Settings
-   and mission unlock/recovery (`DON-219`–`DON-221`), multi-day layer grouping
-   (`DON-100`), and the later Marker Details simplification.
-3. **WAR:** WAR-01, WAR-13A, WAR-04, WAR-04B, WAR-02A, WAR-02B, WAR-06 and
-   several WAR-11 repair trains are complete/merged. WAR-04's three
-   settings/startup findings (`WAR04-SET-01..03`) and three diagnostics/privacy
-   findings (`WAR04-PRV-01..03`) are merged through
-   [PR34](https://github.com/donal0c/sartracker-web/pull/34) with joined
-   red-to-green, 5,074-test serial correctness, packaged macOS recovery, lint,
-   build, and exact-head Linux CI evidence. The first Linux attempt had one
-   transient 222.6 ms packaged observer timing excursion; rerun 35228305218
-   passed the same proof. The final merged repair head `f7cb1503` passed
-   workflow `35235173989` before merge commit `2850e0a5`.
-   WAR-03,
-   WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted. WAR-05 needs the real
-   Mint machine/tester. WAR-12 is the final frozen-candidate qualification and
-   WAR-13B starts only after an internal beta is published.
+The SQLite checkpoint/contention blocker is fixed at the PR36 repair boundary.
+Checkpoint contention is now non-fatal telemetry; genuine reconstruction
+failures remain fail-closed. The retained
+[close-path finding](../docs/assurance/findings/legacy-recovery-close-path-20260917.md)
+records both the failed PR35 receipt and the later passing receipt. The strict
+`<200 ms` predicate is unchanged.
 
-The [locked release train](../docs/two-track-execution-workplan.md#locked-path-to-the-next-team-beta--2026-09-17)
-now controls the route to the next team build. The bounded WAR-11
-settings/privacy repair is merged; next reconcile and dry-run the model-judged
-qualification design on that exact baseline.
-Remaining WAR investigations may run as bounded analysis lanes; any confirmed
-absolute blocker or P1/P2 joins the repair boundary. The prepared private
-MBTiles route is sufficient for this beta; the raw-source administration and
-distribution workflow remains explicitly unfinished.
+Release and candidate freeze remain **BLOCKED / not declared**. All five
+WAR-01 absolute blockers remain `open-blocking` pending exact candidate exit
+evidence. WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 have no current bounded
+investigation receipt or authoritative disposition and therefore cannot be
+treated as cleared or safely deferred. The qualification dry run remains
+`releaseEligible: false`; it proves control-plane plumbing, not product
+qualification. `DON-254` is In Progress and `DON-247` original-machine
+qualification remains open.
 
-## Limits and next action
+The current authoritative reconciliation is in
+[the coordinated ledger](../docs/assurance/coordinated-work-ledger.md) and
+[the two-track workplan](../docs/two-track-execution-workplan.md). The
+candidate-freeze procedure there is a merge-ready procedure, not a claim that
+a candidate has been frozen.
 
-Release, deployment, BCP-17/WAR-12, official-map distribution, field and human
-acceptance remain HOLD/unproven. The historical macOS unpaired
-`coverage-revision-moved` diagnostic remains retained and unallowlisted. The
-strict `<200 ms` predicate remains unchanged; merge evidence is not a release
-qualification claim.
+## Freeze prerequisites and next action
 
-Linear was reconciled live on 2026-09-17. `DON-254` had been marked Done before
-its own BCP-17 completion contract was met; it is reopened In Progress with a
-comment preserving PR32's scoped evidence and the remaining final-candidate,
-machine, field and publication gaps. `DON-271` and `DON-279` are correctly Done.
-Map owners `DON-7`/`DON-76` and machine qualification `DON-247` are In Progress;
-`DON-144` is Todo; the other retained team issues remain Backlog/Todo as named.
+Before BCP-17/WAR-12, the team must close or policy-validly disposition every
+confirmed P1/P2 and all five WAR-01 absolute blockers, complete the missing WAR
+investigations, and produce one exact candidate receipt. The eventual
+reconciliation PR merge SHA must be filled into the candidate record after
+merge; neither this PR head nor its pre-merge base may be substituted.
 
-Next: PR36 remains unmergeable pending the checkpoint-contention repair. The
-worker-side PASSIVE checkpoint must be best-effort telemetry: a transient busy
-or reader boundary must not persist `legacy_evidence_backfill_failure`, because
-that key blocks evidence reads/writes and mission lifecycle actions until
-restart. The retained [finding](../docs/assurance/findings/legacy-recovery-close-path-20260917.md)
-records the earlier qualification evidence; it is not a current merge verdict.
-The parent runner must also corroborate a complete receipt against the live
-`-wal` sidecar, while allowing `{0,0,0}` only when the sidecar is empty. The
-strict `<200 ms` predicate and all release holds remain unchanged.
+The intended next candidate is `0.1.0-beta.13`, tag
+`electron-v0.1.0-beta.13`, using the exact CI-built AppImage, installed `.deb`,
+`SHA256SUMS`, declared fixture identities/checksums, Linux matrix, rollback
+artifact and fail-closed stop conditions recorded in the workplan. No beta13
+candidate or artifact exists yet. The last published beta12.11 remains the
+rollback reference, not current qualification evidence.
 
-The earlier exact-head Linux workflow
-[35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
-passed at `71b83660`, but it predates this blocker repair and cannot qualify
-the current candidate. Do not start BCP-17/WAR-12 before candidate freeze and
-Donal's explicit phase-6 discussion.
+## Verification snapshot
 
-Current repair verification (2026-09-18): 55 focused checkpoint/runner/report
-tests, 4 real-worker evidence cases, full source suite `5,122/5,122`,
-TypeScript build, lint, bundle budgets, and rebuilt macOS packaged diagnostic
-smoke passed. The packaged smoke is local diagnostic evidence only; fresh
-Linux CI and exact-head review are still required after this repair.
+For the PR36 repair branch, the retained local evidence is 55 focused
+checkpoint/runner/report tests, four real-worker cases, the full source suite
+(`5,122/5,122`), TypeScript build, lint, bundle budgets and a rebuilt macOS
+packaged diagnostic smoke. The exact merged PR36 Linux workflow is
+`35332400799`. These are scoped repair and local diagnostics; they do not
+replace candidate, field, human-acceptance or production evidence.
 
-Older history: [pre-Train C archive](archive/pre-train-c-20260914.md) and
-[earlier archive](archive/pre-war06-repair-20260913.md).
+Older detail is archived in [pre-Train C history](archive/pre-train-c-20260914.md)
+and [pre-WAR-06 history](archive/pre-war06-repair-20260913.md).

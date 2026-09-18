@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-17
+Updated: 2026-09-18
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -56,7 +56,90 @@ head.
 - Team-domain meaning comes only from the raw/indexed Q&A. No audit or WAR task
   may invent a new operational requirement.
 
-## Post-PR32 coordinated disposition — 2026-09-17
+## Post-PR36 candidate-freeze reconciliation — 2026-09-18
+
+`origin/master` is `f7798a19589b5d907408080dc65e2d2739767130`, the merge of
+[PR36](https://github.com/donal0c/sartracker-web/pull/36). PR35 merged at
+`ea4b92eb82646b12b2d8ad2307e242ed8049d35c`; PR36 merged from exact head
+`ed3c69f342a9a9f3bc60d7fb1390743f59210ad0`. Required PR36 Linux workflow
+[`35332400799`](https://github.com/donal0c/sartracker-web/actions/runs/35332400799)
+passed at that exact head. The close-path repair is therefore fixed at the
+repair boundary. The retained failed PR35 receipt
+[`35221533225`](https://github.com/donal0c/sartracker-web/actions/runs/35221533225)
+and later passing receipt
+[`35242591823`](https://github.com/donal0c/sartracker-web/actions/runs/35242591823)
+remain unchanged evidence.
+
+This is not a release or candidate qualification. PR36's required workflow
+did not run the complete strict timing, scale, soak, archive, field,
+original-machine or human-acceptance matrix. The qualification control-plane
+dry run remains explicitly `releaseEligible: false`.
+
+### Confirmed P1/P2 reconciliation
+
+The following confirmed P1/P2 groups have merged repair-boundary evidence in
+the repair records and merged PRs #15, #17, #19, #26–#28, #30–#32 and #34.
+Their scoped fixes are not silently promoted to final-candidate closure; each
+still requires the exact-candidate recheck or packaged/field proof named by its
+row and by the WAR-01 overlay.
+
+| Groups | Current disposition |
+| --- | --- |
+| `AUD-01` (P1), `AUD-02` (P2), `AUD-03` (P1), `AUD-04` (P2), `AUD-05` (P2), `AUD-06` (P2), `AUD-07` (P2), `AUD-08` (P2), `AUD-09` (P2), `AUD-10` (P2), `AUD-11` (P2), `AUD-13` (P1), `AUD-14` (P2) | **Repair boundary fixed/merged; final qualification remains open.** Source, native, browser or scoped package receipts exist as linked in the historical rows below, but they do not cover the exact beta13 artifact, all failure modes, or field acceptance. `AUD-12` is P3 and non-blocking unless new evidence changes its severity. |
+| `WAR-06-AUD-01`, `WAR-06-AUD-02`, `WAR-06-CACHE-SIBLING` (P1) | **Merged scoped lifecycle/cache repair; final candidate recheck remains open.** The retained evidence does not prove the whole application, long-duration, package, field or strict release matrix. |
+| `WAR04-SET-01..03` and `WAR04-PRV-01..03` | **Merged through PR34; repair boundary fixed, release qualification open.** Exact-head CI and packaged diagnostics evidence are retained, but this does not close the five WAR-01 absolute blockers or the candidate matrix. |
+
+No confirmed P1/P2 is being accepted as post-candidate debt. The only current
+authoritative disposition for the groups above is “scoped repair fixed;
+candidate recheck/remaining proof required.”
+
+### WAR-01 absolute blockers
+
+All five remain `open-blocking`; no policy-valid deferral has been granted:
+
+1. **Delayed or hidden current position** (`TRK-001`, with `DON-267`/
+   `DON-179`/`DON-250`/`DON-241`): merged polling/reconnect and scoped tracking
+   repairs exist, but startup, reload, pause/recovery, freshness and final
+   candidate proof remain incomplete.
+2. **Silent evidence loss** (`EVD-004`, `PST-001`/`PST-002`,
+   `DON-268`/`DON-249`/`DON-250`): fault controls and tests exist, but no
+   complete packaged EIO/ENOSPC, abrupt-death, power-loss-equivalent or field
+   proof exists for the candidate.
+3. **False Complete or 100%** (`RPL-001`, `MIS-003`, `DON-276`/`DON-271`):
+   participant and coverage repairs are merged, but exact beta13 960k/2M and
+   full no-skip lifecycle proof has not run.
+4. **Corrupted evidence** (`EVD-001`/`EVD-005`, `RPL-003`/`RPL-004`, archive
+   owners): source identity, archive and recovery controls are merged, but
+   final restore/replay, power-loss, cross-machine and field proof has not run.
+5. **Unbounded mission-scale work on Electron main** (`IPC-003`,
+   `PST-003`/`PST-004`/`PST-005`, `DON-249`/`DON-250`/`DON-251`): worker and
+   bounded-path controls exist, but exact field-scale proof and the unchanged
+   strict `<200 ms` gate remain unresolved.
+
+The hazard register is the row-level authority; this overlay records the
+current release disposition and does not rewrite its historical receipts.
+
+### Unexecuted WAR investigations
+
+`WAR-03`, `WAR-07`, `WAR-08`, `WAR-09` and `WAR-10` are each **not covered /
+superseded, insufficient evidence**. The repository has no current bounded
+investigation receipt or authoritative issue disposition for these slices.
+Existing coordinate golden tests and unrelated repair evidence are partial
+signals only and do not clear WAR-03. Each must be investigated and explicitly
+dispositioned before candidate freeze; none is safely deferred post-candidate.
+
+### Freeze decision
+
+Candidate freeze is **BLOCKED / not declared**. The blockers are the five
+open WAR-01 absolute blockers, the missing WAR-03/WAR-07/WAR-08/WAR-09/WAR-10
+dispositions, the unreconciled final-candidate P1/P2 proof, the dry-run's
+`releaseEligible: false`, open `DON-247` original-machine qualification, and
+the absence of beta13 artifact/fixture hashes. The merge-ready procedure,
+including the required eventual reconciliation merge SHA fill step, version,
+artifact names, Linux matrix, rollback and fail-closed stop conditions, is in
+the [two-track workplan](../two-track-execution-workplan.md).
+
+## Historical post-PR32 coordinated disposition — 2026-09-17
 
 `origin/master` is `67300313ab2bc800f9522f54e8de443fcb97fcae`, the merge of
 PR33. The bounded WAR-11 settings/privacy repair is active from that exact
