@@ -58,8 +58,9 @@ head.
 
 ## Post-PR37 candidate-freeze reconciliation — 2026-09-18
 
-`origin/master` is the PR37 merge
-[`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`](https://github.com/donal0c/sartracker-web/commit/6b0b5e0cd8ce7c58060afd740ada8a0343ca655e).
+PR38 started from base snapshot
+[`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`](https://github.com/donal0c/sartracker-web/commit/6b0b5e0cd8ce7c58060afd740ada8a0343ca655e),
+the PR37 merge commit.
 PR37 merged from exact head
 `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`; required Linux workflow
 [`35380031004`](https://github.com/donal0c/sartracker-web/actions/runs/35380031004)
@@ -71,6 +72,11 @@ retained failed PR35 receipt
 and later passing receipt
 [`35242591823`](https://github.com/donal0c/sartracker-web/actions/runs/35242591823)
 remain unchanged evidence.
+
+The preceding exact merge anchors remain retained: [PR35](https://github.com/donal0c/sartracker-web/pull/35)
+merged at `ea4b92eb82646b12b2d8ad2307e242ed8049d35c`, and [PR36](https://github.com/donal0c/sartracker-web/pull/36)
+merged at `f7798a19589b5d907408080dc65e2d2739767130`. These are historical
+repair boundaries, not the eventual merge SHA for this open reconciliation PR.
 
 This is not a release or candidate qualification. PR36's required workflow
 did not run the complete strict timing, scale, soak, archive, field,
@@ -140,8 +146,9 @@ and the exact prior coordinator task history `01a052c8-a981-7793-bbee-d146aaff9e
 (2026-08-30), with the whole-application resilience source also retained in
 tasks `01a04c34-db62-7681-a4fa-eadf9481e90a` and
 `01a04c2e-166e-7122-9aab-fb2897a9f1ec`. The task records are provenance for
-scope recovery only; the hazard register and live Linear issue state remain the
-acceptance authorities.
+scope recovery only. These app task IDs are not repository-backed and may not be
+retrievable by a future agent; the repository-backed hazard register and live
+Linear issue state remain the acceptance authorities.
 
 All five launches are analysis-first and read-only. They may produce a ledger,
 reproduction, test-plan or separately authorised test-tooling PR, but they do
@@ -282,8 +289,8 @@ and gets a separate repair PR or explicit Donal architecture decision.
   independent truth oracle; WAR-10 owns persistence/migration/recovery. WAR-08
   may consume their receipts but must not duplicate their implementation.
   Source: coordinator task `01a052c8-a981-7793-bbee-d146aaff9e4d`, charter row
-  “Operator-evidence surfaces audit”, cross-checked against `EVD-001`–`EVD-005`
-  and `RPL-005`.
+  “Operator-evidence surfaces audit”, cross-checked against `EVD-001`–`EVD-003`,
+  `EVD-005` and `RPL-005`.
 
 #### WAR-09 — independent mission-truth oracle
 
@@ -323,7 +330,7 @@ and gets a separate repair PR or explicit Donal architecture decision.
   be prepared independently. Source: coordinator task
   `01a052c8-a981-7793-bbee-d146aaff9e4d`, charter row “Independent mission-truth
   oracle”, cross-checked against `RPL-001`, `RPL-002`, `RPL-004`, `RPL-005`,
-  `MIS-003` and `EVD-004`.
+  `MIS-003`, `EVD-001` and `EVD-004`.
 
 #### WAR-10 — persistence, migration and recovery audit
 
@@ -399,7 +406,7 @@ open WAR-01 absolute blockers, the missing WAR-03/WAR-07/WAR-08/WAR-09/WAR-10
 dispositions, the unreconciled final-candidate P1/P2 proof, the dry-run's
 `releaseEligible: false`, open `DON-247` original-machine qualification, and
 the absence of beta13 artifact/fixture hashes. The merge-ready procedure,
-including the recorded reconciliation merge SHA, version,
+including the post-merge reconciliation SHA fill step, version,
 artifact names, Linux matrix, rollback and fail-closed stop conditions, is in
 the [two-track workplan](../two-track-execution-workplan.md).
 

@@ -4,8 +4,8 @@ Updated 2026-09-18. Read after `CLAUDE.md`.
 
 ## Baseline and disposition
 
-`origin/master` is the PR37 merge
-`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, from exact head
+PR38 started from base snapshot `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`,
+the PR37 merge, from exact head
 `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`. Required Linux workflow
 `35380031004` passed at that exact head. PR37 is documentation/control-plane
 reconciliation evidence only; it does not fix product hazards, qualify a
@@ -39,10 +39,10 @@ serialised.
 Use the ledger/workplan as the current baton. Complete the five WAR-01 exit
 proofs, the five recovered WAR dispositions, confirmed P1/P2 rechecks, exact
 candidate qualification, original-machine confirmation and same-byte
-publication evidence before any freeze or release claim. The candidate procedure
-now records
-`reconciliationMergeSha=6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`; do not
-substitute PR37's head or workflow SHA.
+publication evidence before any freeze or release claim. After this
+reconciliation PR merges, the candidate procedure must record its actual merge
+SHA as `reconciliationMergeSha`; do not substitute the PR38 head, PR37's head,
+or a workflow SHA.
 
 No product code, manual, BCP-17/WAR-12 execution, release/tag/publish, or merge
 is in scope for this documentation/control-plane chunk.

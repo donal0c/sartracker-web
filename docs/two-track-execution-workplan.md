@@ -4,15 +4,15 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-18):** PR37 is merged on the current
-baseline. `origin/master` is
+**Current reconciliation (2026-09-18):** PR38 started from base snapshot
 `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, the PR37 merge commit. PR37's
-exact head is `1640edb2dfd558c0d26d40e41b1d6c516dea4a28` and required Linux
+exact head was `1640edb2dfd558c0d26d40e41b1d6c516dea4a28` and required Linux
 workflow `35380031004` passed at that exact head. PR37 is documentation and
 control-plane reconciliation evidence only; it does not qualify a candidate,
 declare a freeze, or authorize release. The SQLite checkpoint/contention repair
 remains fixed at its PR36 repair boundary; it is not candidate or release
-qualification.
+qualification. This is a time-bound base snapshot, not a claim about the
+eventual post-PR38 master commit.
 
 The active queue is now:
 
@@ -63,8 +63,10 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 0 — reconcile and establish the release baseline
 
-1. Confirm the live merged PR35/PR36/PR37 state and start any release work only
-   from the clean `master` at `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`.
+1. Confirm the live merged PR35/PR36/PR37 state and a clean `master` before
+   any release work. PR38 started from the recorded base snapshot
+   `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`; do not substitute the open
+   PR's head or its eventual merge for the verified candidate baseline.
 2. Record the exact baseline SHA and refresh the open-finding inventory across
    team requirements, the deep audit and WAR. The failed PR35 timing receipt
    remains evidence; the merged PR36 repair claim is scoped to its exact seam
@@ -123,14 +125,14 @@ test inputs changed.
 This is the procedure to apply after the reconciliation PR is merged. It is
 not evidence that a candidate is currently frozen.
 
-1. Reconfirm the clean `master` baseline. The post-PR37 reconciliation has
-   merged, so its record is now
-   `reconciliationMergeSha=6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`. This fills the procedure's
-   post-merge value; it does not declare a candidate freeze or release. The
-   value is the merged PR commit, not PR37's head SHA
-   `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`, workflow
-   `35380031004`, or the pre-merge baseline
-   `f7798a19589b5d907408080dc65e2d2739767130`.
+1. Reconfirm the clean `master` baseline. After this reconciliation PR merges,
+   fill `reconciliationMergeSha` with that PR's actual merge commit. The PR38
+   base snapshot is `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e` (the PR37 merge);
+   it is not PR38's eventual merge. The value must be the merged PR commit,
+   not PR38's head `41340b65066be1a925a523e77a93b12ee0bcdb41`, PR37's head
+   `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`, a workflow SHA, or the prior
+   pre-PR37 baseline. This procedure does not declare a candidate freeze or
+   release.
 2. Use version `0.1.0-beta.13` and tag `electron-v0.1.0-beta.13`. The expected
    Linux artifacts are
    `sartracker-electron-validation_0.1.0-beta.13_linux_x86_64.AppImage`,
