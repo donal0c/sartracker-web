@@ -4,28 +4,24 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-17):** PR33 merged at
-`67300313ab2bc800f9522f54e8de443fcb97fcae`. The six-finding WAR-11
-settings/privacy repair is active from that exact baseline.
-Its validated implementation head `58ea2900` passed required Linux workflow
-`35177287167`, including strict responsiveness, rendered/browser, packaged
-Train D, tracking-soak, archive-lifecycle and AppImage boundaries. Ordinary PR
-workflow `35179847412` and post-merge `master` workflow `35199520928` passed.
-Release, deployment, BCP-17/WAR-12, field and human acceptance remain HOLD.
+**Current reconciliation (2026-09-18):** PR35 and PR36 are merged on the
+current baseline. `origin/master` is
+`f7798a19589b5d907408080dc65e2d2739767130`, the PR36 merge commit. PR36's
+exact head is `ed3c69f342a9a9f3bc60d7fb1390743f59210ad0` and required Linux
+workflow `35332400799` passed. The SQLite checkpoint/contention repair is
+fixed at that repair boundary; it is not a candidate or release qualification.
 
-The coordinated next queue is:
+The active queue is now:
 
-1. finish review, CI and merge for the bounded six-finding WAR-11
-   settings/privacy repair (`WAR04-SET-01..03`, `WAR04-PRV-01..03`);
-2. permit WAR-03 coordinate/geodesy test hardening in parallel because it is
-   production-ownership-disjoint;
-3. retain the team map-administration/distribution workflow
-   (`DON-144`/`DON-7`/`DON-76`) as the next major team-facing slice, but do not
-   run its implementation concurrently with the Settings train until exact
-   file/state ownership proves no overlap;
-4. fold the sole remaining deep-audit defect, P3 `AUD-12`, into the next
-   coherent UI batch with retained team UI work rather than creating a release-
-   blocking micro-PR.
+1. reconcile the merged PR35/PR36 receipts and all confirmed P1/P2 and WAR-01
+   absolute-blocker dispositions without deleting or relabelling failed proof;
+2. investigate and disposition WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 in
+   bounded lanes before candidate freeze; current evidence is insufficient for
+   any of them to be cleared or safely deferred;
+3. keep `DON-247` original-machine qualification and the map administration /
+   distribution workflow (`DON-144`/`DON-7`/`DON-76`) open and separate from
+   candidate claims;
+4. do not start BCP-17/WAR-12 until the freeze conditions below are met.
 
 **Qualification control-plane update (2026-09-17):** the historical
 post-PR6 research plan has been recovered and reconciled into a bounded core:
@@ -37,29 +33,23 @@ run passes the infrastructure checks while remaining explicitly
 `docs/assurance/qualification-control-plane-dry-run.md`. Exact-head review, CI
 and merge remain required. This does not execute or qualify BCP-17/WAR-12.
 
-WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires the real
-Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B starts only
-after an internal beta is published. Live Linear reconciliation on 2026-09-17
-reopened `DON-254` In Progress because its BCP-17 completion contract remains
-unmet; `DON-271` and `DON-279` remain correctly Done, `DON-7`/`DON-76` and
-`DON-247` are In Progress, and `DON-144` is Todo. The older reconciliation
-paragraphs below are historical evidence, not the current baton.
+WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires
+the real Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B
+starts only after an internal beta is published. Live Linear reconciliation on
+2026-09-18 keeps `DON-254` In Progress because its BCP-17 completion contract
+remains unmet, keeps `DON-247` open, and retains `DON-255` as downstream
+publication work. The older reconciliation paragraphs below are historical
+evidence, not the current baton.
 
 **DON-254 close-path disposition (2026-09-18):** the first PR35 Linux receipt
 `35221533225` failed the unchanged strict `<200 ms` independent main-loop
 predicate during first-launch synchronous SQLite close (`512.449076 ms`), while
 later exact-head run `35242591823` passed on the same close-path production
-files. The retained [finding](assurance/findings/legacy-recovery-close-path-20260917.md)
-attributes the risk to the worker leaving a large WAL for the main connection
-to checkpoint during close. The bounded worker-side `synchronous=FULL`
-non-blocking `wal_checkpoint(PASSIVE)` repair passed exact-head Linux workflow
-`35267063564` at final head `71b83660`; that evidence predates the current
-adversarial review and is retained as historical qualification evidence only.
-PR36 is blocked: checkpoint contention currently enters the reconstruction
-failure key, which can lock evidence and mission lifecycle operations for the
-session, and the IPC receipt is not independently corroborated against the
-live `-wal` sidecar. Repair and rerun the exact-head gates before any merge
-decision. This does not qualify a candidate or authorize BCP-17/WAR-12.
+files. PR36 then merged the bounded worker-side `synchronous=FULL`,
+zero-busy-timeout, non-blocking `wal_checkpoint(PASSIVE)` repair at exact head
+`ed3c69f3`; required workflow `35332400799` passed. The repair boundary is
+fixed. The failed receipt remains retained, and the merged workflow is not
+candidate qualification or authorization for BCP-17/WAR-12.
 
 ## Locked path to the next team beta — 2026-09-17
 
@@ -70,11 +60,12 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 0 — reconcile and establish the release baseline
 
-1. Merge or close PR33 after its documentation facts and green check are
-   verified. Start release work only from the resulting clean `master`.
+1. Confirm the live merged PR35/PR36 state and start any release work only
+   from the clean `master` at `f7798a19589b5d907408080dc65e2d2739767130`.
 2. Record the exact baseline SHA and refresh the open-finding inventory across
-   team requirements, the deep audit and WAR. Historical failed receipts remain
-   evidence; merged repair claims are not rerun without an invalidating change.
+   team requirements, the deep audit and WAR. The failed PR35 timing receipt
+   remains evidence; the merged PR36 repair claim is scoped to its exact seam
+   and is not a candidate qualification claim.
 3. Keep the immediate prepared-MBTiles route for this beta. The unfinished raw
    licensed-source packaging/distribution workflow (`DON-144`/`DON-7`/`DON-76`)
    does not block candidate testing when a named tester receives the prepared
@@ -83,23 +74,23 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 1 — finish the known pre-candidate repair boundary
 
-1. Repair `WAR04-SET-01..03` and `WAR04-PRV-01..03` as one bounded settings,
-   startup and diagnostics-privacy train. Reproduce each current-head defect,
-   add durable regressions, exercise the packaged boundary, and obtain the
-   risk-proportionate independent reviews before merge.
+1. Preserve the merged `WAR04-SET-01..03`/`WAR04-PRV-01..03` and PR35/PR36
+   close-path receipts as scoped repair evidence. No failed timing or
+   contention receipt may be deleted, relabelled or used as final-candidate
+   proof.
 2. Reconcile the completed post-PR6 model-judged QA design against current
-   `master`. The design was research only: it did not implement a complete
-   runner or execute qualification. Reuse the substantial current harness and
-   implement only missing release infrastructure: the requirement/hazard-to-
-   test coverage registry, exact artifact/fixture identity, one result packet,
-   deterministic release predicates, sealed evidence and the advisory fresh
-   model-judge packet.
-3. Dry-run that qualification control plane on a non-candidate build. The dry
-   run proves the harness and evidence flow; it does not qualify the product.
+   `master`. The design and dry run prove infrastructure only; they do not
+   qualify the product. Keep the requirement/hazard-to-test coverage registry,
+   exact artifact/fixture identity, result packet, deterministic release
+   predicates, sealed evidence and advisory fresh model-judge packet bound to
+   the eventual candidate artifact.
+3. Complete the five WAR-01 absolute-blocker exit proofs and every confirmed
+   P1/P2 recheck before freeze. A scoped merged fix is not closure unless its
+   exact candidate, packaged, field or policy authority is recorded.
 4. Run the remaining assurance investigations (`WAR-03`, `WAR-07`, `WAR-08`,
    `WAR-09`, `WAR-10`) in bounded, production-ownership-disjoint lanes where
-   capacity permits. Any confirmed absolute blocker or P1/P2 joins the pre-
-   candidate repair boundary. Lower-severity findings receive an explicit
+   capacity permits. Any confirmed absolute blocker or P1/P2 joins the
+   pre-candidate repair boundary. Lower-severity findings receive an explicit
    owner and release disposition; investigation is not silently equated with a
    fix.
 
@@ -123,6 +114,60 @@ Freeze only when all of the following are true:
 No unrelated feature work enters the candidate after freeze. A product change
 creates a new candidate and invalidates only the evidence whose executable or
 test inputs changed.
+
+### Candidate-freeze procedure — merge-ready, not yet declared
+
+This is the procedure to apply after the reconciliation PR is merged. It is
+not evidence that a candidate is currently frozen.
+
+1. Reconfirm the clean `master` baseline and fill
+   `reconciliationMergeSha` with the eventual merge commit of the
+   post-PR36 reconciliation PR. The value must equal the merged PR commit,
+   not its head SHA, a workflow SHA, or the current pre-merge baseline
+   `f7798a19589b5d907408080dc65e2d2739767130`.
+2. Use version `0.1.0-beta.13` and tag `electron-v0.1.0-beta.13`. The expected
+   Linux artifacts are
+   `sartracker-electron-validation_0.1.0-beta.13_linux_x86_64.AppImage`,
+   `sartracker-electron-validation_0.1.0-beta.13_linux_amd64.deb` and
+   `SHA256SUMS`. Their bytes and SHA-256 values are `TBD at tag CI`; do not
+   inherit hashes from beta12.11 or a local rebuild.
+3. Bind the receipt to the exact source SHA, package version, workflow run,
+   AppImage bytes, installed `.deb` bytes, ASAR identity, and fixture set.
+   Capture byte/hash identity at freeze for the repository fixtures
+   `tests/fixtures/outing-window-vectors.json`,
+   `tests/fixtures/kerry-reference-points.json`,
+   `tests/fixtures/traccar-breadcrumbs.json`,
+   `tests/fixtures/traccar-devices.json`,
+   `tests/fixtures/traccar-positions.json`,
+   `tests/fixtures/gpx-xml-contract-cases.ts` and
+   `tests/fixtures/gpx-extension-fidelity.gpx`, plus the declared `bcp-960k`,
+   `bcp-2m` and `field` generated fixture sidecars. Exact fixture hashes are
+   `TBD at freeze` and must be recorded in the same receipt.
+4. Run the Linux matrix against those exact CI artifacts: native AppImage
+   launch and smoke, genuinely installed `.deb` launch/lifecycle, strict
+   `<200 ms` responsiveness, SQLite/native recovery, offline-map readiness,
+   sanitized diagnostics, bad-credential startup safety, live GET-only
+   Traccar checks where required, and every BCP-17/WAR-12 contract. macOS and
+   Windows are not attached to this candidate lane; `DON-247` original-machine
+   confirmation is a separate gate on the same bytes.
+5. Name the rollback artifact before promotion: the last qualified/published
+   beta12.11 package and its checksum remain available. Do not move or reuse
+   the candidate tag. Rollback removes only the candidate package, reinstalls
+   the retained prior package, and preserves mission data; capture diagnostics
+   and do not delete user data.
+6. Stop and return to repair if any receipt is missing, suppressed, malformed
+   or mismatched; a checksum, ASAR, fixture, package or source identity does
+   not match; a deterministic predicate, strict timing gate, operator journey,
+   current-position priority, archive/restore, privacy, corruption, evidence
+   custody, fresh-download or original-machine check fails; or any result
+   claims Complete while a required contract is false. No retry-until-green or
+   manual override is valid for those conditions.
+
+The freeze record remains `BLOCKED` until the five WAR-01 absolute blockers,
+all confirmed P1/P2 findings and the currently unexecuted WAR-03/WAR-07/WAR-08/
+WAR-09/WAR-10 investigations have authoritative exit evidence. The dry-run
+control-plane receipt is explicitly `releaseEligible: false` and cannot be
+used as a substitute.
 
 ### Phase 3 — execute BCP-17 / WAR-12 on the exact CI artifact
 

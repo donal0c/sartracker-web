@@ -63,19 +63,49 @@ validated checkpoint receipt plus a parent-process observation of the live
 smoke/terminal validator
 binds the helper as the seventh implicated production file.
 
-## Post-review disposition — 2026-09-18
+## Post-merge disposition — 2026-09-18
 
-The earlier implementation evidence is retained, but PR36 is not mergeable as
-written. A checkpoint contention result currently shares the reconstruction
-failure path, so a committed backfill can falsely block evidence reads/writes,
-Replay, Finish Mission, Finalize and Archive until restart. The checkpoint must
-be best-effort telemetry, with real backfill failures remaining fail-closed.
-The runner also needs a parent-process observation of the live `-wal` sidecar
-to corroborate a complete receipt; an empty `{busy:0,log:0,checkpointed:0}` is
-valid only when the sidecar is empty. The prior exact-head workflow
-[35267063564](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
-therefore remains historical evidence and is not acceptance for the repaired
-candidate.
+PR36 is merged at
+[`f7798a19`](https://github.com/donal0c/sartracker-web/commit/f7798a19589b5d907408080dc65e2d2739767130)
+from exact head `ed3c69f342a9a9f3bc60d7fb1390743f59210ad0`. Required Linux
+workflow
+[`35332400799`](https://github.com/donal0c/sartracker-web/actions/runs/35332400799)
+passed at that head. The repair boundary is therefore **fixed**: checkpoint
+contention is best-effort non-fatal telemetry, genuine reconstruction failures
+remain fail-closed, and the parent runner validates a complete receipt against
+the live `-wal` sidecar. The valid zero receipt remains conditional on an empty
+sidecar.
+
+The failed PR35 receipt
+[`35221533225`](https://github.com/donal0c/sartracker-web/actions/runs/35221533225)
+and the later passing PR35 receipt
+[`35242591823`](https://github.com/donal0c/sartracker-web/actions/runs/35242591823)
+remain retained evidence; neither is rewritten as a release result. The
+merged PR36 workflow is scoped repair/merge proof only. It did not execute the
+complete candidate matrix, so release, BCP-17/WAR-12, field, original-machine
+and human-acceptance holds remain unchanged.
+
+The earlier exact-head workflow
+[`35267063564`](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+passed before the final adversarial review and remains historical evidence, not
+acceptance for the merged release candidate.
+
+## Superseded pre-merge blocker retained for escape analysis
+
+Before PR36 merged, the review verdict was that the implementation was not
+mergeable as written: a checkpoint contention result shared the reconstruction
+failure path and could falsely block evidence reads/writes, Replay, Finish
+Mission, Finalize and Archive until restart. The required repair was
+best-effort checkpoint telemetry with genuine backfill failures remaining
+fail-closed, plus parent observation of the live `-wal` sidecar to corroborate a
+complete receipt. The prior exact-head workflow
+[`35267063564`](https://github.com/donal0c/sartracker-web/actions/runs/35267063564)
+was therefore historical evidence, not acceptance for the repaired candidate.
+
+That verdict is retained as the pre-merge escape analysis; PR36's exact-head
+workflow and merged boundary above supersede it only for the scoped repair
+implementation. It does not become release, candidate, field or human-
+acceptance evidence.
 
 ## Verification completed on this branch
 
@@ -114,6 +144,7 @@ passed at `71b83660801f3744fc69afaedfa65dc5217e508e`: the packaged report was
 source-clean, the legacy recovery proof was green, and the worker checkpoint
 receipt was complete. The independent Astra follow-up reported no actionable
 findings on the then-current code, but the later adversarial review identified
-the blocker recorded above. This evidence is not release qualification and
-does not authorize merge, release, deployment, candidate mode, BCP-17/WAR-12
-or SAR-team contact.
+the pre-merge blocker retained in the superseded section above. PR36 addressed
+that scoped repair boundary; this evidence is not release qualification and
+does not authorize release, deployment, candidate mode, BCP-17/WAR-12 or
+SAR-team contact.
