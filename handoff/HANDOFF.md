@@ -44,6 +44,16 @@ treated as cleared or safely deferred. The qualification dry run remains
 qualification. `DON-254` is In Progress and `DON-247` original-machine
 qualification remains open.
 
+PR37 is open at exact head
+`44d130824bb291c680ea521bfcaf6e788646921f`; its required Linux workflow
+`35364592238` passed (`105663963167`) on 2026-09-18. The docs-only workflow
+passed lint, correctness, WAR-02B, rendered regressions, packaging/native
+SQLite/map/GPX/breadcrumb/cache/legacy recovery checks and AppImage smoke.
+Strict responsiveness, normal 960k replay, participant/Search Operations,
+Repair Train D packaged validation, tracking soak and archive lifecycle were
+skipped and remain unqualified. GitHub reports the PR mergeable but blocked
+because no review has been received.
+
 The current authoritative reconciliation is in
 [the coordinated ledger](../docs/assurance/coordinated-work-ledger.md) and
 [the two-track workplan](../docs/two-track-execution-workplan.md). The
@@ -72,7 +82,9 @@ checkpoint/runner/report tests, four real-worker cases, the full source suite
 (`5,122/5,122`), TypeScript build, lint, bundle budgets and a rebuilt macOS
 packaged diagnostic smoke. The exact merged PR36 Linux workflow is
 `35332400799`. These are scoped repair and local diagnostics; they do not
-replace candidate, field, human-acceptance or production evidence.
+replace candidate, field, human-acceptance or production evidence. PR37's
+workflow is additional reconciliation-PR evidence only and does not change
+the blocked freeze disposition.
 
 Older detail is archived in [pre-Train C history](archive/pre-train-c-20260914.md)
 and [pre-WAR-06 history](archive/pre-war06-repair-20260913.md).
