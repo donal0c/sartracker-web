@@ -138,6 +138,21 @@ describe('drawing builders', () => {
     expect(input.label).toContain('94.5°T')
   })
 
+  it('rejects an empty bearing instead of persisting an implicit north bearing', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 4,
+        draft: {
+          ...createBearingLineDraft([-9.744, 51.999]),
+          name: 'Incomplete bearing',
+          inputBearing: '',
+          distanceM: '1000',
+        },
+      }),
+    ).toThrow(RangeError)
+  })
+
   it('builds search sectors with polygon geometry', () => {
     const input = buildDrawingInput({
       missionId: 'mission-1',

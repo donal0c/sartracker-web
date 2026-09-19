@@ -67,6 +67,10 @@ export function parseRequiredPositiveNumber(value: string, label: string): numbe
  * Parses a required non-negative bearing field for persistence.
  */
 export function parseRequiredBearing(value: string, label: string): number {
+  if (value.trim() === '') {
+    throw new RangeError(`${label} is required.`)
+  }
+
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new RangeError(`${label} must be zero or greater.`)
