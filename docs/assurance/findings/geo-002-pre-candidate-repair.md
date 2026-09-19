@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-19
 **Owner seam:** DON-6 / DON-254
-**Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`, `67a6140e`, `75a2a352`, `cb316985f21b2ff86746487e9c094bd8f6540b2f`, `83180d034046ab569257814991d4f75c9d898986`, `d114b092`, `d1c1c9fe10cceb9f6f8c180177cbd76b3b4af2f2`
+**Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`, `67a6140e`, `75a2a352`, `cb316985f21b2ff86746487e9c094bd8f6540b2f`, `83180d034046ab569257814991d4f75c9d898986`, `d114b092`, `d1c1c9fe10cceb9f6f8c180177cbd76b3b4af2f2`, `a7a496409bcaea034dd81e65866bb0954cc5cca8`
 **Disposition:** bounded pre-candidate repair is implemented and independently reviewable at the PR head; release remains HOLD and candidate selection remains blocked by the separate TRK-001 and PKG-001 findings.
 
 ## Finding and boundary
@@ -65,7 +65,7 @@ operator or search-policy limit.
 
 ## Verification
 
-- Focused drawing/measurement/consumer unit suites: 12 files, 172 tests passed
+- Focused drawing/measurement/consumer unit suites: 12 files, 175 tests passed
   after the final implementation commit, including the GEO-002 adversarial
   tests and the drawing-toolbar visibility regression.
 - `npm run lint`: passed.
