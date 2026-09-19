@@ -2,8 +2,8 @@
 
 **Date:** 2026-09-19  
 **Owner seam:** DON-6 / DON-254  
-**Implementation commit:** `678e4aa21fcbbf09345806f04ae28d91597b813f`  
-**Disposition:** bounded pre-candidate repair ready for independent exact-head review; release remains HOLD and candidate selection remains blocked by the separate TRK-001 and PKG-001 findings.
+**Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`
+**Disposition:** bounded pre-candidate repair is implemented and independently reviewable at the PR head; release remains HOLD and candidate selection remains blocked by the separate TRK-001 and PKG-001 findings.
 
 ## Finding and boundary
 
@@ -46,25 +46,30 @@ operator or search-policy limit.
 - Bearing-line previews do not show a plausible conversion for invalid input.
   Persisted range-ring label generation omits only an invalid label coordinate
   instead of crashing the map feature builder or inventing a position.
-- The application-shell bundle budget is explicitly 501,000 bytes because
-  these guards are operator-facing safety code; other application chunks keep
-  the existing 500,000-byte default budget.
+- The existing 500,000-byte application-shell budget is retained. The final
+  application shell is 499,990 bytes; the base commit measured 499,129 bytes.
+- The independent review follow-up makes drawing failures visible in the
+  toolbar when no dialog is open, rejects out-of-range finite bearing inputs
+  in both public magnetic/true conversion functions, and adds browser coverage
+  for the visible drawing rejection.
 
 ## Verification
 
-- Focused drawing/measurement/consumer unit suites: green after the final
-  implementation commit, including the GEO-002 adversarial tests.
+- Focused drawing/measurement/consumer unit suites: 8 files, 112 tests passed
+  after the final implementation commit, including the GEO-002 adversarial
+  tests and the drawing-toolbar visibility regression.
 - `npm run lint`: passed.
 - `npx tsc -b --noEmit`: passed.
-- `npm run build`: passed, including bundle budgets; final application shell
-  was 500,060 bytes.
-- Browser harness: line drawing persisted, measurement rendered distance and
-  bearing, and Playwright reported zero console errors/warnings.
-- Repeatable Chromium drawing and measurement workflows: 19 passed.
-- The full source run passed 482/483 files and 5,159/5,161 tests; the two
-  failures were unrelated existing Electron responsiveness assertions over the
-  200 ms host-timing threshold. Running that file in isolation passed all 94
-  tests.
+- `npm run build`: passed, including the unchanged bundle budgets; final
+  application shell was 499,990 bytes.
+- Repeatable Chromium drawing and measurement workflows: 20 passed,
+  including the invalid-sketch-point visible-alert regression.
+- The exact-head full source run passed 481/483 files and 5,165/5,167 tests;
+  the two failures were unrelated existing Electron responsiveness assertions
+  over the 200 ms host-timing threshold. The affected evidence-versioning
+  responsiveness file had previously passed all 94 tests in isolation; the
+  current full-run failures remain host-contention evidence, not GEO-002
+  failures.
 
 This is local/source and browser-harness evidence only. It is not packaged,
 production, field, human-acceptance, candidate-selection, or release proof.
