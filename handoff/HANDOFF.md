@@ -78,9 +78,11 @@ HOLD, and PKG-001's exact-beta13 same-profile gate unchanged.
 
 Live GitHub checks: origin/master `e5673c9c4fb1b8497d28f4871b793937f85ad2ef`;
 draft [PR #41](https://github.com/donal0c/sartracker-web/pull/41) is open at
-exact head `fbd0f7c02befe448322be92f0f5b4214c5e021a1` and currently reports
-mergeable while its Electron Linux validation check runs. No GEO-002 PR or
-merge was visible at stocktake.
+exact head `9c0026607067188c364bd94b7a4736123a83862e` and currently reports
+mergeable while its Electron Linux validation check runs. Parallel [PR
+#40](https://github.com/donal0c/sartracker-web/pull/40) for GEO-002 is open,
+mergeable, and its Electron Linux validation check is also in progress; it has
+not merged, so PR #41 remains draft and must be rebased after that merge.
 Linear: DON-267 remains In Progress, DON-254 remains In Progress, and release
 HOLD remains unchanged. No ready-for-merge, browser-provider, packaged,
 hosted, production, merge, or release claim is made from the local checks
