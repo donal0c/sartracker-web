@@ -14,7 +14,7 @@ branch and must not be merged through this branch.
 
 ## Active work
 
-- `DON-254` / GEO-002: PR #40 head `1fb9bd3f335c0a73ef4ce44516ecb3d304bc08bd`.
+- `DON-254` / GEO-002: PR #40 head `a7a496409bcaea034dd81e65866bb0954cc5cca8`.
   Geometry distances are bounded, antimeridian area is handled, corrupt drawing
   payloads fail closed, edit/save errors retain provenance, and operator inputs
   expose numeric bounds where applicable.
@@ -24,7 +24,7 @@ branch and must not be merged through this branch.
 
 ## Verification snapshot
 
-GEO-002 final-head focused drawing suites passed (9 files, 150 tests),
+GEO-002 final-head focused drawing suites passed (5 files, 122 tests),
 `npx tsc --noEmit`, ESLint, `npm run build` and the bundle budget passed, and
 the serialized Chromium drawing workflow passed (15/15). The final-head whole
 source run encountered three unrelated parallel-sensitive Electron/fixture
