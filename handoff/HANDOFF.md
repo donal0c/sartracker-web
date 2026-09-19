@@ -1,60 +1,68 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-18. Read after `CLAUDE.md`.
+Updated 2026-09-18 after PR38 merge and bounded release-first triage.
 
 ## Baseline and disposition
 
-PR38 started from base snapshot `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`,
-the PR37 merge, from exact head
-`1640edb2dfd558c0d26d40e41b1d6c516dea4a28`. Required Linux workflow
-`35380031004` passed at that exact head. PR37 is documentation/control-plane
-reconciliation evidence only; it does not fix product hazards, qualify a
-candidate, declare a freeze, authorize release, or start BCP-17/WAR-12.
+`master` is `e69485724044337fb5fee94bfbe5871916fdabf1`, the merge of PR38
+from exact head `92a4f680facc98fb2aa6871228616f6f0cb809e4`. Required Linux
+workflow `35390687670` passed at that exact PR head. PR38 was
+documentation/control-plane evidence only; it did not change product code,
+qualify a candidate, declare a freeze, or authorize release.
 
-`DON-254` is **In Progress**. Candidate freeze and release remain
-**BLOCKED / not declared**. The five WAR-01 absolute blockers remain
-`open-blocking`; WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted
-with no bounded receipt or authoritative disposition. The qualification dry run
-remains `releaseEligible: false`; `DON-247` original-machine qualification is
-still open.
+`DON-254` is **In Progress**. Release remains **HOLD**. Test-candidate
+selection is **BLOCKED / not declared** by the current-head triage of
+`TRK-001`, `GEO-002` and the retained `PKG-001` prolonged package
+non-interactivity finding. These need separate bounded repair work;
+no architecture exception authorising selection with an unrepaired blocker is
+recorded, and no product repair is included in this reconciliation PR.
 
-## Active work and recovered charter
+## Release-first decision
 
-The original WAR-03/07/08/09/10 scopes, hazard IDs, ownership seams, red
-controls, completion rules, complexity/model recommendations and provenance are
-recorded in [the coordinated ledger](../docs/assurance/coordinated-work-ledger.md).
-They were recovered from current hazard rows, the active workplan and prior
-coordinator task history; they are not new programme scope and none is accepted
-as executed evidence. Launches are analysis-first/read-only. P1/P2 or absolute
-blocker findings require a separate repair PR or Donal architecture decision.
+**TEST CANDIDATE FROZEN / SELECTED** means exact clean source SHA, intended
+version, fixture/platform matrix, artifact names, rollback artifact and stop
+conditions are recorded. It may remain on qualification HOLD and is not
+release approval.
 
-Recommended order: WAR-03 first; WAR-07 and WAR-08 in parallel only with
-explicitly disjoint ownership; WAR-09 after the evidence contract is frozen;
-WAR-10 after the WAR-07 worker/main boundary is explicit. Read-only fixture
-preparation may overlap, but shared semantic and archive dispositions are
-serialised.
+**QUALIFIED FOR PROMOTION** is later: BCP-17/WAR-12, the five WAR-01 exit
+gates, exact-artifact checks, original-machine confirmation and all mandatory
+same-byte publication evidence pass.
+
+The current handoff does not authorise an exception to the repair boundary. Any
+future Donal architecture decision must be explicit, named and separately
+recorded; prose here cannot substitute for that decision.
+
+`reconciliationMergeSha` is now
+`e69485724044337fb5fee94bfbe5871916fdabf1`. The dry-run remains
+`releaseEligible: false`.
+
+WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 remain useful post-beta hardening
+charters, not blanket prerequisites to selecting beta13. A concrete P1/P2,
+absolute blocker, silent evidence loss, corrupted evidence, false completeness,
+hidden/delayed current position, privacy breach or unsafe main-process stall in
+one of those scopes remains promotion-blocking and needs a separate repair PR.
 
 ## Next actions and boundaries
 
-Use the ledger/workplan as the current baton. Complete the five WAR-01 exit
-proofs, the five recovered WAR dispositions, confirmed P1/P2 rechecks, exact
-candidate qualification, original-machine confirmation and same-byte
-publication evidence before any freeze or release claim. After this
-reconciliation PR merges, the candidate procedure must record its actual merge
-SHA as `reconciliationMergeSha`; do not substitute the PR38 head, PR37's head,
-or a workflow SHA.
+Use the ledger/workplan as the current baton. Repair/recheck `TRK-001`
+current-position priority, `GEO-002` finite/range math boundaries, and the
+`PKG-001` same-profile long-duration hang before selecting a test candidate.
+Then record the exact beta13 source/fixture/platform/rollback plan and keep
+qualification HOLD until the five WAR-01 gates, BCP-17/WAR-12, `DON-247` and
+same-byte publication evidence pass.
 
 No product code, manual, BCP-17/WAR-12 execution, release/tag/publish, or merge
 is in scope for this documentation/control-plane chunk.
 
 ## Verification snapshot
 
-Live checks confirmed PR37 `MERGED`, exact head `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`,
-merge `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, workflow `35380031004`
-`success`, and no open PRs at the time of reconciliation. Documentation checks
-are `git diff --check`, stale-current-baseline search, and link/identifier
-inspection; product test suites are intentionally not rerun for this docs-only
-change.
+Live GitHub checks: PR38 `MERGED`; head `92a4f680facc98fb2aa6871228616f6f0cb809e4`;
+merge `e69485724044337fb5fee94bfbe5871916fdabf1`; workflow `35390687670`
+`success`; no open PRs at stocktake. Linear: `DON-254` remains In Progress;
+`DON-247` remains open; `DON-255` remains downstream publication work.
+Read-only source/test inspection confirmed the current `TRK-001` and `GEO-002`
+records; no expensive qualification, package soak, release tag or publication
+was run.
 
 Older detail remains in [pre-Train C history](archive/pre-train-c-20260914.md)
 and [pre-WAR-06 history](archive/pre-war06-repair-20260913.md).

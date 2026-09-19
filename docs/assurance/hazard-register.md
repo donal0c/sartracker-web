@@ -5,18 +5,22 @@
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
-**Post-PR37 release disposition (2026-09-18):** PR38 started from base snapshot
-`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, the PR37 reconciliation merge.
-PR37 merged from exact head `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`, with
-required Linux workflow `35380031004` passed. It corrects the control-plane
-record only and does not close any WAR-01 absolute blocker. Delayed/hidden
-current position, silent evidence loss, false Complete/100%, corrupted
-evidence, and unbounded mission-scale main-process work all remain
-`open-blocking` until exact-candidate exit evidence is recorded. This overlay
-preserves the row-level historical receipts. The eventual PR38 merge SHA is not
-known yet; see the
-[coordinated post-PR37 reconciliation](coordinated-work-ledger.md) for the
-current freeze decision.
+**Post-PR38 release-first disposition (2026-09-18):** PR38 merged into
+`master` at `e69485724044337fb5fee94bfbe5871916fdabf1` from exact head
+`92a4f680facc98fb2aa6871228616f6f0cb809e4`; required Linux workflow
+`35390687670` passed at that exact PR head. It corrects the control-plane record
+only and does not close any WAR-01 absolute blocker. The bounded current-head
+triage confirms three concrete production/operational blockers requiring
+separate repair before test-candidate selection: `TRK-001`, `GEO-002` and
+`PKG-001`. The other P1/P2 repair boundaries and WAR-01 controls remain
+qualification evidence or exact-candidate gates. Delayed/hidden current
+position, silent evidence loss, false Complete/100%, corrupted evidence, and
+unbounded mission-scale main-process work remain `open-blocking` until their
+required exit evidence is recorded. The broad WAR-03/WAR-07/WAR-08/WAR-09/
+WAR-10 investigations are not blanket pre-candidate gates; any concrete
+promotion-blocking finding in their scopes still requires a separate repair PR.
+See the [coordinated release-first triage](coordinated-work-ledger.md) for the
+state vocabulary and current selection decision.
 
 **Repair Train B overlay (2026-09-10):** `RPL-003`/`EVD-001` source-fidelity
 and `MIS-002` import/outing settlement gaps reproduce at `302bdd04` as

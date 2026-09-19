@@ -4,27 +4,48 @@
 
 ## Planning Rule
 
-**Current reconciliation (2026-09-18):** PR38 started from base snapshot
-`6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`, the PR37 merge commit. PR37's
-exact head was `1640edb2dfd558c0d26d40e41b1d6c516dea4a28` and required Linux
-workflow `35380031004` passed at that exact head. PR37 is documentation and
+**Current reconciliation (2026-09-18):** PR38 merged into `master` at
+`e69485724044337fb5fee94bfbe5871916fdabf1`, from exact head
+`92a4f680facc98fb2aa6871228616f6f0cb809e4`. Required Linux workflow
+`35390687670` passed at that exact PR head. PR38 is documentation and
 control-plane reconciliation evidence only; it does not qualify a candidate,
 declare a freeze, or authorize release. The SQLite checkpoint/contention repair
 remains fixed at its PR36 repair boundary; it is not candidate or release
-qualification. This is a time-bound base snapshot, not a claim about the
-eventual post-PR38 master commit.
+qualification. The post-PR38 bounded triage is now the current pre-candidate
+decision record; see the coordinated ledger and hazard-register overlay.
 
 The active queue is now:
 
-1. reconcile the merged PR35/PR36/PR37 receipts and all confirmed P1/P2 and WAR-01
-   absolute-blocker dispositions without deleting or relabelling failed proof;
-2. investigate and disposition WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 in
-   bounded lanes before candidate freeze; current evidence is insufficient for
-   any of them to be cleared or safely deferred;
-3. keep `DON-247` original-machine qualification and the map administration /
+1. preserve the merged PR35/PR36/PR37/PR38 receipts and the failed evidence;
+2. repair the concrete current production blockers identified by the post-PR38
+   triage (`TRK-001`, `GEO-002`, and the retained `PKG-001` hang) in separate,
+   bounded repair PRs before selecting a test candidate;
+3. select/freeze one exact beta13 **test candidate** only after that triage is
+   clear, while keeping qualification HOLD until the exact-candidate gates pass;
+4. retain `WAR-03`, `WAR-07`, `WAR-08`, `WAR-09` and `WAR-10` as useful
+   post-beta hardening charters. A concrete P1/P2, absolute blocker, silent
+   evidence loss, corrupted evidence, false completeness, hidden/delayed current
+   position, privacy breach or unsafe main-process stall found in their scope
+   returns to a separate repair PR and blocks promotion;
+5. keep `DON-247` original-machine qualification and the map administration /
    distribution workflow (`DON-144`/`DON-7`/`DON-76`) open and separate from
-   candidate claims;
-4. do not start BCP-17/WAR-12 until the freeze conditions below are met.
+   candidate claims; do not start BCP-17/WAR-12 before the freeze conditions.
+
+### Release-first state vocabulary
+
+**TEST CANDIDATE FROZEN / SELECTED** means that one exact clean source SHA,
+intended version, declared fixtures and platforms, artifact names, rollback
+artifact, and stop conditions have been recorded. It may still be on
+qualification HOLD. This state is not release approval and does not imply that
+the artifact has been built or tested.
+
+**QUALIFIED FOR PROMOTION** means that BCP-17/WAR-12, all five WAR-01 exit
+gates, exact-artifact checks, original-machine confirmation, publication/rollback
+evidence, and every other mandatory receipt have passed for the same bytes.
+
+Exact-candidate evidence cannot be required before selecting the test candidate.
+No freeze record may be represented as qualification, promotion approval, or a
+release claim.
 
 **Qualification control-plane update (2026-09-17):** the historical
 post-PR6 research plan has been recovered and reconciled into a bounded core:
@@ -63,10 +84,10 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
 
 ### Phase 0 — reconcile and establish the release baseline
 
-1. Confirm the live merged PR35/PR36/PR37 state and a clean `master` before
-   any release work. PR38 started from the recorded base snapshot
-   `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e`; do not substitute the open
-   PR's head or its eventual merge for the verified candidate baseline.
+1. Confirm the live merged PR35/PR36/PR37/PR38 state and a clean `master`
+   before any release work. The current master is
+   `e69485724044337fb5fee94bfbe5871916fdabf1`; do not substitute a PR head or
+   a workflow SHA for the verified source baseline.
 2. Record the exact baseline SHA and refresh the open-finding inventory across
    team requirements, the deep audit and WAR. The failed PR35 timing receipt
    remains evidence; the merged PR36 repair claim is scoped to its exact seam
@@ -90,31 +111,34 @@ operational source. `DON-254` owns qualification and `DON-255` owns publication.
    predicates, sealed evidence and advisory fresh model-judge packet bound to
    the eventual candidate artifact.
 3. Complete the five WAR-01 absolute-blocker exit proofs and every confirmed
-   P1/P2 recheck before freeze. A scoped merged fix is not closure unless its
-   exact candidate, packaged, field or policy authority is recorded.
-4. Run the remaining assurance investigations (`WAR-03`, `WAR-07`, `WAR-08`,
-   `WAR-09`, `WAR-10`) in bounded, production-ownership-disjoint lanes where
-   capacity permits. Any confirmed absolute blocker or P1/P2 joins the
-   pre-candidate repair boundary. Lower-severity findings receive an explicit
-   owner and release disposition; investigation is not silently equated with a
-   fix.
+   P1/P2 recheck before qualification/promotion. A scoped merged fix is not
+   closure unless its exact candidate, packaged, field or policy authority is
+   recorded; these receipts are not required to select the test candidate.
+4. Keep the remaining assurance investigations (`WAR-03`, `WAR-07`, `WAR-08`,
+   `WAR-09`, `WAR-10`) available as bounded post-beta hardening lanes. They are
+   not blanket prerequisites to selecting beta13. Any concrete absolute blocker
+   or P1/P2 found by triage, qualification, or a lane joins a separate
+   pre-promotion repair boundary; lower-severity findings retain an explicit
+   owner and disposition.
 
 `AUD-12` and the retained non-safety UI/workflow backlog do not block this beta
 unless current-head reproduction changes their severity or demonstrates an
 absolute-blocker consequence.
 
-### Phase 2 — freeze one candidate
+### Phase 2 — select and freeze one test candidate
 
-Freeze only when all of the following are true:
+Select/freeze the test candidate only when all of the following are true:
 
-- all known release-blocking repairs are merged and required CI is green;
+- all confirmed unresolved production blockers from bounded triage are repaired
+  before selecting a test candidate, and required source CI is green;
 - no required code PR remains open and the working tree, Linear, handoff and
-  ledger agree on the exact candidate SHA;
-- every confirmed P1/P2 and all five WAR-01 absolute blockers are fixed and
-  rechecked or have a policy-valid disposition where disposition is permitted;
-- the qualification coverage registry has no unexplained release-critical gap;
-- the release version, artifact names, fixture identities, platform matrix,
-  rollback artifact and stop conditions are declared before the expensive run.
+  ledger agree on the exact selected source SHA;
+- every known P1/P2 and absolute blocker has a recorded disposition. Missing
+  exact-candidate, package, scale, field or human-acceptance receipts keep
+  qualification HOLD; they are not backfilled from pre-candidate evidence;
+- the qualification contract/coverage registry, release version, artifact
+  names, fixture identities, platform matrix, rollback artifact and stop
+  conditions are declared before the expensive run.
 
 No unrelated feature work enters the candidate after freeze. A product change
 creates a new candidate and invalidates only the evidence whose executable or
@@ -125,11 +149,12 @@ test inputs changed.
 This is the procedure to apply after the reconciliation PR is merged. It is
 not evidence that a candidate is currently frozen.
 
-1. Reconfirm the clean `master` baseline. After this reconciliation PR merges,
-   fill `reconciliationMergeSha` with that PR's actual merge commit. The PR38
-   base snapshot is `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e` (the PR37 merge);
-   it is not PR38's eventual merge. The value must be the merged PR commit,
-   not PR38's head `41340b65066be1a925a523e77a93b12ee0bcdb41`, PR37's head
+1. Reconfirm the clean `master` baseline and record
+   `reconciliationMergeSha=e69485724044337fb5fee94bfbe5871916fdabf1`, the
+   actual PR38 merge commit. The PR38 base snapshot was
+   `6b0b5e0cd8ce7c58060afd740ada8a0343ca655e` (the PR37 merge); it is not the
+   merge value. Do not substitute PR38's head
+   `92a4f680facc98fb2aa6871228616f6f0cb809e4`, PR37's head
    `1640edb2dfd558c0d26d40e41b1d6c516dea4a28`, a workflow SHA, or the prior
    pre-PR37 baseline. This procedure does not declare a candidate freeze or
    release.
@@ -171,11 +196,18 @@ not evidence that a candidate is currently frozen.
    claims Complete while a required contract is false. No retry-until-green or
    manual override is valid for those conditions.
 
-The freeze record remains `BLOCKED` until the five WAR-01 absolute blockers,
-all confirmed P1/P2 findings and the currently unexecuted WAR-03/WAR-07/WAR-08/
-WAR-09/WAR-10 investigations have authoritative exit evidence. The dry-run
-control-plane receipt is explicitly `releaseEligible: false` and cannot be
-used as a substitute.
+The test-candidate record remains `BLOCKED` until the current triage's concrete
+production blockers are repaired. No Donal architecture decision authorising
+selection with an unrepaired blocker is recorded here; any future exception
+would require a separate explicit decision naming the blocker, selection
+consequence, qualification and promotion prohibition, and approving authority.
+Once selected, qualification remains `HOLD` until the five WAR-01
+absolute blockers, exact-candidate evidence, BCP-17/WAR-12, `DON-247` and the
+other mandatory receipts pass. The dry-run control-plane receipt is explicitly
+`releaseEligible: false` and cannot be used as a substitute. WAR-03/WAR-07/
+WAR-08/WAR-09/WAR-10 are not blanket pre-candidate gates; a concrete finding
+within one of their scopes is still promotion-blocking and needs a separate
+repair PR.
 
 ### Phase 3 — execute BCP-17 / WAR-12 on the exact CI artifact
 
