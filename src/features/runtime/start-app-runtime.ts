@@ -380,6 +380,10 @@ export async function startAppRuntime(
               ? phase === 'recovery' ? 'paused' : phase
               : 'idle'
           },
+          getInactiveWarning: (pollingMode) =>
+            pollingMode === 'paused' && useMissionStore.getState().phase === 'recovery'
+              ? 'Resume the mission before reconnecting live tracking.'
+              : null,
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
           ...(rejectionEvidenceDelivery === null
             ? {}

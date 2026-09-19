@@ -141,6 +141,7 @@ type PersistedPositionKeyCache = {
 
 const MAX_RESTART_BREADCRUMBS_PER_DEVICE = 5_000
 const DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS = 5_000
+const MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS = 30_000
 const TRACKING_CACHE_MISSION_WARNING =
   'Tracking cache could not be matched to this mission; waiting for fresh current positions.'
 
@@ -430,6 +431,7 @@ export async function startTrackingRuntime(
   let trustedOperationalScope: {
     readonly contextKey: string
     readonly scope: ParticipationScope
+    readonly acceptedAtMs: number
   } | null = null
   let liveCurrentSnapshotContextKey: string | null | undefined
   let cacheReadActive = true
@@ -911,9 +913,9 @@ export async function startTrackingRuntime(
       if (!publishOperational) return
 
       clearRejectedCacheWarningOnLivePositions(snapshot)
-      if (snapshot.positions.length > 0) {
-        liveCurrentSnapshotContextKey = context.historyResetKey
-      }
+      // An accepted empty current response is still authoritative. It must
+      // prevent a slower startup cache read from resurrecting stale positions.
+      liveCurrentSnapshotContextKey = context.historyResetKey
       currentTransportFreshness.observeCurrent(snapshot)
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
@@ -1299,12 +1301,16 @@ export async function startTrackingRuntime(
     if (cachedSnapshot === null || (!cacheMatchesMission && !cacheMatchesRecovery)) {
       trackingCacheReadWarningActive = cachedSnapshot === null
       trackingCacheMissionWarningActive = cachedSnapshot !== null
-      latestTrackingStatus = {
-        mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
-        warning: null,
-      }
-      if (runtimeGeneration === activeTrackingRuntimeGeneration) {
-        dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+      // A live status, including an accepted empty current response, remains
+      // authoritative when a late cache belongs to another context.
+      if (latestTrackingStatus === null) {
+        latestTrackingStatus = {
+          mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+          warning: null,
+        }
+        if (runtimeGeneration === activeTrackingRuntimeGeneration) {
+          dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+        }
       }
     }
     if (cachedSnapshot !== null &&
@@ -1812,12 +1818,18 @@ export async function startTrackingRuntime(
     const scope = dependencies.readParticipationScope?.()
     const effectiveScope = scopeStatus === 'ready' && scope !== undefined
       ? scope
-      : trustedOperationalScope?.contextKey === contextKey
-        ? trustedOperationalScope.scope
+      : hasUsableTrustedScope(contextKey)
+        ? trustedOperationalScope?.scope ?? null
         : null
-    if (effectiveScope === null) return null
+    if (effectiveScope === null) {
+      if (retainCurrentPositions && trustedOperationalScope !== null && !hasUsableTrustedScope(contextKey)) {
+        trustedOperationalScope = null
+        dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      }
+      return null
+    }
     if (scopeStatus === 'ready' && scope !== undefined) {
-      trustedOperationalScope = { contextKey, scope }
+      trustedOperationalScope = { contextKey, scope, acceptedAtMs: now().getTime() }
     }
     // Retiring fallback/history callbacks may settle evidence, but cannot alter
     // the last-known positions that a later selected response will retain.
@@ -1828,6 +1840,12 @@ export async function startTrackingRuntime(
   /** Keeps retained current positions isolated to one mission runtime context. */
   function currentOperationalContextKey(): string {
     return currentOperationalMissionId() ?? 'no-active-mission'
+  }
+
+  /** Returns whether retained participant selection is still safe to use. */
+  function hasUsableTrustedScope(contextKey: string): boolean {
+    if (trustedOperationalScope?.contextKey !== contextKey) return false
+    return now().getTime() - trustedOperationalScope.acceptedAtMs <= MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS
   }
 
   /** Captures mission identity without treating explicit idle as an unknown key. */
@@ -1968,7 +1986,7 @@ export async function startTrackingRuntime(
   function participantScopeWarning(): string | null {
     const status = readParticipationScopeStatus()
     if (status === 'ready') return null
-    const hasTrustedScope = trustedOperationalScope !== null
+    const hasTrustedScope = hasUsableTrustedScope(currentOperationalContextKey())
     return status === 'loading'
       ? hasTrustedScope
         ? 'PARTICIPANT SELECTION LOADING — current positions remain visible under the last trusted selection while mission participation reloads.'

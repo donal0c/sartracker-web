@@ -84,6 +84,7 @@ type PollingManagerOptions = {
   readonly retryBaseMs?: number
   readonly maxBackoffMs?: number
   readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
+  readonly getInactiveWarning?: (pollingMode: 'paused' | 'idle') => string | null
   readonly getHistoryResetKey?: () => string | null
   readonly beginMissionEvidenceObservation?: (missionId: string | null) => {
     readonly missionId: string | null
@@ -998,10 +999,11 @@ export function createPollingManager(
 
         publishStatus({
           mode: 'idle',
-          warning:
+          warning: options.getInactiveWarning?.(pollingMode) ?? (
             pollingMode === 'paused'
               ? 'Live refresh suspended while mission is paused.'
-              : 'Waiting for an active mission.',
+              : 'Waiting for an active mission.'
+          ),
         })
         scheduleNextPoll(pollIntervalMs)
         return
@@ -1629,10 +1631,11 @@ export function createPollingManager(
 
     publishStatus({
       mode: 'idle',
-      warning:
+      warning: options.getInactiveWarning?.(pollingMode) ?? (
         pollingMode === 'paused'
           ? 'Live refresh suspended while mission is paused.'
-          : 'Waiting for an active mission.',
+          : 'Waiting for an active mission.'
+      ),
     })
   }
 
