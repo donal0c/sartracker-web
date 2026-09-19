@@ -33,6 +33,7 @@ export function DrawingToolbar() {
   const controller = useDrawingStore((state) => state.controller)
   const activeTool = useDrawingStore((state) => state.activeTool)
   const dialog = useDrawingStore((state) => state.dialog)
+  const error = useDrawingStore((state) => state.error)
   const measurementController = useMeasurementStore((state) => state.controller)
   const measurementMode = useMeasurementStore((state) => state.mode)
   const layerCatalogRoot = useLayerCatalogStore((state) => state.root)
@@ -54,6 +55,15 @@ export function DrawingToolbar() {
       data-map-interaction-boundary="true"
       data-testid="drawing-toolbar"
     >
+      {error !== null ? (
+        <p
+          className="mb-2 border border-rose-400/40 px-3 py-2 text-sm text-rose-200"
+          data-testid="drawing-error"
+          role="alert"
+        >
+          Error: {error}
+        </p>
+      ) : null}
       {expanded ? (
         <div className="max-h-[calc(100vh-12rem)] w-72 overflow-y-auto p-3 data-[panel-open=true]:w-[34rem]" data-panel-open={activePanel === null ? 'false' : 'true'}>
           <button

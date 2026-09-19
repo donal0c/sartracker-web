@@ -6,7 +6,6 @@ import {
   geodesicBearing,
   geodesicDistance,
   geodesicPolygonArea,
-  assertValidBearing,
   magneticToTrue,
   trueToMagnetic,
 } from '../features/drawings/drawing-math'
@@ -415,7 +414,8 @@ function BearingLineSection(props: {
   readonly onChange: (draft: Extract<DrawingDraft, { type: 'bearing_line' }>) => void
 }) {
   const bearingNumber = Number(props.draft.inputBearing)
-  const bearingIsValid = isValidBearingInput(bearingNumber)
+  const bearingIsValid =
+    Number.isFinite(bearingNumber) && bearingNumber >= 0 && bearingNumber <= 360
   const trueBearing =
     bearingIsValid && props.draft.inputBearingType === 'magnetic'
       ? magneticToTrue(bearingNumber)
@@ -463,15 +463,6 @@ function BearingLineSection(props: {
       </div>
     </>
   )
-}
-
-function isValidBearingInput(value: number): boolean {
-  try {
-    assertValidBearing(value, 'Bearing preview')
-    return true
-  } catch {
-    return false
-  }
 }
 
 function SearchSectorSection(props: {

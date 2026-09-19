@@ -32,6 +32,22 @@ test.describe('M8 drawing workflows', () => {
     expect(drawings.some((drawing) => drawing.type === 'line' && drawing.name === 'Ingress Line')).toBe(true)
   })
 
+  test('shows rejected sketch input in the toolbar when no dialog is open', async ({ page }) => {
+    await page.getByTestId('drawing-tool-line').click({ force: true })
+
+    await page.evaluate(async () => {
+      const { useDrawingStore } = await import('/src/features/drawings/drawing-store.ts')
+      const controller = useDrawingStore.getState().controller
+      if (controller === null) {
+        throw new Error('Drawing runtime controller was not ready.')
+      }
+      controller.appendSketchPoint(Number.NaN, 52)
+    })
+
+    await expect(page.getByTestId('drawing-error')).toContainText('longitude must be finite')
+    await expect(page.getByTestId('drawing-dialog')).toBeHidden()
+  })
+
   test('creates a search area with metadata', async ({ page }) => {
     await page.getByTestId('drawing-tool-search_area').click({ force: true })
     await clickMap(page, { x: 440, y: 180 })

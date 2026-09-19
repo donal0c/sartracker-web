@@ -55,7 +55,7 @@ export function appendDrawingSketchPoint(
   }
 
   try {
-    assertValidWgs84Coordinate(lon, lat, 'drawing sketch point')
+    assertValidWgs84Coordinate(lon, lat, 'drawing sketch')
   } catch (runtimeError) {
     state.error = toErrorMessage(runtimeError)
     return
@@ -122,7 +122,7 @@ export function beginDrawingDialogAtPoint(
   lat: number,
 ): void {
   try {
-    assertValidWgs84Coordinate(lon, lat, 'drawing dialog point')
+    assertValidWgs84Coordinate(lon, lat, 'drawing dialog')
   } catch (runtimeError) {
     state.error = toErrorMessage(runtimeError)
     return

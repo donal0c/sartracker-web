@@ -88,7 +88,7 @@ export function startMeasurementRuntime(
       }
 
       try {
-        assertValidWgs84Coordinate(lon, lat, 'measurement point')
+        assertValidWgs84Coordinate(lon, lat, 'measurement')
       } catch (runtimeError) {
         state.hoverPoint = null
         state.error = toErrorMessage(runtimeError)
@@ -163,7 +163,7 @@ export function startMeasurementRuntime(
       }
 
       try {
-        assertValidWgs84Coordinate(lon, lat, 'measurement hover point')
+        assertValidWgs84Coordinate(lon, lat, 'measurement hover')
       } catch (runtimeError) {
         state.hoverPoint = null
         state.error = toErrorMessage(runtimeError)

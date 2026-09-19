@@ -20,6 +20,14 @@ describe('drawing geodesic math', () => {
     expect(trueToMagnetic(94.5)).toBeCloseTo(90, 5)
   })
 
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.001, 360.001])(
+    'rejects unsafe public bearing conversion input: %s',
+    (bearing) => {
+      expect(() => magneticToTrue(bearing)).toThrow(RangeError)
+      expect(() => trueToMagnetic(bearing)).toThrow(RangeError)
+    },
+  )
+
   it('computes a near-1km northward endpoint correctly', () => {
     const [lon, lat] = geodesicBearingEndpoint(-9.744, 51.999, 0, 1000)
     expect(lon).toBeCloseTo(-9.744, 2)

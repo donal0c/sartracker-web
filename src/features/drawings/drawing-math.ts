@@ -31,12 +31,12 @@ export function assertValidWgs84Coordinate(
 
   if (lon < WGS84_LON_MIN || lon > WGS84_LON_MAX) {
     throw new RangeError(
-      `${context}: longitude must be between ${WGS84_LON_MIN} and ${WGS84_LON_MAX}, got ${lon}`,
+      `${context}: longitude outside [${WGS84_LON_MIN}, ${WGS84_LON_MAX}]: ${lon}`,
     )
   }
   if (lat < WGS84_LAT_MIN || lat > WGS84_LAT_MAX) {
     throw new RangeError(
-      `${context}: latitude must be between ${WGS84_LAT_MIN} and ${WGS84_LAT_MAX}, got ${lat}`,
+      `${context}: latitude outside [${WGS84_LAT_MIN}, ${WGS84_LAT_MAX}]: ${lat}`,
     )
   }
 }
@@ -48,7 +48,7 @@ export function assertValidBearing(bearing: number, context: string = 'drawing m
   assertFiniteNumber(bearing, 'bearing', context)
   if (bearing < BEARING_MIN || bearing > BEARING_MAX) {
     throw new RangeError(
-      `${context}: bearing must be between ${BEARING_MIN} and ${BEARING_MAX} degrees, got ${bearing}`,
+      `${context}: bearing outside [${BEARING_MIN}, ${BEARING_MAX}] degrees: ${bearing}`,
     )
   }
 }
@@ -127,10 +127,12 @@ export function normalizeBearing(bearing: number): number {
 }
 
 export function magneticToTrue(magneticBearing: number): number {
+  assertValidBearing(magneticBearing, 'magneticToTrue')
   return normalizeBearing(magneticBearing - IRELAND_MAGNETIC_DECLINATION)
 }
 
 export function trueToMagnetic(trueBearing: number): number {
+  assertValidBearing(trueBearing, 'trueToMagnetic')
   return normalizeBearing(trueBearing + IRELAND_MAGNETIC_DECLINATION)
 }
 
