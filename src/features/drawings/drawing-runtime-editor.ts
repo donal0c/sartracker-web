@@ -162,11 +162,17 @@ export function beginDrawingEdit(
   }
 
   state.selectedDrawingId = drawing.id
-  state.dialog = {
-    mode: 'edit',
-    draft: createDraftFromDrawing(drawing),
+  try {
+    state.dialog = {
+      mode: 'edit',
+      draft: createDraftFromDrawing(drawing),
+    }
+    state.error = null
+  } catch (runtimeError) {
+    state.selectedDrawingId = null
+    state.dialog = null
+    state.error = toErrorMessage(runtimeError)
   }
-  state.error = null
 }
 
 /**

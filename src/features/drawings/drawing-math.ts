@@ -14,6 +14,9 @@ const BEARING_MAX = 360
 /** Maximum number of synchronous segments accepted by one geodesic geometry call. */
 export const MAX_GEODESIC_SEGMENTS = 4_096
 
+/** Maximum distance accepted by one geometry call: half the WGS84 equatorial circumference. */
+export const MAX_GEODESIC_DISTANCE_M = Math.PI * WGS84_A
+
 export const IRELAND_MAGNETIC_DECLINATION = -4.5
 
 export type LonLat = readonly [lon: number, lat: number]
@@ -62,7 +65,7 @@ export function assertPositiveDistance(
   context: string,
 ): void {
   assertFiniteNumber(distanceM, name, context)
-  if (distanceM <= 0) {
+  if (distanceM <= 0 || distanceM > MAX_GEODESIC_DISTANCE_M) {
     throw new RangeError(`${context}: ${name} must be positive, got ${distanceM}`)
   }
 }
@@ -75,8 +78,10 @@ export function assertNonNegativeDistance(
   context: string,
 ): void {
   assertFiniteNumber(distanceM, 'distanceM', context)
-  if (distanceM < 0) {
-    throw new RangeError(`${context}: distanceM must be non-negative, got ${distanceM}`)
+  if (distanceM < 0 || distanceM > MAX_GEODESIC_DISTANCE_M) {
+    throw new RangeError(
+      `${context}: distanceM must be non-negative and <= ${MAX_GEODESIC_DISTANCE_M}, got ${distanceM}`,
+    )
   }
 }
 
@@ -377,8 +382,9 @@ export function geodesicPolygonArea(ring: readonly LonLat[]): number {
     const next = ring[nextIndex]!
     const [lon1, lat1] = current
     const [lon2, lat2] = next
+    const shortestLongitudeDelta = ((lon2 - lon1 + 540) % 360) - 180
     area +=
-      (lon2 - lon1) *
+      shortestLongitudeDelta *
       DEG_TO_RAD *
       (2 + Math.sin(lat1 * DEG_TO_RAD) + Math.sin(lat2 * DEG_TO_RAD))
   }

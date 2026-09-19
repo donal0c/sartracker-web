@@ -29,6 +29,7 @@ import {
 import type { DrawingRuntimeState } from './drawing-store'
 import type { DrawingDraft, DrawingTool } from './drawing-types'
 import { assertValidWgs84Coordinate } from './drawing-math'
+import { DrawingInputValidationError } from './drawing-persistence/shared'
 
 type DrawingStoreBoundary = Pick<
   MissionStore,
@@ -237,9 +238,5 @@ function toErrorMessage(error: unknown): string {
 }
 
 function isExpectedDrawingValidationError(error: unknown): boolean {
-  return (
-    error instanceof RangeError ||
-    (error instanceof TypeError && error.message.includes('must be a number')) ||
-    (error instanceof Error && error.message === 'Drawing name is required.')
-  )
+  return error instanceof DrawingInputValidationError
 }

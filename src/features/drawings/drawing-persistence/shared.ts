@@ -1,9 +1,17 @@
 import type { Drawing } from '../../../infrastructure/mission-store/tauri-mission-store'
-import { assertValidWgs84Coordinate } from '../drawing-math'
+import { assertValidWgs84Coordinate, MAX_GEODESIC_DISTANCE_M } from '../drawing-math'
 import type { DrawingDraft, DrawingMetadata, PersistedDrawing } from '../drawing-types'
 import type { LonLat } from '../drawing-math'
 
 const HEX_COLOR_PATTERN = /^#[0-9A-F]{6}$/i
+
+/** Identifies malformed drawing input without swallowing infrastructure failures. */
+export class DrawingInputValidationError extends RangeError {
+  public constructor(message: string) {
+    super(message)
+    this.name = 'DrawingInputValidationError'
+  }
+}
 
 export type BuildDrawingInputArgs = {
   readonly missionId: string
@@ -28,7 +36,7 @@ export function parsePersistedDrawing(drawing: Drawing): PersistedDrawing {
  */
 export function assertValidName(name: string): void {
   if (name.trim() === '') {
-    throw new Error('Drawing name is required.')
+    throw new DrawingInputValidationError('Drawing name is required.')
   }
 }
 
@@ -57,8 +65,10 @@ export function normalizeOptionalNumber(value: string): number | null {
  */
 export function parseRequiredPositiveNumber(value: string, label: string): number {
   const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new RangeError(`${label} must be greater than zero.`)
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > MAX_GEODESIC_DISTANCE_M) {
+    throw new DrawingInputValidationError(
+      `${label} must be greater than zero and no more than ${MAX_GEODESIC_DISTANCE_M} metres.`,
+    )
   }
 
   return parsed
@@ -73,8 +83,8 @@ export function parseRequiredBearing(value: string, label: string): number {
   }
 
   const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new RangeError(`${label} must be zero or greater.`)
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 360) {
+    throw new DrawingInputValidationError(`${label} must be between zero and 360 degrees.`)
   }
 
   return parsed
@@ -86,7 +96,7 @@ export function parseRequiredBearing(value: string, label: string): number {
 export function parseRequiredPositiveInteger(value: string, label: string): number {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new RangeError(`${label} must be a positive integer.`)
+    throw new DrawingInputValidationError(`${label} must be a positive integer.`)
   }
 
   return parsed

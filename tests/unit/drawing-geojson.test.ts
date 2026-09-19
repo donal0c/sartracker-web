@@ -7,6 +7,30 @@ import {
 import type { Drawing } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
 describe('drawing geojson', () => {
+  it('skips corrupt persisted drawing payloads instead of breaking the map', () => {
+    expect(() =>
+      createDrawingFeatureCollection(
+        [
+          createDrawing({
+            geometry_json: '{not-json',
+          }),
+        ],
+        null,
+      ),
+    ).not.toThrow()
+
+    expect(
+      createDrawingFeatureCollection(
+        [
+          createDrawing({
+            geometry_json: '{not-json',
+          }),
+        ],
+        null,
+      ).features,
+    ).toHaveLength(0)
+  })
+
   it('creates geometry and label features for line drawings', () => {
     const collection = createDrawingFeatureCollection(
       [

@@ -128,6 +128,36 @@ describe('startDrawingRuntime', () => {
     )
   })
 
+  it('does not swallow persistence RangeErrors as drawing-input validation', async () => {
+    const persistenceError = new RangeError('SQLite range failure')
+    const runtime = await startDrawingRuntime({
+      drawingStore: {
+        listDrawings: vi.fn().mockResolvedValue([]),
+        upsertDrawing: vi.fn().mockRejectedValue(persistenceError),
+        deleteDrawing: vi.fn(),
+      },
+      applyRuntime: vi.fn(),
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.setActiveTool('line')
+    runtime.appendSketchPoint(-9.744, 51.999)
+    runtime.appendSketchPoint(-9.734, 52.009)
+    runtime.completeSketch()
+    runtime.updateDraft({
+      id: null,
+      type: 'line',
+      name: 'Track line',
+      description: '',
+      points: [
+        [-9.744, 51.999],
+        [-9.734, 52.009],
+      ],
+    })
+
+    await expect(runtime.saveDialog()).rejects.toBe(persistenceError)
+  })
+
   it('opens range ring dialogs from a clicked center point', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startDrawingRuntime({

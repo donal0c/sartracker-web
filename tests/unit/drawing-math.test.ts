@@ -9,6 +9,7 @@ import {
   geodesicDistance,
   geodesicPolygonArea,
   geodesicSectorPoints,
+  MAX_GEODESIC_DISTANCE_M,
   MAX_GEODESIC_SEGMENTS,
   magneticToTrue,
   trueToMagnetic,
@@ -60,6 +61,27 @@ describe('drawing geodesic math', () => {
   it('formats distances cleanly for labels', () => {
     expect(formatDistance(250)).toBe('250 m')
     expect(formatDistance(1250)).toBe('1.25 km')
+  })
+
+  it('rejects distances beyond the physically meaningful WGS84 half-circumference', () => {
+    const oversizedDistance = MAX_GEODESIC_DISTANCE_M + 1
+
+    expect(() => geodesicBearingEndpoint(-9.744, 51.999, 0, oversizedDistance)).toThrow(RangeError)
+    expect(() => geodesicCirclePoints(-9.744, 51.999, oversizedDistance)).toThrow(RangeError)
+    expect(() => geodesicSectorPoints(-9.744, 51.999, 0, 90, oversizedDistance)).toThrow(RangeError)
+    expect(() => formatDistance(oversizedDistance)).toThrow(RangeError)
+  })
+
+  it('calculates small polygon areas correctly across the antimeridian', () => {
+    const area = geodesicPolygonArea([
+      [179.9, 10],
+      [-179.9, 10],
+      [-179.9, 10.1],
+      [179.9, 10.1],
+    ])
+
+    expect(area).toBeGreaterThan(0)
+    expect(area).toBeLessThan(300_000_000)
   })
 })
 

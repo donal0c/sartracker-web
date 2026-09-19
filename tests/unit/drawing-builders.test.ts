@@ -136,6 +136,20 @@ describe('drawing builders', () => {
     ).toThrow(/Ring count must be at most 64/)
   })
 
+  it('rejects manual range-ring radii beyond the geometry safety bound', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 3,
+        draft: {
+          ...createRangeRingDraft([-9.744, 51.999]),
+          name: 'Oversized ring',
+          manualRadiusM: '1000000000000',
+        },
+      }),
+    ).toThrow(RangeError)
+  })
+
   it('builds bearing lines from magnetic bearings by converting to true', () => {
     const input = buildDrawingInput({
       missionId: 'mission-1',
@@ -202,6 +216,20 @@ describe('drawing builders', () => {
     expect(input.geometry_json).toContain('"Point"')
     expect(input.metadata_json).toContain('"fontSize":18')
     expect(input.metadata_json).toContain('"rotation":15')
+  })
+
+  it('rejects text-label rotations above one full turn', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 6,
+        draft: {
+          ...createTextLabelDraft([-9.744, 51.999]),
+          text: 'Unsafe rotation',
+          rotation: '361',
+        },
+      }),
+    ).toThrow(RangeError)
   })
 
   it.each([

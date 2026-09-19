@@ -6,6 +6,7 @@ import {
   geodesicBearing,
   geodesicDistance,
   geodesicPolygonArea,
+  MAX_GEODESIC_DISTANCE_M,
   magneticToTrue,
   trueToMagnetic,
 } from '../features/drawings/drawing-math'
@@ -222,7 +223,7 @@ function LineSection(props: { readonly draft: Extract<DrawingDraft, { type: 'lin
         {
           label: 'Distance',
           testId: 'drawing-line-distance-readout',
-          value: formatDistance(distanceM),
+          value: formatDialogDistance(distanceM),
         },
         {
           label: 'Bearing to endpoint',
@@ -368,7 +369,10 @@ function RangeRingSection(props: {
       {props.draft.mode === 'manual' ? (
         <section className="grid gap-4 md:grid-cols-2">
           <Field
+            inputType="number"
             label="Radius (m)"
+            max={MAX_GEODESIC_DISTANCE_M}
+            min={0.01}
             onChange={(value) => props.onChange({ ...props.draft, manualRadiusM: value })}
             required={props.draft.manualRadiusM.trim() === ''}
             requiredTestId="drawing-range-ring-radius-required"
@@ -456,6 +460,9 @@ function BearingLineSection(props: {
         />
         <Field
           label="Distance (m)"
+          inputType="number"
+          max={MAX_GEODESIC_DISTANCE_M}
+          min={0}
           onChange={(value) => props.onChange({ ...props.draft, distanceM: value })}
           testId="drawing-bearing-distance-input"
           value={props.draft.distanceM}
@@ -515,6 +522,9 @@ function SearchSectorSection(props: {
         />
         <Field
           label="Radius (m)"
+          inputType="number"
+          max={MAX_GEODESIC_DISTANCE_M}
+          min={0.01}
           onChange={(value) =>
             props.onChange((current) =>
               current.type === 'search_sector'
@@ -545,6 +555,8 @@ function TextLabelSection(props: {
       <section className="grid gap-4 md:grid-cols-2">
         <Field
           label="Font Size"
+          inputType="number"
+          min={1}
           onChange={(value) => props.onChange({ ...props.draft, fontSize: value })}
           testId="drawing-text-label-font-size-input"
           value={props.draft.fontSize}
@@ -697,6 +709,14 @@ function calculateEndpointBearing(points: readonly (readonly [number, number])[]
 
 function formatLonLat(point: readonly [number, number]): string {
   return `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`
+}
+
+function formatDialogDistance(distanceM: number): string {
+  try {
+    return formatDistance(distanceM)
+  } catch {
+    return 'Distance unavailable — geometry exceeds the safe display range.'
+  }
 }
 
 function closeRing(points: readonly (readonly [number, number])[]): readonly (readonly [number, number])[] {

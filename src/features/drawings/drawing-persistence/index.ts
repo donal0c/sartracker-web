@@ -8,7 +8,11 @@ import {
   buildTextLabelDrawingInput,
   createTextLabelDraftFromDrawing,
 } from './text-label-drawing-persistence'
-import { type BuildDrawingInputArgs, parsePersistedDrawing } from './shared'
+import {
+  DrawingInputValidationError,
+  type BuildDrawingInputArgs,
+  parsePersistedDrawing,
+} from './shared'
 
 /**
  * Builds a persisted drawing payload from an editable draft.
@@ -18,19 +22,31 @@ export function buildDrawingInput({
   displayOrder,
   draft,
 }: BuildDrawingInputArgs) {
-  switch (draft.type) {
-    case 'line':
-      return buildLineDrawingInput(missionId, displayOrder, draft)
-    case 'search_area':
-      return buildSearchAreaDrawingInput(missionId, displayOrder, draft)
-    case 'range_ring':
-      return buildRangeRingDrawingInput(missionId, displayOrder, draft)
-    case 'bearing_line':
-      return buildBearingLineDrawingInput(missionId, displayOrder, draft)
-    case 'search_sector':
-      return buildSearchSectorDrawingInput(missionId, displayOrder, draft)
-    case 'text_label':
-      return buildTextLabelDrawingInput(missionId, displayOrder, draft)
+  try {
+    switch (draft.type) {
+      case 'line':
+        return buildLineDrawingInput(missionId, displayOrder, draft)
+      case 'search_area':
+        return buildSearchAreaDrawingInput(missionId, displayOrder, draft)
+      case 'range_ring':
+        return buildRangeRingDrawingInput(missionId, displayOrder, draft)
+      case 'bearing_line':
+        return buildBearingLineDrawingInput(missionId, displayOrder, draft)
+      case 'search_sector':
+        return buildSearchSectorDrawingInput(missionId, displayOrder, draft)
+      case 'text_label':
+        return buildTextLabelDrawingInput(missionId, displayOrder, draft)
+    }
+  } catch (error) {
+    if (
+      error instanceof DrawingInputValidationError ||
+      error instanceof RangeError ||
+      (error instanceof TypeError && error.message.includes('must be a number'))
+    ) {
+      throw new DrawingInputValidationError(error instanceof Error ? error.message : 'Invalid drawing input.')
+    }
+
+    throw error
   }
 }
 

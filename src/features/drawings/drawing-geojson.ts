@@ -80,7 +80,12 @@ export function createDrawingFeatureCollection(
   const features: Feature<Geometry, DrawingFeatureProperties>[] = []
 
   for (const drawing of drawings) {
-    const parsed = parsePersistedDrawing(drawing)
+    let parsed: ReturnType<typeof parsePersistedDrawing>
+    try {
+      parsed = parsePersistedDrawing(drawing)
+    } catch {
+      continue
+    }
     if (!isValidPersistedGeometry(parsed.parsedGeometry)) {
       continue
     }
