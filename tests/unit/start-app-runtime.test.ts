@@ -539,6 +539,46 @@ describe('app runtime startup', () => {
     expect(registerServiceWorker).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps tracking in paused last-known mode while mission recovery is awaiting operator action [TRK-001]', async () => {
+    useMissionStore.setState({ phase: 'recovery', currentMission: null, recoverableMission: null })
+    let getPollingMode: (() => string) | undefined
+    const createPollingManager = vi.fn().mockImplementation((_client, options) => {
+      getPollingMode = options.getPollingMode
+      return { start: vi.fn(), stop: vi.fn() }
+    })
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input) => {
+      input.createPoller({}, {
+        onSnapshot: vi.fn(), onCurrentSnapshot: vi.fn(),
+        waitForCurrentEvidenceCapacity: vi.fn().mockResolvedValue(undefined),
+        onStatusChange: vi.fn(),
+        getInitialBreadcrumbs: vi.fn().mockResolvedValue([]),
+        getInitialBreadcrumbTotals: vi.fn().mockResolvedValue({}),
+        getInitialBreadcrumbSelectionMetadata: vi.fn().mockResolvedValue({}),
+        getInitialHistoryCheckpoints: vi.fn().mockResolvedValue({}),
+        onPollDiagnostic: vi.fn(),
+      })
+      return vi.fn()
+    })
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(false),
+      isElectronRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+      createPollingManager,
+    })
+
+    expect(getPollingMode?.()).toBe('paused')
+    await runtime?.dispose()
+  })
+
   it('does not start default-on coverage against the unsupported Tauri mission store', async () => {
     coverageFlagState.enabled = true
     const startCoverageRuntime = vi.fn().mockReturnValue(vi.fn())

@@ -3152,6 +3152,29 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('uses the runtime-provided warning when paused for mission recovery', async () => {
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(createClient(), {
+      intervalMs: 5_000,
+      staleThresholdMs: 60 * 60 * 1000,
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      getPollingMode: () => 'paused',
+      getInactiveWarning: () => 'Resume mission to reconnect.',
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(onStatusChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        warning: 'Resume mission to reconnect.',
+      }),
+    )
+
+    poller.stop()
+  })
+
   it('replays a paused mission snapshot without re-persisting its rendered history', async () => {
     let pollingMode: 'active' | 'paused' = 'active'
     const onSnapshot = vi.fn()

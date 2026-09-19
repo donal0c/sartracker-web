@@ -1134,9 +1134,12 @@
             hiding that participant's breadcrumb history. A last-known current fix remains visible after late
             selection even when its fix time predates the participation window; that visibility does not
             backdate or persist the older fix as mission evidence. If participant evidence is still loading or
-            unavailable, the tracking warning says so explicitly and preserves the unfiltered fallback cache
-            until the scope can be safely applied. If malformed Traccar device rows make a roster observation
-            incomplete, SAR Tracker may add confirmed members from the valid rows but will not infer that a
+            unavailable after a trusted scope was established, current positions remain visible under that
+            last trusted participant selection while the warning explains the held refresh. New mission
+            history and evidence remain fail-closed until the scope can be safely applied; a first load with
+            no trusted scope shows the warning instead of exposing unselected provider devices. If malformed
+            Traccar device rows make a roster observation incomplete, SAR Tracker may add confirmed members
+            from the valid rows but will not infer that a
             missing group member has left. Starting or adding a group is blocked until a complete roster is
             available; individual devices can still be selected explicitly. Once the mission is finished,
             participant changes are locked before archive finalization as well as afterward.
@@ -1180,6 +1183,9 @@
             status changes to a flashing red <strong>OFFLINE</strong> state and the warning line shows
             <strong>OFFLINE MODE</strong>. When a mission is paused, the status chip changes to
             <strong>PAUSED</strong> and <strong>Live refresh suspended</strong> is shown as a red alert.
+            During restart recovery, SAR Tracker keeps the last-known current view available when it has
+            one, does not issue a new provider request, and labels the mission <strong>recovery</strong> until
+            the coordinator resumes or starts fresh.
             A live fix older than five minutes is also marked stale. In all three cases, treat displayed
             positions as potentially stale until a newer live fix arrives.
           </div>

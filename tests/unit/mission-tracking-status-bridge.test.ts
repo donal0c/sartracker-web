@@ -50,15 +50,11 @@ describe('mission tracking status bridge', () => {
       recoverableMission: null,
     })
 
-    expect(applySnapshot).toHaveBeenLastCalledWith({
-      devices: [],
-      positions: [],
-      breadcrumbs: [],
-    })
+    expect(applySnapshot).not.toHaveBeenCalled()
     expect(applyStatus).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'idle',
-        warning: 'Resume the mission before reconnecting live tracking.',
+        warning: 'Resume mission to reconnect.',
       }),
     )
 

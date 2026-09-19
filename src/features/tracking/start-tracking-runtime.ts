@@ -141,6 +141,7 @@ type PersistedPositionKeyCache = {
 
 const MAX_RESTART_BREADCRUMBS_PER_DEVICE = 5_000
 const DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS = 5_000
+const MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS = 30_000
 const TRACKING_CACHE_MISSION_WARNING =
   'Tracking cache could not be matched to this mission; waiting for fresh current positions.'
 
@@ -427,6 +428,13 @@ export async function startTrackingRuntime(
     readonly historyResetKey: string | null
     readonly cachedAt?: string
   } | null = null
+  let trustedOperationalScope: {
+    readonly contextKey: string
+    readonly scope: ParticipationScope
+    readonly acceptedAt: number
+  } | null = null
+  let liveCurrentSnapshotContextKey: string | null | undefined
+  let cacheReadActive = true
   let pendingMissionCache: {
     readonly snapshot: TrackingSnapshot
     readonly missionId: string | null
@@ -544,65 +552,33 @@ export async function startTrackingRuntime(
 
   const cacheReadMissionId = currentOperationalMissionId() ??
     useMissionStore.getState().recoverableMission?.id ?? null
-  const cachedContents = await dependencies.cache.read()
-  if (cachedContents !== null) {
-    const cachedSnapshot = safelyParseCachedSnapshot(cachedContents, logger)
-    const cacheMatchesMission = cachedSnapshot?.mission_id !== undefined &&
-      cachedSnapshot.mission_id === cacheReadMissionId &&
-      isOperationalMissionCurrent(cacheReadMissionId)
-    const cacheMatchesRecovery = cacheReadMissionId !== null &&
-      cachedSnapshot?.mission_id === cacheReadMissionId &&
-      isOperationalMissionCurrent(null) &&
-      useMissionStore.getState().phase === 'recovery' &&
-      useMissionStore.getState().recoverableMission?.id === cacheReadMissionId
-    if (cachedSnapshot === null || (!cacheMatchesMission && !cacheMatchesRecovery)) {
-      trackingCacheReadWarningActive = cachedSnapshot === null
-      trackingCacheMissionWarningActive = cachedSnapshot !== null
-      latestTrackingStatus = {
-        mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
-        warning: null,
-      }
-      if (runtimeGeneration === activeTrackingRuntimeGeneration) {
-        dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
-      }
-    }
-    if (cachedSnapshot !== null && (cacheMatchesMission || cacheMatchesRecovery) && isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
-      const healthyCachedSnapshot = annotateTrackingSnapshotHealth(
-          {
-            devices: cachedSnapshot.devices,
-            positions: cachedSnapshot.positions,
-            breadcrumbs: cachedSnapshot.breadcrumbs,
-          },
-          {
-            now: now(),
-            cacheAgeMs: calculateCacheAgeMs(cachedSnapshot.cached_at, now()),
-            deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
-          },
-        )
-      const operationalCachedSnapshot = cacheMatchesRecovery
-        ? null : filterOperationalSnapshot(healthyCachedSnapshot)
-      if (operationalCachedSnapshot === null) {
-        // Keep proven cache rows separate from live callbacks until both
-        // mission identity and participation permit operational publication.
-        pendingMissionCache = { snapshot: healthyCachedSnapshot,
-          missionId: cacheReadMissionId, cachedAt: cachedSnapshot.cached_at }
-      } else {
-        cachedOperationalDataWarning = describeCachedOperationalData(operationalCachedSnapshot)
-        dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
-      }
-      // Cold-start visibility: until the first live poll succeeds, the operator
-      // is looking at last-known cached positions. Surface that explicitly so
-      // they cannot mistake cached data for a live feed.
-      latestTrackingStatus = {
+  let cacheReadPromise: Promise<string | null>
+  try {
+    cacheReadPromise = dependencies.cache.read()
+  } catch (error) {
+    cacheReadPromise = Promise.reject(error)
+  }
+  void cacheReadPromise.then(
+    (cachedContents) => {
+      if (!cacheReadActive || !acceptingRuntimeUpdates ||
+        runtimeGeneration !== activeTrackingRuntimeGeneration) return
+      applyCachedTrackingContents(cachedContents, cacheReadMissionId)
+    },
+    (error: unknown) => {
+      if (!cacheReadActive || !acceptingRuntimeUpdates ||
+        runtimeGeneration !== activeTrackingRuntimeGeneration) return
+      trackingCacheReadWarningActive = true
+      latestTrackingStatus ??= {
         mode: 'offline',
         consecutiveFailures: 0,
         recovered: false,
-        lastSuccessAt: cachedSnapshot.cached_at,
+        lastSuccessAt: null,
         warning: null,
       }
+      logger.warn('Tracking cache could not be read.', error)
       dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
-    }
-  }
+    },
+  )
 
   let client = dependencies.createClient({
     ...dependencies.config,
@@ -937,6 +913,9 @@ export async function startTrackingRuntime(
       if (!publishOperational) return
 
       clearRejectedCacheWarningOnLivePositions(snapshot)
+      // An accepted empty current response is still authoritative. It must
+      // prevent a slower startup cache read from resurrecting stale positions.
+      liveCurrentSnapshotContextKey = context.historyResetKey
       currentTransportFreshness.observeCurrent(snapshot)
       const operationalSnapshot = filterOperationalSnapshot(
         snapshot,
@@ -960,7 +939,12 @@ export async function startTrackingRuntime(
         ? currentOperationalMissionId() : context.historyResetKey
       const publishOperational = !context?.suppressOperationalPublication &&
         isOperationalMissionCurrent(snapshotMissionId)
-      if (publishOperational) clearRejectedCacheWarningOnLivePositions(snapshot)
+      if (publishOperational) {
+        clearRejectedCacheWarningOnLivePositions(snapshot)
+        // History/fallback publication is also an accepted live context. It
+        // must fence a slower startup cache read just like the current path.
+        liveCurrentSnapshotContextKey = snapshotMissionId
+      }
       if (publishOperational) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context?.missionEvidenceId === undefined
         ? context?.historyResetKey ?? null
@@ -1101,6 +1085,8 @@ export async function startTrackingRuntime(
     if (missionId !== previousMissionId) {
       deferredOperationalSnapshot = null
       operationalPositionRetention.reset()
+      trustedOperationalScope = null
+      liveCurrentSnapshotContextKey = undefined
       currentTransportFreshness.reset()
       cachedOperationalDataWarning = null
       refreshTrackingStatus()
@@ -1157,7 +1143,11 @@ export async function startTrackingRuntime(
             useMissionStore.getState().currentMission?.id === missionId,
         )) ?? (() => undefined)
     poller.start()
+    // Preserve the established immediate-cache behavior for an already
+    // resolved read, without making a slow cache read a renderer startup gate.
+    await Promise.resolve()
   } catch (error) {
+    cacheReadActive = false
     unregisterMissionEvidenceSettler()
     unsubscribeMissionWake()
     unsubscribeDeviceSelectionWake()
@@ -1174,6 +1164,7 @@ export async function startTrackingRuntime(
       clearBreadcrumbTransferStatus()
       if (clearActiveBreadcrumbTransferStatus === clearBreadcrumbTransferStatus) clearActiveBreadcrumbTransferStatus = null
       acceptingRuntimeUpdates = false
+      cacheReadActive = false
       for (const cancel of participantScopeWaiters) cancel()
       pendingMissionCache = null
       deferredOperationalSnapshot = null
@@ -1240,7 +1231,9 @@ export async function startTrackingRuntime(
       pendingMissionCache = null
       trackingCacheMissionWarningActive = false
       trackingCacheReadWarningActive = false
+      trustedOperationalScope = null
     }
+    cacheReadActive = false
     currentTransportFreshness.reset()
     dependencies = next
     deferredOperationalSnapshot = null
@@ -1266,6 +1259,7 @@ export async function startTrackingRuntime(
           runtimeGeneration === activeTrackingRuntimeGeneration)
       }
     } catch (error) {
+      cacheReadActive = false
       latestTrackingStatus = { ...latestTrackingStatus, mode: 'offline', consecutiveFailures: 1,
         warning: 'Tracking could not reconnect. Retry Reconnect and check the provider settings.' }
       dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
@@ -1286,6 +1280,85 @@ export async function startTrackingRuntime(
       event: 'tracking_snapshot_applied',
       fields: buildTrackingSnapshotDiagnosticFields(snapshot),
     })
+  }
+
+  /** Applies a startup cache result after the current-position producer is live. */
+  function applyCachedTrackingContents(
+    cachedContents: string | null,
+    cachedMissionId: string | null,
+  ): void {
+    if (cachedContents === null) return
+    // A live response has priority over a late cache read, even when the
+    // participant scope is temporarily unavailable and the response is being
+    // retained behind the last trusted scope.
+    if (liveCurrentSnapshotContextKey !== undefined &&
+      liveCurrentSnapshotContextKey === cachedMissionId) return
+
+    const cachedSnapshot = safelyParseCachedSnapshot(cachedContents, logger)
+    const cacheMatchesMission = cachedSnapshot?.mission_id !== undefined &&
+      cachedSnapshot.mission_id === cachedMissionId &&
+      isOperationalMissionCurrent(cachedMissionId)
+    const cacheMatchesRecovery = cachedMissionId !== null &&
+      cachedSnapshot?.mission_id === cachedMissionId &&
+      isOperationalMissionCurrent(null) &&
+      useMissionStore.getState().phase === 'recovery' &&
+      useMissionStore.getState().recoverableMission?.id === cachedMissionId
+    if (cachedSnapshot === null || (!cacheMatchesMission && !cacheMatchesRecovery)) {
+      trackingCacheReadWarningActive = cachedSnapshot === null
+      trackingCacheMissionWarningActive = cachedSnapshot !== null
+      // A live status, including an accepted empty current response, remains
+      // authoritative when a late cache belongs to another context.
+      if (latestTrackingStatus === null) {
+        latestTrackingStatus = {
+          mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+          warning: null,
+        }
+        if (runtimeGeneration === activeTrackingRuntimeGeneration) {
+          dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+        }
+      }
+    }
+    if (cachedSnapshot !== null &&
+      (cacheMatchesMission || cacheMatchesRecovery) &&
+      isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
+      const healthyCachedSnapshot = annotateTrackingSnapshotHealth(
+        {
+          devices: cachedSnapshot.devices,
+          positions: cachedSnapshot.positions,
+          breadcrumbs: cachedSnapshot.breadcrumbs,
+        },
+        {
+          now: now(),
+          cacheAgeMs: calculateCacheAgeMs(cachedSnapshot.cached_at, now()),
+          deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
+        },
+      )
+      const operationalCachedSnapshot = cacheMatchesRecovery
+        ? null : filterOperationalSnapshot(healthyCachedSnapshot)
+      if (operationalCachedSnapshot === null) {
+        // Keep proven cache rows separate from live callbacks until both
+        // mission identity and participation permit operational publication.
+        pendingMissionCache = {
+          snapshot: healthyCachedSnapshot,
+          missionId: cachedMissionId,
+          cachedAt: cachedSnapshot.cached_at,
+        }
+      } else {
+        cachedOperationalDataWarning = describeCachedOperationalData(operationalCachedSnapshot)
+        dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
+      }
+      // Cold-start visibility: until the first live poll succeeds, the operator
+      // is looking at last-known cached positions. Surface that explicitly so
+      // they cannot mistake cached data for a live feed.
+      latestTrackingStatus = {
+        mode: 'offline',
+        consecutiveFailures: 0,
+        recovered: false,
+        lastSuccessAt: cachedSnapshot.cached_at,
+        warning: null,
+      }
+      dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
+    }
   }
 
   /** Publishes deferred live/cache positions only for their resumed, trusted mission. */
@@ -1746,18 +1819,38 @@ export async function startTrackingRuntime(
     retainCurrentPositions = true,
   ): TrackingSnapshot | null {
     if (dependencies.missionModelEnabled !== true) return snapshot
-    if (readParticipationScopeStatus() !== 'ready') return null
+    const scopeStatus = readParticipationScopeStatus()
     const scope = dependencies.readParticipationScope?.()
-    if (scope === undefined) return null
+    const effectiveScope = scopeStatus === 'ready' && scope !== undefined
+      ? scope
+      : hasUsableTrustedScope(contextKey)
+        ? trustedOperationalScope?.scope ?? null
+        : null
+    if (effectiveScope === null) {
+      if (retainCurrentPositions && trustedOperationalScope !== null && !hasUsableTrustedScope(contextKey)) {
+        trustedOperationalScope = null
+        dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      }
+      return null
+    }
+    if (scopeStatus === 'ready' && scope !== undefined) {
+      trustedOperationalScope = { contextKey, scope, acceptedAt: now().getTime() }
+    }
     // Retiring fallback/history callbacks may settle evidence, but cannot alter
     // the last-known positions that a later selected response will retain.
-    if (!retainCurrentPositions) return scope.filterSnapshot(snapshot, now().toISOString())
-    return operationalPositionRetention.apply(snapshot, scope, now(), contextKey)
+    if (!retainCurrentPositions) return effectiveScope.filterSnapshot(snapshot, now().toISOString())
+    return operationalPositionRetention.apply(snapshot, effectiveScope, now(), contextKey)
   }
 
   /** Keeps retained current positions isolated to one mission runtime context. */
   function currentOperationalContextKey(): string {
     return currentOperationalMissionId() ?? 'no-active-mission'
+  }
+
+  /** Returns whether retained participant selection is still safe to use. */
+  function hasUsableTrustedScope(contextKey: string): boolean {
+    if (trustedOperationalScope?.contextKey !== contextKey) return false
+    return now().getTime() - trustedOperationalScope.acceptedAt <= MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS
   }
 
   /** Captures mission identity without treating explicit idle as an unknown key. */
@@ -1767,8 +1860,17 @@ export async function startTrackingRuntime(
 
   /** Checks operational ownership before retention, freshness or publication. */
   function isOperationalMissionCurrent(missionId: string | null): boolean {
+    const missionState = useMissionStore.getState()
+    const phase = missionState.phase
+    const mission = missionState.currentMission
+    const missionPhaseAllowsPublication = missionId === null
+      ? phase !== 'active'
+      : phase === 'active' || phase === 'paused'
+    const missionRecordAllowsPublication = missionId === null ||
+      mission?.status === 'active' || mission?.status === 'paused'
     return acceptingRuntimeUpdates && runtimeGeneration === activeTrackingRuntimeGeneration &&
-      missionId === currentOperationalMissionId()
+      missionId === currentOperationalMissionId() && missionPhaseAllowsPublication &&
+      missionRecordAllowsPublication
   }
 
   /** Applies evidence windows independently from immediate current-position visibility. */
@@ -1889,9 +1991,14 @@ export async function startTrackingRuntime(
   function participantScopeWarning(): string | null {
     const status = readParticipationScopeStatus()
     if (status === 'ready') return null
+    const hasTrustedScope = hasUsableTrustedScope(currentOperationalContextKey())
     return status === 'loading'
-      ? 'PARTICIPANT SELECTION LOADING — last-known positions will appear as soon as mission participation is ready.'
-      : 'PARTICIPANT SELECTION UNAVAILABLE — live and cached positions are being preserved but cannot be shown until mission participation reloads.'
+      ? hasTrustedScope
+        ? 'PARTICIPANT SELECTION LOADING — current positions remain visible under the last trusted selection while mission participation reloads.'
+        : 'PARTICIPANT SELECTION LOADING — current positions will appear as soon as mission participation is ready.'
+      : hasTrustedScope
+        ? 'PARTICIPANT SELECTION UNAVAILABLE — current positions remain visible under the last trusted selection; mission history and new selection changes are held until participation reloads.'
+        : 'PARTICIPANT SELECTION UNAVAILABLE — current positions cannot be shown until mission participation reloads.'
   }
 
   /** Keeps current-position publication independent of participant SQLite writes. */

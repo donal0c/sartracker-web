@@ -7,6 +7,8 @@ const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   breadcrumbs: [],
 }
 
+export const RECOVERY_TRACKING_WARNING = 'Resume mission to reconnect.'
+
 type MissionTrackingStatusBridgeOptions = {
   readonly applySnapshot: (snapshot: TrackingSnapshot) => void
   readonly applyStatus: (status: TrackingConnectionStatus) => void
@@ -42,7 +44,10 @@ function synchronizeInactiveMissionTracking(
     return
   }
 
-  if (phase !== 'paused') {
+  // Recovery retains the last known current positions until the operator
+  // explicitly resumes or dismisses recovery. Mission wake-up/finalization
+  // handles clear cross-mission state; recovery must not erase it.
+  if (phase !== 'paused' && phase !== 'recovery') {
     options.applySnapshot(EMPTY_TRACKING_SNAPSHOT)
   }
 
@@ -63,7 +68,7 @@ function getInactiveMissionTrackingWarning(
   }
 
   if (phase === 'recovery') {
-    return 'Resume the mission before reconnecting live tracking.'
+    return RECOVERY_TRACKING_WARNING
   }
 
   return 'Waiting for an active mission.'

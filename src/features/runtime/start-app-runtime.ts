@@ -49,6 +49,7 @@ import { createRejectionEvidenceDelivery } from '../tracking/rejection-evidence-
 import { createIngestEvidenceFinalizationBoundary } from '../tracking/ingest-evidence-finalization-boundary'
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
+import { RECOVERY_TRACKING_WARNING } from '../tracking/mission-tracking-status-bridge'
 import {
   isCoverageEnabled,
   resolveCoverageRuntimeEnabled,
@@ -376,8 +377,14 @@ export async function startAppRuntime(
           maxBackoffMs: 60_000,
           getPollingMode: () => {
             const phase = useMissionStore.getState().phase
-            return phase === 'active' || phase === 'paused' ? phase : 'idle'
+            return phase === 'recovery'
+              ? 'paused'
+              : phase === 'active' || phase === 'paused' ? phase : 'idle'
           },
+          getInactiveWarning: () =>
+            useMissionStore.getState().phase === 'recovery'
+              ? RECOVERY_TRACKING_WARNING
+              : null,
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
           ...(rejectionEvidenceDelivery === null
             ? {}
