@@ -14,7 +14,10 @@ branch and must not be merged through this branch.
 
 ## Active work
 
-- `DON-254` / GEO-002: PR #40 head `3c76b32c054be7080a1a4f0b0a588cda4276a1a7`.
+- `DON-254` / GEO-002: PR #40 exact head is the current commit resolved from
+  `origin/codex/geo-002-pre-candidate-repair`; run `git rev-parse` on that ref
+  before making an exact-head claim so documentation-only commits cannot leave
+  this handoff stale.
   Geometry distances are bounded, antimeridian area is handled, corrupt drawing
   payloads fail closed, edit/save errors retain provenance, and operator inputs
   expose numeric bounds where applicable.
@@ -26,12 +29,11 @@ branch and must not be merged through this branch.
 
 GEO-002 final-head focused drawing suites passed (12 files, 175 tests),
 `npx tsc -b --noEmit`, ESLint, `npm run build` and the bundle budget passed,
-and the Chromium drawing/measurement workflows passed (20/20). Hosted exact-
-head CI run `35441016940` passed full correctness, bounded property/mutation,
-rendered browser, Electron build/artifact, packaged smoke, and AppImage gates;
-the strict responsiveness and several unrelated/optional packaged lanes were
-skipped by the PR workflow. PR #40 remains open, non-draft, and mergeable but
-blocked by the repository's owner-controlled merge authority. This evidence
-does not qualify a beta candidate, production, field, or release.
+and the Chromium drawing/measurement workflows passed (20/20). The PR's
+hosted exact-head CI is the merge-readiness authority and must be checked after
+any head change; the current PR records the latest source, packaged, and
+AppImage results. PR #40 remains open, non-draft, and mergeable but blocked by
+the repository's owner-controlled merge authority. This evidence does not
+qualify a beta candidate, production, field, or release.
 
 Older detail remains in `handoff/archive/`.
