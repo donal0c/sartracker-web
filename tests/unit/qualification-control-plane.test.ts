@@ -68,7 +68,18 @@ describe('qualification control plane', () => {
       identities: { source: sourceIdentity, fixtures: [], artifacts: [] },
       contractResults: registry.contracts.map(({ id }: { id: string }) => ({ contractId: id, status: 'pass' })),
       judgeResults: registry.contracts.map(({ id }: { id: string }) => ({ contractId: id, verdict: 'pass' })),
-    })).toThrow(/Final candidate execution is disabled/u)
+    })).toThrow(/immutable campaign definition/u)
+  })
+
+  it('does not accept an unvalidated immutable/releaseEligible pair as candidate authority', async () => {
+    const registry = JSON.parse(await readFile(registryPath, 'utf8'))
+    expect(() => evaluateCandidate({
+      registry,
+      mode: 'candidate',
+      identities: { source: { ...sourceIdentity, tree: 'b'.repeat(40) }, fixtures: [], artifacts: [] },
+      contractResults: registry.contracts.map(({ id }: { id: string }) => ({ contractId: id, status: 'pass' })),
+      campaignDefinition: { immutable: true, releaseEligible: false },
+    })).toThrow(/validated immutable campaign definition|digest/u)
   })
 
   it('creates an oracle-blind advisory packet without deterministic answers', async () => {

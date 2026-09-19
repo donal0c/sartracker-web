@@ -1,6 +1,6 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-18
+Updated: 2026-09-19
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
@@ -26,6 +26,30 @@ loss, false completeness claim, corrupted evidence, hidden/delayed current
 position, or mission-scale main/renderer stall is resolved before BCP-17 and
 the next team beta. Expensive whole-candidate qualification runs only after all
 required repairs merge.
+
+## DON-254 executable candidate-mode boundary — 2026-09-19
+
+The qualification control plane now supports an explicitly authorized
+candidate execution mode without changing product code. Its immutable
+definition binds exact clean source/tree, candidate/artifact, registry,
+validator and fixture identities. Controller preflight owns capability,
+free-space, baseline, disposable-root and lease checks. Contract attempts are
+named and resumable only for identical input hashes; retries retain their
+predecessors. Evidence manifests are append-only SHA-256 closed sets with
+external anchors and independent verification. Advisory judge packets are
+oracle-blind and judge results cannot override deterministic failure or missing
+evidence.
+
+The checked-in `qualification-campaign-plan.json` is the complete C00-C29
+beta13 adapter map, but exact candidate artifacts and several receipt adapters
+remain unresolved and therefore machine-visible `ENVIRONMENT_BLOCKED` rows.
+`qualification-calibration-plan.json` is the only campaign exercised in this
+chunk. It intentionally produces a deterministic failure with a judge pass to
+prove the fail-closed verdict boundary. Neither plan is beta13 qualification;
+candidate freeze, BCP-17/WAR-12 execution, original-machine testing,
+publication and release remain HOLD. PR40/GEO-002 and PR41/TRK-001 are merged
+repair receipts; `PKG-001` remains an exact-candidate same-profile package
+qualification/promotion gate, not a cleared prerequisite.
 
 The deep audit inspected master `0ca331ff816800e83134142cb109903e5d2c2992`
 and an early PR10 snapshot. Its report is
