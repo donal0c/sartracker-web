@@ -376,7 +376,9 @@ export async function startAppRuntime(
           maxBackoffMs: 60_000,
           getPollingMode: () => {
             const phase = useMissionStore.getState().phase
-            return phase === 'active' || phase === 'paused' ? phase : 'idle'
+            return phase === 'active' || phase === 'paused' || phase === 'recovery'
+              ? phase === 'recovery' ? 'paused' : phase
+              : 'idle'
           },
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
           ...(rejectionEvidenceDelivery === null

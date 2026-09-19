@@ -42,7 +42,10 @@ function synchronizeInactiveMissionTracking(
     return
   }
 
-  if (phase !== 'paused') {
+  // Recovery retains the last known current positions until the operator
+  // explicitly resumes or dismisses recovery. Mission wake-up/finalization
+  // handles clear cross-mission state; recovery must not erase it.
+  if (phase !== 'paused' && phase !== 'recovery') {
     options.applySnapshot(EMPTY_TRACKING_SNAPSHOT)
   }
 

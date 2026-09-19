@@ -691,7 +691,7 @@ describe('startTrackingRuntime', () => {
     expect(recordTrackingPollDiagnostic).toHaveBeenCalledTimes(2)
   })
 
-  it('hydrates the UI from cache before polling starts', async () => {
+  it('hydrates the UI from cache without blocking polling startup', async () => {
     const applySnapshot = vi.fn()
     const createPoller = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })
 
@@ -717,7 +717,7 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
-    expect(applySnapshot).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(applySnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         devices: CACHED_SNAPSHOT.devices,
         positions: expect.arrayContaining([
@@ -727,8 +727,205 @@ describe('startTrackingRuntime', () => {
           }),
         ]),
       }),
-    )
+    ))
     expect(createPoller).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts the current-position path before a slow cache read settles [TRK-001]', async () => {
+    const cacheRead = createDeferred<string | null>()
+    const start = vi.fn()
+    const createPoller = vi.fn().mockReturnValue({ start, stop: vi.fn() })
+    const runtimePromise = startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller,
+      cache: { read: vi.fn().mockReturnValue(cacheRead.promise), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+    })
+
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce())
+    cacheRead.resolve(null)
+    const stop = await runtimePromise
+    await stop()
+  })
+
+  it('keeps current positions visible through a held participant-scope refresh [TRK-001]', async () => {
+    setActiveMission()
+    const selectedDeviceId = SNAPSHOT.devices[0]!.device_id
+    const selectedScope = createParticipationScope({
+      participants: [{
+        id: 'participant-1', mission_id: 'mission-1', kind: 'device',
+        traccar_device_id: selectedDeviceId, mission_team_id: null,
+        traccar_group_id: null, team_name: null, provenance: 'explicit',
+        effective_from: '2026-04-06T09:00:00.000Z',
+        added_at: '2026-04-06T09:00:00.000Z', added_by: 'Coordinator',
+        removed_at: null, removed_by: null,
+      }],
+      membershipEvents: [],
+    })
+    const unavailableScope = createParticipationScope({ participants: [], membershipEvents: [] })
+    let scopeStatus: 'ready' | 'loading' = 'ready'
+    let pollerHooks: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const applySnapshot = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      readParticipationScope: () => scopeStatus === 'ready' ? selectedScope : unavailableScope,
+      readParticipationScopeStatus: () => scopeStatus,
+      subscribeParticipationScope: () => () => undefined,
+      writeCache: false,
+    })
+
+    const context = { historyResetKey: 'mission-1', missionEvidenceId: null }
+    const oldFix = { ...SNAPSHOT.positions[0]!, id: 'old-current' }
+    const freshFix = { ...oldFix, id: 'fresh-current', lat: oldFix.lat + 0.01 }
+    const observation = { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() }
+    pollerHooks!.onCurrentSnapshot({ ...SNAPSHOT, positions: [oldFix] }, context, observation)
+
+    scopeStatus = 'loading'
+    pollerHooks!.onCurrentSnapshot({
+      ...SNAPSHOT,
+      positions: [freshFix, SNAPSHOT.positions[1]!],
+    }, context, { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() })
+
+    expect(applySnapshot.mock.calls.at(-1)?.[0].positions).toEqual([
+      expect.objectContaining({ id: 'fresh-current', device_id: selectedDeviceId }),
+    ])
+    await stop()
+  })
+
+  it('rejects a late current callback after the mission has finalized [TRK-001]', async () => {
+    useMissionStore.setState({
+      phase: 'idle',
+      currentMission: {
+        id: 'mission-finalized', name: 'Finalized', status: 'finalized',
+        start_time: '2026-04-06T09:00:00.000Z', pause_time: null,
+        finish_time: '2026-04-06T10:00:00.000Z', paused_seconds: 0,
+        notes: null, schema_version: 1,
+      },
+    })
+    let pollerHooks: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const applySnapshot = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    pollerHooks!.onCurrentSnapshot(
+      SNAPSHOT,
+      { historyResetKey: 'mission-finalized', missionEvidenceId: null },
+      { missionId: 'mission-finalized', claim: vi.fn(), complete: vi.fn() },
+    )
+
+    expect(applySnapshot).not.toHaveBeenCalled()
+    await stop()
+  })
+
+  it('rejects a current callback from a superseded runtime generation [TRK-001]', async () => {
+    setActiveMission()
+    const hooksByRuntime: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1][] = []
+    const applySnapshot = vi.fn()
+    const dependencies = {
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        hooksByRuntime.push(hooks)
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      writeCache: false,
+    } satisfies Parameters<typeof startTrackingRuntime>[0]
+
+    const firstStop = await startTrackingRuntime(dependencies)
+    const secondStop = await startTrackingRuntime(dependencies)
+    hooksByRuntime[0]!.onCurrentSnapshot(
+      SNAPSHOT,
+      { historyResetKey: 'mission-1', missionEvidenceId: null },
+      { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() },
+    )
+
+    expect(applySnapshot).not.toHaveBeenCalled()
+    await secondStop()
+    await firstStop()
+  })
+
+  it('rejects a current callback for the wrong mission [TRK-001]', async () => {
+    setActiveMission('mission-current')
+    let pollerHooks: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const applySnapshot = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    pollerHooks!.onCurrentSnapshot(
+      SNAPSHOT,
+      { historyResetKey: 'mission-other', missionEvidenceId: null },
+      { missionId: 'mission-other', claim: vi.fn(), complete: vi.fn() },
+    )
+
+    expect(applySnapshot).not.toHaveBeenCalled()
+    await stop()
+  })
+
+  it('rejects a current callback after the runtime has been disposed [TRK-001]', async () => {
+    setActiveMission()
+    let pollerHooks: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const applySnapshot = vi.fn()
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus: vi.fn(),
+      writeCache: false,
+    })
+
+    await stop()
+    pollerHooks!.onCurrentSnapshot(
+      SNAPSHOT,
+      { historyResetKey: 'mission-1', missionEvidenceId: null },
+      { missionId: 'mission-1', claim: vi.fn(), complete: vi.fn() },
+    )
+
+    expect(applySnapshot).not.toHaveBeenCalled()
   })
 
   // V1 regression coverage (sartracker-web-8gw):
@@ -760,13 +957,13 @@ describe('startTrackingRuntime', () => {
       now: () => new Date('2026-04-06T10:35:00.000Z'),
     })
 
-    expect(applyStatus).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(applyStatus).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'offline',
         warning: expect.stringMatching(/cache|cached|last known|offline/i),
         lastSuccessAt: '2026-04-06T10:33:00.000Z',
       }),
-    )
+    ))
   })
 
   it('defers cached map publication until participant scope hydration then re-filters immediately', async () => {
@@ -817,9 +1014,9 @@ describe('startTrackingRuntime', () => {
     })
 
     expect(applySnapshot).not.toHaveBeenCalled()
-    expect(applyStatus).toHaveBeenCalledWith(expect.objectContaining({
+    await vi.waitFor(() => expect(applyStatus).toHaveBeenCalledWith(expect.objectContaining({
       warning: expect.stringMatching(/participant selection.*loading/i),
-    }))
+    })))
 
     scopeStatus = 'ready'
     notifyScopeChanged()
@@ -1671,10 +1868,10 @@ describe('startTrackingRuntime', () => {
 
     expect(applySnapshot).not.toHaveBeenCalled()
     expect(createPoller).toHaveBeenCalledTimes(1)
-    expect(logger.warn).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
       'Tracking cache payload was ignored.',
       expect.any(Error),
-    )
+    ))
   })
 
   it('persists devices and deduplicated positions into the active mission on snapshot updates', async () => {
