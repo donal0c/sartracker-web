@@ -3,6 +3,7 @@
 **Date:** 2026-09-19  
 **Owner seam:** DON-6 / DON-254  
 **Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`, `67a6140e`
+**Receipt refresh:** `17397f73`
 **Disposition:** bounded pre-candidate repair is implemented and independently reviewable at the PR head; release remains HOLD and candidate selection remains blocked by the separate TRK-001 and PKG-001 findings.
 
 ## Finding and boundary
@@ -70,9 +71,8 @@ operator or search-policy limit.
 - A prior full source run on review head `60e07781` passed 481/483 files and
   5,165/5,167 tests; its two failures were unrelated existing Electron
   responsiveness assertions over the 200 ms host-timing threshold. The
-  final-head CI full correctness gate for `67a6140e` is tracked separately in
-  workflow run `35435357059` and must be green before merge readiness is
-  claimed.
+  current PR exact-head CI full correctness gate is the merge-readiness
+  authority and must be green before merge readiness is claimed.
 
 This is local/source and browser-harness evidence only. It is not packaged,
 production, field, human-acceptance, candidate-selection, or release proof.
