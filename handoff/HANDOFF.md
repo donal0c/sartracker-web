@@ -78,7 +78,7 @@ HOLD, and PKG-001's exact-beta13 same-profile gate unchanged.
 
 Live GitHub checks: origin/master `e5673c9c4fb1b8497d28f4871b793937f85ad2ef`;
 draft [PR #41](https://github.com/donal0c/sartracker-web/pull/41) is open at
-exact head `9c0026607067188c364bd94b7a4736123a83862e` and currently reports
+exact head `69ecbed5b7f941e7dd41fe89e330b4c16b3fe8d1` and currently reports
 mergeable while its Electron Linux validation check runs. Parallel [PR
 #40](https://github.com/donal0c/sartracker-web/pull/40) for GEO-002 is open,
 mergeable, and its Electron Linux validation check is also in progress; it has
