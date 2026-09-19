@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_BUNDLE_BUDGET_BYTES, getBundleBudget } from '../../build/bundle-budgets.js'
 
 describe('bundle budgets', () => {
-  it('uses the default budget for application chunks', () => {
-    expect(getBundleBudget('index-abc123.js').maxBytes).toBe(DEFAULT_BUNDLE_BUDGET_BYTES)
+  it('keeps the application shell on its explicit bounded budget', () => {
+    expect(getBundleBudget('index-abc123.js').maxBytes).toBe(501_000)
+    expect(getBundleBudget('other-app-chunk.js').maxBytes).toBe(DEFAULT_BUNDLE_BUDGET_BYTES)
   })
 
   it('allows the isolated MapLibre vendor chunk a dedicated budget', () => {

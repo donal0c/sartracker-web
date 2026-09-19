@@ -126,16 +126,12 @@ export function createDrawingFeatureCollection(
         if (metadata !== null) {
           const radiusM = metadata.radiiM[index]
           const labelText = metadata.labels[index] ?? ringLabel
-          if (radiusM !== undefined) {
+          const labelCoordinate = resolveRangeRingLabelCoordinate(metadata.center, radiusM)
+          if (labelCoordinate !== null) {
             features.push(
               createLabelFeature({
                 drawing,
-                coordinate: geodesicBearingEndpoint(
-                  metadata.center[0],
-                  metadata.center[1],
-                  90,
-                  radiusM,
-                ),
+                coordinate: labelCoordinate,
                 label: labelText,
                 labelColor: ringStroke,
                 fontSize: 11,
@@ -359,6 +355,21 @@ function createPreviewVertexFeature(
       width: style.width,
       selected: false,
     },
+  }
+}
+
+function resolveRangeRingLabelCoordinate(
+  center: LonLat,
+  radiusM: number | undefined,
+): LonLat | null {
+  if (radiusM === undefined) {
+    return null
+  }
+
+  try {
+    return geodesicBearingEndpoint(center[0], center[1], 90, radiusM)
+  } catch {
+    return null
   }
 }
 

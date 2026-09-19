@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDrawingStore } from '../../src/features/drawings/drawing-store'
 import type {
+  BearingLineDrawingDraft,
   LineDrawingDraft,
   RangeRingDrawingDraft,
   SearchAreaDrawingDraft,
@@ -69,6 +70,17 @@ const SEARCH_SECTOR_DRAFT: SearchSectorDrawingDraft = {
   startBearing: '0',
   endBearing: '90',
   radiusM: '1000',
+}
+
+const BEARING_LINE_DRAFT: BearingLineDrawingDraft = {
+  id: null,
+  type: 'bearing_line',
+  name: '',
+  description: '',
+  origin: [-9.7, 52],
+  inputBearingType: 'true',
+  inputBearing: '361',
+  distanceM: '1000',
 }
 
 const TEXT_LABEL_DRAFT: TextLabelDrawingDraft = {
@@ -198,6 +210,15 @@ describe('DrawingDialog vertices readout', () => {
     expect(document.querySelector('[data-testid="drawing-sector-grid-readout"]')?.textContent).toContain(
       'Irish Grid',
     )
+  })
+
+  it('does not preview an out-of-range bearing as a plausible conversion', async () => {
+    useDrawingStore.setState({ dialog: { mode: 'create', draft: BEARING_LINE_DRAFT } })
+    await renderDialog()
+
+    const conversion = document.querySelector('[data-testid="drawing-bearing-conversion"]')
+    expect(conversion?.textContent).toContain('Enter a bearing from 0° to 360°')
+    expect(conversion?.textContent).not.toContain('True 361.0°')
   })
 
   it('lets search-area labels be hidden from the map at creation time', async () => {

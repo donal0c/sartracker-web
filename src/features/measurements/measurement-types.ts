@@ -20,4 +20,5 @@ export type MeasurementRuntimeState = {
   readonly measurements: readonly Measurement[]
   readonly draftStart: LonLat | null
   readonly hoverPoint: LonLat | null
+  readonly error: string | null
 }

@@ -23,6 +23,7 @@ export function MeasurementPanel({
   const mode = useMeasurementStore((state) => state.mode)
   const measurements = useMeasurementStore((state) => state.measurements)
   const draftStart = useMeasurementStore((state) => state.draftStart)
+  const error = useMeasurementStore((state) => state.error)
   const drawingController = useDrawingStore((state) => state.controller)
   const drawingTool = useDrawingStore((state) => state.activeTool)
   const layerCatalogRoot = useLayerCatalogStore((state) => state.root)
@@ -64,6 +65,16 @@ export function MeasurementPanel({
       >
         {statusMessage}
       </p>
+
+      {error !== null ? (
+        <p
+          className="mt-3 rounded-xl border border-rose-400/40 bg-rose-950/40 px-3 py-2 text-sm text-rose-200"
+          data-testid="measurement-error"
+          role="alert"
+        >
+          Measurement was not created: {error}
+        </p>
+      ) : null}
 
       <div className={`mt-4 grid gap-2 ${showArmControl ? 'sm:grid-cols-2' : ''}`}>
         {showArmControl ? (

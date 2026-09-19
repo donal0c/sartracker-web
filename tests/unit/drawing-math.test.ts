@@ -9,6 +9,7 @@ import {
   geodesicDistance,
   geodesicPolygonArea,
   geodesicSectorPoints,
+  MAX_GEODESIC_SEGMENTS,
   magneticToTrue,
   trueToMagnetic,
 } from '../../src/features/drawings/drawing-math'
@@ -170,4 +171,114 @@ describe('drawing-math adversarial safety guards (DON-167 / B2 sweep)', () => {
       expect(bearing).toBeLessThan(360)
     })
   })
+
+  describe('GEO-002: public geometry boundaries reject unsafe numeric input', () => {
+    it.each([
+      ['NaN longitude', Number.NaN, 52],
+      ['infinite longitude', Number.POSITIVE_INFINITY, 52],
+      ['longitude below WGS84 range', -180.001, 52],
+      ['longitude above WGS84 range', 180.001, 52],
+      ['NaN latitude', -9.5, Number.NaN],
+      ['infinite latitude', -9.5, Number.NEGATIVE_INFINITY],
+      ['latitude below WGS84 range', -9.5, -90.001],
+      ['latitude above WGS84 range', -9.5, 90.001],
+    ])('rejects %s at the geodesic bearing boundary', (_label, lon, lat) => {
+      expect(() => geodesicBearing(lon, lat, -9.4, 52.1)).toThrow(RangeError)
+      expect(() => geodesicDistance(lon, lat, -9.4, 52.1)).toThrow(RangeError)
+      expect(() => geodesicBearingEndpoint(lon, lat, 90, 1_000)).toThrow(RangeError)
+      expect(() => geodesicCirclePoints(lon, lat, 1_000)).toThrow(RangeError)
+      expect(() => geodesicSectorPoints(lon, lat, 0, 90, 1_000)).toThrow(RangeError)
+    })
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.001, 360.001])(
+      'rejects invalid destination bearings: %s',
+      (bearing) => {
+        expect(() => geodesicBearingEndpoint(-9.5, 52, bearing, 1_000)).toThrow(RangeError)
+      },
+    )
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.001])(
+      'rejects invalid endpoint distances: %s',
+      (distanceM) => {
+        expect(() => geodesicBearingEndpoint(-9.5, 52, 90, distanceM)).toThrow(RangeError)
+      },
+    )
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 0, -1])(
+      'rejects invalid circle radii: %s',
+      (radiusM) => {
+        expect(() => geodesicCirclePoints(-9.5, 52, radiusM)).toThrow(RangeError)
+        expect(() => geodesicSectorPoints(-9.5, 52, 0, 90, radiusM)).toThrow(RangeError)
+      },
+    )
+
+    it.each([
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      0,
+      -1,
+      1.5,
+      MAX_GEODESIC_SEGMENTS + 1,
+    ])('rejects invalid circle segment counts: %s', (segments) => {
+      expect(() => geodesicCirclePoints(-9.5, 52, 1_000, segments)).toThrow(RangeError)
+      expect(() => geodesicSectorPoints(-9.5, 52, 0, 90, 1_000, segments)).toThrow(RangeError)
+    })
+
+    it('retains the documented zero-distance endpoint behavior', () => {
+      expect(geodesicBearingEndpoint(-9.5, 52, 90, 0)).toEqual([-9.5, 52])
+    })
+
+    it('does not let segments=Infinity hang the main test runner', async () => {
+      const result = await runInfinityProbe()
+
+      expect(result.timedOut).toBe(false)
+      expect(result.exitCode).toBe(0)
+      expect(result.signal).toBeNull()
+    })
+  })
 })
+
+async function runInfinityProbe(): Promise<{
+  readonly timedOut: boolean
+  readonly exitCode: number | null
+  readonly signal: string | null
+}> {
+  const { spawn } = await import('node:child_process')
+  const child = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+        import { readFileSync } from 'node:fs'
+        import ts from 'typescript'
+        const source = readFileSync('src/features/drawings/drawing-math.ts', 'utf8')
+        const compiled = ts.transpileModule(source, {
+          compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+        }).outputText
+        const module = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'))
+        try {
+          module.geodesicCirclePoints(-9.5, 52, 1_000, Number.POSITIVE_INFINITY)
+          process.exitCode = 1
+        } catch (error) {
+          process.exitCode = error instanceof RangeError ? 0 : 2
+        }
+      `,
+    ],
+    { cwd: process.cwd(), stdio: 'ignore' },
+  )
+
+  return new Promise((resolve) => {
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      child.kill('SIGKILL')
+    }, 3_000)
+
+    child.once('exit', (exitCode, signal) => {
+      clearTimeout(timeout)
+      resolve({ timedOut, exitCode, signal })
+    })
+  })
+}

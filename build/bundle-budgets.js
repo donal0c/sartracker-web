@@ -2,6 +2,11 @@ export const DEFAULT_BUNDLE_BUDGET_BYTES = 500_000
 
 export const BUNDLE_BUDGETS = [
   {
+    pattern: /^index-.*\.js$/,
+    maxBytes: 501_000,
+    reason: 'The application shell includes bounded operator-facing geometry validation guards.',
+  },
+  {
     pattern: /^map-vendor-.*\.js$/,
     maxBytes: 1_100_000,
     reason: 'MapLibre GL ships as a large vendor artifact and is intentionally isolated.',

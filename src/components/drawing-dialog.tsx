@@ -6,6 +6,7 @@ import {
   geodesicBearing,
   geodesicDistance,
   geodesicPolygonArea,
+  assertValidBearing,
   magneticToTrue,
   trueToMagnetic,
 } from '../features/drawings/drawing-math'
@@ -414,12 +415,13 @@ function BearingLineSection(props: {
   readonly onChange: (draft: Extract<DrawingDraft, { type: 'bearing_line' }>) => void
 }) {
   const bearingNumber = Number(props.draft.inputBearing)
+  const bearingIsValid = isValidBearingInput(bearingNumber)
   const trueBearing =
-    Number.isFinite(bearingNumber) && props.draft.inputBearingType === 'magnetic'
+    bearingIsValid && props.draft.inputBearingType === 'magnetic'
       ? magneticToTrue(bearingNumber)
       : bearingNumber
   const magneticBearing =
-    Number.isFinite(trueBearing) ? trueToMagnetic(trueBearing) : Number.NaN
+    bearingIsValid && Number.isFinite(trueBearing) ? trueToMagnetic(trueBearing) : Number.NaN
 
   return (
     <>
@@ -456,11 +458,20 @@ function BearingLineSection(props: {
         <p className="mt-2" data-testid="drawing-bearing-conversion">
           {Number.isFinite(trueBearing) && Number.isFinite(magneticBearing)
             ? `True ${trueBearing.toFixed(1)}° / Magnetic ${magneticBearing.toFixed(1)}° (fixed Ireland declination -4.5°)`
-            : 'Enter a numeric bearing to see the true/magnetic conversion.'}
+            : 'Enter a bearing from 0° to 360° to see the true/magnetic conversion.'}
         </p>
       </div>
     </>
   )
+}
+
+function isValidBearingInput(value: number): boolean {
+  try {
+    assertValidBearing(value, 'Bearing preview')
+    return true
+  } catch {
+    return false
+  }
 }
 
 function SearchSectorSection(props: {

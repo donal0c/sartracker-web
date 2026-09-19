@@ -212,6 +212,36 @@ describe('drawing geojson', () => {
     expect(ring?.properties?.width).toBeGreaterThanOrEqual(3)
   })
 
+  it('does not crash or place a plausible label for invalid persisted ring metadata', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'range-invalid-metadata',
+          type: 'range_ring',
+          geometry_json: JSON.stringify({
+            type: 'MultiPolygon',
+            coordinates: [
+              [[[-9.7, 52.0], [-9.69, 52.0], [-9.69, 52.01], [-9.7, 52.0]]],
+            ],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'range_ring',
+            mode: 'manual',
+            center: [-9.7, 52.0],
+            radiiM: [Number.POSITIVE_INFINITY],
+            colors: [],
+            labels: ['invalid'],
+            lpbCategory: null,
+          }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features.filter((feature) => feature.geometry.type === 'LineString')).toHaveLength(1)
+    expect(collection.features.some((feature) => feature.properties?.featureKind === 'label')).toBe(false)
+  })
+
   it('uses an operationally legible default stroke width for search sectors', () => {
     const collection = createDrawingFeatureCollection(
       [

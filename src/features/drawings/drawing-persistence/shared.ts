@@ -57,7 +57,7 @@ export function normalizeOptionalNumber(value: string): number | null {
 export function parseRequiredPositiveNumber(value: string, label: string): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`${label} must be greater than zero.`)
+    throw new RangeError(`${label} must be greater than zero.`)
   }
 
   return parsed
@@ -69,7 +69,7 @@ export function parseRequiredPositiveNumber(value: string, label: string): numbe
 export function parseRequiredBearing(value: string, label: string): number {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new Error(`${label} must be zero or greater.`)
+    throw new RangeError(`${label} must be zero or greater.`)
   }
 
   return parsed
@@ -81,7 +81,7 @@ export function parseRequiredBearing(value: string, label: string): number {
 export function parseRequiredPositiveInteger(value: string, label: string): number {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${label} must be a positive integer.`)
+    throw new RangeError(`${label} must be a positive integer.`)
   }
 
   return parsed

@@ -28,6 +28,7 @@ import {
 } from './drawing-runtime-session'
 import type { DrawingRuntimeState } from './drawing-store'
 import type { DrawingDraft, DrawingTool } from './drawing-types'
+import { assertValidWgs84Coordinate } from './drawing-math'
 
 type DrawingStoreBoundary = Pick<
   MissionStore,
@@ -156,6 +157,14 @@ export async function startDrawingRuntime(
         return null
       }
 
+      try {
+        assertValidWgs84Coordinate(lon, lat, 'text label point')
+      } catch (runtimeError) {
+        state.error = toErrorMessage(runtimeError)
+        publishRuntime()
+        return null
+      }
+
       const target = state.drawings.find((candidate) => candidate.id === drawingId)
       if (target === undefined || target.type !== 'text_label') {
         return null
@@ -228,5 +237,9 @@ function toErrorMessage(error: unknown): string {
 }
 
 function isExpectedDrawingValidationError(error: unknown): boolean {
-  return error instanceof Error && error.message === 'Drawing name is required.'
+  return (
+    error instanceof RangeError ||
+    (error instanceof TypeError && error.message.includes('must be a number')) ||
+    (error instanceof Error && error.message === 'Drawing name is required.')
+  )
 }
