@@ -7,7 +7,7 @@ import {
   type LonLat,
 } from './drawing-math'
 import { parsePersistedDrawing } from './drawing-builders'
-import type { DrawingSketchState, DrawingTool } from './drawing-types'
+import type { DrawingMetadata, DrawingSketchState, DrawingTool } from './drawing-types'
 
 type DrawingFeatureProperties = GeoJsonProperties & {
   readonly featureKind: 'geometry' | 'label' | 'vertex'
@@ -115,7 +115,7 @@ export function createDrawingFeatureCollection(
           }
 
     if (parsed.type === 'range_ring' && parsed.parsedGeometry.type === 'MultiPolygon') {
-      const metadata = parsed.metadata?.kind === 'range_ring' ? parsed.metadata : null
+      const metadata = isValidRangeRingMetadata(parsed.metadata) ? parsed.metadata : null
       parsed.parsedGeometry.coordinates.forEach((coordinates, index) => {
         const ringStroke = metadata?.colors[index] ?? strokeColor
         const ringLabel = metadata?.labels[index] ?? label
@@ -473,8 +473,8 @@ function toLonLat(coordinate: readonly number[]): LonLat {
   return [lon, lat]
 }
 
-/** Returns whether every persisted geometry position lies within WGS84 bounds. */
-function isValidPersistedGeometry(geometry: Geometry): boolean {
+/** Returns whether a persisted GeoJSON geometry has a supported shape and safe positions. */
+function isValidPersistedGeometry(geometry: unknown): geometry is Geometry {
   try {
     assertValidPersistedGeometry(geometry)
     return true
@@ -483,35 +483,75 @@ function isValidPersistedGeometry(geometry: Geometry): boolean {
   }
 }
 
-/** Validates every coordinate position in a persisted GeoJSON geometry. */
-function assertValidPersistedGeometry(geometry: Geometry): void {
-  if (geometry.type === 'GeometryCollection') {
-    geometry.geometries.forEach(assertValidPersistedGeometry)
-    return
+/** Validates a persisted GeoJSON geometry's runtime shape and every coordinate position. */
+function assertValidPersistedGeometry(geometry: unknown): asserts geometry is Geometry {
+  if (!isRecord(geometry)) {
+    throw new Error('Invalid persisted drawing geometry.')
   }
 
-  assertValidCoordinateTree(geometry.coordinates)
+  switch (geometry.type) {
+    case 'Point':
+      assertValidCoordinateTree(geometry.coordinates, 0)
+      return
+    case 'MultiPoint':
+    case 'LineString':
+      assertValidCoordinateTree(geometry.coordinates, 1)
+      return
+    case 'MultiLineString':
+    case 'Polygon':
+      assertValidCoordinateTree(geometry.coordinates, 2)
+      return
+    case 'MultiPolygon':
+      assertValidCoordinateTree(geometry.coordinates, 3)
+      return
+    case 'GeometryCollection':
+      if (!Array.isArray(geometry.geometries)) {
+        throw new Error('Invalid persisted geometry collection.')
+      }
+      geometry.geometries.forEach(assertValidPersistedGeometry)
+      return
+    default:
+      throw new Error('Unsupported persisted drawing geometry type.')
+  }
 }
 
-/** Recursively validates GeoJSON coordinate arrays without trusting parsed JSON shape. */
-function assertValidCoordinateTree(value: unknown): void {
+/** Validates a GeoJSON coordinate tree at the expected nesting depth. */
+function assertValidCoordinateTree(value: unknown, depth: number): void {
   if (!Array.isArray(value)) {
     throw new Error('Invalid persisted drawing coordinate array.')
   }
 
-  if (value.length === 0) {
-    return
-  }
-
-  const first = value[0]
-  if (typeof first === 'number') {
-    const second = value[1]
-    if (typeof second !== 'number') {
+  if (depth === 0) {
+    const [lon, lat] = value
+    if (typeof lon !== 'number' || typeof lat !== 'number') {
       throw new Error('Invalid persisted drawing coordinate position.')
     }
-    assertValidWgs84Coordinate(first, second, 'persisted drawing geometry')
+    assertValidWgs84Coordinate(lon, lat, 'persisted drawing geometry')
     return
   }
 
-  value.forEach(assertValidCoordinateTree)
+  value.forEach((child) => assertValidCoordinateTree(child, depth - 1))
+}
+
+/** Identifies JSON objects without trusting a persisted payload cast. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Returns whether persisted range-ring metadata has the arrays required by overlay construction. */
+function isValidRangeRingMetadata(
+  metadata: unknown,
+): metadata is Extract<DrawingMetadata, { readonly kind: 'range_ring' }> {
+  if (!isRecord(metadata) || metadata.kind !== 'range_ring') {
+    return false
+  }
+
+  return (
+    Array.isArray(metadata.radiiM) &&
+    Array.isArray(metadata.colors) &&
+    Array.isArray(metadata.labels) &&
+    metadata.radiiM.every((radius: unknown) => typeof radius === 'number') &&
+    metadata.colors.every((color: unknown) => typeof color === 'string') &&
+    metadata.labels.every((label: unknown) => typeof label === 'string')
+  )
 }

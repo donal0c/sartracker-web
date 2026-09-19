@@ -266,6 +266,53 @@ describe('drawing geojson', () => {
     expect(collection.features.some((feature) => feature.properties?.featureKind === 'label')).toBe(false)
   })
 
+  it('does not crash when persisted range-ring metadata arrays are malformed', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'range-malformed-metadata',
+          type: 'range_ring',
+          geometry_json: JSON.stringify({
+            type: 'MultiPolygon',
+            coordinates: [
+              [[[-9.7, 52.0], [-9.69, 52.0], [-9.69, 52.01], [-9.7, 52.0]]],
+            ],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'range_ring',
+            mode: 'manual',
+            center: [-9.7, 52.0],
+            radiiM: [800],
+            lpbCategory: null,
+          }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features.filter((feature) => feature.geometry.type === 'LineString')).toHaveLength(1)
+    expect(collection.features.some((feature) => feature.properties?.featureKind === 'label')).toBe(false)
+  })
+
+  it.each([
+    ['LineString', [-9.7, 52]],
+    ['Circle', [-9.7, 52]],
+  ] as const)('omits persisted geometry with invalid %s structure', (type, coordinates) => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: `invalid-${type}`,
+          type: 'line',
+          geometry_json: JSON.stringify({ type, coordinates }),
+          metadata_json: JSON.stringify({ kind: 'line' }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features).toHaveLength(0)
+  })
+
   it('omits range-ring overlays with out-of-range persisted geometry coordinates', () => {
     const collection = createDrawingFeatureCollection(
       [
