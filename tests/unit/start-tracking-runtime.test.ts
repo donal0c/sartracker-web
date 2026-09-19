@@ -801,6 +801,52 @@ describe('startTrackingRuntime', () => {
     })
   })
 
+  it('fences late cache after accepted fallback snapshot publication [TRK-001]', async () => {
+    setActiveMission()
+    const cacheRead = createDeferred<string | null>()
+    const applySnapshot = vi.fn()
+    const applyStatus = vi.fn()
+    let pollerHooks!: Parameters<Parameters<typeof startTrackingRuntime>[0]['createPoller']>[1]
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockReturnValue(cacheRead.promise), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot,
+      applyStatus,
+      writeCache: false,
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+
+    pollerHooks.onStatusChange({
+      mode: 'online',
+      consecutiveFailures: 0,
+      recovered: false,
+      lastSuccessAt: '2026-04-06T10:35:00.000Z',
+      warning: null,
+    })
+    await pollerHooks.onSnapshot(
+      { ...SNAPSHOT, positions: [], breadcrumbs: [] },
+      { historyResetKey: 'mission-1', missionEvidenceId: null },
+    )
+    const liveSnapshotCallCount = applySnapshot.mock.calls.length
+
+    cacheRead.resolve(JSON.stringify({
+      mission_id: 'mission-1',
+      cached_at: '2026-04-06T10:33:00.000Z',
+      devices: CACHED_SNAPSHOT.devices,
+      positions: CACHED_SNAPSHOT.positions,
+      breadcrumbs: CACHED_SNAPSHOT.breadcrumbs,
+    }))
+    await vi.waitFor(() => expect(applySnapshot).toHaveBeenCalledTimes(liveSnapshotCallCount))
+    expect(applyStatus).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'online' }))
+    await stop()
+  })
+
   it('keeps current positions visible through a bounded participant-scope refresh [TRK-001]', async () => {
     setActiveMission()
     const selectedDeviceId = SNAPSHOT.devices[0]!.device_id

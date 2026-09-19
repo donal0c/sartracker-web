@@ -939,7 +939,12 @@ export async function startTrackingRuntime(
         ? currentOperationalMissionId() : context.historyResetKey
       const publishOperational = !context?.suppressOperationalPublication &&
         isOperationalMissionCurrent(snapshotMissionId)
-      if (publishOperational) clearRejectedCacheWarningOnLivePositions(snapshot)
+      if (publishOperational) {
+        clearRejectedCacheWarningOnLivePositions(snapshot)
+        // History/fallback publication is also an accepted live context. It
+        // must fence a slower startup cache read just like the current path.
+        liveCurrentSnapshotContextKey = snapshotMissionId
+      }
       if (publishOperational) applyParticipantRosterWithoutBlocking(snapshot.devices, context)
       const missionEvidenceId = context?.missionEvidenceId === undefined
         ? context?.historyResetKey ?? null
