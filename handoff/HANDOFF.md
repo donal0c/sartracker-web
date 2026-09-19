@@ -14,7 +14,7 @@ branch and must not be merged through this branch.
 
 ## Active work
 
-- `DON-254` / GEO-002: PR #40 head `129de3ee6d717eee8fb9cd5a279a5e453fe87926`.
+- `DON-254` / GEO-002: PR #40 head `dbd31226d825cd6d521a4574aec1283b43b325d1`.
   Geometry distances are bounded, antimeridian area is handled, corrupt drawing
   payloads fail closed, edit/save errors retain provenance, and operator inputs
   expose numeric bounds where applicable.
