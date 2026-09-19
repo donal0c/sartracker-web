@@ -1,7 +1,7 @@
 # GEO-002 — bounded drawing and measurement input repair
 
-**Date:** 2026-09-19  
-**Owner seam:** DON-6 / DON-254  
+**Date:** 2026-09-19
+**Owner seam:** DON-6 / DON-254
 **Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`, `67a6140e`, `75a2a352`, `cb316985f21b2ff86746487e9c094bd8f6540b2f`, `83180d034046ab569257814991d4f75c9d898986`
 **Disposition:** bounded pre-candidate repair is implemented and independently reviewable at the PR head; release remains HOLD and candidate selection remains blocked by the separate TRK-001 and PKG-001 findings.
 
@@ -54,7 +54,7 @@ operator or search-policy limit.
   a plausible-looking label, and text-label persistence rejects non-finite or
   out-of-range anchor coordinates for both create and move paths.
 - The existing 500,000-byte application-shell budget is retained. The final
-  application shell is 499,885 bytes; the base commit measured 499,129 bytes.
+  application shell is 499,885 bytes; the base commit measured 499,135 bytes.
 - The independent review follow-up makes drawing failures visible in the
   toolbar when no dialog is open, rejects out-of-range finite bearing inputs
   in both public magnetic/true conversion functions, and adds browser coverage
