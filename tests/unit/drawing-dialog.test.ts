@@ -217,8 +217,19 @@ describe('DrawingDialog vertices readout', () => {
     await renderDialog()
 
     const conversion = document.querySelector('[data-testid="drawing-bearing-conversion"]')
-    expect(conversion?.textContent).toContain('Enter a bearing from 0° to 360°')
+    expect(conversion?.textContent).toContain('Enter 0°–360°')
     expect(conversion?.textContent).not.toContain('True 361.0°')
+  })
+
+  it('does not preview a blank bearing as a plausible zero conversion', async () => {
+    useDrawingStore.setState({
+      dialog: { mode: 'create', draft: { ...BEARING_LINE_DRAFT, inputBearing: '' } },
+    })
+    await renderDialog()
+
+    const conversion = document.querySelector('[data-testid="drawing-bearing-conversion"]')
+    expect(conversion?.textContent).toContain('Enter 0°–360°')
+    expect(conversion?.textContent).not.toContain('True 0.0°')
   })
 
   it('lets search-area labels be hidden from the map at creation time', async () => {

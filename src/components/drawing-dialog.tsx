@@ -413,9 +413,10 @@ function BearingLineSection(props: {
   readonly draft: Extract<DrawingDraft, { type: 'bearing_line' }>
   readonly onChange: (draft: Extract<DrawingDraft, { type: 'bearing_line' }>) => void
 }) {
-  const bearingNumber = Number(props.draft.inputBearing)
+  const bearingInput = props.draft.inputBearing.trim()
+  const bearingNumber = Number(bearingInput)
   const bearingIsValid =
-    Number.isFinite(bearingNumber) && bearingNumber >= 0 && bearingNumber <= 360
+    bearingInput !== '' && Number.isFinite(bearingNumber) && bearingNumber >= 0 && bearingNumber <= 360
   const trueBearing =
     bearingIsValid && props.draft.inputBearingType === 'magnetic'
       ? magneticToTrue(bearingNumber)
@@ -458,7 +459,7 @@ function BearingLineSection(props: {
         <p className="mt-2" data-testid="drawing-bearing-conversion">
           {Number.isFinite(trueBearing) && Number.isFinite(magneticBearing)
             ? `True ${trueBearing.toFixed(1)}° / Magnetic ${magneticBearing.toFixed(1)}° (fixed Ireland declination -4.5°)`
-            : 'Enter a bearing from 0° to 360° to see the true/magnetic conversion.'}
+            : 'Enter 0°–360° for conversion.'}
         </p>
       </div>
     </>
