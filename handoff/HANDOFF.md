@@ -1,35 +1,39 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-19 after the GEO-002 and TRK-001 repair pass.
+Updated 2026-09-19 after rebasing TRK-001 onto the merged GEO-002 repair.
 
 ## Current state
 
-`origin/master` is `e5673c9c4fb1b8497d28f4871b793937f85ad2ef`. Release remains
-**HOLD** and no beta candidate, merge, release tag, or publication is
-authorised by this handoff.
+`origin/master` is `c916ced954bcd9e43900f55612a11a80138c8d72`, the merge commit
+for PR #40 / GEO-002. PR #41 / TRK-001 is at exact head `dafba5e7` on
+`codex/trk-001-current-position-repair`; GitHub is the source of truth for its
+current review and merge state. Release remains **HOLD** and no beta candidate,
+release tag, publication, or promotion is authorised by this handoff.
 
 PR #40 (`codex/geo-002-pre-candidate-repair`) is merged. PR #41 remains a
 separate tracking repair branch and must not be merged through this branch.
 
 ## Active work
 
-- `DON-254` / GEO-002: PR #40 head `867a5819`. Geometry distances are bounded,
-  antimeridian area is handled, corrupt drawing payloads fail closed, edit/save
-  errors retain provenance, and operator inputs expose numeric bounds where
-  applicable.
-- `DON-267` / TRK-001: PR #41 repair head is `c5daa9fd`. Accepted empty live
-  current snapshots now fence late cache, live status is not clobbered by cache,
+- `DON-254` / GEO-002: PR #40 is merged at `c916ced9`. Geometry distances are
+  bounded, antimeridian area is handled, corrupt drawing payloads fail closed,
+  edit/save errors retain provenance, and operator inputs expose numeric bounds
+  where applicable.
+- `DON-267` / TRK-001: PR #41 exact head is `dafba5e7`. Accepted empty live
+  current snapshots fence late cache, live status is not clobbered by cache,
   recovery has one operator warning, and retained participant scope fails closed
   after a bounded hold.
 - `PKG-001` and the WAR-01/BCP-17 release gates remain independent blockers.
 
 ## Verification snapshot
 
-Both branches passed `npx tsc --noEmit` and ESLint with zero warnings.
-GEO-002 passed `npx vitest run tests/unit` (483 files, 5,190 tests) and the
-serialized Chromium drawing workflow (15/15). TRK-001 passed the full local
-unit suite (483 files, 5,132 tests) and serialized Chromium tracking ingest
-health (3/3). These are local source/browser results only; CI, packaged
-artifact, hosted, merge, and release evidence are still absent.
+The rebased TRK-001 source suite passed 483 files / 5,203 tests on the first
+post-rebase run. The final follow-up run passed 482 files / 5,202 tests and
+hit one contention-sensitive Electron responsiveness assertion in an unrelated
+evidence-versioning test; that file passed isolated with 94/94 tests. Focused
+tracking tests passed 229/229, Chromium tracking ingest health passed 3/3,
+TypeScript and ESLint passed, and `npm run build` passed the application bundle
+budget at 499.99 kB. These are local source/browser/build results; hosted CI,
+packaged artifact, merge, and release evidence remain separate claims.
 
 Older detail remains in `handoff/archive/`.
