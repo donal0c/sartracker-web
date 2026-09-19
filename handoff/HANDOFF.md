@@ -59,8 +59,9 @@ The qualification-control-plane slice now has 22 focused tests; the two
 affected controller files pass 22/22. The review-repair full source run
 covered 484 files / 5,217 tests with one known non-slice observation: the
 official-map fixture was stale relative to the generated runtime tree. The
-application TypeScript check passed; rebuild the generated tree and rerun that
-isolated map file before final PR closeout. These are source/build checks, not
-candidate or release evidence.
+application TypeScript check and production build passed; rebuilding the
+generated tree made the isolated official-map file pass 27/27 with the bundle
+budget at 499.99 kB. These are source/build checks, not candidate or release
+evidence.
 
 Older detail remains in `handoff/archive/`.
