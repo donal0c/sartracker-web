@@ -121,6 +121,35 @@ describe('drawing builders', () => {
     expect(input.metadata_json).toContain('8000')
   })
 
+  it('rejects manual range-ring counts above the renderer safety bound', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 3,
+        draft: {
+          ...createRangeRingDraft([-9.744, 51.999]),
+          name: 'Too many rings',
+          manualRadiusM: '500',
+          manualRingCount: '65',
+        },
+      }),
+    ).toThrow(/Ring count must be at most 64/)
+  })
+
+  it('rejects manual range-ring radii beyond the geometry safety bound', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 3,
+        draft: {
+          ...createRangeRingDraft([-9.744, 51.999]),
+          name: 'Oversized ring',
+          manualRadiusM: '1000000000000',
+        },
+      }),
+    ).toThrow(RangeError)
+  })
+
   it('builds bearing lines from magnetic bearings by converting to true', () => {
     const input = buildDrawingInput({
       missionId: 'mission-1',
@@ -136,6 +165,21 @@ describe('drawing builders', () => {
 
     expect(input.type).toBe('bearing_line')
     expect(input.label).toContain('94.5°T')
+  })
+
+  it('rejects an empty bearing instead of persisting an implicit north bearing', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 4,
+        draft: {
+          ...createBearingLineDraft([-9.744, 51.999]),
+          name: 'Incomplete bearing',
+          inputBearing: '',
+          distanceM: '1000',
+        },
+      }),
+    ).toThrow(RangeError)
   })
 
   it('builds search sectors with polygon geometry', () => {
@@ -172,6 +216,37 @@ describe('drawing builders', () => {
     expect(input.geometry_json).toContain('"Point"')
     expect(input.metadata_json).toContain('"fontSize":18')
     expect(input.metadata_json).toContain('"rotation":15')
+  })
+
+  it('rejects text-label rotations above one full turn', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 6,
+        draft: {
+          ...createTextLabelDraft([-9.744, 51.999]),
+          text: 'Unsafe rotation',
+          rotation: '361',
+        },
+      }),
+    ).toThrow(RangeError)
+  })
+
+  it.each([
+    [181, 52],
+    [-181, 52],
+    [-9, 91],
+    [-9, -91],
+    [Number.NaN, 52],
+    [-9, Number.POSITIVE_INFINITY],
+  ] as const)('rejects unsafe text-label coordinates: %s, %s', (lon, lat) => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 6,
+        draft: { ...createTextLabelDraft([lon, lat]), text: 'Unsafe label' },
+      }),
+    ).toThrow(RangeError)
   })
 
   it('defaults new text labels to a high-contrast map colour', () => {

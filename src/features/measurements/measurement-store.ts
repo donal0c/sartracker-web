@@ -15,6 +15,7 @@ const EMPTY_MEASUREMENT_RUNTIME: MeasurementRuntimeState = {
   measurements: [],
   draftStart: null,
   hoverPoint: null,
+  error: null,
 }
 
 export const useMeasurementStore = create<MeasurementStoreState>((set) => ({

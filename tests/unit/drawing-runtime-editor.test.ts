@@ -84,6 +84,25 @@ describe('drawing runtime editor', () => {
     )
   })
 
+  it('rejects corrupt persisted geometry without opening an unsafe edit dialog', () => {
+    const state = createDrawingRuntimeMutableState({
+      drawings: [
+        createDrawing({
+          geometry_json: '{not-json',
+        }),
+      ],
+    })
+
+    expect(() => beginDrawingEdit(state, 'drawing-1')).not.toThrow()
+    expect(snapshotDrawingRuntimeState(state)).toEqual(
+      expect.objectContaining({
+        selectedDrawingId: null,
+        dialog: null,
+        error: expect.stringContaining('JSON'),
+      }),
+    )
+  })
+
   it('returns to select mode when cancelling the active tool', () => {
     const state = createDrawingRuntimeMutableState()
 
@@ -101,7 +120,7 @@ describe('drawing runtime editor', () => {
   })
 })
 
-function createDrawing(): Drawing {
+function createDrawing(overrides: Partial<Drawing> = {}): Drawing {
   return {
     id: 'drawing-1',
     mission_id: 'mission-1',
@@ -118,5 +137,6 @@ function createDrawing(): Drawing {
     metadata_json: '{"kind":"line"}',
     created_at: '2026-04-09T00:00:00.000Z',
     updated_at: '2026-04-09T00:00:00.000Z',
+    ...overrides,
   }
 }

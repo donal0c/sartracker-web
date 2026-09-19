@@ -1,5 +1,6 @@
 import type { Drawing } from '../../../infrastructure/mission-store/tauri-mission-store'
 import type { TextLabelDrawingDraft } from '../drawing-types'
+import { assertValidWgs84Coordinate } from '../drawing-math'
 import {
   parsePersistedDrawing,
   normalizeHexColor,
@@ -23,6 +24,8 @@ export function buildTextLabelDrawingInput(
   if (text.length > 255) {
     throw new Error('Label text must be 255 characters or fewer.')
   }
+
+  assertValidWgs84Coordinate(draft.point[0], draft.point[1], 'label')
 
   const fontSize = parseRequiredPositiveInteger(draft.fontSize, 'Font size')
   const rotation = parseRequiredBearing(draft.rotation, 'Rotation')
@@ -64,10 +67,6 @@ export function buildMovedTextLabelDrawingInput(
   lon: number,
   lat: number,
 ) {
-  if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
-    throw new Error('Moved text label requires finite coordinates.')
-  }
-
   const draft = createTextLabelDraftFromDrawing(drawing)
   return buildTextLabelDrawingInput(drawing.mission_id, drawing.display_order, {
     ...draft,

@@ -128,6 +128,36 @@ describe('startDrawingRuntime', () => {
     )
   })
 
+  it('does not swallow persistence RangeErrors as drawing-input validation', async () => {
+    const persistenceError = new RangeError('SQLite range failure')
+    const runtime = await startDrawingRuntime({
+      drawingStore: {
+        listDrawings: vi.fn().mockResolvedValue([]),
+        upsertDrawing: vi.fn().mockRejectedValue(persistenceError),
+        deleteDrawing: vi.fn(),
+      },
+      applyRuntime: vi.fn(),
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.setActiveTool('line')
+    runtime.appendSketchPoint(-9.744, 51.999)
+    runtime.appendSketchPoint(-9.734, 52.009)
+    runtime.completeSketch()
+    runtime.updateDraft({
+      id: null,
+      type: 'line',
+      name: 'Track line',
+      description: '',
+      points: [
+        [-9.744, 51.999],
+        [-9.734, 52.009],
+      ],
+    })
+
+    await expect(runtime.saveDialog()).rejects.toBe(persistenceError)
+  })
+
   it('opens range ring dialogs from a clicked center point', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startDrawingRuntime({
@@ -150,6 +180,66 @@ describe('startDrawingRuntime', () => {
             center: [-9.744, 51.999],
           }),
         }),
+      }),
+    )
+  })
+
+  it('rejects an invalid sketch point without retaining unsafe geometry', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startDrawingRuntime({
+      drawingStore: {
+        listDrawings: vi.fn().mockResolvedValue([]),
+        upsertDrawing: vi.fn(),
+        deleteDrawing: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.setActiveTool('line')
+    runtime.appendSketchPoint(Number.NaN, 52)
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sketch: null,
+        dialog: null,
+        error: expect.stringContaining('longitude'),
+      }),
+    )
+  })
+
+  it('keeps invalid point-drawing input visible in the dialog instead of throwing', async () => {
+    const applyRuntime = vi.fn()
+    const upsertDrawing = vi.fn()
+    const runtime = await startDrawingRuntime({
+      drawingStore: {
+        listDrawings: vi.fn().mockResolvedValue([]),
+        upsertDrawing,
+        deleteDrawing: vi.fn(),
+      },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.beginDialogAtPoint('search_sector', -9.5, 52)
+    runtime.updateDraft({
+      id: null,
+      type: 'search_sector',
+      name: 'Unsafe sector input',
+      description: '',
+      center: [-9.5, 52],
+      startBearing: '0',
+      endBearing: '361',
+      radiusM: '1000',
+    })
+
+    await expect(runtime.saveDialog()).resolves.toBeNull()
+    expect(upsertDrawing).not.toHaveBeenCalled()
+    expect(applyRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        dialog: expect.any(Object),
+        saving: false,
+        error: expect.stringContaining('bearing'),
       }),
     )
   })

@@ -1,9 +1,13 @@
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from 'geojson'
 
 import type { Drawing } from '../../infrastructure/mission-store/tauri-mission-store'
-import { geodesicBearingEndpoint, type LonLat } from './drawing-math'
+import {
+  assertValidWgs84Coordinate,
+  geodesicBearingEndpoint,
+  type LonLat,
+} from './drawing-math'
 import { parsePersistedDrawing } from './drawing-builders'
-import type { DrawingSketchState, DrawingTool } from './drawing-types'
+import type { DrawingMetadata, DrawingSketchState, DrawingTool } from './drawing-types'
 
 type DrawingFeatureProperties = GeoJsonProperties & {
   readonly featureKind: 'geometry' | 'label' | 'vertex'
@@ -76,7 +80,15 @@ export function createDrawingFeatureCollection(
   const features: Feature<Geometry, DrawingFeatureProperties>[] = []
 
   for (const drawing of drawings) {
-    const parsed = parsePersistedDrawing(drawing)
+    let parsed: ReturnType<typeof parsePersistedDrawing>
+    try {
+      parsed = parsePersistedDrawing(drawing)
+    } catch {
+      continue
+    }
+    if (!isValidPersistedGeometry(parsed.parsedGeometry)) {
+      continue
+    }
     const baseStyle = DEFAULT_DRAWING_STYLE[drawing.type]
     const isSelected = drawing.id === selectedDrawingId
     const strokeColor = drawing.color ?? baseStyle.strokeColor
@@ -103,7 +115,7 @@ export function createDrawingFeatureCollection(
           }
 
     if (parsed.type === 'range_ring' && parsed.parsedGeometry.type === 'MultiPolygon') {
-      const metadata = parsed.metadata?.kind === 'range_ring' ? parsed.metadata : null
+      const metadata = isValidRangeRingMetadata(parsed.metadata) ? parsed.metadata : null
       parsed.parsedGeometry.coordinates.forEach((coordinates, index) => {
         const ringStroke = metadata?.colors[index] ?? strokeColor
         const ringLabel = metadata?.labels[index] ?? label
@@ -126,16 +138,12 @@ export function createDrawingFeatureCollection(
         if (metadata !== null) {
           const radiusM = metadata.radiiM[index]
           const labelText = metadata.labels[index] ?? ringLabel
-          if (radiusM !== undefined) {
+          const labelCoordinate = resolveRangeRingLabelCoordinate(metadata.center, radiusM)
+          if (labelCoordinate !== null) {
             features.push(
               createLabelFeature({
                 drawing,
-                coordinate: geodesicBearingEndpoint(
-                  metadata.center[0],
-                  metadata.center[1],
-                  90,
-                  radiusM,
-                ),
+                coordinate: labelCoordinate,
                 label: labelText,
                 labelColor: ringStroke,
                 fontSize: 11,
@@ -362,6 +370,21 @@ function createPreviewVertexFeature(
   }
 }
 
+function resolveRangeRingLabelCoordinate(
+  center: LonLat,
+  radiusM: number | undefined,
+): LonLat | null {
+  if (radiusM === undefined) {
+    return null
+  }
+
+  try {
+    return geodesicBearingEndpoint(center[0], center[1], 90, radiusM)
+  } catch {
+    return null
+  }
+}
+
 function resolveLabelCoordinate(drawing: ReturnType<typeof parsePersistedDrawing>): LonLat | null {
   if (drawing.parsedGeometry.type === 'LineString') {
     const coordinates = drawing.parsedGeometry.coordinates.map((coordinate) => toLonLat(coordinate))
@@ -445,5 +468,90 @@ function toLonLat(coordinate: readonly number[]): LonLat {
     throw new Error('Invalid drawing coordinate.')
   }
 
+  assertValidWgs84Coordinate(lon, lat, 'persisted drawing geometry')
+
   return [lon, lat]
+}
+
+/** Returns whether a persisted GeoJSON geometry has a supported shape and safe positions. */
+function isValidPersistedGeometry(geometry: unknown): geometry is Geometry {
+  try {
+    assertValidPersistedGeometry(geometry)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Validates a persisted GeoJSON geometry's runtime shape and every coordinate position. */
+function assertValidPersistedGeometry(geometry: unknown): asserts geometry is Geometry {
+  if (!isRecord(geometry)) {
+    throw new Error('Invalid persisted drawing geometry.')
+  }
+
+  switch (geometry.type) {
+    case 'Point':
+      assertValidCoordinateTree(geometry.coordinates, 0)
+      return
+    case 'MultiPoint':
+    case 'LineString':
+      assertValidCoordinateTree(geometry.coordinates, 1)
+      return
+    case 'MultiLineString':
+    case 'Polygon':
+      assertValidCoordinateTree(geometry.coordinates, 2)
+      return
+    case 'MultiPolygon':
+      assertValidCoordinateTree(geometry.coordinates, 3)
+      return
+    case 'GeometryCollection':
+      if (!Array.isArray(geometry.geometries)) {
+        throw new Error('Invalid persisted geometry collection.')
+      }
+      geometry.geometries.forEach(assertValidPersistedGeometry)
+      return
+    default:
+      throw new Error('Unsupported persisted drawing geometry type.')
+  }
+}
+
+/** Validates a GeoJSON coordinate tree at the expected nesting depth. */
+function assertValidCoordinateTree(value: unknown, depth: number): void {
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid persisted drawing coordinate array.')
+  }
+
+  if (depth === 0) {
+    const [lon, lat] = value
+    if (typeof lon !== 'number' || typeof lat !== 'number') {
+      throw new Error('Invalid persisted drawing coordinate position.')
+    }
+    assertValidWgs84Coordinate(lon, lat, 'persisted drawing geometry')
+    return
+  }
+
+  value.forEach((child) => assertValidCoordinateTree(child, depth - 1))
+}
+
+/** Identifies JSON objects without trusting a persisted payload cast. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Returns whether persisted range-ring metadata has the arrays required by overlay construction. */
+function isValidRangeRingMetadata(
+  metadata: unknown,
+): metadata is Extract<DrawingMetadata, { readonly kind: 'range_ring' }> {
+  if (!isRecord(metadata) || metadata.kind !== 'range_ring') {
+    return false
+  }
+
+  return (
+    Array.isArray(metadata.radiiM) &&
+    Array.isArray(metadata.colors) &&
+    Array.isArray(metadata.labels) &&
+    metadata.radiiM.every((radius: unknown) => typeof radius === 'number') &&
+    metadata.colors.every((color: unknown) => typeof color === 'string') &&
+    metadata.labels.every((label: unknown) => typeof label === 'string')
+  )
 }

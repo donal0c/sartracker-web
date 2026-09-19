@@ -4,10 +4,114 @@ const WGS84_B = WGS84_A * (1 - WGS84_F)
 
 const DEG_TO_RAD = Math.PI / 180
 const RAD_TO_DEG = 180 / Math.PI
+const WGS84_LON_MIN = -180
+const WGS84_LON_MAX = 180
+const WGS84_LAT_MIN = -90
+const WGS84_LAT_MAX = 90
+const BEARING_MIN = 0
+const BEARING_MAX = 360
+
+/** Maximum number of synchronous segments accepted by one geodesic geometry call. */
+export const MAX_GEODESIC_SEGMENTS = 4_096
+
+/** Maximum distance accepted by one geometry call: half the WGS84 equatorial circumference. */
+export const MAX_GEODESIC_DISTANCE_M = Math.PI * WGS84_A
 
 export const IRELAND_MAGNETIC_DECLINATION = -4.5
 
 export type LonLat = readonly [lon: number, lat: number]
+
+/**
+ * Validates a WGS84 longitude/latitude pair at a public drawing-math boundary.
+ */
+export function assertValidWgs84Coordinate(
+  lon: number,
+  lat: number,
+  context: string = 'drawing math',
+): void {
+  assertFiniteNumber(lon, 'longitude', context)
+  assertFiniteNumber(lat, 'latitude', context)
+
+  if (lon < WGS84_LON_MIN || lon > WGS84_LON_MAX) {
+    throw new RangeError(
+      `${context}: longitude outside [${WGS84_LON_MIN}, ${WGS84_LON_MAX}]: ${lon}`,
+    )
+  }
+  if (lat < WGS84_LAT_MIN || lat > WGS84_LAT_MAX) {
+    throw new RangeError(
+      `${context}: latitude outside [${WGS84_LAT_MIN}, ${WGS84_LAT_MAX}]: ${lat}`,
+    )
+  }
+}
+
+/**
+ * Validates a compass bearing in the existing inclusive 0–360 degree contract.
+ */
+export function assertValidBearing(bearing: number, context: string = 'drawing math'): void {
+  assertFiniteNumber(bearing, 'bearing', context)
+  if (bearing < BEARING_MIN || bearing > BEARING_MAX) {
+    throw new RangeError(
+      `${context}: bearing outside [${BEARING_MIN}, ${BEARING_MAX}] degrees: ${bearing}`,
+    )
+  }
+}
+
+/**
+ * Validates a positive distance or radius used to construct geometry.
+ */
+export function assertPositiveDistance(
+  distanceM: number,
+  name: 'distanceM' | 'radiusM',
+  context: string,
+): void {
+  assertFiniteNumber(distanceM, name, context)
+  if (distanceM <= 0 || distanceM > MAX_GEODESIC_DISTANCE_M) {
+    throw new RangeError(`${context}: ${name} must be positive, got ${distanceM}`)
+  }
+}
+
+/**
+ * Validates a non-negative distance used by endpoint and measurement math.
+ */
+export function assertNonNegativeDistance(
+  distanceM: number,
+  context: string,
+): void {
+  assertFiniteNumber(distanceM, 'distanceM', context)
+  if (distanceM < 0 || distanceM > MAX_GEODESIC_DISTANCE_M) {
+    throw new RangeError(
+      `${context}: distanceM must be non-negative and <= ${MAX_GEODESIC_DISTANCE_M}, got ${distanceM}`,
+    )
+  }
+}
+
+/**
+ * Validates the bounded integer segment count used by synchronous geometry loops.
+ */
+export function assertValidGeodesicSegments(
+  segments: number,
+  context: string,
+): void {
+  assertFiniteNumber(segments, 'segments', context)
+  if (!Number.isInteger(segments) || segments <= 0 || segments > MAX_GEODESIC_SEGMENTS) {
+    throw new RangeError(
+      `${context}: segments must be a positive integer <= ${MAX_GEODESIC_SEGMENTS}, got ${segments}`,
+    )
+  }
+}
+
+function assertFiniteNumber(value: number, name: string, context: string): void {
+  if (typeof value !== 'number') {
+    throw new TypeError(`${context}: ${name} must be a number, got ${typeof value}`)
+  }
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`${context}: ${name} must be finite, got ${String(value)}`)
+  }
+}
+
+function normalizeLongitude(longitude: number): number {
+  return ((longitude + 180) % 360 + 360) % 360 - 180
+}
 
 function earthRadiusAtLat(latRad: number): number {
   const cosLat = Math.cos(latRad)
@@ -23,14 +127,17 @@ function earthRadiusAtLat(latRad: number): number {
 }
 
 export function normalizeBearing(bearing: number): number {
+  assertFiniteNumber(bearing, 'bearing', 'normalizeBearing')
   return ((bearing % 360) + 360) % 360
 }
 
 export function magneticToTrue(magneticBearing: number): number {
+  assertValidBearing(magneticBearing, 'magneticToTrue')
   return normalizeBearing(magneticBearing - IRELAND_MAGNETIC_DECLINATION)
 }
 
 export function trueToMagnetic(trueBearing: number): number {
+  assertValidBearing(trueBearing, 'trueToMagnetic')
   return normalizeBearing(trueBearing + IRELAND_MAGNETIC_DECLINATION)
 }
 
@@ -48,6 +155,9 @@ export function geodesicBearing(
   destLon: number,
   destLat: number,
 ): number | null {
+  assertValidWgs84Coordinate(originLon, originLat, 'geodesicBearing')
+  assertValidWgs84Coordinate(destLon, destLat, 'geodesicBearing')
+
   const lat1 = originLat * DEG_TO_RAD
   const lat2 = destLat * DEG_TO_RAD
   const dLon = (destLon - originLon) * DEG_TO_RAD
@@ -78,10 +188,12 @@ export function geodesicBearingEndpoint(
   bearing: number,
   distanceM: number,
 ): LonLat {
-  if (distanceM < 0) {
-    throw new RangeError(
-      `geodesicBearingEndpoint: distanceM must be non-negative, got ${distanceM}`,
-    )
+  assertValidWgs84Coordinate(originLon, originLat, 'geodesicBearingEndpoint')
+  assertValidBearing(bearing, 'geodesicBearingEndpoint')
+  assertNonNegativeDistance(distanceM, 'geodesicBearingEndpoint')
+
+  if (distanceM === 0) {
+    return [originLon, originLat]
   }
 
   const bearingRad = bearing * DEG_TO_RAD
@@ -102,7 +214,7 @@ export function geodesicBearingEndpoint(
       Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
     )
 
-  return [lon2 * RAD_TO_DEG, lat2 * RAD_TO_DEG]
+  return [normalizeLongitude(lon2 * RAD_TO_DEG), lat2 * RAD_TO_DEG]
 }
 
 export function geodesicDistance(
@@ -111,6 +223,9 @@ export function geodesicDistance(
   lon2: number,
   lat2: number,
 ): number {
+  assertValidWgs84Coordinate(lon1, lat1, 'geodesicDistance')
+  assertValidWgs84Coordinate(lon2, lat2, 'geodesicDistance')
+
   const lat1Rad = lat1 * DEG_TO_RAD
   const lat2Rad = lat2 * DEG_TO_RAD
   const dLat = (lat2 - lat1) * DEG_TO_RAD
@@ -134,11 +249,9 @@ export function geodesicCirclePoints(
   radiusM: number,
   segments: number = 64,
 ): readonly LonLat[] {
-  if (radiusM <= 0) {
-    throw new RangeError(
-      `geodesicCirclePoints: radiusM must be positive, got ${radiusM}`,
-    )
-  }
+  assertValidWgs84Coordinate(centerLon, centerLat, 'geodesicCirclePoints')
+  assertPositiveDistance(radiusM, 'radiusM', 'geodesicCirclePoints')
+  assertValidGeodesicSegments(segments, 'geodesicCirclePoints')
 
   const latRad = centerLat * DEG_TO_RAD
   const earthRadius = earthRadiusAtLat(latRad)
@@ -161,7 +274,7 @@ export function geodesicCirclePoints(
         Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(lat2),
       )
 
-    points.push([lon2 * RAD_TO_DEG, lat2 * RAD_TO_DEG])
+    points.push([normalizeLongitude(lon2 * RAD_TO_DEG), lat2 * RAD_TO_DEG])
   }
 
   return points
@@ -177,6 +290,9 @@ export function geodesicCirclePoints(
  * circle and returns 360; a true zero-length input (e.g. `45 → 45`) returns 0.
  */
 export function calculateSectorArcLength(startBearing: number, endBearing: number): number {
+  assertValidBearing(startBearing, 'calculateSectorArcLength')
+  assertValidBearing(endBearing, 'calculateSectorArcLength')
+
   const start = normalizeBearing(startBearing)
   const end = normalizeBearing(endBearing)
 
@@ -215,11 +331,11 @@ export function geodesicSectorPoints(
   radiusM: number,
   segments: number = 36,
 ): readonly LonLat[] {
-  if (radiusM <= 0) {
-    throw new RangeError(
-      `geodesicSectorPoints: radiusM must be positive, got ${radiusM}`,
-    )
-  }
+  assertValidWgs84Coordinate(centerLon, centerLat, 'geodesicSectorPoints')
+  assertValidBearing(startBearing, 'geodesicSectorPoints')
+  assertValidBearing(endBearing, 'geodesicSectorPoints')
+  assertPositiveDistance(radiusM, 'radiusM', 'geodesicSectorPoints')
+  assertValidGeodesicSegments(segments, 'geodesicSectorPoints')
 
   const angleRange = calculateSectorArcLength(startBearing, endBearing)
   const lat1 = centerLat * DEG_TO_RAD
@@ -243,7 +359,7 @@ export function geodesicSectorPoints(
         Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2),
       )
 
-    points.push([lon2 * RAD_TO_DEG, lat2 * RAD_TO_DEG])
+    points.push([normalizeLongitude(lon2 * RAD_TO_DEG), lat2 * RAD_TO_DEG])
   }
 
   points.push([centerLon, centerLat])
@@ -251,6 +367,10 @@ export function geodesicSectorPoints(
 }
 
 export function geodesicPolygonArea(ring: readonly LonLat[]): number {
+  for (const [lon, lat] of ring) {
+    assertValidWgs84Coordinate(lon, lat, 'geodesicPolygonArea')
+  }
+
   if (ring.length < 3) {
     return 0
   }
@@ -262,8 +382,9 @@ export function geodesicPolygonArea(ring: readonly LonLat[]): number {
     const next = ring[nextIndex]!
     const [lon1, lat1] = current
     const [lon2, lat2] = next
+    const shortestLongitudeDelta = ((lon2 - lon1 + 540) % 360) - 180
     area +=
-      (lon2 - lon1) *
+      shortestLongitudeDelta *
       DEG_TO_RAD *
       (2 + Math.sin(lat1 * DEG_TO_RAD) + Math.sin(lat2 * DEG_TO_RAD))
   }
@@ -273,5 +394,6 @@ export function geodesicPolygonArea(ring: readonly LonLat[]): number {
 }
 
 export function formatDistance(distanceM: number): string {
+  assertNonNegativeDistance(distanceM, 'formatDistance')
   return distanceM >= 1000 ? `${(distanceM / 1000).toFixed(2)} km` : `${distanceM.toFixed(0)} m`
 }

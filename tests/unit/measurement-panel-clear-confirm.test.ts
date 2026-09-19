@@ -56,6 +56,21 @@ describe('MeasurementPanel two-stage clear confirmation', () => {
     expect(query('[data-testid="measurement-clear-confirmation"]')).toBeNull()
   })
 
+  it('renders rejected-point errors as operator-visible alerts', () => {
+    useMeasurementStore.setState({
+      mode: 'armed',
+      measurements: [],
+      draftStart: null,
+      hoverPoint: null,
+      error: 'measurement point: longitude must be finite, got NaN',
+    })
+    render(React.createElement(MeasurementPanel))
+
+    expect(query('[data-testid="measurement-error"]')?.textContent).toContain(
+      'Measurement was not created',
+    )
+  })
+
   function setupWithMeasurements(clearMeasurements: ReturnType<typeof vi.fn>): void {
     useMissionStore.setState({
       currentMission: { id: 'mission-1', name: 'Test', startedAt: new Date().toISOString() } as never,

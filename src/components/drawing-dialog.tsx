@@ -11,7 +11,11 @@ import {
 } from '../features/drawings/drawing-math'
 import { isDrawingDraftSaveable } from '../features/drawings/drawing-draft-factories'
 import { LPB_CATEGORIES, LPB_PERCENTILE_ORDER, LPB_RING_COLORS } from '../features/drawings/lpb-data'
-import { SEARCH_AREA_STATUSES, type DrawingDraft } from '../features/drawings/drawing-types'
+import {
+  MAX_MANUAL_RANGE_RING_COUNT,
+  SEARCH_AREA_STATUSES,
+  type DrawingDraft,
+} from '../features/drawings/drawing-types'
 import { ColorPaletteInput } from './color-palette-input'
 import { DialogOverlay } from './dialog-overlay'
 import { formatIrishGridReference, isWithinIreland, wgs84ToTM65 } from '../lib/coordinates'
@@ -218,7 +222,7 @@ function LineSection(props: { readonly draft: Extract<DrawingDraft, { type: 'lin
         {
           label: 'Distance',
           testId: 'drawing-line-distance-readout',
-          value: formatDistance(distanceM),
+          value: formatDialogDistance(distanceM),
         },
         {
           label: 'Bearing to endpoint',
@@ -373,6 +377,9 @@ function RangeRingSection(props: {
           />
           <Field
             label="Ring Count"
+            inputType="number"
+            max={MAX_MANUAL_RANGE_RING_COUNT}
+            min={1}
             onChange={(value) => props.onChange({ ...props.draft, manualRingCount: value })}
             testId="drawing-range-ring-count-input"
             value={props.draft.manualRingCount}
@@ -413,13 +420,16 @@ function BearingLineSection(props: {
   readonly draft: Extract<DrawingDraft, { type: 'bearing_line' }>
   readonly onChange: (draft: Extract<DrawingDraft, { type: 'bearing_line' }>) => void
 }) {
-  const bearingNumber = Number(props.draft.inputBearing)
+  const bearingInput = props.draft.inputBearing.trim()
+  const bearingNumber = Number(bearingInput)
+  const bearingIsValid =
+    bearingInput !== '' && Number.isFinite(bearingNumber) && bearingNumber >= 0 && bearingNumber <= 360
   const trueBearing =
-    Number.isFinite(bearingNumber) && props.draft.inputBearingType === 'magnetic'
+    bearingIsValid && props.draft.inputBearingType === 'magnetic'
       ? magneticToTrue(bearingNumber)
       : bearingNumber
   const magneticBearing =
-    Number.isFinite(trueBearing) ? trueToMagnetic(trueBearing) : Number.NaN
+    bearingIsValid ? trueToMagnetic(trueBearing) : Number.NaN
 
   return (
     <>
@@ -456,7 +466,7 @@ function BearingLineSection(props: {
         <p className="mt-2" data-testid="drawing-bearing-conversion">
           {Number.isFinite(trueBearing) && Number.isFinite(magneticBearing)
             ? `True ${trueBearing.toFixed(1)}° / Magnetic ${magneticBearing.toFixed(1)}° (fixed Ireland declination -4.5°)`
-            : 'Enter a numeric bearing to see the true/magnetic conversion.'}
+            : 'Enter 0°–360° for conversion.'}
         </p>
       </div>
     </>
@@ -555,6 +565,9 @@ function Field(props: {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly testId: string
+  readonly inputType?: 'text' | 'number'
+  readonly min?: number
+  readonly max?: number
   readonly maxLength?: number | undefined
   readonly required?: boolean
   readonly requiredTestId?: string
@@ -579,8 +592,11 @@ function Field(props: {
           required ? 'border-rose-400 shadow-[0_0_0_1px_rgba(251,113,133,0.35)]' : 'border-stone-700'
         }`}
         data-testid={props.testId}
+        max={props.max}
         maxLength={props.maxLength}
+        min={props.min}
         onChange={(event) => props.onChange(event.target.value)}
+        type={props.inputType ?? 'text'}
         value={props.value}
       />
     </label>
@@ -681,6 +697,14 @@ function calculateEndpointBearing(points: readonly (readonly [number, number])[]
 
 function formatLonLat(point: readonly [number, number]): string {
   return `${point[1].toFixed(5)}, ${point[0].toFixed(5)}`
+}
+
+function formatDialogDistance(distanceM: number): string {
+  try {
+    return formatDistance(distanceM)
+  } catch {
+    return 'Distance unavailable — geometry exceeds the safe display range.'
+  }
 }
 
 function closeRing(points: readonly (readonly [number, number])[]): readonly (readonly [number, number])[] {

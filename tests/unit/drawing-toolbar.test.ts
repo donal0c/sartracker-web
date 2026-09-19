@@ -71,6 +71,17 @@ describe('DrawingToolbar', () => {
     expect(chip?.textContent).toContain('Select')
   })
 
+  it('shows drawing input failures even when no dialog is open', async () => {
+    const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
+    useDrawingStore.setState({ error: 'drawing sketch point: longitude must be finite' })
+
+    render(React.createElement(DrawingToolbar))
+
+    expect(document.querySelector('[data-testid="drawing-error"]')?.textContent).toContain(
+      'longitude must be finite',
+    )
+  })
+
   it('reveals Map Tools and the selected drawing layer before arming a drawing tool', async () => {
     const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
     const setActiveTool = vi.fn()

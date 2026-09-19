@@ -13,6 +13,7 @@ import {
   snapshotDrawingRuntimeState,
   type DrawingRuntimeMutableState,
 } from './drawing-runtime-state'
+import { assertValidWgs84Coordinate } from './drawing-math'
 export { createDrawingRuntimeMutableState, snapshotDrawingRuntimeState }
 
 /**
@@ -50,6 +51,13 @@ export function appendDrawingSketchPoint(
   lat: number,
 ): void {
   if (state.activeTool !== 'line' && state.activeTool !== 'search_area') {
+    return
+  }
+
+  try {
+    assertValidWgs84Coordinate(lon, lat, 'drawing sketch')
+  } catch (runtimeError) {
+    state.error = toErrorMessage(runtimeError)
     return
   }
 
@@ -113,6 +121,13 @@ export function beginDrawingDialogAtPoint(
   lon: number,
   lat: number,
 ): void {
+  try {
+    assertValidWgs84Coordinate(lon, lat, 'drawing dialog')
+  } catch (runtimeError) {
+    state.error = toErrorMessage(runtimeError)
+    return
+  }
+
   state.activeTool = tool
   state.error = null
   state.sketch = null
@@ -147,11 +162,17 @@ export function beginDrawingEdit(
   }
 
   state.selectedDrawingId = drawing.id
-  state.dialog = {
-    mode: 'edit',
-    draft: createDraftFromDrawing(drawing),
+  try {
+    state.dialog = {
+      mode: 'edit',
+      draft: createDraftFromDrawing(drawing),
+    }
+    state.error = null
+  } catch (runtimeError) {
+    state.selectedDrawingId = null
+    state.dialog = null
+    state.error = toErrorMessage(runtimeError)
   }
-  state.error = null
 }
 
 /**
@@ -171,6 +192,15 @@ export function updateDrawingDraft(
     ...state.dialog,
     draft: nextDraft,
   }
+}
+
+/** Converts a drawing-input failure into an operator-visible message. */
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim() !== '') {
+    return error.message
+  }
+
+  return 'Drawing point was rejected.'
 }
 
 /**

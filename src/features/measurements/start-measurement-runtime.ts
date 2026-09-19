@@ -1,8 +1,10 @@
 import {
+  assertValidBearing,
   formatDistance,
   geodesicBearing,
   geodesicBearingEndpoint,
   geodesicDistance,
+  assertValidWgs84Coordinate,
   trueToMagnetic,
   type LonLat,
 } from '../drawings/drawing-math'
@@ -15,6 +17,7 @@ type MutableMeasurementState = {
   measurements: Measurement[]
   draftStart: LonLat | null
   hoverPoint: LonLat | null
+  error: string | null
 }
 
 export type MeasurementRuntimeController = {
@@ -43,6 +46,7 @@ export function startMeasurementRuntime(
     measurements: [],
     draftStart: null,
     hoverPoint: null,
+    error: null,
   }
 
   publishRuntime()
@@ -58,6 +62,7 @@ export function startMeasurementRuntime(
       state.measurements = []
       state.draftStart = null
       state.hoverPoint = null
+      state.error = null
       publishRuntime()
     },
     armMeasurement: () => {
@@ -68,12 +73,14 @@ export function startMeasurementRuntime(
       state.mode = 'armed'
       state.draftStart = null
       state.hoverPoint = null
+      state.error = null
       publishRuntime()
     },
     cancelMeasurement: () => {
       state.mode = 'idle'
       state.draftStart = null
       state.hoverPoint = null
+      state.error = null
       publishRuntime()
     },
     registerPoint: (lon, lat) => {
@@ -81,7 +88,17 @@ export function startMeasurementRuntime(
         return null
       }
 
+      try {
+        assertValidWgs84Coordinate(lon, lat, 'measurement')
+      } catch (runtimeError) {
+        state.hoverPoint = null
+        state.error = toErrorMessage(runtimeError)
+        publishRuntime()
+        return null
+      }
+
       const nextPoint: LonLat = [lon, lat]
+      state.error = null
       if (state.draftStart === null) {
         state.draftStart = nextPoint
         state.hoverPoint = null
@@ -98,11 +115,19 @@ export function startMeasurementRuntime(
         return null
       }
 
-      const measurement = createMeasurement(
-        state.activeMissionId,
-        state.draftStart,
-        nextPoint,
-      )
+      let measurement: Measurement
+      try {
+        measurement = createMeasurement(
+          state.activeMissionId,
+          state.draftStart,
+          nextPoint,
+        )
+      } catch (runtimeError) {
+        state.error = toErrorMessage(runtimeError)
+        publishRuntime()
+        return null
+      }
+
       state.measurements = [...state.measurements, measurement]
       void dependencies.recordDiagnosticEvent?.({
         level: 'info',
@@ -117,6 +142,7 @@ export function startMeasurementRuntime(
       state.mode = 'idle'
       state.draftStart = null
       state.hoverPoint = null
+      state.error = null
       publishRuntime()
       return measurement
     },
@@ -137,6 +163,16 @@ export function startMeasurementRuntime(
         return
       }
 
+      try {
+        assertValidWgs84Coordinate(lon, lat, 'measurement hover')
+      } catch (runtimeError) {
+        state.hoverPoint = null
+        state.error = toErrorMessage(runtimeError)
+        publishRuntime()
+        return
+      }
+
+      state.error = null
       state.hoverPoint = [lon, lat]
       publishRuntime()
     },
@@ -144,6 +180,7 @@ export function startMeasurementRuntime(
       state.measurements = []
       state.draftStart = null
       state.hoverPoint = null
+      state.error = null
       publishRuntime()
     },
   }
@@ -155,6 +192,7 @@ export function startMeasurementRuntime(
       measurements: state.measurements,
       draftStart: state.draftStart,
       hoverPoint: state.hoverPoint,
+      error: state.error,
     })
   }
 }
@@ -195,5 +233,15 @@ export function formatMeasurementLabel(
   distanceM: number,
   trueBearing: number,
 ): string {
+  assertValidBearing(trueBearing, 'measure')
   return `${formatDistance(distanceM)} ${Math.round(trueBearing)}°`
+}
+
+/** Converts a runtime failure into a concise operator-visible message. */
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim() !== '') {
+    return error.message
+  }
+
+  return 'Measurement point was rejected.'
 }

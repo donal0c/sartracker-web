@@ -105,6 +105,56 @@ describe('startMeasurementRuntime', () => {
       hoverPoint: null,
     })
   })
+
+  it('rejects an invalid first point visibly without creating preview geometry', () => {
+    const applyRuntime = vi.fn<(runtime: MeasurementRuntimeState) => void>()
+    const controller = startMeasurementRuntime({ applyRuntime })
+
+    controller.refreshMission('mission-1')
+    controller.armMeasurement()
+
+    expect(controller.registerPoint(Number.NaN, 52)).toBeNull()
+    expect(latestRuntime(applyRuntime)).toMatchObject({
+      mode: 'armed',
+      draftStart: null,
+      hoverPoint: null,
+      measurements: [],
+      error: expect.stringContaining('longitude'),
+    })
+  })
+
+  it('rejects an invalid second point visibly while keeping the valid start point', () => {
+    const applyRuntime = vi.fn<(runtime: MeasurementRuntimeState) => void>()
+    const controller = startMeasurementRuntime({ applyRuntime })
+
+    controller.refreshMission('mission-1')
+    controller.armMeasurement()
+    controller.registerPoint(-9.5, 52)
+
+    expect(controller.registerPoint(181, 52)).toBeNull()
+    expect(latestRuntime(applyRuntime)).toMatchObject({
+      mode: 'armed',
+      draftStart: [-9.5, 52],
+      measurements: [],
+      error: expect.stringContaining('longitude'),
+    })
+  })
+
+  it('rejects invalid hover points without publishing plausible preview geometry', () => {
+    const applyRuntime = vi.fn<(runtime: MeasurementRuntimeState) => void>()
+    const controller = startMeasurementRuntime({ applyRuntime })
+
+    controller.refreshMission('mission-1')
+    controller.armMeasurement()
+    controller.registerPoint(-9.5, 52)
+    controller.setHoverPoint(Number.POSITIVE_INFINITY, 52)
+
+    expect(latestRuntime(applyRuntime)).toMatchObject({
+      draftStart: [-9.5, 52],
+      hoverPoint: null,
+      error: expect.stringContaining('longitude'),
+    })
+  })
 })
 
 function latestRuntime(

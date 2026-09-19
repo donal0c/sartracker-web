@@ -6,7 +6,10 @@ import {
   LPB_RING_COLORS,
   type LpbCategoryId,
 } from '../lpb-data'
-import type { RangeRingDrawingDraft } from '../drawing-types'
+import {
+  MAX_MANUAL_RANGE_RING_COUNT,
+  type RangeRingDrawingDraft,
+} from '../drawing-types'
 import {
   assertValidName,
   normalizeOptionalText,
@@ -82,6 +85,11 @@ export function createRangeRingDraftFromDrawing(
 function buildManualRingSpec(radiusInput: string, countInput: string) {
   const radiusM = parseRequiredPositiveNumber(radiusInput, 'Radius')
   const ringCount = parseRequiredPositiveInteger(countInput, 'Ring count')
+  if (ringCount > MAX_MANUAL_RANGE_RING_COUNT) {
+    throw new RangeError(
+      `Ring count must be at most ${MAX_MANUAL_RANGE_RING_COUNT}.`,
+    )
+  }
   const radiiM = Array.from({ length: ringCount }, (_, index) => radiusM * (index + 1))
 
   return {

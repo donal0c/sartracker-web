@@ -1,5 +1,6 @@
 import type { Drawing } from '../../../infrastructure/mission-store/tauri-mission-store'
 import {
+  assertValidBearing,
   formatDistance,
   geodesicBearingEndpoint,
   magneticToTrue,
@@ -10,6 +11,7 @@ import {
   assertValidName,
   normalizeOptionalText,
   parsePersistedDrawing,
+  parseRequiredBearing,
   parseRequiredPositiveNumber,
 } from './shared'
 
@@ -22,7 +24,8 @@ export function buildBearingLineDrawingInput(
   draft: BearingLineDrawingDraft,
 ) {
   assertValidName(draft.name)
-  const inputBearing = parseRequiredPositiveNumber(draft.inputBearing, 'Bearing')
+  const inputBearing = parseRequiredBearing(draft.inputBearing, 'Bearing')
+  assertValidBearing(inputBearing, 'Bearing line input')
   const distanceM = parseRequiredPositiveNumber(draft.distanceM, 'Distance')
   const trueBearing =
     draft.inputBearingType === 'magnetic'
