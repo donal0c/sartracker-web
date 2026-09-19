@@ -11,6 +11,7 @@ import {
   readdir,
   realpath,
   rename,
+  rmdir,
   rm,
   stat,
   statfs,
@@ -668,7 +669,7 @@ export async function cleanupCampaignLease({ leasePath, simulateFailure = false 
   }
   await rm(leasePath, { force: false })
   if (typeof lease.campaignLockPath === 'string') await rm(lease.campaignLockPath, { force: false })
-  await rm(leaseRoot, { recursive: false })
+  await rmdir(leaseRoot)
   return Object.freeze({ status: 'CLEANED', leaseId: lease.leaseId })
 }
 
