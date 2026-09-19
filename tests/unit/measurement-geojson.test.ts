@@ -31,4 +31,11 @@ describe('measurement geojson', () => {
   it('formats the permanent measurement label with distance and map bearing only', () => {
     expect(formatMeasurementLabel(1532, 94.5)).toBe('1.53 km 95°')
   })
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -0.001, 360.001])(
+    'rejects invalid bearings before formatting a permanent label: %s',
+    (bearing) => {
+      expect(() => formatMeasurementLabel(100, bearing)).toThrow(RangeError)
+    },
+  )
 })

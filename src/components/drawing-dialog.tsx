@@ -421,7 +421,7 @@ function BearingLineSection(props: {
       ? magneticToTrue(bearingNumber)
       : bearingNumber
   const magneticBearing =
-    bearingIsValid && Number.isFinite(trueBearing) ? trueToMagnetic(trueBearing) : Number.NaN
+    bearingIsValid ? trueToMagnetic(trueBearing) : Number.NaN
 
   return (
     <>

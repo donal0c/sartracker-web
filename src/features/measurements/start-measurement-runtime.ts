@@ -1,4 +1,5 @@
 import {
+  assertValidBearing,
   formatDistance,
   geodesicBearing,
   geodesicBearingEndpoint,
@@ -232,6 +233,7 @@ export function formatMeasurementLabel(
   distanceM: number,
   trueBearing: number,
 ): string {
+  assertValidBearing(trueBearing, 'measure')
   return `${formatDistance(distanceM)} ${Math.round(trueBearing)}°`
 }
 

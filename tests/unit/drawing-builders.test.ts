@@ -174,6 +174,23 @@ describe('drawing builders', () => {
     expect(input.metadata_json).toContain('"rotation":15')
   })
 
+  it.each([
+    [181, 52],
+    [-181, 52],
+    [-9, 91],
+    [-9, -91],
+    [Number.NaN, 52],
+    [-9, Number.POSITIVE_INFINITY],
+  ] as const)('rejects unsafe text-label coordinates: %s, %s', (lon, lat) => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 6,
+        draft: { ...createTextLabelDraft([lon, lat]), text: 'Unsafe label' },
+      }),
+    ).toThrow(RangeError)
+  })
+
   it('defaults new text labels to a high-contrast map colour', () => {
     const draft = createTextLabelDraft([-9.744, 51.999])
 
