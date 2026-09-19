@@ -116,16 +116,19 @@ a separate repair PR and blocks promotion.
 
 This is a short read-only triage of the records and current production seams on
 `e69485724044337fb5fee94bfbe5871916fdabf1`; it is not execution of WAR-03,
-WAR-07, WAR-08, WAR-09 or WAR-10 and does not replace exact-candidate proof.
+WAR-07, WAR-08, WAR-09 or WAR-10 and does not replace exact-candidate proof. No
+checks were executed for this triage; the triage below is source and record
+inspection only.
 
 | Item | Current evidence and judgment | Disposition |
 | --- | --- | --- |
 | `TRK-001` delayed/hidden current position | The current hazard row remains accurate: pre-window startup, renderer cold-start, participant/error, reload drain/replacement, pause and automatic-recovery paths can leave current position delayed, withheld or without an active request path. Existing tests cover bounded pieces but do not close the held-gate paths. | **Confirmed unresolved production blocker requiring a separate repair before candidate selection.** Smallest coherent chunk: current-position priority through startup/reload/replacement/recovery, with held-gate regressions and visible bounded failure. Owner seam: DON-267/DON-179/DON-250; complexity 9/10; recommended model Luna x-high. |
 | `GEO-002` unsafe bearing/distance/measurement input | Current `drawing-math.ts` still accepts non-finite and out-of-range coordinates/bearings, and `segments=Infinity` can make the synchronous point loops unbounded. Existing tests cover negative radius/distance and degenerate bearing only; `start-measurement-runtime.ts` passes clicked values directly to the math boundary. | **Confirmed unresolved production blocker requiring a separate repair before candidate selection.** Smallest coherent chunk: finite/range validation at the public math boundary, bounded segment validation, red/green adversarial tests and affected drawing/measurement consumer review. Owner: DON-6/DON-254; complexity 6/10; recommended model Luna x-high. |
 | `PKG-001` prolonged package non-interactivity | Retained DON-247 field evidence records Mint `.deb` controls becoming non-interactive around 182 hours while a different PCLinuxOS AppImage profile remained responsive. The profile split prevents causal attribution, but the operator-visible failure itself is not closed. | **Confirmed unresolved production blocker requiring a separate repair before candidate selection.** Smallest coherent chunk: same-profile AppImage/installed-`.deb` reproduction with report-only hang capture, causal attribution and bounded recovery/repair; owner DON-247; complexity 9/10; recommended model Luna x-high. |
-| Merged P1/P2 groups above, including `AUD-11`, WAR-06 and WAR-04 settings/privacy | Current master contains the named scoped repairs and no new current-head red receipt was found in this read-only pass. Exact beta13 bytes, package, scale, field and human-acceptance evidence remain absent. | **Repaired boundary awaiting exact-candidate qualification.** Do not call these findings closed from PR merge or from the dry run. |
+| Merged P1/P2 groups above, including `AUD-11`, WAR-06 and WAR-04 settings/privacy | Current master contains the named scoped repairs. No checks were executed for this triage; source inspection only found no new current-head production failure beyond the triage blockers above. Exact beta13 bytes, package, scale, field and human-acceptance evidence remain absent. | **Repaired boundary awaiting exact-candidate qualification.** Do not call these findings closed from PR merge or from the dry run. |
 | WAR-01: silent evidence loss; false `Complete`/`100%`; corrupted evidence; unbounded mission-scale main work | The merged controls and negative tests provide bounded repair evidence, but the required packaged fault, exact-scale, archive/restore, interruption, field and strict-responsiveness proof has not run on beta13. No new current-head data-loss, false-completeness, corruption or main-stall reproduction was created by this triage. | **Repaired boundary awaiting exact-candidate qualification.** These remain `open-blocking` qualification gates after candidate selection; they are not evidence that a test candidate is already qualified. |
-| Other unscored `unenforced-invariant` rows (`MAP-001`, `EVD-003`, `PKG-002`, `REL-001`, `REL-002`, `REL-004`, `OPS-001`, and `GEO-001`) | The bounded inspection found control or evidence gaps, not a new confirmed current-head production failure beyond the three blockers above. Existing owners, warnings and exact qualification requirements remain authoritative. | **Lower-severity/post-beta hardening with rationale.** Retain explicit owners and qualification/field gates; do not describe these as cleared or silently use them to waive a mandatory receipt. |
+| Other unscored `unenforced-invariant` rows (`MAP-001`, `EVD-003`, `PKG-002`, `REL-001`, `REL-002`, `REL-004` and `OPS-001`) | The bounded source/record inspection found control gaps, not a new confirmed current-head production failure beyond the three blockers above. Existing owners, warnings and exact qualification requirements remain authoritative. | **Lower-severity/post-beta hardening with rationale.** Retain explicit owners and qualification/field gates; do not describe these as cleared or silently use them to waive a mandatory receipt. |
+| `GEO-001` (`evidence-tier-gap`) | The bounded source/record inspection found a coordinate transform/parser/format evidence gap, not a new confirmed current-head production failure beyond the three blockers above. Existing owners and exact qualification requirements remain authoritative. | **Lower-severity/post-beta hardening with rationale.** Retain the `DON-238`/`DON-6` evidence boundary; do not describe the gap as cleared or silently use it to waive a mandatory receipt. |
 
 ### WAR-01 absolute blockers
 
@@ -186,7 +189,8 @@ not silently repair production code, change the hazard register to “cleared”
 or turn local/CI/packaged evidence into field, human-acceptance or production
 proof. A confirmed P1/P2, absolute blocker, silent evidence loss, corrupted
 evidence, false completeness claim, or unsafe main-process stall stops the lane
-and gets a separate repair PR or explicit Donal architecture decision.
+and gets a separate repair PR. This charter records no architecture exception;
+any future Donal decision must be explicit, named and separately recorded.
 
 #### WAR-03 — coordinate and geodesy proof
 
@@ -201,6 +205,12 @@ and gets a separate repair PR or explicit Donal architecture decision.
   reject NaN/Infinity/out-of-range input. `GEO-002` must preserve true↔magnetic
   declination (`-4.5°` true to magnetic), reject invalid coordinates/bearings/
   radii/distances/segments, and keep geodesic measurement behavior.
+- **Boundary with current triage:** the finite/range public-input and bounded-
+  segment repair for `GEO-002` is separately tracked above as a pre-candidate
+  blocker, not deferred into this WAR-03 charter. WAR-03 retains the residual
+  post-beta proof: WGS84↔ITM↔TM65 round-trips, Irish Grid parse/format and
+  square-boundary behavior, declination direction/sign, and geodesic/fuzzing
+  evidence not closed by that repair.
 - **Production ownership:** `src/lib/coordinates.ts`,
   `src/features/coordinates/coordinate-tool.ts`,
   `src/features/drawings/drawing-math.ts`, and
@@ -433,9 +443,12 @@ a release, a freeze, or any product-code change.
 
 Test-candidate selection is **BLOCKED / not declared** by the current-head
 triage's three concrete production/operational blockers: `TRK-001`, `GEO-002`
-and `PKG-001`. Each requires a separate bounded repair or explicit Donal
-architecture decision before selection. This is distinct from qualification
-HOLD: the five WAR-01 absolute blockers, exact-candidate evidence, the dry-run's
+and `PKG-001`. Each requires a separate bounded repair before selection. No
+Donal architecture decision authorising selection with an unrepaired blocker
+has been made in this record; a future exception would need a separate,
+explicit decision naming the blocker, selection consequence, qualification and
+promotion prohibition, and approving authority. This is distinct from
+qualification HOLD: the five WAR-01 absolute blockers, exact-candidate evidence, the dry-run's
 `releaseEligible: false`, open `DON-247` original-machine qualification and the
 absence of beta13 artifact/fixture hashes remain qualification/promotion gates
 after a candidate is selected. WAR-03/WAR-07/WAR-08/WAR-09/WAR-10 are not

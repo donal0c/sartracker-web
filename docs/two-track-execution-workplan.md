@@ -130,17 +130,15 @@ absolute-blocker consequence.
 Select/freeze the test candidate only when all of the following are true:
 
 - all confirmed unresolved production blockers from bounded triage are repaired
-  or explicitly stopped at a separate Donal architecture decision, and required
-  source CI is green;
+  before selecting a test candidate, and required source CI is green;
 - no required code PR remains open and the working tree, Linear, handoff and
   ledger agree on the exact selected source SHA;
 - every known P1/P2 and absolute blocker has a recorded disposition. Missing
   exact-candidate, package, scale, field or human-acceptance receipts keep
   qualification HOLD; they are not backfilled from pre-candidate evidence;
-- the qualification contract/coverage registry, version, fixture identities,
-  platform matrix, rollback artifact and stop conditions are declared before
-  the expensive run;
-- the release version and artifact names are declared with that same plan.
+- the qualification contract/coverage registry, release version, artifact
+  names, fixture identities, platform matrix, rollback artifact and stop
+  conditions are declared before the expensive run.
 
 No unrelated feature work enters the candidate after freeze. A product change
 creates a new candidate and invalidates only the evidence whose executable or
@@ -199,8 +197,11 @@ not evidence that a candidate is currently frozen.
    manual override is valid for those conditions.
 
 The test-candidate record remains `BLOCKED` until the current triage's concrete
-production blockers are repaired or stopped by an explicit architecture
-decision. Once selected, qualification remains `HOLD` until the five WAR-01
+production blockers are repaired. No Donal architecture decision authorising
+selection with an unrepaired blocker is recorded here; any future exception
+would require a separate explicit decision naming the blocker, selection
+consequence, qualification and promotion prohibition, and approving authority.
+Once selected, qualification remains `HOLD` until the five WAR-01
 absolute blockers, exact-candidate evidence, BCP-17/WAR-12, `DON-247` and the
 other mandatory receipts pass. The dry-run control-plane receipt is explicitly
 `releaseEligible: false` and cannot be used as a substitute. WAR-03/WAR-07/

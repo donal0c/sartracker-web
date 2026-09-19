@@ -13,8 +13,9 @@ qualify a candidate, declare a freeze, or authorize release.
 `DON-254` is **In Progress**. Release remains **HOLD**. Test-candidate
 selection is **BLOCKED / not declared** by the current-head triage of
 `TRK-001`, `GEO-002` and the retained `PKG-001` prolonged package
-non-interactivity finding. These need separate bounded repair/decision work;
-no product repair is included in this reconciliation PR.
+non-interactivity finding. These need separate bounded repair work;
+no architecture exception authorising selection with an unrepaired blocker is
+recorded, and no product repair is included in this reconciliation PR.
 
 ## Release-first decision
 
@@ -26,6 +27,10 @@ release approval.
 **QUALIFIED FOR PROMOTION** is later: BCP-17/WAR-12, the five WAR-01 exit
 gates, exact-artifact checks, original-machine confirmation and all mandatory
 same-byte publication evidence pass.
+
+The current handoff does not authorise an exception to the repair boundary. Any
+future Donal architecture decision must be explicit, named and separately
+recorded; prose here cannot substitute for that decision.
 
 `reconciliationMergeSha` is now
 `e69485724044337fb5fee94bfbe5871916fdabf1`. The dry-run remains
