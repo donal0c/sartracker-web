@@ -21,6 +21,9 @@ export type SearchAreaStatus =
 export type RangeRingMode = 'manual' | 'lpb'
 export type BearingInputType = 'true' | 'magnetic'
 
+/** Maximum number of manually generated range rings retained by one drawing. */
+export const MAX_MANUAL_RANGE_RING_COUNT = 64
+
 export type LineDrawingDraft = {
   readonly id: string | null
   readonly type: 'line'

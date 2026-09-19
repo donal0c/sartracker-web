@@ -198,6 +198,7 @@ describe('DrawingDialog vertices readout', () => {
     expect(document.body.textContent).not.toContain('Mode')
     expect(document.querySelector('[data-testid="drawing-name-required"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="drawing-range-ring-radius-required"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="drawing-range-ring-count-input"]')?.getAttribute('max')).toBe('64')
   })
 
   it('shows required search-sector name and replaces centre readout with Irish Grid coordinates', async () => {

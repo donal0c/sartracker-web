@@ -11,7 +11,11 @@ import {
 } from '../features/drawings/drawing-math'
 import { isDrawingDraftSaveable } from '../features/drawings/drawing-draft-factories'
 import { LPB_CATEGORIES, LPB_PERCENTILE_ORDER, LPB_RING_COLORS } from '../features/drawings/lpb-data'
-import { SEARCH_AREA_STATUSES, type DrawingDraft } from '../features/drawings/drawing-types'
+import {
+  MAX_MANUAL_RANGE_RING_COUNT,
+  SEARCH_AREA_STATUSES,
+  type DrawingDraft,
+} from '../features/drawings/drawing-types'
 import { ColorPaletteInput } from './color-palette-input'
 import { DialogOverlay } from './dialog-overlay'
 import { formatIrishGridReference, isWithinIreland, wgs84ToTM65 } from '../lib/coordinates'
@@ -373,6 +377,9 @@ function RangeRingSection(props: {
           />
           <Field
             label="Ring Count"
+            inputType="number"
+            max={MAX_MANUAL_RANGE_RING_COUNT}
+            min={1}
             onChange={(value) => props.onChange({ ...props.draft, manualRingCount: value })}
             testId="drawing-range-ring-count-input"
             value={props.draft.manualRingCount}
@@ -558,6 +565,9 @@ function Field(props: {
   readonly value: string
   readonly onChange: (value: string) => void
   readonly testId: string
+  readonly inputType?: 'text' | 'number'
+  readonly min?: number
+  readonly max?: number
   readonly maxLength?: number | undefined
   readonly required?: boolean
   readonly requiredTestId?: string
@@ -582,8 +592,11 @@ function Field(props: {
           required ? 'border-rose-400 shadow-[0_0_0_1px_rgba(251,113,133,0.35)]' : 'border-stone-700'
         }`}
         data-testid={props.testId}
+        max={props.max}
         maxLength={props.maxLength}
+        min={props.min}
         onChange={(event) => props.onChange(event.target.value)}
+        type={props.inputType ?? 'text'}
         value={props.value}
       />
     </label>

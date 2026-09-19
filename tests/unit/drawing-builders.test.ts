@@ -121,6 +121,21 @@ describe('drawing builders', () => {
     expect(input.metadata_json).toContain('8000')
   })
 
+  it('rejects manual range-ring counts above the renderer safety bound', () => {
+    expect(() =>
+      buildDrawingInput({
+        missionId: 'mission-1',
+        displayOrder: 3,
+        draft: {
+          ...createRangeRingDraft([-9.744, 51.999]),
+          name: 'Too many rings',
+          manualRadiusM: '500',
+          manualRingCount: '65',
+        },
+      }),
+    ).toThrow(/Ring count must be at most 64/)
+  })
+
   it('builds bearing lines from magnetic bearings by converting to true', () => {
     const input = buildDrawingInput({
       missionId: 'mission-1',

@@ -1,7 +1,11 @@
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry, Point } from 'geojson'
 
 import type { Drawing } from '../../infrastructure/mission-store/tauri-mission-store'
-import { geodesicBearingEndpoint, type LonLat } from './drawing-math'
+import {
+  assertValidWgs84Coordinate,
+  geodesicBearingEndpoint,
+  type LonLat,
+} from './drawing-math'
 import { parsePersistedDrawing } from './drawing-builders'
 import type { DrawingSketchState, DrawingTool } from './drawing-types'
 
@@ -77,6 +81,9 @@ export function createDrawingFeatureCollection(
 
   for (const drawing of drawings) {
     const parsed = parsePersistedDrawing(drawing)
+    if (!isValidPersistedGeometry(parsed.parsedGeometry)) {
+      continue
+    }
     const baseStyle = DEFAULT_DRAWING_STYLE[drawing.type]
     const isSelected = drawing.id === selectedDrawingId
     const strokeColor = drawing.color ?? baseStyle.strokeColor
@@ -456,5 +463,50 @@ function toLonLat(coordinate: readonly number[]): LonLat {
     throw new Error('Invalid drawing coordinate.')
   }
 
+  assertValidWgs84Coordinate(lon, lat, 'persisted drawing geometry')
+
   return [lon, lat]
+}
+
+/** Returns whether every persisted geometry position lies within WGS84 bounds. */
+function isValidPersistedGeometry(geometry: Geometry): boolean {
+  try {
+    assertValidPersistedGeometry(geometry)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Validates every coordinate position in a persisted GeoJSON geometry. */
+function assertValidPersistedGeometry(geometry: Geometry): void {
+  if (geometry.type === 'GeometryCollection') {
+    geometry.geometries.forEach(assertValidPersistedGeometry)
+    return
+  }
+
+  assertValidCoordinateTree(geometry.coordinates)
+}
+
+/** Recursively validates GeoJSON coordinate arrays without trusting parsed JSON shape. */
+function assertValidCoordinateTree(value: unknown): void {
+  if (!Array.isArray(value)) {
+    throw new Error('Invalid persisted drawing coordinate array.')
+  }
+
+  if (value.length === 0) {
+    return
+  }
+
+  const first = value[0]
+  if (typeof first === 'number') {
+    const second = value[1]
+    if (typeof second !== 'number') {
+      throw new Error('Invalid persisted drawing coordinate position.')
+    }
+    assertValidWgs84Coordinate(first, second, 'persisted drawing geometry')
+    return
+  }
+
+  value.forEach(assertValidCoordinateTree)
 }

@@ -242,6 +242,57 @@ describe('drawing geojson', () => {
     expect(collection.features.some((feature) => feature.properties?.featureKind === 'label')).toBe(false)
   })
 
+  it('omits range-ring overlays with out-of-range persisted geometry coordinates', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'range-invalid-geometry',
+          type: 'range_ring',
+          geometry_json: JSON.stringify({
+            type: 'MultiPolygon',
+            coordinates: [[[[181, 52], [180, 52], [180, 53], [181, 52]]]],
+          }),
+          metadata_json: JSON.stringify({
+            kind: 'range_ring',
+            mode: 'manual',
+            center: [-9.7, 52.0],
+            radiiM: [800],
+            colors: [],
+            labels: ['800 m'],
+            lpbCategory: null,
+          }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features).toHaveLength(0)
+  })
+
+  it('omits text-label overlays with out-of-range persisted geometry coordinates', () => {
+    const collection = createDrawingFeatureCollection(
+      [
+        createDrawing({
+          id: 'text-invalid-geometry',
+          type: 'text_label',
+          label: 'Unsafe label',
+          geometry_json: JSON.stringify({ type: 'Point', coordinates: [181, 52] }),
+          metadata_json: JSON.stringify({
+            kind: 'text_label',
+            text: 'Unsafe label',
+            fontSize: 18,
+            color: '#FFCC00',
+            rotation: 0,
+            point: [181, 52],
+          }),
+        }),
+      ],
+      null,
+    )
+
+    expect(collection.features).toHaveLength(0)
+  })
+
   it('uses an operationally legible default stroke width for search sectors', () => {
     const collection = createDrawingFeatureCollection(
       [

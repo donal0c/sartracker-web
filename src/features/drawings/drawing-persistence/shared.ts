@@ -1,4 +1,5 @@
 import type { Drawing } from '../../../infrastructure/mission-store/tauri-mission-store'
+import { assertValidWgs84Coordinate } from '../drawing-math'
 import type { DrawingDraft, DrawingMetadata, PersistedDrawing } from '../drawing-types'
 import type { LonLat } from '../drawing-math'
 
@@ -118,6 +119,8 @@ export function toLonLat(coordinate: readonly number[]): LonLat {
   if (typeof lon !== 'number' || typeof lat !== 'number') {
     throw new Error('Invalid drawing geometry coordinate.')
   }
+
+  assertValidWgs84Coordinate(lon, lat, 'persisted drawing geometry')
 
   return [lon, lat]
 }
