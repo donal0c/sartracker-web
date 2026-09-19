@@ -54,7 +54,7 @@ describe('mission tracking status bridge', () => {
     expect(applyStatus).toHaveBeenCalledWith(
       expect.objectContaining({
         mode: 'idle',
-        warning: 'Resume mission before reconnecting.',
+        warning: 'Resume mission to reconnect.',
       }),
     )
 

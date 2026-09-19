@@ -7,7 +7,7 @@ const EMPTY_TRACKING_SNAPSHOT: TrackingSnapshot = {
   breadcrumbs: [],
 }
 
-export const RECOVERY_TRACKING_WARNING = 'Resume mission before reconnecting.'
+export const RECOVERY_TRACKING_WARNING = 'Resume mission to reconnect.'
 
 type MissionTrackingStatusBridgeOptions = {
   readonly applySnapshot: (snapshot: TrackingSnapshot) => void
@@ -60,7 +60,7 @@ function synchronizeInactiveMissionTracking(
   })
 }
 
-export function getInactiveMissionTrackingWarning(
+function getInactiveMissionTrackingWarning(
   phase: ReturnType<typeof useMissionStore.getState>['phase'],
 ): string {
   if (phase === 'paused') {
