@@ -766,6 +766,15 @@ export function createPollingManager(
     })
   }
 
+  /** Returns the operator warning for a non-active polling mode. */
+  function getInactiveMissionWarning(pollingMode: 'paused' | 'idle'): string {
+    return options.getInactiveWarning?.(pollingMode) || (
+      pollingMode === 'paused'
+        ? 'Live refresh suspended while mission is paused.'
+        : 'Waiting for an active mission.'
+    )
+  }
+
   /** Reports rejected current rows after position publication and contains UI failures. */
   function publishCurrentPositionRejections(
     rejections: readonly CurrentPositionRejection[],
@@ -999,11 +1008,7 @@ export function createPollingManager(
 
         publishStatus({
           mode: 'idle',
-          warning: options.getInactiveWarning?.(pollingMode) ?? (
-            pollingMode === 'paused'
-              ? 'Live refresh suspended while mission is paused.'
-              : 'Waiting for an active mission.'
-          ),
+          warning: getInactiveMissionWarning(pollingMode),
         })
         scheduleNextPoll(pollIntervalMs)
         return
@@ -1631,11 +1636,7 @@ export function createPollingManager(
 
     publishStatus({
       mode: 'idle',
-      warning: options.getInactiveWarning?.(pollingMode) ?? (
-        pollingMode === 'paused'
-          ? 'Live refresh suspended while mission is paused.'
-          : 'Waiting for an active mission.'
-      ),
+      warning: getInactiveMissionWarning(pollingMode),
     })
   }
 

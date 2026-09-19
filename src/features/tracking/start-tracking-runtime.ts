@@ -431,7 +431,7 @@ export async function startTrackingRuntime(
   let trustedOperationalScope: {
     readonly contextKey: string
     readonly scope: ParticipationScope
-    readonly acceptedAtMs: number
+    readonly acceptedAt: number
   } | null = null
   let liveCurrentSnapshotContextKey: string | null | undefined
   let cacheReadActive = true
@@ -1834,7 +1834,7 @@ export async function startTrackingRuntime(
       return null
     }
     if (scopeStatus === 'ready' && scope !== undefined) {
-      trustedOperationalScope = { contextKey, scope, acceptedAtMs: now().getTime() }
+      trustedOperationalScope = { contextKey, scope, acceptedAt: now().getTime() }
     }
     // Retiring fallback/history callbacks may settle evidence, but cannot alter
     // the last-known positions that a later selected response will retain.
@@ -1850,7 +1850,7 @@ export async function startTrackingRuntime(
   /** Returns whether retained participant selection is still safe to use. */
   function hasUsableTrustedScope(contextKey: string): boolean {
     if (trustedOperationalScope?.contextKey !== contextKey) return false
-    return now().getTime() - trustedOperationalScope.acceptedAtMs <= MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS
+    return now().getTime() - trustedOperationalScope.acceptedAt <= MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS
   }
 
   /** Captures mission identity without treating explicit idle as an unknown key. */

@@ -3160,7 +3160,7 @@ describe('polling manager', () => {
       onSnapshot: vi.fn(),
       onStatusChange,
       getPollingMode: () => 'paused',
-      getInactiveWarning: () => 'Resume the mission before reconnecting live tracking.',
+      getInactiveWarning: () => 'Resume mission before reconnecting.',
     })
 
     poller.start()
@@ -3168,7 +3168,7 @@ describe('polling manager', () => {
 
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
-        warning: 'Resume the mission before reconnecting live tracking.',
+        warning: 'Resume mission before reconnecting.',
       }),
     )
 
