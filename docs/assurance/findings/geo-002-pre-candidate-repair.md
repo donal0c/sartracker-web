@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-19  
 **Owner seam:** DON-6 / DON-254  
-**Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`, `67a6140e`, `75a2a352`, `cb316985f21b2ff86746487e9c094bd8f6540b2f`
+**Implementation commits:** `678e4aa21fcbbf09345806f04ae28d91597b813f`, `49088dbd`, `67a6140e`, `75a2a352`, `cb316985f21b2ff86746487e9c094bd8f6540b2f`, `83180d034046ab569257814991d4f75c9d898986`
 **Disposition:** bounded pre-candidate repair is implemented and independently reviewable at the PR head; release remains HOLD and candidate selection remains blocked by the separate TRK-001 and PKG-001 findings.
 
 ## Finding and boundary
@@ -43,6 +43,10 @@ operator or search-policy limit.
 - Drawing and measurement runtimes reject unsafe map values before retaining
   them or creating preview/persisted geometry. Validation failures remain
   visible to the operator; they do not become silent successful operations.
+- Persisted drawing overlays validate every GeoJSON coordinate tree before
+  creating live features; invalid persisted geometries are omitted rather than
+  reaching MapLibre. Manual range-ring generation is capped at 64 rings and
+  the dialog exposes the same bound.
 - Bearing-line previews do not show a plausible conversion for invalid input.
   Persisted range-ring label generation omits only an invalid label coordinate
   instead of crashing the map feature builder or inventing a position.
@@ -50,7 +54,7 @@ operator or search-policy limit.
   a plausible-looking label, and text-label persistence rejects non-finite or
   out-of-range anchor coordinates for both create and move paths.
 - The existing 500,000-byte application-shell budget is retained. The final
-  application shell is 499,970 bytes; the base commit measured 499,129 bytes.
+  application shell is 499,885 bytes; the base commit measured 499,129 bytes.
 - The independent review follow-up makes drawing failures visible in the
   toolbar when no dialog is open, rejects out-of-range finite bearing inputs
   in both public magnetic/true conversion functions, and adds browser coverage
@@ -58,13 +62,13 @@ operator or search-policy limit.
 
 ## Verification
 
-- Focused drawing/measurement/consumer unit suites: 10 files, 144 tests passed
+- Focused drawing/measurement/consumer unit suites: 12 files, 165 tests passed
   after the final implementation commit, including the GEO-002 adversarial
   tests and the drawing-toolbar visibility regression.
 - `npm run lint`: passed.
 - `npx tsc -b --noEmit`: passed.
 - `npm run build`: passed, including the unchanged bundle budgets; final
-  application shell was 499,970 bytes.
+  application shell was 499,885 bytes.
 - Repeatable Chromium drawing and measurement workflows: 20 passed,
   including the invalid-sketch-point visible-alert regression.
 - A prior full source run on review head `60e07781` passed 481/483 files and
