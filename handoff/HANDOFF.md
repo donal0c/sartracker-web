@@ -17,7 +17,7 @@ separate tracking repair branch and must not be merged through this branch.
   antimeridian area is handled, corrupt drawing payloads fail closed, edit/save
   errors retain provenance, and operator inputs expose numeric bounds where
   applicable.
-- `DON-267` / TRK-001: PR #41 repair head is `4219fb11`. Accepted empty live
+- `DON-267` / TRK-001: PR #41 repair head is `c5daa9fd`. Accepted empty live
   current snapshots now fence late cache, live status is not clobbered by cache,
   recovery has one operator warning, and retained participant scope fails closed
   after a bounded hold.
@@ -28,7 +28,7 @@ separate tracking repair branch and must not be merged through this branch.
 Both branches passed `npx tsc --noEmit` and ESLint with zero warnings.
 GEO-002 passed `npx vitest run tests/unit` (483 files, 5,190 tests) and the
 serialized Chromium drawing workflow (15/15). TRK-001 passed the full local
-unit suite (483 files, 5,131 tests) and serialized Chromium tracking ingest
+unit suite (483 files, 5,132 tests) and serialized Chromium tracking ingest
 health (3/3). These are local source/browser results only; CI, packaged
 artifact, hosted, merge, and release evidence are still absent.
 
