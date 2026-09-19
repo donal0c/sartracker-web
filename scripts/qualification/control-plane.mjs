@@ -115,11 +115,9 @@ export async function fileIdentity(filePath) {
 
 export function evaluateCandidate({ registry, mode, identities, contractResults, blockers = [], judgeResults = [], campaignDefinition }) {
   if (!['dry-run', 'candidate'].includes(mode)) throw new Error('Qualification mode must be dry-run or candidate.')
-  if (mode === 'candidate' && (campaignDefinition?.immutable !== true || campaignDefinition?.releaseEligible !== false)) {
-    throw new Error('Final candidate execution requires an explicitly authorized immutable campaign definition.')
-  }
   const compiled = compileCoverageRegistry(registry)
   validateIdentities(identities)
+  if (mode === 'candidate') validateCandidateDefinitionForEvaluation(campaignDefinition, compiled, identities)
   const resultByContract = new Map()
   for (const result of contractResults) {
     if (!CONTRACT_IDS.includes(result?.contractId) || !['pass', 'fail', 'not-run'].includes(result?.status)) {
@@ -151,6 +149,68 @@ export function evaluateCandidate({ registry, mode, identities, contractResults,
     judgeHolds: Object.freeze(judgeHolds),
     contractResults: Object.freeze(compiled.contracts.map((contract) => resultByContract.get(contract.id) ?? Object.freeze({ contractId: contract.id, status: 'not-run' }))),
   })
+}
+
+/** Validate the immutable campaign proof before allowing legacy evaluation to enter candidate mode. */
+function validateCandidateDefinitionForEvaluation(definition, compiledRegistry, identities) {
+  if (definition?.schema !== 'sartracker-qualification-campaign-definition-v1'
+      || definition.immutable !== true || definition.mode !== 'candidate' || definition.releaseEligible !== false) {
+    throw new Error('Final candidate execution requires a validated immutable campaign definition with exact candidate identity.')
+  }
+  if (!SHA256_PATTERN.test(definition.definitionDigest ?? '')) {
+    throw new Error('Candidate campaign definition digest is required.')
+  }
+  const expectedDigest = sha256(Buffer.from(canonicalJson(stripDefinitionDigest(definition)), 'utf8'))
+  if (expectedDigest !== definition.definitionDigest) {
+    throw new Error('Candidate campaign definition digest does not match its immutable bytes.')
+  }
+  if (!sameStringArray(definition.requiredContracts, CONTRACT_IDS)) {
+    throw new Error('Candidate campaign definition must require every C00-C29 contract.')
+  }
+  const coverage = definition.registryCoverage
+  if (canonicalJson(coverage?.contracts) !== canonicalJson(compiledRegistry.contracts)
+      || !sameStringArray(coverage?.contractIds, compiledRegistry.contracts.map((contract) => contract.id))
+      || !sameStringArray(coverage?.hazards, compiledRegistry.releaseCriticalHazards)
+      || !sameStringArray(coverage?.programmeChanges, compiledRegistry.programmeChanges)
+      || !sameStringArray(coverage?.releaseGates, compiledRegistry.releaseGates)) {
+    throw new Error('Candidate campaign definition does not correspond to the evaluated contract registry.')
+  }
+  const definitionSource = definition.identities?.source
+  const currentSource = identities.source
+  if (definitionSource?.sha !== currentSource?.sha
+      || definitionSource?.tree !== currentSource?.tree
+      || definitionSource?.dirty !== currentSource?.dirty) {
+    throw new Error('Candidate campaign source identity does not match the evaluated source identity.')
+  }
+  if (!isFileIdentity(definition.identities?.contractRegistry)
+      || typeof definition.registryPath !== 'string'
+      || !Array.isArray(definition.identities?.fixtures)
+      || !Array.isArray(definition.identities?.validators)
+      || !Array.isArray(definition.identities?.candidate?.artifacts)) {
+    throw new Error('Candidate campaign file identities are incomplete.')
+  }
+}
+
+/** Compare ordered string inventories without allowing omissions or substitutions. */
+function sameStringArray(left, right) {
+  return Array.isArray(left) && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index])
+}
+
+/** Validate a sealed file identity shape without following a filesystem path. */
+function isFileIdentity(identity) {
+  return identity !== null && typeof identity === 'object'
+    && typeof identity.path === 'string'
+    && Number.isSafeInteger(identity.bytes) && identity.bytes >= 0
+    && SHA256_PATTERN.test(identity.sha256 ?? '')
+}
+
+/** Remove the mutable digest field before recomputing a definition digest. */
+function stripDefinitionDigest(definition) {
+  const clone = structuredClone(definition)
+  delete clone.definitionDigest
+  return clone
 }
 
 export function buildJudgePacket({ attemptId, result, captures = [] }) {
@@ -381,7 +441,17 @@ async function requireRealDirectoryWithin(directoryPath, parentPath, label) {
   return canonicalDirectory
 }
 
-function sha256(value) {
+/** Return a stable recursively key-sorted JSON representation. */
+export function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+/** Calculate SHA-256 for bytes. */
+export function sha256(value) {
   return createHash('sha256').update(value).digest('hex')
 }
 

@@ -1,6 +1,7 @@
-import { createHash, randomUUID } from 'node:crypto'
-import { execFile as execFileCallback } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { execFile as execFileCallback, execFileSync } from 'node:child_process'
 import { promisify } from 'node:util'
+import { createConnection } from 'node:net'
 import {
   appendFile,
   lstat,
@@ -20,8 +21,10 @@ import path from 'node:path'
 
 import {
   buildJudgePacket,
+  canonicalJson,
   compileCoverageRegistry,
   fileIdentity,
+  sha256,
   verifySealedResult,
 } from './control-plane.mjs'
 
@@ -113,7 +116,8 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
     },
     planIdentity,
     registryCoverage: {
-      contracts: compiledRegistry.contracts.map((contract) => contract.id),
+      contracts: compiledRegistry.contracts,
+      contractIds: compiledRegistry.contracts.map((contract) => contract.id),
       hazards: compiledRegistry.releaseCriticalHazards,
       programmeChanges: compiledRegistry.programmeChanges,
       releaseGates: compiledRegistry.releaseGates,
@@ -124,7 +128,7 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
   if (outputPath !== undefined) {
     const resolvedOutputPath = path.resolve(outputPath)
     await mkdir(path.dirname(resolvedOutputPath), { recursive: true, mode: 0o700 })
-    await writeExclusiveJson(resolvedOutputPath, definition)
+    await writeIdempotentJson(resolvedOutputPath, definition, 'campaign definition')
   }
   return definition
 }
@@ -146,16 +150,31 @@ export async function createCampaignLease({ campaignRoot, definition }) {
   const leaseRoot = path.join(root, 'leases', leaseId)
   await mkdir(path.join(root, 'leases'), { recursive: true, mode: 0o700 })
   try {
-    await writeExclusiveJson(campaignLockPath, { campaignId: definition.campaignId, definitionDigest: definition.definitionDigest, leaseId })
+    await writeExclusiveJson(campaignLockPath, {
+      campaignId: definition.campaignId,
+      definitionDigest: definition.definitionDigest,
+      leaseId,
+      pid: process.pid,
+      host: os.hostname(),
+    })
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error
     const existingLock = JSON.parse(await readFile(campaignLockPath, 'utf8'))
-    if (existingLock.definitionDigest !== definition.definitionDigest) {
+    if (existingLock.campaignId !== definition.campaignId || existingLock.definitionDigest !== definition.definitionDigest) {
       throw new Error('A different immutable campaign already owns the campaign lease.')
+    }
+    if (existingLock.host !== os.hostname() || existingLock.pid !== process.pid) {
+      if (existingLock.host === os.hostname() && processIsAlive(existingLock.pid)) {
+        throw new Error(`Campaign lease is held by live process ${existingLock.pid} on ${existingLock.host}.`)
+      }
+      throw new Error('Campaign lease is held by another host or has a stale owner; explicit cleanup is required.')
     }
     const existingLeasePath = path.join(root, 'leases', existingLock.leaseId, 'lease.json')
     if (!await pathExists(existingLeasePath)) throw new Error('Campaign lease lock exists without a recoverable lease.')
     const existingLease = JSON.parse(await readFile(existingLeasePath, 'utf8'))
+    if (existingLease.status !== 'ACQUIRED' || existingLease.pid !== process.pid || existingLease.host !== os.hostname()) {
+      throw new Error('Campaign lease owner identity is not recoverable.')
+    }
     return leaseFromState(existingLeasePath, existingLease)
   }
   await mkdir(leaseRoot, { recursive: false, mode: 0o700 })
@@ -218,6 +237,17 @@ async function releaseResourceLock(lock) {
   await rm(lock.lockPath, { force: false })
 }
 
+/** Check a same-host process without treating permission errors as safe to reclaim. */
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid < 1) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error?.code !== 'ESRCH'
+  }
+}
+
 /**
  * Run controller-owned preflight for an immutable campaign definition.
  *
@@ -237,7 +267,7 @@ export async function preflightCampaign({ definition, campaignRoot, currentSourc
     return preflightBlocked(definition, [`definition: ${error.message}`])
   }
 
-  if (currentSourceIdentity !== undefined && !sameIdentity(currentSourceIdentity, normalized.identities.source)) {
+  if (currentSourceIdentity !== undefined && !sameSourceIdentity(currentSourceIdentity, normalized.identities.source)) {
     blockers.push('source identity differs from the immutable campaign definition')
   }
   if (normalized.preflight.expectedPlatform !== null
@@ -251,7 +281,7 @@ export async function preflightCampaign({ definition, campaignRoot, currentSourc
   blockers.push(...await verifyBoundIdentities(normalized))
   blockers.push(...validateBindingCoverage(normalized))
   blockers.push(...validateCapabilities(normalized))
-  blockers.push(...await checkFreeSpace(normalized.preflight.minimumFreeBytes))
+  blockers.push(...await checkFreeSpace(normalized.preflight.minimumFreeBytes, campaignRoot))
 
   if (blockers.length > 0) return preflightBlocked(normalized, uniqueStrings(blockers, 'blockers'))
 
@@ -303,6 +333,10 @@ export async function runContractAttempt({
     requireSafeId(attemptId, 'resume attempt id')
     attemptDirectory = path.join(attemptsRoot, attemptId)
     await requireRealDirectory(attemptDirectory, attemptsRoot, 'resume attempt directory')
+    if (await pathExists(path.join(attemptDirectory, 'manifest.json'))
+        || await pathExists(path.join(attemptDirectory, 'seal.json'))) {
+      throw new Error('Cannot resume an attempt after it has been sealed.')
+    }
     const metadata = JSON.parse(await readFile(path.join(attemptDirectory, 'attempt.json'), 'utf8'))
     if (metadata.definitionDigest !== normalized.definitionDigest || metadata.inputDigest !== inputDigest) {
       throw new Error('Resume attempt identity does not match the immutable definition or input identity.')
@@ -343,6 +377,7 @@ export async function runContractAttempt({
       status: 'ENVIRONMENT_BLOCKED',
       reason: adapter === undefined ? `missing adapter ${binding.adapterId}` : `missing receipt validator ${binding.receiptValidatorId}`,
       binding,
+      resumed,
     })
   }
 
@@ -361,7 +396,7 @@ export async function runContractAttempt({
     try {
       captures = await materializeCaptures(execution.captures ?? [], attemptDirectory, attemptsRoot)
     } catch (error) {
-      return writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status: 'INVALID_EVIDENCE', reason: error.message, binding })
+      return writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status: 'INVALID_EVIDENCE', reason: error.message, binding, resumed })
     }
     return await writeExecutionReceipt({ normalized, binding, validator, execution, captures, attemptId, attemptDirectory, inputDigest, resumed })
   } finally {
@@ -387,8 +422,8 @@ async function writeExecutionReceipt({ normalized, binding, validator, execution
     observed: execution.observed ?? {},
   }
   validator(receipt, binding)
-  const receiptFileName = resumed ? `receipt-resume-${Date.now()}.json` : 'receipt.json'
-  const resultFileName = resumed ? `result-resume-${Date.now()}.json` : 'result.json'
+  const receiptFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json'
+  const resultFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json'
   await writeExclusiveJson(path.join(attemptDirectory, receiptFileName), receipt)
   await writeExclusiveJson(path.join(attemptDirectory, resultFileName), {
     schema: 'sartracker-qualification-attempt-result-v1',
@@ -409,7 +444,7 @@ async function writeExecutionReceipt({ normalized, binding, validator, execution
     result: { mode: normalized.mode },
     captures,
   })
-  const judgePacketFileName = resumed ? `judge-packet-resume-${Date.now()}.json` : 'judge-packet.json'
+  const judgePacketFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'judge-packet') : 'judge-packet.json'
   const judgePacketPath = path.join(attemptDirectory, judgePacketFileName)
   await writeExclusiveJson(judgePacketPath, {
     ...judgePacket,
@@ -523,7 +558,8 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
       const sealPath = path.join(attemptDirectory, 'seal.json')
       const judgeResultPath = path.join(attemptDirectory, 'judge-result.json')
       if (!(await pathExists(sealPath))) {
-        evidenceErrors.push(`${entry}: attempt is not sealed`)
+        if (result.status === 'ENVIRONMENT_BLOCKED') environmentBlockers.push(result.reason ?? result.contractId)
+        else evidenceErrors.push(`${entry}: attempt is not sealed`)
       } else {
         await verifyCampaignAttempt({ attemptDirectory, anchorPath })
         if (!(await pathExists(judgeResultPath))) throw new Error('sealed attempt is missing the advisory judge result.')
@@ -535,7 +571,8 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
     }
   }
 
-  const requiredRows = normalized.requiredContracts.map((contractId) => {
+  const requiredContracts = normalized.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : normalized.requiredContracts
+  const requiredRows = requiredContracts.map((contractId) => {
     const candidates = [...rows.values()].filter((result) => result.contractId === contractId)
     const latest = candidates.sort((left, right) => left.attemptId.localeCompare(right.attemptId)).at(-1)
     return latest ?? { contractId, variantId: null, status: 'not-run' }
@@ -579,9 +616,25 @@ async function latestAttemptFile(attemptDirectory, pattern, label) {
   const names = entries
     .filter((entry) => entry.isFile() && !entry.isSymbolicLink() && pattern.test(entry.name))
     .map((entry) => entry.name)
-    .sort()
+    .sort((left, right) => appendOnlySequence(left) - appendOnlySequence(right) || left.localeCompare(right))
   if (names.length === 0) throw new Error(`${label} is missing.`)
   return path.join(attemptDirectory, names.at(-1))
+}
+
+/** Allocate a monotonic append-only evidence filename for one attempt. */
+async function nextAppendOnlyFileName(attemptDirectory, prefix) {
+  const entries = await readdir(attemptDirectory, { withFileTypes: true })
+  const pattern = new RegExp(`^${prefix}-resume-(\\d+)\\.json$`, 'u')
+  const next = entries
+    .filter((entry) => entry.isFile() && !entry.isSymbolicLink())
+    .map((entry) => Number(entry.name.match(pattern)?.[1] ?? -1))
+    .reduce((maximum, value) => Math.max(maximum, value), -1) + 1
+  return `${prefix}-resume-${String(next).padStart(6, '0')}.json`
+}
+
+/** Return the numeric append-only sequence, keeping the initial file first. */
+function appendOnlySequence(name) {
+  return Number(name.match(/-resume-(\d+)\.json$/u)?.[1] ?? -1)
 }
 
 /**
@@ -638,6 +691,11 @@ function registerCalibrationAdapters() {
   ADAPTERS.set('calibration.interrupt', async ({ resumed }) => resumed
     ? { status: 'PASS', observed: { calibration: 'resumed' } }
     : { status: 'ABORTED_SAFE', reason: 'synthetic interruption before completion', observed: { calibration: 'interrupted' } })
+  ADAPTERS.set('calibration.capture', async ({ binding }) => ({
+    status: 'PASS',
+    captures: [{ name: binding.captureName, path: binding.capturePath, kind: 'image' }],
+    observed: { calibration: 'capture' },
+  }))
   RECEIPT_VALIDATORS.set('calibration.v1', (receipt, binding) => {
     if (receipt.contractId !== binding.contractId || receipt.variantId !== binding.variantId) {
       throw new Error('Calibration receipt contract identity does not match the binding.')
@@ -738,6 +796,7 @@ async function materializeCaptures(captures, attemptDirectory, attemptsRoot) {
   const materialized = []
   for (const capture of captures) {
     if (capture === null || typeof capture !== 'object') throw new Error('Capture identity is invalid.')
+    requireSafeId(capture.name, 'capture name')
     if (capture.path === undefined) {
       materialized.push(capture)
       continue
@@ -766,7 +825,7 @@ async function materializeCaptures(captures, attemptDirectory, attemptsRoot) {
 function validateSourceIdentity(identity) {
   if (identity === null || typeof identity !== 'object' || !SHA1_PATTERN.test(identity.sha ?? '')
       || !SHA1_PATTERN.test(identity.tree ?? '') || identity.dirty !== false) {
-    throw new Error('Exact clean source SHA and tree identity are required.')
+    throw new Error('Exact clean source SHA and tree identity are required; untracked or modified files make the source dirty.')
   }
 }
 
@@ -821,9 +880,11 @@ function validateCapabilities(definition) {
 }
 
 /** Check free space on the campaign filesystem. */
-async function checkFreeSpace(minimumBytes) {
+async function checkFreeSpace(minimumBytes, campaignRoot) {
   try {
-    const usage = await statfs(process.cwd())
+    const resolvedRoot = path.resolve(campaignRoot)
+    const target = await pathExists(resolvedRoot) ? resolvedRoot : path.dirname(resolvedRoot)
+    const usage = await statfs(target)
     const freeBytes = Number(usage.bavail) * Number(usage.bsize)
     return freeBytes >= minimumBytes ? [] : [`free space ${freeBytes} is below required ${minimumBytes}`]
   } catch (error) {
@@ -832,8 +893,10 @@ async function checkFreeSpace(minimumBytes) {
 }
 
 /** Write a deterministic environment-blocked attempt result. */
-async function writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status, reason, binding }) {
-  await writeExclusiveJson(path.join(attemptDirectory, 'receipt.json'), {
+async function writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status, reason, binding, resumed = false }) {
+  const receiptPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json')
+  const resultPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json')
+  await writeExclusiveJson(receiptPath, {
     schema: 'sartracker-qualification-contract-receipt-v1',
     campaignId: normalized.campaignId,
     attemptId,
@@ -848,7 +911,7 @@ async function writeBlockedAttempt({ normalized, attemptId, attemptDirectory, in
     evidence: [],
     observed: { reason },
   })
-  await writeExclusiveJson(path.join(attemptDirectory, 'result.json'), {
+  await writeExclusiveJson(resultPath, {
     schema: 'sartracker-qualification-attempt-result-v1',
     campaignId: normalized.campaignId,
     attemptId,
@@ -862,6 +925,19 @@ async function writeBlockedAttempt({ normalized, attemptId, attemptDirectory, in
   })
   await appendState(attemptDirectory, { phase: 'blocked', status, reason })
   return Object.freeze({ status, attemptId, attemptDirectory, anchorPath: undefined, releaseEligible: false })
+}
+
+/** Write an immutable definition once, allowing only an exact same-byte rerun. */
+async function writeIdempotentJson(filePath, value, label) {
+  try {
+    await writeExclusiveJson(filePath, value)
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error
+    const existing = JSON.parse(await readFile(filePath, 'utf8'))
+    if (canonicalJson(existing) !== canonicalJson(value)) {
+      throw new Error(`Existing ${label} differs; choose a new output path for a new immutable input.`)
+    }
+  }
 }
 
 /** Seal every regular file in an attempt and place the anchor outside it. */
@@ -936,7 +1012,7 @@ async function allContractRows(definition, requiredRows) {
   const byId = new Map(requiredRows.map((row) => [row.contractId, row]))
   return registry.contracts.map((contract) => ({
     contractId: contract.id,
-    required: definition.requiredContracts.includes(contract.id),
+    required: (definition.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : definition.requiredContracts).includes(contract.id),
     status: byId.get(contract.id)?.status ?? 'not-run',
     variantId: byId.get(contract.id)?.variantId ?? null,
   }))
@@ -947,7 +1023,7 @@ async function captureBaseline(ports) {
   const portStates = []
   for (const port of ports) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid baseline port: ${port}.`)
-    portStates.push({ port, occupied: false })
+    portStates.push({ port, occupied: await probeTcpPort(port), probe: 'tcp-connect-127.0.0.1' })
   }
   let processSummary = `pid=${process.pid}`
   try {
@@ -961,6 +1037,25 @@ async function captureBaseline(ports) {
     process: processSummary,
     ports: Object.freeze(portStates),
     cwd: process.cwd(),
+  })
+}
+
+/** Probe a declared TCP port and fail closed when its state cannot be determined. */
+function probeTcpPort(port) {
+  return new Promise((resolve, reject) => {
+    const socket = createConnection({ host: '127.0.0.1', port })
+    const finish = (callback) => {
+      socket.removeAllListeners()
+      socket.destroy()
+      callback()
+    }
+    socket.setTimeout(250)
+    socket.once('connect', () => finish(() => resolve(true)))
+    socket.once('error', (error) => {
+      if (error.code === 'ECONNREFUSED') finish(() => resolve(false))
+      else finish(() => reject(new Error(`TCP port ${port} probe failed: ${error.message}`)))
+    })
+    socket.once('timeout', () => finish(() => reject(new Error(`TCP port ${port} probe timed out.`))))
   })
 }
 
@@ -1071,7 +1166,12 @@ function hasArtifact(definition, role) {
 
 /** Check command availability without making it a release claim. */
 function hasCommand(command) {
-  return command === 'git'
+  try {
+    execFileSync(command, ['--version'], { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Return a strict path list with duplicates removed. */
@@ -1103,6 +1203,11 @@ function sameIdentity(left, right) {
   return left?.bytes === right?.bytes && left?.sha256 === right?.sha256
 }
 
+/** Compare the exact clean source SHA, tree and dirty-state identity. */
+function sameSourceIdentity(left, right) {
+  return left?.sha === right?.sha && left?.tree === right?.tree && left?.dirty === right?.dirty
+}
+
 /** Return whether a file or directory exists. */
 async function pathExists(filePath) {
   try {
@@ -1119,20 +1224,6 @@ function stripDigest(definition) {
   const clone = structuredClone(definition)
   delete clone.definitionDigest
   return clone
-}
-
-/** Return a stable recursively-key-sorted JSON representation. */
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry)).join(',')}]`
-  if (value !== null && typeof value === 'object') {
-    return `{${Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`
-  }
-  return JSON.stringify(value)
-}
-
-/** Calculate SHA-256 for bytes. */
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex')
 }
 
 /** Return unique values in insertion order. */

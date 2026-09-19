@@ -17,6 +17,10 @@ digests, fixture digests, candidate artifact digests, adapter bindings and
 preflight requirements. The definition is written once with exclusive create;
 changing any bound input requires a new definition and a new campaign.
 
+An exact rerun of compilation is idempotent when the existing definition bytes
+match; a changed plan or source identity must use a new output path. Source
+comparison includes SHA, tree and dirty state, including untracked files.
+
 The controller fails closed when a mandatory adapter, receipt validator,
 capability, exact artifact or identity is absent. Browser, exact CI AppImage
 and installed `.deb` proof modes are separate. A local build never satisfies a
@@ -27,6 +31,12 @@ Every attempt has a unique immutable directory and linked retry identity. State
 events are append-only. An interrupted attempt can resume only when its
 definition and input digest are identical. A retry creates a new attempt and
 retains the failed predecessor.
+
+Sealed attempts cannot be resumed. The campaign lease records host and PID and
+is not handed to another live process; stale or foreign ownership requires
+explicit cleanup. Baseline TCP ports are probed rather than recorded as an
+assumption, and the free-space check is made against the campaign root's
+filesystem.
 
 Evidence is a closed regular-file set with SHA-256 identities, campaign and
 attempt correlation, an external anchor, and independent verification. Symlink
@@ -87,6 +97,8 @@ eligible.
 The checked-in calibration command intentionally produces a deterministic
 failure plus an advisory judge pass, so its expected verdict is `FAIL` and its
 purpose is to prove that judge advice cannot override deterministic evidence.
+It runs every mandatory calibration binding, including interrupted/resumed
+evidence, and cleans up its lease before returning.
 
 ## Current beta13 boundary
 

@@ -115,26 +115,67 @@ async function main() {
       process.exitCode = 2
       return
     }
-    for (const contractId of definition.requiredContracts) {
-      const binding = definition.bindings.find((candidate) => candidate.contractId === contractId)
-      const attempt = await runContractAttempt({ definition, preflight, campaignRoot, contractId, variantId: binding.variantId })
-      if (attempt.judgePacketSha256 !== undefined) {
-        await ingestAdvisoryJudgeResult({
-          attemptDirectory: attempt.attemptDirectory,
-          result: {
-            schema: 'sartracker-oracle-blind-judge-result-v1',
-            campaignId: definition.campaignId,
-            attemptId: attempt.attemptId,
-            packetSha256: attempt.judgePacketSha256,
-            verdict: 'pass',
-            observations: [],
-          },
+    let verdict
+    let cleanup
+    try {
+      for (const binding of definition.bindings.filter((candidate) => candidate.mandatory)) {
+        let attempt = await runContractAttempt({
+          definition,
+          preflight,
+          campaignRoot,
+          contractId: binding.contractId,
+          variantId: binding.variantId,
         })
+        if (attempt.status === 'ABORTED_SAFE') {
+          attempt = await runContractAttempt({
+            definition,
+            preflight,
+            campaignRoot,
+            contractId: binding.contractId,
+            variantId: binding.variantId,
+            resumeAttemptId: attempt.attemptId,
+          })
+        }
+        if (attempt.judgePacketSha256 !== undefined) {
+          await ingestAdvisoryJudgeResult({
+            attemptDirectory: attempt.attemptDirectory,
+            result: {
+              schema: 'sartracker-oracle-blind-judge-result-v1',
+              campaignId: definition.campaignId,
+              attemptId: attempt.attemptId,
+              packetSha256: attempt.judgePacketSha256,
+              verdict: 'pass',
+              observations: [],
+            },
+          })
+        }
       }
+      verdict = await computeCampaignVerdict({ definition, campaignRoot })
+    } finally {
+      cleanup = await cleanupCampaignLease({ leasePath: preflight.lease.leasePath })
     }
-    const verdict = await computeCampaignVerdict({ definition, campaignRoot })
-    emit({ calibration: true, definitionDigest: definition.definitionDigest, verdict })
+    emit({ calibration: true, definitionDigest: definition.definitionDigest, verdict, cleanup })
+    if (cleanup.status !== 'CLEANED') process.exitCode = 2
     return
+  }
+  if (command === 'ingest-judge') {
+    const attemptDirectory = path.resolve(requireOption(options, 'attempt'))
+    const result = await readJson(requireOption(options, 'result'), 'judge result')
+    emit(await ingestAdvisoryJudgeResult({ attemptDirectory, result }))
+    return
+  }
+  if (command === 'verify') {
+    const attemptDirectory = path.resolve(requireOption(options, 'attempt'))
+    const anchorPath = path.resolve(options.get('anchor') ?? defaultAnchorPath(attemptDirectory))
+    emit(await verifyCampaignAttempt({ attemptDirectory, anchorPath }))
+    return
+  }
+  if (command === 'cleanup') {
+    emit(await cleanupCampaignLease({ leasePath: path.resolve(requireOption(options, 'lease')), simulateFailure: options.get('simulate-failure') === true }))
+    return
+  }
+  if (!['preflight', 'run', 'resume', 'verdict'].includes(command)) {
+    throw new Error(`Unknown qualification command: ${command}.`)
   }
   const definitionPath = path.resolve(requireOption(options, 'campaign'))
   const definition = await readJson(definitionPath, 'campaign definition')
@@ -166,26 +207,10 @@ async function main() {
     if (attempt.status === 'FAIL') process.exitCode = 1
     return
   }
-  if (command === 'ingest-judge') {
-    const attemptDirectory = path.resolve(requireOption(options, 'attempt'))
-    const result = await readJson(requireOption(options, 'result'), 'judge result')
-    emit(await ingestAdvisoryJudgeResult({ attemptDirectory, result }))
-    return
-  }
-  if (command === 'verify') {
-    const attemptDirectory = path.resolve(requireOption(options, 'attempt'))
-    const anchorPath = path.resolve(options.get('anchor') ?? defaultAnchorPath(attemptDirectory))
-    emit(await verifyCampaignAttempt({ attemptDirectory, anchorPath }))
-    return
-  }
   if (command === 'verdict') {
     const verdict = await computeCampaignVerdict({ definition, campaignRoot })
     emit(verdict)
     if (verdict.verdict !== 'PASS') process.exitCode = 2
-    return
-  }
-  if (command === 'cleanup') {
-    emit(await cleanupCampaignLease({ leasePath: path.resolve(requireOption(options, 'lease')), simulateFailure: options.get('simulate-failure') === true }))
     return
   }
   throw new Error(`Unknown qualification command: ${command}.`)

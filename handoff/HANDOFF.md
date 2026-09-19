@@ -35,6 +35,11 @@ PR #40 (`codex/geo-002-pre-candidate-repair`) and PR #41
   returned the intentional `FAIL` on synthetic C01 with `releaseEligible: false`;
   the real beta13 plan compiled with `releaseEligible: false` and preflight
   returned `ENVIRONMENT_BLOCKED` with exit code 2.
+- The PR #42 review repair closes source SHA/tree comparison, immutable
+  definition and registry correspondence, C00-C29 candidate coverage, exact
+  append-only resume ordering, sealed-attempt mutation, capture path escape,
+  lease ownership, CLI dispatch, calibration binding coverage, and campaign-
+  root filesystem checks. No candidate or release gate is weakened.
 
 ## Verification snapshot
 
@@ -50,12 +55,12 @@ packaged map/GPX/native coverage checks, tracking soak, and evidence upload.
 This is merge evidence only; release and beta qualification remain separate
 claims.
 
-The qualification-control-plane slice adds 16 focused tests; the two affected
-controller files pass 16/16. The final normal parallel source run covered 484
-files / 5,211 tests with one known non-slice observation: a
-contention-sensitive responsiveness assertion exceeded its 200 ms threshold
-under full-suite load. The affected evidence-versioning file passed isolated
-94/94. The application TypeScript/build checks passed earlier on the same
-product tree; these are source/build checks, not candidate or release evidence.
+The qualification-control-plane slice now has 22 focused tests; the two
+affected controller files pass 22/22. The review-repair full source run
+covered 484 files / 5,217 tests with one known non-slice observation: the
+official-map fixture was stale relative to the generated runtime tree. The
+application TypeScript check passed; rebuild the generated tree and rerun that
+isolated map file before final PR closeout. These are source/build checks, not
+candidate or release evidence.
 
 Older detail remains in `handoff/archive/`.
