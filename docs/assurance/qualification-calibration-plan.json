@@ -1,0 +1,20 @@
+{
+  "schema": "sartracker-qualification-campaign-plan-v1",
+  "campaignId": "control-plane-calibration",
+  "mode": "calibration",
+  "releaseEligible": false,
+  "authorization": {
+    "issue": "DON-254",
+    "purpose": "synthetic-control-plane-calibration",
+    "explicitlyEnabled": true
+  },
+  "registryPath": "qualification-contracts.json",
+  "fixturePaths": ["../../tests/fixtures/outing-window-vectors.json"],
+  "validatorPaths": ["../../scripts/qualification-control-plane.mjs", "../../scripts/qualification/control-plane.mjs"],
+  "requiredContracts": ["C00", "C01"],
+  "bindings": [
+    { "contractId": "C00", "variantId": "synthetic-pass", "adapterId": "calibration.pass", "receiptValidatorId": "calibration.v1", "proofMode": "synthetic", "capability": "node", "resourceKey": "calibration", "mandatory": true, "command": ["internal-calibration", "pass"] },
+    { "contractId": "C01", "variantId": "synthetic-fail", "adapterId": "calibration.fail", "receiptValidatorId": "calibration.v1", "proofMode": "synthetic", "capability": "node", "resourceKey": "calibration", "mandatory": true, "command": ["internal-calibration", "fail"] },
+    { "contractId": "C00", "variantId": "synthetic-interrupt", "adapterId": "calibration.interrupt", "receiptValidatorId": "calibration.v1", "proofMode": "synthetic", "capability": "node", "resourceKey": "calibration", "mandatory": true, "command": ["internal-calibration", "interrupt-resume"] }
+  ]
+}

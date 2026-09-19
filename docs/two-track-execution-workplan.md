@@ -57,6 +57,18 @@ run passes the infrastructure checks while remaining explicitly
 `docs/assurance/qualification-control-plane-dry-run.md`. Exact-head review, CI
 and merge remain required. This does not execute or qualify BCP-17/WAR-12.
 
+**Candidate-mode enablement (2026-09-19):** DON-254 now has an executable,
+fail-closed controller around that dry-run boundary. A compiled definition
+binds clean source/tree, candidate/artifact, contract registry, validator and
+fixture identities; controller preflight owns host/capability/free-space
+checks, disposable roots, baseline state and leases; named attempts retain
+append-only receipts, oracle-blind judge packets, resumable exact-input state,
+external anchors and independent verification. The checked-in beta13 plan
+maps every C00-C29 row to an explicit command/oracle/proof mode but remains
+release-blocking where adapters or exact artifacts are unresolved. The only
+executed campaign in this chunk is synthetic calibration; it cannot claim
+beta13 qualification, candidate freeze, package proof or release.
+
 WAR-03, WAR-07, WAR-08, WAR-09 and WAR-10 remain unexecuted; WAR-05 requires
 the real Mint machine/tester; WAR-12 is last after feature freeze; WAR-13B
 starts only after an internal beta is published. Live Linear reconciliation on

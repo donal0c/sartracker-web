@@ -68,7 +68,7 @@ describe('qualification control plane', () => {
       identities: { source: sourceIdentity, fixtures: [], artifacts: [] },
       contractResults: registry.contracts.map(({ id }: { id: string }) => ({ contractId: id, status: 'pass' })),
       judgeResults: registry.contracts.map(({ id }: { id: string }) => ({ contractId: id, verdict: 'pass' })),
-    })).toThrow(/Final candidate execution is disabled/u)
+    })).toThrow(/immutable campaign definition/u)
   })
 
   it('creates an oracle-blind advisory packet without deterministic answers', async () => {
