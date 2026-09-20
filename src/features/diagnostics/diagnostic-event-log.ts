@@ -19,6 +19,7 @@ const SECRET_ASSIGNMENT_PATTERN = new RegExp(
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
 const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
 const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
+const URL_QUERY_CREDENTIALS_PATTERN = /([?&](?:session|password|pass[-_]?phrase|secret|token|credential|api[-_]?key|authorization|recovery[-_]?code)=)[^&#\s]+/gi
 
 type SensitiveDiagnosticValues = Set<string>
 type StructuredDiagnosticValue = Record<string, unknown> | unknown[]
@@ -80,7 +81,9 @@ export function readDiagnosticEvents(): readonly DiagnosticEvent[] {
       return []
     }
     const parsed = JSON.parse(raw) as readonly DiagnosticEvent[]
-    return Array.isArray(parsed) ? parsed.filter(isDiagnosticEvent) : []
+    return Array.isArray(parsed)
+      ? parsed.filter(isDiagnosticEvent).map((event) => sanitizeDiagnosticEvent(event))
+      : []
   } catch {
     return []
   }
@@ -104,6 +107,7 @@ export function formatDiagnosticEvents(
   timeFrame?: SupportBundleTimeFrame,
 ): string {
   const scopedEvents = filterDiagnosticEventsByTimeFrame(events, timeFrame)
+    .map((event) => sanitizeDiagnosticEvent(event))
   const lines = ['[diagnostic-breadcrumbs]', `event count: ${scopedEvents.length}`]
   if (scopedEvents.length === 0) {
     lines.push('no diagnostic breadcrumbs recorded')
@@ -399,7 +403,11 @@ function sanitizeDiagnosticString(input: string, sensitiveValues: SensitiveDiagn
     .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
     .replace(AUTH_TOKEN_PATTERN, '[redacted]')
     .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
-  return redactSensitiveValues(anonymizePath(sanitized), sensitiveValues)
+    .replace(URL_QUERY_CREDENTIALS_PATTERN, '$1[redacted]')
+  const redacted = redactSensitiveValues(anonymizePath(sanitized), sensitiveValues)
+  return new TextEncoder().encode(redacted).byteLength > MAX_STRUCTURED_DIAGNOSTIC_BYTES
+    ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    : redacted
 }
 
 function anonymizePath(value: string): string {

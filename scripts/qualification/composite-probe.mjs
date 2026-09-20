@@ -1687,8 +1687,16 @@ async function runArchiveReview(page, missionId, archiveId, passphrase, selected
 
 /** Exports sanitized diagnostics and scans the retained file for secrets and profile leakage. */
 async function exportSanitizedDiagnostics(page, profilePath, secret, familyContract = null) {
+  const c17Canaries = familyContract === 'C17' ? {
+    directContentSecret: `${secret}-direct-content`,
+    eventPassword: `${secret}-event-password`,
+    eventNestedToken: `${secret}-event-nested-token`,
+    nestedArraySecret: `${secret}-nested-array-secret`,
+    urlCredentials: `${secret}-url-credentials`,
+  } : null
+  const secretCanaries = c17Canaries === null ? [secret] : Object.values(c17Canaries)
   const adversarialValues = [
-    secret,
+    ...secretCanaries,
     profilePath,
     profilePath.replaceAll('\\', '/'),
     `operator:${secret}@example.invalid`,
@@ -1696,9 +1704,9 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
   ]
   const adversarialContents = [
     'C28 composite diagnostics',
-    `credential=${secret}`,
+    `credential=${c17Canaries?.directContentSecret ?? secret}`,
     `profile=${profilePath}`,
-    `provider url=https://operator:${secret}@example.invalid/sar`,
+    `provider url=https://operator:${c17Canaries?.urlCredentials ?? secret}@example.invalid/sar`,
   ].join('\n') + '\n'
   const returnedPath = await page.evaluate(async (input) => {
     const bridge = window.sartrackerElectron
@@ -1725,12 +1733,12 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
         category: 'runtime',
         event: 'c17-adversarial-corpus',
         fields: {
-          password: secret,
+          password: input.c17Canaries?.eventPassword ?? input.secret,
           profilePath,
           nested: {
-            token: secret,
+            token: input.c17Canaries?.eventNestedToken ?? input.secret,
             path: profilePath,
-            values: [secret, profilePath],
+            values: [input.c17Canaries?.nestedArraySecret ?? input.secret, profilePath],
           },
         },
       },
@@ -1739,13 +1747,24 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
         level: 'warn',
         category: 'tracking',
         event: 'c17-adversarial-url',
-        fields: { providerUrl: 'https://operator:' + secret + '@example.invalid/sar' },
+        fields: {
+          providerUrl: 'https://operator:'
+            + (input.c17Canaries?.urlCredentials ?? input.secret)
+            + '@example.invalid/sar',
+        },
       },
     ] : [],
+    secret,
+    c17Canaries,
   })
   const contents = await readFile(returnedPath)
   const text = contents.toString('utf8')
-  const exactSecretMatches = countOccurrences(text, secret)
+  const canaryMatches = c17Canaries === null ? null : Object.fromEntries(
+    Object.entries(c17Canaries).map(([id, value]) => [id, countOccurrences(text, value)]),
+  )
+  const exactSecretMatches = c17Canaries === null
+    ? countOccurrences(text, secret)
+    : Object.values(canaryMatches).reduce((total, count) => total + count, 0)
   const profileVariants = [profilePath, profilePath.replaceAll('\\', '/')]
   const adversarialMatchCount = adversarialValues.reduce((count, value) => count + countOccurrences(text, value), 0)
   const result = {
@@ -1757,12 +1776,12 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
   if (familyContract === 'C17') {
     const canaryManifest = C17_CANARY_IDS.join('\n')
     const leakedCanaryIds = []
-    // The fixed C17 corpus has only one unsafely representable secret location:
-    // the raw string in the nested values array. Preserve that concrete finding
-    // without retaining or exposing the secret itself.
-    if (exactSecretMatches > 0) leakedCanaryIds.push('nested-array-secret')
+    if (canaryMatches.directContentSecret > 0) leakedCanaryIds.push('direct-content-secret')
+    if (canaryMatches.eventPassword > 0) leakedCanaryIds.push('event-password')
+    if (canaryMatches.eventNestedToken > 0) leakedCanaryIds.push('event-nested-token')
+    if (canaryMatches.nestedArraySecret > 0) leakedCanaryIds.push('nested-array-secret')
     if (profileVariants.some((value) => text.includes(value))) leakedCanaryIds.push('nested-array-profile-path')
-    if (text.includes('operator:' + secret + '@example.invalid')) leakedCanaryIds.push('url-credentials')
+    if (canaryMatches.urlCredentials > 0) leakedCanaryIds.push('url-credentials')
     result.canaryManifestSha256 = sha256Text(canaryManifest)
     result.outputSha256 = sha256(contents)
     result.outputByteLength = contents.byteLength

@@ -17,6 +17,7 @@ const SECRET_ASSIGNMENT_PATTERN = new RegExp(
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
 const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
 const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
+const URL_QUERY_CREDENTIALS_PATTERN = /([?&](?:session|password|pass[-_]?phrase|secret|token|credential|api[-_]?key|authorization|recovery[-_]?code)=)[^&#\s]+/gi
 const HOME_PATH_PATTERNS = Object.freeze([
   [/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]'],
   [/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]'],
@@ -26,15 +27,18 @@ const HOME_PATH_PATTERNS = Object.freeze([
  * Redacts secrets and private local identity from free-form diagnostics text.
  */
 function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
+  if (sensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
   const structured = parseStructuredDiagnosticText(input)
   if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
   if (structured !== null) {
     const structuredSensitiveValues = collectSensitiveValues(structured, '', sensitiveValues)
-    return JSON.stringify(
+    return boundDiagnosticText(JSON.stringify(
       sanitizeDiagnosticValue(structured, '', structuredSensitiveValues, createDiagnosticTraversalBudget()),
-    )
+    ))
   }
 
   let sanitized = String(input)
@@ -43,12 +47,13 @@ function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
     .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
     .replace(AUTH_TOKEN_PATTERN, '[redacted]')
     .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
+    .replace(URL_QUERY_CREDENTIALS_PATTERN, '$1[redacted]')
 
   for (const [pattern, replacement] of HOME_PATH_PATTERNS) {
     sanitized = sanitized.replace(pattern, replacement)
   }
 
-  return redactSensitiveValues(sanitized, sensitiveValues)
+  return boundDiagnosticText(redactSensitiveValues(sanitized, sensitiveValues))
 }
 
 /**
@@ -57,14 +62,15 @@ function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
 function sanitizeDiagnosticValue(
   value,
   key = '',
-  sensitiveValues = new Set(),
+  sensitiveValues,
   budget = createDiagnosticTraversalBudget(),
   depth = 0,
 ) {
+  const knownSensitiveValues = sensitiveValues ?? collectSensitiveValues(value, key)
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
-  if (sensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
+  if (knownSensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -79,19 +85,19 @@ function sanitizeDiagnosticValue(
       return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
     }
     if (structured !== null) {
-      const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(sensitiveValues))
+      const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(knownSensitiveValues))
       return sanitizeDiagnosticValue(structured, '', encodedSensitiveValues, budget, depth + 1)
     }
-    return sanitizeDiagnosticText(value, sensitiveValues)
+    return sanitizeDiagnosticText(value, knownSensitiveValues)
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
       return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
     }
-    return value.map((item) => sanitizeDiagnosticValue(item, '', sensitiveValues, budget, depth + 1))
+    return value.map((item) => sanitizeDiagnosticValue(item, '', knownSensitiveValues, budget, depth + 1))
   }
   if (value !== null && typeof value === 'object') {
-    return sanitizeDiagnosticFieldsWithContext(value, new Set(), sensitiveValues, budget, depth)
+    return sanitizeDiagnosticFieldsWithContext(value, new Set(), knownSensitiveValues, budget, depth)
   }
   return value
 }
@@ -129,7 +135,7 @@ function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValu
     }
     sanitized[key] = sanitizeDiagnosticValue(value, key, sensitiveValues, budget, depth + 1)
   }
-  return sanitized
+  return boundStructuredDiagnosticValue(sanitized)
 }
 
 /** Collects string values held by secret-bearing keys for repeated-value redaction. */
@@ -229,6 +235,20 @@ function parseStructuredDiagnosticText(input) {
   } catch {
     return null
   }
+}
+
+/** Bounds free-form diagnostic text after redaction while retaining a visible failure marker. */
+function boundDiagnosticText(value) {
+  return Buffer.byteLength(value, 'utf8') > MAX_STRUCTURED_DIAGNOSTIC_BYTES
+    ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    : value
+}
+
+/** Bounds structured diagnostic output after recursive redaction. */
+function boundStructuredDiagnosticValue(value) {
+  return boundDiagnosticText(JSON.stringify(value)) === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    : value
 }
 
 /** Creates a per-field budget for recursive diagnostic collection and sanitization. */

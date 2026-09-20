@@ -71,11 +71,20 @@ describe('electron diagnostic sanitizer', () => {
     const secret = 'C17-Oversized-Main-Secret-9!'
     const oversized = JSON.stringify({ token: secret, padding: 'x'.repeat(40_000) })
     const tooManyElements = { values: Array.from({ length: 513 }, () => secret) }
+    const oversizedPlainText = 'x'.repeat(40_000)
 
-    const sanitized = sanitizeDiagnosticFields({ oversized, tooManyElements })
+    const sanitized = sanitizeDiagnosticFields({ oversized, tooManyElements, oversizedPlainText })
     const serialized = JSON.stringify(sanitized)
 
     expect(serialized).not.toContain(secret)
     expect(serialized).toContain('[redacted-structured-value-too-large]')
+  })
+
+  it('redacts credentials in generic diagnostic URL query text [DON-237]', () => {
+    const secret = 'C17-Query-Credential-9!'
+    const sanitized = sanitizeDiagnosticText(`https://host.example/api?session=${secret}`)
+
+    expect(sanitized).not.toContain(secret)
+    expect(sanitized).toContain('?session=[redacted]')
   })
 })

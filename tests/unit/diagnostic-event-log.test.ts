@@ -128,6 +128,7 @@ describe('diagnostic event log', () => {
     const passphrase = 'C17-Browser-Passphrase-9!'
     const recoveryCode = 'C17-Browser-Recovery-9!'
     const bearerToken = 'browser-bearer-token-9'
+    const queryCredential = 'browser-query-credential-9'
 
     await recordDiagnosticEvent({
       ts: '2026-09-20T12:02:00.000Z',
@@ -135,16 +136,36 @@ describe('diagnostic event log', () => {
       category: 'runtime',
       event: 'c17_free_form_credentials',
       fields: {
-        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics`,
+        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics?session=${queryCredential}`,
       },
     })
 
     const serialized = JSON.stringify(readDiagnosticEvents())
     const report = formatDiagnosticEvents(readDiagnosticEvents())
-    for (const secret of [passphrase, recoveryCode, bearerToken]) {
+    for (const secret of [passphrase, recoveryCode, bearerToken, queryCredential]) {
       expect(serialized).not.toContain(secret)
       expect(report).not.toContain(secret)
     }
+    expect(report).toContain('[redacted]')
+  })
+
+  it('re-sanitizes legacy renderer events before browser fallback formatting [DON-237]', () => {
+    const secret = 'C17-Legacy-Browser-Secret-9!'
+    window.sessionStorage.setItem('sartracker:diagnostic-events', JSON.stringify([{
+      ts: '2026-09-20T12:03:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'legacy_c17_event',
+      fields: {
+        token: secret,
+        nested: { values: [secret] },
+      },
+    }]))
+
+    const events = readDiagnosticEvents()
+    const report = formatDiagnosticEvents(events)
+    expect(JSON.stringify(events)).not.toContain(secret)
+    expect(report).not.toContain(secret)
     expect(report).toContain('[redacted]')
   })
 

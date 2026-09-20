@@ -487,6 +487,24 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('[redacted-user-data-path]')
   })
 
+  it('collects secrets before sanitizing legacy array-root runtime entries [DON-237]', async () => {
+    const secret = 'C17-Legacy-Array-Root-Secret-9!'
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [[
+        { token: secret, repeated: secret },
+      ]],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'c17-array-root-support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain(secret)
+    expect(bundle).toContain('[redacted]')
+  })
+
   async function createRuntimeFiles(
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>
