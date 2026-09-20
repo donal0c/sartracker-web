@@ -1,4 +1,8 @@
 const SECRET_KEY_SOURCE = String.raw`(?:password|secret|token|credential|api[-_]?key|authorization|pass[-_]?phrase|recovery[-_]?code)`
+const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
+const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
+const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 512
+const STRUCTURED_DIAGNOSTIC_LIMIT_MARKER = '[redacted-structured-value-too-large]'
 const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
 const COORDINATE_KEY_PATTERN = /^(?:lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
 const SECRET_JSON_KEY_PATTERN = new RegExp(
@@ -22,9 +26,14 @@ const HOME_PATH_PATTERNS = Object.freeze([
  */
 function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
   const structured = parseStructuredDiagnosticText(input)
+  if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
   if (structured !== null) {
     const structuredSensitiveValues = collectSensitiveValues(structured, '', sensitiveValues)
-    return JSON.stringify(sanitizeDiagnosticValue(structured, '', structuredSensitiveValues))
+    return JSON.stringify(
+      sanitizeDiagnosticValue(structured, '', structuredSensitiveValues, createDiagnosticTraversalBudget()),
+    )
   }
 
   let sanitized = String(input)
@@ -44,7 +53,16 @@ function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
 /**
  * Recursively redacts diagnostic values before writing them to app-owned logs.
  */
-function sanitizeDiagnosticValue(value, key = '', sensitiveValues = new Set()) {
+function sanitizeDiagnosticValue(
+  value,
+  key = '',
+  sensitiveValues = new Set(),
+  budget = createDiagnosticTraversalBudget(),
+  depth = 0,
+) {
+  if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
   if (SECRET_KEY_PATTERN.test(key)) {
     return '[redacted]'
   }
@@ -52,13 +70,24 @@ function sanitizeDiagnosticValue(value, key = '', sensitiveValues = new Set()) {
     return '[coordinate-redacted]'
   }
   if (typeof value === 'string') {
+    const structured = parseStructuredDiagnosticText(value)
+    if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
+      return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    }
+    if (structured !== null) {
+      const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(sensitiveValues))
+      return sanitizeDiagnosticValue(structured, '', encodedSensitiveValues, budget, depth + 1)
+    }
     return sanitizeDiagnosticText(value, sensitiveValues)
   }
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeDiagnosticValue(item, '', sensitiveValues))
+    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    }
+    return value.map((item) => sanitizeDiagnosticValue(item, '', sensitiveValues, budget, depth + 1))
   }
   if (value !== null && typeof value === 'object') {
-    return sanitizeDiagnosticFieldsWithContext(value, new Set(), sensitiveValues)
+    return sanitizeDiagnosticFieldsWithContext(value, new Set(), sensitiveValues, budget, depth)
   }
   return value
 }
@@ -71,56 +100,106 @@ function sanitizeDiagnosticFields(fields, reservedKeys = new Set()) {
     return {}
   }
 
-  return sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, collectSensitiveValues(fields))
+  return sanitizeDiagnosticFieldsWithContext(
+    fields,
+    reservedKeys,
+    collectSensitiveValues(fields),
+    createDiagnosticTraversalBudget(),
+    0,
+  )
 }
 
 /** Sanitizes structured diagnostics while carrying known secret values through arrays. */
-function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValues) {
+function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValues, budget, depth) {
+  if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+  const entries = Object.entries(fields)
+  if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
   const sanitized = {}
-  for (const [key, value] of Object.entries(fields)) {
+  for (const [key, value] of entries) {
     if (reservedKeys.has(key)) {
       continue
     }
-    sanitized[key] = sanitizeDiagnosticValue(value, key, sensitiveValues)
+    sanitized[key] = sanitizeDiagnosticValue(value, key, sensitiveValues, budget, depth + 1)
   }
   return sanitized
 }
 
 /** Collects string values held by secret-bearing keys for repeated-value redaction. */
-function collectSensitiveValues(value, key = '', sensitiveValues = new Set()) {
+function collectSensitiveValues(
+  value,
+  key = '',
+  sensitiveValues = new Set(),
+  budget = createDiagnosticTraversalBudget(),
+  depth = 0,
+) {
+  if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    return sensitiveValues
+  }
   if (SECRET_KEY_PATTERN.test(key)) {
-    collectStringValues(value, sensitiveValues)
+    collectStringValues(value, sensitiveValues, budget, depth + 1)
+    return sensitiveValues
+  }
+  if (typeof value === 'string') {
+    const structured = parseStructuredDiagnosticText(value)
+    if (structured !== null && structured !== STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
+      collectSensitiveValues(structured, '', sensitiveValues, budget, depth + 1)
+    }
     return sensitiveValues
   }
   if (Array.isArray(value)) {
+    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      return sensitiveValues
+    }
     for (const item of value) {
-      collectSensitiveValues(item, '', sensitiveValues)
+      collectSensitiveValues(item, '', sensitiveValues, budget, depth + 1)
     }
     return sensitiveValues
   }
   if (value !== null && typeof value === 'object') {
-    for (const [nestedKey, nestedValue] of Object.entries(value)) {
-      collectSensitiveValues(nestedValue, nestedKey, sensitiveValues)
+    const entries = Object.entries(value)
+    if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      return sensitiveValues
+    }
+    for (const [nestedKey, nestedValue] of entries) {
+      collectSensitiveValues(nestedValue, nestedKey, sensitiveValues, budget, depth + 1)
     }
   }
   return sensitiveValues
 }
 
 /** Collects non-empty string leaves from a secret-bearing structured value. */
-function collectStringValues(value, sensitiveValues) {
+function collectStringValues(value, sensitiveValues, budget, depth) {
+  if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    return
+  }
   if (typeof value === 'string' && value !== '') {
     sensitiveValues.add(value)
+    const structured = parseStructuredDiagnosticText(value)
+    if (structured !== null && structured !== STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
+      collectSensitiveValues(structured, '', sensitiveValues, budget, depth + 1)
+    }
     return
   }
   if (Array.isArray(value)) {
+    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      return
+    }
     for (const item of value) {
-      collectStringValues(item, sensitiveValues)
+      collectStringValues(item, sensitiveValues, budget, depth + 1)
     }
     return
   }
   if (value !== null && typeof value === 'object') {
-    for (const nestedValue of Object.values(value)) {
-      collectStringValues(nestedValue, sensitiveValues)
+    const values = Object.values(value)
+    if (values.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      return
+    }
+    for (const nestedValue of values) {
+      collectStringValues(nestedValue, sensitiveValues, budget, depth + 1)
     }
   }
 }
@@ -131,12 +210,29 @@ function parseStructuredDiagnosticText(input) {
   if (!text.startsWith('{') && !text.startsWith('[')) {
     return null
   }
+  if (Buffer.byteLength(text, 'utf8') > MAX_STRUCTURED_DIAGNOSTIC_BYTES) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
   try {
     const parsed = JSON.parse(text)
     return parsed !== null && typeof parsed === 'object' ? parsed : null
   } catch {
     return null
   }
+}
+
+/** Creates a per-field budget for recursive diagnostic collection and sanitization. */
+function createDiagnosticTraversalBudget() {
+  return { elements: 0 }
+}
+
+/** Enforces bounded recursive diagnostic traversal before visiting another value. */
+function consumeDiagnosticTraversalNode(budget, depth) {
+  if (depth > MAX_STRUCTURED_DIAGNOSTIC_DEPTH || budget.elements >= MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+    return false
+  }
+  budget.elements += 1
+  return true
 }
 
 /** Replaces known secret values wherever they were repeated in a diagnostic string. */

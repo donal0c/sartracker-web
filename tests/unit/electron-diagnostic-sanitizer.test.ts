@@ -66,4 +66,16 @@ describe('electron diagnostic sanitizer', () => {
     expect(serialized).not.toContain(secret)
     expect(serialized).toContain('[redacted]')
   })
+
+  it('fails visibly and bounds oversized and over-element structured values [DON-237]', () => {
+    const secret = 'C17-Oversized-Main-Secret-9!'
+    const oversized = JSON.stringify({ token: secret, padding: 'x'.repeat(40_000) })
+    const tooManyElements = { values: Array.from({ length: 513 }, () => secret) }
+
+    const sanitized = sanitizeDiagnosticFields({ oversized, tooManyElements })
+    const serialized = JSON.stringify(sanitized)
+
+    expect(serialized).not.toContain(secret)
+    expect(serialized).toContain('[redacted-structured-value-too-large]')
+  })
 })

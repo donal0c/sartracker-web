@@ -107,6 +107,23 @@ describe('diagnostic event log', () => {
     expect(serialized).toContain('[redacted]')
   })
 
+  it('fails visibly and bounds oversized encoded diagnostic values [DON-237]', async () => {
+    const secret = 'C17-Oversized-Encoded-Secret-9!'
+    const encoded = JSON.stringify({ token: secret, padding: 'x'.repeat(40_000) })
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:01:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'c17_oversized_encoded_payload',
+      fields: { encoded },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(secret)
+    expect(serialized).toContain('[redacted-structured-value-too-large]')
+  })
+
   it('writes Electron breadcrumbs through the preload bridge while keeping browser fallback history', async () => {
     const recordDiagnosticEventBridge = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(window, 'sartrackerElectron', {
