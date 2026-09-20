@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-20 for the completed DON-237 diagnostics/support-export repair.
+Updated 2026-09-21 for the completed DON-237 diagnostics/support-export repair.
 
 ## Current state
 
@@ -8,30 +8,24 @@ Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-mergeable at final PR head `81e417911ccc543024653d0745d608428c479bbf`, a
-documentation-only commit after tested repair code head
-`d78a0c76a9d1efb265e70ecd586c723695274ead`, directly on PR43's merge base. The
-repair recursively sanitizes renderer and Electron diagnostics, closes legacy
-`/private`/`/tmp`/`/var` path leakage, and makes the C17 development receipt
-independently bind export paths, retained hashes, canary manifest and bounded
-rescans. The prior exact-head review of the earlier repair head found no
-actionable P0/P1/P2 findings. Hosted Linux run `35537304260` passed the full
-workflow, including the C17 proof at job `106148526794`, for the tested repair
-code head. Its retained artifact is `electron-linux-validation-evidence-d78a0c76a9d1efb265e70ecd586c723695274ead`;
+mergeable at final PR head `1129e2f6d8775fd7bb864457b0ae4b120e900b5c`, directly
+on PR43's merge base. The repair recursively sanitizes renderer and Electron
+diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
+C17 development receipt independently bind export paths, retained hashes,
+canary manifest and bounded rescans. The prior exact-head review of the earlier
+repair head found no actionable P0/P1/P2 findings. Final PR run
+`35543867706`, job `106166228976`, passed the full PR workflow including the
+exact-head packaged C17 proof. Its retained artifact is
+`electron-linux-validation-evidence-1129e2f6d8775fd7bb864457b0ae4b120e900b5c`;
 the C17 receipt is `PASS`, `valid:true`, `zeroCanary:true`, with 11 canaries,
 zero exact/adversarial matches, output hash
-`352df5721a26415d64d81fd3c7115cc510b8074e66ac3692f091773b27c27969`, and
+`439c53e7a7847a1d01da370926d6330e447c8f0b03334b115292532e066898c7`, and
 manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
 The receipt correctly retains `coverageComplete:false` and is not qualification or
-release evidence. Manual run `35540259983` bound final PR head `81e4179` and
-passed correctness, WAR-02B, responsiveness, browser regressions and packaging,
-but failed the separate `bcp-960k` gate at `eventLoopMaxGapMs=200.11` before C17.
-Latest PR run `35541974539` bound final PR head `0511827` and passed source,
-browser, packaging and artifact inspection, but failed the separate C10
-known-at-time replay proof at `200.0999999999999 ms` against its strict `<200 ms`
-bound, again before C17. A fresh independent review remains the review closeout
-before human merge review; both timing/qualification failures remain unresolved
-boundaries and no final-head C17 receipt exists.
+release evidence. Earlier manual run `35540259983` retained a separate
+`bcp-960k` timing failure, and PR run `35541974539` retained a C10 timing-boundary
+failure; the final PR run passed those PR-mode paths. A fresh independent review
+remains the review closeout before human merge review.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
 release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
@@ -48,10 +42,9 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: retain and triage the separate BCP-960k/C10 timing boundaries,
-complete the fresh exact-head independent review, and leave merge/release
-decisions to the authorized human boundary. DON-237 now records the retained
-run/job/artifact evidence and both failures. The C17 receipt retains
+Next action: complete the fresh exact-head independent review and leave
+merge/release decisions to the authorized human boundary. DON-237 now records
+the final run/job/artifact evidence and the historical timing boundaries. The C17 receipt retains
 `coverageComplete:false` with the intentional `recursive-adversarial-corpus`
 and `bounded-output-scan-identity` gaps.
 

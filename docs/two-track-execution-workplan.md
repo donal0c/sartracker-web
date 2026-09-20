@@ -3,24 +3,20 @@
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
 **Current DON-237 repair (2026-09-20):** PR44 is non-draft and mergeable at
-final PR head `81e417911ccc543024653d0745d608428c479bbf`, a documentation-only
-commit after tested repair code head `d78a0c76a9d1efb265e70ecd586c723695274ead`.
-The diagnostics/support-export repair is recursively fail-closed across renderer,
-Electron and legacy runtime-log paths, including compound credential forms and
-`/private`/`/tmp`/`/var` paths. The C17 development receipt independently binds
-the disposable export path, retained hashes, fixed canary manifest, output bound
-and rescans. Hosted run `35537304260` passed the packaged Linux C17 proof and the
-full PR workflow at the tested repair code head; its retained receipt is `PASS`,
-`valid:true`, `zeroCanary:true`, with `coverageComplete:false`. A final-head
-manual run bound `81e4179` and passed through packaging but failed the separate
-`bcp-960k` gate at `eventLoopMaxGapMs=200.11` before C17. These are
-development/packaged-smoke results, not candidate qualification or release
-evidence. The intentional C17 coverage gaps remain `recursive-adversarial-corpus`
-and `bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
-remain open. Latest PR run `35541974539` also failed before C17 at the separate
-C10 known-at-time replay bound (`200.0999999999999 ms` against `<200 ms`); no
-final-head C17 receipt exists. No merge, tag or publication is authorized by this
-repair.
+final PR head `1129e2f6d8775fd7bb864457b0ae4b120e900b5c`. The diagnostics/support-
+export repair is recursively fail-closed across renderer, Electron and legacy
+runtime-log paths, including compound credential forms and `/private`/`/tmp`/`/var`
+paths. Final PR run `35543867706` passed the full PR workflow and exact-head
+packaged Linux C17 proof; its retained receipt is `PASS`, `valid:true`,
+`zeroCanary:true`, with `coverageComplete:false`, output hash
+`439c53e7a7847a1d01da370926d6330e447c8f0b03334b115292532e066898c7`, and
+manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
+This is development/packaged-smoke evidence, not candidate qualification or
+release evidence. Earlier runs retained separate BCP-960k and C10 timing-boundary
+failures; the final PR-mode run passed those PR paths. The intentional C17
+coverage gaps remain `recursive-adversarial-corpus` and
+`bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
+remain open; no merge, tag or publication is authorized by this repair.
 
 ## Planning Rule
 
