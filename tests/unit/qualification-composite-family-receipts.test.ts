@@ -376,6 +376,9 @@ describe('independent packaged composite family receipts', () => {
     expect(validateCompositeFamilyReceipt(c17, expected('C17')).valid).toBe(false)
 
     phase.exportedPath = path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt')
+    phase.pathWithinProfile = false
+    expect(validateCompositeFamilyReceipt(c17, expected('C17')).valid).toBe(false)
+    phase.pathWithinProfile = true
     const leaked = Buffer.from(`leaked ${'C28-Composite-Archive-9!x'}-event-password\n`, 'utf8')
     writeFileSync(retainedDiagnosticPath, leaked, { mode: 0o600 })
     phase.outputSha256 = createHash('sha256').update(leaked).digest('hex')

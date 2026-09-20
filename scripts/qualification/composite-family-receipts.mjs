@@ -446,7 +446,10 @@ function validateC17Phase(phase, diagnostics, binding, failures) {
     || phase.exactSecretMatches !== 0 || phase.adversarialMatchCount !== 0 || phase.pathWithinProfile !== true) {
     failures.push('C17 composite facts do not prove a sanitized export and zero adversarial matches.')
   }
-  if (phase.exportedPath !== path.join(binding.profilePath, ...C17_EXPORT_PATH)) {
+  const expectedExportPath = path.join(binding.profilePath, ...C17_EXPORT_PATH)
+  const independentlyWithinProfile = isWithin(phase.exportedPath, binding.profilePath)
+  if (phase.exportedPath !== expectedExportPath || phase.pathWithinProfile !== independentlyWithinProfile
+    || independentlyWithinProfile !== true) {
     failures.push('C17 export path is not the exact disposable-profile diagnostics path.')
   }
   if (!hasRequiredKeys(diagnostics, [
