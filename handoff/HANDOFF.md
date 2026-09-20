@@ -28,6 +28,12 @@ Current-head source checks, browser verification, independent rechecks and green
 Linux CI remain the delivery gate, recorded on the PR and DON-254; merge requires
 Donal's decision.
 
+Remediation commit `d61aa0d0f11945190866bb35f8861792fb5abe56` is pushed. Exact-head
+Linux CI `35511794190` passed in 35m40s, including full correctness, packaging,
+producer development checks and packaged smoke lanes. PR43 is intentionally draft
+while Donal reviews the fresh evidence; the pass is merge evidence only, not
+candidate qualification or release approval.
+
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
