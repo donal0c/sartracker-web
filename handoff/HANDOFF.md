@@ -25,8 +25,7 @@ mode-labelled verdicts, reviewed C29/C27 trust-root digests, producer parent-dea
 and wait-status custody, and fresh candidate package/installed-deb byte
 revalidation. The packaged C21 probe also now requires the visible renderer shell.
 Current-head source checks, browser verification, independent rechecks and green
-Linux CI remain the delivery gate, recorded on the PR and DON-254; merge requires
-Donal's decision.
+Linux CI are recorded on the PR and DON-254; merge requires Donal's decision.
 
 Remediation commit `d61aa0d0f11945190866bb35f8861792fb5abe56` is pushed. Exact-head
 Linux CI `35511794190` passed in 35m40s, including full correctness, packaging,
@@ -38,7 +37,12 @@ The final read-only recheck found one P2 in retained C21 admission: the package
 adapter checked wrapper identity but did not re-run the packaged wrapper's renderer
 and screenshot validator. That guard is now wired to the retained report and
 `package-ui-archive-security-runtime.png`; focused package and wrapper tests pass.
-The resulting head still needs its own exact-head Linux CI and review recheck.
+Follow-up commit `90cb7b621872d07ba4393a542edd32802e95f81e` wires the retained
+C21 report and flattened renderer screenshot through the packaged wrapper
+validator. Focused tests passed (27/27), independent final review found no
+actionable P0/P1/P2 findings, and exact-head Linux CI `35514475637` passed in
+38m11s. PR43 is now ready for Donal's review and remains unmerged; this is merge
+evidence only, not candidate qualification or release approval.
 
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
