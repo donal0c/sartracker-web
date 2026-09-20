@@ -100,4 +100,21 @@ describe('electron diagnostic sanitizer', () => {
     expect(sanitized).toContain('?auth=[redacted]')
     expect(sanitized).toContain('&access_token=[redacted]')
   })
+
+  it('redacts private temporary and system paths from legacy diagnostic text [DON-237]', () => {
+    const sanitized = sanitizeDiagnosticText(
+      [
+        'database: /private/var/folders/operator-private/mission.sqlite',
+        'cache: /tmp/sartracker/operator-private/runtime.log',
+        'system: /var/lib/sartracker/operator-private/state.db',
+      ].join('\n'),
+    )
+
+    expect(sanitized).not.toContain('/private/var/folders/operator-private')
+    expect(sanitized).not.toContain('/tmp/sartracker/operator-private')
+    expect(sanitized).not.toContain('/var/lib/sartracker/operator-private')
+    expect(sanitized).toContain('/private/[redacted]')
+    expect(sanitized).toContain('/tmp/[redacted]')
+    expect(sanitized).toContain('/var/[redacted]')
+  })
 })

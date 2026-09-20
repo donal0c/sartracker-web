@@ -1777,6 +1777,7 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     supported: true, requested: true, exported: true, sanitized: adversarialMatchCount === 0,
     containsSecret: exactSecretMatches > 0, containsProfilePath: profileVariants.some((value) => text.includes(value)),
     exactSecretMatches, adversarialMatchCount,
+    exportedPath: path.resolve(returnedPath),
     pathWithinProfile: path.resolve(returnedPath).startsWith(path.resolve(profilePath) + path.sep),
   }
   if (familyContract === 'C17') {
@@ -1814,6 +1815,7 @@ function projectDiagnostics(value) {
   return {
     requested: value.requested,
     exported: value.exported,
+    exportedPath: value.exportedPath,
     sanitized: value.sanitized,
     containsSecret: value.containsSecret,
     containsProfilePath: value.containsProfilePath,
@@ -1826,6 +1828,8 @@ function projectDiagnostics(value) {
       canaryCount: value.canaryCount,
       outputWithinLimit: value.outputWithinLimit,
       leakedCanaryIds: value.leakedCanaryIds,
+      retainedOutputPath: value.retainedOutputPath,
+      retainedCanaryManifestPath: value.retainedCanaryManifestPath,
     }),
   }
 }

@@ -26,6 +26,9 @@ const HOME_PATH_PATTERNS = Object.freeze([
   [/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]'],
   [/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]'],
 ])
+const PRIVATE_SYSTEM_PATH_PATTERNS = Object.freeze([
+  [/(\/(?:private|tmp|var)\/)[^\s:"]+/g, '$1[redacted]'],
+])
 
 /**
  * Redacts secrets and private local identity from free-form diagnostics text.
@@ -54,6 +57,9 @@ function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
     .replace(URL_QUERY_CREDENTIALS_PATTERN, '$1[redacted]')
 
   for (const [pattern, replacement] of HOME_PATH_PATTERNS) {
+    sanitized = sanitized.replace(pattern, replacement)
+  }
+  for (const [pattern, replacement] of PRIVATE_SYSTEM_PATH_PATTERNS) {
     sanitized = sanitized.replace(pattern, replacement)
   }
 

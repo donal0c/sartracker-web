@@ -3,7 +3,6 @@ const path = require('node:path')
 const os = require('node:os')
 
 const {
-  sanitizeDiagnosticFields,
   sanitizeDiagnosticText,
   sanitizeDiagnosticValue,
 } = require('./diagnostic-sanitizer.cjs')
@@ -78,9 +77,9 @@ function createElectronRuntimeFiles(options) {
     const bundle = [
       report,
       ...(incidentWindow === null ? [] : [formatIncidentWindow(incidentWindow), '']),
-      formatCrashHistory(filterEntriesByIncidentWindow(crashes, incidentWindow)),
+      formatCrashHistory(filterEntriesByIncidentWindow(crashes, incidentWindow), userDataPath),
       '',
-      formatRuntimeLog(filterEntriesByIncidentWindow(logEntries, incidentWindow)),
+      formatRuntimeLog(filterEntriesByIncidentWindow(logEntries, incidentWindow), userDataPath),
       '',
       formatStorageDiagnostics(storageDiagnostics ?? {}),
       '',
@@ -110,7 +109,10 @@ function createElectronRuntimeFiles(options) {
   async function writeReport(fileName, contents) {
     const safeName = sanitizeReportFileName(fileName)
     const reportPath = path.join(userDataPath, DIAGNOSTICS_DIR_NAME, safeName)
-    await writeTextAtomically(reportPath, redactUserDataPath(contents, userDataPath))
+    await writeTextAtomically(
+      reportPath,
+      redactPrivateSystemPaths(contents),
+    )
     return reportPath
   }
 }
@@ -141,6 +143,11 @@ function redactUserDataPath(contents, userDataPath) {
   return redacted
 }
 
+/** Redacts absolute temporary/system paths after exact userData replacement. */
+function redactPrivateSystemPaths(contents) {
+  return String(contents).replace(/(\/(?:private|tmp|var)\/)[^\s:"]+/g, '$1[redacted]')
+}
+
 function formatIncidentWindow(incidentWindow) {
   return [
     '[incident-window]',
@@ -152,7 +159,7 @@ function formatIncidentWindow(incidentWindow) {
   ].join('\n')
 }
 
-function formatCrashHistory(crashes) {
+function formatCrashHistory(crashes, userDataPath) {
   const entries = Array.isArray(crashes) ? crashes : []
   const lines = ['[crash-history]', `crash count: ${entries.length}`]
   if (entries.length === 0) {
@@ -162,9 +169,13 @@ function formatCrashHistory(crashes) {
   for (const crash of entries) {
     const ts = readDiagnosticsValue(crash?.ts, 'unknown-time')
     const kind = readDiagnosticsValue(crash?.kind, 'unknown')
-    const summary = sanitizeDiagnosticsText(readDiagnosticsValue(crash?.summary, '(no summary)'))
+    const summary = sanitizeDiagnosticsText(redactUserDataPath(
+      readDiagnosticsValue(crash?.summary, '(no summary)'), userDataPath,
+    ))
     lines.push(`${ts} ${kind}: ${summary}`)
-    const detail = sanitizeDiagnosticsText(readDiagnosticsValue(crash?.detail, ''))
+    const detail = sanitizeDiagnosticsText(redactUserDataPath(
+      readDiagnosticsValue(crash?.detail, ''), userDataPath,
+    ))
     if (detail !== '') {
       lines.push(`  detail: ${detail}`)
     }
@@ -172,7 +183,7 @@ function formatCrashHistory(crashes) {
   return lines.join('\n')
 }
 
-function formatRuntimeLog(logEntries) {
+function formatRuntimeLog(logEntries, userDataPath) {
   const entries = Array.isArray(logEntries) ? logEntries : []
   const lines = ['[runtime-log]']
   if (entries.length === 0) {
@@ -182,9 +193,9 @@ function formatRuntimeLog(logEntries) {
   for (const entry of entries) {
     // Re-sanitize on export as well as on write so support bundles remain safe
     // when a profile contains logs persisted by an older app version.
-    const sanitizedEntry = entry !== null && typeof entry === 'object' && !Array.isArray(entry)
-      ? sanitizeDiagnosticFields(entry)
-      : sanitizeDiagnosticValue(entry)
+    const sanitizedEntry = entry !== null && typeof entry === 'object'
+      ? sanitizeDiagnosticValue(redactUserDataPath(JSON.stringify(entry), userDataPath))
+      : sanitizeDiagnosticValue(redactUserDataPath(String(entry), userDataPath))
     lines.push(sanitizeDiagnosticsText(JSON.stringify(sanitizedEntry)))
   }
   return lines.join('\n')
@@ -200,7 +211,7 @@ function buildElectronDiagnosticsReport(input) {
     `node: ${input.versions.node}`,
     `platform: ${input.platform}`,
     `os release: ${os.release()}`,
-    `userData path: ${sanitizeDiagnosticsText(input.userDataPath)}`,
+    `userData path: ${REDACTED_USER_DATA_PATH}`,
     `safeStorage backend: ${input.safeStorageBackend}`,
     `credential storage: local-file`,
     `settings status: ${input.settings === null ? 'unavailable' : 'loaded'}`,
@@ -215,7 +226,7 @@ function buildElectronDiagnosticsReport(input) {
     ...formatOfficialMapPackages(officialMaps?.packages),
     '',
     '[support-report]',
-    sanitizeDiagnosticsText(input.contents),
+    sanitizeDiagnosticsText(redactUserDataPath(input.contents, input.userDataPath)),
     '',
   ].join('\n')
 }

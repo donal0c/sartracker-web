@@ -78,11 +78,20 @@ function report(): JsonObject {
   const diagnostics = {
     requested: true,
     exported: true,
+    exportedPath: path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt'),
     sanitized: true,
     containsSecret: false,
     containsProfilePath: false,
     exactSecretMatches: 0,
     adversarialMatchCount: 0,
+    canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
+    outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
+    outputByteLength: retainedDiagnosticBytes.byteLength,
+    canaryCount: C17_CANARY_IDS.length,
+    outputWithinLimit: true,
+    retainedOutputPath: retainedDiagnosticPath,
+    retainedCanaryManifestPath,
+    leakedCanaryIds: [],
   }
   return {
     schemaVersion: 1,
@@ -345,10 +354,45 @@ describe('independent packaged composite family receipts', () => {
     expect(validateCompositeFamilyReceipt(c17, expected('C17')).complete).toBe(false)
   })
 
+  it('independently binds C17 export paths and rejects a retained canary leak', () => {
+    const c17 = copy(report())
+    const phase = c17.phases.sanitizedDiagnostics as JsonObject
+    Object.assign(phase, {
+      canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
+      outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
+      outputByteLength: retainedDiagnosticBytes.byteLength,
+      canaryCount: C17_CANARY_IDS.length,
+      outputWithinLimit: true,
+      exportedPath: path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt'),
+      retainedOutputPath: retainedDiagnosticPath,
+      retainedCanaryManifestPath,
+      leakedCanaryIds: [],
+    })
+    Object.assign(c17.diagnostics as JsonObject, phase)
+
+    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({ valid: true })
+
+    phase.exportedPath = path.join(expectedBase.evidencePath, 'wrong-export.txt')
+    expect(validateCompositeFamilyReceipt(c17, expected('C17')).valid).toBe(false)
+
+    phase.exportedPath = path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt')
+    const leaked = Buffer.from(`leaked ${'C28-Composite-Archive-9!x'}-event-password\n`, 'utf8')
+    writeFileSync(retainedDiagnosticPath, leaked, { mode: 0o600 })
+    phase.outputSha256 = createHash('sha256').update(leaked).digest('hex')
+    phase.outputByteLength = leaked.byteLength
+    ;(c17.diagnostics as JsonObject).outputSha256 = phase.outputSha256
+    ;(c17.diagnostics as JsonObject).outputByteLength = phase.outputByteLength
+    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({
+      valid: false,
+      status: 'INVALID_EVIDENCE',
+    })
+    writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+  })
+
   it('keeps C17 invalid when retained raw bytes expose the fixed secret despite forged green scanner fields', () => {
     const c17 = copy(report())
     const rawLeak = Buffer.from(`nested values: ["${'C28-Composite-Archive-9!x'}"]\n`, 'utf8')
-    const rawLeakPath = '/tmp/sartracker-family-evidence/c17-raw-failure.txt'
+    const rawLeakPath = retainedDiagnosticPath
     writeFileSync(rawLeakPath, rawLeak, { mode: 0o600 })
     Object.assign(c17.phases.sanitizedDiagnostics as JsonObject, {
       sanitized: false,
@@ -378,7 +422,7 @@ describe('independent packaged composite family receipts', () => {
       observedProductFailure: false,
       evidenceComplete: false,
     })
-    rmSync(rawLeakPath, { force: true })
+    writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
   })
 
   it.each([

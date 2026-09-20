@@ -506,6 +506,32 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('[redacted-structured-value-too-large]')
   })
 
+  it('redacts private temporary and system paths from legacy runtime logs [DON-237]', async () => {
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [{
+        ts: '2026-09-20T12:00:00.000Z',
+        level: 'error',
+        event: 'legacy-path-leak',
+        path: '/private/var/folders/operator-private/mission.sqlite',
+        cachePath: '/tmp/sartracker/operator-private/runtime.log',
+        systemPath: '/var/lib/sartracker/operator-private/state.db',
+      }],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'legacy-path-support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain('/private/var/folders/operator-private')
+    expect(bundle).not.toContain('/tmp/sartracker/operator-private')
+    expect(bundle).not.toContain('/var/lib/sartracker/operator-private')
+    expect(bundle).toContain('/private/[redacted]')
+    expect(bundle).toContain('/tmp/[redacted]')
+    expect(bundle).toContain('/var/[redacted]')
+  })
+
   async function createRuntimeFiles(
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>

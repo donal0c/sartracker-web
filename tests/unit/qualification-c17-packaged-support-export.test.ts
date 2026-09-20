@@ -25,6 +25,11 @@ describe('C17 packaged support-export development receipt', () => {
           leakedCanaryIds: [],
           outputByteLength: 1234,
           outputWithinLimit: true,
+          exportedPath: '/tmp/c17-profile/diagnostics-reports/c17-diagnostics-support.txt',
+          retainedOutputPath: '/tmp/c17-evidence/c17-sanitized-output.txt',
+          retainedCanaryManifestPath: '/tmp/c17-evidence/c17-canary-manifest.txt',
+          outputSha256: 'b'.repeat(64),
+          canaryManifestSha256: 'c'.repeat(64),
         },
       },
     })
@@ -38,6 +43,10 @@ describe('C17 packaged support-export development receipt', () => {
     expect(receipt.coverageGaps).toEqual(['recursive-adversarial-corpus', 'bounded-output-scan-identity'])
     expect(receipt.qualificationExecuted).toBe(false)
     expect(receipt.releaseEligible).toBe(false)
+    expect(receipt.canaryCount).toBe(C17_CANARY_IDS.length)
+    expect(receipt.outputSha256).toBe('b'.repeat(64))
+    expect(receipt.canaryManifestSha256).toBe('c'.repeat(64))
+    expect(receipt.exportedPath).toContain('c17-diagnostics-support.txt')
   })
 
   it('fails closed when a packaged canary is retained', () => {
