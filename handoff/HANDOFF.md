@@ -26,8 +26,12 @@ The receipt correctly retains `coverageComplete:false` and is not qualification 
 release evidence. Manual run `35540259983` bound final PR head `81e4179` and
 passed correctness, WAR-02B, responsiveness, browser regressions and packaging,
 but failed the separate `bcp-960k` gate at `eventLoopMaxGapMs=200.11` before C17.
-A fresh independent review remains the review closeout before human merge review;
-the BCP-960k failure remains an unresolved qualification boundary.
+Latest PR run `35541974539` bound final PR head `0511827` and passed source,
+browser, packaging and artifact inspection, but failed the separate C10
+known-at-time replay proof at `200.0999999999999 ms` against its strict `<200 ms`
+bound, again before C17. A fresh independent review remains the review closeout
+before human merge review; both timing/qualification failures remain unresolved
+boundaries and no final-head C17 receipt exists.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
 release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
@@ -44,9 +48,10 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: complete the fresh exact-head independent review and leave
-merge/release decisions to the authorized human boundary. DON-237 now records
-the retained run/job/artifact evidence and the separate BCP-960k failure. The C17 receipt retains
+Next action: retain and triage the separate BCP-960k/C10 timing boundaries,
+complete the fresh exact-head independent review, and leave merge/release
+decisions to the authorized human boundary. DON-237 now records the retained
+run/job/artifact evidence and both failures. The C17 receipt retains
 `coverageComplete:false` with the intentional `recursive-adversarial-corpus`
 and `bounded-output-scan-identity` gaps.
 

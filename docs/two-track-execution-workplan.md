@@ -17,7 +17,10 @@ manual run bound `81e4179` and passed through packaging but failed the separate
 development/packaged-smoke results, not candidate qualification or release
 evidence. The intentional C17 coverage gaps remain `recursive-adversarial-corpus`
 and `bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
-remain open; no merge, tag or publication is authorized by this repair.
+remain open. Latest PR run `35541974539` also failed before C17 at the separate
+C10 known-at-time replay bound (`200.0999999999999 ms` against `<200 ms`); no
+final-head C17 receipt exists. No merge, tag or publication is authorized by this
+repair.
 
 ## Planning Rule
 
