@@ -1,0 +1,197 @@
+# DON-254 candidate enablement
+
+This slice starts at PR42 merge `bd301484561fac372ef7c95090ab5d9cc21533f3`.
+It prepares qualification machinery; it neither selects nor qualifies beta.13.
+
+## Expected behaviour and acceptance criteria
+
+- Every mandatory C00-C29 variant resolves to a reviewed executable adapter and
+  deterministic validator. Process success alone never establishes a contract.
+- A contract passes only when **every** mandatory variant has valid, sealed,
+  definition-bound evidence. Failed attempts remain visible and blocking.
+- Source, browser, CI AppImage, genuinely installed deb and human evidence retain
+  their separate meanings. Synthetic calibration cannot enter candidate mode.
+- Runtime handoff supplies the clean post-merge SHA/tree, candidate version,
+  CI provenance, exact package bytes, installation/runtime identity, fixtures and
+  necessary environmental inputs. Missing inputs block with explicit reasons.
+- Receipt validation checks the actual independent oracle, coverage, terminal
+  completion, identity and capture bytes. Missing observations, malformed or
+  conflicting evidence, wrong tiers and changed bytes fail closed.
+- C29 requires externally supplied named human/original-machine evidence; no
+  generated acceptance result. C27 retains the downstream DON-255 decision.
+- No product repairs, operational qualification, tag, publication or deployment
+  occur in this slice. Existing responsiveness thresholds remain unchanged.
+
+## Verification plan (recorded before production edits)
+
+First reproduce gaps using focused negative tests. Cover wrong/missing adapters
+and validators, all mandatory variants, tier substitution, missing or mismatched
+candidate/artifact identities, malformed external evidence, interrupted attempts,
+changed files, and independent verdict revalidation. Exercise CLI compile,
+preflight, run, verify and verdict with isolated calibration inputs; never label
+these as beta qualification. Run affected suites, the serial correctness suite,
+lint/build and exact-head Linux CI. Complete one independent broad review plus
+three risk-focused reviews, remediate accepted findings and recheck affected
+boundaries before marking the PR ready.
+
+## Version and release metadata decision
+
+Keep `package.json`/lockfile version and release metadata unchanged here. The
+workplan's Phase 2 candidate-freeze procedure explicitly selects
+`0.1.0-beta.13`, artifact names, fixtures and rollback together. The release
+workflow checks that tag and package version agree before building. Therefore
+the version and release-note preparation must precede the future exact candidate
+SHA/CI build, in the candidate-freeze step; this enablement PR's SHA is not a
+preselected candidate. Never substitute this PR's base or head for its future
+merge SHA, or reuse beta12.11/local hashes as beta.13 identity.
+
+## Required exact-candidate handoff
+
+The later freeze step supplies an explicit clean source SHA/tree after version
+and release-note preparation is merged. The enablement PR cannot contain its
+own eventual merge SHA. A local configuration must supply data and owned paths,
+not substitute arbitrary commands, validators or weakened budget values for
+reviewed bindings. Changing any input creates a new immutable campaign.
+
+CI provenance must be independently read from GitHub for the supplied run and
+artifact ID: repository, workflow path, run ID/attempt, completed-success state,
+exact `head_sha`, artifact ID/name, expiry state and archive digest. Download
+that artifact from the matching run, verify its archive digest, then derive
+the inner AppImage/deb/SHA256SUMS identities from those verified bytes. An
+asserted `ciRunId` or a locally computed installer hash alone is insufficient.
+Never confuse GitHub's artifact ZIP digest with the contained installer digest.
+For example, PR42's inspected run is a `pull_request` run at its PR head; its
+artifacts do not become post-merge beta.13 artifacts because master merged it.
+
+Runtime configuration must separately bind:
+
+- source checkout and all executed adapter/validator modules;
+- exact CI AppImage and CI deb installer, package version and ASAR/native bytes;
+- each scenario's immutable source fixture, size/workload and independent oracle;
+- reference host/platform/architecture and display/process capabilities;
+- controller-owned output/profile/fixture roots and bounded resource budgets;
+- private-map/live-GET configuration only for the relevant authorized variant;
+- external authority/session inputs for pre-release C29 training acceptance.
+
+The deb **file** is not installation evidence. Installed proof additionally
+requires successful package-manager state, matching installed version and
+architecture, actual installed file identities compared with the verified deb
+payload, and the launched process executable/ASAR matching that installation.
+An extracted deb or `linux-unpacked` directory cannot satisfy this boundary.
+AppImage proof must launch the exact verified AppImage and bind the resulting
+runtime; a sibling unpacked executable is not equivalent proof.
+
+The data-only runtime handoff, fresh CI archive inspection, installed payload
+comparison and observed package process identity are implemented in
+`runtime-inputs.mjs`, `candidate-artifacts.mjs` and `package-runtime.mjs`.
+Their local tests are infrastructure evidence. No installer, private profile,
+live provider or actual installed-machine proof is populated by this document.
+
+## Starting investigation (historical)
+
+At the start, PR42's registered adapters were calibration-only. Several proposed package rows
+name browser/source commands, and the existing verdict aggregates by contract
+rather than requiring every mandatory variant. These are enablement gaps, not
+evidence that a product contract has passed or failed. Detailed adapter inventory
+and verification results will be recorded as implementation proceeds.
+
+The executable plan now requires each packaged scenario separately on the CI
+AppImage and installed Debian build. The binding retains its package-specific
+variant identity; only its fixed producer scenario is normalized. C02 includes
+five interruption/close paths, C18 seven backup faults, and C03/C11/C17 dedicated
+family probes. A successful sibling cannot cover a missing package or scenario.
+
+PR CI additionally runs a bounded unpacked-package producer-development plan.
+It never creates candidate receipts or release eligibility. Held-startup checks
+separate infrastructure mechanics from the observed product predicate: a real
+bounded negative may verify the probe while retaining `observedPredicateStatus:
+FAIL`. Large fixtures, physical ENOSPC, long soaks, private/live inputs and named
+human acceptance remain separately executed qualification obligations.
+
+## Approved C29 separation (2026-09-19)
+
+Donal approved separating mandatory pre-release original-machine/training
+acceptance (C29) from post-publication WAR-13B field shadow. C29 uses only
+synthetic, replayed or disposable training data and requires named external
+human acceptance on the exact installed candidate on the original machine.
+It never counts toward the WAR-13B field scorecard. Tier G retains all
+qualification, DON-255 and publication admission gates for field shadow.
+Record exact candidate identity for both; no cross-build transfer of acceptance.
+
+Decision source in the candidate-enablement task: Codex asked, “Should we
+separate pre-release original-machine/training acceptance from post-publication
+WAR-13B field shadow? I recommend that distinction, without counting training
+as field evidence.” Donal replied, “Let's go with your recommendation.”
+This is authorization for the contract distinction, not a human acceptance
+receipt, qualification run, publication approval or field-admission decision.
+
+`team-evidence.mjs` is integrated with a pending human request, immutable
+authorized signer configuration, attachment custody and signed ingestion under
+the campaign resource lock. Tests use generated keys and synthetic declarations;
+they are not human acceptance. A valid signature establishes who made an
+attestation, not that an unobserved session happened. Missing files and invalid
+submissions remain retained invalid attempts rather than disappearing.
+
+## Retained local evidence
+
+### Product capabilities remain separate implementation owners
+
+The C19 specification explicitly retains DON-249, DON-250 and DON-251 as
+separate owners. Live Linear inspection on 2026-09-20 confirmed all three are
+Backlog. Existing migrations can be exercised through normal application
+startup; background integrity arbitration, state-aware oversized recovery and
+bounded telemetry retention cannot be established by probes when the product
+does not yet implement them. `product-capabilities.mjs` therefore records
+source-controlled candidate admission holds for C19 and the affected C24
+phases. These holds block both the campaign and prepublication verdict even
+when every implemented subset probe passes. They are not environment inputs,
+human-waivable exceptions or evidence that a test was executed. Their owners
+must implement the capability and reviewed qualification coverage before the
+holds are removed. This PR does not implement those product changes.
+
+DON-264 remains a separately observed negative C14 result: persistent overlay
+failure is console-only. Unlike the absent capabilities above, this behavior
+has a runnable probe and must fail its actual operator-warning predicate.
+
+### REL-004 decision, 2026-09-19
+
+The QA plan treated repository safeguards as open-blocking while the coordinated
+ledger's earlier triage deferred them. Codex asked Donal which rule C27 should
+enforce and recommended blocking readiness unless safeguards pass or Donal
+supplies explicit signed risk acceptance. Donal replied, “Let's go with your
+recommendation.” The rule is now enforced by fresh before/after observations
+and the separate exact-candidate signature validator. This is not acceptance of
+the current observed gaps, a C29 attestation, or authorization to publish.
+
+The routing registry was also reconciled against the canonical QA hazard map:
+REL-004 belongs to C27, not soak C25. Every primary owner must be one of the
+canonical required contracts; primary routing never removes sibling obligations.
+
+`tmp/candidate-enablement/` retains red and green controller logs. Reproduced
+failures cover missing sibling variants, foreign-campaign receipts, changed
+preflight inputs, candidate calibration substitution, borrowed leases, changed
+receipt proof tiers and changed validator bytes. Preliminary independent review
+also reproduced masking of INVALID_EVIDENCE/NEEDS_HUMAN_DECISION/CLEANUP_BLOCKED
+by a passing sibling; all three now have red/green regressions. The narrow
+reviewer rechecked that repair without further P1/P2 findings. This is not an
+exact-head PR review.
+
+An earlier focused run passed 50 tests; that snapshot's lint and production build passed.
+The first wider source run overlapped development of the sibling-status tests
+and encountered their red state; it is retained as development evidence, not a
+green stable-source claim. An earlier stable serial correctness run passed
+481 files / 5,220 tests, with six declared correctness-mode exclusions. Strict
+responsiveness qualification was not run. Later adapter edits invalidate that
+snapshot as a current full-suite claim. An isolated synthetic Git checkout also
+exercised the real CLI: calibration returned the intentional C01 FAIL with
+CLEANED lease; plan compilation succeeded; candidate preflight returned
+ENVIRONMENT_BLOCKED for host, candidate, adapter, validator and artifact gaps.
+These are infrastructure/source results only.
+
+The final stable local correctness run passed 552 files and 5,687 tests, with the
+six prescribed correctness-mode exclusions. Lint and the production build passed.
+Current development receipts include the complete 50k C11 raw-page oracle and the nine C24 competing
+operation phases. C17's raw secret leak and C14/C24's missing visible overlay
+warning remain negative product observations. Exact-head Linux CI and four
+independent reviews are required on the delivery PR before merge readiness;
+none of these source/development results qualifies a candidate.

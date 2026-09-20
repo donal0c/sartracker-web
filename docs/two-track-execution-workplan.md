@@ -4,6 +4,32 @@
 
 ## Planning Rule
 
+**Current post-PR42 state (2026-09-19):** verified master is
+`bd301484561fac372ef7c95090ab5d9cc21533f3`; PR42 exact head
+`5cddbb1f086191539c7c771ea82d9b73bacd8c77` passed Linux CI `35454420736`.
+PR40/41/42 are merged. DON-254 remains In Progress and release HOLD. Current
+work is candidate enablement on `codex/beta13-candidate-adapters`; see
+[acceptance/test plan](assurance/candidate-enablement-design.md) and
+[adapter inventory](assurance/candidate-adapter-inventory.md). The historical
+reconciliation/phase snapshots below are not the current master identity.
+No candidate is selected and no BCP-17 run is authorized by these source checks.
+
+Donal resolved the C29 admission cycle on 2026-09-19: mandatory pre-release
+original-machine/training acceptance is separate from post-publication WAR-13B
+field shadow. Training remains non-counted field evidence; all field-admission
+gates remain in force. Integrate named human acceptance with exact candidate
+and original-machine binding under this approved distinction. Missing real
+producer/validator work remains part of candidate enablement, not an artifact
+or host prerequisite that can be claimed resolved by supplying package paths.
+
+The C00/C27 phase distinction was also approved: C27 remains a mandatory draft
+gate before controlled prerelease publication; C00 fresh public-download bytes
+are a separate mandatory gate immediately after publication and before team
+distribution or rollout approval. A mismatch blocks rollout and requires
+withdrawal or rollback. Draft downloads cannot satisfy the public gate, and
+publication is not release completion. This implementation authorises neither
+publication nor qualification execution.
+
 **Current reconciliation (2026-09-18):** PR38 merged into `master` at
 `e69485724044337fb5fee94bfbe5871916fdabf1`, from exact head
 `92a4f680facc98fb2aa6871228616f6f0cb809e4`. Required Linux workflow

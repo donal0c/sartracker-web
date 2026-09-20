@@ -18,13 +18,65 @@ const PROFILE_DEFINITIONS = Object.freeze({
   normal: Object.freeze({
     actualBatches: 480,
     equivalentProductionPolls: 86_400,
+    durationDays: 5,
     restartCheckpoints: Object.freeze([240]),
     recommendedPollIntervalMs: 250,
   }),
   extended: Object.freeze({
     actualBatches: 1_344,
     equivalentProductionPolls: 241_920,
+    durationDays: 14,
     restartCheckpoints: Object.freeze([448, 896]),
+    recommendedPollIntervalMs: 250,
+  }),
+  // Fixed C04 priority lane: 100 current devices under the same bounded
+  // CI-equivalent poll envelope.  It is separate from the field-scale rows.
+  'priority-100': Object.freeze({
+    actualBatches: 6,
+    productionPollsPerBatch: 180,
+    deviceCount: 100,
+    movingDeviceCount: 100,
+    durationDays: null,
+    equivalentProductionPolls: 1_080,
+    restartCheckpoints: Object.freeze([3]),
+    recommendedPollIntervalMs: 250,
+  }),
+  // Field variants retain the producer's batch semantics while fixing the
+  // reviewed 100-device position envelopes.  The resulting row counts are
+  // deliberately explicit so an adapter cannot substitute a smaller profile.
+  'field-960k': Object.freeze({
+    actualBatches: 96,
+    productionPollsPerBatch: 100,
+    deviceCount: 100,
+    movingDeviceCount: 100,
+    durationDays: 12,
+    equivalentProductionPolls: 9_600,
+    outingCount: 12,
+    restartCheckpoints: Object.freeze([32, 64]),
+    recommendedPollIntervalMs: 250,
+  }),
+  'field-2m': Object.freeze({
+    actualBatches: 200,
+    productionPollsPerBatch: 100,
+    deviceCount: 100,
+    movingDeviceCount: 100,
+    durationDays: 12,
+    equivalentProductionPolls: 20_000,
+    outingCount: 12,
+    restartCheckpoints: Object.freeze([50, 100, 150]),
+    recommendedPollIntervalMs: 250,
+  }),
+  'field-device-modes': Object.freeze({
+    actualBatches: 96,
+    productionPollsPerBatch: 100,
+    deviceCount: 100,
+    movingDeviceCount: 80,
+    stationaryDeviceCount: 10,
+    staleDeviceCount: 10,
+    equivalentProductionPolls: 9_600,
+    durationDays: 12,
+    outingCount: 12,
+    restartCheckpoints: Object.freeze([32, 64]),
     recommendedPollIntervalMs: 250,
   }),
 })
@@ -35,31 +87,83 @@ const PRODUCTION_POLLS_PER_BATCH = 180
 const MAX_RUNTIME_LOG_BYTES = 5 * 1024 * 1024
 const MAX_SUPPORT_BUNDLE_BYTES = 10 * 1024 * 1024
 const MAX_PROCESS_TREE_RESIDENT_BYTES = 2 * 1024 * 1024 * 1024
+const SHA256 = /^[a-f0-9]{64}$/u
 
 /** Returns one immutable accelerated soak profile. */
 export function createTrackingSoakProfile(name) {
   const definition = PROFILE_DEFINITIONS[name]
   if (definition === undefined) {
-    throw new Error(`Unknown tracking soak profile "${String(name)}". Use ci, normal, or extended.`)
+    throw new Error(`Unknown tracking soak profile "${String(name)}". Use ci, normal, extended, priority-100, field-960k, field-2m, or field-device-modes.`)
   }
 
+  const deviceCount = definition.deviceCount ?? DEVICE_COUNT
+  const movingDeviceCount = definition.movingDeviceCount ?? MOVING_DEVICE_COUNT
+  const stationaryDeviceCount = definition.stationaryDeviceCount ?? deviceCount - movingDeviceCount
+  const staleDeviceCount = definition.staleDeviceCount ?? 0
+  if (movingDeviceCount + stationaryDeviceCount + staleDeviceCount !== deviceCount) {
+    throw new Error(`Tracking soak profile "${name}" has inconsistent device mode counts.`)
+  }
   return Object.freeze({
     name,
-    deviceCount: DEVICE_COUNT,
-    movingDeviceCount: MOVING_DEVICE_COUNT,
+    deviceCount,
+    movingDeviceCount,
+    stationaryDeviceCount,
+    staleDeviceCount,
+    durationDays: definition.durationDays ?? null,
     actualBatches: definition.actualBatches,
-    productionPollsPerBatch: PRODUCTION_POLLS_PER_BATCH,
-    equivalentProductionPolls: definition.equivalentProductionPolls,
+    productionPollsPerBatch: definition.productionPollsPerBatch ?? PRODUCTION_POLLS_PER_BATCH,
+    equivalentProductionPolls: definition.equivalentProductionPolls ??
+      definition.actualBatches * (definition.productionPollsPerBatch ?? PRODUCTION_POLLS_PER_BATCH),
     expectedPositionRows:
-      definition.equivalentProductionPolls * MOVING_DEVICE_COUNT +
-      (DEVICE_COUNT - MOVING_DEVICE_COUNT),
+      (definition.equivalentProductionPolls ??
+        definition.actualBatches * (definition.productionPollsPerBatch ?? PRODUCTION_POLLS_PER_BATCH)) *
+        movingDeviceCount +
+      (deviceCount - movingDeviceCount),
+    outingCount: definition.outingCount ?? 0,
     restartCheckpoints: [...definition.restartCheckpoints],
     recommendedPollIntervalMs: definition.recommendedPollIntervalMs,
   })
 }
 
+/** Bind a copied field fixture to the runtime database and the workload mission. */
+export function buildTrackingSoakFixtureLoadEvidence(input) {
+  const fixture = input?.fixture
+  const runtimeDatabase = input?.runtimeDatabase
+  const fixtureMission = input?.fixtureMission
+  if (fixture === null || typeof fixture !== 'object'
+      || !Number.isSafeInteger(fixture.bytes) || fixture.bytes < 1
+      || typeof fixture.sha256 !== 'string' || !SHA256.test(fixture.sha256)) {
+    throw new Error('Field fixture source identity is required.')
+  }
+  if (runtimeDatabase === null || typeof runtimeDatabase !== 'object'
+      || runtimeDatabase.basename !== 'mission-store.sqlite'
+      || runtimeDatabase.bytes !== fixture.bytes
+      || typeof runtimeDatabase.sha256 !== 'string'
+      || runtimeDatabase.sha256 !== fixture.sha256) {
+    throw new Error('Field fixture runtime database identity does not match the bound source.')
+  }
+  if (fixtureMission === null || typeof fixtureMission !== 'object'
+      || typeof fixtureMission.id !== 'string' || fixtureMission.id.trim() === ''
+      || fixtureMission.statusBefore !== 'active'
+      || fixtureMission.statusAfter !== 'finished') {
+    throw new Error('Loaded field fixture mission was not retired from active to finished.')
+  }
+  if (typeof input?.workloadMissionId !== 'string' || input.workloadMissionId.trim() === '') {
+    throw new Error('Field workload mission identity is required after fixture loading.')
+  }
+  return Object.freeze({
+    runtimeDatabaseBasename: runtimeDatabase.basename,
+    runtimeDatabaseBytes: runtimeDatabase.bytes,
+    runtimeDatabaseSha256: runtimeDatabase.sha256,
+    fixtureMissionId: fixtureMission.id,
+    fixtureMissionStatusBefore: fixtureMission.statusBefore,
+    fixtureMissionStatusAfter: fixtureMission.statusAfter,
+    workloadMissionId: input.workloadMissionId,
+  })
+}
+
 /** Classifies bounded operational mission events captured by the packaged soak. */
-export function classifyTrackingSoakMissionEvents(events) {
+export function classifyTrackingSoakMissionEvents(events, options = {}) {
   const entries = Object.entries(events ?? {}).map(([eventType, count]) => [
     eventType,
     Number(count),
@@ -76,7 +180,10 @@ export function classifyTrackingSoakMissionEvents(events) {
     'participant_added',
     'participant_backfill_completed',
     'group_membership_changed',
+    'outing_started',
+    'outing_ended',
   ])
+  if (options?.operationPhases === true) declaredEventTypes.add('gpx_import_created')
   return {
     operationalMissionEvents: entries
       .filter(([eventType]) => !['device_updated', 'position_recorded'].includes(eventType))
@@ -153,6 +260,18 @@ export function parseTrackingSoakArgs(argv) {
       case '--evidence':
         parsed.evidenceDir = nextValue()
         break
+      case '--field-fixture':
+        parsed.fieldFixturePath = nextValue()
+        break
+      case '--field-fixture-preset':
+        parsed.fieldFixturePreset = nextValue()
+        break
+      case '--priority-faults':
+        parsed.priorityFaults = true
+        break
+      case '--operation-phases':
+        parsed.operationPhases = true
+        break
       case '--poll-interval-ms':
         parsed.pollIntervalMs = Number(nextValue())
         break
@@ -178,6 +297,18 @@ export function parseTrackingSoakArgs(argv) {
     throw new Error('--app <packaged Electron binary> is required.')
   }
   const profile = createTrackingSoakProfile(parsed.profileName ?? 'ci')
+  if (profile.outingCount > 0 && (typeof parsed.fieldFixturePath !== 'string' || parsed.fieldFixturePath.trim() === '')) {
+    throw new Error('--field-fixture <bound field storage fixture> is required for field-scale profiles.')
+  }
+  if (profile.outingCount === 0 && parsed.fieldFixturePath !== undefined) {
+    throw new Error('--field-fixture is only valid for field-scale profiles.')
+  }
+  if (parsed.fieldFixturePreset !== undefined && !['local', 'field'].includes(parsed.fieldFixturePreset)) {
+    throw new Error('--field-fixture-preset must be local or field.')
+  }
+  if (parsed.fieldFixturePreset !== undefined && parsed.fieldFixturePath === undefined) {
+    throw new Error('--field-fixture-preset requires --field-fixture.')
+  }
   const pollIntervalMs = boundedInteger(
     parsed.pollIntervalMs,
     profile.recommendedPollIntervalMs,
@@ -190,6 +321,10 @@ export function parseTrackingSoakArgs(argv) {
     appPath: parsed.appPath,
     profile,
     evidenceDir: parsed.evidenceDir ?? 'output/electron-tracking-soak',
+    priorityFaults: parsed.priorityFaults === true,
+    operationPhases: parsed.operationPhases === true,
+    ...(parsed.fieldFixturePath === undefined ? {} : { fieldFixturePath: parsed.fieldFixturePath }),
+    ...(parsed.fieldFixturePreset === undefined ? {} : { fieldFixturePreset: parsed.fieldFixturePreset }),
     pollIntervalMs,
     timeoutMs: positiveNumber(parsed.timeoutMs, 30 * 60_000, '--timeout-ms'),
     freezeThresholdMs: positiveNumber(

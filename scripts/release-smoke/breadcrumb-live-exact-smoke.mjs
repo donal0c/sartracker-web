@@ -265,12 +265,13 @@ try {
   const sqliteReadMs = Date.now() - sqliteStartedAt
 
   failureProgress.phase = 'report'
-  const fixEvidence = assertExactFixEvidenceChain({
+  const fixStages = {
     provider: createExactFixEvidence(rawFixes, hmacKey),
     sqlite: createExactFixEvidence(sqliteFixes, hmacKey),
     exactPages: createExactFixEvidence(exactPageFixes, hmacKey),
     exactGeoJson: createExactFixEvidence(exactGeoJsonFixes, hmacKey),
-  })
+  }
+  const fixEvidence = assertExactFixEvidenceChain(fixStages)
   const exactSourceIdentityTimeEvidence = createExactIdentityTimeEvidence(
     exactGeoJsonFixes,
     hmacKey,
@@ -309,6 +310,9 @@ try {
     },
     renderedCoordinateDeviation: uiPages.renderedCoordinateDeviation,
   })
+  report.schemaVersion = 2
+  report.oracleInputs = { fixStages, sourceIdentityTime: exactSourceIdentityTimeEvidence,
+    renderedIdentityTime: renderedIdentityTimeEvidence }
   sqliteRead.rows.splice(0, sqliteRead.rows.length)
   for (const entries of directPages.pages) entries.splice(0, entries.length)
   for (const entries of uiPages.geoJsonPages) entries.splice(0, entries.length)

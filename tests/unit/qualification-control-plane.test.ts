@@ -38,7 +38,7 @@ describe('qualification control plane', () => {
 
     const duplicate = structuredClone(registry)
     duplicate.contracts[1].hazards.push(duplicate.contracts[0].hazards[0])
-    expect(() => compileCoverageRegistry(duplicate)).toThrow(/duplicate=PKG-001/u)
+    expect(() => compileCoverageRegistry(duplicate)).toThrow(`duplicate=${registry.contracts[0].hazards[0]}`)
 
     const selfOmitted = structuredClone(registry)
     selfOmitted.releaseCriticalHazards = selfOmitted.releaseCriticalHazards.filter((hazard: string) => hazard !== 'TRK-001')

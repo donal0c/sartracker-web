@@ -1,67 +1,142 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-19 during DON-254 qualification-controller enablement.
+Updated 2026-09-20 during DON-254 candidate-enablement implementation.
 
 ## Current state
 
-`origin/master` is `1f9184cf416144767f26fc7b00b302787cf0a91e`, the post-merge
-TRK-001 receipt commit following PR #41 / TRK-001 and PR #40 / GEO-002 at
-`c916ced9`. PR #41's exact source head was
-`529cef5098497ae3f29c574011b088c4aa92ac11`. Release remains
-**HOLD** and no beta candidate, release tag, publication, or promotion is
-authorised by this handoff.
+Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
+qualification run, merge, tag, publication or promotion is authorized here.
 
-PR #40 (`codex/geo-002-pre-candidate-repair`) and PR #41
-(`codex/trk-001-current-position-repair`) are merged.
+Verified base: PR42 merge `bd301484561fac372ef7c95090ab5d9cc21533f3`,
+from head `5cddbb1f086191539c7c771ea82d9b73bacd8c77`; its exact-head Linux CI
+`35454420736` passed. PR40/GEO-002 and PR41/TRK-001 are merged at
+`c916ced9` and `27687b53`. These are merge evidence, not candidate qualification.
+DON-254 is In Progress; PKG-001 and WAR-01/BCP-17 remain separate blockers.
 
-## Active work
+## Active work and next actions
 
-- `DON-254` / GEO-002: PR #40 is merged at `c916ced9`. Geometry distances are
-  bounded, antimeridian area is handled, corrupt drawing payloads fail closed,
-  edit/save errors retain provenance, and operator inputs expose numeric bounds
-  where applicable.
-- `DON-267` / TRK-001: PR #41 merged at `27687b53` from exact head
-  `529cef50`. Accepted empty live
-  current snapshots fence late cache, live status is not clobbered by cache,
-  recovery has one operator warning, and retained participant scope fails closed
-  after a bounded hold.
-- `PKG-001` and the WAR-01/BCP-17 release gates remain independent blockers.
-- `DON-254` candidate-mode enablement is implemented in the qualification
-  controller, with the checked-in beta13 C00-C29 plan remaining explicitly
-  blocked on unresolved exact runtime/package adapters and candidate artifacts.
-  The synthetic calibration path is infrastructure evidence only; no candidate
-  is frozen and no BCP-17/WAR-12 campaign has run.
-- The DON-254 PR branch is ready for review. Its final local calibration run
-  returned the intentional `FAIL` on synthetic C01 with `releaseEligible: false`;
-  the real beta13 plan compiled with `releaseEligible: false` and preflight
-  returned `ENVIRONMENT_BLOCKED` with exit code 2.
-- The PR #42 review repair closes source SHA/tree comparison, immutable
-  definition and registry correspondence, C00-C29 candidate coverage, exact
-  append-only resume ordering, sealed-attempt mutation, capture path escape,
-  lease ownership, CLI dispatch, calibration binding coverage, and campaign-
-  root filesystem checks. No candidate or release gate is weakened.
+One authorized candidate-enablement PR on `codex/beta13-candidate-adapters`,
+based on PR42. Producer implementation and stable local checks are complete.
+The delivery gate remains exact-head Linux CI, four independent reviews and
+remediation, recorded on the PR and DON-254; merge requires Donal's decision.
+
+Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
+Historical gap inventory:
+[candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
+The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
+
+Implemented/integrating: immutable source/browser suites; signed C29 ingestion;
+CI/AppImage/installed-deb process identity; fixed packaged producers and
+independent validators; C27 draft/C00 public checks; append-only failures and
+bounded capture custody. Primary hazard routes now match QA section4.2;
+primary ownership never waives sibling contracts.
+
+Producer integration, bounded development calibration and source checks are
+complete. All 124 package bindings compile and require
+separate AppImage/deb scenarios. C01 held-startup/physical-disk-full producers,
+C09 packaged import interruption, C02 lifecycle, C10 replay scale/outing,
+C18 fault matrix, C19 historical/default migrations and C20/C22 large-archive
+producers are implemented. The independent archive oracle reconciles all30
+tables and exact startup-pause/finish events on small development copies. Missing
+harnesses are implementation work, not external prerequisites. Future exact
+candidate/version/CI artifacts, Linux installed host, private maps/live input
+and named human acceptance remain external execution inputs.
+
+No product behavior change is intended. Keep package version and release
+metadata for the later candidate-freeze step. Do not promote local development,
+source/browser or unpacked evidence into exact Linux candidate proof.
+
+Fresh Linear verification on 2026-09-20 confirms DON-249/250/251 remain Backlog:
+background integrity/resource arbitration, mission-state-aware oversized recovery,
+and bounded telemetry retention/index policy remain separate product owners.
+C19 (and those C24 operation phases) cannot be qualified by adding probes alone.
+These are product-capability blockers, not missing host inputs or waived checks.
+Source-controlled admission holds now prevent campaign/prepublication PASS
+from successful subset probes; removing them requires the owning product work.
+DON-264's console-only persistent overlay failure likewise remains a product gate.
+
+## Approved decisions
+
+- C29 is mandatory pre-release acceptance on the original machine with training
+  data. Postpublication WAR-13B field shadow remains separate. No acceptance
+  was generated; an advisory model result cannot supply it.
+- C27 draft checks precede a separate Donal publication decision. C00 fresh
+  public downloads are mandatory before distribution; mismatch requires
+  withdrawal/rollback. Publication alone is not completion.
+- REL-004: C27 requires passing GitHub safeguards or separate signed acceptance
+  of the exact candidate and observed gaps. Policy approval is not acceptance
+  of today's gaps, C29 acceptance or publication authority. Read-only evidence
+  at22:02UTC still showed absent approval/thread-resolution enforcement,
+  required status checks, secret scanning and push protection. Before/after
+  observations and signature expiry/scope checks are implemented.
 
 ## Verification snapshot
 
-The rebased TRK-001 source suite passed 483 files / 5,203 tests on the first
-post-rebase run. The final follow-up run passed 482 files / 5,202 tests and
-hit one contention-sensitive Electron responsiveness assertion in an unrelated
-evidence-versioning test; that file passed isolated with 94/94 tests. Focused
-tracking tests passed 229/229, Chromium tracking ingest health passed 3/3,
-TypeScript and ESLint passed, and `npm run build` passed the application bundle
-budget at 499.99 kB. The final hosted exact-head run passed the full correctness
-gate, production bundle budget, rendered regressions, Electron artifact build,
-packaged map/GPX/native coverage checks, tracking soak, and evidence upload.
-This is merge evidence only; release and beta qualification remain separate
-claims.
+Current local development evidence:
+- C13 coordinate/bearing/measurement public-UI flow passed; golden and rendered
+  geometry/measurement oracles plus screenshots checked.
+- C05/C06 real loopback provider→store→UI flow passed: divergent provider clocks
+  resolve to fixTime, duplicate polls retain three exact rows, acknowledgement
+  preserves evidence, stale/disconnected/recovered states and movement clearing
+  are visible. Four screenshots retained; raised/cleared/disconnected inspected.
+- C28 routine and revision development journeys passed all nine phases.
+  The earlier revision double-finish failure is retained; producer state handling
+  was corrected. Field/fault package execution is not yet claimed.
+- C12 development16 passed attachment/archive/restore custody and four persisted
+  marker names in Layers. Earlier empty-dialog evidence was rejected and retained.
+- C14 `c14-cli-1` correctly fails: persistent overlay error is console-only,
+  matching open DON-264. Failure-window screenshot retained; recovery and cleanup
+  passed. Generic basemap warnings cannot satisfy this predicate.
+- C10 scale-producer small development mechanics passed seven source/archive
+  replay streams (0/1,600/3,200 points), concurrent-write cursor rejection and
+  cleanup. Source integration/mutation tests passed; this is not scale proof.
+- C10 201-outing development flow passed live/archive 100+100+1 pagination and
+  rendered last-ID search; screenshot and independent retained SQLite checked.
+- C19 development default startup migrated schemas 1–12 and preserved original
+  fields; schema6 is explicitly synthetic compatibility, others historical-source
+  fixtures. A real SIGKILL at300/50,000 legacy baselines recovered all50,000 and
+  survived another restart; three retained databases independently agreed.
+- C02 pending-finalize development interruption reached the real snapshot phase,
+  killed the app, then showed the durable evidence-loss warning. Retry safely
+  refused with ARCHIVE_EVIDENCE_HEALTH_BLOCKED and no finalized audit event.
+  This passes the narrow safe-refusal predicate, not successful finalization.
+- C01 development FIFO diagnostics/crash holds and SQLite exclusive-lock hold
+  produced no actionable response within5s; raw negative receipts preserve
+  process identities and originals. These are product-gap observations, not PASS.
+- C18 development worker-crash, corrupt-temp, busy-WAL and stale-mirror mechanics
+  preserved the good mirror. Permission denial and two genuine concurrent domain
+  writes now have actual development evidence and passing focused validators.
+- C09 full development13 passed75,008-point import/replacement/concurrency
+  custody and exact8MiB pending/retained forced-kill recovery on the default store.
+- C03 development7 passed12-outing/midnight, true later-received earlier-fix
+  exclusion and selected-device scope. C17 development2 retained a nested-array
+  synthetic secret in support export; independent raw re-scan confirms FAIL.
+- C11 scoped development `c11-family-dev-receipt-2` retained the full report,
+  all1,000pages/50,000rows and clean teardown. Independent raw-file validation
+  checked every fixed ID, assignment and outcome; copies and hashes are retained.
+  The original development2 timeout occurred later in archive finalization,
+  after search-pass creation and mission-finalize request. That retained archive
+  hang remains unresolved; removing unrelated archive work from C11 does not
+  pass or explain the original full producer attempt.
+- C04/C24 source barriers now bind earliest arrival of each new exact position,
+  not a later repeat response. C24 development21 completed6/6batches and exact
+  8,728rows, two archive cycles and failure recovery, plus all nine competing
+  operation phases. Its independent helper validator correctly fails the missing
+  overlay warning (DON-264); screenshot inspected. Raw reports and earlier failed
+  harness attempts are retained. This is development mechanics, not qualification.
 
-The qualification-control-plane slice now has 22 focused tests; the two
-affected controller files pass 22/22. The review-repair full source run
-covered 484 files / 5,217 tests with one known non-slice observation: the
-official-map fixture was stale relative to the generated runtime tree. The
-application TypeScript check and production build passed; rebuilding the
-generated tree made the isolated official-map file pass 27/27 with the bundle
-budget at 499.99 kB. These are source/build checks, not candidate or release
-evidence.
+Stable local correctness passed 552 files / 5,687 tests, with six prescribed
+correctness-mode exclusions; strict responsiveness qualification was not run.
+Lint and the production build passed. Earlier integration failures and native rebuild crashes
+remain retained; the latter included macOS CODESIGNING Invalid Page.
 
-Older detail remains in `handoff/archive/`.
+Logs/failures remain in `tmp/candidate-enablement/`. Electron/Node SQLite addon
+builds must use separate coordinated windows: fresh-inode signing recovered
+local Electron loading. Confirm actual SQLite open after restoring Node.
+All Electron development processes are closed. Node22 ABI127 was restored and
+an actual SQLite SELECT1 passed. Exact-head Linux CI and four independent
+reviews must be recorded on the PR/DON-254 before merge readiness; these local
+results cannot stand in for those gates or future candidate qualification.
+
+Older PR41/PR42 receipts remain in their merged PR/Linear records and
+`handoff/archive/`; they do not cover current edits.

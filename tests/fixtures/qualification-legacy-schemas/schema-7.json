@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 7,
+  "sourceCommit": "57eb740bf02b15115111de803b26ca71a6d7ded7",
+  "sourceModuleSha256": "9314c15f4babd0bb2474ea20f9f77d1b04b7565cece3c36968f766b09af9f186",
+  "missionId": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+  "markerId": "32a63afc-1481-4af6-93ac-b16bf50604ec",
+  "schema": [
+    {
+      "type": "table",
+      "name": "devices",
+      "sql": "CREATE TABLE devices (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      device_id TEXT NOT NULL,\n      name TEXT NOT NULL,\n      color TEXT NOT NULL,\n      last_seen TEXT,\n      status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n      UNIQUE (mission_id, device_id)\n    )"
+    },
+    {
+      "type": "table",
+      "name": "drawings",
+      "sql": "CREATE TABLE drawings (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      type TEXT NOT NULL CHECK(type IN ('line', 'search_area', 'range_ring', 'bearing_line', 'search_sector', 'text_label')),\n      name TEXT NOT NULL,\n      description TEXT,\n      color TEXT,\n      width REAL,\n      distance_m REAL,\n      temporary_measure INTEGER,\n      label TEXT,\n      display_order INTEGER NOT NULL DEFAULT 0,\n      geometry_json TEXT NOT NULL,\n      metadata_json TEXT,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n    )"
+    },
+    {
+      "type": "table",
+      "name": "gpx_track_imports",
+      "sql": "CREATE TABLE gpx_track_imports (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      source_path TEXT NOT NULL,\n      file_name TEXT NOT NULL,\n      display_name TEXT NOT NULL,\n      geometry_json TEXT NOT NULL,\n      metadata_json TEXT,\n      imported_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n      UNIQUE (mission_id, source_path)\n    )"
+    },
+    {
+      "type": "table",
+      "name": "helicopters",
+      "sql": "CREATE TABLE helicopters (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      slot_key TEXT NOT NULL CHECK(slot_key IN ('slot_1', 'slot_2', 'slot_3', 'slot_4')),\n      call_sign TEXT NOT NULL,\n      hex_id TEXT,\n      lat REAL NOT NULL,\n      lon REAL NOT NULL,\n      altitude REAL,\n      speed REAL,\n      heading REAL,\n      last_update TEXT NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n      UNIQUE (mission_id, slot_key)\n    )"
+    },
+    {
+      "type": "table",
+      "name": "layer_catalog_entries",
+      "sql": "CREATE TABLE layer_catalog_entries (\n      mission_id TEXT NOT NULL,\n      node_id TEXT NOT NULL,\n      parent_node_id TEXT,\n      node_kind TEXT NOT NULL CHECK(node_kind IN ('group', 'layer', 'feature_item')),\n      alias TEXT,\n      is_favorite INTEGER NOT NULL DEFAULT 0,\n      is_visible INTEGER NOT NULL DEFAULT 1,\n      display_order INTEGER NOT NULL DEFAULT 0,\n      metadata_json TEXT,\n      updated_at TEXT NOT NULL,\n      PRIMARY KEY (mission_id, node_id),\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n    )"
+    },
+    {
+      "type": "table",
+      "name": "markers",
+      "sql": "CREATE TABLE markers (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      type TEXT NOT NULL CHECK(type IN ('ipp_lkp', 'clue', 'hazard', 'casualty')),\n      name TEXT NOT NULL,\n      description TEXT,\n      lat REAL NOT NULL,\n      lon REAL NOT NULL,\n      irish_grid_e INTEGER NOT NULL,\n      irish_grid_n INTEGER NOT NULL,\n      created_at TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      display_order INTEGER NOT NULL DEFAULT 0,\n      subject_category TEXT,\n      clue_type TEXT,\n      confidence REAL,\n      found_by TEXT,\n      hazard_type TEXT,\n      severity TEXT,\n      condition TEXT,\n      treatment TEXT,\n      evacuation_priority TEXT,\n      label_size INTEGER,\n      updated_by TEXT,\n      coordinator_ids TEXT,\n      attachment_path TEXT,\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n    )"
+    },
+    {
+      "type": "table",
+      "name": "metadata",
+      "sql": "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    },
+    {
+      "type": "table",
+      "name": "mission_events",
+      "sql": "CREATE TABLE mission_events (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      event_type TEXT NOT NULL,\n      timestamp TEXT NOT NULL,\n      details_json TEXT,\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n    )"
+    },
+    {
+      "type": "table",
+      "name": "missions",
+      "sql": "CREATE TABLE missions (\n      id TEXT PRIMARY KEY,\n      name TEXT NOT NULL,\n      status TEXT NOT NULL CHECK(status IN ('idle', 'active', 'paused', 'finished', 'finalized')),\n      start_time TEXT NOT NULL,\n      pause_time TEXT,\n      finish_time TEXT,\n      paused_seconds INTEGER NOT NULL DEFAULT 0,\n      notes TEXT,\n      schema_version INTEGER NOT NULL\n    )"
+    },
+    {
+      "type": "table",
+      "name": "position_revisions",
+      "sql": "CREATE TABLE position_revisions (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      position_id TEXT NOT NULL,\n      source_position_id TEXT NOT NULL,\n      corrected_at TEXT NOT NULL,\n      changed_fields_json TEXT NOT NULL,\n      previous_json TEXT NOT NULL,\n      corrected_json TEXT NOT NULL,\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n      FOREIGN KEY (position_id) REFERENCES positions(id) ON DELETE CASCADE\n    )"
+    },
+    {
+      "type": "table",
+      "name": "positions",
+      "sql": "CREATE TABLE positions (\n      id TEXT PRIMARY KEY,\n      mission_id TEXT NOT NULL,\n      device_id TEXT NOT NULL,\n      source_position_id TEXT,\n      name TEXT,\n      lat REAL NOT NULL,\n      lon REAL NOT NULL,\n      altitude REAL,\n      speed REAL,\n      battery REAL,\n      accuracy REAL,\n      source TEXT,\n      timestamp TEXT NOT NULL,\n      data_origin TEXT NOT NULL DEFAULT 'live' CHECK(data_origin IN ('live', 'cache')),\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n      FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)\n    )"
+    },
+    {
+      "type": "table",
+      "name": "tracking_history_checkpoints",
+      "sql": "CREATE TABLE tracking_history_checkpoints (\n      mission_id TEXT NOT NULL,\n      device_id TEXT NOT NULL,\n      history_from TEXT NOT NULL,\n      reconciled_until TEXT NOT NULL,\n      updated_at TEXT NOT NULL,\n      PRIMARY KEY (mission_id, device_id),\n      FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n      FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id) ON DELETE CASCADE\n    )"
+    },
+    {
+      "type": "index",
+      "name": "idx_missions_status",
+      "sql": "CREATE INDEX idx_missions_status ON missions(status)"
+    },
+    {
+      "type": "index",
+      "name": "idx_position_revisions_position_corrected",
+      "sql": "CREATE INDEX idx_position_revisions_position_corrected\n      ON position_revisions(position_id, corrected_at)"
+    },
+    {
+      "type": "index",
+      "name": "idx_positions_mission_device_timestamp",
+      "sql": "CREATE INDEX idx_positions_mission_device_timestamp ON positions(mission_id, device_id, timestamp)"
+    },
+    {
+      "type": "index",
+      "name": "idx_positions_mission_source_position_id",
+      "sql": "CREATE UNIQUE INDEX idx_positions_mission_source_position_id\n      ON positions(mission_id, source_position_id)\n      WHERE source_position_id IS NOT NULL"
+    }
+  ],
+  "rows": {
+    "devices": [
+      {
+        "id": "79f7806c-50b6-4466-90ad-57c160f422ba",
+        "mission_id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "device_id": "historical-device",
+        "name": "Historical device",
+        "color": "#2563eb",
+        "last_seen": "2026-08-20T10:00:00.000Z",
+        "status": "online"
+      }
+    ],
+    "drawings": [],
+    "gpx_track_imports": [],
+    "helicopters": [],
+    "layer_catalog_entries": [],
+    "markers": [
+      {
+        "id": "32a63afc-1481-4af6-93ac-b16bf50604ec",
+        "mission_id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "type": "clue",
+        "name": "Historical retained clue",
+        "description": "Synthetic migration evidence",
+        "lat": 52.1,
+        "lon": -9.5,
+        "irish_grid_e": 480000,
+        "irish_grid_n": 580000,
+        "created_at": "2026-09-19T23:31:37.638Z",
+        "updated_at": "2026-09-19T23:31:37.638Z",
+        "display_order": 0,
+        "subject_category": null,
+        "clue_type": null,
+        "confidence": null,
+        "found_by": null,
+        "hazard_type": null,
+        "severity": null,
+        "condition": null,
+        "treatment": null,
+        "evacuation_priority": null,
+        "label_size": null,
+        "updated_by": "Synthetic coordinator",
+        "coordinator_ids": null,
+        "attachment_path": null
+      }
+    ],
+    "metadata": [
+      {
+        "key": "schema_version",
+        "value": "7"
+      }
+    ],
+    "mission_events": [
+      {
+        "id": "72e959a3-fd5a-4b31-9498-1379f23145f7",
+        "mission_id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "event_type": "mission_created",
+        "timestamp": "2026-08-20T09:00:00.000Z",
+        "details_json": "{\"name\":\"Synthetic historical schema 7\",\"notes\":null,\"start_time\":\"2026-08-20T09:00:00.000Z\"}"
+      },
+      {
+        "id": "c5354c74-a2bc-4417-b536-bba5d8a4f929",
+        "mission_id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "event_type": "marker_created",
+        "timestamp": "2026-09-19T23:31:37.638Z",
+        "details_json": "{\"marker_id\":\"32a63afc-1481-4af6-93ac-b16bf50604ec\",\"marker_type\":\"clue\",\"name\":\"Historical retained clue\",\"display_order\":0,\"updated_by\":\"Synthetic coordinator\",\"coordinator_ids\":null,\"attachment_path\":null}"
+      },
+      {
+        "id": "b704b0e5-ceca-4ebb-9a67-23fbff28d4b5",
+        "mission_id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "event_type": "device_created",
+        "timestamp": "2026-09-19T23:31:37.639Z",
+        "details_json": "{\"device_id\":\"historical-device\",\"name\":\"Historical device\",\"status\":\"online\",\"color\":\"#2563eb\"}"
+      }
+    ],
+    "missions": [
+      {
+        "id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "name": "Synthetic historical schema 7",
+        "status": "active",
+        "start_time": "2026-08-20T09:00:00.000Z",
+        "pause_time": null,
+        "finish_time": null,
+        "paused_seconds": 0,
+        "notes": null,
+        "schema_version": 7
+      }
+    ],
+    "position_revisions": [],
+    "positions": [
+      {
+        "id": "903cdb28-9e11-4cb5-8443-4b0a040d3d06",
+        "mission_id": "19a718d9-6d25-4c44-85b1-a673ba0dc722",
+        "device_id": "historical-device",
+        "source_position_id": "historical-position",
+        "name": null,
+        "lat": 52.1,
+        "lon": -9.5,
+        "altitude": null,
+        "speed": null,
+        "battery": null,
+        "accuracy": null,
+        "source": null,
+        "timestamp": "2026-08-20T10:00:00.000Z",
+        "data_origin": "live"
+      }
+    ],
+    "tracking_history_checkpoints": []
+  }
+}

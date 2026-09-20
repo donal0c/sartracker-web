@@ -7,9 +7,11 @@
 
 import { execFile, spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { createReadStream, existsSync, statSync } from 'node:fs'
 import {
   access,
+  copyFile,
+  lstat,
   mkdir,
   readFile,
   rm,
@@ -65,6 +67,7 @@ import {
   buildWebGlRendererAttestation,
   buildTrackingGrowthEvidence,
   buildTrackingSoakVerdict,
+  buildTrackingSoakFixtureLoadEvidence,
   clickActionablePointerTarget,
   classifyOperatorInteraction,
   classifyTrackingSoakMissionEvents,
@@ -81,6 +84,7 @@ import {
   buildTrackingSoakExpectedPositionTruthEvidence,
   startTrackingSoakMockServer,
 } from '../build/electron-tracking-soak-mock-server.js'
+import { runCompetingOperationProbe } from './qualification/competing-operation-probe.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -121,11 +125,37 @@ async function main() {
     intervalMs: fixtureClock.intervalMs,
     deviceCount: options.profile.deviceCount,
     movingDeviceCount: options.profile.movingDeviceCount,
+    stationaryDeviceCount: options.profile.stationaryDeviceCount,
+    staleDeviceCount: options.profile.staleDeviceCount,
     productionPollsPerBatch: options.profile.productionPollsPerBatch,
     maximumBatches: options.profile.actualBatches,
     pauseCheckpoints: exactSoakPauseCheckpoints,
+    priorityFaults: options.priorityFaults,
   })
   await seedRuntimeConfiguration(userDataDir, mockServer.baseUrl)
+  let fieldFixtureEvidence = null
+  let fieldFixtureRuntimeDatabase = null
+  if (options.fieldFixturePath !== undefined) {
+    const minimumFieldFixtureBytes = options.fieldFixturePreset === 'local' ? 1_073_741_824 : 3_700_000_000
+    const fixtureMetadata = await lstat(options.fieldFixturePath)
+    if (fixtureMetadata.isSymbolicLink() || !fixtureMetadata.isFile() || fixtureMetadata.size < minimumFieldFixtureBytes) {
+      throw new Error(`Field-scale soak fixture must be a regular file of at least ${minimumFieldFixtureBytes} bytes.`)
+    }
+    await copyFile(options.fieldFixturePath, databasePath)
+    const runtimeDatabaseMetadata = await stat(databasePath)
+    fieldFixtureEvidence = {
+      basename: path.basename(options.fieldFixturePath),
+      bytes: fixtureMetadata.size,
+      sha256: await sha256File(options.fieldFixturePath),
+      preset: options.fieldFixturePreset ?? 'field',
+      minimumBytes: minimumFieldFixtureBytes,
+    }
+    fieldFixtureRuntimeDatabase = {
+      basename: path.basename(databasePath),
+      bytes: runtimeDatabaseMetadata.size,
+      sha256: await sha256File(databasePath),
+    }
+  }
 
   const launches = []
   const mainRoundTrips = []
@@ -142,6 +172,16 @@ async function main() {
   let restartCheckpointsPassed = 0
   let activeLaunch
   let missionId
+  let fieldOutingEvidence = { expectedOutingCount: 0, createdOutingCount: 0 }
+  let fieldFixtureLoadEvidence = null
+  let priorityFaultEvidence = null
+  const archiveCycleRequired = ['normal', 'extended'].includes(options.profile.name) || options.operationPhases === true
+  const archiveCycleMissions = []
+  const archiveCycleEntries = []
+  let archiveCycleCursor = 0
+  let competingArchiveMission = null
+  let archiveFailureMission = null
+  let archiveFailureRecovery = null
   let sleepGuard
   const failureReportPath = path.join(
     evidenceDir,
@@ -171,12 +211,58 @@ async function main() {
     activeLaunch = await launchPackagedApp(options, userDataDir, launches.length + 1)
     launches.push(activeLaunch)
     exactFailureProgress.launchNumber = activeLaunch.number
+    let loadedFixtureMission = null
+    if (fieldFixtureEvidence !== null) {
+      loadedFixtureMission = await retireLoadedFieldFixtureMission(activeLaunch.page)
+    }
+    if (archiveCycleRequired) {
+      const seededArchiveMissions = await seedArchiveCycleMissions(
+        activeLaunch.page,
+        options.profile.name,
+        fixtureClock.baseTimeMs,
+      )
+      archiveCycleMissions.push(...seededArchiveMissions.successMissions)
+      archiveFailureMission = seededArchiveMissions.failureMission
+    }
+    if (options.operationPhases) {
+      competingArchiveMission = await seedCompetingOperationArchiveMission(
+        activeLaunch.page,
+        options.profile.name,
+        fixtureClock.baseTimeMs,
+        userDataDir,
+      )
+    }
     const missionModelEvidence = await startSyntheticMission(
       activeLaunch,
       fixtureClock.missionOffsetHours,
       options.profile.deviceCount,
     )
     missionId = await readActiveMissionId(activeLaunch.page)
+    if (fieldFixtureEvidence !== null && fieldFixtureRuntimeDatabase !== null && loadedFixtureMission !== null) {
+      fieldFixtureLoadEvidence = buildTrackingSoakFixtureLoadEvidence({
+        fixture: fieldFixtureEvidence,
+        runtimeDatabase: fieldFixtureRuntimeDatabase,
+        fixtureMission: loadedFixtureMission,
+        workloadMissionId: missionId,
+      })
+    }
+    fieldOutingEvidence = await createSyntheticFieldOutings(
+      activeLaunch.page,
+      missionId,
+      options.profile.outingCount,
+      fixtureClock.baseTimeMs,
+    )
+    if (options.priorityFaults && !options.operationPhases) {
+      priorityFaultEvidence = await runPriorityFaultEvidence({
+        launch: activeLaunch,
+        mockServer,
+        missionId,
+        expectedDeviceCount: options.profile.deviceCount,
+        timeoutMs: Math.min(options.timeoutMs, 30_000),
+        operationPhases: options.operationPhases === true,
+      })
+      await writeJson(path.join(evidenceDir, 'priority-fault-evidence.json'), priorityFaultEvidence)
+    }
     await recordOperatorInteraction({
       page: activeLaunch.page,
       phase: 'mission-started',
@@ -278,6 +364,21 @@ async function main() {
       }
       await mockServer.resume()
       restartCheckpointsPassed += 1
+      if (archiveCycleCursor < archiveCycleMissions.length) {
+        archiveCycleEntries.push(await runArchiveCycleWhileTracking(
+          activeLaunch.page,
+          archiveCycleMissions[archiveCycleCursor],
+          archiveCycleCursor + 1,
+        ))
+        archiveCycleCursor += 1
+      }
+      if (archiveFailureMission !== null && archiveFailureRecovery === null) {
+        archiveFailureRecovery = await runArchiveFailureRecoveryWhileTracking(
+          activeLaunch.page,
+          archiveFailureMission,
+          checkpoint,
+        )
+      }
     }
 
     await waitForCheckpoint({
@@ -290,6 +391,32 @@ async function main() {
       progress: exactFailureProgress,
       sleepGuard,
     })
+    while (archiveCycleCursor < archiveCycleMissions.length) {
+      archiveCycleEntries.push(await runArchiveCycleWhileTracking(
+        activeLaunch.page,
+        archiveCycleMissions[archiveCycleCursor],
+        archiveCycleCursor + 1,
+      ))
+      archiveCycleCursor += 1
+    }
+    if (options.priorityFaults && options.operationPhases) {
+      priorityFaultEvidence = await runPriorityFaultEvidence({
+        launch: activeLaunch, mockServer, missionId,
+        expectedDeviceCount: options.profile.deviceCount,
+        timeoutMs: Math.min(options.timeoutMs, 30_000), operationPhases: true,
+        evidenceDir,
+        operationEvidenceDir: path.join(userDataDir, 'c24-competing-operation'),
+        archiveMission: competingArchiveMission,
+      })
+      await writeJson(path.join(evidenceDir, 'priority-fault-evidence.json'), priorityFaultEvidence)
+    }
+    if (archiveFailureMission !== null && archiveFailureRecovery === null) {
+      archiveFailureRecovery = await runArchiveFailureRecoveryWhileTracking(
+        activeLaunch.page,
+        archiveFailureMission,
+        null,
+      )
+    }
     if (exactSoakRequired) {
       exactFailureProgress.phase = 'final_latest_before'
       exactFailureProgress.direction = 'latest'
@@ -399,7 +526,11 @@ async function main() {
     await closeLaunch(activeLaunch, mainRoundTrips, rendererGaps)
     activeLaunch = undefined
 
-    const databaseEvidence = inspectDatabase(databasePath, missionId)
+    const mockState = mockServer.snapshot()
+    const databaseEvidence = inspectDatabase(databasePath, missionId, options.profile, {
+      batch: mockState.prioritySourceBatch,
+      versionCount: mockState.prioritySourceVersion,
+    }, { operationPhases: options.operationPhases === true })
     if (
       databaseEvidence.participantRows !== missionModelEvidence.expectedParticipantRows ||
       databaseEvidence.teamRows !== 0 ||
@@ -417,7 +548,12 @@ async function main() {
       baseTimeMs: fixtureClock.baseTimeMs,
       intervalMs: fixtureClock.intervalMs,
       statePath: path.join(evidenceDir, 'unused-position-truth-state.json'),
-    })
+    }, 480, mockState.prioritySourceBatch === null
+      ? null
+      : {
+          batch: mockState.prioritySourceBatch,
+          versionCount: mockState.prioritySourceVersion,
+        })
     const positionTruth = {
       actual: databaseEvidence.positionTruth,
       expected: expectedPositionTruth,
@@ -514,15 +650,24 @@ async function main() {
       profileName: options.profile.name,
       launches,
     })
-    const mockState = mockServer.snapshot()
+    const archiveCycles = {
+      expectedCount: archiveCycleMissions.length,
+      completedCount: archiveCycleEntries.filter((entry) => entry.passed === true).length,
+      entries: archiveCycleEntries,
+      failures: archiveCycleEntries.filter((entry) => entry.passed !== true),
+    }
     const supportBundleRedacted = !containsForbiddenEvidence(supportBundle, [
       'synthetic-soak-secret',
       'synthetic-soak@example.invalid',
       userDataDir,
       os.homedir(),
     ])
-    const verdict = buildTrackingSoakVerdict({
-      profile: options.profile,
+    const verdictProfile = profileWithPriorityBarrierRows(options.profile, {
+      batch: mockState.prioritySourceBatch,
+      versionCount: mockState.prioritySourceVersion,
+    })
+    let verdict = buildTrackingSoakVerdict({
+      profile: verdictProfile,
       observedBatches: mockState.completedBatches,
       deviceRows: databaseEvidence.deviceRows,
       positionRows: databaseEvidence.positionRows,
@@ -539,8 +684,10 @@ async function main() {
         (exactSoakRequired
           ? options.profile.restartCheckpoints.length * 2 + 1
           : 0) +
+        options.profile.outingCount * 2 +
         databaseEvidence.participantBackfillCompletedEvents +
-        (databaseEvidence.events.mission_backup_synced ?? 0),
+        (databaseEvidence.events.mission_backup_synced ?? 0) +
+        (options.operationPhases ? 2 : 0),
       unexplainedMissionEvents: databaseEvidence.unexplainedMissionEvents,
       restartCheckpointsPassed,
       backupCycles: databaseEvidence.events.mission_backup_synced ?? 0,
@@ -578,6 +725,23 @@ async function main() {
       exactDotProof,
       finalLineTotalAudit,
     })
+    if (archiveCycles.completedCount < archiveCycles.expectedCount) {
+      verdict = {
+        ...verdict,
+        passed: false,
+        failureReasons: [
+          ...verdict.failureReasons,
+          `Expected ${archiveCycles.expectedCount} archive cycles while tracking; completed ${archiveCycles.completedCount}.`,
+        ],
+      }
+    }
+    if (archiveCycleRequired && archiveFailureRecovery?.recoverySucceeded !== true) {
+      verdict = {
+        ...verdict,
+        passed: false,
+        failureReasons: [...verdict.failureReasons, 'Archive failure/restart recovery was not completed while tracking.'],
+      }
+    }
     exactFailureProgress.phase = 'closeout'
     sleepGuard.assertHealthy()
     await sleepGuard.stop()
@@ -603,12 +767,63 @@ async function main() {
         node: process.version,
       },
       mockTraccar: mockState,
+      workloadModes: {
+        durationDays: options.profile.durationDays,
+        moving: options.profile.movingDeviceCount,
+        stationary: options.profile.stationaryDeviceCount,
+        stale: options.profile.staleDeviceCount,
+      },
       missionModel: {
         ...missionModelEvidence,
         persistedParticipantRows: databaseEvidence.participantRows,
         persistedTeamRows: databaseEvidence.teamRows,
       },
+      outings: fieldOutingEvidence,
+      archiveCycles,
+      archiveFailureRecovery,
+      priorityFaultEvidence,
+      fieldFixtureLoad: fieldFixtureLoadEvidence,
       database: databaseEvidence,
+      rawResourceMetrics: {
+        schemaVersion: 1,
+        profile: {
+          name: options.profile.name,
+          deviceCount: options.profile.deviceCount,
+          movingDeviceCount: options.profile.movingDeviceCount,
+          stationaryDeviceCount: options.profile.stationaryDeviceCount,
+          staleDeviceCount: options.profile.staleDeviceCount,
+          durationDays: options.profile.durationDays,
+          equivalentProductionPolls: options.profile.equivalentProductionPolls,
+          expectedPositionRows: options.profile.expectedPositionRows,
+          outingCount: options.profile.outingCount,
+        },
+        database: {
+          pageAllocatedBytes: databaseEvidence.databaseBytes,
+          databaseFileBytes: databaseEvidence.databaseFileBytes,
+          walFileBytes: databaseEvidence.walFileBytes,
+          shmFileBytes: databaseEvidence.shmFileBytes,
+          positionRows: databaseEvidence.positionRows,
+          outingRows: databaseEvidence.outingRows,
+        },
+        process: {
+          maximumResidentBytes: processMemory.maximumProcessTreeResidentBytes,
+          sampleCount: processMemory.samples,
+        },
+        ...(fieldFixtureEvidence === null ? {} : { fieldFixture: fieldFixtureEvidence }),
+        ...(fieldFixtureLoadEvidence === null ? {} : { fieldFixtureLoad: fieldFixtureLoadEvidence }),
+        responsiveness: {
+          mainMaximumMs: mainStats.maxMs,
+          rendererMaximumMs: rendererStats.maxMs,
+          operatorMaximumMs: operatorInteractionStats.maxMs,
+        },
+        resourceDistributions: {
+          cpuProcessMs: launches.flatMap((launch) => launch.heartbeatEvidence?.cpuSamples ?? [])
+            .map((sample) => sample.cpuMs)
+            .filter((value) => Number.isFinite(value)),
+          storageBytes: growthCheckpoints.map((checkpoint) => checkpoint.databaseBytes)
+            .filter((value) => Number.isSafeInteger(value) && value >= 0),
+        },
+      },
       positionTruth,
       growth,
       runtimeTiming,
@@ -646,6 +861,7 @@ async function main() {
         webGlRenderer: launch.webGlRenderer,
         rendererSampleCount: launch.rendererSampleCount ?? 0,
         mainHeartbeatErrors: launch.mainHeartbeatErrors,
+        mainHeartbeatCpuSamples: launch.heartbeatEvidence?.cpuSamples ?? [],
         mainHeartbeatFailures: launch.mainHeartbeatFailures,
         mainEventLoopEvidence: launch.mainEventLoopEvidence,
         attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected'),
@@ -660,7 +876,7 @@ async function main() {
     await writeJson(path.join(evidenceDir, 'electron-tracking-soak-report.json'), report)
     console.log(
       `[tracking-soak] profile=${options.profile.name} batches=${mockState.completedBatches}/${options.profile.actualBatches} ` +
-        `positions=${databaseEvidence.positionRows}/${options.profile.expectedPositionRows} ` +
+        `positions=${databaseEvidence.positionRows}/${verdictProfile.expectedPositionRows} ` +
         `main-max=${mainStats.maxMs.toFixed(1)}ms redundant-slope=${verdict.redundantTelemetrySlopeRowsPerEquivalentPoll} ` +
         `passed=${verdict.passed}`,
     )
@@ -771,16 +987,22 @@ async function launchPackagedApp(options, userDataDir, number) {
   const remoteDebuggingPort = await findFreePort()
   const inspectorPort = await findFreePort()
   const logChunks = []
+  const childEnvironment = {
+    ...process.env,
+    SARTRACKER_ELECTRON_USER_DATA_PATH: userDataDir,
+    SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS: String(options.pollIntervalMs),
+  }
+  // The controller may itself run under Electron's Node mode so its native
+  // SQLite binding matches the Electron ABI. The launched app must remain a
+  // normal desktop Electron process with its renderer enabled.
+  delete childEnvironment.ELECTRON_RUN_AS_NODE
+  delete childEnvironment.ELECTRON_RENDERER_URL
   const appProcess = spawn(
     options.appPath,
     [`--inspect=${inspectorPort}`, `--remote-debugging-port=${remoteDebuggingPort}`, ...options.extraArgs],
     {
       cwd: projectRoot,
-      env: {
-        ...process.env,
-        SARTRACKER_ELECTRON_USER_DATA_PATH: userDataDir,
-        SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS: String(options.pollIntervalMs),
-      },
+      env: childEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   )
@@ -994,6 +1216,764 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
     selectedParticipantRows: missionModelEnabled ? expectedDeviceCount : 0,
     expectedParticipantRows: expectedDeviceCount,
     expectedParticipantAddedEvents: missionModelEnabled ? 0 : expectedDeviceCount,
+  }
+}
+
+/**
+ * Exercises the fixed C04/C24 priority and fault boundary through the real
+ * packaged preload and mission-store bridges.  The provider controls are
+ * deterministic and bounded; every observation is retained as raw status or
+ * identity data so the receipt validator can recompute the predicates.
+ */
+async function runPriorityFaultEvidence({
+  launch,
+  mockServer,
+  missionId,
+  expectedDeviceCount,
+  timeoutMs,
+  operationPhases = false,
+  evidenceDir = null,
+  operationEvidenceDir = null,
+  archiveMission = null,
+}) {
+  const page = launch.page
+  const startedAtMs = performance.now()
+  const expectedDeviceIds = Array.from({ length: expectedDeviceCount }, (_, index) => String(index + 1))
+  const deadline = Date.now() + timeoutMs
+  const readLatest = async () => page.evaluate(async (activeMissionId) => {
+    const store = window.sartrackerElectron?.missionStore
+    if (typeof store?.latestPositions !== 'function') {
+      throw new Error('Priority soak requires the packaged latest-positions bridge.')
+    }
+    const positions = await store.latestPositions(activeMissionId)
+    return {
+      observedAtMs: Date.now(),
+      positions: positions.map((position) => ({
+      deviceId: position?.device_id ?? null,
+      sourcePositionId: position?.source_position_id ?? null,
+      timestamp: position?.timestamp ?? null,
+      })),
+    }
+  }, missionId)
+  const snapshot = (positions) => {
+    const observation = positions !== null && typeof positions === 'object' ? positions : {}
+    const rows = Array.isArray(observation.positions) ? observation.positions : []
+    return {
+      count: rows.length,
+      deviceIds: rows.map((row) => row.deviceId).filter((value) => typeof value === 'string').sort(),
+      sourcePositionIds: rows.map((row) => row.sourcePositionId).filter((value) => typeof value === 'string').sort(),
+      timestampCount: rows.filter((row) => typeof row.timestamp === 'string' && Number.isFinite(Date.parse(row.timestamp))).length,
+      observedAtMs: Number.isSafeInteger(observation.observedAtMs) ? observation.observedAtMs : null,
+      positionBindings: rows
+        .filter((row) => typeof row.deviceId === 'string' && typeof row.sourcePositionId === 'string')
+        .map((row) => ({ deviceId: row.deviceId, sourcePositionId: row.sourcePositionId })),
+    }
+  }
+  const waitForCurrent = async (label, expectedSourcePositionIds = null) => {
+    let latest = []
+    while (Date.now() < deadline) {
+      latest = await readLatest()
+      const current = snapshot(latest)
+      const hasExpectedSourceVersion = expectedSourcePositionIds === null
+        || JSON.stringify([...current.positionBindings].sort(comparePositionBindings)) ===
+          JSON.stringify([...expectedSourcePositionIds].sort(comparePositionBindings))
+      if (current.count >= expectedDeviceCount &&
+          new Set(current.deviceIds).size >= expectedDeviceCount &&
+          current.timestampCount >= expectedDeviceCount &&
+          hasExpectedSourceVersion) {
+        return { label, observedAtMs: performance.now(), ...current }
+      }
+      await delay(100)
+    }
+    throw new Error(`Priority soak did not observe ${expectedDeviceCount} current positions during ${label}.`)
+  }
+  const requestViaBridge = async (url) => page.evaluate(async (requestUrl) => {
+    const bridge = window.sartrackerElectron
+    if (typeof bridge?.traccarHttpRequest !== 'function') {
+      throw new Error('Priority soak requires the packaged Traccar HTTP bridge.')
+    }
+    const startedAt = performance.now()
+    const response = await bridge.traccarHttpRequest({
+      url: requestUrl,
+      method: 'GET',
+      headers: { Accept: 'application/json', Cookie: 'JSESSIONID=tracking-soak' },
+      body: null,
+      timeoutMs: 5_000,
+    })
+    return {
+      status: response.status,
+      statusText: response.statusText,
+      bodyBytes: typeof response.body === 'string' ? response.body.length : 0,
+      durationMs: performance.now() - startedAt,
+    }
+  }, url)
+  const operationEvidence = async () => {
+    const requestId = `priority-breadcrumb-${Date.now()}`
+    const operationStartedAt = performance.now()
+    const queryPromise = page.evaluate(async ({ activeMissionId, activeRequestId }) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (typeof store?.listExactBreadcrumbDotPage !== 'function') {
+        throw new Error('Priority soak exact breadcrumb page bridge is unavailable.')
+      }
+      const result = await store.listExactBreadcrumbDotPage({
+        missionId: activeMissionId,
+        activeDeviceIds: [],
+        limit: 10_000,
+        cursor: null,
+        direction: 'latest',
+      }, activeRequestId)
+      return { positionCount: result?.pagePositionCount ?? null }
+    }, { activeMissionId: missionId, activeRequestId: requestId }).then(
+      (result) => ({ status: 'fulfilled', result }),
+      (error) => ({
+        status: 'rejected',
+        errorName: typeof error?.name === 'string' ? error.name : null,
+        errorMessage: typeof error?.message === 'string' ? error.message : String(error),
+      }),
+    )
+    await delay(10)
+    const cancelRequestedAtMs = performance.now()
+    const cancelAccepted = await page.evaluate(async (activeRequestId) => {
+      const cancel = window.sartrackerElectron?.missionStore?.cancelExactBreadcrumbDotQuery
+      if (typeof cancel !== 'function') return null
+      return cancel(activeRequestId)
+    }, requestId)
+    let queryOutcome = 'unknown'
+    let positionCount = null
+    let queryErrorName = null
+    let queryErrorClass = null
+    const queryResult = await queryPromise
+    if (queryResult.status === 'fulfilled') {
+      queryOutcome = 'fulfilled'
+      positionCount = queryResult.result.positionCount
+    } else {
+      queryErrorName = queryResult.errorName
+      queryErrorClass = /cancel/iu.test(queryResult.errorMessage)
+        ? 'breadcrumb-query-cancelled'
+        : 'other'
+      queryOutcome = queryResult.errorName === 'AbortError' || queryErrorClass === 'breadcrumb-query-cancelled'
+        ? 'cancelled'
+        : 'rejected'
+    }
+    return {
+      requestId,
+      started: true,
+      startDurationMs: cancelRequestedAtMs - operationStartedAt,
+      cancelRequested: true,
+      cancelAccepted,
+      clientSurface: 'packaged-electron-mission-store-exact-dot-page',
+      queryApi: 'listExactBreadcrumbDotPage',
+      queryOutcome,
+      queryErrorName,
+      queryErrorClass,
+      positionCount,
+      querySettled: true,
+      cleanupCompleted: true,
+    }
+  }
+
+  /** Exercise fixed public operation surfaces and retain only bounded result shapes. */
+  const representativeOperationEvidence = async () => {
+    if (!operationPhases) return null
+    const runPhase = async (name, action) => {
+      const startedAtMs = performance.now()
+      try {
+        const resultShape = await action()
+        return {
+          name,
+          status: 'fulfilled',
+          durationMs: performance.now() - startedAtMs,
+          resultShape,
+        }
+      } catch (error) {
+        return {
+          name,
+          status: 'rejected',
+          durationMs: performance.now() - startedAtMs,
+          failureKind: safeErrorClass(error),
+          resultShape: null,
+        }
+      }
+    }
+    const phases = {}
+    phases.coverage = await runPhase('coverage', () => page.evaluate(async (activeMissionId) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (typeof store?.readCoverageManifest !== 'function') throw new Error('Coverage manifest bridge is unavailable.')
+      const manifest = await store.readCoverageManifest(activeMissionId, crypto.randomUUID())
+      return {
+        enumerated: manifest?.enumerated === true,
+        chunkCount: Array.isArray(manifest?.chunks) ? manifest.chunks.length : -1,
+      }
+    }, missionId))
+    phases.replay = await runPhase('replay', () => page.evaluate(async (activeMissionId) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (typeof store?.readMissionReplay !== 'function') throw new Error('Mission replay bridge is unavailable.')
+      const result = await store.readMissionReplay({
+        missionId: activeMissionId,
+        selectedTime: new Date().toISOString(),
+        timezone: 'Europe/Dublin',
+        trackLimit: 32,
+        objectLimit: 16,
+      }, crypto.randomUUID())
+      return {
+        replayGeneration: Number.isSafeInteger(result?.replayGeneration) ? result.replayGeneration : -1,
+        trackCount: Array.isArray(result?.tracks) ? result.tracks.length : -1,
+      }
+    }, missionId))
+    phases.gpx = await runPhase('gpx', () => page.evaluate(async (activeMissionId) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (typeof store?.listGpxImportPage !== 'function' || typeof store?.listGpxImportIssues !== 'function') {
+        throw new Error('GPX listing bridges are unavailable.')
+      }
+      const [imports, issues] = await Promise.all([
+        store.listGpxImportPage({ missionId: activeMissionId, limit: 16 }),
+        store.listGpxImportIssues({ missionId: activeMissionId, limit: 16 }),
+      ])
+      return {
+        importCount: Array.isArray(imports?.entries) ? imports.entries.length : -1,
+        issueCount: Array.isArray(issues?.entries) ? issues.entries.length : -1,
+      }
+    }, missionId))
+    phases.archive = await runPhase('archive', () => page.evaluate(async (activeMissionId) => {
+      const store = window.sartrackerElectron?.missionStore
+      if (typeof store?.listMissionArchives !== 'function') throw new Error('Mission archive bridge is unavailable.')
+      const archives = await store.listMissionArchives(activeMissionId)
+      return { archiveCount: Array.isArray(archives) ? archives.length : -1 }
+    }, missionId))
+    phases.backup = await runPhase('backup', () => page.evaluate(async () => {
+      const store = window.sartrackerElectron?.missionStore
+      if (typeof store?.syncBackup !== 'function') throw new Error('Mission backup bridge is unavailable.')
+      const result = await store.syncBackup('c24-operation-phases')
+      return { resultKind: typeof result }
+    }))
+    phases.export = await runPhase('export', () => page.evaluate(async () => {
+      const exportBundle = window.sartrackerElectron?.exportSupportBundle
+      if (typeof exportBundle !== 'function') throw new Error('Support export bridge is unavailable.')
+      const result = await exportBundle({
+        fileName: 'c24-operation-phases-support.txt',
+        contents: 'SAR Tracker bounded C24 representative operation phase',
+      })
+      return { resultKind: typeof result }
+    }))
+    return phases
+  }
+
+  try {
+    const initial = await waitForCurrent('initial-current')
+    const workloadPositionRows = await page.evaluate(id => window.sartrackerElectron.missionStore.countPositions(id), missionId)
+    mockServer.setHistoryMode('hold-503')
+    const heldHistory = await requestViaBridge(
+      `${mockServer.baseUrl}/api/positions?deviceId=1&from=2026-01-01T00:00:00.000Z&to=2026-01-01T00:01:00.000Z`,
+    )
+    const historyHoldSource = await mockServer.advancePrioritySourceVersion()
+    const duringHistoryHold = await waitForCurrent(
+      'history-hold-current',
+      historyHoldSource.sourcePositionIds,
+    )
+    const visibility = []
+    await performLaunchOwnedHarnessClick(
+      launch,
+      'open-devices-workspace',
+      () => page.getByTestId('open-devices-workspace').click({ force: true }),
+    )
+    const toggle = page.getByTestId('device-visibility-1')
+    await toggle.waitFor({ state: 'visible', timeout: 5_000 })
+    const before = await toggle.isChecked()
+    const hideStartedAt = performance.now()
+    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click({ force: true }))
+    await page.waitForFunction(() => document.querySelector('[data-testid="device-visibility-1"]')?.matches(':checked') === false)
+    visibility.push({ deviceId: '1', action: 'hide', checkedBefore: before, checkedAfter: false, durationMs: performance.now() - hideStartedAt })
+    const showStartedAt = performance.now()
+    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click({ force: true }))
+    await page.waitForFunction(() => document.querySelector('[data-testid="device-visibility-1"]')?.matches(':checked') === true)
+    visibility.push({ deviceId: '1', action: 'show', checkedBefore: false, checkedAfter: true, durationMs: performance.now() - showStartedAt })
+    await performLaunchOwnedHarnessClick(launch, 'workspace-close-btn', () => page.getByTestId('workspace-close-btn').click({ force: true }))
+    await page.getByTestId('devices-workspace').waitFor({ state: 'hidden', timeout: 5_000 })
+
+    mockServer.setCurrentMode('offline')
+    const offlineCurrent = await requestViaBridge(`${mockServer.baseUrl}/api/positions`)
+    mockServer.setCurrentMode('allow')
+    const reconnectSource = await mockServer.advancePrioritySourceVersion()
+    const recoveredCurrent = await requestViaBridge(`${mockServer.baseUrl}/api/positions`)
+    const afterReconnect = await waitForCurrent(
+      'current-reconnect',
+      reconnectSource.sourcePositionIds,
+    )
+    // The held-history interval is the bounded fault window. Release it before
+    // returning so the surrounding soak can complete its normal reconciliation.
+    mockServer.setHistoryMode('allow')
+    const operation = await operationEvidence()
+    const representativePhases = operationPhases ? null : await representativeOperationEvidence()
+    const competingOperationEvidence = operationPhases
+      ? await runCompetingOperationProbe({
+          page,
+          missionId,
+          evidenceDir: operationEvidenceDir ?? evidenceDir,
+          expected: {
+            missionId,
+            archiveMissionId: archiveMission?.missionId,
+            archiveMissionName: archiveMission?.name,
+            archiveSecret: archiveMission?.secret,
+          },
+        })
+      : null
+    if (operationPhases) {
+      await retainCompetingOperationArtifacts(operationEvidenceDir, evidenceDir)
+    }
+    const requests = mockServer.requestLog()
+    const currentResponses = requests.filter((entry) => entry.kind === 'current')
+    const sourceCurrentObservations = [initial, duringHistoryHold, afterReconnect].map((observation) => {
+      const observedPositions = observation.positionBindings
+      const matchedSourceArrivals = observedPositions.map((position) => {
+        const matchingResponses = currentResponses
+          .filter((response) => response.status === 200
+            && Number.isSafeInteger(response.sourceArrivalAtMs)
+            && response.sourceArrivalAtMs <= observation.observedAtMs
+            && Array.isArray(response.sourcePositions)
+            && response.sourcePositions.some((source) =>
+              source.deviceId === position.deviceId && source.sourcePositionId === position.sourcePositionId))
+          .sort((left, right) => left.sourceResponseSequence - right.sourceResponseSequence)
+        const response = matchingResponses.at(0)
+        if (response === undefined) return null
+        return {
+          deviceId: position.deviceId,
+          sourcePositionId: position.sourcePositionId,
+          sourceResponseSequence: response.sourceResponseSequence,
+          sourceArrivalAtMs: response.sourceArrivalAtMs,
+          latencyMs: observation.observedAtMs - response.sourceArrivalAtMs,
+        }
+      })
+      return {
+        label: observation.label,
+        observedAtMs: observation.observedAtMs,
+        positionBindings: observedPositions,
+        matchedSourceArrivals,
+      }
+    })
+    const sourceToCurrentLatencyMs = sourceCurrentObservations.slice(1).flatMap((observation) =>
+      observation.matchedSourceArrivals
+        .filter((match) => match !== null)
+        .map((match) => match.latencyMs))
+    const currentRequestDurationsMs = requests
+      .filter((entry) => entry.kind === 'current' && Number.isFinite(entry.durationMs))
+      .map((entry) => entry.durationMs)
+    return {
+      schemaVersion: 1,
+      status: 'observed',
+      workloadPositionRows,
+      source: {
+        expectedDeviceCount,
+        expectedDeviceIds,
+        prioritySource: {
+          batch: mockServer.snapshot().prioritySourceBatch,
+          versionCount: mockServer.snapshot().prioritySourceVersion,
+        },
+        historyHoldStatus: heldHistory.status,
+        currentOfflineStatus: offlineCurrent.status,
+        currentReconnectStatus: recoveredCurrent.status,
+        currentRequestDurationsMs,
+        currentResponses,
+        provider: mockServer.prioritySnapshot(),
+      },
+      packaged: {
+        initial,
+        currentWhileHistoryHeld: duringHistoryHold,
+        currentAfterReconnect: afterReconnect,
+        visibility,
+        historyBridgeDurationMs: heldHistory.durationMs,
+        currentOfflineBridgeDurationMs: offlineCurrent.durationMs,
+        currentReconnectBridgeDurationMs: recoveredCurrent.durationMs,
+      },
+      operations: {
+        competingHistoryAndCurrent: true,
+        competingOperationBinding: {
+          missionId,
+          archiveMissionId: archiveMission?.missionId ?? null,
+        },
+        cancellation: operation,
+        faultStages: ['start', 'steady', 'cancel', 'fail', 'cleanup'],
+        representativePhases,
+        competingOperationEvidence,
+      },
+      sourceCurrentObservations,
+      sourceToCurrentLatencyMs,
+      elapsedMs: performance.now() - startedAtMs,
+    }
+  } catch (error) {
+    if (operationPhases) {
+      await retainCompetingOperationArtifacts(operationEvidenceDir, evidenceDir)
+    }
+    const partialCompetingOperation = evidenceDir === null
+      ? null
+      : await readFile(path.join(evidenceDir, 'competing-operation-report.json'), 'utf8')
+        .then((contents) => JSON.parse(contents))
+        .catch(() => null)
+    return {
+      schemaVersion: 1,
+      status: 'not-observed',
+      failureKind: safeErrorClass(error),
+      failureMessage: error instanceof Error ? error.message : String(error),
+      source: { expectedDeviceCount, expectedDeviceIds, provider: mockServer.prioritySnapshot() },
+      packaged: { initial: null, currentWhileHistoryHeld: null, currentAfterReconnect: null, visibility: [] },
+      operations: {
+        competingHistoryAndCurrent: false,
+        competingOperationBinding: {
+          missionId,
+          archiveMissionId: archiveMission?.missionId ?? null,
+        },
+        cancellation: null,
+        faultStages: [],
+        representativePhases: null,
+        competingOperationEvidence: partialCompetingOperation,
+      },
+      sourceToCurrentLatencyMs: [],
+      elapsedMs: performance.now() - startedAtMs,
+    }
+  }
+}
+
+/** Copy bounded C24 helper evidence from app-owned storage into controller evidence. */
+async function retainCompetingOperationArtifacts(sourceDirectory, evidenceDirectory) {
+  if (typeof sourceDirectory !== 'string' || typeof evidenceDirectory !== 'string'
+      || sourceDirectory === evidenceDirectory) return
+  const artifacts = [
+    ['competing-operation-report.json', 8 * 1024 * 1024],
+    ['map-surface-overlay-failure.png', 25 * 1024 * 1024],
+  ]
+  await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 })
+  for (const [basename, maximumBytes] of artifacts) {
+    const sourcePath = path.join(sourceDirectory, basename)
+    const destinationPath = path.join(evidenceDirectory, basename)
+    try {
+      const sourceStat = await stat(sourcePath)
+      if (!sourceStat.isFile() || sourceStat.size > maximumBytes) continue
+      await copyFile(sourcePath, destinationPath)
+    } catch {
+      // A phase may fail before producing its optional nested artifact. The
+      // partial operation report remains embedded in the outer failure report.
+    }
+  }
+}
+
+/** Compares device/source bindings without trusting database row order. */
+function comparePositionBindings(left, right) {
+  const deviceOrder = String(left?.deviceId ?? '').localeCompare(
+    String(right?.deviceId ?? ''),
+    'en',
+    { numeric: true },
+  )
+  if (deviceOrder !== 0) return deviceOrder
+  return String(left?.sourcePositionId ?? '').localeCompare(
+    String(right?.sourcePositionId ?? ''),
+    'en',
+    { numeric: true },
+  )
+}
+
+/** Finish the active fixture mission through the packaged UI before starting the bounded workload. */
+async function retireLoadedFieldFixtureMission(page) {
+  const active = await page.evaluate(async () => {
+    const mission = await window.sartrackerElectron?.missionStore.getActiveMission()
+    if (mission === null || mission === undefined || typeof mission.id !== 'string'
+        || !mission.id.startsWith('fixture-mission-')) {
+      throw new Error('Field-scale soak did not load the bound fixture mission into the packaged runtime.')
+    }
+    return { id: mission.id, statusBefore: mission.status }
+  })
+  if (active.statusBefore !== 'active') {
+    throw new Error(`Field-scale fixture mission must start active; observed ${active.statusBefore}.`)
+  }
+  await page.getByTestId('mission-finish-btn').waitFor({ state: 'visible', timeout: 60_000 })
+  await page.getByTestId('mission-finish-btn').click({ force: true })
+  const dialog = page.getByTestId('mission-finish-dialog')
+  await dialog.waitFor({ state: 'visible', timeout: 30_000 })
+  await dialog.getByRole('button', { name: 'Confirm Finish', exact: true }).click()
+  const statusAfter = await page.evaluate(async (missionId) => {
+    const mission = await window.sartrackerElectron?.missionStore.getMission(missionId)
+    return mission?.status ?? null
+  }, active.id)
+  if (statusAfter !== 'finished') {
+    throw new Error(`Field-scale fixture mission did not finish after the packaged UI action: ${String(statusAfter)}.`)
+  }
+  await page.getByTestId('mission-name-input').waitFor({ state: 'visible', timeout: 30_000 })
+  return {
+    id: active.id,
+    statusBefore: active.statusBefore,
+    statusAfter,
+  }
+}
+
+/** Seed finished disposable missions so archive work can run beside tracking. */
+async function seedArchiveCycleMissions(page, profileName, baseTimeMs) {
+  const seeded = await page.evaluate(async ({ profile, startTimeMs }) => {
+    const store = window.sartrackerElectron?.missionStore
+    if (store === undefined || typeof store.createMission !== 'function'
+        || typeof store.finishMission !== 'function') {
+      throw new Error('Long-duration soak requires the packaged mission archive bridge.')
+    }
+    const successMissions = []
+    for (let index = 0; index < 2; index += 1) {
+      const created = await store.createMission({
+        name: `Synthetic ${profile} archive cycle ${index + 1}`,
+        start_time: new Date(startTimeMs - (2 - index) * 60 * 60 * 1_000).toISOString(),
+      })
+      if (created?.status !== 'active' || typeof created.id !== 'string') {
+        throw new Error('Long-duration archive-cycle seed returned an invalid mission.')
+      }
+      const finished = await store.finishMission(created.id)
+      if (finished?.status !== 'finished') {
+        throw new Error('Long-duration archive-cycle seed did not finish cleanly.')
+      }
+      successMissions.push({ missionId: created.id, missionStatusBefore: finished.status })
+    }
+    const failureCreated = await store.createMission({
+      name: `Synthetic ${profile} archive failure recovery`,
+      start_time: new Date(startTimeMs - 3 * 60 * 60 * 1_000).toISOString(),
+    })
+    if (failureCreated?.status !== 'active' || typeof failureCreated.id !== 'string') {
+      throw new Error('Long-duration archive-failure seed returned an invalid mission.')
+    }
+    const failureFinished = await store.finishMission(failureCreated.id)
+    if (failureFinished?.status !== 'finished') {
+      throw new Error('Long-duration archive-failure seed did not finish cleanly.')
+    }
+    return {
+      successMissions,
+      failureMission: { missionId: failureCreated.id, missionStatusBefore: failureFinished.status },
+    }
+  }, { profile: profileName, startTimeMs: baseTimeMs })
+  if (!Array.isArray(seeded?.successMissions) || seeded.successMissions.length !== 2
+      || seeded.successMissions.some((entry) => typeof entry?.missionId !== 'string')
+      || typeof seeded.failureMission?.missionId !== 'string') {
+    throw new Error('Long-duration soak did not retain two success and one failure-recovery archive missions.')
+  }
+  return seeded
+}
+
+/** Seed one finished mission solely for the C24 competing archive lifecycle. */
+async function seedCompetingOperationArchiveMission(page, profileName, baseTimeMs, appOwnedEvidenceDir) {
+  const name = `Synthetic ${profileName} C24 competing archive`
+  const secret = 'C24-Competing-Archive-Secret-2026!'
+  const fixturePath = path.join(appOwnedEvidenceDir, 'c24-competing-archive-seed.gpx')
+  const fixture = '<?xml version="1.0"?><gpx version="1.1" creator="sartracker-c24"><trk><trkseg><trkpt lat="52.120000" lon="-9.720000"><time>2026-01-01T09:00:00.000Z</time></trkpt><trkpt lat="52.120100" lon="-9.720100"><time>2026-01-01T09:00:01.000Z</time></trkpt></trkseg></trk></gpx>\n'
+  await writeFile(fixturePath, fixture, { flag: 'wx', mode: 0o600 })
+  const mission = await page.evaluate(async ({ missionName, startTimeMs, fixturePath: sourcePath }) => {
+    const store = window.sartrackerElectron?.missionStore
+    if (store === undefined || typeof store.createMission !== 'function'
+        || typeof store.finishMission !== 'function') {
+      throw new Error('C24 competing archive requires the packaged mission archive bridge.')
+    }
+    const created = await store.createMission({
+      name: missionName,
+      start_time: new Date(startTimeMs - 4 * 60 * 60 * 1_000).toISOString(),
+    })
+    if (created?.status !== 'active' || typeof created.id !== 'string') {
+      throw new Error('C24 competing archive seed returned an invalid mission.')
+    }
+    const imported = await store.importGpxEvidencePaths({ missionId: created.id, paths: [sourcePath] })
+    if (!Array.isArray(imported?.imports) || imported.imports.length !== 1
+        || !Array.isArray(imported.failures) || imported.failures.length !== 0) {
+      throw new Error('C24 competing archive seed did not retain a nonempty GPX import.')
+    }
+    const finished = await store.finishMission(created.id)
+    if (finished?.status !== 'finished') {
+      throw new Error('C24 competing archive seed did not finish cleanly.')
+    }
+    return { missionId: created.id, status: finished.status }
+  }, { missionName: name, startTimeMs: baseTimeMs, fixturePath })
+  if (mission?.status !== 'finished' || typeof mission.missionId !== 'string') {
+    throw new Error('C24 competing archive seed did not retain the finished mission identity.')
+  }
+  return { ...mission, name, secret }
+}
+
+/** Finalize one disposable mission while the tracking mission remains active. */
+async function runArchiveCycleWhileTracking(page, seeded, cycleNumber) {
+  try {
+    const result = await page.evaluate(async ({ missionId }) => {
+      const bridge = window.sartrackerElectron
+      const store = bridge?.missionStore
+      if (store === undefined || typeof store.issueMissionArchiveRecoveryCode !== 'function'
+          || typeof store.finalizeMission !== 'function'
+          || typeof bridge.onMissionArchiveProgress !== 'function') {
+        throw new Error('Long-duration soak archive-cycle bridge is unavailable.')
+      }
+      const issuance = await store.issueMissionArchiveRecoveryCode(missionId)
+      if (typeof issuance?.operationId !== 'string' || typeof issuance.recoveryCode !== 'string') {
+        throw new Error('Long-duration archive-cycle recovery issuance was invalid.')
+      }
+      const createProgressPhases = []
+      const verifyProgressPhases = []
+      const unsubscribe = bridge.onMissionArchiveProgress((progress) => {
+        if (progress?.operationId !== issuance.operationId || progress?.missionId !== missionId) return
+        if (progress.kind === 'create' && typeof progress.phase === 'string') createProgressPhases.push(progress.phase)
+        if (progress.kind === 'verify' && typeof progress.phase === 'string') verifyProgressPhases.push(progress.phase)
+      })
+      try {
+        const finalized = await store.finalizeMission(missionId, {
+          operationId: issuance.operationId,
+          passphrase: 'Synthetic-Soak-Archive-Passphrase-2026!',
+          recoveryCode: issuance.recoveryCode,
+        })
+        return {
+          missionStatusAfter: finalized?.mission?.status ?? null,
+          archiveStatus: finalized?.archive?.status ?? null,
+          archiveAvailability: finalized?.archive?.availability ?? null,
+          archiveId: finalized?.archive?.id ?? null,
+          archiveSizeBytes: finalized?.archive?.size_bytes ?? null,
+          ciphertextSha256: finalized?.archive?.ciphertext_sha256 ?? null,
+          createProgressPhases,
+          verifyProgressPhases,
+        }
+      } finally {
+        unsubscribe()
+      }
+    }, { missionId: seeded.missionId })
+    const passed = result?.missionStatusAfter === 'finalized'
+      && result.archiveStatus === 'verified'
+      && result.archiveAvailability === 'present'
+      && typeof result.archiveId === 'string'
+      && Number.isSafeInteger(result.archiveSizeBytes)
+      && result.archiveSizeBytes > 0
+      && typeof result.ciphertextSha256 === 'string'
+      && /^[a-f0-9]{64}$/u.test(result.ciphertextSha256)
+    return {
+      cycle: cycleNumber,
+      missionId: seeded.missionId,
+      observedWhileTracking: true,
+      missionStatusBefore: seeded.missionStatusBefore,
+      ...result,
+      passed,
+    }
+  } catch (error) {
+    return {
+      cycle: cycleNumber,
+      missionId: seeded.missionId,
+      observedWhileTracking: true,
+      missionStatusBefore: seeded.missionStatusBefore,
+      passed: false,
+      failureKind: error instanceof Error ? error.name : 'UnknownError',
+      failureMessage: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+/** Prove a rejected archive attempt can recover after a tracking restart. */
+async function runArchiveFailureRecoveryWhileTracking(page, seeded, restartCheckpoint) {
+  try {
+    const result = await page.evaluate(async ({ missionId, afterRestart }) => {
+      const bridge = window.sartrackerElectron
+      const store = bridge?.missionStore
+      if (store === undefined || typeof store.issueMissionArchiveRecoveryCode !== 'function'
+          || typeof store.finalizeMission !== 'function'
+          || typeof bridge.onMissionArchiveProgress !== 'function') {
+        throw new Error('Long-duration archive failure-recovery bridge is unavailable.')
+      }
+      const failedIssuance = await store.issueMissionArchiveRecoveryCode(missionId)
+      if (typeof failedIssuance?.operationId !== 'string' || typeof failedIssuance.recoveryCode !== 'string') {
+        throw new Error('Long-duration archive failure-recovery issuance was invalid.')
+      }
+      let failureRejected = false
+      try {
+        await store.finalizeMission(missionId, {
+          operationId: failedIssuance.operationId,
+          passphrase: 'Synthetic-Soak-Archive-Passphrase-2026!',
+          recoveryCode: 'invalid-synthetic-recovery-code',
+        })
+      } catch {
+        failureRejected = true
+      }
+      const recoveryIssuance = await store.issueMissionArchiveRecoveryCode(missionId)
+      if (typeof recoveryIssuance?.operationId !== 'string' || typeof recoveryIssuance.recoveryCode !== 'string') {
+        throw new Error('Long-duration archive recovery issuance was invalid.')
+      }
+      const createProgressPhases = []
+      const verifyProgressPhases = []
+      const unsubscribe = bridge.onMissionArchiveProgress((progress) => {
+        if (progress?.operationId !== recoveryIssuance.operationId || progress?.missionId !== missionId) return
+        if (progress.kind === 'create' && typeof progress.phase === 'string') createProgressPhases.push(progress.phase)
+        if (progress.kind === 'verify' && typeof progress.phase === 'string') verifyProgressPhases.push(progress.phase)
+      })
+      try {
+        const finalized = await store.finalizeMission(missionId, {
+          operationId: recoveryIssuance.operationId,
+          passphrase: 'Synthetic-Soak-Archive-Passphrase-2026!',
+          recoveryCode: recoveryIssuance.recoveryCode,
+        })
+        return {
+          observedWhileTracking: true,
+          observedAfterRestart: afterRestart,
+          failureAttempted: true,
+          failureRejected,
+          recoverySucceeded: finalized?.mission?.status === 'finalized'
+            && finalized?.archive?.status === 'verified'
+            && finalized?.archive?.availability === 'present',
+          missionStatusAfter: finalized?.mission?.status ?? null,
+          archiveStatus: finalized?.archive?.status ?? null,
+          archiveAvailability: finalized?.archive?.availability ?? null,
+          createProgressPhases,
+          verifyProgressPhases,
+        }
+      } finally {
+        unsubscribe()
+      }
+    }, { missionId: seeded.missionId, afterRestart: restartCheckpoint !== null })
+    return {
+      missionId: seeded.missionId,
+      restartCheckpoint,
+      ...result,
+    }
+  } catch (error) {
+    return {
+      missionId: seeded.missionId,
+      restartCheckpoint,
+      observedWhileTracking: true,
+      observedAfterRestart: restartCheckpoint !== null,
+      failureAttempted: true,
+      failureRejected: false,
+      recoverySucceeded: false,
+      failureKind: error instanceof Error ? error.name : 'UnknownError',
+      failureMessage: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+/** Create deterministic, closed synthetic outings for the reviewed field profiles. */
+async function createSyntheticFieldOutings(page, missionId, expectedOutingCount, baseTimeMs) {
+  if (expectedOutingCount === 0) {
+    return { expectedOutingCount: 0, createdOutingCount: 0 }
+  }
+  const createdOutingIds = await page.evaluate(async ({ missionId: activeMissionId, expectedCount, startTimeMs }) => {
+    const missionStore = window.sartrackerElectron?.missionStore
+    if (typeof missionStore?.createOuting !== 'function' || typeof missionStore?.endOuting !== 'function') {
+      throw new Error('Field-scale soak requires the packaged outing mission-store bridge.')
+    }
+    const outingIds = []
+    const spacingMs = 30 * 60 * 1_000
+    const durationMs = 10 * 60 * 1_000
+    for (let index = 0; index < expectedCount; index += 1) {
+      const startedAt = new Date(startTimeMs + index * spacingMs).toISOString()
+      const endedAt = new Date(startTimeMs + index * spacingMs + durationMs).toISOString()
+      const outing = await missionStore.createOuting({
+        mission_id: activeMissionId,
+        label: `Synthetic field outing ${index + 1}`,
+        started_at: startedAt,
+      })
+      await missionStore.endOuting({
+        mission_id: activeMissionId,
+        outing_id: outing.id,
+        ended_at: endedAt,
+      })
+      outingIds.push(outing.id)
+    }
+    return outingIds
+  }, { missionId, expectedCount: expectedOutingCount, startTimeMs: baseTimeMs })
+  if (!Array.isArray(createdOutingIds) || createdOutingIds.length !== expectedOutingCount) {
+    throw new Error(`Field-scale soak expected ${expectedOutingCount} closed outings; observed ${createdOutingIds?.length ?? 0}.`)
+  }
+  return {
+    expectedOutingCount,
+    createdOutingCount: createdOutingIds.length,
   }
 }
 
@@ -3137,7 +4117,7 @@ function createProcessMemoryReport(processMemory) {
   }
 }
 
-function inspectDatabase(databasePath, missionId) {
+function inspectDatabase(databasePath, missionId, profile, prioritySource = null, options = {}) {
   const database = new Database(databasePath)
   try {
     const walRows = database.pragma('wal_checkpoint(PASSIVE)')
@@ -3149,7 +4129,9 @@ function inspectDatabase(databasePath, missionId) {
         .all(missionId)
         .map((row) => [row.event_type, Number(row.count)]),
     )
-    const operationalEventEvidence = classifyTrackingSoakMissionEvents(events)
+    const operationalEventEvidence = classifyTrackingSoakMissionEvents(events, {
+      operationPhases: options?.operationPhases === true,
+    })
     const fullPositionTruth = createPositionTruthDigestAccumulator()
     const normalPrefixPositionTruth = createPositionTruthDigestAccumulator()
     for (const row of database
@@ -3161,7 +4143,7 @@ function inspectDatabase(databasePath, missionId) {
       )
       .iterate(missionId)) {
       fullPositionTruth.add(row)
-      if (isNormalProfilePositionIdentity(row.source_position_id)) {
+      if (isNormalProfilePositionIdentity(row.source_position_id, profile, prioritySource)) {
         normalPrefixPositionTruth.add(row)
       }
     }
@@ -3181,6 +4163,12 @@ function inspectDatabase(databasePath, missionId) {
       positionRows: Number(
         database.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId).count,
       ),
+      outingRows: Number(
+        database.prepare('SELECT COUNT(*) AS count FROM outings WHERE mission_id = ?').get(missionId).count,
+      ),
+      databaseFileBytes: statSync(databasePath).size,
+      walFileBytes: existsSync(`${databasePath}-wal`) ? statSync(`${databasePath}-wal`).size : 0,
+      shmFileBytes: existsSync(`${databasePath}-shm`) ? statSync(`${databasePath}-shm`).size : 0,
       events,
       ...operationalEventEvidence,
       positionTruth: {
@@ -3200,13 +4188,43 @@ function inspectDatabase(databasePath, missionId) {
   }
 }
 
-function isNormalProfilePositionIdentity(sourcePositionId) {
+function isNormalProfilePositionIdentity(sourcePositionId, profile, prioritySource = null) {
   const numericIdentity = Number(sourcePositionId)
-  return (
-    Number.isSafeInteger(numericIdentity) &&
-    numericIdentity > 0 &&
-    (numericIdentity < 1_000_000 || Math.floor(numericIdentity / 1_000_000) <= 480)
-  )
+  if (!Number.isSafeInteger(numericIdentity) || numericIdentity <= 0) return false
+  if (numericIdentity < 1_000_000) return true
+  const priorityIds = prioritySourcePositionIds(profile, prioritySource)
+  return !priorityIds.has(String(numericIdentity)) &&
+    Math.floor(numericIdentity / 1_000_000) <= 480
+}
+
+/** Build the exact source IDs introduced by the declared priority barriers. */
+function prioritySourcePositionIds(profile, prioritySource) {
+  if (profile === null || typeof profile !== 'object' || prioritySource === null ||
+      typeof prioritySource !== 'object' || !Number.isSafeInteger(prioritySource.batch) ||
+      prioritySource.batch < 1 || !Number.isSafeInteger(prioritySource.versionCount) ||
+      prioritySource.versionCount < 1) {
+    return new Set()
+  }
+  const ids = new Set()
+  for (let version = 1; version <= prioritySource.versionCount; version += 1) {
+    const offset = profile.productionPollsPerBatch - 1 + version * profile.productionPollsPerBatch
+    for (let deviceId = 1; deviceId <= profile.deviceCount; deviceId += 1) {
+      ids.add(String(prioritySource.batch * 1_000_000 + deviceId * 1_000 + offset))
+    }
+  }
+  return ids
+}
+
+/** Extend only the pure verdict row count with independently declared barrier rows. */
+function profileWithPriorityBarrierRows(profile, prioritySource) {
+  if (prioritySource === null || typeof prioritySource !== 'object' ||
+      !Number.isSafeInteger(prioritySource.versionCount) || prioritySource.versionCount < 1) {
+    return profile
+  }
+  return {
+    ...profile,
+    expectedPositionRows: profile.expectedPositionRows + profile.deviceCount * prioritySource.versionCount,
+  }
 }
 
 function positionTruthDigestsMatch(actual, expected) {
@@ -3312,14 +4330,23 @@ async function collectRendererProbe(page) {
 function startMainHeartbeat(mainInspector, intervalMs) {
   let stopped = false
   const roundTrips = []
+  const cpuSamples = []
   let errors = 0
   const failures = []
   const task = (async () => {
     while (!stopped) {
       const startedAt = performance.now()
       try {
-        await mainInspector.evaluate('process.uptime()')
-        roundTrips.push(performance.now() - startedAt)
+        const evaluation = await mainInspector.evaluate('process.cpuUsage()')
+        const cpu = evaluation?.result?.value
+        const elapsedMs = performance.now() - startedAt
+        roundTrips.push(elapsedMs)
+        const cpuMs = Number.isFinite(cpu?.user) && Number.isFinite(cpu?.system)
+          ? (cpu.user + cpu.system) / 1_000
+          : null
+        if (cpuMs !== null) {
+          cpuSamples.push({ atMs: performance.now(), cpuMs })
+        }
       } catch (error) {
         errors += 1
         if (failures.length < 8) failures.push({
@@ -3329,7 +4356,7 @@ function startMainHeartbeat(mainInspector, intervalMs) {
       }
       await delay(Math.max(0, intervalMs - (performance.now() - startedAt)))
     }
-    return { roundTrips, errors, failures }
+    return { roundTrips, cpuSamples, errors, failures }
   })()
   return {
     stop: async () => {

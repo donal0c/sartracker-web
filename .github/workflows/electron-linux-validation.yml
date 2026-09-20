@@ -293,6 +293,21 @@ jobs:
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
 
+      - name: Candidate producer development checks (not qualification)
+        timeout-minutes: 20
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/qualification/producer-development-checks.mjs \
+              "$GITHUB_WORKSPACE/tmp/electron-dist/linux-unpacked/sartracker-web" \
+              "$GITHUB_WORKSPACE/tmp/electron-validation-evidence/candidate-producer-development" \
+              "$EXPECTED_SOURCE_SHA"
+
       - name: Packaged native coverage runtime control
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'

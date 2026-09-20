@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { _electron as electron, expect } from '@playwright/test'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
+import { validateReplayReceipt } from './qualification/replay-receipts.mjs'
 
 const executablePath = process.argv[2]
 const evidence = path.resolve(process.argv[3] ?? 'tmp/batch2-packaged-proof')
 if (!path.isAbsolute(executablePath ?? '')) throw new Error('Supply an absolute packaged executable path.')
 await mkdir(evidence, { recursive: true })
-const profile = await mkdtemp(path.join(tmpdir(), 'sar-replay-map-proof-'))
+const profile = await mkdtemp(path.join(evidence, '.profile-replay-'))
 let app
 try {
   app = await electron.launch({ executablePath, env: { ...process.env,
@@ -24,12 +24,20 @@ try {
     ring.push(ring[0])
     const geometry = JSON.stringify({ type: 'Polygon', coordinates: [ring] })
     const drawing = await store.upsertDrawing({ mission_id: mission.id, type: 'search_area', name: 'Large retained search area', color: '#ff7700', display_order: 1, geometry_json: geometry })
+    const knownBeforeUpdate = new Date().toISOString()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const updatedRing = Array.from({ length: 2000 }, (_, i) => [-9.7 + 0.002 + Math.cos(i * Math.PI / 1000) * 0.01, 52 + Math.sin(i * Math.PI / 1000) * 0.01])
+    updatedRing.push(updatedRing[0])
+    const updatedGeometry = JSON.stringify({ type: 'Polygon', coordinates: [updatedRing] })
+    await store.upsertDrawing({ id: drawing.id, mission_id: mission.id, type: 'search_area', name: 'Large retained search area', color: '#ff7700', display_order: 1, geometry_json: updatedGeometry })
+    const knownAfterUpdate = new Date().toISOString()
     await store.finishMission(mission.id)
-    return { missionId: mission.id, drawingId: drawing.id, geometry }
+    return { missionId: mission.id, drawingId: drawing.id, initialGeometry: geometry, geometry: updatedGeometry,
+      knownBeforeUpdate, knownAfterUpdate }
   })
-  const selectedTime = new Date().toISOString()
+  const selectedTime = seeded.knownAfterUpdate
   /** Exercises the public live or archive preload bridge and validates every detail fragment. */
-  const readGeometry = async (sessionId = null) => page.evaluate(async ({ seeded, selectedTime, sessionId }) => {
+  const readGeometry = async (sessionId = null, time = selectedTime, geometry = seeded.geometry) => page.evaluate(async ({ seeded, selectedTime, sessionId, geometry }) => {
     const bridge = window.sartrackerElectron
     const read = (method, query) => sessionId === null ? bridge.missionStore[method](query, crypto.randomUUID())
       : bridge.archiveReview.read({ sessionId, requestId: crypto.randomUUID(), method, input: query })
@@ -50,9 +58,10 @@ try {
       fragments++
       if (fragments > 100) throw new Error('Continuation did not terminate.')
     }
-    if (JSON.parse(serialized).geometry_json !== seeded.geometry) throw new Error('Retained geometry changed.')
+    if (JSON.parse(serialized).geometry_json !== geometry) throw new Error('Retained known-at-time geometry changed.')
     return { serialized, fragments, expectedHash: object.state._state_sha256 }
-  }, { seeded, selectedTime, sessionId })
+  }, { seeded, selectedTime: time, sessionId, geometry })
+  const liveOld = await readGeometry(null, seeded.knownBeforeUpdate, seeded.initialGeometry)
   const live = await readGeometry()
   expect(createHash('sha256').update(live.serialized).digest('hex')).toBe(live.expectedHash)
   await page.reload()
@@ -77,7 +86,9 @@ try {
     await map.locator('canvas').click({ force: true })
     await expect(map.locator('.maplibregl-popup-content')).toContainText('Large retained search area')
   }).toPass({ timeout: 15_000 })
-  expect(await map.locator('.maplibregl-popup-content').evaluate((element) => getComputedStyle(element).color)).toBe('rgb(28, 25, 23)')
+  const popupText = await map.locator('.maplibregl-popup-content').innerText()
+  const popupColor = await map.locator('.maplibregl-popup-content').evaluate((element) => getComputedStyle(element).color)
+  expect(popupColor).toBe('rgb(28, 25, 23)')
   const maximumFrameGapMs = await page.evaluate(() => {
     cancelAnimationFrame(window.__replayFrameProof.frameId)
     return window.__replayFrameProof.maximumGapMs
@@ -94,13 +105,23 @@ try {
     operationId: crypto.randomUUID(), archiveId, containerVersion: 2, slotType: 'passphrase', secret: 'Synthetic replay map proof passphrase 2026!',
   }), archive.id)
   let archived
-  try { archived = await readGeometry(opened.sessionId) }
+  let archiveOld
+  try {
+    archived = await readGeometry(opened.sessionId)
+    archiveOld = await readGeometry(opened.sessionId, seeded.knownBeforeUpdate, seeded.initialGeometry)
+  }
   finally { await page.evaluate((sessionId) => window.sartrackerElectron.archiveReview.close({ sessionId }), opened.sessionId) }
   expect(archived.serialized).toBe(live.serialized)
   await page.screenshot({ path: path.join(evidence, 'packaged-shell.png') })
-  await writeFile(path.join(evidence, 'report.json'), JSON.stringify({ passed: true, executablePath,
+  const report = { schemaVersion: 2, executablePath,
+    source: { initialGeometry: seeded.initialGeometry, updatedGeometry: seeded.geometry,
+      knownBeforeUpdate: seeded.knownBeforeUpdate, knownAfterUpdate: seeded.knownAfterUpdate },
+    liveOld, liveUpdated: live, archiveOld, archiveUpdated: archived, popupText, popupColor,
     liveFragments: live.fragments, archiveFragments: archived.fragments, stateSha256: live.expectedHash, maximumFrameGapMs,
-    boundary: 'Packaged public preload, live SQLite and independently verified encrypted archive; synthetic geometry. Native replay map rendered and selected the retained large search area.' }, null, 2))
+    boundary: 'Packaged public preload, live SQLite and independently verified encrypted archive; synthetic geometry. Native replay map rendered and selected the retained large search area.' }
+  await writeFile(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2))
+  const validation = validateReplayReceipt(report)
+  if (!validation.passed) throw new Error(validation.failureReasons.join('; '))
 } catch (error) {
   if (app) {
     const page = await app.firstWindow()

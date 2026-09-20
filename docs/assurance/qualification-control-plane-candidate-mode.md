@@ -3,8 +3,8 @@
 This document describes the executable controller added for `DON-254`. It is
 qualification infrastructure, not a beta qualification result. The checked-in
 `qualification-campaign-plan.json` is a reviewed C00–C29 adapter map; it is not
-an exact candidate and it deliberately contains unresolved runtime/package
-adapters. The synthetic plan is calibration-only.
+an exact candidate. Runtime handoff values remain deliberately absent until the
+separate candidate-freeze decision. The synthetic plan is calibration-only.
 
 ## Safety boundary
 
@@ -102,10 +102,103 @@ evidence, and cleans up its lease before returning.
 
 ## Current beta13 boundary
 
-The beta13 plan names the existing smoke/browser/validator surfaces and their
-required proof modes, but its exact artifact identities and several executable
-receipt adapters are intentionally not present in this PR. Compiling that plan
-therefore produces a useful immutable plan only after exact candidate inputs
-are supplied; preflight remains `ENVIRONMENT_BLOCKED` until every mandatory
-row is resolved. This PR does not freeze a candidate, run BCP-17/WAR-12,
-publish an artifact, test the original machine or change product code.
+The beta13 plan binds reviewed source/browser inventories and package, live,
+identity, release and externally signed human adapters. Adapter development and
+full-family coverage review are still in progress. Exact candidate inputs are
+not supplied by this work. Preflight remains `ENVIRONMENT_BLOCKED` until every
+mandatory binding and input is resolved. This PR does not freeze a candidate,
+run BCP-17/WAR-12, publish an artifact or test the original machine.
+
+## Data-only runtime handoff
+
+The future candidate plan supplies `runtimeInputPath`, `candidateId`, `version`,
+`externalHuman` and `release` without replacing reviewed bindings or commands.
+Runtime JSON uses schema `sartracker-candidate-runtime-inputs-v1` and exactly
+the fields `schema`, `ci`, `installedExecutablePath` and `fixtures`, with optional
+`enospcMount` for the mandatory physical disk-full probes. That field must name
+an existing canonical absolute directory. It does not create or approve a
+volume: the producer independently requires a distinct filesystem no larger
+than64MiB and fills only its newly created owned subdirectory. Missing or
+unsuitable input remains blocked; synthetic thrown errors do not count.
+`ci` is the `sartracker-candidate-ci-artifacts-v1` manifest with the verified
+archive, two installer roles (`ci-appimage`, `ci-deb`), version and provenance
+(`sourceSha`, `runId`, `runAttempt`, `artifactId`). File identities contain
+absolute `path`, `bytes` and `sha256`. GitHub metadata and installed payloads
+are checked afresh; local hashes or a downloaded deb do not prove installation.
+
+Fixture roles currently include `storage-mission`, its optional separately
+bound `storage-mission-manifest`, and scale roles `paging-960k`, `paging-2m`,
+`paging-2m-1gib`, `paging-field-37gb`. The 2m headroom fixture and one-GiB
+storage workload are separate: the existing 2m fixture is smaller than one GiB.
+Scale admission requires 100 primary-mission devices and twelve outings plus
+the named total fixture row/file-size floor. The reviewed BCP generator's twelve
+legacy-mission rows are counted explicitly; this paging producer proves every
+primary-mission row, while legacy behavior has separate regression coverage.
+Source fixtures are copied
+into disposable owned roots and rehashed; raw paging evidence is retained and
+stream-validated against an independently opened source database. The reviewed
+plan requires 64 GiB free before admission for retained large-archive copies; this is a prerequisite, not runtime
+resource qualification.
+
+`live-config` is the one directory-valued fixture role. It contains exactly
+`credentials.json` and `settings.json`, regular non-symlink JSON files bounded
+to one MiB each. Its identity is the SHA-256 of sorted manifest records
+`name\0bytes\0sha256\0`, with total byte count. `live-selector` is a separately
+bound regular file. Live access is GET-only. Private configuration, full logs,
+positions and live screenshots are excluded from retained/model evidence;
+only the allowlisted HMAC stage oracle and sanitized process facts remain.
+Mandatory C05 synthetic browser evidence supplies that family's advisory visual
+review, so this separation does not waive the family obligation.
+
+Package execution requires Linux x64, the reviewed Playwright dependency,
+an X11 `DISPLAY`, and `unzip`, `unsquashfs`, `dpkg-deb`, `dpkg-query`, `xdotool`
+and `xwininfo`. Static availability is not a successful application launch.
+Every actual package process is independently tied to executable and ASAR
+bytes. Direct-child and descendant cleanup are bounded and checked.
+
+## Human and release phases
+
+Registry hazard ownership is a single primary routing owner, not permission to
+skip the other required contracts in QA-plan section 4.2. The routing test
+checks every primary owner against that canonical many-contract map. In
+particular REL-004 is owned by C27 repository-control admission, not C25 soak;
+stationary attention is TRK-004/C06, and skipped incremental history is
+TRK-003/C05. All mandatory C00-C29 variants still govern campaign admission.
+
+C29 issues a pending training request; it never generates acceptance.
+`externalHuman` supplies `authorityPath` and `authorizationPath`. The public
+authority contains only `signerId`, `machineId`, `profileSha256`, `dataClass`
+and an Ed25519 `publicKey`. Private signing keys never enter the controller.
+The named signer supplies the signed envelope and evidence attachment for the
+fresh request. Invalid/stale submissions and missing attachments are retained.
+Training acceptance is distinct from postpublication WAR-13B field shadow.
+
+C27 requires fresh draft metadata, exact tag/artifact/checksum bytes, tag-driven
+release CI provenance before and after transfers, and independently downloaded
+prior rollback artifacts. It cannot authorize publication. After Donal's
+separate publication decision, C00 requires unauthenticated fresh public
+downloads before team distribution. Public mismatch requires withdrawal or
+rollback; authenticated draft downloads cannot satisfy that step. Both phase
+outcomes are exposed, and publication alone never completes qualification.
+
+C27 also retains fresh repository rules, exact-head checks, associated review
+metadata and secret-scanning configuration before and after inspection. Donal's
+2026-09-19 policy requires safeguards to pass or a separate signed REL-004
+acceptance; missing acceptance yields `NEEDS_HUMAN_DECISION`. This approval of
+the policy did not accept current gaps. Optional immutable runtime fixture roles
+`release-risk-authority` and `release-risk-acceptance` supply bounded JSON files.
+The authority is independently approved and pinned before compilation and
+contains only `signerId: "donal0c"` and the Ed25519 public key. Never take a
+verification key from the acceptance itself or supply private signing material.
+The signed payload schema in `scripts/qualification/repository-risk.mjs` binds
+repository, C27/REL-004, exact source/tag/release/assets, every observed gap,
+rationale, compensating controls and a maximum seven-day expiry. It explicitly
+sets `publicationAuthorized: false`. Any changed candidate or additional gap
+requires a new decision; C29 cannot substitute for it. The controller does not
+generate or sign acceptance. Retained replay checks the original observation
+times rather than extending the decision's validity.
+
+Linux CI also runs bounded producer development checks against its unpacked
+build. Those reports explicitly say `qualificationExecuted: false` and are not
+sealed campaign receipts, installed-deb evidence, AppImage qualification or
+release admission. Failed logs and frames remain available for diagnosis.

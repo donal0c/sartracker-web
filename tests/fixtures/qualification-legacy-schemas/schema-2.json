@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 2,
+  "sourceCommit": "cbc520ab2ef1b60107314d69506f58ad21c2bca8",
+  "sourceModuleSha256": "cbead06f48653904cdb92fdb37932d3f6a4a034a3c9b9cda0e036b071b470153",
+  "fixtureKind": "historical-rust-ddl-with-synthetic-evidence",
+  "missionId": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+  "markerId": "f8a689b5-23ae-483a-8ffa-7a5cbb5ef602",
+  "schema": [
+    {
+      "type": "table",
+      "name": "devices",
+      "sql": "CREATE TABLE devices (\n              id TEXT PRIMARY KEY,\n              mission_id TEXT NOT NULL,\n              device_id TEXT NOT NULL,\n              name TEXT NOT NULL,\n              color TEXT NOT NULL,\n              last_seen TEXT,\n              status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'unknown')),\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n              UNIQUE (mission_id, device_id)\n            )"
+    },
+    {
+      "type": "table",
+      "name": "drawings",
+      "sql": "CREATE TABLE drawings (\n              id TEXT PRIMARY KEY,\n              mission_id TEXT NOT NULL,\n              type TEXT NOT NULL CHECK(type IN ('line', 'search_area', 'range_ring', 'bearing_line', 'search_sector', 'text_label')),\n              name TEXT NOT NULL,\n              description TEXT,\n              color TEXT,\n              width REAL,\n              distance_m REAL,\n              temporary_measure INTEGER,\n              label TEXT,\n              display_order INTEGER NOT NULL DEFAULT 0,\n              geometry_json TEXT NOT NULL,\n              metadata_json TEXT,\n              created_at TEXT NOT NULL,\n              updated_at TEXT NOT NULL,\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n            )"
+    },
+    {
+      "type": "table",
+      "name": "layer_catalog_entries",
+      "sql": "CREATE TABLE layer_catalog_entries (\n              mission_id TEXT NOT NULL,\n              node_id TEXT NOT NULL,\n              parent_node_id TEXT,\n              node_kind TEXT NOT NULL CHECK(node_kind IN ('group', 'layer', 'feature_item')),\n              alias TEXT,\n              is_favorite INTEGER NOT NULL DEFAULT 0,\n              is_visible INTEGER NOT NULL DEFAULT 1,\n              display_order INTEGER NOT NULL DEFAULT 0,\n              metadata_json TEXT,\n              updated_at TEXT NOT NULL,\n              PRIMARY KEY (mission_id, node_id),\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n            )"
+    },
+    {
+      "type": "table",
+      "name": "markers",
+      "sql": "CREATE TABLE markers (\n              id TEXT PRIMARY KEY,\n              mission_id TEXT NOT NULL,\n              type TEXT NOT NULL CHECK(type IN ('ipp_lkp', 'clue', 'hazard', 'casualty')),\n              name TEXT NOT NULL,\n              description TEXT,\n              lat REAL NOT NULL,\n              lon REAL NOT NULL,\n              irish_grid_e INTEGER NOT NULL,\n              irish_grid_n INTEGER NOT NULL,\n              created_at TEXT NOT NULL,\n              updated_at TEXT NOT NULL,\n              display_order INTEGER NOT NULL DEFAULT 0,\n              subject_category TEXT,\n              clue_type TEXT,\n              confidence REAL,\n              found_by TEXT,\n              hazard_type TEXT,\n              severity TEXT,\n              condition TEXT,\n              treatment TEXT,\n              evacuation_priority TEXT,\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n            )"
+    },
+    {
+      "type": "table",
+      "name": "metadata",
+      "sql": "CREATE TABLE metadata (\n              key TEXT PRIMARY KEY,\n              value TEXT NOT NULL\n            )"
+    },
+    {
+      "type": "table",
+      "name": "mission_events",
+      "sql": "CREATE TABLE mission_events (\n              id TEXT PRIMARY KEY,\n              mission_id TEXT NOT NULL,\n              event_type TEXT NOT NULL,\n              timestamp TEXT NOT NULL,\n              details_json TEXT,\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n            )"
+    },
+    {
+      "type": "table",
+      "name": "missions",
+      "sql": "CREATE TABLE missions (\n              id TEXT PRIMARY KEY,\n              name TEXT NOT NULL,\n              status TEXT NOT NULL CHECK(status IN ('idle', 'active', 'paused', 'finished', 'finalized')),\n              start_time TEXT NOT NULL,\n              pause_time TEXT,\n              finish_time TEXT,\n              paused_seconds INTEGER NOT NULL DEFAULT 0,\n              notes TEXT,\n              schema_version INTEGER NOT NULL\n            )"
+    },
+    {
+      "type": "table",
+      "name": "positions",
+      "sql": "CREATE TABLE positions (\n              id TEXT PRIMARY KEY,\n              mission_id TEXT NOT NULL,\n              device_id TEXT NOT NULL,\n              name TEXT,\n              lat REAL NOT NULL,\n              lon REAL NOT NULL,\n              altitude REAL,\n              speed REAL,\n              battery REAL,\n              accuracy REAL,\n              source TEXT,\n              timestamp TEXT NOT NULL,\n              data_origin TEXT NOT NULL DEFAULT 'live' CHECK(data_origin IN ('live', 'cache')),\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE,\n              FOREIGN KEY (mission_id, device_id) REFERENCES devices(mission_id, device_id)\n            )"
+    },
+    {
+      "type": "index",
+      "name": "idx_devices_mission_name",
+      "sql": "CREATE INDEX idx_devices_mission_name\n              ON devices(mission_id, name)"
+    },
+    {
+      "type": "index",
+      "name": "idx_drawings_mission_display_order",
+      "sql": "CREATE INDEX idx_drawings_mission_display_order\n              ON drawings(mission_id, display_order)"
+    },
+    {
+      "type": "index",
+      "name": "idx_layer_catalog_entries_mission_parent_order",
+      "sql": "CREATE INDEX idx_layer_catalog_entries_mission_parent_order\n              ON layer_catalog_entries(mission_id, parent_node_id, display_order)"
+    },
+    {
+      "type": "index",
+      "name": "idx_markers_mission_display_order",
+      "sql": "CREATE INDEX idx_markers_mission_display_order\n              ON markers(mission_id, display_order)"
+    },
+    {
+      "type": "index",
+      "name": "idx_mission_events_mission_timestamp",
+      "sql": "CREATE INDEX idx_mission_events_mission_timestamp\n              ON mission_events(mission_id, timestamp)"
+    },
+    {
+      "type": "index",
+      "name": "idx_missions_status",
+      "sql": "CREATE INDEX idx_missions_status ON missions(status)"
+    },
+    {
+      "type": "index",
+      "name": "idx_positions_mission_device_timestamp",
+      "sql": "CREATE INDEX idx_positions_mission_device_timestamp\n              ON positions(mission_id, device_id, timestamp)"
+    }
+  ],
+  "rows": {
+    "devices": [
+      {
+        "id": "6e96fa3f-e639-482d-93fd-3e80bfdc2bfc",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "device_id": "historical-device",
+        "name": "Historical device",
+        "color": "#2563eb",
+        "last_seen": "2026-08-20T10:00:00.000Z",
+        "status": "online"
+      }
+    ],
+    "drawings": [],
+    "layer_catalog_entries": [],
+    "markers": [
+      {
+        "id": "f8a689b5-23ae-483a-8ffa-7a5cbb5ef602",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "type": "clue",
+        "name": "Historical retained clue",
+        "description": "Synthetic migration evidence",
+        "lat": 52.1,
+        "lon": -9.5,
+        "irish_grid_e": 480000,
+        "irish_grid_n": 580000,
+        "created_at": "2026-09-19T23:31:37.581Z",
+        "updated_at": "2026-09-19T23:31:37.581Z",
+        "display_order": 0,
+        "subject_category": null,
+        "clue_type": null,
+        "confidence": null,
+        "found_by": null,
+        "hazard_type": null,
+        "severity": null,
+        "condition": null,
+        "treatment": null,
+        "evacuation_priority": null
+      }
+    ],
+    "metadata": [
+      {
+        "key": "schema_version",
+        "value": "2"
+      }
+    ],
+    "mission_events": [
+      {
+        "id": "e85ffd90-aa77-48fd-b7cb-5148093a31a5",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "event_type": "mission_created",
+        "timestamp": "2026-08-20T09:00:00.000Z",
+        "details_json": "{\"name\":\"Synthetic historical schema 3\",\"notes\":null,\"start_time\":\"2026-08-20T09:00:00.000Z\"}"
+      },
+      {
+        "id": "f357dcf0-d6e8-404d-8c6c-3756c005a216",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "event_type": "device_updated",
+        "timestamp": "2026-09-19T23:31:37.581Z",
+        "details_json": "{\"device_id\":\"historical-device\",\"name\":\"Historical device\",\"status\":\"online\",\"color\":\"#2563eb\"}"
+      },
+      {
+        "id": "8e2b987a-6b65-44e6-9dc0-cbd538410456",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "event_type": "position_recorded",
+        "timestamp": "2026-08-20T10:00:00.000Z",
+        "details_json": "{\"position_id\":\"dae65a27-df74-4984-bb02-5cce939dde5d\",\"device_id\":\"historical-device\",\"timestamp\":\"2026-08-20T10:00:00.000Z\",\"data_origin\":\"live\",\"source\":null}"
+      }
+    ],
+    "missions": [
+      {
+        "id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "name": "Synthetic historical schema 3",
+        "status": "active",
+        "start_time": "2026-08-20T09:00:00.000Z",
+        "pause_time": null,
+        "finish_time": null,
+        "paused_seconds": 0,
+        "notes": null,
+        "schema_version": 2
+      }
+    ],
+    "positions": [
+      {
+        "id": "dae65a27-df74-4984-bb02-5cce939dde5d",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "device_id": "historical-device",
+        "name": null,
+        "lat": 52.1,
+        "lon": -9.5,
+        "altitude": null,
+        "speed": null,
+        "battery": null,
+        "accuracy": null,
+        "source": null,
+        "timestamp": "2026-08-20T10:00:00.000Z",
+        "data_origin": "live"
+      }
+    ]
+  }
+}
