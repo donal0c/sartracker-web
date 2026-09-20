@@ -188,10 +188,51 @@ CLEANED lease; plan compilation succeeded; candidate preflight returned
 ENVIRONMENT_BLOCKED for host, candidate, adapter, validator and artifact gaps.
 These are infrastructure/source results only.
 
-The final stable local correctness run passed 552 files and 5,687 tests, with the
+The initial stable local correctness run passed 552 files and 5,687 tests, with the
 six prescribed correctness-mode exclusions. Lint and the production build passed.
 Current development receipts include the complete 50k C11 raw-page oracle and the nine C24 competing
 operation phases. C17's raw secret leak and C14/C24's missing visible overlay
 warning remain negative product observations. Exact-head Linux CI and four
 independent reviews are required on the delivery PR before merge readiness;
 none of these source/development results qualifies a candidate.
+
+## PR43 review remediation
+
+Four independent reviews at `bab0ddb5ab35782935c5fede0cb07f491d8ac3c4`
+identified fourteen actionable findings. The revisions bind C18 variant identity,
+C14 exact feature membership, C20/C22 observed source/cleanliness, C05 runtime
+custody, C00's canonical installed launcher and C29's exact parsed authority bytes.
+C01 physical-disk-full success now also requires removal of both owned fillers
+and disposable profiles. Failures and the original review reports remain retained.
+
+Process ownership now uses a Linux Python subreaper with pidfd signalling and a
+private bounded protocol. Detached and double-forked descendants must be reaped
+before cleanup can pass; unsupported hosts fail before producer launch. A fixed
+outer worker bounds soak preparation, execution and retention together. Unproven
+cleanup quarantines the resource lock, including when writing the failure receipt
+also fails; lease cleanup then requires explicit manual recovery. Lease publication
+is atomic and ownership includes boot/process-start identity.
+
+C04 stage records now contain actual operation/request IDs, timestamps, ordered
+events and outcomes; a query that already settled cannot claim an in-flight stage.
+Bounded descriptor reads enforce JSON/image limits while reading, and failed
+capture retention cannot silently disappear. Actual native Linux container tests
+covered detached descendants, cancellation, protocol failure and a soak-worker
+timeout during artifact hashing. These are mechanics checks, not Linux x64
+candidate qualification. The macOS C04 development rerun completed six batches
+and 8,728 rows with observed cancellation stages; its raw report and screenshot
+remain under `tmp/candidate-enablement/c04-review-remediation-dev-1/`.
+
+Initial hosted CI `35482891762` failed one test's 120-second full-campaign setup
+deadline (5,686 passed). The regression now compiles one actual reviewed C19
+binding and one C24 binding while retaining the source-recheck and all three
+product-capability holds. The failed run is not erased or treated as passed.
+The producer-development step's deadline now covers its fixed aggregate command
+budgets plus cleanup and evidence headroom; product responsiveness limits remain
+unchanged. Replacement exact-head CI and independent remediation rechecks remain
+required before PR readiness.
+
+Post-remediation serial correctness passed554files /5,714tests with21skips:
+six prescribed timing exclusions and Linux-only cases on macOS. Lint and build
+passed; the build-generated version file was restored, leaving product/version
+trees unchanged. Logs are `tmp/candidate-enablement/remediation/final-*`.

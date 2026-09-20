@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promi
 import path from 'node:path'
 import os from 'node:os'
 import { compileRuntimeInputs } from '../../scripts/qualification/runtime-inputs.mjs'
-import { hashCandidateFile } from '../../scripts/qualification/candidate-artifacts.mjs'
+import { CANONICAL_INSTALLED_EXECUTABLE_PATH, hashCandidateFile } from '../../scripts/qualification/candidate-artifacts.mjs'
 import { hashLiveConfigDirectory } from '../../scripts/qualification/live-config-identity.mjs'
 
 let root: string | undefined
@@ -22,7 +22,7 @@ async function inputs() {
     ci: { schema: 'sartracker-candidate-ci-artifacts-v1', version: '0.1.0-beta.13',
       provenance: { sourceSha: 'a'.repeat(40), runId: 1, runAttempt: 1, artifactId: 2 },
       archive: files[0], installers: [{ ...files[1], role: 'ci-appimage' }, { ...files[2], role: 'ci-deb' }] },
-    installedExecutablePath: '/opt/SAR/sartracker-web', fixtures: {},
+    installedExecutablePath: CANONICAL_INSTALLED_EXECUTABLE_PATH, fixtures: {},
   }))
   return filename
 }
@@ -72,5 +72,13 @@ describe('data-only exact-candidate runtime handoff', () => {
     await writeFile(filename, JSON.stringify(config))
     await writeFile(config.ci.installers[0].path, 'changed')
     await expect(compileRuntimeInputs(filename, { sha: 'a'.repeat(40) }, '0.1.0-beta.13')).rejects.toThrow()
+  })
+  it('requires the canonical installed launcher path from the actual builder', async () => {
+    const filename = await inputs()
+    const config = JSON.parse(await readFile(filename, 'utf8'))
+    for (const installedExecutablePath of ['/opt/sartracker-web/sartracker-web', '/opt/SAR Tracker Electron Validation/resources/app.asar']) {
+      await writeFile(filename, JSON.stringify({ ...config, installedExecutablePath }))
+      await expect(compileRuntimeInputs(filename, { sha: 'a'.repeat(40) }, '0.1.0-beta.13')).rejects.toThrow(/canonical|launcher|installation/iu)
+    }
   })
 })

@@ -15,21 +15,16 @@ DON-254 is In Progress; PKG-001 and WAR-01/BCP-17 remain separate blockers.
 
 ## Active work and next actions
 
-One authorized candidate-enablement PR on `codex/beta13-candidate-adapters`,
-based on PR42. Producer implementation and stable local checks are complete.
-The delivery gate remains exact-head Linux CI, four independent reviews and
-remediation, recorded on the PR and DON-254; merge requires Donal's decision.
+Draft [PR43](https://github.com/donal0c/sartracker-web/pull/43) on
+`codex/beta13-candidate-adapters`, based on PR42. Four independent reviews at
+`bab0ddb5` produced fourteen accepted findings; remediation is implemented.
+Current-head source checks, independent rechecks and green Linux CI remain the
+delivery gate, recorded on the PR and DON-254; merge requires Donal's decision.
 
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
-
-Implemented/integrating: immutable source/browser suites; signed C29 ingestion;
-CI/AppImage/installed-deb process identity; fixed packaged producers and
-independent validators; C27 draft/C00 public checks; append-only failures and
-bounded capture custody. Primary hazard routes now match QA section4.2;
-primary ownership never waives sibling contracts.
 
 Producer integration, bounded development calibration and source checks are
 complete. All 124 package bindings compile and require
@@ -73,17 +68,12 @@ DON-264's console-only persistent overlay failure likewise remains a product gat
 ## Verification snapshot
 
 Current local development evidence:
-- C13 coordinate/bearing/measurement public-UI flow passed; golden and rendered
-  geometry/measurement oracles plus screenshots checked.
-- C05/C06 real loopback provider→store→UI flow passed: divergent provider clocks
-  resolve to fixTime, duplicate polls retain three exact rows, acknowledgement
-  preserves evidence, stale/disconnected/recovered states and movement clearing
-  are visible. Four screenshots retained; raised/cleared/disconnected inspected.
-- C28 routine and revision development journeys passed all nine phases.
-  The earlier revision double-finish failure is retained; producer state handling
-  was corrected. Field/fault package execution is not yet claimed.
-- C12 development16 passed attachment/archive/restore custody and four persisted
-  marker names in Layers. Earlier empty-dialog evidence was rejected and retained.
+- C13 coordinate/bearing/measurement flow and independent geometry checks passed.
+  C05/C06 loopback provider→store→UI checks passed fixTime ordering, deduplication,
+  acknowledgement and stale/disconnected/recovered states; screenshots inspected.
+- C28 routine/revision journeys passed nine phases; earlier double-finish failure
+  retained. C12 development16 passed attachment/archive/restore custody and four
+  persisted marker names; earlier empty-dialog evidence remains rejected.
 - C14 `c14-cli-1` correctly fails: persistent overlay error is console-only,
   matching open DON-264. Failure-window screenshot retained; recovery and cleanup
   passed. Generic basemap warnings cannot satisfy this predicate.
@@ -125,18 +115,31 @@ Current local development evidence:
   overlay warning (DON-264); screenshot inspected. Raw reports and earlier failed
   harness attempts are retained. This is development mechanics, not qualification.
 
-Stable local correctness passed 552 files / 5,687 tests, with six prescribed
-correctness-mode exclusions; strict responsiveness qualification was not run.
-Lint and the production build passed. Earlier integration failures and native rebuild crashes
-remain retained; the latter included macOS CODESIGNING Invalid Page.
+Post-remediation local correctness passed554files /5,714tests, with21skips
+(six prescribed timing exclusions plus Linux-only cases on macOS). Lint/build
+passed. Strict responsiveness qualification was not run. Earlier failures and
+native crashes remain retained, including macOS CODESIGNING Invalid Page.
 
 Logs/failures remain in `tmp/candidate-enablement/`. Electron/Node SQLite addon
 builds must use separate coordinated windows: fresh-inode signing recovered
 local Electron loading. Confirm actual SQLite open after restoring Node.
 All Electron development processes are closed. Node22 ABI127 was restored and
-an actual SQLite SELECT1 passed. Exact-head Linux CI and four independent
-reviews must be recorded on the PR/DON-254 before merge readiness; these local
-results cannot stand in for those gates or future candidate qualification.
+an actual SQLite SELECT1 passed. Exact-head Linux CI and independent remediation
+rechecks remain required; local results cannot establish merge readiness or
+future candidate qualification.
+
+Review remediation adds Linux subreaper/pidfd process ownership, atomic leases
+with process-start identity, exact runtime/authority custody and stricter independent
+oracles. Soak preparation/execution/retention share a bounded worker; unproven
+cleanup retains the resource lock even if receipt persistence fails. Unsupported
+supervision hosts fail before launch. Native Linux container mechanics passed
+detached/double-fork cleanup and timeout during actual artifact hashing. C04
+`review-remediation-dev-1` passed6/6batches/8,728rows with real operation-bound
+cancellation stages, replacing the earlier hard-coded stage evidence. These are
+development checks, not qualification. Initial CI `35482891762` failed one
+120s full-campaign setup test (5,686passed); its real C19/C24 regression setup is
+now bounded without weakening source checks or product holds. Failed receipts
+remain retained. Detail: design document's PR43 review-remediation section.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

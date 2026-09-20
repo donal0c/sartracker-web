@@ -9,7 +9,10 @@ export function validateArchiveFieldFacts(report, expected) {
   if (!['C20', 'C22'].includes(expected.contractId) || report?.schemaVersion !== 1
       || report.proofKind !== 'packaged-large-archive-v1' || report.contractId !== 'C20-C22'
       || report.variantId !== 'field-archive-37gb' || report.developmentTestHarness === true
-      || report.source?.head !== expected.sourceSha || report.runtime?.executableSha256 !== expected.appSha256
+      || report.source?.head !== expected.sourceSha || report.source.observedHead !== expected.sourceSha
+      || report.source.expectedHead !== expected.sourceSha || report.source.dirty !== false
+      || !Array.isArray(report.source.manifest) || report.source.manifest.length === 0
+      || report.runtime?.executableSha256 !== expected.appSha256
       || !expected.asarSha256 || report.runtime?.asarSha256 !== expected.asarSha256) throw new Error('Large archive candidate identity differs.')
   if (report.sourceFixture?.preset !== 'field' || report.sourceFixture.sourceBytes < 3700000000
       || !/^[a-f0-9]{64}$/u.test(report.sourceFixture.sourceSha256)) throw new Error('Large archive source fixture is incomplete.')

@@ -31,6 +31,21 @@ describe('qualification host capability inspection', () => {
     expect(result.available).toEqual(expect.arrayContaining(['node', 'fs', 'git', 'gh', 'package-host']))
     expect(result.checks.packageHost).toMatchObject({ linuxX64: true, playwrightElectron: true, display: true })
     expect(result.runtimeLaunchVerified).toBe(false)
+    expect(result.available).toContain('owned-process-supervisor')
+    expect(result.checks.ownedProcessSupervisor).toBe(true)
+  })
+
+  it('blocks strict owned-process qualification when Python 3 is unavailable', () => {
+    const result = inspectHostCapabilities({
+      platform: 'linux',
+      arch: 'x64',
+      commandAvailable: () => true,
+      python3Available: false,
+      playwrightElectronAvailable: true,
+      displayAvailable: true,
+    })
+    expect(result.available).not.toContain('owned-process-supervisor')
+    expect(result.missingReasons['owned-process-supervisor']).toMatch(/python3/iu)
   })
 
   it('reports each missing static prerequisite with an actionable reason', () => {

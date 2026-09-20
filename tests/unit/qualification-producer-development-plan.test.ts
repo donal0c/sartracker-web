@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { compileProducerDevelopmentPlan } from '../../scripts/qualification/producer-development-plan.mjs'
 
 describe('bounded PR producer development inventory', () => {
+  it('allows every declared case and its cleanup to finish before the CI deadline', () => {
+    const cases = compileProducerDevelopmentPlan({ app: '/candidate/app', output: '/evidence',
+      sourceSha: 'a'.repeat(40), appSha256: 'b'.repeat(64) })
+    const workflow = readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')
+    const stepMinutes = Number(workflow.match(/name: Candidate producer development checks \(not qualification\)\s+timeout-minutes: (\d+)/u)?.[1])
+    const jobMinutes = Number(workflow.match(/^ {4}timeout-minutes: (\d+)$/mu)?.[1])
+    // Per-case TERM grace + cleanup, plus five minutes for evidence/summary I/O.
+    const worstCaseMs = cases.reduce((total, entry) => total + entry.command.timeoutMs + 15000, 300000)
+    expect(stepMinutes * 60000).toBeGreaterThan(worstCaseMs)
+    expect(jobMinutes).toBeGreaterThanOrEqual(stepMinutes + 60)
+  })
   it('compiles explicit variants and keeps held-gate negatives separate from product passes', () => {
     const cases = compileProducerDevelopmentPlan({ app: '/candidate/app', output: '/evidence',
       sourceSha: 'a'.repeat(40), appSha256: 'b'.repeat(64) })

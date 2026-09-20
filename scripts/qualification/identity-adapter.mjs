@@ -3,6 +3,8 @@ import path from 'node:path'
 
 import {
   validateCiArtifactProvenance,
+  validateCanonicalInstalledExecutable,
+  CANONICAL_INSTALLED_EXECUTABLE_PATH,
   validateInstalledPayload,
 } from './candidate-artifacts.mjs'
 import { verifyRuntimeInputs } from './runtime-inputs.mjs'
@@ -117,7 +119,7 @@ function compileIdentityExpectation(normalized) {
       || !Array.isArray(ci.installers) || ci.installers.length !== 2
       || ci.installers.some((entry) => !ROLES.includes(entry.role) || !fileIdentity(entry))
       || new Set(ci.installers.map((entry) => entry.role)).size !== 2
-      || typeof config.installedExecutablePath !== 'string' || !path.isAbsolute(config.installedExecutablePath)) {
+      || config.installedExecutablePath !== CANONICAL_INSTALLED_EXECUTABLE_PATH) {
     throw new Error('C00 identity proof requires exact CI archive, installer, and installed path identities.')
   }
   const artifacts = normalized.identities.candidate.artifacts
@@ -180,6 +182,7 @@ function independentlyValidateReport(report, expected) {
   const payloadExpected = installation.payloadExpected ?? report.payloadExpected
   if (!payloadExpected || !Array.isArray(payloadExpected.files)) throw new Error('Retained installation payload expectation is missing.')
   validateInstalledPayload(installation, payloadExpected)
+  validateCanonicalInstalledExecutable(installation, expected.installedExecutablePath)
   const installedPath = report.installedExecutablePath
   if (installedPath !== expected.installedExecutablePath) throw new Error('Retained installed executable path differs from the definition.')
   const relativeExecutable = installedPath.replace(/^\//u, '')

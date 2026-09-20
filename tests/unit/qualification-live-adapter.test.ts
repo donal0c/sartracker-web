@@ -124,9 +124,12 @@ async function retainedFixture() {
     runtimeObservations: [{
       pid: 123,
       startTicks: '456',
+      launchPath: '/owned/runtime/candidate.AppImage',
+      executablePath: '/tmp/.mount_candidate/sartracker-web',
       artifactSha256: artifactSha,
       executableSha256: '1'.repeat(64),
       asarSha256: '2'.repeat(64),
+      appImagePath: '/owned/runtime/candidate.AppImage',
       mainProcess: true,
       descendantOfRunner: true,
     }],
@@ -144,6 +147,12 @@ async function retainedFixture() {
         reportPath: path.join(attemptDirectory, 'live-report.json'),
         processPath: path.join(attemptDirectory, 'live-process.json'),
         reportSha256: sha256(reportBytes),
+        processSha256: sha256(processBytes),
+        processBytes: processBytes.byteLength,
+        runtime: {
+          proofMode: 'ci-appimage', launchPath: '/owned/runtime/candidate.AppImage', installedExecutablePath: null,
+          artifactSha256: artifactSha, executableSha256: '1'.repeat(64), asarSha256: '2'.repeat(64),
+        },
         process,
         validation: { status: 'PASS' },
       },
@@ -180,6 +189,29 @@ describe('packaged live GET-only adapter', () => {
     expect(result.validation.passed).toBe(true)
     expect(result.validation.proofMode).toBe('packaged-live-get-only')
     expect(result.releaseEligible).toBe(false)
+  })
+
+  it('rejects retained runtime bytes or launch origin that differ from the sealed independent preparation', async () => {
+    const fixture = await retainedFixture()
+    const processPath = path.join(fixture.attemptDirectory, 'live-process.json')
+    const process = JSON.parse(await readFile(processPath, 'utf8'))
+    process.runtimeObservations[0].appImagePath = '/forged/candidate.AppImage'
+    await writeFile(processPath, `${JSON.stringify(process, null, 2)}\n`)
+    const result = await validateRetainedLive(fixture.receipt, binding, {
+      definition: fixture.definition,
+      attemptDirectory: fixture.attemptDirectory,
+    })
+    expect(result.status).toBe('INVALID_EVIDENCE')
+
+    await writeFile(processPath, `${JSON.stringify({ ...process, runtimeObservations: [{
+      ...process.runtimeObservations[0], appImagePath: '/owned/runtime/candidate.AppImage',
+    }] }, null, 2)}\n`)
+    const changed = { ...fixture.receipt, observed: { ...fixture.receipt.observed, processSha256: '0'.repeat(64) } }
+    const digestResult = await validateRetainedLive(changed, binding, {
+      definition: fixture.definition,
+      attemptDirectory: fixture.attemptDirectory,
+    })
+    expect(digestResult.status).toBe('INVALID_EVIDENCE')
   })
 
   it('recomputes raw live facts instead of trusting the producer verdict', async () => {

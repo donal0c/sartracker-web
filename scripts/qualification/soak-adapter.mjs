@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { copyFile, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readdir, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,7 +20,15 @@ import {
   preparePackageRuntime,
   validateRuntimeObservation,
 } from './package-runtime.mjs'
-import { hashCandidateFile } from './candidate-artifacts.mjs'
+import { CANONICAL_INSTALLED_EXECUTABLE_PATH, hashCandidateFile } from './candidate-artifacts.mjs'
+import {
+  MAX_SOAK_CAPTURE_BYTES,
+  MAX_SOAK_REPORT_BYTES,
+  readBoundedSoakFile,
+} from './soak-evidence-file.mjs'
+import {
+  runSoakExecutionWorker,
+} from './soak-execution-boundary.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SHA1 = /^[a-f0-9]{40}$/u
@@ -40,6 +48,8 @@ const STORAGE_FIXTURE_GENERATORS = Object.freeze({
 
 /** Enumerate the contracts with this executable packaged-soak adapter. */
 export { SOAK_ADAPTER_CONTRACTS }
+/** Keep the focused bounded evidence reader available to its adapter tests. */
+export { readBoundedSoakFile }
 
 /** Fixed variant definitions; callers cannot substitute a smaller workload. */
 export const SOAK_VARIANTS = Object.freeze({
@@ -271,8 +281,55 @@ export function buildIndependentSoakSourceFacts(profileName, recordedNowMs, prio
   })
 }
 
-/** Execute one fixed soak variant under the exact prepared package runtime. */
+/** Execute one fixed soak variant under one owned, bounded worker lifecycle. */
 export async function executeSoakVariant({ normalized, binding, attemptDirectory, workDirectory }) {
+  const variant = validateSoakWorkerInvocation({ normalized, binding, attemptDirectory, workDirectory })
+  const { execution, worker } = await runSoakExecutionWorker({
+    config: { normalized, binding, attemptDirectory, workDirectory },
+    projectRoot,
+    variant,
+  })
+  const cleanupVerified = execution.zeroDescendantsAfterRun === true
+  const resourceCleanupBlocked = execution.supervisorPid !== null && !cleanupVerified
+  const failureCode = workerFailureCode(execution, worker)
+  if (failureCode === null && worker.receipt !== null) {
+    const receipt = {
+      ...worker.receipt,
+      workerExecution: {
+        schema: 'sartracker-soak-execution-v1',
+        status: 'COMPLETED',
+        failureCode: null,
+        timedOut: false,
+        cleanupVerified: true,
+        zeroDescendantsAfterRun: true,
+        resourceCleanupBlocked: false,
+      },
+    }
+    try {
+      await writeJson(path.join(attemptDirectory, 'soak-adapter-receipt.json'), receipt)
+    } catch {
+      throw createReceiptWriteError(resourceCleanupBlocked)
+    }
+    return Object.freeze(receipt)
+  }
+  const receipt = workerFailureReceipt({
+    normalized,
+    binding,
+    execution,
+    failureCode: failureCode ?? 'WORKER_OUTPUT_INVALID',
+    cleanupVerified,
+    resourceCleanupBlocked,
+  })
+  try {
+    await writeJson(path.join(attemptDirectory, 'soak-adapter-receipt.json'), receipt)
+  } catch {
+    throw createReceiptWriteError(resourceCleanupBlocked)
+  }
+  return Object.freeze(receipt)
+}
+
+/** Execute the complete soak lifecycle inside the already-owned worker. */
+export async function executeSoakVariantInProcess({ normalized, binding, attemptDirectory, workDirectory }) {
   const context = await validateExecutionContext(normalized, binding, attemptDirectory, workDirectory)
   if (process.platform !== 'linux' || process.arch !== 'x64') {
     throw new Error('Packaged soak execution requires a Linux x64 host; source and validator checks remain testable on macOS.')
@@ -321,6 +378,7 @@ export async function executeSoakVariant({ normalized, binding, attemptDirectory
     processResult.processError === null &&
     processResult.timedOut === false &&
     processResult.zeroDescendantsAfterRun === true &&
+    retained.captureErrors.length === 0 &&
     runtimeValidation.passed &&
     validation.passed
   const receipt = {
@@ -348,6 +406,7 @@ export async function executeSoakVariant({ normalized, binding, attemptDirectory
     competingOperationReportSha256: retained.competingOperationReportSha256,
     runtimeObservationsSha256: retained.runtimeObservationsSha256,
     captures: retained.captures,
+    captureErrors: retained.captureErrors,
     process: {
       exitCode: processResult.exitCode,
       signal: processResult.signal,
@@ -366,8 +425,91 @@ export async function executeSoakVariant({ normalized, binding, attemptDirectory
       ...(retained.competingOperationReportPath === null ? [] : [retained.competingOperationReportPath]),
     ],
   }
-  await writeJson(path.join(context.attemptDirectory, 'soak-adapter-receipt.json'), receipt)
   return Object.freeze(receipt)
+}
+
+/** Validate only the fixed parent-to-worker invocation boundary. */
+function validateSoakWorkerInvocation({ normalized, binding, attemptDirectory, workDirectory }) {
+  if (!isRecord(normalized) || !isRecord(binding)) throw new Error('Soak worker invocation requires bound objects.')
+  if (!['C04', 'C24', 'C25'].includes(binding.contractId)
+      || !['ci-appimage', 'installed-deb'].includes(binding.proofMode)) {
+    throw new Error('Soak worker invocation is not a reviewed package variant.')
+  }
+  const variant = variantFor(binding.contractId, binding.variantId)
+  requireAbsolute(attemptDirectory, 'Soak attempt directory')
+  requireAbsolute(workDirectory, 'Soak work directory')
+  if (path.resolve(attemptDirectory) === path.resolve(workDirectory)) {
+    throw new Error('Soak attempt and disposable work directories must be distinct.')
+  }
+  return variant
+}
+
+/** Map worker and supervisor outcomes to a fixed bounded receipt code. */
+function workerFailureCode(execution, worker) {
+  if (execution.supervisorPid === null && execution.processError !== null) return 'WORKER_UNAVAILABLE'
+  if (execution.timedOut === true) return execution.zeroDescendantsAfterRun === true
+    ? 'WORKER_TIMEOUT_CLEAN'
+    : 'WORKER_TIMEOUT_CLEANUP_UNPROVEN'
+  if (execution.zeroDescendantsAfterRun !== true) return 'WORKER_CLEANUP_UNPROVEN'
+  if (execution.processError !== null || execution.exitCode !== 0) return 'WORKER_PROCESS_FAILED'
+  if (worker.status === 'failed' || worker.status === 'invalid') return worker.failureCode ?? 'WORKER_OUTPUT_INVALID'
+  if (worker.status !== 'completed' || worker.receipt === null) return 'WORKER_OUTPUT_INVALID'
+  return null
+}
+
+/** Build a code-only invalid receipt when the outer worker cannot retain one. */
+function workerFailureReceipt({ normalized, binding, execution, failureCode, cleanupVerified, resourceCleanupBlocked }) {
+  const validation = invalidValidation(binding.contractId, 'Owned soak worker did not retain a valid receipt.')
+  return {
+    schema: 'sartracker-soak-adapter-receipt-v1',
+    status: 'INVALID_EVIDENCE',
+    contractId: binding.contractId,
+    variantId: binding.variantId,
+    proofMode: binding.proofMode,
+    sourceSha: normalized.identities?.source?.sha ?? null,
+    sourceTree: normalized.identities?.source?.tree ?? null,
+    definitionDigest: normalized.definitionDigest ?? null,
+    artifact: null,
+    runtime: null,
+    rawReportPath: null,
+    runtimeObservationsPath: null,
+    stdoutPath: null,
+    stderrPath: null,
+    rawReportSha256: null,
+    competingOperationReportPath: null,
+    competingOperationReportSha256: null,
+    runtimeObservationsSha256: null,
+    captures: [],
+    captureErrors: [],
+    process: {
+      exitCode: execution.exitCode,
+      signal: execution.signal,
+      timedOut: execution.timedOut === true,
+      processError: null,
+      zeroDescendantsAfterRun: execution.zeroDescendantsAfterRun === true,
+    },
+    workerExecution: {
+      schema: 'sartracker-soak-execution-v1',
+      status: 'INVALID_EVIDENCE',
+      failureCode,
+      timedOut: execution.timedOut === true,
+      cleanupVerified,
+      zeroDescendantsAfterRun: execution.zeroDescendantsAfterRun === true,
+      resourceCleanupBlocked,
+    },
+    validation,
+    runtimeValidation: { passed: false, failureReasons: ['Owned soak worker did not retain runtime observations.'] },
+    scopeGaps: scopeGapsForValidation(validation),
+    evidence: [],
+  }
+}
+
+/** Return a code-only write failure while preserving the outer cleanup flag. */
+function createReceiptWriteError(resourceCleanupBlocked) {
+  const error = new Error('Soak receipt write failed.')
+  error.resourceCleanupBlocked = resourceCleanupBlocked === true
+  error.code = error.resourceCleanupBlocked ? 'SOAK_RESOURCE_CLEANUP_BLOCKED' : 'SOAK_RECEIPT_WRITE_FAILED'
+  return error
 }
 
 /** Re-read retained raw soak and process observations and recompute all predicates. */
@@ -376,6 +518,19 @@ export async function validateRetainedSoak(receipt, binding, { definition, attem
   const context = await validateExecutionContext(definition, binding, attemptDirectory, null, { retained: true })
   const variant = variantFor(binding.contractId, binding.variantId)
   const failures = []
+  if (!isRecord(receipt.workerExecution)
+      || receipt.workerExecution.schema !== 'sartracker-soak-execution-v1'
+      || receipt.workerExecution.status !== 'COMPLETED'
+      || receipt.workerExecution.failureCode !== null
+      || receipt.workerExecution.timedOut !== false
+      || receipt.workerExecution.cleanupVerified !== true
+      || receipt.workerExecution.zeroDescendantsAfterRun !== true
+      || receipt.workerExecution.resourceCleanupBlocked !== false) {
+    failures.push('Retained soak worker did not prove bounded completion and cleanup.')
+  }
+  if (!Array.isArray(receipt.captureErrors) || receipt.captureErrors.length !== 0) {
+    failures.push('Retained soak capture errors make the evidence incomplete.')
+  }
   if (receipt.schema !== 'sartracker-soak-adapter-receipt-v1' ||
       receipt.contractId !== binding.contractId ||
       receipt.variantId !== binding.variantId ||
@@ -387,8 +542,8 @@ export async function validateRetainedSoak(receipt, binding, { definition, attem
   }
   const reportPath = await requireAttemptFile(attemptDirectory, receipt.rawReportPath, 'raw soak report')
   const observationsPath = await requireAttemptFile(attemptDirectory, receipt.runtimeObservationsPath, 'soak runtime observations')
-  const reportBytes = await readFile(reportPath)
-  const observationBytes = await readFile(observationsPath)
+  const reportBytes = await readBoundedSoakFile(reportPath, MAX_SOAK_REPORT_BYTES, 'retained soak report')
+  const observationBytes = await readBoundedSoakFile(observationsPath, MAX_SOAK_REPORT_BYTES, 'retained soak runtime observations')
   if (sha256(reportBytes) !== receipt.rawReportSha256) failures.push('Retained soak report digest differs from receipt.')
   if (sha256(observationBytes) !== receipt.runtimeObservationsSha256) failures.push('Retained soak runtime observation digest differs from receipt.')
   if (binding.contractId === 'C24') {
@@ -401,7 +556,7 @@ export async function validateRetainedSoak(receipt, binding, { definition, attem
         receipt.competingOperationReportPath,
         'C24 competing-operation report',
       )
-      const helperReportBytes = await readFile(helperReportPath)
+      const helperReportBytes = await readBoundedSoakFile(helperReportPath, MAX_SOAK_REPORT_BYTES, 'retained C24 competing-operation report')
       if (sha256(helperReportBytes) !== receipt.competingOperationReportSha256) {
         failures.push('Retained C24 competing-operation report digest differs from receipt.')
       }
@@ -638,7 +793,7 @@ async function retainSoakArtifacts({ reportPath, evidenceDirectory, attemptDirec
   let report = null
   let rawReportSha256 = null
   try {
-    const bytes = await readFile(reportPath)
+    const bytes = await readBoundedSoakFile(reportPath, MAX_SOAK_REPORT_BYTES, 'retained soak report')
     rawReportSha256 = sha256(bytes)
     await writeFile(path.join(attemptDirectory, rawReportPath), bytes, { flag: 'wx' })
     report = parseJson(bytes, 'soak producer report')
@@ -657,7 +812,8 @@ async function retainSoakArtifacts({ reportPath, evidenceDirectory, attemptDirec
     competingOperationReportPath: competingOperation.path,
     competingOperationReportSha256: competingOperation.sha256,
     runtimeObservationsSha256: sha256(Buffer.from(`${JSON.stringify(processResult.runtimeObservations, null, 2)}\n`, 'utf8')),
-    captures,
+    captures: captures.captures,
+    captureErrors: captures.errors,
   }
 }
 
@@ -666,8 +822,7 @@ async function retainCompetingOperationReport(evidenceDirectory, attemptDirector
   const sourcePath = path.join(evidenceDirectory, 'competing-operation-report.json')
   const retainedPath = 'c24-competing-operation-report.json'
   try {
-    const bytes = await readFile(sourcePath)
-    if (bytes.byteLength > 8 * 1024 * 1024) return { path: null, sha256: null }
+    const bytes = await readBoundedSoakFile(sourcePath, MAX_SOAK_REPORT_BYTES, 'C24 competing-operation report')
     await writeFile(path.join(attemptDirectory, retainedPath), bytes, { flag: 'wx' })
     return { path: retainedPath, sha256: sha256(bytes) }
   } catch {
@@ -678,18 +833,36 @@ async function retainCompetingOperationReport(evidenceDirectory, attemptDirector
 /** Copy only bounded image captures into the flat attempt directory. */
 async function retainCaptures(evidenceDirectory, attemptDirectory) {
   const captures = []
+  const errors = []
   let entries = []
-  try { entries = await readdir(evidenceDirectory, { withFileTypes: true }) } catch { return captures }
+  try {
+    entries = await readdir(evidenceDirectory, { withFileTypes: true })
+  } catch {
+    return { captures, errors: ['capture-directory-unreadable'] }
+  }
   for (const entry of entries) {
-    if (!entry.isFile() || !/\.(?:png|jpe?g|webp)$/iu.test(entry.name)) continue
+    if (!/\.(?:png|jpe?g|webp)$/iu.test(entry.name)) continue
+    if (!entry.isFile()) {
+      errors.push(`${entry.name}:not-a-regular-file`)
+      continue
+    }
     const safeName = entry.name.replace(/[^a-zA-Z0-9._-]/gu, '_')
     const destination = path.join(attemptDirectory, `soak-ui-${safeName}`)
-    const bytes = await readFile(path.join(evidenceDirectory, entry.name))
-    if (bytes.byteLength > 25 * 1024 * 1024) continue
+    let bytes
+    try {
+      bytes = await readBoundedSoakFile(
+        path.join(evidenceDirectory, entry.name),
+        MAX_SOAK_CAPTURE_BYTES,
+        `soak capture ${entry.name}`,
+      )
+    } catch {
+      errors.push(`${entry.name}:bounded-read-failed`)
+      continue
+    }
     await writeFile(destination, bytes, { flag: 'wx' })
     captures.push({ name: path.basename(destination), kind: 'ui-screenshot', path: destination, sha256: sha256(bytes) })
   }
-  return captures
+  return { captures, errors }
 }
 
 /** Build exact runtime expectations from package-runtime observations. */
@@ -806,7 +979,11 @@ async function validateExecutionContext(normalized, binding, attemptDirectory, w
   const fresh = await hashCandidateFile(installer.path)
   if (fresh.sha256 !== installer.sha256 || fresh.bytes !== installer.bytes) throw new Error('Bound soak package artifact changed before execution.')
   const installedExecutablePath = config.installedExecutablePath
-  if (binding.proofMode === 'installed-deb' && !isAbsolutePath(installedExecutablePath)) throw new Error('Installed-deb soak requires the exact package-manager executable path.')
+  if (binding.proofMode === 'installed-deb'
+      && (installedExecutablePath !== CANONICAL_INSTALLED_EXECUTABLE_PATH
+        || !isAbsolutePath(installedExecutablePath))) {
+    throw new Error('Installed-deb soak requires the canonical package-manager executable path.')
+  }
   const variant = variantFor(binding.contractId, binding.variantId)
   const fieldFixture = variant.workloadClass === 'field-scale'
     ? await resolveFieldFixture(config, variant)
@@ -868,6 +1045,11 @@ function variantFor(contractId, variantId) {
   return variantId === baseVariantId ? variant : Object.freeze({ ...variant, id: variantId })
 }
 
+/** Test whether a controller-owned path is absolute. */
+function isAbsolutePath(value) {
+  return typeof value === 'string' && ABSOLUTE_PATH.test(value)
+}
+
 /** Require an absolute path from controller-owned context. */
 function requireAbsolute(value, label) {
   if (typeof value !== 'string' || !ABSOLUTE_PATH.test(value)) throw new Error(`${label} must be absolute.`)
@@ -922,5 +1104,5 @@ function isRecord(value) {
 /** Write deterministic JSON evidence. */
 async function writeJson(filePath, value) {
   await mkdir(path.dirname(filePath), { recursive: true })
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
 }

@@ -11,6 +11,7 @@ const REPOSITORY = 'donal0c/sartracker-web'
 const WORKFLOW = '.github/workflows/electron-linux-validation.yml'
 const RELEASE_WORKFLOW = '.github/workflows/electron-release.yml'
 const SHA256 = /^[a-f0-9]{64}$/u
+export const CANONICAL_INSTALLED_EXECUTABLE_PATH = '/opt/SAR Tracker Electron Validation/sartracker-web'
 
 /** Validate live GitHub metadata; a ZIP identity is deliberately not an installer identity. */
 export function validateCiArtifactProvenance(run, artifact, expected) {
@@ -138,6 +139,20 @@ export function validateInstalledPayload(installed, expected) {
       : !SHA256.test(entry.sha256) || actual.sha256 !== entry.sha256 || actual.size !== entry.size || actual.executableBits !== entry.executableBits)) {
       throw new Error('Installed payload differs from the verified Debian installer.')
     }
+  }
+  return true
+}
+
+/** Require the launcher path emitted by the reviewed electron-builder package. */
+export function validateCanonicalInstalledExecutable(installed, executablePath = CANONICAL_INSTALLED_EXECUTABLE_PATH) {
+  if (executablePath !== CANONICAL_INSTALLED_EXECUTABLE_PATH || !Array.isArray(installed?.files)) {
+    throw new Error('Installed candidate must use the canonical electron-builder launcher path.')
+  }
+  const relativePath = executablePath.slice(1)
+  const entry = installed.files.find((item) => item?.path === relativePath)
+  if (!entry || entry.symlink !== undefined || !SHA256.test(entry.sha256 ?? '')
+      || !Number.isSafeInteger(entry.executableBits) || entry.executableBits <= 0) {
+    throw new Error('Canonical installed launcher must be an owned regular executable file.')
   }
   return true
 }

@@ -1,6 +1,12 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { hashCandidateFile, inspectCiCandidateArchive, inspectInstalledCandidate } from './candidate-artifacts.mjs'
+import {
+  hashCandidateFile,
+  inspectCiCandidateArchive,
+  inspectInstalledCandidate,
+  validateCanonicalInstalledExecutable,
+  CANONICAL_INSTALLED_EXECUTABLE_PATH,
+} from './candidate-artifacts.mjs'
 import { hashLiveConfigDirectory } from './live-config-identity.mjs'
 
 /** Require the explicitly documented data-only configuration fields. */
@@ -40,7 +46,7 @@ export async function compileRuntimeInputs(filename, source, version) {
       || config.ci?.schema !== 'sartracker-candidate-ci-artifacts-v1'
       || config.ci.version !== version || config.ci.provenance?.sourceSha !== source.sha
       || ![config.ci.provenance?.runId, config.ci.provenance?.runAttempt, config.ci.provenance?.artifactId].every((value) => Number.isSafeInteger(value) && value > 0)
-      || typeof config.installedExecutablePath !== 'string' || !path.isAbsolute(config.installedExecutablePath)
+      || config.installedExecutablePath !== CANONICAL_INSTALLED_EXECUTABLE_PATH
       || !Array.isArray(config.ci.installers) || config.ci.installers.length !== 2
       || config.ci.installers.map((entry) => entry.role).sort().join(',') !== 'ci-appimage,ci-deb'
       || !config.fixtures || typeof config.fixtures !== 'object' || Array.isArray(config.fixtures)) {
@@ -82,10 +88,10 @@ export async function verifyRuntimeInputs(inputs, source, version, workDirectory
   const deb = config.ci.installers.find((entry) => entry.role === 'ci-deb')
   const installation = await inspectInstalledCandidate({ debPath: deb.path, debSha256: deb.sha256,
     extractionDirectory: path.join(workDirectory, 'verified-installed-deb') })
-  if (installation.version !== version || await realpath(config.installedExecutablePath) !== config.installedExecutablePath
-      || !installation.files.some((entry) => `/${entry.path}` === config.installedExecutablePath && entry.sha256)) {
+  if (installation.version !== version || await realpath(config.installedExecutablePath) !== config.installedExecutablePath) {
     throw new Error('Configured launch path is not the actual exact installed Debian executable.')
   }
+  validateCanonicalInstalledExecutable(installation, config.installedExecutablePath)
   for (const identity of inputs.identities) await boundFile(identity)
   return { schema: 'sartracker-runtime-preflight-v1', ci: verified, installation,
     installedExecutablePath: config.installedExecutablePath, releaseEligible: false }

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { validateCiArtifactProvenance, validateInstalledPayload } from '../../scripts/qualification/candidate-artifacts.mjs'
+import {
+  CANONICAL_INSTALLED_EXECUTABLE_PATH,
+  validateCanonicalInstalledExecutable,
+  validateCiArtifactProvenance,
+  validateInstalledPayload,
+} from '../../scripts/qualification/candidate-artifacts.mjs'
 
 const sha = 'a'.repeat(40)
 const digest = 'b'.repeat(64)
@@ -37,7 +42,7 @@ describe('exact candidate CI and installed package boundaries', () => {
     expect(() => validateCiArtifactProvenance(run, { ...artifact, ...change }, expected)).toThrow()
   })
   it('requires actual installed dpkg state and exact payload rather than extracted files alone', () => {
-    const payload = [{ path: 'opt/sar/app', sha256: digest, size: 50, executableBits: 73 }]
+    const payload = [{ path: CANONICAL_INSTALLED_EXECUTABLE_PATH.slice(1), sha256: digest, size: 50, executableBits: 73 }]
     const identity = { packageName: 'sartracker-web', version: '0.1.0-beta.13', architecture: 'amd64' }
     const installed = { ...identity, status: 'install ok installed', files: payload }
     expect(validateInstalledPayload(installed, { ...identity, files: payload })).toBe(true)
@@ -45,6 +50,21 @@ describe('exact candidate CI and installed package boundaries', () => {
       { files: [] }, { files: [{ ...payload[0], sha256: 'c'.repeat(64) }] },
       { files: [...payload, payload[0]] }, { architecture: 'arm64' }]) {
       expect(() => validateInstalledPayload({ ...installed, ...change }, { ...identity, files: payload })).toThrow()
+    }
+  })
+  it('binds the actual builder launcher path and executable mode', () => {
+    const installed = {
+      status: 'install ok installed', packageName: 'sartracker-web', version: '0.1.0-beta.13', architecture: 'amd64',
+      files: [{ path: CANONICAL_INSTALLED_EXECUTABLE_PATH.slice(1), sha256: digest, size: 50, executableBits: 73 }],
+    }
+    expect(validateCanonicalInstalledExecutable(installed, CANONICAL_INSTALLED_EXECUTABLE_PATH)).toBe(true)
+    for (const change of [
+      { path: 'opt/sartracker-web/sartracker-web' },
+      { symlink: 'somewhere' },
+      { executableBits: 0 },
+    ]) {
+      const files = [{ ...installed.files[0], ...change }]
+      expect(() => validateCanonicalInstalledExecutable({ ...installed, files }, CANONICAL_INSTALLED_EXECUTABLE_PATH)).toThrow()
     }
   })
 })

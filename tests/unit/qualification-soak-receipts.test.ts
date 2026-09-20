@@ -189,14 +189,20 @@ function report(overrides: Record<string, unknown> = {}) {
     operations: {
       competingHistoryAndCurrent: true,
       cancellation: {
-        requestId: 'priority-breadcrumb-test', started: true, startDurationMs: 4,
+        operationId: 'priority-breadcrumb-test', requestId: 'priority-breadcrumb-test', started: true, startDurationMs: 4,
         cancelRequested: true, cancelAccepted: true, queryOutcome: 'cancelled', positionCount: null,
         clientSurface: 'packaged-electron-mission-store-exact-dot-page',
         queryApi: 'listExactBreadcrumbDotPage',
         queryErrorName: 'AbortError', queryErrorClass: 'breadcrumb-query-cancelled',
         querySettled: true, cleanupCompleted: true,
       },
-      faultStages: ['start', 'steady', 'cancel', 'fail', 'cleanup'],
+      faultStages: [
+        { sequence: 1, stage: 'start', operationId: 'priority-breadcrumb-test', requestId: 'priority-breadcrumb-test', observedAt: '2026-09-20T10:00:00.000Z', outcome: 'started' },
+        { sequence: 2, stage: 'steady', operationId: 'priority-breadcrumb-test', requestId: 'priority-breadcrumb-test', observedAt: '2026-09-20T10:00:00.500Z', outcome: 'in-flight' },
+        { sequence: 3, stage: 'cancel', operationId: 'priority-breadcrumb-test', requestId: 'priority-breadcrumb-test', observedAt: '2026-09-20T10:00:00.700Z', outcome: 'accepted' },
+        { sequence: 4, stage: 'fail', operationId: 'priority-breadcrumb-test', requestId: 'priority-breadcrumb-test', observedAt: '2026-09-20T10:00:00.800Z', outcome: 'cancelled' },
+        { sequence: 5, stage: 'cleanup', operationId: 'priority-breadcrumb-test', requestId: 'priority-breadcrumb-test', observedAt: '2026-09-20T10:00:01.000Z', outcome: 'settled' },
+      ],
       competingOperationBinding: { missionId: 'active-mission', archiveMissionId: 'finished-mission' },
       competingOperationEvidence: competingOperationEvidence(),
       representativePhases: {
@@ -416,6 +422,38 @@ describe('qualification soak receipt validators', () => {
     expect(result.failureReasons.join('\n')).toContain(
       'Priority-fault competing operation did not retain a real in-flight cancellation, settled AbortError outcome and cleanup observations.',
     )
+  })
+
+  it('rejects priority stages that are not bound to the real operation and request', () => {
+    const candidate = report()
+    candidate.priorityFaultEvidence.operations.faultStages[2] = {
+      sequence: 3,
+      stage: 'cancel',
+      operationId: 'different-operation',
+      requestId: 'different-request',
+      observedAt: '2026-09-20T10:00:00.700Z',
+      outcome: 'accepted',
+    }
+    const result = validateSoakContractEvidence('C04', candidate, expected)
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/stage.*bound|cancelled operation/iu)
+  })
+
+  it('rejects a steady record that claims the query was already settled', () => {
+    const candidate = report()
+    candidate.priorityFaultEvidence.operations.faultStages[1].outcome = 'already-settled'
+    const result = validateSoakContractEvidence('C04', candidate, expected)
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/steady.*outcome|in-flight/iu)
+  })
+
+  it('accepts equal wall-clock stage timestamps when explicit sequence is retained', () => {
+    const candidate = report()
+    for (const stage of candidate.priorityFaultEvidence.operations.faultStages.slice(2)) {
+      stage.observedAt = '2026-09-20T10:00:00.700Z'
+    }
+    const result = validateSoakContractEvidence('C04', candidate, expected)
+    expect(result.passed).toBe(true)
   })
 
   it('requires raw CPU and storage distributions for C24', () => {

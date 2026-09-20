@@ -22,9 +22,17 @@ const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], {
 }).trim()
 const asarIdentity = await hashCandidateFile(path.join(path.dirname(app), 'resources', 'app.asar'))
 const results = []
+let cancellationSignal = null
+let cleanupBlocked = false
+const onTerminate = () => { cancellationSignal = 'SIGTERM' }
+const onInterrupt = () => { cancellationSignal = 'SIGINT' }
+process.on('SIGTERM', onTerminate)
+process.on('SIGINT', onInterrupt)
+const plan = compileProducerDevelopmentPlan({ app, output, sourceSha, appSha256: appIdentity.sha256 })
 // This is a bounded PR producer check. It does not enter candidate mode, create
 // seals, claim CI AppImage/install identity or satisfy any release obligation.
-for (const entry of compileProducerDevelopmentPlan({ app, output, sourceSha, appSha256: appIdentity.sha256 })) {
+for (const entry of plan) {
+  if (cancellationSignal !== null) break
   const { id, contractId, evidence, command } = entry
   await mkdir(evidence, { mode: 0o700 })
   let execution
@@ -55,10 +63,16 @@ for (const entry of compileProducerDevelopmentPlan({ app, output, sourceSha, app
     infrastructurePassed, qualificationExecuted: false, mechanics }
   results.push(result)
   await writeFile(path.join(output, `${id}-development-result.json`), JSON.stringify(result, null, 2), { flag: 'wx' })
+  if (execution.zeroDescendantsAfterRun !== true) {
+    cleanupBlocked = true
+    break
+  }
 }
-const infrastructurePassed = results.every(result => result.infrastructurePassed)
+const infrastructurePassed = cancellationSignal === null && results.length === plan.length
+  && results.every(result => result.infrastructurePassed)
 await writeFile(path.join(output, 'development-summary.json'), JSON.stringify({
   schema: 'sartracker-producer-development-v1', sourceSha, sourceTree, appIdentity, asarIdentity, results, infrastructurePassed,
+  cancellationSignal, cleanupBlocked, plannedCases: plan.length, completedCases: results.length,
   proofMode: 'unpacked-package-producer-development', qualificationExecuted: false,
   releaseEligible: false, candidateReceipt: false,
   notRun: ['full C01 startup matrix including physical ENOSPC and field storage',
@@ -66,4 +80,6 @@ await writeFile(path.join(output, 'development-summary.json'), JSON.stringify({
     'C18 physical volume and full fault matrix', 'large replay/archive/storage and long-duration soaks',
     'exact AppImage and installed-deb qualification', 'private maps, live provider and named human acceptance'],
 }, null, 2), { flag: 'wx' })
+process.off('SIGTERM', onTerminate)
+process.off('SIGINT', onInterrupt)
 if (!infrastructurePassed) process.exitCode = 1

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import os, { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, generateKeyPairSync, sign } from 'node:crypto'
@@ -14,7 +14,7 @@ import {
   runContractAttempt,
   verifyCampaignAttempt,
 } from '../../scripts/qualification/control-plane.mjs'
-import { ingestHumanTrainingEvidence, materializeCaptures, validateBindingCoverage } from '../../scripts/qualification/candidate-control-plane.mjs'
+import { ingestHumanTrainingEvidence, materializeCaptures, readBoundJsonFile, validateBindingCoverage } from '../../scripts/qualification/candidate-control-plane.mjs'
 import { canonicalJson } from '../../scripts/qualification/control-plane.mjs'
 import { C28_REQUIRED_VARIANTS } from '../../scripts/qualification/composite-coverage.mjs'
 
@@ -236,7 +236,25 @@ describe('qualification candidate control plane', () => {
   it('rechecks the executing source at verdict instead of trusting a retained source claim', async () => {
     await createFixture()
     const planPath = path.resolve('docs/assurance/qualification-campaign-plan.json')
-    const definition = await compileCampaignDefinition({ planPath, sourceIdentity })
+    const reviewedPlan = JSON.parse(await readFile(planPath, 'utf8'))
+    const c19Binding = reviewedPlan.bindings.find((binding: { contractId: string; adapterId: string }) =>
+      binding.contractId === 'C19' && binding.adapterId === 'package.reviewed')
+    const c24Binding = reviewedPlan.bindings.find((binding: { contractId: string; adapterId: string }) =>
+      binding.contractId === 'C24' && binding.adapterId === 'soak.reviewed')
+    expect(c19Binding).toBeDefined()
+    expect(c24Binding).toBeDefined()
+    const bindings = [c19Binding!, c24Binding!]
+    const definition = await compileCampaignDefinition({
+      plan: {
+        ...reviewedPlan,
+        campaignId: 'source-verdict-check',
+        requiredContracts: ['C19', 'C24'],
+        bindings,
+      },
+      planPath,
+      sourceIdentity,
+    })
+    expect(definition.identities.validators.some((identity: { path: string }) => identity.path.endsWith('.py'))).toBe(true)
     const verdict = await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })
     expect(verdict.evidenceErrors.join(' ')).toMatch(/live checkout/iu)
     expect(verdict.productCapabilityBlockers.map((entry: { issueId: string }) => entry.issueId))
@@ -254,7 +272,7 @@ describe('qualification candidate control plane', () => {
     expect(await readFile(fixturePath, 'utf8')).toContain('calibration')
     expect(await readFile(lease.leasePath, 'utf8')).toContain('ACQUIRED')
   })
-  it('compiles source regression suites with immutable test identities and preserves their proof tier', async () => {
+  it.skipIf(process.platform !== 'linux')('compiles source regression suites with immutable test identities and preserves their proof tier', async () => {
     const fixturePath = await createFixture()
     const base = makePlan(fixturePath)
     const definition = await compileCampaignDefinition({ plan: { ...base, requiredContracts: ['C13'],
@@ -284,6 +302,22 @@ describe('qualification candidate control plane', () => {
     await expect(compileCampaignDefinition({ plan: makePlan(fixturePath, {
       externalHuman: { authorityPath, authorizationPath: fixturePath },
     }), sourceIdentity })).rejects.toThrow(/public key/iu)
+  })
+  it('parses human authority from the same descriptor bytes whose identity it retains', async () => {
+    await createFixture()
+    const authorityPath = path.join(temporaryRoot!, 'authority-bound.json')
+    const authority = { signerId: 'test-signer', machineId: 'host', dataClass: 'synthetic', profileSha256: 'd'.repeat(64), publicKey: 'public-key' }
+    await writeFile(authorityPath, JSON.stringify(authority), 'utf8')
+    const bound = await readBoundJsonFile(authorityPath, 'human authority')
+    await writeFile(authorityPath, JSON.stringify({ ...authority, machineId: 'substituted' }), 'utf8')
+    expect(bound.value).toEqual(authority)
+    expect(bound.identity.sha256).toBe(createHash('sha256').update(JSON.stringify(authority)).digest('hex'))
+  })
+  it('rejects an oversized bound JSON file before parsing beyond its limit', async () => {
+    await createFixture()
+    const authorityPath = path.join(temporaryRoot!, 'authority-too-large.json')
+    await writeFile(authorityPath, Buffer.alloc(16 * 1024 + 1, 0x20))
+    await expect(readBoundJsonFile(authorityPath, 'human authority')).rejects.toThrow(/bounded size/iu)
   })
   it.each(['signed', 'missing-file', 'invalid-authority'])('retains the C29 submission outcome without a fabricated judge: %s', async (submission) => {
     const fixturePath = await createFixture()
@@ -820,5 +854,26 @@ describe('qualification candidate control plane', () => {
     await expect(createCampaignLease({ campaignRoot: temporaryRoot!, definition }))
       .rejects.toThrow(/held by live process/u)
     expect(lease.status).toBe('ACQUIRED')
+  })
+  it('rolls back unpublished lease roots when acquisition preparation fails', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'], baselinePorts: [0] })
+    await expect(createCampaignLease({ campaignRoot: temporaryRoot!, definition })).rejects.toThrow(/baseline port/iu)
+    expect(await readFile(path.join(temporaryRoot!, 'campaign.lock'), 'utf8').catch(() => null)).toBeNull()
+    const leasesRoot = path.join(temporaryRoot!, 'leases')
+    expect((await readdir(leasesRoot, { withFileTypes: true })).filter((entry) => entry.isDirectory())).toHaveLength(0)
+  })
+  it('rejects a symlinked lease root before publishing campaign custody', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'] })
+    await symlink(path.dirname(temporaryRoot!), path.join(temporaryRoot!, 'leases'))
+    await expect(createCampaignLease({ campaignRoot: temporaryRoot!, definition })).rejects.toThrow(/real directory/iu)
+    expect(await readFile(path.join(temporaryRoot!, 'campaign.lock'), 'utf8').catch(() => null)).toBeNull()
+  })
+  it('rejects cleanup when the lease PID is reused by a different process instance', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'] })
+    const lease = await createCampaignLease({ campaignRoot: temporaryRoot!, definition })
+    const state = JSON.parse(await readFile(lease.leasePath, 'utf8'))
+    await writeFile(lease.leasePath, JSON.stringify({ ...state, processStart: 'reused-process-instance' }), 'utf8')
+    const { cleanupCampaignLease } = await import('../../scripts/qualification/control-plane.mjs')
+    await expect(cleanupCampaignLease({ leasePath: lease.leasePath })).rejects.toThrow(/PID|process instance|ownership/iu)
   })
 })

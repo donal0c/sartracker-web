@@ -519,6 +519,18 @@ describe('packaged qualification adapter', () => {
     }, { definition: fixture.definition, attemptDirectory: fixture.attemptDirectory })).rejects.toThrow(/bound|binding|definition/iu)
   })
 
+  it('rejects a noncanonical installed launcher during retained package admission', async () => {
+    const fixture = await writeRetainedFixture()
+    fixture.definition.identities.candidate.artifacts[0].role = 'ci-deb'
+    fixture.definition.runtimeInputs.config.ci.installers[0].role = 'ci-deb'
+    fixture.definition.runtimeInputs.config.installedExecutablePath = '/opt/SAR Tracker Electron Validation/resources/app.asar'
+    await expect(validateRetainedPackage({ ...fixture.receipt,
+      proofMode: 'installed-deb', variantId: 'sqlite-recovery-installed',
+      artifact: { ...fixture.receipt.artifact, role: 'ci-deb' },
+    }, { contractId: 'C18', proofMode: 'installed-deb', variantId: 'sqlite-recovery-installed' },
+    { definition: fixture.definition, attemptDirectory: fixture.attemptDirectory })).rejects.toThrow(/canonical.*launcher/iu)
+  })
+
   it('revalidates retained C18 fault-matrix facts with the independent oracle', async () => {
     const fixture = await writeRetainedFixture()
     const report = c18FaultReport(fixture.artifactSha, fixture.fixtureSha)
@@ -534,6 +546,23 @@ describe('packaged qualification adapter', () => {
     }, { definition: fixture.definition, attemptDirectory: fixture.attemptDirectory })
     expect(result.status).toBe('PASS')
     expect(result.validation.predicates.oracle).toBe(true)
+  })
+
+  it('rejects passing C18 oracle facts for a different planned fault', async () => {
+    const fixture = await writeRetainedFixture()
+    const report = c18FaultReport(fixture.artifactSha, fixture.fixtureSha)
+    const substituted = { ...report, oracleInput: { ...report.oracleInput,
+      variant: 'busy-wal', outcome: 'completed', error: null,
+      busyWal: { writeTransactionHeld: true, backupCompleted: true, released: true },
+    } }
+    const bytes = Buffer.from(`${JSON.stringify(substituted)}\n`)
+    await writeFile(path.join(fixture.attemptDirectory, 'package-raw-report.json'), bytes)
+    const result = await validateRetainedPackage({ ...fixture.receipt,
+      variantId: 'permission', rawReportSha256: sha256(bytes),
+    }, { contractId: 'C18', variantId: 'permission', proofMode: 'ci-appimage' },
+    { definition: fixture.definition, attemptDirectory: fixture.attemptDirectory })
+    expect(result.status).toBe('INVALID_EVIDENCE')
+    expect(result.validation.failureReasons.join(' ')).toMatch(/variant/iu)
   })
 
   it('re-reads raw observations instead of trusting retained validation or producer verdict', async () => {

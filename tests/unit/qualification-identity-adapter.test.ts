@@ -4,13 +4,14 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { validateRetainedIdentity } from '../../scripts/qualification/identity-adapter.mjs'
+import { CANONICAL_INSTALLED_EXECUTABLE_PATH } from '../../scripts/qualification/candidate-artifacts.mjs'
 
 const sourceSha = 'a'.repeat(40)
 const archiveSha = 'b'.repeat(64)
 const appImageSha = 'c'.repeat(64)
 const debSha = 'd'.repeat(64)
 const version = '0.1.0-beta.13'
-const payload = [{ path: 'opt/sartracker-web/sartracker-web', sha256: 'e'.repeat(64), size: 50, executableBits: 73 }]
+const payload = [{ path: CANONICAL_INSTALLED_EXECUTABLE_PATH.slice(1), sha256: 'e'.repeat(64), size: 50, executableBits: 73 }]
 const run = {
   id: 123,
   run_attempt: 1,
@@ -41,7 +42,7 @@ const config = {
       { role: 'ci-deb', path: '/owned/candidate.deb', sha256: debSha, bytes: 20 },
     ],
   },
-  installedExecutablePath: '/opt/sartracker-web/sartracker-web',
+  installedExecutablePath: CANONICAL_INSTALLED_EXECUTABLE_PATH,
 }
 const definition = {
   identities: {
@@ -85,7 +86,7 @@ function report() {
       version,
       architecture: 'amd64',
       files: payload,
-      payloadExpected: { packageName: 'sartracker-web', version, architecture: 'amd64', files: payload },
+      payloadExpected: { packageName: 'sartracker-web', version, architecture: 'amd64', files: payload.map((entry) => ({ ...entry })) },
     },
     installedExecutablePath: config.installedExecutablePath,
   }

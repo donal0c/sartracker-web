@@ -4,7 +4,7 @@ import { copyFile, lstat, mkdir, readFile, readdir, realpath, stat, writeFile } 
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { hashCandidateFile } from './candidate-artifacts.mjs'
+import { CANONICAL_INSTALLED_EXECUTABLE_PATH, hashCandidateFile } from './candidate-artifacts.mjs'
 import {
   compilePackageCommand,
   LEGACY_DEFAULT_VARIANTS,
@@ -509,8 +509,8 @@ async function validateExecutionContext(normalized, binding, attemptDirectory, w
   }
   const installedExecutablePath = config.installedExecutablePath
   if (binding.proofMode === 'installed-deb'
-      && (typeof installedExecutablePath !== 'string' || !path.isAbsolute(installedExecutablePath))) {
-    throw new Error('Installed-deb package adapter requires the exact installedExecutablePath from runtimeInputs.')
+      && installedExecutablePath !== CANONICAL_INSTALLED_EXECUTABLE_PATH) {
+    throw new Error('Installed-deb package adapter requires the canonical installed launcher from runtimeInputs.')
   }
   if (!options.retained && (!path.isAbsolute(attemptDirectory) || !path.isAbsolute(workDirectory))) {
     throw new Error('Package adapter attempt and work directories must be absolute.')
@@ -810,8 +810,9 @@ function validateStorageBackupFaultReport(report, context, runtime) {
       || report.schema !== 'sartracker-storage-backup-fault-matrix-v1'
       || report.contractId !== 'C18'
       || report.variant !== context.bindingVariantId
+      || report.oracleInput?.variant !== context.bindingVariantId
       || report.releaseEligible !== false) {
-    failures.push('C18 backup-fault report identity or schema is invalid.')
+    failures.push('C18 backup-fault report identity, oracle variant or schema is invalid.')
   }
   if (!isRecord(fixture)
       || report?.source?.sha256 !== fixture.sha256

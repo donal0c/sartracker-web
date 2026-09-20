@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { validateRuntimeObservation } from '../../scripts/qualification/package-runtime.mjs'
+import { CANONICAL_INSTALLED_EXECUTABLE_PATH } from '../../scripts/qualification/candidate-artifacts.mjs'
 
 const expected = { proofMode: 'ci-appimage', launchPath: '/owned/candidate.AppImage',
   executableSha256: 'a'.repeat(64), asarSha256: 'b'.repeat(64), artifactSha256: 'c'.repeat(64) }
@@ -20,8 +21,8 @@ describe('actual package process identity', () => {
     expect(() => validateRuntimeObservation({ ...observed, ...change }, expected)).toThrow()
   })
   it('requires the actual installed executable, not a byte-identical extracted copy', () => {
-    const installed = { ...expected, proofMode: 'installed-deb', launchPath: '/opt/SAR/sartracker-web',
-      installedExecutablePath: '/opt/SAR/sartracker-web' }
+    const installed = { ...expected, proofMode: 'installed-deb', launchPath: CANONICAL_INSTALLED_EXECUTABLE_PATH,
+      installedExecutablePath: CANONICAL_INSTALLED_EXECUTABLE_PATH }
     const input = { ...observed, launchPath: installed.launchPath, executablePath: installed.launchPath, appImagePath: null }
     expect(validateRuntimeObservation(input, installed)).toBe(true)
     expect(() => validateRuntimeObservation({ ...input, executablePath: '/tmp/deb/opt/SAR/sartracker-web' }, installed)).toThrow()

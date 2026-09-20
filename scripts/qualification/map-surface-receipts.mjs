@@ -37,8 +37,9 @@ export function validateMapSurfaceFacts(report) {
   const after = projectMapSnapshot(report.map?.after)
   for (const snapshot of [before, after]) {
     for (const sourceId of SOURCE_IDS) {
-      if (!snapshot.sources.some((source) => source.id === sourceId && source.type === 'geojson')) {
-        throw new Error(`MapLibre source ${sourceId} was not retained.`)
+      const sources = snapshot.sources.filter((source) => source.id === sourceId)
+      if (sources.length !== 1 || sources[0].type !== 'geojson') {
+        throw new Error(`MapLibre source ${sourceId} is missing or duplicated.`)
       }
     }
   }
@@ -140,22 +141,43 @@ function projectFeature(feature) {
   }
 }
 
+/** Require exact persisted membership, including the line's optional bound label. */
 function assertRenderedIdentity(snapshot, persisted) {
+  const markerFeatures = snapshot.sources.find((candidate) => candidate.id === 'mission-markers').features
+  const drawingFeatures = snapshot.sources.find((candidate) => candidate.id === 'mission-drawings').features
+  const markerIds = new Set(persisted.markers.map((marker) => marker.id))
+  const drawingIds = new Set(persisted.drawings.map((drawing) => drawing.id))
+  if (markerIds.size !== persisted.markers.length || drawingIds.size !== persisted.drawings.length
+      || markerFeatures.length !== persisted.markers.length
+      || markerFeatures.some((feature) => !markerIds.has(feature.properties.markerId))
+      || drawingFeatures.some((feature) => !drawingIds.has(feature.properties.drawingId)
+        || !['geometry', 'label'].includes(feature.properties.featureKind))) {
+    throw new Error('Rendered map membership contains duplicate or unbound identities.')
+  }
   for (const marker of persisted.markers) {
-    const source = snapshot.sources.find((candidate) => candidate.id === 'mission-markers')
-    const feature = source?.features.find((candidate) => candidate.properties.markerId === marker.id)
-    if (feature === undefined || feature.properties.markerType !== marker.type || feature.properties.name !== marker.name
+    const features = markerFeatures.filter((candidate) => candidate.properties.markerId === marker.id)
+    const feature = features[0]
+    if (features.length !== 1 || feature.properties.markerType !== marker.type || feature.properties.name !== marker.name
         || canonicalJson(feature.geometry) !== canonicalJson({ type: 'Point', coordinates: [marker.lon, marker.lat] })) {
       throw new Error(`Rendered marker ${marker.id} differs from persisted identity or coordinates.`)
     }
   }
   for (const drawing of persisted.drawings) {
-    const source = snapshot.sources.find((candidate) => candidate.id === 'mission-drawings')
-    const feature = source?.features.find((candidate) => candidate.properties.drawingId === drawing.id
-      && candidate.properties.featureKind === 'geometry')
-    if (feature === undefined || feature.properties.drawingType !== drawing.type
+    const features = drawingFeatures.filter((candidate) => candidate.properties.drawingId === drawing.id)
+    const geometries = features.filter((candidate) => candidate.properties.featureKind === 'geometry')
+    const labels = features.filter((candidate) => candidate.properties.featureKind === 'label')
+    const feature = geometries[0]
+    if (geometries.length !== 1 || labels.length > 1
+        || features.some((candidate) => candidate.properties.drawingType !== drawing.type)
         || canonicalJson(feature.geometry) !== canonicalJson(drawing.geometry)) {
       throw new Error(`Rendered drawing ${drawing.id} differs from persisted geometry.`)
+    }
+    // The reviewed C14 producer creates a line. Its label belongs to the middle
+    // vertex; supplemental labels must not conceal foreign geometry or duplicates.
+    if (labels.length === 1 && (drawing.geometry.type !== 'LineString'
+        || canonicalJson(labels[0].geometry) !== canonicalJson({ type: 'Point',
+          coordinates: drawing.geometry.coordinates[Math.floor(drawing.geometry.coordinates.length / 2)] }))) {
+      throw new Error(`Rendered drawing ${drawing.id} label differs from its persisted line.`)
     }
   }
 }

@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 
 import {
   buildIndependentSoakSourceFacts,
   buildSoakExpectedBinding,
   compileSoakCommand,
   projectSoakReport,
+  readBoundedSoakFile,
   SOAK_ADAPTER_DESCRIPTOR,
   SOAK_VARIANTS,
 } from '../../scripts/qualification/soak-adapter.mjs'
+import {
+  SOAK_WORKER_PREPARATION_RETENTION_ALLOWANCE_MS,
+  soakWorkerTimeoutMs,
+} from '../../scripts/qualification/soak-execution-boundary.mjs'
 
 const recordedNowMs = 1_750_000_000_000
 const artifactSha = 'a'.repeat(64)
@@ -153,5 +161,26 @@ describe('qualification soak adapter', () => {
       maximumResidentBytes: 2_147_483_648,
       databaseBytes: 3_700_000_000,
     }))
+  })
+
+  it('reads retained evidence through a bounded descriptor-backed read', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-bounded-read-'))
+    const filename = path.join(directory, 'report.json')
+    try {
+      await writeFile(filename, '{"status":"observed"}')
+      await expect(readBoundedSoakFile(filename, 21)).resolves.toEqual(Buffer.from('{"status":"observed"}'))
+      await expect(readBoundedSoakFile(filename, 20)).rejects.toThrow(/limit|changed|size/iu)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('uses one fixed worker deadline with an explicit preparation and retention allowance', () => {
+    expect(soakWorkerTimeoutMs(SOAK_VARIANTS.ci)).toBe(
+      SOAK_VARIANTS.ci.timeoutMs + SOAK_WORKER_PREPARATION_RETENTION_ALLOWANCE_MS + 30_000,
+    )
+    expect(soakWorkerTimeoutMs(SOAK_VARIANTS['field-960k'])).toBe(
+      SOAK_VARIANTS['field-960k'].timeoutMs + SOAK_WORKER_PREPARATION_RETENTION_ALLOWANCE_MS + 30_000,
+    )
   })
 })

@@ -8,6 +8,7 @@ import {
   chmod,
   copyFile,
   lstat,
+  link,
   mkdir,
   open,
   readFile,
@@ -130,6 +131,10 @@ ADAPTERS.set('soak.reviewed', async (context) => {
 RECEIPT_VALIDATORS.set('soak.receipt', async (receipt, binding, context) => {
   const { validateRetainedSoak } = await import('./soak-adapter.mjs')
   const checked = await validateRetainedSoak(receipt.observed, binding, context)
+  if (receipt.status === 'CLEANUP_BLOCKED' && receipt.observed?.workerExecution?.resourceCleanupBlocked === true) {
+    if (checked.status !== 'INVALID_EVIDENCE') throw new Error('Cleanup-blocked soak evidence unexpectedly validated as a complete result.')
+    return
+  }
   if (checked.status !== receipt.status) throw new Error('Soak status differs from independently validated producer and runtime evidence.')
 })
 ADAPTERS.set('live.get-only', async (context) => {
@@ -214,7 +219,7 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
       disposableRootNames: ['profiles', 'fixtures', 'archives'],
       requiredCapabilities: uniqueStrings(
         unique([...resolvedPlan.bindings.map((binding) => binding.capability).filter(Boolean),
-          ...(resolvedPlan.mode === 'candidate' ? ['git', 'gh'] : [])]),
+          ...(resolvedPlan.mode === 'candidate' ? ['git', 'gh', 'owned-process-supervisor'] : [])]),
         'requiredCapabilities',
       ),
       baselinePorts: resolvedPlan.baselinePorts ?? [],
@@ -250,7 +255,7 @@ async function qualificationValidatorFiles() {
   const files = []
   for (const directory of [qualificationRoot, buildRoot]) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
-      if (/\.(?:mjs|cjs|js)$/u.test(entry.name)) {
+      if (/\.(?:mjs|cjs|js|py)$/u.test(entry.name)) {
         if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('Qualification validator inventory contains a non-regular module.')
         files.push(path.join(directory, entry.name))
       }
@@ -273,62 +278,93 @@ export async function createCampaignLease({ campaignRoot, definition }) {
   const root = await requireRealRoot(campaignRoot, 'campaign root')
   const campaignLockPath = path.join(root, 'campaign.lock')
   const leaseId = `lease-${Date.now()}-${randomUUID().slice(0, 8)}`
-  const leaseRoot = path.join(root, 'leases', leaseId)
-  await mkdir(path.join(root, 'leases'), { recursive: true, mode: 0o700 })
+  const leasesRoot = path.join(root, 'leases')
+  const leaseRoot = path.join(leasesRoot, leaseId)
+  const owner = await processOwnerIdentity(process.pid)
+  const leasePath = path.join(leaseRoot, 'lease.json')
+  let published = false
+  await mkdir(leasesRoot, { recursive: true, mode: 0o700 })
+  const leasesInfo = await lstat(leasesRoot)
+  if (!leasesInfo.isDirectory() || leasesInfo.isSymbolicLink() || await realpath(leasesRoot) !== leasesRoot) {
+    throw new Error('Campaign lease root must be a real directory.')
+  }
   try {
-    await writeExclusiveJson(campaignLockPath, {
+    await mkdir(leaseRoot, { recursive: false, mode: 0o700 })
+    const disposableRoots = []
+    for (const name of definition.preflight.disposableRootNames) {
+      const disposableRoot = path.join(leaseRoot, name)
+      await mkdir(disposableRoot, { recursive: false, mode: 0o700 })
+      disposableRoots.push(disposableRoot)
+    }
+    const lease = {
+      schema: 'sartracker-qualification-lease-v1',
+      status: 'ACQUIRED',
+      leaseId,
       campaignId: definition.campaignId,
       definitionDigest: definition.definitionDigest,
-      leaseId,
-      pid: process.pid,
-      host: os.hostname(),
-    })
+      pid: owner.pid,
+      host: owner.host,
+      bootId: owner.bootId,
+      processStart: owner.processStart,
+      platform: process.platform,
+      arch: process.arch,
+      acquiredAt: new Date().toISOString(),
+      campaignRoot: root,
+      campaignLockPath,
+      disposableRoots,
+      baseline: await captureBaseline(definition.preflight.baselinePorts),
+    }
+    await writeExclusiveJson(leasePath, lease)
+    try {
+      await link(leasePath, campaignLockPath)
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      await rm(leaseRoot, { recursive: true, force: false })
+      return recoverExistingCampaignLease({ root, campaignLockPath, definition, owner })
+    }
+    published = true
+    return leaseFromState(leasePath, lease)
   } catch (error) {
-    if (error?.code !== 'EEXIST') throw error
-    const existingLock = JSON.parse(await readFile(campaignLockPath, 'utf8'))
-    if (existingLock.campaignId !== definition.campaignId || existingLock.definitionDigest !== definition.definitionDigest) {
-      throw new Error('A different immutable campaign already owns the campaign lease.')
-    }
-    if (existingLock.host !== os.hostname() || existingLock.pid !== process.pid) {
-      if (existingLock.host === os.hostname() && processIsAlive(existingLock.pid)) {
-        throw new Error(`Campaign lease is held by live process ${existingLock.pid} on ${existingLock.host}.`)
-      }
-      throw new Error('Campaign lease is held by another host or has a stale owner; explicit cleanup is required.')
-    }
-    const existingLeasePath = path.join(root, 'leases', existingLock.leaseId, 'lease.json')
-    if (!await pathExists(existingLeasePath)) throw new Error('Campaign lease lock exists without a recoverable lease.')
-    const existingLease = JSON.parse(await readFile(existingLeasePath, 'utf8'))
-    if (existingLease.status !== 'ACQUIRED' || existingLease.pid !== process.pid || existingLease.host !== os.hostname()) {
-      throw new Error('Campaign lease owner identity is not recoverable.')
-    }
-    return leaseFromState(existingLeasePath, existingLease)
+    if (!published) await rm(leaseRoot, { recursive: true, force: true }).catch(() => undefined)
+    throw error
   }
-  await mkdir(leaseRoot, { recursive: false, mode: 0o700 })
-  const disposableRoots = []
-  for (const name of definition.preflight.disposableRootNames) {
-    const disposableRoot = path.join(leaseRoot, name)
-    await mkdir(disposableRoot, { recursive: false, mode: 0o700 })
-    disposableRoots.push(disposableRoot)
+}
+
+/** Resolve a competing final lock after this process has rolled back its unpublished lease. */
+async function recoverExistingCampaignLease({ root, campaignLockPath, definition, owner }) {
+  const lockInfo = await lstat(campaignLockPath)
+  if (!lockInfo.isFile() || lockInfo.isSymbolicLink() || lockInfo.size > 1024 * 1024) {
+    throw new Error('Campaign lease lock is not a regular recoverable file.')
   }
-  const lease = {
-    schema: 'sartracker-qualification-lease-v1',
-    status: 'ACQUIRED',
-    leaseId,
-    campaignId: definition.campaignId,
-    definitionDigest: definition.definitionDigest,
-    pid: process.pid,
-    host: os.hostname(),
-    platform: process.platform,
-    arch: process.arch,
-    acquiredAt: new Date().toISOString(),
-    campaignRoot: root,
-    campaignLockPath,
-    disposableRoots,
-    baseline: await captureBaseline(definition.preflight.baselinePorts),
+  const existingLock = JSON.parse(await readFile(campaignLockPath, 'utf8'))
+  if (existingLock.campaignId !== definition.campaignId || existingLock.definitionDigest !== definition.definitionDigest) {
+    throw new Error('A different immutable campaign already owns the campaign lease.')
   }
-  const leasePath = path.join(leaseRoot, 'lease.json')
-  await writeExclusiveJson(leasePath, lease)
-  return leaseFromState(leasePath, lease)
+  if (existingLock.status !== 'ACQUIRED' || existingLock.campaignLockPath !== campaignLockPath
+      || typeof existingLock.leaseId !== 'string' || !SAFE_ID_PATTERN.test(existingLock.leaseId)) {
+    throw new Error('Campaign lease lock has an invalid recoverable identity.')
+  }
+  const sameOwner = existingLock.host === owner.host && existingLock.bootId === owner.bootId
+    && existingLock.pid === owner.pid && existingLock.processStart === owner.processStart
+  if (!sameOwner) {
+    if (existingLock.host === owner.host && existingLock.bootId === owner.bootId && processIsAlive(existingLock.pid)) {
+      throw new Error(`Campaign lease is held by live process ${existingLock.pid} on ${existingLock.host}.`)
+    }
+    throw new Error('Campaign lease is held by another host or has a stale owner; explicit cleanup is required.')
+  }
+  const existingLeasePath = path.join(root, 'leases', existingLock.leaseId, 'lease.json')
+  const existingLeaseInfo = await lstat(existingLeasePath).catch(() => null)
+  if (existingLeaseInfo === null || !existingLeaseInfo.isFile() || existingLeaseInfo.isSymbolicLink()
+      || existingLeaseInfo.size > 1024 * 1024 || existingLeaseInfo.dev !== lockInfo.dev || existingLeaseInfo.ino !== lockInfo.ino) {
+    throw new Error('Campaign lease lock exists without a recoverable lease.')
+  }
+  const existingLease = JSON.parse(await readFile(existingLeasePath, 'utf8'))
+  if (existingLease.status !== 'ACQUIRED' || existingLease.pid !== owner.pid
+      || existingLease.host !== owner.host || existingLease.bootId !== owner.bootId
+      || existingLease.processStart !== owner.processStart) {
+    throw new Error('Campaign lease owner identity is not recoverable.')
+  }
+  return leaseFromState(existingLeasePath, existingLease)
 }
 
 /** Convert an on-disk lease into the narrow controller handle used by callers. */
@@ -372,6 +408,51 @@ function processIsAlive(pid) {
   } catch (error) {
     return error?.code !== 'ESRCH'
   }
+}
+
+/** Bind a lease to the host boot and process-start instance, not PID alone. */
+async function processOwnerIdentity(pid) {
+  const processStart = await processStartFingerprint(pid)
+  const bootId = await bootFingerprint()
+  return Object.freeze({ pid, host: os.hostname(), bootId, processStart })
+}
+
+/** Read a stable process-start marker on the supported qualification hosts. */
+async function processStartFingerprint(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('Lease process identity requires a positive PID.')
+  if (process.platform === 'linux') {
+    const stat = await readFile(`/proc/${pid}/stat`, 'utf8')
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/u)
+    const startTicks = fields[19]
+    if (!/^\d+$/u.test(startTicks ?? '')) throw new Error('Lease process start identity is unavailable.')
+    return `linux:${startTicks}`
+  }
+  const result = await execFile('ps', ['-o', 'lstart=', '-p', String(pid)])
+  const value = result.stdout.trim()
+  if (value === '' || value.length > 128) throw new Error('Lease process start identity is unavailable.')
+  return `${process.platform}:${value}`
+}
+
+/** Read a stable host-boot marker so a reused PID from another boot cannot own a lease. */
+async function bootFingerprint() {
+  if (process.platform === 'linux') {
+    const value = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()
+    if (!/^[a-f0-9-]{8,128}$/u.test(value)) throw new Error('Lease host boot identity is unavailable.')
+    return `linux:${value}`
+  }
+  if (process.platform === 'darwin') {
+    const result = await execFile('sysctl', ['-n', 'kern.boottime'])
+    const value = result.stdout.trim()
+    if (value === '' || value.length > 128) throw new Error('Lease host boot identity is unavailable.')
+    return `darwin:${value}`
+  }
+  throw new Error('Lease host boot identity is unsupported on this platform.')
+}
+
+/** Compare persisted lease ownership with the current process instance. */
+function sameProcessOwner(lease, owner) {
+  return lease.host === owner.host && lease.bootId === owner.bootId
+    && lease.pid === owner.pid && lease.processStart === owner.processStart
 }
 
 /**
@@ -530,6 +611,7 @@ export async function runContractAttempt({
   }
 
   let resourceLock
+  let resourceCleanupBlocked = false
   try {
     let workDirectory
     try {
@@ -555,11 +637,23 @@ export async function runContractAttempt({
         binding,
         workDirectory,
       })
-    } catch {
+      resourceCleanupBlocked = binding.adapterId === 'soak.reviewed' && (
+        execution?.workerExecution?.resourceCleanupBlocked === true
+        || execution?.observed?.workerExecution?.resourceCleanupBlocked === true)
+    } catch (error) {
       // Producers retain bounded diagnostics themselves. Do not copy arbitrary
       // exception text, which may contain private configuration, into receipts.
+      // The soak wrapper may report that its receipt write failed after the
+      // worker cleanup boundary was unproven. Preserve that typed custody
+      // signal so the resource lock cannot be released by this catch path.
+      resourceCleanupBlocked = binding.adapterId === 'soak.reviewed'
+        && error?.code === 'SOAK_RESOURCE_CLEANUP_BLOCKED'
+        && error?.resourceCleanupBlocked === true
       return await writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
-        status: 'INVALID_EVIDENCE', reason: 'Adapter terminated without a valid execution receipt; inspect retained producer evidence.', binding, resumed })
+        status: resourceCleanupBlocked ? 'CLEANUP_BLOCKED' : 'INVALID_EVIDENCE',
+        reason: resourceCleanupBlocked ? 'Soak receipt retention failed while cleanup was unproven; resource lock is retained for manual recovery.'
+          : 'Adapter terminated without a valid execution receipt; inspect retained producer evidence.',
+        binding, resumed })
     }
     let captures
     try {
@@ -570,11 +664,18 @@ export async function runContractAttempt({
         normalized.mode,
       )
     } catch (error) {
-      return writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status: 'INVALID_EVIDENCE', reason: error.message, binding, resumed })
+      return writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+        status: resourceCleanupBlocked ? 'CLEANUP_BLOCKED' : 'INVALID_EVIDENCE',
+        reason: resourceCleanupBlocked ? 'Owned soak cleanup was not proven; resource lock is retained for manual recovery.' : error.message,
+        binding, resumed })
     }
-    return await writeExecutionReceipt({ normalized, binding, validator, execution, captures, attemptId, attemptDirectory, inputDigest, resumed })
+    const persistedExecution = resourceCleanupBlocked
+      ? { ...execution, status: 'CLEANUP_BLOCKED' }
+      : execution
+    return await writeExecutionReceipt({ normalized, binding, validator, execution: persistedExecution,
+      captures, attemptId, attemptDirectory, inputDigest, resumed })
   } finally {
-    if (resourceLock !== undefined) await releaseResourceLock(resourceLock)
+    if (resourceLock !== undefined && !resourceCleanupBlocked) await releaseResourceLock(resourceLock)
   }
 }
 
@@ -584,14 +685,21 @@ async function assertOwnedCampaignLease(handle, campaignRoot, definition) {
   if (path.dirname(path.dirname(path.resolve(handle.leasePath))) !== path.join(root, 'leases')) {
     throw new Error('Preflight lease belongs to a different campaign root.')
   }
+  const leaseInfo = await lstat(handle.leasePath)
+  const lockPath = path.join(root, 'campaign.lock')
+  const lockInfo = await lstat(lockPath)
+  if (!leaseInfo.isFile() || leaseInfo.isSymbolicLink() || !lockInfo.isFile() || lockInfo.isSymbolicLink()
+      || leaseInfo.dev !== lockInfo.dev || leaseInfo.ino !== lockInfo.ino) {
+    throw new Error('Preflight lease custody changed before execution.')
+  }
   const lease = JSON.parse(await readFile(handle.leasePath, 'utf8'))
-  const lock = JSON.parse(await readFile(path.join(root, 'campaign.lock'), 'utf8'))
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'))
+  const currentOwner = await processOwnerIdentity(process.pid)
   if (lease.status !== 'ACQUIRED' || lease.campaignRoot !== root
       || lease.definitionDigest !== definition.definitionDigest || lock.definitionDigest !== definition.definitionDigest
       || lease.campaignId !== definition.campaignId || lock.campaignId !== definition.campaignId
       || lease.leaseId !== handle.leaseId || lock.leaseId !== lease.leaseId
-      || lease.pid !== process.pid || lock.pid !== process.pid
-      || lease.host !== os.hostname() || lock.host !== os.hostname()) {
+      || !sameProcessOwner(lease, currentOwner) || !sameProcessOwner(lock, currentOwner)) {
     throw new Error('Preflight lease ownership changed before execution.')
   }
 }
@@ -602,12 +710,13 @@ async function compileHumanAuthority(config, planPath) {
   if (!config || typeof config.authorityPath !== 'string' || typeof config.authorizationPath !== 'string') {
     throw new Error('External human authority and authorization paths are required.')
   }
-  const authorityIdentity = await strictFileIdentity(resolvePlanPath(config.authorityPath, planPath), 'human authority')
+  const authorityRead = await readBoundJsonFile(resolvePlanPath(config.authorityPath, planPath), 'human authority')
+  const authorityIdentity = authorityRead.identity
   const authorizationIdentity = await strictFileIdentity(resolvePlanPath(config.authorizationPath, planPath), 'human authorization')
   if (authorityIdentity.bytes > 16384 || authorizationIdentity.bytes < 1 || authorizationIdentity.bytes > 1024 * 1024) {
     throw new Error('External authority inputs exceed their bounded size or are empty.')
   }
-  const authority = JSON.parse(await readFile(authorityIdentity.path, 'utf8'))
+  const authority = authorityRead.value
   if (Object.keys(authority).sort().join(',') !== ['dataClass', 'machineId', 'profileSha256', 'publicKey', 'signerId'].sort().join(',')) {
     throw new Error('External human authority must contain only named public training authority fields.')
   }
@@ -1036,13 +1145,25 @@ export async function cleanupCampaignLease({ leasePath, simulateFailure = false 
       || await realpath(leaseRoot) !== leaseRoot) throw new Error('Cleanup lease or lock ownership is invalid.')
   const lockInfo = await lstat(expectedLockPath)
   if (!lockInfo.isFile() || lockInfo.isSymbolicLink()) throw new Error('Cleanup campaign lock is not a regular owned file.')
+  if (lockInfo.dev !== file.dev || lockInfo.ino !== file.ino) throw new Error('Cleanup campaign lock is not the published lease inode.')
   const lock = JSON.parse(await readFile(expectedLockPath, 'utf8'))
-  if (['campaignId', 'definitionDigest', 'leaseId', 'pid', 'host'].some((key) => lock[key] !== lease[key])) {
+  if (['campaignId', 'definitionDigest', 'leaseId', 'pid', 'host', 'bootId', 'processStart'].some((key) => lock[key] !== lease[key])) {
     throw new Error('Cleanup campaign lock ownership differs from the lease.')
   }
   if (!Array.isArray(lease.disposableRoots) || lease.disposableRoots.length !== 3
       || lease.disposableRoots.map((directory) => path.basename(directory)).sort().join(',') !== 'archives,fixtures,profiles') {
     throw new Error('Cleanup disposable ownership inventory differs.')
+  }
+  const locksRoot = path.join(root, 'locks')
+  const locksInfo = await lstat(locksRoot).catch((error) => error?.code === 'ENOENT' ? null : Promise.reject(error))
+  if (locksInfo !== null) {
+    if (!locksInfo.isDirectory() || locksInfo.isSymbolicLink()) throw new Error('Cleanup resource-lock directory is not a regular owned directory.')
+    const retainedLocks = await readdir(locksRoot, { withFileTypes: true })
+    if (retainedLocks.length > 0) throw new Error('Cleanup blocked while resource locks remain; explicit manual recovery is required.')
+  }
+  const currentOwner = await processOwnerIdentity(process.pid)
+  if (lease.pid === process.pid && !sameProcessOwner(lease, currentOwner)) {
+    throw new Error('Cleanup lease PID was reused by a different process instance.')
   }
   for (const directory of lease.disposableRoots) {
     if (path.dirname(directory) !== leaseRoot || await realpath(directory) !== directory
@@ -1612,6 +1733,45 @@ async function identityArtifacts(artifacts, planPath) {
     const identity = await strictFileIdentity(resolvePlanPath(artifact.path, planPath), 'artifact')
     return Object.freeze({ ...identity, role: artifact.role, ciRunId: artifact.ciRunId ?? null, localBuild: artifact.localBuild === true })
   })))
+}
+
+/** Reject symlinks before following a file identity. */
+export async function readBoundJsonFile(filePath, label, maxBytes = 16 * 1024) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error(`${label} bounded size is invalid.`)
+  const resolved = path.resolve(filePath)
+  const before = await lstat(resolved)
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular file.`)
+  if (before.size > maxBytes) throw new Error(`${label} exceeds its bounded size.`)
+  const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0)
+  const handle = await open(resolved, flags)
+  try {
+    const opened = await handle.stat()
+    if (!sameFileMetadata(before, opened)) throw new Error(`${label} changed before its bound descriptor was opened.`)
+    const boundedBytes = Buffer.allocUnsafe(maxBytes + 1)
+    let bytesRead = 0
+    while (bytesRead < boundedBytes.byteLength) {
+      const read = await handle.read(boundedBytes, bytesRead, boundedBytes.byteLength - bytesRead, null)
+      if (read.bytesRead === 0) break
+      bytesRead += read.bytesRead
+    }
+    if (bytesRead > maxBytes) throw new Error(`${label} exceeds its bounded size.`)
+    const bytes = boundedBytes.subarray(0, bytesRead)
+    const after = await handle.stat()
+    if (!sameFileMetadata(opened, after)) throw new Error(`${label} changed while being read.`)
+    const value = JSON.parse(bytes.toString('utf8'))
+    return Object.freeze({
+      identity: Object.freeze({ path: resolved, bytes: bytes.byteLength, sha256: sha256(bytes) }),
+      value,
+    })
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Compare file metadata captured from one path and one bound descriptor. */
+function sameFileMetadata(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
+    && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs
 }
 
 /** Reject symlinks before following a file identity. */

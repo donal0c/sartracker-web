@@ -118,6 +118,7 @@ export async function executeLiveVariant({ normalized, binding, attemptDirectory
   }
   const reportSha256 = sha256(reportBytes)
   const processBytes = jsonBytes(safeProcess)
+  const processSha256 = sha256(processBytes)
   await writeJsonExclusive(reportPath, report)
   await writeJsonExclusive(processPath, safeProcess)
   return Object.freeze({
@@ -127,7 +128,10 @@ export async function executeLiveVariant({ normalized, binding, attemptDirectory
       reportPath,
       processPath,
       reportSha256,
+      processSha256,
+      processBytes: processBytes.byteLength,
       process: safeProcess,
+      runtime: runtime === undefined ? null : runtimeSummary(runtime),
       validation: passed ? reportValidation : { status: 'INVALID_EVIDENCE', failureReasons: [failureCode] },
       scope: 'packaged-live-get-only',
       sourceSha: expected.sourceSha,
@@ -152,7 +156,8 @@ export async function validateRetainedLive(receipt, binding, { definition, attem
   const reportPath = await requirePathInside(receipt.reportPath ?? receipt.observed?.reportPath, attemptRoot, 'retained live report', 'live-report.json')
   const processPath = await requirePathInside(receipt.processPath ?? receipt.observed?.processPath, attemptRoot, 'retained live process evidence', 'live-process.json')
   const report = await readJson(reportPath, 'retained live report')
-  const processEvidence = await readJson(processPath, 'retained live process evidence')
+  const processBytes = await readFile(processPath)
+  const processEvidence = parseJsonBytes(processBytes, 'retained live process evidence')
   let validation
   try {
     validation = validateLiveExactReceipt(report, {
@@ -162,8 +167,14 @@ export async function validateRetainedLive(receipt, binding, { definition, attem
   } catch (error) {
     return invalidReceipt(receipt, reportPath, processPath, safeFailureReason(error, 'LIVE_REPORT_INVALID'))
   }
-  const processFailure = validateProcessEvidence(processEvidence, expected.artifact.sha256)
+  const runtime = validateRetainedRuntimeSummary(receipt.observed?.runtime, expected.artifact.sha256)
+  if (runtime === null) return invalidReceipt(receipt, reportPath, processPath, 'LIVE_RUNTIME_EXPECTATION_MISSING')
+  const processFailure = validateProcessEvidence(processEvidence, runtime)
   if (processFailure !== null) return invalidReceipt(receipt, reportPath, processPath, processFailure)
+  if (receipt.observed?.processSha256 !== sha256(processBytes)
+      || receipt.observed?.processBytes !== processBytes.byteLength) {
+    return invalidReceipt(receipt, reportPath, processPath, 'LIVE_PROCESS_HASH_MISMATCH')
+  }
   const actualReportSha256 = sha256(jsonBytes(report))
   if (receipt.observed?.reportSha256 !== undefined && receipt.observed.reportSha256 !== actualReportSha256) {
     return invalidReceipt(receipt, reportPath, processPath, 'LIVE_REPORT_HASH_MISMATCH')
@@ -261,7 +272,7 @@ function retainProcessEvidence(processResult, failureCode) {
 }
 
 /** Validate only the allowlisted process cleanup facts retained by the adapter. */
-function validateProcessEvidence(value, expectedArtifactSha256) {
+function validateProcessEvidence(value, expectedRuntime) {
   const allowed = ['exitCode', 'ownedPidsAfterExit', 'outputOverflowed', 'processError', 'runtimeIdentityObserved', 'runtimeObservations', 'schema', 'signal', 'stderrBytes', 'stdoutBytes', 'timedOut', 'zeroDescendantsAfterRun']
   if (!value || typeof value !== 'object' || value.schema !== PROCESS_SCHEMA
       || Object.keys(value).sort().join(',') !== allowed.sort().join(',')
@@ -271,7 +282,7 @@ function validateProcessEvidence(value, expectedArtifactSha256) {
       || !Number.isSafeInteger(value.stdoutBytes) || value.stdoutBytes < 0
       || !Number.isSafeInteger(value.stderrBytes) || value.stderrBytes < 0
       || value.runtimeIdentityObserved !== true || !Array.isArray(value.runtimeObservations)
-      || value.runtimeObservations.length === 0 || !validRuntimeObservations(value.runtimeObservations, expectedArtifactSha256)) return 'LIVE_RUNTIME_IDENTITY_MISSING'
+      || value.runtimeObservations.length === 0 || !validRuntimeObservations(value.runtimeObservations, expectedRuntime)) return 'LIVE_RUNTIME_IDENTITY_MISSING'
   return null
 }
 
@@ -396,8 +407,12 @@ function sanitizeRuntimeObservations(values) {
           || !/^\d+$/u.test(value.startTicks) || !SHA256.test(value.artifactSha256 ?? '')
           || !SHA256.test(value.executableSha256 ?? '') || !SHA256.test(value.asarSha256 ?? '')
           || value.mainProcess !== true || value.descendantOfRunner !== true) continue
-      const item = { pid: value.pid, startTicks: value.startTicks, artifactSha256: value.artifactSha256,
-        executableSha256: value.executableSha256, asarSha256: value.asarSha256,
+      if (typeof value.launchPath !== 'string' || !path.isAbsolute(value.launchPath)
+          || typeof value.executablePath !== 'string' || !path.isAbsolute(value.executablePath)
+          || (value.appImagePath !== null && (typeof value.appImagePath !== 'string' || !path.isAbsolute(value.appImagePath)))) continue
+      const item = { pid: value.pid, startTicks: value.startTicks, launchPath: value.launchPath,
+        executablePath: value.executablePath, appImagePath: value.appImagePath,
+        artifactSha256: value.artifactSha256, executableSha256: value.executableSha256, asarSha256: value.asarSha256,
         mainProcess: true, descendantOfRunner: true }
       unique.set(`${item.pid}:${item.startTicks}`, item)
     }
@@ -406,17 +421,46 @@ function sanitizeRuntimeObservations(values) {
 }
 
 /** Validate retained runtime observations without trusting a generic launched flag. */
-function validRuntimeObservations(values, expectedArtifactSha256) {
+function validRuntimeObservations(values, expected) {
   const seen = new Set()
   return values.every((value) => {
-    if (!value || Object.keys(value).sort().join(',') !== 'artifactSha256,asarSha256,descendantOfRunner,executableSha256,mainProcess,pid,startTicks'
+    if (!value || Object.keys(value).sort().join(',') !== 'appImagePath,artifactSha256,asarSha256,descendantOfRunner,executablePath,executableSha256,launchPath,mainProcess,pid,startTicks'
         || !Number.isSafeInteger(value.pid) || value.pid <= 0 || typeof value.startTicks !== 'string'
-        || !/^\d+$/u.test(value.startTicks) || value.artifactSha256 !== expectedArtifactSha256
-        || !SHA256.test(value.executableSha256 ?? '') || !SHA256.test(value.asarSha256 ?? '')
+        || !/^\d+$/u.test(value.startTicks) || value.artifactSha256 !== expected.artifactSha256
+        || value.launchPath !== expected.launchPath || value.appImagePath !== expected.launchPath
+        || !path.isAbsolute(value.executablePath) || !SHA256.test(value.executableSha256 ?? '')
+        || value.executableSha256 !== expected.executableSha256 || value.asarSha256 !== expected.asarSha256
         || value.mainProcess !== true || value.descendantOfRunner !== true) return false
     const key = `${value.pid}:${value.startTicks}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
+}
+
+/** Project the independently prepared runtime identity into the retained C05 receipt. */
+function runtimeSummary(runtime) {
+  return {
+    proofMode: runtime.proofMode,
+    launchPath: runtime.launchPath,
+    installedExecutablePath: runtime.installedExecutablePath ?? null,
+    artifactSha256: runtime.artifactSha256,
+    executableSha256: runtime.executableSha256,
+    asarSha256: runtime.asarSha256,
+  }
+}
+
+/** Validate the sealed C05 runtime expectation before using it as an observation oracle. */
+function validateRetainedRuntimeSummary(value, artifactSha256) {
+  if (!value || value.proofMode !== 'ci-appimage' || value.artifactSha256 !== artifactSha256
+      || value.installedExecutablePath !== null || typeof value.launchPath !== 'string'
+      || !path.isAbsolute(value.launchPath) || path.basename(value.launchPath) !== 'candidate.AppImage'
+      || !SHA256.test(value.executableSha256 ?? '') || !SHA256.test(value.asarSha256 ?? '')) return null
+  return value
+}
+
+/** Parse exact retained bytes so the digest and the validated object share one read. */
+function parseJsonBytes(bytes, label) {
+  try { return JSON.parse(bytes.toString('utf8')) }
+  catch { throw new Error(`${label} is not valid retained JSON.`) }
 }

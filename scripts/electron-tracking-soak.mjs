@@ -1309,7 +1309,21 @@ async function runPriorityFaultEvidence({
   }, url)
   const operationEvidence = async () => {
     const requestId = `priority-breadcrumb-${Date.now()}`
+    const operationId = requestId
+    const faultStages = []
+    const recordFaultStage = (stage, outcome) => {
+      faultStages.push({
+        sequence: faultStages.length + 1,
+        stage,
+        operationId,
+        requestId,
+        observedAt: new Date().toISOString(),
+        outcome,
+      })
+    }
+    recordFaultStage('start', 'started')
     const operationStartedAt = performance.now()
+    let querySettled = false
     const queryPromise = page.evaluate(async ({ activeMissionId, activeRequestId }) => {
       const store = window.sartrackerElectron?.missionStore
       if (typeof store?.listExactBreadcrumbDotPage !== 'function') {
@@ -1324,20 +1338,28 @@ async function runPriorityFaultEvidence({
       }, activeRequestId)
       return { positionCount: result?.pagePositionCount ?? null }
     }, { activeMissionId: missionId, activeRequestId: requestId }).then(
-      (result) => ({ status: 'fulfilled', result }),
-      (error) => ({
-        status: 'rejected',
-        errorName: typeof error?.name === 'string' ? error.name : null,
-        errorMessage: typeof error?.message === 'string' ? error.message : String(error),
-      }),
+      (result) => {
+        querySettled = true
+        return { status: 'fulfilled', result }
+      },
+      (error) => {
+        querySettled = true
+        return {
+          status: 'rejected',
+          errorName: typeof error?.name === 'string' ? error.name : null,
+          errorMessage: typeof error?.message === 'string' ? error.message : String(error),
+        }
+      },
     )
     await delay(10)
+    recordFaultStage('steady', querySettled ? 'already-settled' : 'in-flight')
     const cancelRequestedAtMs = performance.now()
     const cancelAccepted = await page.evaluate(async (activeRequestId) => {
       const cancel = window.sartrackerElectron?.missionStore?.cancelExactBreadcrumbDotQuery
       if (typeof cancel !== 'function') return null
       return cancel(activeRequestId)
     }, requestId)
+    recordFaultStage('cancel', cancelAccepted === true ? 'accepted' : 'not-accepted')
     let queryOutcome = 'unknown'
     let positionCount = null
     let queryErrorName = null
@@ -1355,7 +1377,10 @@ async function runPriorityFaultEvidence({
         ? 'cancelled'
         : 'rejected'
     }
+    recordFaultStage('fail', queryOutcome)
+    recordFaultStage('cleanup', 'settled')
     return {
+      operationId,
       requestId,
       started: true,
       startDurationMs: cancelRequestedAtMs - operationStartedAt,
@@ -1367,8 +1392,9 @@ async function runPriorityFaultEvidence({
       queryErrorName,
       queryErrorClass,
       positionCount,
-      querySettled: true,
-      cleanupCompleted: true,
+      querySettled,
+      cleanupCompleted: querySettled,
+      faultStages,
     }
   }
 
@@ -1591,7 +1617,7 @@ async function runPriorityFaultEvidence({
           archiveMissionId: archiveMission?.missionId ?? null,
         },
         cancellation: operation,
-        faultStages: ['start', 'steady', 'cancel', 'fail', 'cleanup'],
+        faultStages: operation.faultStages,
         representativePhases,
         competingOperationEvidence,
       },

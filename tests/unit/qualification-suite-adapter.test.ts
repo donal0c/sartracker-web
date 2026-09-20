@@ -10,6 +10,7 @@ import {
   validateRetainedSuite,
   retainBrowserCaptures,
 } from '../../scripts/qualification/suite-adapter.mjs'
+import { runOwnedProcess } from '../../scripts/qualification/owned-process.mjs'
 
 const SOURCE_SHA = 'a'.repeat(40)
 
@@ -99,7 +100,7 @@ describe('qualification suite adapter', () => {
     expect(Object.isFrozen(compiled.testIds)).toBe(true)
   }, 60_000)
 
-  it('executes only the reviewed source variant and retains report and runner logs', async () => {
+  it.skipIf(process.platform !== 'linux')('executes only the reviewed source variant and retains report and runner logs', async () => {
     const binding = { contractId: 'C13', proofMode: 'source' as const, command: 'echo arbitrary commands are forbidden' }
     const expected = await compileSuiteBinding(binding, SOURCE_SHA)
     const attemptDirectory = await mkdtemp(path.join(tmpdir(), 'sartracker-suite-attempt-'))
@@ -172,5 +173,20 @@ describe('qualification suite adapter', () => {
     } finally {
       await rm(attemptDirectory, { recursive: true, force: true })
     }
+  })
+
+  it.skipIf(process.platform === 'linux')('retains strict ownership unavailability without launching a producer', async () => {
+    const result = await runOwnedProcess({
+      file: process.execPath,
+      args: ['-e', 'throw new Error("producer must not launch")'],
+      cwd: process.cwd(),
+      env: process.env,
+      timeoutMs: 100,
+      cleanupTimeoutMs: 100,
+      terminationGraceMs: 50,
+    })
+    expect(result.processError).toMatch(/supervisor|Linux|unavailable/iu)
+    expect(result.producerPid).toBe(null)
+    expect(result.zeroDescendantsAfterRun).toBe(false)
   })
 })

@@ -54,7 +54,7 @@ function validReport() {
       },
       after: {
         basemapId: 'esri_topo',
-        sources: [source.missionMarkers, source.missionDrawings],
+        sources: structuredClone([source.missionMarkers, source.missionDrawings]),
         overlayLayerIds: ['mission-markers-symbol-ipp_lkp', 'mission-drawings-line'],
       },
     },
@@ -87,6 +87,44 @@ describe('C14 map surface receipts', () => {
       coordinates: [[-9.45, 52.08], [-9.3, 52.12]],
     }
     expect(() => validateMapSurface(report)).toThrow(/geometry|rendered/i)
+  })
+
+  it.each(['foreign-marker', 'duplicate-marker', 'unbound-marker', 'foreign-drawing', 'duplicate-drawing', 'unbound-drawing', 'duplicate-source'])('rejects extra rendered membership: %s', (kind) => {
+    const report = structuredClone(validReport())
+    for (const snapshot of [report.map.before, report.map.after]) {
+      if (kind === 'duplicate-source') {
+        snapshot.sources.push(structuredClone(snapshot.sources[0]))
+        continue
+      }
+      const source = snapshot.sources[kind.endsWith('marker') ? 0 : 1]
+      const extra = structuredClone(source.features[0])
+      if (kind.startsWith('foreign')) {
+        extra.properties = { ...extra.properties, markerId: 'foreign', drawingId: 'foreign' }
+      } else if (kind.startsWith('unbound')) {
+        extra.properties = { ...extra.properties, markerId: '', drawingId: '' }
+      }
+      source.features.push(extra)
+    }
+    expect(() => validateMapSurface(report)).toThrow(/rendered|source|membership|duplicate/iu)
+  })
+
+  it('accepts one bound line label but rejects duplicate or foreign labels', () => {
+    const report = structuredClone(validReport())
+    for (const snapshot of [report.map.before, report.map.after]) {
+      const source = snapshot.sources[1]
+      source.features.push({ geometry: { type: 'Point', coordinates: [-9.35, 52.12] },
+        properties: { drawingId: 'drawing-c14-1', drawingType: 'line', featureKind: 'label' } })
+    }
+    expect(validateMapSurface(report).status).toBe('PASS')
+    for (const kind of ['duplicate', 'foreign']) {
+      const changed = structuredClone(report)
+      for (const snapshot of [changed.map.before, changed.map.after]) {
+        const label = structuredClone(snapshot.sources[1].features[1])
+        if (kind === 'foreign') label.properties = { ...label.properties, drawingId: 'foreign' }
+        snapshot.sources[1].features.push(label)
+      }
+      expect(() => validateMapSurface(changed)).toThrow(/rendered|membership|duplicate/iu)
+    }
   })
 
   it('rejects a console-only persistent overlay failure', () => {

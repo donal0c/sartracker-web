@@ -69,7 +69,7 @@ jobs:
   build:
     name: Build and inspect Linux Electron artifacts
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@v4
@@ -129,6 +129,7 @@ jobs:
             mesa-utils \
             squashfs-tools \
             openbox \
+            python3 \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -293,8 +294,11 @@ jobs:
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
 
+      # 78 minutes of declared case bounds, 4.5 minutes of owned cleanup,
+      # and evidence/summary headroom. These are harness deadlines, not
+      # responsiveness or qualification thresholds.
       - name: Candidate producer development checks (not qualification)
-        timeout-minutes: 20
+        timeout-minutes: 90
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe

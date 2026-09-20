@@ -169,6 +169,7 @@ function report(overrides: Record<string, unknown> = {}) {
         filesystem: { databaseMode: 0o444, directoryMode: 0o555, restored: true },
       }),
       'disk-full': nativeFaultScenario('disk-full', 'disk-full', {
+        cleanup: { fillerRemoved: true, profileRemoved: true },
         precondition: {
           kind: 'bounded-enospc',
           status: 'READY',
@@ -380,6 +381,17 @@ describe('qualification C01 startup receipt validator', () => {
     const result = validateStartupContractEvidence('C01', forged, expected)
     expect(result.passed).toBe(false)
     expect(result.failureReasons.join('\n')).toMatch(/physical|bounded|ENOSPC/iu)
+  })
+
+  it.each(['fillerRemoved', 'profileRemoved'])('rejects physical disk-full evidence without %s cleanup', (field) => {
+    for (const value of [false, undefined]) {
+      const forged = report()
+      const diskFull = (forged.scenarios as Record<string, Record<string, unknown>>)['disk-full']
+      diskFull.cleanup = { fillerRemoved: true, profileRemoved: true, [field]: value }
+      const result = validateStartupContractEvidence('C01', forged, expected)
+      expect(result.passed).toBe(false)
+      expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
+    }
   })
 
   it('retains an actual held-gate timeout as a product gap instead of promoting it', () => {

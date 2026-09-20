@@ -382,6 +382,10 @@ function validatePhysicalDiskFull(scenario, failures) {
   if (!passed) {
     failures.push('C01 disk-full profile lacks a reviewed bounded volume and independently observed physical ENOSPC boundary.')
   }
+  if (scenario.cleanup?.fillerRemoved !== true || scenario.cleanup?.profileRemoved !== true) {
+    failures.push('C01 disk-full cleanup did not remove the owned filler and disposable profile.')
+    passed = false
+  }
   return passed
 }
 

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const KNOWN_CAPABILITIES = Object.freeze(['node', 'fs', 'git', 'gh', 'electron', 'package-host'])
+const KNOWN_CAPABILITIES = Object.freeze(['node', 'fs', 'git', 'gh', 'electron', 'owned-process-supervisor', 'package-host'])
 
 /**
  * Inspect static prerequisites needed before a qualification adapter can run.
@@ -22,6 +22,7 @@ export function inspectHostCapabilities(options = {}) {
   const playwrightElectron = options.playwrightElectronAvailable ?? hasPlaywrightElectron(options.packageRoot ?? REPOSITORY_ROOT)
   const display = options.displayAvailable ?? hasDisplayPrerequisite(options.environment ?? process.env)
   const linuxX64 = platform === 'linux' && arch === 'x64'
+  const ownedProcessSupervisor = platform === 'linux' && (options.python3Available ?? commandAvailable('python3'))
   const git = commandAvailable('git')
   const gh = commandAvailable('gh')
   const electron = options.electronAvailable ?? process.versions.electron !== undefined
@@ -33,12 +34,14 @@ export function inspectHostCapabilities(options = {}) {
     git,
     gh,
     electron,
+    ownedProcessSupervisor,
     packageHost: { linuxX64, playwrightElectron, display, missingTools },
   }
   const available = ['node', 'fs']
   if (git) available.push('git')
   if (gh) available.push('gh')
   if (electron) available.push('electron')
+  if (ownedProcessSupervisor) available.push('owned-process-supervisor')
   if (packageHost) available.push('package-host')
   const missingReasons = {}
   if (!checks.node) missingReasons.node = 'Node.js runtime is unavailable.'
@@ -46,6 +49,7 @@ export function inspectHostCapabilities(options = {}) {
   if (!git) missingReasons.git = 'git is unavailable on PATH.'
   if (!gh) missingReasons.gh = 'gh (GitHub CLI) is unavailable on PATH.'
   if (!electron) missingReasons.electron = 'electron controller runtime is unavailable; use package-host for the Node CLI.'
+  if (!ownedProcessSupervisor) missingReasons['owned-process-supervisor'] = ownedProcessSupervisorReason({ platform, arch, python3Available: options.python3Available ?? commandAvailable('python3') })
   if (!packageHost) missingReasons['package-host'] = packageHostReason({ linuxX64, playwrightElectron, display, platform, arch, missingTools })
   return Object.freeze({
     schema: 'sartracker-host-capabilities-v1',
@@ -106,6 +110,13 @@ function packageHostReason({ linuxX64, playwrightElectron, display, platform, ar
   if (!display) missing.push('X11 display prerequisite unavailable (DISPLAY; reviewed probes force X11)')
   if (missingTools.length) missing.push(`required inspection/dialog tools unavailable: ${missingTools.join(', ')}`)
   return `package-host unavailable: ${missing.join('; ')}.`
+}
+
+/** Explain why the strict Linux ownership supervisor cannot provide a proof. */
+function ownedProcessSupervisorReason({ platform, arch, python3Available }) {
+  if (platform !== 'linux') return `strict owned-process supervision requires Linux subreaper support (found ${platform}/${arch})`
+  if (!python3Available) return 'strict owned-process supervision requires python3 on PATH'
+  return 'strict owned-process supervision is unavailable on this host'
 }
 
 /** Confirm that this process has a usable Node runtime. */

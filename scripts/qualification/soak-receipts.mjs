@@ -631,6 +631,56 @@ function sourceCurrentLatencyFailures(evidence, expectedDeviceCount, thresholdMs
   return failures
 }
 
+/** Validate the ordered C04/C24 fault-stage records against one real operation. */
+function priorityFaultStageFailures(operations, cancellation) {
+  const failures = []
+  const expectedStages = [
+    ['start', 'started'],
+    ['steady', 'in-flight'],
+    ['cancel', 'accepted'],
+    ['fail', 'cancelled'],
+    ['cleanup', 'settled'],
+  ]
+  if (!isRecord(operations) || !isRecord(cancellation)) return failures
+  if (typeof cancellation.operationId !== 'string' || cancellation.operationId.length < 1 ||
+      typeof cancellation.requestId !== 'string' || cancellation.requestId.length < 1) {
+    failures.push('Priority-fault cancellation is missing bounded operation and request identities.')
+    return failures
+  }
+  const stages = operations.faultStages
+  if (!Array.isArray(stages) || stages.length !== expectedStages.length) {
+    failures.push('Priority-fault operation stages must retain exactly five ordered records.')
+    return failures
+  }
+  let previousObservedAtMs = -Infinity
+  for (const [index, [expectedStage, expectedOutcome]] of expectedStages.entries()) {
+    const record = stages[index]
+    if (!isRecord(record)) {
+      failures.push(`Priority-fault operation stage ${expectedStage} is not a retained record.`)
+      continue
+    }
+    if (record.sequence !== index + 1) {
+      failures.push(`Priority-fault operation stage ${expectedStage} sequence is not retained.`)
+    }
+    if (record.stage !== expectedStage) {
+      failures.push(`Priority-fault operation stage ${expectedStage} was not observed in order.`)
+    }
+    if (record.operationId !== cancellation.operationId || record.requestId !== cancellation.requestId) {
+      failures.push(`Priority-fault operation stage ${expectedStage} is not bound to the cancelled operation.`)
+    }
+    const observedAtMs = typeof record.observedAt === 'string' ? Date.parse(record.observedAt) : NaN
+    if (!Number.isFinite(observedAtMs) || observedAtMs < previousObservedAtMs) {
+      failures.push(`Priority-fault operation stage ${expectedStage} does not have a nondecreasing timestamp.`)
+    } else {
+      previousObservedAtMs = observedAtMs
+    }
+    if (record.outcome !== expectedOutcome) {
+      failures.push(`Priority-fault operation stage ${expectedStage} outcome is not ${expectedOutcome}.`)
+    }
+  }
+  return failures
+}
+
 /** Recompute packaged current/history priority facts from retained raw observations. */
 function priorityFaultFailures(report, binding, contractId) {
   if (contractId !== 'C04' && contractId !== 'C24') return []
@@ -694,10 +744,7 @@ function priorityFaultFailures(report, binding, contractId) {
       || cancellation.cleanupCompleted !== true) {
     failures.push('Priority-fault competing operation did not retain a real in-flight cancellation, settled AbortError outcome and cleanup observations.')
   }
-  const stages = Array.isArray(operations?.faultStages) ? new Set(operations.faultStages) : new Set()
-  for (const stage of ['start', 'steady', 'cancel', 'fail', 'cleanup']) {
-    if (!stages.has(stage)) failures.push(`Priority-fault operation stage ${stage} was not observed.`)
-  }
+  failures.push(...priorityFaultStageFailures(operations, cancellation))
   if (contractId === 'C24') {
     if (binding.workload.class === 'field-scale'
         && (!Number.isSafeInteger(evidence.workloadPositionRows)
