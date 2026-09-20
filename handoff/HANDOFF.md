@@ -8,21 +8,26 @@ Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-mergeable at exact head `d78a0c76a9d1efb265e70ecd586c723695274ead`, directly
-on PR43's merge base. The repair recursively sanitizes renderer and Electron
-diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
-C17 development receipt independently bind export paths, retained hashes,
-canary manifest and bounded rescans. The prior exact-head review of the earlier
-repair head found no actionable P0/P1/P2 findings. Hosted Linux run `35537304260` passed the
-full workflow, including the C17 proof at job `106148526794`. Its retained
-artifact is `electron-linux-validation-evidence-d78a0c76a9d1efb265e70ecd586c723695274ead`;
+mergeable at final PR head `81e417911ccc543024653d0745d608428c479bbf`, a
+documentation-only commit after tested repair code head
+`d78a0c76a9d1efb265e70ecd586c723695274ead`, directly on PR43's merge base. The
+repair recursively sanitizes renderer and Electron diagnostics, closes legacy
+`/private`/`/tmp`/`/var` path leakage, and makes the C17 development receipt
+independently bind export paths, retained hashes, canary manifest and bounded
+rescans. The prior exact-head review of the earlier repair head found no
+actionable P0/P1/P2 findings. Hosted Linux run `35537304260` passed the full
+workflow, including the C17 proof at job `106148526794`, for the tested repair
+code head. Its retained artifact is `electron-linux-validation-evidence-d78a0c76a9d1efb265e70ecd586c723695274ead`;
 the C17 receipt is `PASS`, `valid:true`, `zeroCanary:true`, with 11 canaries,
 zero exact/adversarial matches, output hash
 `352df5721a26415d64d81fd3c7115cc510b8074e66ac3692f091773b27c27969`, and
 manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
 The receipt correctly retains `coverageComplete:false` and is not qualification or
-release evidence. A fresh exact-head independent review is the remaining review
-closeout before human merge review.
+release evidence. Manual run `35540259983` bound final PR head `81e4179` and
+passed correctness, WAR-02B, responsiveness, browser regressions and packaging,
+but failed the separate `bcp-960k` gate at `eventLoopMaxGapMs=200.11` before C17.
+A fresh independent review remains the review closeout before human merge review;
+the BCP-960k failure remains an unresolved qualification boundary.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
 release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
@@ -39,9 +44,9 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: complete the fresh exact-head independent review, update DON-237
-with the retained run/job/artifact evidence, and leave merge/release decisions
-to the authorized human boundary. The C17 receipt retains
+Next action: complete the fresh exact-head independent review and leave
+merge/release decisions to the authorized human boundary. DON-237 now records
+the retained run/job/artifact evidence and the separate BCP-960k failure. The C17 receipt retains
 `coverageComplete:false` with the intentional `recursive-adversarial-corpus`
 and `bounded-output-scan-identity` gaps.
 
