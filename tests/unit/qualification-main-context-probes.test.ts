@@ -1,10 +1,13 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { closeSync, openSync, readSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
 import { evaluateArchiveSecurityProbe } from '../../scripts/qualification/archive-security-packaged-probe.mjs'
+import { hashFile } from '../../scripts/qualification/archive-security-probe.cjs'
 import { evaluateInvalidSender, normalizeIpcBridgeError } from '../../scripts/qualification/ipc-probe.mjs'
 import {
   closeElectronApplication,
@@ -30,6 +33,36 @@ describe('qualification packaged main-context probes', () => {
         { controllerProbePath: probePath, sourceSha: HEAD },
       )
       expect(result).toEqual({ loaded: true, input: { moduleRoot: process.cwd(), tier: 'packaged-module', sourceSha: HEAD } })
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
+    }
+  })
+
+  it('hashes the supplied file through the raw filesystem boundary', async () => {
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'sartracker-c21-hash-'))
+    const filePath = path.join(temporary, 'payload.asar')
+    const bytes = Buffer.from('C21 raw package bytes', 'utf8')
+    await writeFile(filePath, bytes)
+    const calls: string[] = []
+    const rawFs = {
+      openSync: (...args: Parameters<typeof openSync>) => {
+        calls.push('openSync')
+        return openSync(...args)
+      },
+      readSync: (...args: Parameters<typeof readSync>) => {
+        calls.push('readSync')
+        return readSync(...args)
+      },
+      closeSync: (...args: Parameters<typeof closeSync>) => {
+        calls.push('closeSync')
+        return closeSync(...args)
+      },
+    }
+    try {
+      expect(hashFile(filePath, rawFs)).toBe(createHash('sha256').update(bytes).digest('hex'))
+      expect(calls).toContain('openSync')
+      expect(calls).toContain('readSync')
+      expect(calls).toContain('closeSync')
     } finally {
       await rm(temporary, { recursive: true, force: true })
     }

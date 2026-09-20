@@ -36,6 +36,9 @@ const {
   openVerifiedRestoredAttachment,
 } = require('./archive-review-attachment-opener.cjs')
 const {
+  createArchiveReviewDesktopOpener,
+} = require('./archive-review-desktop-opener.cjs')
+const {
   createArchiveReviewSessionManager,
 } = require('./archive-review-sessions.cjs')
 const {
@@ -1337,6 +1340,10 @@ async function startElectronApp() {
     shell,
     getBrowserWindow: () => BrowserWindow.getFocusedWindow(),
   })
+  const openArchiveReviewStage = createArchiveReviewDesktopOpener({
+    platform: process.platform,
+    shell,
+  })
   const archiveReviewSessionManager = createArchiveReviewSessionManager({
     archiveDirectory: path.join(userDataPath, 'archives'),
     reviewRoot: path.join(userDataPath, 'archive-review'),
@@ -1349,7 +1356,7 @@ async function startElectronApp() {
     }),
     openRestoredAttachment: (input) => openVerifiedRestoredAttachment({
       ...input,
-      openPath: (stagePath) => shell.openPath(stagePath),
+      openPath: openArchiveReviewStage,
     }),
   })
   electronRuntimeContext.archiveReviewSessionManager = archiveReviewSessionManager

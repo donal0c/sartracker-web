@@ -19,6 +19,7 @@ const ATTACHMENT_FILE_NAME = 'same-name.txt'
 const MARKER_KINDS = Object.freeze(['ipp_lkp', 'clue', 'hazard', 'casualty'])
 const SHA1 = /^[a-f0-9]{40}$/u
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const ARCHIVE_REVIEW_READINESS_TIMEOUT_MS = 60_000
 
 /** Execute the fixed C12 marker and attachment producer; the development flag is API-only and never a CLI option. */
 export async function runMarkerAttachmentProbe(input, { developmentTestHarness = false } = {}) {
@@ -147,8 +148,20 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
       markerRow.versionOperations = operations
       markerRow.versionCount = operations.length
     }
+    window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+      phase: 'finishMission',
+      startedAt: Date.now(),
+    }
     const finished = await bridge.missionStore.finishMission(mission.id)
+    window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+      phase: 'issueMissionArchiveRecoveryCode',
+      startedAt: Date.now(),
+    }
     const issued = await bridge.missionStore.issueMissionArchiveRecoveryCode(mission.id)
+    window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+      phase: 'finalizeMission',
+      startedAt: Date.now(),
+    }
     const finalized = await bridge.missionStore.finalizeMission(mission.id, {
       operationId: issued.operationId,
       recoveryCode: issued.recoveryCode,
@@ -157,6 +170,10 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
     const archive = finalized?.archive
     if (archive?.mission_id !== mission.id || archive.container_version !== 2) {
       throw new Error('C12 marker probe did not finalize the encrypted mission archive.')
+    }
+    window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+      phase: 'archiveReview.open',
+      startedAt: Date.now(),
     }
     const opened = await bridge.archiveReview.open({
       operationId: crypto.randomUUID(),
@@ -170,12 +187,20 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
     let openedAttachment = false
     let closed = false
     try {
+      window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+        phase: 'listArchiveAttachmentPage',
+        startedAt: Date.now(),
+      }
       attachmentReferences = await bridge.archiveReview.read({
         sessionId: opened.sessionId,
         requestId: crypto.randomUUID(),
         method: 'listArchiveAttachmentPage',
         input: { missionId: mission.id, cursor: null, limit: 100 },
       })
+      window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+        phase: 'readMissionReview',
+        startedAt: Date.now(),
+      }
       review = await bridge.archiveReview.read({
         sessionId: opened.sessionId,
         requestId: crypto.randomUUID(),
@@ -184,6 +209,12 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
       })
       const target = attachmentReferences?.entries?.find((entry) => entry.referenceKind === 'marker_version')
       if (!target) throw new Error('C12 archive review did not expose a marker-version attachment reference.')
+      window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+        phase: 'openAttachment',
+        startedAt: Date.now(),
+        referenceKind: target.referenceKind,
+        referenceId: target.referenceId,
+      }
       openedAttachment = await bridge.archiveReview.read({
         sessionId: opened.sessionId,
         requestId: crypto.randomUUID(),
@@ -195,6 +226,13 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
           referenceId: target.referenceId,
         },
       }) === true
+      window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ = {
+        phase: 'settled',
+        settledAt: Date.now(),
+        referenceKind: target.referenceKind,
+        referenceId: target.referenceId,
+        openedAttachment,
+      }
       window.__C12_ARCHIVE_REVIEW_READY__ = {
         sessionId: opened.sessionId,
         archivePath: archive.archive_path,
@@ -395,7 +433,7 @@ async function readPackagedRuntimeIdentity(app, { developmentTestHarness = false
 
 /** Wait for the renderer to confirm that read-only archive review opened one attachment. */
 export async function waitForArchiveReviewReady(page, readFailure = () => null) {
-  const deadline = Date.now() + 60_000
+  const deadline = Date.now() + ARCHIVE_REVIEW_READINESS_TIMEOUT_MS
   while (Date.now() < deadline) {
     const failure = readFailure()
     if (failure !== null && failure !== undefined) throw failure
@@ -403,7 +441,35 @@ export async function waitForArchiveReviewReady(page, readFailure = () => null) 
     if (ready !== null && ready.openedAttachment !== false) return ready
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
-  throw new Error('C12 archive review did not expose its bounded attachment-open readiness.')
+  const operationState = await page.evaluate(() => window.__C12_ARCHIVE_REVIEW_OPERATION_STATE__ ?? null)
+  throw createArchiveReviewReadinessTimeoutError(operationState)
+}
+
+/** Create a bounded, stage-specific readiness error without retaining private paths. */
+export function createArchiveReviewReadinessTimeoutError(operationState, now = Date.now()) {
+  const message = 'C12 archive review did not expose its bounded attachment-open readiness.'
+  const pendingPhases = new Set([
+    'finishMission',
+    'issueMissionArchiveRecoveryCode',
+    'finalizeMission',
+    'archiveReview.open',
+    'listArchiveAttachmentPage',
+    'readMissionReview',
+    'openAttachment',
+  ])
+  if (!pendingPhases.has(operationState?.phase)
+      || !Number.isSafeInteger(operationState.startedAt)
+      || !Number.isSafeInteger(now)
+      || now < operationState.startedAt) {
+    return new Error(message)
+  }
+  const elapsed = now - operationState.startedAt
+  const reference = operationState.phase === 'openAttachment'
+    ? ` (${operationState.referenceKind ?? 'unknown'}/${operationState.referenceId ?? 'unknown'})`
+    : ''
+  const error = new Error(`${message} ${operationState.phase} remained pending for ${elapsed}ms${reference}.`)
+  error.code = 'C12_ATTACHMENT_OPEN_TIMEOUT'
+  return error
 }
 
 /** Wait for the public mission UI refresh boundary before retaining marker-state evidence. */

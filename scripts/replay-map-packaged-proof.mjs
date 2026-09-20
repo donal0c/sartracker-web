@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { validateReplayReceipt } from './qualification/replay-receipts.mjs'
 import { createReplayGeometryFixture } from './qualification/replay-probe-fixture.mjs'
+import { isExpectedBlockedReplayRequest } from './qualification/replay-probe-diagnostics.mjs'
 
 const executablePath = process.argv[2]
 const evidence = path.resolve(process.argv[3] ?? 'tmp/batch2-packaged-proof')
@@ -14,8 +15,14 @@ const profile = await mkdtemp(path.join(evidence, '.profile-replay-'))
 let app
 const rendererErrors = []
 const rendererRequestsFailed = []
+let blockedNetworkRequestCount = 0
 try {
-  app = await electron.launch({ executablePath, env: { ...process.env,
+  // Match the Linux validation host's attested Mesa/ANGLE path. Chromium's
+  // default selection failed WebGL context creation in retained CI 35492584673.
+  const launchArgs = process.platform === 'linux'
+    ? ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl', '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE']
+    : []
+  app = await electron.launch({ executablePath, args: launchArgs, env: { ...process.env,
     SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' } })
   const page = await app.firstWindow()
   page.on('pageerror', (error) => {
@@ -23,8 +30,13 @@ try {
   })
   page.on('crash', () => { rendererErrors.push('Renderer process crashed.') })
   page.on('requestfailed', (request) => {
+    const failure = request.failure()?.errorText ?? 'unknown'
+    if (isExpectedBlockedReplayRequest(request.url(), failure)) {
+      blockedNetworkRequestCount += 1
+      return
+    }
     if (rendererRequestsFailed.length < 100) rendererRequestsFailed.push({
-      url: request.url(), failure: request.failure()?.errorText ?? 'unknown',
+      url: request.url().slice(0, 16_384), failure: failure.slice(0, 16_384),
     })
   })
   page.on('dialog', (dialog) => { void dialog.accept().catch(() => undefined) })
@@ -122,6 +134,7 @@ try {
   expect(archived.serialized).toBe(live.serialized)
   await page.screenshot({ path: path.join(evidence, 'packaged-shell.png') })
   const report = { schemaVersion: 2, executablePath,
+    rendererDiagnostics: { errors: rendererErrors, unexpectedRequestFailures: rendererRequestsFailed, blockedNetworkRequestCount },
     source: { initialGeometry: seeded.initialGeometry, updatedGeometry: seeded.geometry,
       knownBeforeUpdate: seeded.knownBeforeUpdate, knownAfterUpdate: seeded.knownAfterUpdate },
     liveOld, liveUpdated: live, archiveOld, archiveUpdated: archived, popupText, popupColor,

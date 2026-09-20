@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 
 const fs = require('node:fs')
+let originalFs = null
+try {
+  originalFs = require('original-fs')
+} catch {
+  // Source-calibration runs use Node's regular filesystem. Electron's main
+  // process supplies the built-in original-fs module for physical ASAR bytes.
+}
 const os = require('node:os')
 const path = require('node:path')
 const { createHash, randomBytes } = require('node:crypto')
@@ -1327,19 +1334,22 @@ function resultFromError(error, accepted, classification = null) {
   }
 }
 
-/** Hash one file with bounded streaming reads. */
-function hashFile(filePath) {
+/** Hash one file with bounded streaming reads through the physical filesystem. */
+function hashFile(filePath, filesystem = originalFs ?? fs) {
+  if (originalFs === null && process.versions.electron && filePath.endsWith('.asar')) {
+    throw new Error('Packaged C21 could not load Electron original-fs for physical ASAR hashing.')
+  }
   const hash = createHash('sha256')
-  const descriptor = fs.openSync(filePath, 'r')
+  const descriptor = filesystem.openSync(filePath, 'r')
   const buffer = Buffer.allocUnsafe(1024 * 1024)
   try {
     let bytesRead = 0
     do {
-      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null)
+      bytesRead = filesystem.readSync(descriptor, buffer, 0, buffer.length, null)
       if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead))
     } while (bytesRead > 0)
   } finally {
-    fs.closeSync(descriptor)
+    filesystem.closeSync(descriptor)
     buffer.fill(0)
   }
   return hash.digest('hex')
@@ -1387,4 +1397,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { CASE_IDS, KEY_SLOT_CASE_IDS, CUSTODY_CASE_IDS, runArchiveSecurityProbe }
+module.exports = { CASE_IDS, KEY_SLOT_CASE_IDS, CUSTODY_CASE_IDS, hashFile, runArchiveSecurityProbe }

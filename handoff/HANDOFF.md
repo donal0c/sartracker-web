@@ -38,9 +38,12 @@ harnesses are implementation work, not external prerequisites. Future exact
 candidate/version/CI artifacts, Linux installed host, private maps/live input
 and named human acceptance remain external execution inputs.
 
-No product behavior change is intended. Keep package version and release
-metadata for the later candidate-freeze step. Do not promote local development,
-source/browser or unpacked evidence into exact Linux candidate proof.
+The scoped C12 product fix is now implemented locally: Linux archive-review
+attachments use a file-URL external desktop handoff, while other platforms keep
+the existing path handoff. Keep package version and release metadata for the
+later candidate-freeze step. Do not promote local development, source/browser
+or unpacked evidence into exact Linux candidate proof until the new exact-head
+CI run passes.
 
 Fresh Linear verification on 2026-09-20 confirms DON-249/250/251 remain Backlog:
 background integrity/resource arbitration, mission-state-aware oversized recovery,
@@ -116,7 +119,7 @@ Current local development evidence:
   overlay warning (DON-264); screenshot inspected. Raw reports and earlier failed
   harness attempts are retained. This is development mechanics, not qualification.
 
-Current producer-remediation local correctness passed562files /5,761tests, with24skips
+The `5bf844f9` producer-remediation local cycle passed562files /5,761tests, with24skips
 (six prescribed timing exclusions plus Linux-only cases on macOS). Lint/build
 passed. Strict responsiveness qualification was not run. Earlier failures and
 native crashes remain retained, including macOS CODESIGNING Invalid Page.
@@ -140,20 +143,33 @@ their harness repairs passed later source checks. `35488610748` was cancelled
 as superseded, not passed or failed. Full history and review dispositions remain
 in the design document's PR43 review-remediation section and PR/Linear comments.
 
-CI `35489521926` at `8f4e77fe` passed559files/5,761tests (seven skips),
-lint/build/browser and artifact inspection, then failed eight of18 producer
-development cases. Every case proved zero descendants; later packaged smoke
-was skipped. Raw receipts/logs are retained. Scoped harness repairs and Linux
-reverification are in progress; C10 blank replay and C12 archive/open causes
-remain unresolved. Local development success does not explain those failures.
-Current harness repairs include post-import replay timing/exact response binding,
-host-generated geometry, settings receipt initialization/joined cleanup, main-
-context module loading, IPC error normalization and stderr finalization. C01 now
-polls the native dialog within5s instead of inferring timing after the wait.
-Latest development geometry and C28 store/archive phases passed. Full source,
-TypeScript, lint and build passed; all1,409frozen executable/test files matched
-after restoring generated version metadata. Exact-head Linux re-execution remains
-pending on the PR; its terminal result determines readiness.
+CI `35489521926` at `8f4e77fe` failed eight of18 producer cases. Its scoped
+harness repairs passed source/development checks and independent rechecks.
+The next CI `35492584673` at `5bf844f9` passed562files/5,778tests (seven skips),
+lint/build/browser, packaging/native SQLite and renderer attestation, then
+passed15/18 producer cases. All18 proved zero descendants; later packaged
+smokes were skipped. Both failed runs and raw receipts remain retained.
+C10's WebGL launch configuration and C21's physical-ASAR hash path are repaired.
+Both passed bounded checks against the CI Debian application extracted in an
+amd64 Bookworm container; this is not installed Ubuntu or candidate proof.
+C12 reached attachment opening after successful archive restoration but still
+timed out. In a container control, real Mousepad displayed the restored bytes
+and its owned PID exited; the pre-cleanup diagnostic still showed
+`openAttachment` pending56,608ms, then app.close completed. The cause was the
+Linux `shell.openPath` handoff promise remaining pending after the viewer opened.
+The approved narrow fix is implemented in
+`electron/archive-review-desktop-opener.cjs`: Linux uses
+`shell.openExternal(file://...)` and propagates launcher rejection;
+macOS/Windows retain `shell.openPath`. Red/green opener, staging and source
+tests pass. Exact packaged Linux CI for the new head is still required before
+PR43 can leave draft state.
+Separately, C10 now rejects success receipts containing renderer errors or
+unexpected request failures; only explicitly blocked HTTP(S) is exempted.
+Focused red/green and unpacked Mac development passed. The follow-up local
+source cycle passed563files/5,769tests (24skips), TypeScript, lint and build.
+The prior 1,410-input freeze remains valid for the pre-fix harness changes; the
+new opener and wiring require a fresh exact-head manifest after commit. PR
+remains draft pending C12 packaged Linux proof and green Linux CI.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

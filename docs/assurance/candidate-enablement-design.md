@@ -337,3 +337,95 @@ Logs: `producer-final-*` under the remediation directory. Affected independent
 reviews are clear; the C28 response-time finding was fixed and rechecked. The
 previous C10/C12 Linux failures still require new exact-head execution before
 PR readiness; no local check or review replaces that gate.
+
+The final identity review found that C10 successful receipts omitted captured
+renderer errors. The follow-up now retains those diagnostics and rejects any
+renderer error or unexpected failed request. Only explicitly blocked HTTP(S)
+requests with `net::ERR_BLOCKED_BY_CLIENT` are counted as expected; failed local
+assets are never exempted. Regression tests failed first, then20 focused tests
+passed. Mac development `c10-development-diagnostics` completed with zero
+renderer errors, zero unexpected failures,88 expected blocked requests and a
+25.7ms maximum frame gap. This is unpacked development evidence, not Linux
+qualification. The affected independent static recheck is clear.
+
+The review's C01 inner-xdotool timeout suggestion is advisory: the mandatory
+outer owned-process supervisor already bounds execution and descendant cleanup,
+so an inner hang cannot establish PASS. No distinct false-PASS or unsafe-cleanup
+path was demonstrated. Original findings and their dispositions are retained.
+
+### Second Linux producer-development integration
+
+Run `35492584673` at `5bf844f9` passed562files/5,778tests (seven skips),
+lint/build/browser checks, packaging, native SQLite and llvmpipe attestation.
+The producer matrix improved to15/18 passing; all18 proved zero descendants.
+Later packaged smokes were skipped. Full logs and raw receipts are retained in
+`tmp/candidate-enablement/remediation/ci-5bf844f9-evidence` and sibling logs.
+C10 now records the actual blank-screen cause: WebGL context creation failed
+with Mesa/ANGLE `BindToCurrentSequence`. Its launch is being aligned with the
+existing explicit Linux Mesa/ANGLE flags used by other packaged map probes.
+C21 exposed physical-ASAR hashing through Electron's virtualized filesystem.
+C12 still timed out awaiting attachment-open readiness without a rejected
+seeding promise; its cause remains under investigation. No threshold changed.
+
+Before those Linux follow-ups, the C10 success-diagnostics change passed a
+stable local cycle of562files/5,764tests with24declared skips in552.97seconds,
+then lint. This evidence does not cover the later Linux-specific repairs.
+
+C21's physical-ASAR repair was reproduced in Electron40 with a303-byte synthetic
+archive: normal Electron fs returned ENOENT, original-fs read the physical bytes,
+and the repaired bounded-stream hash matched an independently computed SHA-256.
+The16 focused tests passed. Retained script, red/green logs and JSON are in
+`remediation/c21-physical-asar/`. The independent C10/C21 affected review is clear.
+
+C12 now retains the pending phase across mission finish, recovery-code issuance,
+archive finalization/open, review reads and attachment opening. The actual C12
+producer in an isolated amd64 Bookworm container, using the checksum-verified
+CI5bf Debian artifact extracted without installation, reached `openAttachment`
+and remained pending for56,714ms before its unchanged readiness deadline failed.
+Earlier archive phases therefore completed. This diagnostic is not Ubuntu
+qualification or installed-package proof. Logs/screenshots are retained in
+`remediation/c12-docker-run.log` and `c12-docker-evidence/`; desktop hand-off
+and viewer cleanup remain under investigation.
+
+The stable follow-up source cycle passed562files/5,766tests with24declared skips
+in581.61seconds, TypeScript, lint and build/bundle checks. All1,410frozen source
+and test inputs matched. Logs are `remediation/linux-followup-*`. This covers
+the C10 Linux launch settings, C21 physical hash and C12 stage diagnostics;
+it does not establish a passing C12 Linux runtime flow.
+
+Bounded Linux container checks subsequently exercised the current C10/C21
+harness against the checksum-verified CI5bf extracted Debian application.
+C10 passed independent replay validation with five live/archive fragments,
+zero renderer errors, zero unexpected requests,126 expected blocked requests
+and183.3ms maximum frame gap. The retained screenshot visibly shows the orange
+search area, readable popup and explicit unavailable-basemap warning.
+C21 completed its corpus with `PASS_WITH_GAPS`, valid=true, releaseEligible=false
+and no close error. These are emulated amd64 Bookworm development checks,
+not installed Ubuntu or candidate qualification. C21 container setup failures
+(missing xauth, host-native ABI mismatch, non-executable tmpfs) are retained;
+the corrected container used the CI artifact's Linux addon in an executable
+container-only overlay without changing the host addon. One earlier C21
+container was mistakenly interrupted during an agent's C12 cleanup; that
+interruption is retained and is not counted as passing cleanup evidence.
+
+The decisive C12 container control installed real Mousepad with an explicit
+text MIME association. Its window displayed `C12 replacement attachment bytes`
+from the exact staged attachment path; the screenshot was inspected. Normal
+quit/window close completed and the owned viewer PID exited. Instrumentation
+before cleanup nevertheless retained `openAttachment` pending56,608ms with no
+seeded promise rejection, followed by app.close completion. The retained JSON
+and screenshot are in `remediation/c12-diagnostic-mousepad-evidence/`.
+This directly locates the pending application operation. The approved narrow
+repair identifies the unresolved boundary as the Linux `shell.openPath` handoff
+promise: the viewer opened and exited, but the promise remained pending. The
+new `electron/archive-review-desktop-opener.cjs` adapter uses
+`shell.openExternal(pathToFileURL(stagePath).href)` on Linux and propagates any
+launcher rejection; macOS and Windows retain the existing `shell.openPath`
+path. The opener regression was red before implementation and green afterward,
+with 41 focused attachment/staging/source tests passing. The staged path,
+descriptor custody, lease lifetime and cleanup logic are unchanged. C12 remains
+unqualified until the exact-head packaged Linux producer proves the full flow;
+PR43 stays draft and no receipt threshold or failure predicate was weakened.
+The independent C12 diagnostic review found no actionable P1/P2 and confirmed
+that its operation labels do not weaken receipt validation or turn timeout
+into PASS. Its report is `reviews/c12-stage-followup-working-tree.md`.

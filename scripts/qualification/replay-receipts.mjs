@@ -5,6 +5,12 @@ export function validateReplayReceipt(report) {
   const failureReasons = []
   try {
     if (report?.schemaVersion !== 2) throw new Error('Replay raw oracle schema is missing.')
+    const diagnostics = report.rendererDiagnostics
+    if (!Array.isArray(diagnostics?.errors) || diagnostics.errors.length !== 0
+        || !Array.isArray(diagnostics.unexpectedRequestFailures) || diagnostics.unexpectedRequestFailures.length !== 0
+        || !Number.isSafeInteger(diagnostics.blockedNetworkRequestCount) || diagnostics.blockedNetworkRequestCount < 0) {
+      throw new Error('Replay renderer diagnostics are missing or contain unexpected failures.')
+    }
     const initial = expectedGeometry(0)
     const updated = expectedGeometry(0.002)
     if (report.source?.initialGeometry !== initial || report.source?.updatedGeometry !== updated) throw new Error('Replay source geometry differs from the fixed independent fixture.')
