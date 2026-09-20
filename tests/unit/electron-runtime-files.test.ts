@@ -492,6 +492,7 @@ describe('electron runtime files', () => {
     const files = await createRuntimeFiles({
       readRecentLog: async () => [[
         { token: secret, repeated: secret },
+        { token: '[redacted]', repeated: secret },
       ]],
     })
 
@@ -502,7 +503,7 @@ describe('electron runtime files', () => {
 
     const bundle = await readFile(exportPath, 'utf8')
     expect(bundle).not.toContain(secret)
-    expect(bundle).toContain('[redacted]')
+    expect(bundle).toContain('[redacted-structured-value-too-large]')
   })
 
   async function createRuntimeFiles(

@@ -7,10 +7,15 @@ const SHA256 = /^[a-f0-9]{64}$/u
 const COMPOSITE_PROOF_KIND = 'packaged-composite-v1'
 const PRODUCER_CONTRACT_ID = 'C28'
 const PASS_PHRASE = 'C28-Composite-Archive-9!x'
-const C17_CANARY_IDS = Object.freeze([
+export const C17_CANARY_IDS = Object.freeze([
   'direct-content-secret',
+  'direct-content-passphrase',
+  'direct-content-recovery-code',
+  'direct-content-profile-path',
   'event-password',
   'event-nested-token',
+  'event-authorization-header',
+  'event-query-credential',
   'nested-array-secret',
   'nested-array-profile-path',
   'url-credentials',
@@ -604,8 +609,9 @@ function deriveCoverageGaps(report, contractId) {
       && Number.isSafeInteger(phase.outputByteLength) && phase.outputByteLength >= 0
       && phase.canaryCount === C17_CANARY_IDS.length && phase.outputWithinLimit === true
       && Array.isArray(phase.leakedCanaryIds) && phase.leakedCanaryIds.length === 0) {
-    if (!nonEmpty(phase.retainedOutputPath) || !nonEmpty(phase.retainedCanaryManifestPath)) return gaps
-    return []
+    // C17's recursive corpus and bounded scanner remain development coverage
+    // gaps until their separate qualification work is explicitly executed.
+    return gaps
   }
   return gaps
 }

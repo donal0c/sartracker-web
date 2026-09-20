@@ -6,6 +6,7 @@ const MAX_DIAGNOSTIC_EVENTS = 500
 const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
 const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
 const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 512
+const MAX_RENDERER_FIELD_BYTES = 240
 const STRUCTURED_DIAGNOSTIC_LIMIT_MARKER = '[redacted-structured-value-too-large]'
 const SENSITIVE_VALUES_INCOMPLETE_MARKER = '__diagnostic_sensitive_values_incomplete__'
 const SECRET_KEY_SOURCE = '(?:password|secret|token|credential|api[-_]?key|authorization|pass[-_]?phrase|recovery[-_]?code)'
@@ -161,7 +162,7 @@ function sanitizeDiagnosticEvent(input: DiagnosticEventInput): DiagnosticEvent {
   return {
     ts: normalizeTimestamp(input.ts),
     level: normalizeLevel(input.level),
-    category: input.category,
+    category: normalizeCategory(input.category),
     event: sanitizeToken(input.event, 'unknown'),
     fields: sanitizeFields(input.fields),
   }
@@ -170,6 +171,9 @@ function sanitizeDiagnosticEvent(input: DiagnosticEventInput): DiagnosticEvent {
 function sanitizeFields(input: Record<string, unknown> | undefined): Record<string, string | number | boolean | null> {
   if (input === undefined) {
     return {}
+  }
+  if (Object.keys(input).length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+    return { diagnosticFields: STRUCTURED_DIAGNOSTIC_LIMIT_MARKER }
   }
   const sensitiveValues = collectSensitiveValues(input)
   const sanitized: Record<string, string | number | boolean | null> = {}
@@ -185,7 +189,9 @@ function sanitizeFields(input: Record<string, unknown> | undefined): Record<stri
     }
     sanitized[safeKey] = sanitizeValue(value, sensitiveValues)
   }
-  return sanitized
+  return new TextEncoder().encode(JSON.stringify(sanitized)).byteLength > MAX_STRUCTURED_DIAGNOSTIC_BYTES
+    ? { diagnosticFields: STRUCTURED_DIAGNOSTIC_LIMIT_MARKER }
+    : sanitized
 }
 
 function sanitizeValue(value: unknown, sensitiveValues: SensitiveDiagnosticValues): string | number | boolean | null {
@@ -202,15 +208,21 @@ function sanitizeValue(value: unknown, sensitiveValues: SensitiveDiagnosticValue
     }
     if (structured !== null) {
       const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(sensitiveValues))
-      return JSON.stringify(
+      return boundRendererField(JSON.stringify(
         sanitizeNestedValue(structured, '', encodedSensitiveValues, createDiagnosticTraversalBudget()),
-      ).slice(0, 240)
+      ))
     }
-    return sanitizeDiagnosticString(value, sensitiveValues).slice(0, 240)
+    return boundRendererField(sanitizeDiagnosticString(value, sensitiveValues))
   }
-  return JSON.stringify(
+  return boundRendererField(JSON.stringify(
     sanitizeNestedValue(value, '', sensitiveValues, createDiagnosticTraversalBudget()),
-  ).slice(0, 240)
+  ))
+}
+
+function boundRendererField(value: string): string {
+  return new TextEncoder().encode(value).byteLength > MAX_RENDERER_FIELD_BYTES
+    ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    : value
 }
 
 function sanitizeNestedValue(
@@ -300,6 +312,14 @@ function collectSensitiveValues(
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value)
     if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+      return sensitiveValues
+    }
+    if (depth > 0 && entries.some(([nestedKey, nestedValue]) => SECRET_KEY_PATTERN.test(nestedKey)
+      && nestedValue === '[redacted]')
+      && entries.some(([, nestedValue]) => typeof nestedValue === 'string'
+        && nestedValue !== '[redacted]'
+        && sensitiveValues.has(nestedValue))) {
       sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return sensitiveValues
     }
@@ -431,6 +451,13 @@ function normalizeTimestamp(input: string | undefined): string {
 
 function normalizeLevel(input: DiagnosticEventLevel): DiagnosticEventLevel {
   return input === 'error' || input === 'warn' ? input : 'info'
+}
+
+function normalizeCategory(input: DiagnosticEventCategory): DiagnosticEventCategory {
+  return input === 'map' || input === 'tracking' || input === 'marker' || input === 'drawing'
+    || input === 'measurement' || input === 'gpx' || input === 'layer' || input === 'runtime'
+    ? input
+    : 'runtime'
 }
 
 function isDiagnosticEvent(input: unknown): input is DiagnosticEvent {

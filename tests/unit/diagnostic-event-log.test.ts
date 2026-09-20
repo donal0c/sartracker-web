@@ -169,6 +169,54 @@ describe('diagnostic event log', () => {
     expect(report).toContain('[redacted]')
   })
 
+  it('normalizes legacy categories before browser fallback formatting [DON-237]', () => {
+    const secret = 'C17-Legacy-Category-Secret-9!'
+    window.sessionStorage.setItem('sartracker:diagnostic-events', JSON.stringify([{
+      ts: '2026-09-20T12:04:00.000Z',
+      level: 'error',
+      category: `runtime:${secret}:/Users/operator/private`,
+      event: 'legacy_category_event',
+    }]))
+
+    const events = readDiagnosticEvents()
+    const report = formatDiagnosticEvents(events)
+    expect(events[0]?.category).toBe('runtime')
+    expect(report).not.toContain(secret)
+    expect(report).not.toContain('/Users/operator')
+  })
+
+  it('fails visibly for oversized renderer fields and field collections [DON-237]', async () => {
+    const oversizedFields = Object.fromEntries(
+      Array.from({ length: 513 }, (_, index) => [`field-${index}`, 'value']),
+    )
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:05:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'renderer_bounds',
+      fields: {
+        longText: 'x'.repeat(241),
+        longStructured: JSON.stringify({ value: 'x'.repeat(300) }),
+      },
+    })
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:06:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'renderer_root_bounds',
+      fields: oversizedFields,
+    })
+
+    const events = readDiagnosticEvents()
+    expect(events[0]?.fields).toEqual({
+      longText: '[redacted-structured-value-too-large]',
+      longStructured: '[redacted-structured-value-too-large]',
+    })
+    expect(events[1]?.fields).toEqual({
+      diagnosticFields: '[redacted-structured-value-too-large]',
+    })
+  })
+
   it('writes Electron breadcrumbs through the preload bridge while keeping browser fallback history', async () => {
     const recordDiagnosticEventBridge = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(window, 'sartrackerElectron', {

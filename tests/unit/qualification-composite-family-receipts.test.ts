@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   COMPOSITE_FAMILY_CONTRACTS,
+  C17_CANARY_IDS,
   computeExpectedPassSequenceSha256,
   validateCompositeFamilyCoverage,
   validateCompositeFamilyReceipt,
@@ -28,12 +29,7 @@ const retainedDiagnosticPath = '/tmp/sartracker-family-evidence/c17-sanitized-ou
 const retainedDiagnosticBytes = Buffer.from('sanitized diagnostics\n', 'utf8')
 const retainedCanaryManifestPath = '/tmp/sartracker-family-evidence/c17-canary-manifest.txt'
 const retainedCanaryManifestBytes = Buffer.from([
-  'direct-content-secret',
-  'event-password',
-  'event-nested-token',
-  'nested-array-secret',
-  'nested-array-profile-path',
-  'url-credentials',
+  ...C17_CANARY_IDS,
 ].join('\n'), 'utf8')
 const retainedPassPagesPath = '/tmp/sartracker-family-evidence/c11-pass-pages.ndjson'
 const retainedPassPagesBytes = Buffer.from(Array.from({ length: 1_000 }, (_, pageIndex) => {
@@ -331,7 +327,7 @@ describe('independent packaged composite family receipts', () => {
       canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
       outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
       outputByteLength: retainedDiagnosticBytes.byteLength,
-      canaryCount: 6,
+      canaryCount: C17_CANARY_IDS.length,
       outputWithinLimit: true,
       retainedOutputPath: retainedDiagnosticPath,
       retainedCanaryManifestPath,
@@ -339,7 +335,12 @@ describe('independent packaged composite family receipts', () => {
     })
     Object.assign(c17.diagnostics as JsonObject, c17.phases.sanitizedDiagnostics as JsonObject)
     const c17Receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
-    expect(c17Receipt.complete).toBe(true)
+    expect(c17Receipt.complete).toBe(false)
+    expect(c17Receipt.coverageComplete).toBe(false)
+    expect(c17Receipt.coverageGaps).toEqual(expect.arrayContaining([
+      'recursive-adversarial-corpus',
+      'bounded-output-scan-identity',
+    ]))
     ;(c17.phases.sanitizedDiagnostics as JsonObject).outputWithinLimit = false
     expect(validateCompositeFamilyReceipt(c17, expected('C17')).complete).toBe(false)
   })
@@ -357,7 +358,7 @@ describe('independent packaged composite family receipts', () => {
       canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
       outputSha256: createHash('sha256').update(rawLeak).digest('hex'),
       outputByteLength: rawLeak.byteLength,
-      canaryCount: 6,
+      canaryCount: C17_CANARY_IDS.length,
       outputWithinLimit: true,
       retainedOutputPath: rawLeakPath,
       retainedCanaryManifestPath,

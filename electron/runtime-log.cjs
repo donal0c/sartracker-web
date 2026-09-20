@@ -185,7 +185,10 @@ function tailNonEmptyLines(contents, limit) {
  * Returns a shallow copy of `fields` with secrets redacted and home paths anonymized.
  */
 function sanitizeFields(fields) {
-  return sanitizeDiagnosticFields(fields, new Set(['ts', 'level', 'event']))
+  const sanitized = sanitizeDiagnosticFields(fields, new Set(['ts', 'level', 'event']))
+  return sanitized !== null && typeof sanitized === 'object' && !Array.isArray(sanitized)
+    ? sanitized
+    : { diagnosticFields: sanitized }
 }
 
 module.exports = {

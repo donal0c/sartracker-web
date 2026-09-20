@@ -102,6 +102,19 @@ describe('electron runtime log', () => {
     expect(serialized).toContain('[redacted]')
   })
 
+  it('keeps an oversized top-level field envelope visible and structurally safe [DON-237]', async () => {
+    const log = await createLog()
+    const fields = Object.fromEntries(
+      Array.from({ length: 400 }, (_, index) => [`diagnostic-${index}`, 'x'.repeat(100)]),
+    )
+
+    await log.append({ level: 'warn', event: 'oversized_diagnostic', fields })
+
+    const persistedText = await readFile(log.logFilePath, 'utf8')
+    expect(persistedText).toContain('"diagnosticFields":"[redacted-structured-value-too-large]"')
+    expect(persistedText).not.toContain('"0":"[')
+  })
+
   it('recursively redacts precise coordinate fields before persistence [WAR04-PRV-03]', async () => {
     const log = await createLog()
     await log.appendDurable({

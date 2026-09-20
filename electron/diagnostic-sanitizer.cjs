@@ -177,6 +177,14 @@ function collectSensitiveValues(
       sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return sensitiveValues
     }
+    if (depth > 0 && entries.some(([nestedKey, nestedValue]) => SECRET_KEY_PATTERN.test(nestedKey)
+      && nestedValue === '[redacted]')
+      && entries.some(([, nestedValue]) => typeof nestedValue === 'string'
+        && nestedValue !== '[redacted]'
+        && sensitiveValues.has(nestedValue))) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+      return sensitiveValues
+    }
     for (const [nestedKey, nestedValue] of entries) {
       collectSensitiveValues(nestedValue, nestedKey, sensitiveValues, budget, depth + 1)
     }

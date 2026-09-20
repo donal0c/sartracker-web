@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createCompositeSourceManifest } from './composite-manifest.mjs'
-import { validateCompositeFamilyReceipt } from './composite-family-receipts.mjs'
+import { C17_CANARY_IDS, validateCompositeFamilyReceipt } from './composite-family-receipts.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SHA1 = /^[a-f0-9]{40}$/u
@@ -80,7 +80,7 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
       && diagnostics.containsProfilePath === false
       && diagnostics.exactSecretMatches === 0
       && diagnostics.adversarialMatchCount === 0
-      && diagnostics.canaryCount === 6
+      && diagnostics.canaryCount === C17_CANARY_IDS.length
       && Array.isArray(diagnostics.leakedCanaryIds)
       && diagnostics.leakedCanaryIds.length === 0
       && diagnostics.outputWithinLimit === true,

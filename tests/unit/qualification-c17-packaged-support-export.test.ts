@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { C17_CANARY_IDS } from '../../scripts/qualification/composite-family-receipts.mjs'
 import { createC17PackagedSupportExportReceipt } from '../../scripts/qualification/verify-c17-packaged-support-export.mjs'
 
 describe('C17 packaged support-export development receipt', () => {
@@ -20,7 +21,7 @@ describe('C17 packaged support-export development receipt', () => {
           containsProfilePath: false,
           exactSecretMatches: 0,
           adversarialMatchCount: 0,
-          canaryCount: 6,
+          canaryCount: C17_CANARY_IDS.length,
           leakedCanaryIds: [],
           outputByteLength: 1234,
           outputWithinLimit: true,
@@ -56,7 +57,7 @@ describe('C17 packaged support-export development receipt', () => {
           containsProfilePath: true,
           exactSecretMatches: 1,
           adversarialMatchCount: 1,
-          canaryCount: 6,
+          canaryCount: C17_CANARY_IDS.length,
           leakedCanaryIds: ['nested-array-secret'],
           outputByteLength: 1234,
           outputWithinLimit: true,

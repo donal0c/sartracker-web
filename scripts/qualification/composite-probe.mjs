@@ -14,7 +14,7 @@ import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { createCompositeSourceManifest } from './composite-manifest.mjs'
 import { C28_VARIANT_AXIS_MAP } from './composite-coverage.mjs'
 import { validateCompositeReceipt, validateCompositeVariantReceipt } from './composite-receipts.mjs'
-import { validateCompositeFamilyReceipt } from './composite-family-receipts.mjs'
+import { C17_CANARY_IDS, validateCompositeFamilyReceipt } from './composite-family-receipts.mjs'
 import { selectPagingSource } from './paging-source.mjs'
 import { inspectStandaloneSqliteFixture } from './sqlite-fixture.mjs'
 export { COMPOSITE_SOURCE_MANIFEST_PATHS } from './composite-manifest.mjs'
@@ -26,14 +26,6 @@ const SHA1 = /^[a-f0-9]{40}$/u
 const PASS_PHRASE = 'C28-Composite-Archive-9!x'
 const MISSION_NAME = 'C28 packaged composite synthetic mission'
 const COMPOSITE_FAMILY_CONTRACTS = new Set(['C03', 'C11', 'C17'])
-const C17_CANARY_IDS = Object.freeze([
-  'direct-content-secret',
-  'event-password',
-  'event-nested-token',
-  'nested-array-secret',
-  'nested-array-profile-path',
-  'url-credentials',
-])
 const C11_PAGING_TIMEOUT_MS = 10 * 60 * 1_000
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -1689,9 +1681,15 @@ async function runArchiveReview(page, missionId, archiveId, passphrase, selected
 async function exportSanitizedDiagnostics(page, profilePath, secret, familyContract = null) {
   const c17Canaries = familyContract === 'C17' ? {
     directContentSecret: `${secret}-direct-content`,
+    directContentPassphrase: `${secret}-direct-passphrase`,
+    directContentRecoveryCode: `${secret}-direct-recovery-code`,
+    directContentProfilePath: `${profilePath}/direct-content-profile`,
     eventPassword: `${secret}-event-password`,
     eventNestedToken: `${secret}-event-nested-token`,
+    eventAuthorizationHeader: `${secret}-event-authorization-header`,
+    eventQueryCredential: `${secret}-event-query-credential`,
     nestedArraySecret: `${secret}-nested-array-secret`,
+    nestedArrayProfilePath: `${profilePath}/nested-array-profile`,
     urlCredentials: `${secret}-url-credentials`,
   } : null
   const secretCanaries = c17Canaries === null ? [secret] : Object.values(c17Canaries)
@@ -1705,7 +1703,11 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
   const adversarialContents = [
     'C28 composite diagnostics',
     `credential=${c17Canaries?.directContentSecret ?? secret}`,
-    `profile=${profilePath}`,
+    `passphrase=${c17Canaries?.directContentPassphrase ?? secret}`,
+    `recovery-code=${c17Canaries?.directContentRecoveryCode ?? secret}`,
+    `Authorization: Bearer ${c17Canaries?.eventAuthorizationHeader ?? secret}`,
+    `query=https://host.example/api?session=${c17Canaries?.eventQueryCredential ?? secret}`,
+    `profile=${c17Canaries?.directContentProfilePath ?? profilePath}`,
     `provider url=https://operator:${c17Canaries?.urlCredentials ?? secret}@example.invalid/sar`,
   ].join('\n') + '\n'
   const returnedPath = await page.evaluate(async (input) => {
@@ -1734,11 +1736,15 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
         event: 'c17-adversarial-corpus',
         fields: {
           password: input.c17Canaries?.eventPassword ?? input.secret,
-          profilePath,
+          profilePath: input.c17Canaries?.directContentProfilePath ?? profilePath,
           nested: {
             token: input.c17Canaries?.eventNestedToken ?? input.secret,
-            path: profilePath,
-            values: [input.c17Canaries?.nestedArraySecret ?? input.secret, profilePath],
+            path: input.c17Canaries?.nestedArrayProfilePath ?? profilePath,
+            values: [input.c17Canaries?.nestedArraySecret ?? input.secret, input.c17Canaries?.nestedArrayProfilePath ?? profilePath],
+            headers: {
+              Authorization: `Bearer ${input.c17Canaries?.eventAuthorizationHeader ?? input.secret}`,
+            },
+            queryUrl: `https://host.example/api?session=${input.c17Canaries?.eventQueryCredential ?? input.secret}`,
           },
         },
       },
@@ -1777,10 +1783,15 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     const canaryManifest = C17_CANARY_IDS.join('\n')
     const leakedCanaryIds = []
     if (canaryMatches.directContentSecret > 0) leakedCanaryIds.push('direct-content-secret')
+    if (canaryMatches.directContentPassphrase > 0) leakedCanaryIds.push('direct-content-passphrase')
+    if (canaryMatches.directContentRecoveryCode > 0) leakedCanaryIds.push('direct-content-recovery-code')
+    if (canaryMatches.directContentProfilePath > 0) leakedCanaryIds.push('direct-content-profile-path')
     if (canaryMatches.eventPassword > 0) leakedCanaryIds.push('event-password')
     if (canaryMatches.eventNestedToken > 0) leakedCanaryIds.push('event-nested-token')
+    if (canaryMatches.eventAuthorizationHeader > 0) leakedCanaryIds.push('event-authorization-header')
+    if (canaryMatches.eventQueryCredential > 0) leakedCanaryIds.push('event-query-credential')
     if (canaryMatches.nestedArraySecret > 0) leakedCanaryIds.push('nested-array-secret')
-    if (profileVariants.some((value) => text.includes(value))) leakedCanaryIds.push('nested-array-profile-path')
+    if (canaryMatches.nestedArrayProfilePath > 0) leakedCanaryIds.push('nested-array-profile-path')
     if (canaryMatches.urlCredentials > 0) leakedCanaryIds.push('url-credentials')
     result.canaryManifestSha256 = sha256Text(canaryManifest)
     result.outputSha256 = sha256(contents)
