@@ -6,6 +6,8 @@ const MAX_DIAGNOSTIC_EVENTS = 500
 const SECRET_KEY_PATTERN = /(password|secret|token|credential|api[-_]?key|authorization)/i
 const COORDINATE_KEY_PATTERN = /^(lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
 
+type SensitiveDiagnosticValues = Set<string>
+
 export type DiagnosticEventLevel = 'info' | 'warn' | 'error'
 export type DiagnosticEventCategory =
   | 'map'
@@ -149,6 +151,7 @@ function sanitizeFields(input: Record<string, unknown> | undefined): Record<stri
   if (input === undefined) {
     return {}
   }
+  const sensitiveValues = collectSensitiveValues(input)
   const sanitized: Record<string, string | number | boolean | null> = {}
   for (const [key, value] of Object.entries(input)) {
     const safeKey = sanitizeToken(key, 'field')
@@ -160,22 +163,22 @@ function sanitizeFields(input: Record<string, unknown> | undefined): Record<stri
       sanitized[safeKey] = '[coordinate-redacted]'
       continue
     }
-    sanitized[safeKey] = sanitizeValue(value)
+    sanitized[safeKey] = sanitizeValue(value, sensitiveValues)
   }
   return sanitized
 }
 
-function sanitizeValue(value: unknown): string | number | boolean | null {
+function sanitizeValue(value: unknown, sensitiveValues: SensitiveDiagnosticValues): string | number | boolean | null {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') {
     return value
   }
   if (typeof value === 'string') {
-    return anonymizePath(value).slice(0, 240)
+    return redactSensitiveValues(anonymizePath(value), sensitiveValues).slice(0, 240)
   }
-  return JSON.stringify(sanitizeNestedValue(value)).slice(0, 240)
+  return JSON.stringify(sanitizeNestedValue(value, '', sensitiveValues)).slice(0, 240)
 }
 
-function sanitizeNestedValue(value: unknown, key = ''): unknown {
+function sanitizeNestedValue(value: unknown, key = '', sensitiveValues: SensitiveDiagnosticValues): unknown {
   if (SECRET_KEY_PATTERN.test(key)) {
     return '[redacted]'
   }
@@ -183,25 +186,80 @@ function sanitizeNestedValue(value: unknown, key = ''): unknown {
     return '[coordinate-redacted]'
   }
   if (typeof value === 'string') {
-    return anonymizePath(value)
+    return redactSensitiveValues(anonymizePath(value), sensitiveValues)
   }
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeNestedValue(item))
+    return value.map((item) => sanitizeNestedValue(item, '', sensitiveValues))
   }
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value).map(([nestedKey, nestedValue]) => [
         nestedKey,
-        sanitizeNestedValue(nestedValue, nestedKey),
+        sanitizeNestedValue(nestedValue, nestedKey, sensitiveValues),
       ]),
     )
   }
   return value
 }
 
+/** Collects string values held by secret-bearing keys for repeated-value redaction. */
+function collectSensitiveValues(
+  value: unknown,
+  key = '',
+  sensitiveValues: SensitiveDiagnosticValues = new Set(),
+): SensitiveDiagnosticValues {
+  if (SECRET_KEY_PATTERN.test(key)) {
+    collectStringValues(value, sensitiveValues)
+    return sensitiveValues
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectSensitiveValues(item, '', sensitiveValues)
+    }
+    return sensitiveValues
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const [nestedKey, nestedValue] of Object.entries(value)) {
+      collectSensitiveValues(nestedValue, nestedKey, sensitiveValues)
+    }
+  }
+  return sensitiveValues
+}
+
+/** Collects non-empty string leaves from a secret-bearing structured value. */
+function collectStringValues(value: unknown, sensitiveValues: SensitiveDiagnosticValues): void {
+  if (typeof value === 'string' && value !== '') {
+    sensitiveValues.add(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringValues(item, sensitiveValues)
+    }
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const nestedValue of Object.values(value)) {
+      collectStringValues(nestedValue, sensitiveValues)
+    }
+  }
+}
+
+/** Replaces known secret values wherever they were repeated in a diagnostic string. */
+function redactSensitiveValues(input: string, sensitiveValues: SensitiveDiagnosticValues): string {
+  let redacted = input
+  for (const value of [...sensitiveValues].sort((left, right) => right.length - left.length)) {
+    if (value !== '') {
+      redacted = redacted.replaceAll(value, '[redacted]')
+    }
+  }
+  return redacted
+}
+
 function anonymizePath(value: string): string {
   return value
     .replace(/(\/(?:home|Users)\/)[^/\s:"]+(?:\/[^\s:"]*)?/g, '$1[redacted]')
+    .replace(/(\/(?:private|tmp|var)\/)[^/\s:"]+(?:\/[^\s:"]*)?/g, '$1[redacted]')
     .replace(/([A-Za-z]:\\Users\\)[^\\\s:"]+(?:\\[^\s:"]*)?/g, '$1[redacted]')
 }
 

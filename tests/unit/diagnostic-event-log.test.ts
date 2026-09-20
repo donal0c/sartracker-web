@@ -78,6 +78,30 @@ describe('diagnostic event log', () => {
     expect(serialized).not.toContain('operator')
   })
 
+  it('redacts sensitive values repeated inside nested arrays and encoded fields [DON-237]', async () => {
+    const secret = 'C17-Renderer-Nested-Array-Secret-9!'
+    const profilePath = '/tmp/c17-private-profile/mission-store.sqlite'
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'c17_adversarial_corpus',
+      fields: {
+        context: {
+          token: secret,
+          profilePath,
+          values: [secret, profilePath],
+        },
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain(profilePath)
+    expect(serialized).toContain('[redacted]')
+  })
+
   it('writes Electron breadcrumbs through the preload bridge while keeping browser fallback history', async () => {
     const recordDiagnosticEventBridge = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(window, 'sartrackerElectron', {

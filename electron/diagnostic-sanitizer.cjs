@@ -20,7 +20,13 @@ const HOME_PATH_PATTERNS = Object.freeze([
 /**
  * Redacts secrets and private local identity from free-form diagnostics text.
  */
-function sanitizeDiagnosticText(input) {
+function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
+  const structured = parseStructuredDiagnosticText(input)
+  if (structured !== null) {
+    const structuredSensitiveValues = collectSensitiveValues(structured, '', sensitiveValues)
+    return JSON.stringify(sanitizeDiagnosticValue(structured, '', structuredSensitiveValues))
+  }
+
   let sanitized = String(input)
     .replace(SECRET_JSON_KEY_PATTERN, '$1"[redacted]"')
     .replace(SECRET_ASSIGNMENT_PATTERN, '$1[redacted]')
@@ -32,13 +38,13 @@ function sanitizeDiagnosticText(input) {
     sanitized = sanitized.replace(pattern, replacement)
   }
 
-  return sanitized
+  return redactSensitiveValues(sanitized, sensitiveValues)
 }
 
 /**
  * Recursively redacts diagnostic values before writing them to app-owned logs.
  */
-function sanitizeDiagnosticValue(value, key = '') {
+function sanitizeDiagnosticValue(value, key = '', sensitiveValues = new Set()) {
   if (SECRET_KEY_PATTERN.test(key)) {
     return '[redacted]'
   }
@@ -46,13 +52,13 @@ function sanitizeDiagnosticValue(value, key = '') {
     return '[coordinate-redacted]'
   }
   if (typeof value === 'string') {
-    return sanitizeDiagnosticText(value)
+    return sanitizeDiagnosticText(value, sensitiveValues)
   }
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeDiagnosticValue(item))
+    return value.map((item) => sanitizeDiagnosticValue(item, '', sensitiveValues))
   }
   if (value !== null && typeof value === 'object') {
-    return sanitizeDiagnosticFields(value)
+    return sanitizeDiagnosticFieldsWithContext(value, new Set(), sensitiveValues)
   }
   return value
 }
@@ -65,14 +71,83 @@ function sanitizeDiagnosticFields(fields, reservedKeys = new Set()) {
     return {}
   }
 
+  return sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, collectSensitiveValues(fields))
+}
+
+/** Sanitizes structured diagnostics while carrying known secret values through arrays. */
+function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValues) {
   const sanitized = {}
   for (const [key, value] of Object.entries(fields)) {
     if (reservedKeys.has(key)) {
       continue
     }
-    sanitized[key] = sanitizeDiagnosticValue(value, key)
+    sanitized[key] = sanitizeDiagnosticValue(value, key, sensitiveValues)
   }
   return sanitized
+}
+
+/** Collects string values held by secret-bearing keys for repeated-value redaction. */
+function collectSensitiveValues(value, key = '', sensitiveValues = new Set()) {
+  if (SECRET_KEY_PATTERN.test(key)) {
+    collectStringValues(value, sensitiveValues)
+    return sensitiveValues
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectSensitiveValues(item, '', sensitiveValues)
+    }
+    return sensitiveValues
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const [nestedKey, nestedValue] of Object.entries(value)) {
+      collectSensitiveValues(nestedValue, nestedKey, sensitiveValues)
+    }
+  }
+  return sensitiveValues
+}
+
+/** Collects non-empty string leaves from a secret-bearing structured value. */
+function collectStringValues(value, sensitiveValues) {
+  if (typeof value === 'string' && value !== '') {
+    sensitiveValues.add(value)
+    return
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectStringValues(item, sensitiveValues)
+    }
+    return
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const nestedValue of Object.values(value)) {
+      collectStringValues(nestedValue, sensitiveValues)
+    }
+  }
+}
+
+/** Parses an encoded structured diagnostic value without treating ordinary text as JSON. */
+function parseStructuredDiagnosticText(input) {
+  const text = String(input).trim()
+  if (!text.startsWith('{') && !text.startsWith('[')) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(text)
+    return parsed !== null && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** Replaces known secret values wherever they were repeated in a diagnostic string. */
+function redactSensitiveValues(input, sensitiveValues) {
+  let redacted = input
+  for (const value of [...sensitiveValues].sort((left, right) => right.length - left.length)) {
+    if (value !== '') {
+      redacted = redacted.replaceAll(value, '[redacted]')
+    }
+  }
+  return redacted
 }
 
 module.exports = {

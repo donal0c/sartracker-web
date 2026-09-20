@@ -54,4 +54,16 @@ describe('electron diagnostic sanitizer', () => {
     expect(serialized).not.toContain(RECOVERY_CODE_SENTINEL)
     expect(serialized.match(/\[redacted\]/g)).toHaveLength(8)
   })
+
+  it('redacts sensitive values repeated inside nested arrays [DON-237]', () => {
+    const secret = 'C17-Main-Nested-Array-Secret-9!'
+    const sanitized = sanitizeDiagnosticFields({
+      token: secret,
+      nested: { values: [secret] },
+    })
+
+    const serialized = JSON.stringify(sanitized)
+    expect(serialized).not.toContain(secret)
+    expect(serialized).toContain('[redacted]')
+  })
 })

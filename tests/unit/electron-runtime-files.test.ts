@@ -455,6 +455,34 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('[coordinate-redacted]')
   })
 
+  it('redacts secrets inside renderer-encoded nested arrays during support export [DON-237]', async () => {
+    const secret = 'C17-Nested-Array-Secret-9!'
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [
+        {
+          ts: '2026-09-20T12:00:00.000Z',
+          level: 'error',
+          event: 'renderer_c17_adversarial_corpus',
+          nested: JSON.stringify({
+            token: secret,
+            path: userDataPath,
+            values: [secret, userDataPath],
+          }),
+        },
+      ],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'c17-support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain(secret)
+    expect(bundle).not.toContain(userDataPath!)
+    expect(bundle).toContain('[redacted-user-data-path]')
+  })
+
   async function createRuntimeFiles(
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>
