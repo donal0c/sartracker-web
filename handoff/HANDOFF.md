@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-20 for DON-237 diagnostics/support-export repair.
+Updated 2026-09-20 for the completed DON-237 diagnostics/support-export repair.
 
 ## Current state
 
@@ -8,12 +8,21 @@ Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-mergeable at exact head `c34fddc28f94f4964fbce7fed6a96329d8ecb2c5`, directly
+mergeable at exact head `d78a0c76a9d1efb265e70ecd586c723695274ead`, directly
 on PR43's merge base. The repair recursively sanitizes renderer and Electron
 diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
 C17 development receipt independently bind export paths, retained hashes,
-canary manifest and bounded rescans. The exact-head review found no actionable
-P0/P1/P2 findings.
+canary manifest and bounded rescans. The prior exact-head review of the earlier
+repair head found no actionable P0/P1/P2 findings. Hosted Linux run `35537304260` passed the
+full workflow, including the C17 proof at job `106148526794`. Its retained
+artifact is `electron-linux-validation-evidence-d78a0c76a9d1efb265e70ecd586c723695274ead`;
+the C17 receipt is `PASS`, `valid:true`, `zeroCanary:true`, with 11 canaries,
+zero exact/adversarial matches, output hash
+`352df5721a26415d64d81fd3c7115cc510b8074e66ac3692f091773b27c27969`, and
+manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
+The receipt correctly retains `coverageComplete:false` and is not qualification or
+release evidence. A fresh exact-head independent review is the remaining review
+closeout before human merge review.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
 release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
@@ -30,11 +39,11 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: complete exact-head hosted CI and retain the packaged C17
-development receipt, then update the assurance docs and DON-237 with the exact
-run/job/artifact evidence. The C17 receipt must retain
-`coverageComplete:false` with the intentional
-`recursive-adversarial-corpus` and `bounded-output-scan-identity` gaps.
+Next action: complete the fresh exact-head independent review, update DON-237
+with the retained run/job/artifact evidence, and leave merge/release decisions
+to the authorized human boundary. The C17 receipt retains
+`coverageComplete:false` with the intentional `recursive-adversarial-corpus`
+and `bounded-output-scan-identity` gaps.
 
 Producer integration is under repair after the first Linux development matrix.
 All 124 package bindings compile and require
@@ -112,9 +121,10 @@ Current local development evidence:
 - C09 full development13 passed75,008-point import/replacement/concurrency
   custody and exact8MiB pending/retained forced-kill recovery on the default store.
 - C03 development7 passed12-outing/midnight, true later-received earlier-fix
-  exclusion and selected-device scope. DON-237 now closes the C17 nested-array
+  exclusion and selected-device scope. DON-237 closes the C17 nested-array
   support-export leak and legacy private/system path leak in source/Electron
-  paths; the exact-head packaged Linux development proof remains hosted-CI work.
+  paths. Hosted exact-head run `35537304260` passed C17 and the full packaged
+  workflow; its receipt remains development evidence, not qualification.
 - C11 scoped development `c11-family-dev-receipt-2` retained the full report,
   all1,000pages/50,000rows and clean teardown. Independent raw-file validation
   checked every fixed ID, assignment and outcome; copies and hashes are retained.
@@ -139,8 +149,8 @@ builds must use separate coordinated windows: fresh-inode signing recovered
 local Electron loading. Confirm actual SQLite open after restoring Node.
 All Electron development processes are closed. Node22 ABI127 was restored and
 an actual SQLite SELECT1 passed. Exact-head Linux CI and independent remediation
-rechecks remain required; local results cannot establish merge readiness or
-future candidate qualification.
+rechecks remain historical evidence; the final hosted result is merge-review
+evidence only and cannot establish candidate qualification or release readiness.
 
 Review remediation adds Linux subreaper/pidfd ownership, identity-bound leases,
 supervisor deadlines/parent-death cleanup, adapter quarantine and lock retention

@@ -192,10 +192,11 @@ The initial stable local correctness run passed 552 files and 5,687 tests, with 
 six prescribed correctness-mode exclusions. Lint and the production build passed.
 Current development receipts include the complete 50k C11 raw-page oracle and the nine C24 competing
 operation phases. DON-237 repairs the C17 raw secret/path leak across recursive,
-encoded, compound-key and legacy Electron export paths. Exact-head Linux
-packaged development proof and the retained C17 receipt remain pending; the
-intentional recursive-corpus and bounded-output-scan coverage gaps remain open.
-None of these source/development results qualifies a candidate.
+encoded, compound-key and legacy Electron export paths. Hosted exact-head Linux
+run `35537304260` at `d78a0c76a9d1` passed the packaged C17 zero-canary proof
+and retained the receipt with `coverageComplete:false`; the intentional
+recursive-corpus and bounded-output-scan coverage gaps remain open. None of
+these source/development results qualifies a candidate.
 
 ## PR43 review remediation
 
