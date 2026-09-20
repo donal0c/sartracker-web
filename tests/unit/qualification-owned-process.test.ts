@@ -61,7 +61,7 @@ describe('qualification owned process runner', () => {
     regression.stderr?.on('data', (chunk) => { stderr += String(chunk) })
     const [exitCode] = await once(regression, 'close')
     expect(exitCode).toBe(0)
-    expect(stderr).toMatch(/Ran 1 test/iu)
+    expect(stderr).toMatch(/Ran 2 tests/iu)
     expect(stderr).toMatch(/OK/iu)
   })
 

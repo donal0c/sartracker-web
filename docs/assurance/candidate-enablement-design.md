@@ -265,3 +265,21 @@ results remain source/development evidence. Logs: `second-final-*`,
 `oracles-supervisor-identity-green.log`, `pid-regression-old-red.log` and
 `soak-preparation-timeout-linux-final-3.log` under the remediation directory.
 Exact-head independent re-attestation and hosted CI remain the PR readiness gate.
+
+The `745b471b` final rechecks found two further P2 predicates: C01 ignored
+producer/held-gate cleanup failures, and an exited producer sampled after its
+deadline could be recorded as on time. Both have failing regressions followed
+by focused green checks. C01 now requires empty producer failure accounting,
+removed FIFO holds and a positively closed, identified SQLite lock holder.
+The supervisor treats completion first observed after its deadline as timeout.
+The controlled-clock test reproduces the original race without timing luck.
+Hosted run `35488610748` was deliberately cancelled when these executable
+corrections superseded its head; it supplies no passing delivery claim.
+
+The final predicate revision passed559files /5,744tests with the same24declared
+skips in542.37seconds, then lint and build. All1,405frozen executable/test files
+matched after restoring generated version metadata. The native Linux17-test
+owned-process suite includes both direct Python regressions; C01/package focused
+checks passed48tests. Affected independent working-tree rechecks are clear.
+Logs are `third-final-*`, `c01-held-cleanup-*`, `supervisor-deadline-race-*` and
+`linux-owned-deadline-final.log`; committed-head rechecks and CI follow.

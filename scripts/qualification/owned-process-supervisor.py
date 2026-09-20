@@ -362,8 +362,9 @@ def run() -> int:
             state["stop_signal"] = "PROTOCOL_UNAVAILABLE"
         while True:
             exit_code, exit_signal = producer_returncode(producer)
-            if (not cleanup_started and exit_code is None and exit_signal is None
-                    and time.monotonic() >= runtime_deadline):
+            # A completed producer sampled after the deadline has no proven
+            # on-time exit; do not turn polling latency into passing evidence.
+            if not cleanup_started and time.monotonic() >= runtime_deadline:
                 deadline_exceeded = True
             if not cleanup_started and (exit_code is not None or exit_signal is not None
                                         or bool(state["stop_requested"]) or deadline_exceeded):

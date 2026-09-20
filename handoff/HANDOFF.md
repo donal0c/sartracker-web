@@ -116,7 +116,7 @@ Current local development evidence:
   overlay warning (DON-264); screenshot inspected. Raw reports and earlier failed
   harness attempts are retained. This is development mechanics, not qualification.
 
-Final remediation local correctness passed559files /5,737tests, with24skips
+Final remediation local correctness passed559files /5,744tests, with24skips
 (six prescribed timing exclusions plus Linux-only cases on macOS). Lint/build
 passed. Strict responsiveness qualification was not run. Earlier failures and
 native crashes remain retained, including macOS CODESIGNING Invalid Page.
@@ -145,7 +145,10 @@ sentinel setup (5,727passed, one failure, seven skips); package steps did not ru
 The sentinel is now asynchronous. Supervisor-owned deadlines/parent-death cleanup,
 all-adapter quarantine, code-only soak failure receipts and canonical persistence
 failure lock retention address the independent recheck findings. Bare PID fallback
-ownership is removed. Detail: design document's PR43 review-remediation section.
+ownership is removed. Final rechecks additionally require held-gate cleanup and
+empty C01 producer failures, and reject completion first observed after deadline.
+CI `35488610748` was cancelled as superseded by those corrections, not counted
+as passed or failed. Detail: design document's PR43 review-remediation section.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

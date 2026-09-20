@@ -77,6 +77,7 @@ function report(overrides: Record<string, unknown> = {}) {
     schema: STARTUP_PROBE_DESCRIPTOR.schema,
     contractId: 'C01',
     proofMode: C01_STARTUP_PROOF_MODE,
+    failures: [],
     source: { head: SHA1, expectedHead: SHA1, tree: TREE, dirty: false },
     app: {
       suppliedPath: '/evidence/SARTracker.deb/usr/bin/sartracker-web',
@@ -190,7 +191,8 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-store-gate': {
         profileKind: 'held-store-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support' },
+        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', lockHolder: { pid: 110, closed: true } },
+        cleanup: { lockHolderClosed: true, heldPathRemoved: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 106, closed: true, faultShellAtMs: 1800 },
       },
@@ -198,6 +200,7 @@ function report(overrides: Record<string, unknown> = {}) {
         profileKind: 'held-diagnostics-gate',
         observed: 'actionable-fault',
         gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support' },
+        cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 108, closed: true, faultShellAtMs: 1800 },
       },
@@ -205,6 +208,7 @@ function report(overrides: Record<string, unknown> = {}) {
         profileKind: 'held-crash-gate',
         observed: 'actionable-fault',
         gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support' },
+        cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 109, closed: true, faultShellAtMs: 1800 },
       },
@@ -392,6 +396,38 @@ describe('qualification C01 startup receipt validator', () => {
       expect(result.passed).toBe(false)
       expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
     }
+  })
+
+  it.each([['diagnostics', 'heldPathRemoved'], ['crash', 'heldPathRemoved'], ['store', 'lockHolderClosed']])(
+    'rejects a held %s gate without %s cleanup', (kind, field) => {
+      for (const value of [false, undefined]) {
+        const forged = report()
+        const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)[`held-${kind}-gate`]
+        scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: value }
+        const result = validateStartupContractEvidence('C01', forged, expected)
+        expect(result.passed).toBe(false)
+        expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
+      }
+    },
+  )
+
+  it('rejects contradictory or missing store lock-holder closure evidence', () => {
+    for (const lockHolder of [undefined, { pid: 110, closed: false }, { pid: null, closed: true }]) {
+      const forged = report()
+      const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)['held-store-gate']
+      scenario.gate = { ...(scenario.gate as Record<string, unknown>), lockHolder }
+      expect(validateStartupContractEvidence('C01', forged, expected).passed).toBe(false)
+    }
+  })
+
+  it.each([
+    { failures: ['Disposable C01 profile cleanup failed: EACCES'] },
+    { failures: undefined },
+    { failures: 'invalid' },
+  ])('rejects producer failures or absent failure accounting: $failures', ({ failures }) => {
+    const result = validateStartupContractEvidence('C01', report({ failures }), expected)
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/producer|failure/iu)
   })
 
   it('retains an actual held-gate timeout as a product gap instead of promoting it', () => {

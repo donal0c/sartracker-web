@@ -102,6 +102,9 @@ export function validateStartupContractEvidence(contractId, report, expected) {
   ) {
     failures.push('C01 startup report schema or contract identity is invalid.')
   }
+  if (!Array.isArray(report.failures) || report.failures.length !== 0) {
+    failures.push('C01 producer failure accounting is missing or records a failed operation or cleanup.')
+  }
 
   predicates.identity = validateIdentity(report, binding, failures)
   predicates.absentSchemaAdmission = validateAbsentSchema(
@@ -455,6 +458,16 @@ function validateHeldGate(scenario, gateKind, failures) {
     && nonEmptyString(scenario.gate?.action)
     && scenario.gate?.synthetic !== true
   if (!passed) failures.push('C01 ' + label + ' did not expose a bounded actionable gate.')
+  const cleanupPassed = gateKind === 'store'
+    ? scenario.cleanup?.lockHolderClosed === true
+      && scenario.gate?.lockHolder?.closed === true
+      && Number.isSafeInteger(scenario.gate?.lockHolder?.pid)
+      && scenario.gate.lockHolder.pid > 0
+    : scenario.cleanup?.heldPathRemoved === true
+  if (!cleanupPassed) {
+    failures.push('C01 ' + label + ' cleanup was not positively verified.')
+    passed = false
+  }
   if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'faultShellAtMs')) passed = false
   if (!validateUnchangedFiles(scenario.originalFiles, 'C01 ' + label + ' profile', failures)) passed = false
   return passed
