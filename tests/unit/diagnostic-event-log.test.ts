@@ -137,7 +137,7 @@ describe('diagnostic event log', () => {
       category: 'runtime',
       event: 'c17_free_form_credentials',
       fields: {
-        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} auth=${authCredential} auth: ${authCredential} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics?session=${queryCredential}&auth=${authCredential}`,
+        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} auth=${authCredential} auth: ${authCredential} authToken=${authCredential} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics?session=${queryCredential}&auth=${authCredential}&access_token=${authCredential}`,
       },
     })
 

@@ -11,16 +11,23 @@ const STRUCTURED_DIAGNOSTIC_LIMIT_MARKER = '[redacted-structured-value-too-large
 const SENSITIVE_VALUES_INCOMPLETE_MARKER = '__diagnostic_sensitive_values_incomplete__'
 const SECRET_KEY_SOURCE = '(?:auth(?:entication|orization)?|password|secret|token|credential|api[-_]?key|pass[-_]?phrase|recovery[-_]?code)'
 const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
+const QUERY_CREDENTIAL_KEY_SOURCE = `(?:session|${SECRET_KEY_SOURCE})`
 const COORDINATE_KEY_PATTERN = /^(lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
-const SECRET_JSON_KEY_PATTERN = new RegExp(`("${SECRET_KEY_SOURCE}\\s*:\\s*")(?:\\\\.|[^"\\\\])*"`, 'gi')
+const SECRET_JSON_KEY_PATTERN = new RegExp(
+  `("(?:[^"\\\\]*${SECRET_KEY_SOURCE}[^"\\\\]*)"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`,
+  'gi',
+)
 const SECRET_ASSIGNMENT_PATTERN = new RegExp(
-  `\\b(${SECRET_KEY_SOURCE}\\s*[:=]\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\r\\n]+)`,
+  `\\b([A-Za-z0-9_.-]*${SECRET_KEY_SOURCE}[A-Za-z0-9_.-]*\\s*[:=]\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\r\\n]+)`,
   'gi',
 )
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
 const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
 const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
-const URL_QUERY_CREDENTIALS_PATTERN = /([?&](?:auth|session|password|pass[-_]?phrase|secret|token|credential|api[-_]?key|authorization|recovery[-_]?code)=)[^&#\s]+/gi
+const URL_QUERY_CREDENTIALS_PATTERN = new RegExp(
+  `([?&][A-Za-z0-9_.-]*${QUERY_CREDENTIAL_KEY_SOURCE}[A-Za-z0-9_.-]*=)[^&#\\s]+`,
+  'gi',
+)
 
 type SensitiveDiagnosticValues = Set<string>
 type StructuredDiagnosticValue = Record<string, unknown> | unknown[]
