@@ -47,6 +47,7 @@ import { validateCanonicalIngestSurface } from './canonical-ingest-receipts.mjs'
 import { validatePagingFiles, PAGING_PROFILES } from './paging-file-oracle.mjs'
 import { CASE_IDS as ARCHIVE_SECURITY_CASE_IDS } from './archive-security-probe.cjs'
 import { validateArchiveSecurityReceipt } from './archive-security-receipts.mjs'
+import { validateRetainedPackagedArchiveSecurityReceipt } from './archive-security-packaged-probe.mjs'
 import { validateReplayScaleFiles } from './replay-scale-receipts.mjs'
 import { validateReplayOutingReceipt } from './replay-outing-receipts.mjs'
 import { copyStandaloneSqliteFixture } from './sqlite-fixture.mjs'
@@ -289,6 +290,13 @@ export async function validateRetainedPackage(receipt, binding, { definition, at
             || wrapper.rawReportSha256 !== receipt.rawReportSha256
             || wrapper.releaseEligible !== false) {
           failures.push('Retained C21 wrapper receipt is not bound to the raw report and immutable source.')
+        }
+        const retainedWrapperValidation = await validateRetainedPackagedArchiveSecurityReceipt(wrapper, attemptDirectory, {
+          reportFilename: 'package-raw-report.json',
+          screenshotFilename: 'package-ui-archive-security-runtime.png',
+        })
+        if (retainedWrapperValidation.passed !== true) {
+          failures.push(...retainedWrapperValidation.failureReasons)
         }
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error))

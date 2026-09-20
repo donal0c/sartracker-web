@@ -34,6 +34,12 @@ producer development checks and packaged smoke lanes. PR43 is intentionally draf
 while Donal reviews the fresh evidence; the pass is merge evidence only, not
 candidate qualification or release approval.
 
+The final read-only recheck found one P2 in retained C21 admission: the package
+adapter checked wrapper identity but did not re-run the packaged wrapper's renderer
+and screenshot validator. That guard is now wired to the retained report and
+`package-ui-archive-security-runtime.png`; focused package and wrapper tests pass.
+The resulting head still needs its own exact-head Linux CI and review recheck.
+
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).

@@ -148,8 +148,16 @@ export async function runPackagedArchiveSecurityProbe(options) {
 }
 
 /** Validate the wrapper receipt from independently retained files. */
-export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, evidenceDir) {
+export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, evidenceDir, {
+  reportFilename = REPORT_FILE,
+  screenshotFilename = SCREENSHOT_FILE,
+} = {}) {
   const failures = []
+  if (!isSafeRetainedFilename(reportFilename) || !isSafeRetainedFilename(screenshotFilename)) {
+    failures.push('Packaged C21 retained evidence filenames must be simple basenames.')
+  }
+  const safeReportFilename = isSafeRetainedFilename(reportFilename) ? reportFilename : REPORT_FILE
+  const safeScreenshotFilename = isSafeRetainedFilename(screenshotFilename) ? screenshotFilename : SCREENSHOT_FILE
   if (!isRecord(receipt) || receipt.schema !== 'c21-packaged-archive-security-v1') {
     failures.push('Packaged C21 wrapper receipt schema is invalid.')
     return Object.freeze({ valid: false, passed: false, failureReasons: Object.freeze(failures) })
@@ -161,7 +169,7 @@ export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, ev
       || !SHA256.test(receipt.screenshotSha256 ?? '')) {
     failures.push('Packaged C21 wrapper identity or cleanup binding is invalid.')
   }
-  const reportPath = path.join(evidenceDir, REPORT_FILE)
+  const reportPath = path.join(evidenceDir, safeReportFilename)
   try {
     const reportBytes = await readFile(reportPath)
     if (sha256(reportBytes) !== receipt.rawReportSha256) failures.push('Retained C21 report digest differs from its wrapper receipt.')
@@ -175,7 +183,7 @@ export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, ev
     })
     failures.push(...validation.failureReasons)
     if (validation.passed !== true) failures.push('Retained C21 report did not pass independent receipt validation.')
-    const screenshotBytes = await readFile(path.join(evidenceDir, SCREENSHOT_FILE))
+    const screenshotBytes = await readFile(path.join(evidenceDir, safeScreenshotFilename))
     if (sha256(screenshotBytes) !== receipt.screenshotSha256) failures.push('Retained C21 screenshot digest differs from its wrapper receipt.')
   } catch (error) {
     failures.push(`Retained C21 evidence could not be re-read: ${error instanceof Error ? error.message : 'unknown error'}.`)
@@ -188,6 +196,11 @@ export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, ev
     releaseEligible: false,
     failureReasons: Object.freeze([...new Set(failures)]),
   })
+}
+
+/** Keep retained evidence resolution below the caller-owned directory. */
+function isSafeRetainedFilename(value) {
+  return typeof value === 'string' && value.length > 0 && path.basename(value) === value
 }
 
 /** Build a closed package receipt from raw report and independently measured runtime identity. */
