@@ -51,6 +51,19 @@ export function parseArchiveSecurityPackagedArgs(argv) {
   return Object.freeze({ appPath: path.resolve(app), evidenceDir: path.resolve(evidence), expectedHead })
 }
 
+/** Evaluate the packaged C21 controller from Electron's main process. */
+export async function evaluateArchiveSecurityProbe({ app: runningApp }, input) {
+  const nodePath = process.getBuiltinModule('node:path')
+  const { createRequire } = process.getBuiltinModule('node:module')
+  const load = createRequire(nodePath.join(runningApp.getAppPath(), 'package.json'))
+  const probe = load(input.controllerProbePath)
+  return probe.runArchiveSecurityProbe({
+    moduleRoot: runningApp.getAppPath(),
+    tier: 'packaged-module',
+    sourceSha: input.sourceSha,
+  })
+}
+
 /** Launch the exact supplied executable and retain a package-bound C21 receipt. */
 export async function runPackagedArchiveSecurityProbe(options) {
   validateOptions(options)
@@ -77,14 +90,10 @@ export async function runPackagedArchiveSecurityProbe(options) {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => undefined)
     await page.screenshot({ path: screenshotPath, fullPage: true })
-    report = await app.evaluate(async ({ app: runningApp }, input) => {
-      const probe = require(input.controllerProbePath)
-      return probe.runArchiveSecurityProbe({
-        moduleRoot: runningApp.getAppPath(),
-        tier: 'packaged-module',
-        sourceSha: input.sourceSha,
-      })
-    }, { controllerProbePath: controllerProbePath(), sourceSha: options.expectedHead })
+    report = await app.evaluate(evaluateArchiveSecurityProbe, {
+      controllerProbePath: controllerProbePath(),
+      sourceSha: options.expectedHead,
+    })
     const reportPath = path.join(options.evidenceDir, REPORT_FILE)
     await writeJson(reportPath, report)
     const rawReportSha256 = sha256(await readFile(reportPath))

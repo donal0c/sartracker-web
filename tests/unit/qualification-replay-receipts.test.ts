@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { validateReplayReceipt } from '../../scripts/qualification/replay-receipts.mjs'
+import { createReplayGeometryFixture } from '../../scripts/qualification/replay-probe-fixture.mjs'
 
 /** Synthetic raw replay observations; they are not packaged execution evidence. */
 function report() {
@@ -21,6 +22,12 @@ function report() {
 }
 
 describe('retained packaged replay oracle', () => {
+  it('passes exact host-generated fixture bytes across the renderer boundary', () => {
+    const expected = report().source
+    expect(createReplayGeometryFixture()).toEqual({
+      initialGeometry: expected.initialGeometry, updatedGeometry: expected.updatedGeometry,
+    })
+  })
   it('recomputes both known-at-time geometries and live/archive equality', () => {
     expect(validateReplayReceipt(report())).toMatchObject({ passed: true, status: 'PASS' })
   })

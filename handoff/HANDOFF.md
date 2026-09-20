@@ -27,8 +27,8 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Producer integration, bounded development calibration and source checks are
-complete. All 124 package bindings compile and require
+Producer integration is under repair after the first Linux development matrix.
+All 124 package bindings compile and require
 separate AppImage/deb scenarios. C01 held-startup/physical-disk-full producers,
 C09 packaged import interruption, C02 lifecycle, C10 replay scale/outing,
 C18 fault matrix, C19 historical/default migrations and C20/C22 large-archive
@@ -116,7 +116,7 @@ Current local development evidence:
   overlay warning (DON-264); screenshot inspected. Raw reports and earlier failed
   harness attempts are retained. This is development mechanics, not qualification.
 
-Final remediation local correctness passed559files /5,744tests, with24skips
+Current producer-remediation local correctness passed562files /5,761tests, with24skips
 (six prescribed timing exclusions plus Linux-only cases on macOS). Lint/build
 passed. Strict responsiveness qualification was not run. Earlier failures and
 native crashes remain retained, including macOS CODESIGNING Invalid Page.
@@ -129,26 +129,31 @@ an actual SQLite SELECT1 passed. Exact-head Linux CI and independent remediation
 rechecks remain required; local results cannot establish merge readiness or
 future candidate qualification.
 
-Review remediation adds Linux subreaper/pidfd process ownership, atomic leases
-with process-start identity, exact runtime/authority custody and stricter independent
-oracles. Soak preparation/execution/retention share a bounded worker; unproven
-cleanup retains the resource lock even if receipt persistence fails. Unsupported
-supervision hosts fail before launch. Native Linux container mechanics passed
-detached/double-fork cleanup and timeout during actual artifact hashing. C04
-`review-remediation-dev-1` passed6/6batches/8,728rows with real operation-bound
-cancellation stages, replacing the earlier hard-coded stage evidence. These are
-development checks, not qualification. Initial CI `35482891762` failed one
-120s full-campaign setup test (5,686passed); its real C19/C24 regression setup is
-now bounded without weakening source checks or product holds. Failed receipts
-remain retained. CI `35486189960` then failed only the Linux test's synchronous
-sentinel setup (5,727passed, one failure, seven skips); package steps did not run.
-The sentinel is now asynchronous. Supervisor-owned deadlines/parent-death cleanup,
-all-adapter quarantine, code-only soak failure receipts and canonical persistence
-failure lock retention address the independent recheck findings. Bare PID fallback
-ownership is removed. Final rechecks additionally require held-gate cleanup and
-empty C01 producer failures, and reject completion first observed after deadline.
-CI `35488610748` was cancelled as superseded by those corrections, not counted
-as passed or failed. Detail: design document's PR43 review-remediation section.
+Review remediation adds Linux subreaper/pidfd ownership, identity-bound leases,
+supervisor deadlines/parent-death cleanup, adapter quarantine and lock retention
+when cleanup or canonical receipt persistence is unproven. Native Linux mechanics
+passed detached cleanup and timeout during actual hashing. C04 development passed
+6/6batches/8,728rows with actual operation-bound cancellation stages. These are
+development checks, not qualification. Failed CI `35482891762` (campaign-test
+setup timeout) and `35486189960` (synchronous sentinel setup) remain retained;
+their harness repairs passed later source checks. `35488610748` was cancelled
+as superseded, not passed or failed. Full history and review dispositions remain
+in the design document's PR43 review-remediation section and PR/Linear comments.
+
+CI `35489521926` at `8f4e77fe` passed559files/5,761tests (seven skips),
+lint/build/browser and artifact inspection, then failed eight of18 producer
+development cases. Every case proved zero descendants; later packaged smoke
+was skipped. Raw receipts/logs are retained. Scoped harness repairs and Linux
+reverification are in progress; C10 blank replay and C12 archive/open causes
+remain unresolved. Local development success does not explain those failures.
+Current harness repairs include post-import replay timing/exact response binding,
+host-generated geometry, settings receipt initialization/joined cleanup, main-
+context module loading, IPC error normalization and stderr finalization. C01 now
+polls the native dialog within5s instead of inferring timing after the wait.
+Latest development geometry and C28 store/archive phases passed. Full source,
+TypeScript, lint and build passed; all1,409frozen executable/test files matched
+after restoring generated version metadata. Exact-head Linux re-execution remains
+pending on the PR; its terminal result determines readiness.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

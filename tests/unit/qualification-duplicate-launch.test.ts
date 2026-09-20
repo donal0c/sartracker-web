@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 import { parseArgs } from '../../scripts/qualification/duplicate-launch-probe.mjs'
 import { validateDuplicateLaunchReceipt } from '../../scripts/qualification/duplicate-launch-receipts.mjs'
@@ -69,6 +70,14 @@ function copy<T>(value: T): T {
 }
 
 describe('C26 duplicate-launch receipt', () => {
+  it('invokes the bounded stderr finalizers returned by each launch capture', () => {
+    const source = readFileSync('scripts/qualification/duplicate-launch-probe.mjs', 'utf8')
+    expect(source).not.toContain('finishStderr(')
+    expect(source).toMatch(/await primaryStderr\(\)/u)
+    expect(source).toMatch(/await restartStderr\(\)/u)
+    expect(source).toMatch(/await stderr\(\)/u)
+  })
+
   it('accepts only the exact three launch flags', () => {
     expect(parseArgs([
       '--app', expected.appPath,

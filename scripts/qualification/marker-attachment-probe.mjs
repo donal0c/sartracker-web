@@ -270,7 +270,7 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
   await layerTree.screenshot({ path: path.join(options.evidence, 'marker-attachment-layer-tree.png') })
   await page.screenshot({ path: path.join(options.evidence, 'marker-attachment-markers.png'), fullPage: true })
   await page.evaluate(() => { window.__C12_MARKERS_RELEASE__?.() })
-  const ready = await waitForArchiveReviewReady(page)
+  const ready = await waitForArchiveReviewReady(page, () => seededPromiseError)
   assertInsideProfile(ready.archivePath, profile)
   for (const storedPath of ready.storedPaths) assertInsideProfile(storedPath, profile)
   const storedFacts = await Promise.all(ready.storedPaths.map((filePath) => readAttachmentIdentity(filePath)))
@@ -394,9 +394,11 @@ async function readPackagedRuntimeIdentity(app, { developmentTestHarness = false
 }
 
 /** Wait for the renderer to confirm that read-only archive review opened one attachment. */
-async function waitForArchiveReviewReady(page) {
+export async function waitForArchiveReviewReady(page, readFailure = () => null) {
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
+    const failure = readFailure()
+    if (failure !== null && failure !== undefined) throw failure
     const ready = await page.evaluate(() => window.__C12_ARCHIVE_REVIEW_READY__ ?? null)
     if (ready !== null && ready.openedAttachment !== false) return ready
     await new Promise((resolve) => setTimeout(resolve, 100))

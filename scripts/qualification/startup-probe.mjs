@@ -738,6 +738,20 @@ async function fillBoundedEnospcVolume(profile) {
 
 const HELD_GATE_TIMEOUT_MS = 5_000
 
+/** Classify a held gate that reached the fixed observation bound without an in-bound response. */
+export function isBoundedHeldGateTimeoutWithoutAction({ earlyExit }) {
+  return earlyExit?.timedOut === true
+}
+
+/** Accept a native dialog as actionable only when polling observed it inside the fixed bound. */
+export function isActionableHeldGateObservation({ earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs }) {
+  return dialogWindowId !== null
+    && earlyExit?.timedOut !== true
+    && Number.isFinite(dialogObservedAtMs)
+    && dialogObservedAtMs >= 0
+    && dialogObservedAtMs <= timeoutMs
+}
+
 /** Hold one real startup dependency, then retain the bounded runtime response. */
 async function runHeldGateScenario(options, profile, _report, gateKind) {
   await seedOperationalProfile(profile)
@@ -752,6 +766,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   let appProcess = null
   let cleanup = { heldPathRemoved: false, lockHolderClosed: false }
   let setupFailure = null
+  let forcedKill = false
   let appStdout = null
   let appStderr = null
   try {
@@ -769,6 +784,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   const launchStartedAt = Date.now()
   let earlyExit = null
   let dialogWindowId = null
+  let dialogObservedAtMs = null
   let observationFailure = setupFailure
   if (setupFailure === null) {
     const appEnvironment = {
@@ -791,8 +807,13 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     })
     appStdout = collectChildOutput(appProcess.stdout, appProcess)
     appStderr = collectChildOutput(appProcess.stderr, appProcess)
-    earlyExit = await waitForOwnedProcessOrTimeout(appProcess, HELD_GATE_TIMEOUT_MS)
-    dialogWindowId = await findSarTrackerErrorDialog(appProcess.pid)
+    earlyExit = await waitForOwnedProcessOrTimeout(appProcess, HELD_GATE_TIMEOUT_MS, launchStartedAt)
+    dialogWindowId = earlyExit.dialogWindowId
+    dialogObservedAtMs = earlyExit.dialogObservedAtMs
+    if (earlyExit.timedOut === true && dialogWindowId === null) {
+      dialogWindowId = await findSarTrackerErrorDialog(appProcess.pid, 500)
+      if (dialogWindowId !== null) dialogObservedAtMs = Date.now() - launchStartedAt
+    }
     if (dialogWindowId !== null) {
       await dismissErrorDialog(dialogWindowId, appProcess.pid).catch(() => undefined)
     }
@@ -800,7 +821,10 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       appProcess.kill('SIGTERM')
       await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
     }
-    if (appProcess.exitCode === null && appProcess.signalCode === null) appProcess.kill('SIGKILL')
+    if (appProcess.exitCode === null && appProcess.signalCode === null) {
+      forcedKill = true
+      appProcess.kill('SIGKILL')
+    }
   }
   if (appProcess !== null && appProcess.exitCode === null && appProcess.signalCode === null) {
     await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
@@ -813,13 +837,22 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   const crashLog = gateKind === 'crash'
     ? ''
     : await readFile(path.join(profile, 'crashes', 'crash-log.json'), 'utf8').catch(() => '')
-  const actionable = dialogWindowId !== null && earlyExit?.timedOut !== true
+  const actionable = isActionableHeldGateObservation({
+    earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: HELD_GATE_TIMEOUT_MS,
+  })
+  const lateDialogAfterTimeout = earlyExit?.timedOut === true && dialogWindowId !== null
   const processObservation = {
     pid: appProcess?.pid ?? process.pid,
     closed: appProcess === null || appProcess.exitCode !== null || appProcess.signalCode !== null,
     exitCode: appProcess?.exitCode ?? null,
     signal: appProcess?.signalCode ?? null,
     timeoutMs: HELD_GATE_TIMEOUT_MS,
+    timedOut: earlyExit?.timedOut ?? null,
+    observationElapsedMs: earlyExit?.elapsedMs ?? null,
+    forcedKill,
+    dialogObserved: dialogWindowId !== null,
+    dialogObservedAtMs,
+    lateDialogAfterTimeout,
     faultShellAtMs: actionable ? earlyExit?.elapsedMs ?? null : null,
   }
   if (holder !== null) {
@@ -828,7 +861,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     cleanup.lockHolderClosed = holder.exitCode !== null || holder.signalCode !== null
   }
   if (heldPath !== null) cleanup.heldPathRemoved = await rm(heldPath, { force: true }).then(() => true).catch(() => false)
-  const timedOutWithoutAction = earlyExit?.timedOut === true && dialogWindowId === null
+  const timedOutWithoutAction = isBoundedHeldGateTimeoutWithoutAction({ earlyExit, dialogWindowId, forcedKill })
   return {
     profileKind: `held-${gateKind}-gate`,
     observed: actionable ? 'actionable-fault' : timedOutWithoutAction ? 'bounded-timeout-no-action' : 'not-observed',
@@ -839,7 +872,13 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       action: actionable ? 'preserve-profile-and-contact-support' : '',
       synthetic: false,
       timeoutMs: HELD_GATE_TIMEOUT_MS,
-      response: actionable ? 'native-error-dialog' : 'no-native-dialog-no-shell',
+      response: actionable
+        ? 'native-error-dialog'
+        : lateDialogAfterTimeout
+          ? 'native-error-dialog-after-bound'
+          : 'no-native-dialog-no-shell',
+      dialogObserved: dialogWindowId !== null,
+      lateDialogAfterTimeout,
       dependencyPath: heldPath,
       lockHolder: gateKind === 'store' ? { pid: holder?.pid ?? null, closed: cleanup.lockHolderClosed } : null,
     },
@@ -854,7 +893,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     cleanup,
     ...(observationFailure === null ? {} : { observationFailure }),
     ...(timedOutWithoutAction
-      ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response.` }
+      ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
       : {}),
   }
 }
@@ -923,16 +962,28 @@ function collectChildOutput(stream, child) {
   return output
 }
 
-/** Wait for an owned process to exit or reach the fixed observation bound. */
-async function waitForOwnedProcessOrTimeout(child, timeoutMs) {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
+/** Wait for an owned process or an in-bound native dialog without exceeding the fixed observation bound. */
+export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt = Date.now(), dependencies = {}) {
+  const now = dependencies.now ?? Date.now
+  const findDialog = dependencies.findDialog ?? findSarTrackerErrorDialog
+  const wait = dependencies.wait ?? delay
+  const deadline = startedAt + timeoutMs
+  while (now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      return { timedOut: false, elapsedMs: Date.now() - startedAt }
+      return { timedOut: false, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
     }
-    await delay(100)
+    const dialogWindowId = await findDialog(child.pid, Math.min(250, Math.max(1, deadline - now())))
+    const observedAtMs = now() - startedAt
+    if (dialogWindowId !== null && observedAtMs <= timeoutMs) {
+      return { timedOut: false, elapsedMs: observedAtMs, dialogWindowId, dialogObservedAtMs: observedAtMs }
+    }
+    if (now() >= deadline) break
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return { timedOut: false, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+    }
+    await wait(Math.min(100, deadline - now()))
   }
-  return { timedOut: true, elapsedMs: Date.now() - startedAt }
+  return { timedOut: true, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
 }
 
 /** Await a child close without extending the bounded observation window. */
@@ -948,12 +999,19 @@ async function waitForChildClose(child, timeoutMs) {
 }
 
 /** Return the owned SAR Tracker error dialog when startup produced one. */
-async function findSarTrackerErrorDialog(pid) {
+async function findSarTrackerErrorDialog(pid, timeoutMs = 1_000) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return null
+  const boundedTimeoutMs = Math.max(1, Math.floor(timeoutMs))
+  const deadline = Date.now() + boundedTimeoutMs
   try {
-    const { stdout } = await execFileAsync('xdotool', ['search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$'])
+    const commandOptions = { timeout: boundedTimeoutMs, killSignal: 'SIGKILL' }
+    const { stdout } = await execFileAsync(
+      'xdotool', ['search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$'], commandOptions,
+    )
     for (const windowId of stdout.trim().split(/\s+/u)) {
-      if (/^\d+$/u.test(windowId) && await isSarTrackerErrorDialog(windowId)) return windowId
+      if (Date.now() >= deadline) break
+      const remainingMs = Math.max(1, deadline - Date.now())
+      if (/^\d+$/u.test(windowId) && await isSarTrackerErrorDialog(windowId, remainingMs)) return windowId
     }
   } catch {
     // Headless environments retain the absence as raw evidence.
@@ -1519,11 +1577,12 @@ async function waitForProcessExit(appProcess, timeoutMs) {
 }
 
 /** Reject unrelated desktop error windows by class and minimum geometry. */
-async function isSarTrackerErrorDialog(windowId) {
+async function isSarTrackerErrorDialog(windowId, timeoutMs = 1_000) {
   try {
+    const commandOptions = { timeout: timeoutMs, killSignal: 'SIGKILL' }
     const [{ stdout: windowClass }, { stdout: geometry }] = await Promise.all([
-      execFileAsync('xprop', ['-id', windowId, 'WM_CLASS']),
-      execFileAsync('xdotool', ['getwindowgeometry', '--shell', windowId]),
+      execFileAsync('xprop', ['-id', windowId, 'WM_CLASS'], commandOptions),
+      execFileAsync('xdotool', ['getwindowgeometry', '--shell', windowId], commandOptions),
     ])
     const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
     const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])

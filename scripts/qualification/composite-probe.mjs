@@ -279,7 +279,7 @@ export async function runCompositeProbe(input) {
     }
 
     currentPhase = 'coverageReplay'
-    const coverageReplay = await readCoverageAndReplay(page, missionId, fixture.selectedTime)
+    const coverageReplay = await readCoverageAndReplay(page, missionId)
     phases.coverageReplay = coverageReplay
     if (options.variant === 'failure-coverage-replay') {
       variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, null)
@@ -341,7 +341,7 @@ export async function runCompositeProbe(input) {
       variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, finalized.archiveId)
     }
     currentPhase = 'archiveReviewRestore'
-    const review = await runArchiveReview(page, missionId, finalized.archiveId, passphraseInMemory, fixture.selectedTime)
+    const review = await runArchiveReview(page, missionId, finalized.archiveId, passphraseInMemory, coverageReplay.replay.selectedTime)
     phases.archiveReviewRestore = {
       supported: true,
       review: review.review,
@@ -1340,7 +1340,6 @@ async function createGpxFixtures(profilePath, startTime) {
     datedPath, undatedPath,
     datedSha256: sha256Text(dated), undatedSha256: sha256Text(undated),
     endedAt: new Date(Date.now() - 30_000).toISOString(),
-    selectedTime: new Date().toISOString(),
   }
 }
 
@@ -1381,7 +1380,7 @@ async function importGpxFixtures(page, missionId, outingId, fixture) {
 }
 
 /** Persists one marker, search area, assignment, and completed pass through preload. */
-async function createMarkerAndSearch(page, missionId, outingId, startTime, familyContract = null, evidencePath = null) {
+export async function createMarkerAndSearch(page, missionId, outingId, startTime, familyContract = null, evidencePath = null) {
   const start = new Date(Date.parse(startTime) + 120_000).toISOString()
   const end = new Date(Date.parse(startTime) + 121_000).toISOString()
   return page.evaluate(async (input) => {
@@ -1431,7 +1430,8 @@ async function createMarkerAndSearch(page, missionId, outingId, startTime, famil
     return {
       supported: true, missionId: input.missionId, markerId: marker.id, searchAreaId: area.id,
       assignmentId: assignment.id, searchPassId: pass.id, markerCount: 1, searchAreaCount: 1,
-      searchPassCount: passCount, passOutcomes,
+      searchPassCount: passCount,
+      ...(input.familyContract === 'C11' ? { passOutcomes } : {}),
     }
   }, { missionId, outingId, start, end, familyContract }).then(async (facts) => {
     if (familyContract !== 'C11') return facts
@@ -1528,14 +1528,19 @@ async function collectSearchPassPaging(page, missionId, assignmentId, evidencePa
 }
 
 /** Reads coverage manifest and replay state against one same-mission selected time. */
-async function readCoverageAndReplay(page, missionId, selectedTime) {
+export async function readCoverageAndReplay(page, missionId) {
   return page.evaluate(async (input) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined || typeof store.readCoverageManifest !== 'function' || typeof store.readMissionReplay !== 'function') {
       throw new Error('Coverage/replay preload bridge is unavailable.')
     }
     const coverage = await store.readCoverageManifest(input.missionId, `c28-coverage-${input.missionId}`)
-    const replay = await store.readMissionReplay({ missionId: input.missionId, selectedTime: input.selectedTime, timezone: 'Europe/Dublin', trackLimit: 1000, objectLimit: 100 }, `c28-replay-${input.missionId}`)
+    // Capture knowledge time only after all fixture writes and imports have completed.
+    const selectedTime = new Date().toISOString()
+    const replay = await store.readMissionReplay({ missionId: input.missionId, selectedTime, timezone: 'Europe/Dublin', trackLimit: 1000, objectLimit: 100 }, `c28-replay-${input.missionId}`)
+    if (replay.missionId !== input.missionId || replay.selectedTime !== selectedTime) {
+      throw new Error('C28 replay response differs from the requested mission or selected time.')
+    }
     return {
       supported: true,
       missionId: input.missionId,
@@ -1551,7 +1556,7 @@ async function readCoverageAndReplay(page, missionId, selectedTime) {
       },
       replay: { missionId: replay.missionId, selectedTime: replay.selectedTime, replayGeneration: replay.replayGeneration, totalTrackCount: replay.totalTrackCount, staticGpxPointCount: replay.staticGpxPointCount, objectCount: replay.totalObjectCount ?? replay.objects?.length ?? 1 },
     }
-  }, { missionId, selectedTime })
+  }, { missionId })
 }
 
 /** Finalizes one mission and independently verifies its v2 archive with the public bridge. */

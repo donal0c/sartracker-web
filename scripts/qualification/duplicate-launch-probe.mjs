@@ -57,7 +57,7 @@ async function runDuplicateLaunchProbe(input) {
     await firstPage.screenshot({ path: path.join(options.evidencePath, 'duplicate-primary.png'), fullPage: true })
 
     const firstExit = await closeOwnedProcess(primaryApp, primaryProcess)
-    const firstStderr = await finishStderr(primaryStderr)
+    const firstStderr = await primaryStderr()
     primaryApp = undefined
     primaryProcess = undefined
 
@@ -74,7 +74,7 @@ async function runDuplicateLaunchProbe(input) {
     const restartWindowCount = restartApp.windows().length
     await restartPage.screenshot({ path: path.join(options.evidencePath, 'duplicate-restart.png'), fullPage: true })
     const restartExit = await closeOwnedProcess(restartApp, restartProcess)
-    const restartStderrFact = await finishStderr(restartStderr)
+    const restartStderrFact = await restartStderr()
     restartApp = undefined
     restartProcess = undefined
 
@@ -156,7 +156,7 @@ async function launchSecondary(appPath, env) {
     singleInstanceRejected: exited.exitCode === 0 && exited.signal === null,
     windowCount: 0,
     missionWriteAttempted: false,
-    stderr: await finishStderr(stderr),
+    stderr: await stderr(),
   }
 }
 

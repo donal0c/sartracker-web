@@ -135,7 +135,7 @@ export async function runIpcContainmentProbe(options) {
     report.runtime = await observeRuntime(app, page)
     report.probes.capability = await exerciseCapabilities(page)
     report.probes.invalidPayload = await exerciseInvalidPayload(page)
-    report.probes.invalidSender = await exerciseInvalidSender(app)
+    report.probes.invalidSender = await app.evaluate(evaluateInvalidSender)
   } catch (error) {
     report.failure = sanitizeError(error)
   } finally {
@@ -237,7 +237,7 @@ async function exerciseCapabilities(page) {
 
 /** Exercise a known invalid payload that is rejected before any file write. */
 async function exerciseInvalidPayload(page) {
-  return page.evaluate(async () => {
+  const result = await page.evaluate(async () => {
     try {
       await window.sartrackerElectron?.writeTrackingCache(null)
       return { attempted: true, blocked: false, error: null }
@@ -245,34 +245,40 @@ async function exerciseInvalidPayload(page) {
       return { attempted: true, blocked: true, error: error instanceof Error ? error.message : String(error) }
     }
   })
+  return result.error === null ? result : { ...result, error: normalizeIpcBridgeError(result.error) }
+}
+
+/** Remove only Electron's remote-call envelope while retaining the guard error. */
+export function normalizeIpcBridgeError(value) {
+  const message = String(value)
+  return message.replace(/^Error invoking remote method '[^']+': Error: /u, '')
 }
 
 /** Exercise the main sender guard from an owned data-URL renderer. */
-async function exerciseInvalidSender(app) {
-  return app.evaluate(async ({ BrowserWindow, app: runningApp }) => {
-    const child = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        preload: require('node:path').join(runningApp.getAppPath(), 'electron', 'preload.cjs'),
-      },
-    })
-    try {
-      await child.loadURL('data:text/html,<html><body>C23</body></html>')
-      return await child.webContents.executeJavaScript(`(async () => {
-        try {
-          await window.sartrackerElectron.readTrackingCache()
-          return { attempted: true, blocked: false, error: null }
-        } catch (error) {
-          return { attempted: true, blocked: true, error: error instanceof Error ? error.message : String(error) }
-        }
-      })()`)
-    } finally {
-      child.destroy()
-    }
+export async function evaluateInvalidSender({ BrowserWindow, app: runningApp }) {
+  const nodePath = process.getBuiltinModule('node:path')
+  const child = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: nodePath.join(runningApp.getAppPath(), 'electron', 'preload.cjs'),
+    },
   })
+  try {
+    await child.loadURL('data:text/html,<html><body>C23</body></html>')
+    return await child.webContents.executeJavaScript(`(async () => {
+      try {
+        await window.sartrackerElectron.readTrackingCache()
+        return { attempted: true, blocked: false, error: null }
+      } catch (error) {
+        return { attempted: true, blocked: true, error: error instanceof Error ? error.message : String(error) }
+      }
+    })()`)
+  } finally {
+    child.destroy()
+  }
 }
 
 /** Close only the Electron process owned by this probe within a bounded window. */

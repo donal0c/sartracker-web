@@ -14,6 +14,8 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { closeOwnedSmokeChild } from '../../build/electron-repair-train-d-smoke-lib.js'
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SYNTHETIC_BASE_URL = 'https://synthetic.invalid.example'
 const SYNTHETIC_EMAIL = 'synthetic-operator'
@@ -25,10 +27,12 @@ const WARNING_TEXT =
 const URL_CREDENTIALS_ERROR =
   'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.'
 
-main().catch((error) => {
-  console.error(redactKnownSecrets(error instanceof Error ? error.message : String(error)))
-  process.exitCode = 1
-})
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(redactKnownSecrets(error instanceof Error ? error.message : String(error)))
+    process.exitCode = 1
+  })
+}
 
 /** Execute the bounded packaged C16 probe and retain a receipt on every exit path. */
 async function main() {
@@ -153,7 +157,13 @@ async function main() {
   } catch (error) {
     failures.push(redactKnownSecrets(error instanceof Error ? error.message : String(error)))
   } finally {
-    if (session !== null) await closeSession(session)
+    if (session !== null) {
+      try {
+        await closeSession(session)
+      } catch (error) {
+        failures.push(redactKnownSecrets(error instanceof Error ? error.message : String(error)))
+      }
+    }
     report.result = failures.length === 0 ? 'pass' : 'fail'
     report.failures = failures
     report.custody ??= {
@@ -174,7 +184,7 @@ async function main() {
 }
 
 /** Create the bounded receipt envelope before any packaged process is started. */
-function createReport(options) {
+export function createReport(options) {
   return {
     schemaVersion: 1,
     proofKind: 'sartracker-settings-probe-v1',
@@ -189,6 +199,7 @@ function createReport(options) {
     result: 'fail',
     failures: [],
     evidence: [],
+    sessions: {},
   }
 }
 
@@ -244,20 +255,28 @@ async function launchPackagedApp(appPath, extraArgs, userDataDir) {
       SARTRACKER_ELECTRON_USER_DATA_PATH: userDataDir,
     },
   })
-  const page = await app.firstWindow()
-  await page.setViewportSize({ width: 1440, height: 900 })
-  const runtime = await app.evaluate(({ app: electronApp }) => ({
-    appPath: electronApp.getAppPath(),
-    isPackaged: electronApp.isPackaged,
-    electron: process.versions.electron,
-    node: process.versions.node,
-    modules: process.versions.modules,
-  }))
-  if (!runtime.isPackaged || !runtime.appPath.endsWith('.asar')) {
-    await app.close().catch(() => undefined)
-    throw new Error('C16 settings probe requires a packaged Electron ASAR runtime.')
+  try {
+    const page = await app.firstWindow()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const runtime = await app.evaluate(({ app: electronApp }) => ({
+      appPath: electronApp.getAppPath(),
+      isPackaged: electronApp.isPackaged,
+      electron: process.versions.electron,
+      node: process.versions.node,
+      modules: process.versions.modules,
+    }))
+    if (!runtime.isPackaged || !runtime.appPath.endsWith('.asar')) {
+      throw new Error('C16 settings probe requires a packaged Electron ASAR runtime.')
+    }
+    return { app, page, runtime }
+  } catch (error) {
+    try {
+      await closeElectronApplication(app)
+    } catch (cleanupError) {
+      throw combineProbeFailure(error, cleanupError)
+    }
+    throw error
   }
-  return { app, page, runtime }
 }
 
 /** Capture actual archive/executable identity while redacting private path names. */
@@ -412,11 +431,36 @@ async function captureSettingsSnapshotAfterStartup(page, userDataDir) {
 
 /** Close a packaged process without leaving a second profile writer running. */
 async function closeSession(session) {
-  try {
-    await session.app.close()
-  } catch {
-    // Cleanup must not replace the bounded probe failure already retained.
+  await closeElectronApplication(session.app)
+}
+
+/** Close a launched Electron process and require an observed orderly exit. */
+export async function closeElectronApplication(app, timeoutMs = 5_000) {
+  const child = app.process?.()
+  const startedAt = Date.now()
+  const result = await closeOwnedSmokeChild(child, {
+    owned: true,
+    close: () => app.close(),
+    orderlyDeadline: startedAt + timeoutMs,
+    deadline: startedAt + (timeoutMs * 2),
+  })
+  if (result.closeError !== null) throw result.closeError
+  if (result.forcedCleanup !== null) {
+    throw new Error('C16 owned Electron cleanup required forced termination.')
   }
+  if (result.exit === null) throw new Error('C16 owned Electron cleanup did not observe process exit.')
+  return result
+}
+
+/** Preserve the primary probe failure while retaining an owned-cleanup failure as cause. */
+export function combineProbeFailure(primaryError, cleanupError) {
+  const primaryMessage = primaryError instanceof Error ? primaryError.message : String(primaryError)
+  const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+  return new AggregateError(
+    [primaryError, cleanupError],
+    `${primaryMessage} (owned Electron cleanup failed: ${cleanupMessage})`,
+    { cause: primaryError },
+  )
 }
 
 /** Capture a screenshot using a relative evidence name and preserve probe progress on failure. */

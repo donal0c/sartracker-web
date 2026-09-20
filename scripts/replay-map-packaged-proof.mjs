@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { validateReplayReceipt } from './qualification/replay-receipts.mjs'
+import { createReplayGeometryFixture } from './qualification/replay-probe-fixture.mjs'
 
 const executablePath = process.argv[2]
 const evidence = path.resolve(process.argv[3] ?? 'tmp/batch2-packaged-proof')
@@ -11,30 +12,37 @@ if (!path.isAbsolute(executablePath ?? '')) throw new Error('Supply an absolute 
 await mkdir(evidence, { recursive: true })
 const profile = await mkdtemp(path.join(evidence, '.profile-replay-'))
 let app
+const rendererErrors = []
+const rendererRequestsFailed = []
 try {
   app = await electron.launch({ executablePath, env: { ...process.env,
     SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' } })
   const page = await app.firstWindow()
+  page.on('pageerror', (error) => {
+    if (rendererErrors.length < 100) rendererErrors.push((error.stack ?? error.message).slice(0, 16_384))
+  })
+  page.on('crash', () => { rendererErrors.push('Renderer process crashed.') })
+  page.on('requestfailed', (request) => {
+    if (rendererRequestsFailed.length < 100) rendererRequestsFailed.push({
+      url: request.url(), failure: request.failure()?.errorText ?? 'unknown',
+    })
+  })
   page.on('dialog', (dialog) => { void dialog.accept().catch(() => undefined) })
   await page.getByTestId('app-shell').waitFor({ timeout: 60_000 })
-  const seeded = await page.evaluate(async () => {
+  const seeded = await page.evaluate(async (fixture) => {
     const store = window.sartrackerElectron.missionStore
     const mission = await store.createMission({ name: 'Replay geometry proof', start_time: new Date(Date.now() - 60_000).toISOString() })
-    const ring = Array.from({ length: 2000 }, (_, i) => [-9.7 + Math.cos(i * Math.PI / 1000) * 0.01, 52 + Math.sin(i * Math.PI / 1000) * 0.01])
-    ring.push(ring[0])
-    const geometry = JSON.stringify({ type: 'Polygon', coordinates: [ring] })
+    const geometry = fixture.initialGeometry
     const drawing = await store.upsertDrawing({ mission_id: mission.id, type: 'search_area', name: 'Large retained search area', color: '#ff7700', display_order: 1, geometry_json: geometry })
     const knownBeforeUpdate = new Date().toISOString()
     await new Promise((resolve) => setTimeout(resolve, 10))
-    const updatedRing = Array.from({ length: 2000 }, (_, i) => [-9.7 + 0.002 + Math.cos(i * Math.PI / 1000) * 0.01, 52 + Math.sin(i * Math.PI / 1000) * 0.01])
-    updatedRing.push(updatedRing[0])
-    const updatedGeometry = JSON.stringify({ type: 'Polygon', coordinates: [updatedRing] })
+    const updatedGeometry = fixture.updatedGeometry
     await store.upsertDrawing({ id: drawing.id, mission_id: mission.id, type: 'search_area', name: 'Large retained search area', color: '#ff7700', display_order: 1, geometry_json: updatedGeometry })
     const knownAfterUpdate = new Date().toISOString()
     await store.finishMission(mission.id)
     return { missionId: mission.id, drawingId: drawing.id, initialGeometry: geometry, geometry: updatedGeometry,
       knownBeforeUpdate, knownAfterUpdate }
-  })
+  }, createReplayGeometryFixture())
   const selectedTime = seeded.knownAfterUpdate
   /** Exercises the public live or archive preload bridge and validates every detail fragment. */
   const readGeometry = async (sessionId = null, time = selectedTime, geometry = seeded.geometry) => page.evaluate(async ({ seeded, selectedTime, sessionId, geometry }) => {
@@ -123,6 +131,8 @@ try {
   const validation = validateReplayReceipt(report)
   if (!validation.passed) throw new Error(validation.failureReasons.join('; '))
 } catch (error) {
+  await writeFile(path.join(evidence, 'renderer-errors.json'), JSON.stringify(rendererErrors, null, 2))
+  await writeFile(path.join(evidence, 'renderer-requests-failed.json'), JSON.stringify(rendererRequestsFailed, null, 2))
   if (app) {
     const page = await app.firstWindow()
     await page.screenshot({ path: path.join(evidence, 'failure.png') }).catch(() => undefined)

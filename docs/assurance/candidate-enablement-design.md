@@ -283,3 +283,57 @@ owned-process suite includes both direct Python regressions; C01/package focused
 checks passed48tests. Affected independent working-tree rechecks are clear.
 Logs are `third-final-*`, `c01-held-cleanup-*`, `supervisor-deadline-race-*` and
 `linux-owned-deadline-final.log`; committed-head rechecks and CI follow.
+
+### First Linux producer-development integration
+
+Run `35489521926` at `8f4e77fe` passed559source files/5,761tests with seven
+skips, lint/build/browser checks and artifact inspection. Its18-case development
+matrix failed eight checks; all cases reported zero descendants and cleanup was
+not blocked. Later packaged smoke was skipped. Retained evidence is under
+`tmp/candidate-enablement/remediation/ci-8f4e77fe-evidence`; the full and failed
+CI logs remain alongside it. This failed run is not candidate qualification.
+
+Confirmed harness defects include C16's uninitialized session receipt, C21/C23's
+unavailable main-context `require`, C23's unnormalized IPC error envelope,
+C26's nonexistent stderr finalizer, and C28's extra C11-only fields and replay
+timestamp captured before imports. C10 development additionally reproduced
+Chromium/Node transcendental rounding differences in generated polygon bytes;
+the producer now sends host-generated input to Chromium while retaining the
+independent oracle. C10's Linux blank screen and C12's Linux archive/open failure
+remain unresolved; added error retention is diagnostic, not a passing repair.
+
+Local Electron development `c10-development-fixed` passed exact live/archive
+geometry with five fragments and16.6ms maximum frame gap. `c28-development-fixed`
+completed all nine bridge/store phases, including two static GPX points and
+three dated track points; its independent validator rejects only source/package
+identity. The active-frame screenshot still shows the idle renderer before
+refresh, so it is not proof of an active operator UI. C12 development passed
+attachment custody. C21 source calibration passed with gaps; C23 observed both
+real IPC guards and cleanup but remains invalid as packaged evidence. C16's Mac
+startup-window timeout is retained, not treated as a successful lifecycle run.
+All development Electron processes were closed and Node ABI127 restored with
+an actual SQLite SELECT1 before source verification resumed.
+
+C01's observer now polls its owned native dialog during the fixed5s window,
+with bounded xdotool/xprop commands and retained observation times. A forced
+kill alone never proves a timed-out response; a dialog first observed after the
+bound remains negative. Deterministic clock tests cover in-bound, late and
+natural-exit observations. C16 now joins its owned app through the existing
+bounded close utility, escalates only that child and fails closed on forced,
+failed or unobserved cleanup before attempting a restart. Launch and cleanup
+errors are retained together. These repairs replace the rejected intermediate
+forced-kill classification and fire-and-forget termination proposals.
+
+Independent affected review found C28 also needed to bind the replay response
+to the exact requested mission and knowledge time. The producer now rejects a
+stale valid timestamp before reusing it for archive review. Its regression was
+red, then the three affected files passed45tests. No independent replay,
+attachment, security or startup predicate was relaxed.
+
+The stable producer-remediation cycle passed562files/5,761tests with24declared
+skips in539.70seconds, then TypeScript, lint and build/bundle checks. All1,409
+frozen executable/test files matched after restoring generated version metadata.
+Logs: `producer-final-*` under the remediation directory. Affected independent
+reviews are clear; the C28 response-time finding was fixed and rechecked. The
+previous C10/C12 Linux failures still require new exact-head execution before
+PR readiness; no local check or review replaces that gate.

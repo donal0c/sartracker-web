@@ -6,7 +6,12 @@ import {
   STARTUP_PROBE_DESCRIPTOR,
   validateStartupContractEvidence,
 } from '../../scripts/qualification/startup-receipts.mjs'
-import { parseStartupProbeArgs } from '../../scripts/qualification/startup-probe.mjs'
+import {
+  isActionableHeldGateObservation,
+  isBoundedHeldGateTimeoutWithoutAction,
+  parseStartupProbeArgs,
+  waitForOwnedProcessOrTimeout,
+} from '../../scripts/qualification/startup-probe.mjs'
 import { validateLegacyStartupReceipt } from '../../scripts/qualification/legacy-startup-receipts.mjs'
 
 const SHA1 = 'a'.repeat(40)
@@ -235,6 +240,59 @@ function report(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification C01 startup receipt validator', () => {
+  it('requires the observed timeout and preserves late-dialog timeout negatives', () => {
+    expect(isBoundedHeldGateTimeoutWithoutAction({
+      earlyExit: { timedOut: false }, dialogWindowId: null, forcedKill: true,
+    })).toBe(false)
+    expect(isBoundedHeldGateTimeoutWithoutAction({
+      earlyExit: { timedOut: true }, dialogWindowId: null, forcedKill: false,
+    })).toBe(true)
+    expect(isBoundedHeldGateTimeoutWithoutAction({
+      earlyExit: { timedOut: true }, dialogWindowId: '123', forcedKill: false,
+    })).toBe(true)
+    expect(isBoundedHeldGateTimeoutWithoutAction({
+      earlyExit: { timedOut: false }, dialogWindowId: '123', forcedKill: true,
+    })).toBe(false)
+    expect(isBoundedHeldGateTimeoutWithoutAction({
+      earlyExit: { timedOut: false }, dialogWindowId: null, forcedKill: false,
+    })).toBe(false)
+  })
+
+  it('accepts only a dialog observed within the five-second polling bound', () => {
+    const observed = { earlyExit: { timedOut: false }, dialogWindowId: '123', timeoutMs: 5_000 }
+    expect(isActionableHeldGateObservation({ ...observed, dialogObservedAtMs: 4_999 })).toBe(true)
+    expect(isActionableHeldGateObservation({ ...observed, dialogObservedAtMs: 5_001 })).toBe(false)
+    expect(isActionableHeldGateObservation({ ...observed, earlyExit: { timedOut: true }, dialogObservedAtMs: 1_000 })).toBe(false)
+    expect(isActionableHeldGateObservation({ ...observed, dialogWindowId: null, dialogObservedAtMs: null })).toBe(false)
+  })
+
+  it('polls the owned dialog boundary before deciding the held-gate outcome', async () => {
+    let now = 0
+    const clock = () => now
+    const wait = async (milliseconds: number) => { now += milliseconds }
+    const liveChild = { pid: 101, exitCode: null as number | null, signalCode: null as NodeJS.Signals | null }
+    const inBound = await waitForOwnedProcessOrTimeout(liveChild, 5_000, 0, {
+      now: clock, wait, findDialog: async () => { now = 1_000; return '501' },
+    })
+    expect(inBound).toMatchObject({ timedOut: false, dialogWindowId: '501', dialogObservedAtMs: 1_000 })
+    expect(isActionableHeldGateObservation({ earlyExit: inBound, dialogWindowId: inBound.dialogWindowId, dialogObservedAtMs: inBound.dialogObservedAtMs, timeoutMs: 5_000 })).toBe(true)
+
+    now = 0
+    const late = await waitForOwnedProcessOrTimeout(liveChild, 5_000, 0, {
+      now: clock, wait, findDialog: async () => { now = 5_001; return '502' },
+    })
+    expect(late).toMatchObject({ timedOut: true, dialogWindowId: null, dialogObservedAtMs: null })
+    expect(isBoundedHeldGateTimeoutWithoutAction({ earlyExit: late })).toBe(true)
+
+    now = 0
+    const exitedChild = { pid: 103, exitCode: 0, signalCode: null as NodeJS.Signals | null }
+    const earlyExit = await waitForOwnedProcessOrTimeout(exitedChild, 5_000, 0, {
+      now: clock, wait, findDialog: async () => null,
+    })
+    expect(earlyExit).toMatchObject({ timedOut: false, dialogWindowId: null })
+    expect(isBoundedHeldGateTimeoutWithoutAction({ earlyExit })).toBe(false)
+  })
+
   it('accepts only the fixed packaged invocation and rejects arbitrary app flags', () => {
     expect(parseStartupProbeArgs([
       '--app', '/tmp/app',
