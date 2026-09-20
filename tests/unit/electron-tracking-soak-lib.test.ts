@@ -12,6 +12,7 @@ import {
   buildTrackingGrowthEvidence,
   createPositionTruthDigestAccumulator,
   createTrackingSoakProfile,
+  buildTrackingSoakFixtureLoadEvidence,
   installCadencedRendererProbeInWindow,
   measureOperatorAction,
   parseTrackingSoakRuntimeLog,
@@ -66,6 +67,77 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       expectedPositionRows: 1_935_384,
       restartCheckpoints: [448, 896],
       recommendedPollIntervalMs: 250,
+    })
+    expect(createTrackingSoakProfile('priority-100')).toMatchObject({
+      name: 'priority-100',
+      deviceCount: 100,
+      movingDeviceCount: 100,
+      stationaryDeviceCount: 0,
+      equivalentProductionPolls: 1_080,
+      expectedPositionRows: 108_000,
+      restartCheckpoints: [3],
+    })
+    expect(createTrackingSoakProfile('field-960k')).toMatchObject({
+      name: 'field-960k',
+      deviceCount: 100,
+      movingDeviceCount: 100,
+      actualBatches: 96,
+      productionPollsPerBatch: 100,
+      equivalentProductionPolls: 9_600,
+      expectedPositionRows: 960_000,
+      outingCount: 12,
+      restartCheckpoints: [32, 64],
+      recommendedPollIntervalMs: 250,
+    })
+    expect(createTrackingSoakProfile('field-2m')).toMatchObject({
+      name: 'field-2m',
+      deviceCount: 100,
+      movingDeviceCount: 100,
+      actualBatches: 200,
+      productionPollsPerBatch: 100,
+      equivalentProductionPolls: 20_000,
+      expectedPositionRows: 2_000_000,
+      outingCount: 12,
+      restartCheckpoints: [50, 100, 150],
+      recommendedPollIntervalMs: 250,
+    })
+    expect(createTrackingSoakProfile('field-device-modes')).toMatchObject({
+      name: 'field-device-modes',
+      deviceCount: 100,
+      movingDeviceCount: 80,
+      stationaryDeviceCount: 10,
+      staleDeviceCount: 10,
+      durationDays: 12,
+      outingCount: 12,
+    })
+    expect(createTrackingSoakProfile('field-960k').durationDays).toBe(12)
+    expect(createTrackingSoakProfile('normal').durationDays).toBe(5)
+    expect(createTrackingSoakProfile('extended').durationDays).toBe(14)
+  })
+
+  it('declares synthetic outing events as explained operational events', () => {
+    expect(classifyTrackingSoakMissionEvents({
+      mission_created: 1,
+      outing_started: 12,
+      outing_ended: 12,
+      device_created: 100,
+    })).toEqual({
+      operationalMissionEvents: 125,
+      participantBackfillCompletedEvents: 0,
+      unexplainedMissionEvents: 0,
+    })
+  })
+
+  it('declares exactly two helper GPX imports only for the C24 operation lane', () => {
+    const events = { mission_created: 1, gpx_import_created: 2 }
+    expect(classifyTrackingSoakMissionEvents(events)).toMatchObject({
+      operationalMissionEvents: 3,
+      unexplainedMissionEvents: 2,
+    })
+    expect(classifyTrackingSoakMissionEvents(events, { operationPhases: true })).toEqual({
+      operationalMissionEvents: 3,
+      participantBackfillCompletedEvents: 0,
+      unexplainedMissionEvents: 0,
     })
   })
 
@@ -159,6 +231,58 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     }
   })
 
+  it('retains explicit moving, stationary, and stale device modes in the synthetic provider', async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-device-modes-'))
+    const server = await startTrackingSoakMockServer({
+      statePath: path.join(temporaryDirectory, 'state.json'),
+      baseTimeMs: Date.parse('2026-01-01T00:00:00.000Z'),
+      intervalMs: 5_000,
+      deviceCount: 100,
+      movingDeviceCount: 80,
+      stationaryDeviceCount: 10,
+      staleDeviceCount: 10,
+      productionPollsPerBatch: 2,
+      maximumBatches: 1,
+      pauseCheckpoints: [],
+    })
+    try {
+      const sessionResponse = await fetch(`${server.baseUrl}/api/session`, { method: 'POST' })
+      const cookie = sessionResponse.headers.get('set-cookie')
+      const response = await fetch(`${server.baseUrl}/api/devices`, { headers: { Cookie: cookie ?? '' } })
+      const devices = await response.json() as Array<{ status: string; attributes: { syntheticMode: string } }>
+      expect(devices).toHaveLength(100)
+      expect(devices.filter((device) => device.attributes.syntheticMode === 'moving')).toHaveLength(80)
+      expect(devices.filter((device) => device.attributes.syntheticMode === 'stationary')).toHaveLength(10)
+      expect(devices.filter((device) => device.attributes.syntheticMode === 'stale' && device.status === 'offline')).toHaveLength(10)
+    } finally {
+      await server.close()
+      await rm(temporaryDirectory, { recursive: true, force: true })
+    }
+  })
+
+  it('binds the loaded field fixture copy to a retired fixture mission and workload mission', () => {
+    expect(buildTrackingSoakFixtureLoadEvidence({
+      fixture: { bytes: 3_700_000_000, sha256: 'd'.repeat(64) },
+      runtimeDatabase: { basename: 'mission-store.sqlite', bytes: 3_700_000_000, sha256: 'd'.repeat(64) },
+      fixtureMission: { id: 'fixture-mission-000000000001', statusBefore: 'active', statusAfter: 'finished' },
+      workloadMissionId: 'synthetic-workload-mission',
+    })).toEqual({
+      runtimeDatabaseBasename: 'mission-store.sqlite',
+      runtimeDatabaseBytes: 3_700_000_000,
+      runtimeDatabaseSha256: 'd'.repeat(64),
+      fixtureMissionId: 'fixture-mission-000000000001',
+      fixtureMissionStatusBefore: 'active',
+      fixtureMissionStatusAfter: 'finished',
+      workloadMissionId: 'synthetic-workload-mission',
+    })
+    expect(() => buildTrackingSoakFixtureLoadEvidence({
+      fixture: { bytes: 3_700_000_000, sha256: 'd'.repeat(64) },
+      runtimeDatabase: { basename: 'mission-store.sqlite', bytes: 3_700_000_000, sha256: 'e'.repeat(64) },
+      fixtureMission: { id: 'fixture-mission-000000000001', statusBefore: 'active', statusAfter: 'finished' },
+      workloadMissionId: 'synthetic-workload-mission',
+    })).toThrow(/runtime database|fixture/iu)
+  })
+
   it('parses a fail-closed packaged-runner command line', () => {
     expect(
       parseTrackingSoakArgs([
@@ -168,6 +292,8 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
         'normal',
         '--evidence',
         '/tmp/evidence',
+      '--priority-faults',
+        '--operation-phases',
         '--poll-interval-ms',
         '25',
         '--timeout-ms',
@@ -179,12 +305,23 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       appPath: '/tmp/SAR.AppImage',
       profile: createTrackingSoakProfile('normal'),
       evidenceDir: '/tmp/evidence',
+      priorityFaults: true,
+      operationPhases: true,
       pollIntervalMs: 25,
       timeoutMs: 60_000,
       freezeThresholdMs: 1_000,
       mainStallThresholdMs: 200,
       extraArgs: ['--ozone-platform=x11'],
     })
+  })
+
+  it('requires the bound field fixture for field-scale command lines', () => {
+    expect(parseTrackingSoakArgs([
+      '--app', '/tmp/SAR.AppImage', '--profile', 'field-960k', '--field-fixture', '/tmp/field.sqlite', '--field-fixture-preset', 'local',
+    ])).toMatchObject({ fieldFixturePath: '/tmp/field.sqlite', fieldFixturePreset: 'local' })
+    expect(() => parseTrackingSoakArgs([
+      '--app', '/tmp/SAR.AppImage', '--profile', 'field-960k',
+    ])).toThrow(/field-fixture/iu)
   })
 
   it('rejects missing apps, unknown profiles, and unsafe acceleration values', () => {

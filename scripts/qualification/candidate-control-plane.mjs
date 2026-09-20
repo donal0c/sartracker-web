@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { execFile as execFileCallback, execFileSync } from 'node:child_process'
+import { execFile as execFileCallback } from 'node:child_process'
+import { constants as fsConstants } from 'node:fs'
 import { promisify } from 'node:util'
 import { createConnection } from 'node:net'
 import {
   appendFile,
+  chmod,
+  copyFile,
   lstat,
+  link,
   mkdir,
   open,
   readFile,
@@ -19,12 +23,28 @@ import {
 } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { createHumanTrainingRequest, validateHumanTrainingSubmission, validateHumanPublicKey } from './human-request.mjs'
+import { hashCandidateFile } from './candidate-artifacts.mjs'
+import { compileRuntimeInputs, verifyRuntimeInputs } from './runtime-inputs.mjs'
+import { compileSuiteBinding, executeSuiteVariant, validateRetainedSuite } from './suite-adapter.mjs'
+import { evaluateQualificationPhases, validateQualificationPhase } from './campaign-phases.mjs'
+import { compileReleaseInputs } from './release-receipts.mjs'
+import { executeReleaseVariant, validateRetainedRelease } from './release-adapter.mjs'
+import { executeIdentityVariant, validateRetainedIdentity } from './identity-adapter.mjs'
+import { validateHostCapabilities } from './host-capabilities.mjs'
+import { hashLiveConfigDirectory } from './live-config-identity.mjs'
+import { C28_REQUIRED_VARIANTS } from './composite-coverage.mjs'
+import { candidateProductCapabilityBlockers } from './product-capabilities.mjs'
+import {
+  hasOwnedProcessCleanupMarker,
+  isOwnedProcessCleanupError,
+} from './owned-process-custody.mjs'
 
 import {
   buildJudgePacket,
   canonicalJson,
   compileCoverageRegistry,
-  fileIdentity,
   sha256,
   verifySealedResult,
 } from './control-plane.mjs'
@@ -44,14 +64,98 @@ const CONTRACT_STATUSES = Object.freeze([
   'CLEANUP_BLOCKED',
 ])
 const JUDGE_VERDICTS = Object.freeze(['pass', 'concern', 'unreadable'])
-const PROOF_MODES = Object.freeze(['synthetic', 'browser', 'ci-appimage', 'installed-deb'])
+const CAPTURE_BYTE_LIMITS = Object.freeze({
+  image: 25 * 1024 * 1024,
+  'ui-screenshot': 25 * 1024 * 1024,
+})
+const PROOF_MODES = Object.freeze(['synthetic', 'source', 'browser', 'ci-appimage', 'installed-deb', 'external-human', 'public-release'])
 const REQUIRED_CANDIDATE_CONTRACTS = Object.freeze(
   Array.from({ length: 30 }, (_, index) => `C${String(index).padStart(2, '0')}`),
 )
+const REQUIRED_C25_CANDIDATE_VARIANTS = Object.freeze([
+  'normal',
+  'extended',
+  'field-960k',
+  'field-2m',
+  'field-local-1gib',
+  'field-device-modes',
+  'normal-installed',
+  'extended-installed',
+  'field-960k-installed',
+  'field-2m-installed',
+  'field-local-1gib-installed',
+  'field-device-modes-installed',
+])
+const REQUIRED_C28_CANDIDATE_VARIANTS = Object.freeze(
+  C28_REQUIRED_VARIANTS.flatMap((variantId) => [`${variantId}-appimage`, `${variantId}-installed`]),
+)
 const ADAPTERS = new Map()
 const RECEIPT_VALIDATORS = new Map()
+const OWNED_PROCESS_CUSTODY_ADAPTERS = Object.freeze([
+  'live.get-only',
+  'package.reviewed',
+  'suite.source',
+  'suite.browser',
+])
 
 registerCalibrationAdapters()
+for (const proofMode of ['source', 'browser']) {
+  ADAPTERS.set(`suite.${proofMode}`, async (context) => {
+    const observed = await executeSuiteVariant({ ...context,
+      expected: context.normalized.suiteExpectations[`${context.binding.contractId}:${context.binding.variantId}`] })
+    return { status: observed.status, observed, captures: observed.captures ?? [] }
+  })
+}
+RECEIPT_VALIDATORS.set('suite.receipt', async (receipt, binding, context) => {
+  const checked = await validateRetainedSuite(receipt.observed, binding, { ...context,
+    expected: context.definition.suiteExpectations[`${binding.contractId}:${binding.variantId}`] })
+  if (checked.status !== receipt.status) throw new Error('Retained suite status differs from independently validated runner evidence.')
+})
+ADAPTERS.set('external.c29.training', async (context) => {
+  const request = await expectedHumanRequest(context.normalized, context.attemptDirectory)
+  await writeExclusiveJson(path.join(context.attemptDirectory, 'human-request.json'), request)
+  return { status: 'NEEDS_HUMAN_DECISION', observed: { requestSha256: request.requestSha256 } }
+})
+RECEIPT_VALIDATORS.set('external.c29.receipt', validateRetainedHumanReceipt)
+ADAPTERS.set('release.draft', executeReleaseVariant)
+ADAPTERS.set('release.public-bytes', executeReleaseVariant)
+RECEIPT_VALIDATORS.set('release.draft-receipt', validateRetainedRelease)
+RECEIPT_VALIDATORS.set('release.public-receipt', validateRetainedRelease)
+ADAPTERS.set('identity.ci-installed', executeIdentityVariant)
+RECEIPT_VALIDATORS.set('identity.receipt', validateRetainedIdentity)
+ADAPTERS.set('package.reviewed', async (context) => {
+  const { executePackageVariant } = await import('./package-adapter.mjs')
+  const observed = await executePackageVariant(context)
+  return { status: observed.status, observed, captures: observed.captures ?? [] }
+})
+RECEIPT_VALIDATORS.set('package.receipt', async (receipt, binding, context) => {
+  const { validateRetainedPackage } = await import('./package-adapter.mjs')
+  const checked = await validateRetainedPackage(receipt.observed, binding, context)
+  if (checked.status !== receipt.status) throw new Error('Package status differs from independently validated producer and runtime evidence.')
+})
+ADAPTERS.set('soak.reviewed', async (context) => {
+  const { executeSoakVariant } = await import('./soak-adapter.mjs')
+  const observed = await executeSoakVariant(context)
+  return { status: observed.status, observed, captures: observed.captures ?? [] }
+})
+RECEIPT_VALIDATORS.set('soak.receipt', async (receipt, binding, context) => {
+  const { validateRetainedSoak } = await import('./soak-adapter.mjs')
+  const checked = await validateRetainedSoak(receipt.observed, binding, context)
+  if (receipt.status === 'CLEANUP_BLOCKED' && receipt.observed?.workerExecution?.resourceCleanupBlocked === true) {
+    if (checked.status !== 'INVALID_EVIDENCE') throw new Error('Cleanup-blocked soak evidence unexpectedly validated as a complete result.')
+    return
+  }
+  if (checked.status !== receipt.status) throw new Error('Soak status differs from independently validated producer and runtime evidence.')
+})
+ADAPTERS.set('live.get-only', async (context) => {
+  const { executeLiveVariant } = await import('./live-adapter.mjs')
+  return executeLiveVariant(context)
+})
+RECEIPT_VALIDATORS.set('live.receipt', async (receipt, binding, context) => {
+  const { validateRetainedLive } = await import('./live-adapter.mjs')
+  const checked = await validateRetainedLive(receipt, binding, context)
+  if (checked.status !== receipt.status) throw new Error('Live receipt differs from independently validated runtime and privacy-safe lane evidence.')
+})
 
 /**
  * Compile a reviewed campaign plan into an immutable, exact-input definition.
@@ -72,12 +176,26 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
   const registryIdentity = await strictFileIdentity(registryPath, 'contract registry')
   const fixtures = await identityList(resolvedPlan.fixturePaths ?? [], planPath, 'fixture')
   const validators = await identityList(
-    uniquePaths([registryPath, ...(resolvedPlan.validatorPaths ?? [])]),
+    uniquePaths([registryPath, ...await qualificationValidatorFiles(), ...(resolvedPlan.validatorPaths ?? [])]),
     planPath,
     'validator',
   )
-  const artifacts = await identityArtifacts(resolvedPlan.artifacts ?? [], planPath)
+  const runtimeInputs = resolvedPlan.runtimeInputPath === undefined ? null
+    : await compileRuntimeInputs(resolvePlanPath(resolvedPlan.runtimeInputPath, planPath), sourceIdentity, resolvedPlan.version)
+  const artifactInputs = runtimeInputs ? runtimeInputs.config.ci.installers.map((entry) => ({ ...entry,
+    ciRunId: runtimeInputs.config.ci.provenance.runId, localBuild: false })) : resolvedPlan.artifacts ?? []
+  const artifacts = await identityArtifacts(artifactInputs, planPath)
+  const externalHuman = await compileHumanAuthority(resolvedPlan.externalHuman, planPath, resolvedPlan.mode)
+  const reviewedPlanIdentity = resolvedPlan.mode === 'candidate'
+    ? await strictFileIdentity(reviewedCandidatePlanPath(), 'reviewed candidate plan') : null
   validateSourceIdentity(sourceIdentity)
+  const suiteExpectations = {}
+  for (const binding of resolvedPlan.bindings.filter((entry) => entry.adapterId.startsWith('suite.'))) {
+    if (binding.adapterId !== `suite.${binding.proofMode}` || binding.receiptValidatorId !== 'suite.receipt') {
+      throw new Error('Suite adapter and validator must match the declared source/browser proof tier.')
+    }
+    suiteExpectations[`${binding.contractId}:${binding.variantId}`] = await compileSuiteBinding(binding, sourceIdentity.sha)
+  }
 
   const planIdentity = Object.freeze({
     sha256: sha256(Buffer.from(canonicalJson(resolvedPlan), 'utf8')),
@@ -110,12 +228,18 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
       minimumFreeBytes: resolvedPlan.minimumFreeBytes ?? 1024 * 1024,
       disposableRootNames: ['profiles', 'fixtures', 'archives'],
       requiredCapabilities: uniqueStrings(
-        unique(resolvedPlan.bindings.map((binding) => binding.capability).filter(Boolean)),
+        unique([...resolvedPlan.bindings.map((binding) => binding.capability).filter(Boolean),
+          ...(resolvedPlan.mode === 'candidate' ? ['git', 'gh', 'owned-process-supervisor'] : [])]),
         'requiredCapabilities',
       ),
       baselinePorts: resolvedPlan.baselinePorts ?? [],
     },
     planIdentity,
+    externalHuman,
+    reviewedPlanIdentity,
+    runtimeInputs,
+    releaseInputs: resolvedPlan.release === undefined ? null : compileReleaseInputs(resolvedPlan.release, resolvedPlan.version),
+    suiteExpectations,
     registryCoverage: {
       contracts: compiledRegistry.contracts,
       contractIds: compiledRegistry.contracts.map((contract) => contract.id),
@@ -134,6 +258,22 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
   return definition
 }
 
+/** Bind the complete reviewed qualification and build-validator module inventory, including imported helpers. */
+async function qualificationValidatorFiles() {
+  const qualificationRoot = path.dirname(fileURLToPath(import.meta.url))
+  const buildRoot = path.resolve(qualificationRoot, '../../build')
+  const files = []
+  for (const directory of [qualificationRoot, buildRoot]) {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (/\.(?:mjs|cjs|js|py)$/u.test(entry.name)) {
+        if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('Qualification validator inventory contains a non-regular module.')
+        files.push(path.join(directory, entry.name))
+      }
+    }
+  }
+  return files.sort()
+}
+
 /**
  * Create the controller-owned lease and disposable roots for a campaign.
  *
@@ -148,62 +288,93 @@ export async function createCampaignLease({ campaignRoot, definition }) {
   const root = await requireRealRoot(campaignRoot, 'campaign root')
   const campaignLockPath = path.join(root, 'campaign.lock')
   const leaseId = `lease-${Date.now()}-${randomUUID().slice(0, 8)}`
-  const leaseRoot = path.join(root, 'leases', leaseId)
-  await mkdir(path.join(root, 'leases'), { recursive: true, mode: 0o700 })
+  const leasesRoot = path.join(root, 'leases')
+  const leaseRoot = path.join(leasesRoot, leaseId)
+  const owner = await processOwnerIdentity(process.pid)
+  const leasePath = path.join(leaseRoot, 'lease.json')
+  let published = false
+  await mkdir(leasesRoot, { recursive: true, mode: 0o700 })
+  const leasesInfo = await lstat(leasesRoot)
+  if (!leasesInfo.isDirectory() || leasesInfo.isSymbolicLink() || await realpath(leasesRoot) !== leasesRoot) {
+    throw new Error('Campaign lease root must be a real directory.')
+  }
   try {
-    await writeExclusiveJson(campaignLockPath, {
+    await mkdir(leaseRoot, { recursive: false, mode: 0o700 })
+    const disposableRoots = []
+    for (const name of definition.preflight.disposableRootNames) {
+      const disposableRoot = path.join(leaseRoot, name)
+      await mkdir(disposableRoot, { recursive: false, mode: 0o700 })
+      disposableRoots.push(disposableRoot)
+    }
+    const lease = {
+      schema: 'sartracker-qualification-lease-v1',
+      status: 'ACQUIRED',
+      leaseId,
       campaignId: definition.campaignId,
       definitionDigest: definition.definitionDigest,
-      leaseId,
-      pid: process.pid,
-      host: os.hostname(),
-    })
+      pid: owner.pid,
+      host: owner.host,
+      bootId: owner.bootId,
+      processStart: owner.processStart,
+      platform: process.platform,
+      arch: process.arch,
+      acquiredAt: new Date().toISOString(),
+      campaignRoot: root,
+      campaignLockPath,
+      disposableRoots,
+      baseline: await captureBaseline(definition.preflight.baselinePorts),
+    }
+    await writeExclusiveJson(leasePath, lease)
+    try {
+      await link(leasePath, campaignLockPath)
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      await rm(leaseRoot, { recursive: true, force: false })
+      return recoverExistingCampaignLease({ root, campaignLockPath, definition, owner })
+    }
+    published = true
+    return leaseFromState(leasePath, lease)
   } catch (error) {
-    if (error?.code !== 'EEXIST') throw error
-    const existingLock = JSON.parse(await readFile(campaignLockPath, 'utf8'))
-    if (existingLock.campaignId !== definition.campaignId || existingLock.definitionDigest !== definition.definitionDigest) {
-      throw new Error('A different immutable campaign already owns the campaign lease.')
-    }
-    if (existingLock.host !== os.hostname() || existingLock.pid !== process.pid) {
-      if (existingLock.host === os.hostname() && processIsAlive(existingLock.pid)) {
-        throw new Error(`Campaign lease is held by live process ${existingLock.pid} on ${existingLock.host}.`)
-      }
-      throw new Error('Campaign lease is held by another host or has a stale owner; explicit cleanup is required.')
-    }
-    const existingLeasePath = path.join(root, 'leases', existingLock.leaseId, 'lease.json')
-    if (!await pathExists(existingLeasePath)) throw new Error('Campaign lease lock exists without a recoverable lease.')
-    const existingLease = JSON.parse(await readFile(existingLeasePath, 'utf8'))
-    if (existingLease.status !== 'ACQUIRED' || existingLease.pid !== process.pid || existingLease.host !== os.hostname()) {
-      throw new Error('Campaign lease owner identity is not recoverable.')
-    }
-    return leaseFromState(existingLeasePath, existingLease)
+    if (!published) await rm(leaseRoot, { recursive: true, force: true }).catch(() => undefined)
+    throw error
   }
-  await mkdir(leaseRoot, { recursive: false, mode: 0o700 })
-  const disposableRoots = []
-  for (const name of definition.preflight.disposableRootNames) {
-    const disposableRoot = path.join(leaseRoot, name)
-    await mkdir(disposableRoot, { recursive: false, mode: 0o700 })
-    disposableRoots.push(disposableRoot)
+}
+
+/** Resolve a competing final lock after this process has rolled back its unpublished lease. */
+async function recoverExistingCampaignLease({ root, campaignLockPath, definition, owner }) {
+  const lockInfo = await lstat(campaignLockPath)
+  if (!lockInfo.isFile() || lockInfo.isSymbolicLink() || lockInfo.size > 1024 * 1024) {
+    throw new Error('Campaign lease lock is not a regular recoverable file.')
   }
-  const lease = {
-    schema: 'sartracker-qualification-lease-v1',
-    status: 'ACQUIRED',
-    leaseId,
-    campaignId: definition.campaignId,
-    definitionDigest: definition.definitionDigest,
-    pid: process.pid,
-    host: os.hostname(),
-    platform: process.platform,
-    arch: process.arch,
-    acquiredAt: new Date().toISOString(),
-    campaignRoot: root,
-    campaignLockPath,
-    disposableRoots,
-    baseline: await captureBaseline(definition.preflight.baselinePorts),
+  const existingLock = JSON.parse(await readFile(campaignLockPath, 'utf8'))
+  if (existingLock.campaignId !== definition.campaignId || existingLock.definitionDigest !== definition.definitionDigest) {
+    throw new Error('A different immutable campaign already owns the campaign lease.')
   }
-  const leasePath = path.join(leaseRoot, 'lease.json')
-  await writeExclusiveJson(leasePath, lease)
-  return leaseFromState(leasePath, lease)
+  if (existingLock.status !== 'ACQUIRED' || existingLock.campaignLockPath !== campaignLockPath
+      || typeof existingLock.leaseId !== 'string' || !SAFE_ID_PATTERN.test(existingLock.leaseId)) {
+    throw new Error('Campaign lease lock has an invalid recoverable identity.')
+  }
+  const sameOwner = existingLock.host === owner.host && existingLock.bootId === owner.bootId
+    && existingLock.pid === owner.pid && existingLock.processStart === owner.processStart
+  if (!sameOwner) {
+    if (existingLock.host === owner.host && existingLock.bootId === owner.bootId && processIsAlive(existingLock.pid)) {
+      throw new Error(`Campaign lease is held by live process ${existingLock.pid} on ${existingLock.host}.`)
+    }
+    throw new Error('Campaign lease is held by another host or has a stale owner; explicit cleanup is required.')
+  }
+  const existingLeasePath = path.join(root, 'leases', existingLock.leaseId, 'lease.json')
+  const existingLeaseInfo = await lstat(existingLeasePath).catch(() => null)
+  if (existingLeaseInfo === null || !existingLeaseInfo.isFile() || existingLeaseInfo.isSymbolicLink()
+      || existingLeaseInfo.size > 1024 * 1024 || existingLeaseInfo.dev !== lockInfo.dev || existingLeaseInfo.ino !== lockInfo.ino) {
+    throw new Error('Campaign lease lock exists without a recoverable lease.')
+  }
+  const existingLease = JSON.parse(await readFile(existingLeasePath, 'utf8'))
+  if (existingLease.status !== 'ACQUIRED' || existingLease.pid !== owner.pid
+      || existingLease.host !== owner.host || existingLease.bootId !== owner.bootId
+      || existingLease.processStart !== owner.processStart) {
+    throw new Error('Campaign lease owner identity is not recoverable.')
+  }
+  return leaseFromState(existingLeasePath, existingLease)
 }
 
 /** Convert an on-disk lease into the narrow controller handle used by callers. */
@@ -249,6 +420,51 @@ function processIsAlive(pid) {
   }
 }
 
+/** Bind a lease to the host boot and process-start instance, not PID alone. */
+async function processOwnerIdentity(pid) {
+  const processStart = await processStartFingerprint(pid)
+  const bootId = await bootFingerprint()
+  return Object.freeze({ pid, host: os.hostname(), bootId, processStart })
+}
+
+/** Read a stable process-start marker on the supported qualification hosts. */
+async function processStartFingerprint(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('Lease process identity requires a positive PID.')
+  if (process.platform === 'linux') {
+    const stat = await readFile(`/proc/${pid}/stat`, 'utf8')
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/u)
+    const startTicks = fields[19]
+    if (!/^\d+$/u.test(startTicks ?? '')) throw new Error('Lease process start identity is unavailable.')
+    return `linux:${startTicks}`
+  }
+  const result = await execFile('ps', ['-o', 'lstart=', '-p', String(pid)])
+  const value = result.stdout.trim()
+  if (value === '' || value.length > 128) throw new Error('Lease process start identity is unavailable.')
+  return `${process.platform}:${value}`
+}
+
+/** Read a stable host-boot marker so a reused PID from another boot cannot own a lease. */
+async function bootFingerprint() {
+  if (process.platform === 'linux') {
+    const value = (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim()
+    if (!/^[a-f0-9-]{8,128}$/u.test(value)) throw new Error('Lease host boot identity is unavailable.')
+    return `linux:${value}`
+  }
+  if (process.platform === 'darwin') {
+    const result = await execFile('sysctl', ['-n', 'kern.boottime'])
+    const value = result.stdout.trim()
+    if (value === '' || value.length > 128) throw new Error('Lease host boot identity is unavailable.')
+    return `darwin:${value}`
+  }
+  throw new Error('Lease host boot identity is unsupported on this platform.')
+}
+
+/** Compare persisted lease ownership with the current process instance. */
+function sameProcessOwner(lease, owner) {
+  return lease.host === owner.host && lease.bootId === owner.bootId
+    && lease.pid === owner.pid && lease.processStart === owner.processStart
+}
+
 /**
  * Run controller-owned preflight for an immutable campaign definition.
  *
@@ -271,6 +487,9 @@ export async function preflightCampaign({ definition, campaignRoot, currentSourc
   if (currentSourceIdentity !== undefined && !sameSourceIdentity(currentSourceIdentity, normalized.identities.source)) {
     blockers.push('source identity differs from the immutable campaign definition')
   }
+  if (normalized.mode === 'candidate' && currentSourceIdentity === undefined) {
+    blockers.push('current clean source identity is required for candidate preflight')
+  }
   if (normalized.preflight.expectedPlatform !== null
       && normalized.preflight.expectedPlatform !== process.platform) {
     blockers.push(`platform ${process.platform} does not match ${normalized.preflight.expectedPlatform}`)
@@ -286,8 +505,15 @@ export async function preflightCampaign({ definition, campaignRoot, currentSourc
 
   if (blockers.length > 0) return preflightBlocked(normalized, uniqueStrings(blockers, 'blockers'))
 
+  let lease
   try {
-    const lease = await createCampaignLease({ campaignRoot, definition: normalized })
+    lease = await createCampaignLease({ campaignRoot, definition: normalized })
+    let runtime = null
+    if (normalized.mode === 'candidate') {
+      const workDirectory = path.join(lease.disposableRoots.find((root) => path.basename(root) === 'fixtures'), 'candidate-inputs')
+      await mkdir(workDirectory, { recursive: false, mode: 0o700 })
+      runtime = await verifyRuntimeInputs(normalized.runtimeInputs, normalized.identities.source, normalized.identities.candidate.version, workDirectory)
+    }
     return Object.freeze({
       status: 'READY',
       releaseEligible: false,
@@ -295,9 +521,14 @@ export async function preflightCampaign({ definition, campaignRoot, currentSourc
       definitionDigest: normalized.definitionDigest,
       lease,
       baseline: lease.baseline,
+      runtime,
     })
   } catch (error) {
-    return preflightBlocked(normalized, [`lease: ${error.message}`])
+    if (lease !== undefined) {
+      try { await cleanupCampaignLease({ leasePath: lease.leasePath }) }
+      catch { return preflightBlocked(normalized, [`runtime preflight: ${error.message}`, 'owned preflight cleanup could not be completed']) }
+    }
+    return preflightBlocked(normalized, [`preflight: ${error.message}`])
   }
 }
 
@@ -323,7 +554,14 @@ export async function runContractAttempt({
   if (preflight?.status !== 'READY' || preflight.lease === undefined) {
     throw new Error('Candidate execution requires a READY controller preflight lease.')
   }
+  const changedInputs = await verifyBoundIdentities(normalized)
+  if (changedInputs.length > 0) throw new Error(changedInputs.join('; '))
+  await assertOwnedCampaignLease(preflight.lease, campaignRoot, normalized)
   const binding = findBinding(normalized, contractId, variantId)
+  if (binding.phase === 'postpublication') {
+    const verdict = await computeCampaignVerdict({ definition: normalized, campaignRoot })
+    if (verdict.phases.prepublication.status !== 'PASS') throw new Error('Public-byte verification requires every prepublication gate to have passed; it never authorises publication.')
+  }
   const inputDigest = inputDigestFor(normalized, binding)
   const attemptsRoot = path.join(path.resolve(campaignRoot), 'attempts')
   await mkdir(attemptsRoot, { recursive: true, mode: 0o700 })
@@ -383,25 +621,255 @@ export async function runContractAttempt({
   }
 
   let resourceLock
+  let resourceCleanupBlocked = false
+  let receiptPersistenceBlocked = false
+  const persistBlockedAttempt = async (options) => {
+    try {
+      return await writeBlockedAttempt(options)
+    } catch (error) {
+      if (isReceiptPersistenceError(error)) receiptPersistenceBlocked = true
+      throw error
+    }
+  }
   try {
-    resourceLock = await acquireResourceLock(campaignRoot, binding.resourceKey ?? 'default', normalized.definitionDigest)
-    const execution = await adapter({
-      attemptId,
-      campaignId: normalized.campaignId,
-      definitionDigest: normalized.definitionDigest,
-      inputDigest,
-      resumed,
-      binding,
-    })
+    let workDirectory
+    try {
+      resourceLock = await acquireResourceLock(campaignRoot, binding.resourceKey ?? 'default', normalized.definitionDigest)
+      const fixturesRoot = preflight.lease.disposableRoots.find((root) => path.basename(root) === 'fixtures')
+      if (typeof fixturesRoot !== 'string') throw new Error('owned fixtures root is unavailable')
+      workDirectory = path.join(fixturesRoot, `${attemptId}-${randomUUID()}`)
+      await mkdir(workDirectory, { recursive: false, mode: 0o700 })
+    } catch {
+      return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+        status: 'ENVIRONMENT_BLOCKED', reason: 'Owned attempt setup could not be completed before adapter execution.', binding, resumed })
+    }
+    let execution
+    try {
+      execution = await adapter({
+        normalized,
+        attemptDirectory,
+        attemptId,
+        campaignId: normalized.campaignId,
+        definitionDigest: normalized.definitionDigest,
+        inputDigest,
+        resumed,
+        binding,
+        workDirectory,
+      })
+      resourceCleanupBlocked = binding.adapterId === 'soak.reviewed' && (
+        execution?.workerExecution?.resourceCleanupBlocked === true
+        || execution?.observed?.workerExecution?.resourceCleanupBlocked === true)
+      if (OWNED_PROCESS_CUSTODY_ADAPTERS.includes(binding.adapterId)
+          && hasOwnedProcessCleanupMarker(execution)) {
+        resourceCleanupBlocked = true
+        return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+          status: 'CLEANUP_BLOCKED', reason: 'Owned producer cleanup was not proven; resource lock is retained for manual recovery.', binding, resumed })
+      }
+    } catch (error) {
+      // Producers retain bounded diagnostics themselves. Do not copy arbitrary
+      // exception text, which may contain private configuration, into receipts.
+      // The soak wrapper may report that its receipt write failed after the
+      // worker cleanup boundary was unproven. Preserve that typed custody
+      // signal so the resource lock cannot be released by this catch path.
+      if (isReceiptPersistenceError(error)) {
+        receiptPersistenceBlocked = true
+        throw error
+      }
+      resourceCleanupBlocked = (binding.adapterId === 'soak.reviewed'
+        && error?.code === 'SOAK_RESOURCE_CLEANUP_BLOCKED'
+        && error?.resourceCleanupBlocked === true)
+        || (OWNED_PROCESS_CUSTODY_ADAPTERS.includes(binding.adapterId)
+          && isOwnedProcessCleanupError(error, binding.adapterId))
+      return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+        status: resourceCleanupBlocked ? 'CLEANUP_BLOCKED' : 'INVALID_EVIDENCE',
+        reason: resourceCleanupBlocked
+          ? (binding.adapterId === 'soak.reviewed'
+            ? 'Soak receipt retention failed while cleanup was unproven; resource lock is retained for manual recovery.'
+            : 'Owned producer cleanup was not proven; resource lock is retained for manual recovery.')
+          : 'Adapter terminated without a valid execution receipt; inspect retained producer evidence.',
+        binding, resumed })
+    }
     let captures
     try {
-      captures = await materializeCaptures(execution.captures ?? [], attemptDirectory, attemptsRoot)
+      captures = await materializeCaptures(
+        execution.captures ?? [],
+        attemptDirectory,
+        attemptsRoot,
+        normalized.mode,
+      )
     } catch (error) {
-      return writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status: 'INVALID_EVIDENCE', reason: error.message, binding, resumed })
+      return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+        status: resourceCleanupBlocked ? 'CLEANUP_BLOCKED' : 'INVALID_EVIDENCE',
+        reason: resourceCleanupBlocked ? 'Owned producer cleanup was not proven; resource lock is retained for manual recovery.' : error.message,
+        binding, resumed })
     }
-    return await writeExecutionReceipt({ normalized, binding, validator, execution, captures, attemptId, attemptDirectory, inputDigest, resumed })
+    const persistedExecution = resourceCleanupBlocked
+      ? { ...execution, status: 'CLEANUP_BLOCKED' }
+      : execution
+    try {
+      return await writeExecutionReceipt({ normalized, binding, validator, execution: persistedExecution,
+        captures, attemptId, attemptDirectory, inputDigest, resumed })
+    } catch (error) {
+      if (isReceiptPersistenceError(error)) receiptPersistenceBlocked = true
+      throw error
+    }
   } finally {
-    if (resourceLock !== undefined) await releaseResourceLock(resourceLock)
+    if (resourceLock !== undefined && !resourceCleanupBlocked && !receiptPersistenceBlocked) await releaseResourceLock(resourceLock)
+  }
+}
+
+/** Re-read lease ownership immediately before using any campaign resource. */
+async function assertOwnedCampaignLease(handle, campaignRoot, definition) {
+  const root = await realpath(campaignRoot).catch(() => { throw new Error('Preflight lease campaign root is unavailable.') })
+  if (path.dirname(path.dirname(path.resolve(handle.leasePath))) !== path.join(root, 'leases')) {
+    throw new Error('Preflight lease belongs to a different campaign root.')
+  }
+  const leaseInfo = await lstat(handle.leasePath)
+  const lockPath = path.join(root, 'campaign.lock')
+  const lockInfo = await lstat(lockPath)
+  if (!leaseInfo.isFile() || leaseInfo.isSymbolicLink() || !lockInfo.isFile() || lockInfo.isSymbolicLink()
+      || leaseInfo.dev !== lockInfo.dev || leaseInfo.ino !== lockInfo.ino) {
+    throw new Error('Preflight lease custody changed before execution.')
+  }
+  const lease = JSON.parse(await readFile(handle.leasePath, 'utf8'))
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'))
+  const currentOwner = await processOwnerIdentity(process.pid)
+  if (lease.status !== 'ACQUIRED' || lease.campaignRoot !== root
+      || lease.definitionDigest !== definition.definitionDigest || lock.definitionDigest !== definition.definitionDigest
+      || lease.campaignId !== definition.campaignId || lock.campaignId !== definition.campaignId
+      || lease.leaseId !== handle.leaseId || lock.leaseId !== lease.leaseId
+      || !sameProcessOwner(lease, currentOwner) || !sameProcessOwner(lock, currentOwner)) {
+    throw new Error('Preflight lease ownership changed before execution.')
+  }
+}
+
+/** Bind externally supplied public authority and authorization files at compilation. */
+async function compileHumanAuthority(config, planPath, mode = 'calibration') {
+  if (config === undefined) return null
+  if (!config || typeof config.authorityPath !== 'string' || typeof config.authorizationPath !== 'string') {
+    throw new Error('External human authority and authorization paths are required.')
+  }
+  const authorityRead = await readBoundJsonFile(resolvePlanPath(config.authorityPath, planPath), 'human authority')
+  const authorityIdentity = authorityRead.identity
+  const authorizationIdentity = await strictFileIdentity(resolvePlanPath(config.authorizationPath, planPath), 'human authorization')
+  if (authorityIdentity.bytes > 16384 || authorizationIdentity.bytes < 1 || authorizationIdentity.bytes > 1024 * 1024) {
+    throw new Error('External authority inputs exceed their bounded size or are empty.')
+  }
+  const authority = authorityRead.value
+  if (Object.keys(authority).sort().join(',') !== ['dataClass', 'machineId', 'profileSha256', 'publicKey', 'signerId'].sort().join(',')) {
+    throw new Error('External human authority must contain only named public training authority fields.')
+  }
+  validateHumanPublicKey(authority.publicKey)
+  const publicKeySha256 = sha256(Buffer.from(authority.publicKey, 'utf8'))
+  if (mode === 'candidate'
+      && (!SHA256_PATTERN.test(config.trustedPublicKeySha256 ?? '') || config.trustedPublicKeySha256 !== publicKeySha256)) {
+    throw new Error('Candidate human authority requires a reviewed public-key digest; a campaign cannot nominate its own signing key.')
+  }
+  return {
+    authorityPath: config.authorityPath,
+    authorizationPath: config.authorizationPath,
+    trustedPublicKeySha256: config.trustedPublicKeySha256 ?? null,
+    authorityIdentity,
+    authorizationIdentity,
+    authority: { ...authority, authorizationSha256: authorizationIdentity.sha256 },
+  }
+}
+
+/** Reconstruct the request from bound inputs and immutable attempt metadata. */
+async function expectedHumanRequest(definition, attemptDirectory) {
+  const metadata = JSON.parse(await readFile(path.join(attemptDirectory, 'attempt.json'), 'utf8'))
+  const binding = findBinding(definition, metadata.contractId, metadata.variantId)
+  const artifact = definition.identities.candidate.artifacts.find((entry) => entry.role === 'ci-deb' && entry.localBuild !== true)
+  if (binding.adapterId !== 'external.c29.training' || binding.receiptValidatorId !== 'external.c29.receipt'
+      || binding.proofMode !== 'external-human' || !definition.externalHuman || !artifact
+      || metadata.campaignId !== definition.campaignId || metadata.definitionDigest !== definition.definitionDigest
+      || metadata.inputDigest !== inputDigestFor(definition, binding)) throw new Error('Human request is outside the bound C29 campaign.')
+  return createHumanTrainingRequest({ campaignId: definition.campaignId, definitionDigest: definition.definitionDigest,
+    inputDigest: metadata.inputDigest, attemptId: metadata.attemptId, variantId: metadata.variantId,
+    sourceSha: definition.identities.source.sha, artifactSha256: artifact.sha256, createdAt: metadata.startedAt }, definition.externalHuman.authority)
+}
+
+/** Independently revalidate retained pending or accepted human evidence; never consult a model result. */
+async function validateRetainedHumanReceipt(receipt, binding, { definition, attemptDirectory }) {
+  const request = await expectedHumanRequest(definition, attemptDirectory)
+  const retained = JSON.parse(await readFile(path.join(attemptDirectory, 'human-request.json'), 'utf8'))
+  if (canonicalJson(request) !== canonicalJson(retained) || receipt.observed?.requestSha256 !== request.requestSha256
+      || receipt.attemptId !== request.attemptId || receipt.definitionDigest !== request.definitionDigest
+      || receipt.inputDigest !== request.inputDigest || receipt.contractId !== 'C29'
+      || receipt.variantId !== binding.variantId || receipt.proofMode !== 'external-human') {
+    throw new Error('Human receipt differs from the independently bound request.')
+  }
+  if (receipt.status === 'NEEDS_HUMAN_DECISION') return
+  if (receipt.status !== 'PASS') throw new Error('Human acceptance is absent.')
+  const envelope = JSON.parse(await readFile(path.join(attemptDirectory, 'human-envelope.json'), 'utf8'))
+  const evidence = await readFile(path.join(attemptDirectory, 'human-evidence.bin'))
+  validateHumanTrainingSubmission(request, envelope, evidence, receipt.observed.receivedAt)
+}
+
+/** Read an external regular-file submission within a fixed size bound. */
+async function readBoundedSubmission(filename, maximum) {
+  const info = await lstat(filename)
+  if (!info.isFile() || info.isSymbolicLink() || info.size < 1 || info.size > maximum) throw new Error('Human submission size or file type is outside its bound.')
+  const identity = await strictFileIdentity(filename, 'human submission')
+  if (identity.bytes < 1 || identity.bytes > maximum) throw new Error('Human submission size is outside its bound.')
+  const bytes = await readFile(identity.path)
+  if (sha256(bytes) !== identity.sha256) throw new Error('Human submission changed while being copied.')
+  return bytes
+}
+
+/**
+ * Import externally signed C29 acceptance under an owned lease, preserving the
+ * original pending request and copied bytes. Invalid submissions become retained
+ * invalid attempts; neither a generated signature nor an advisory pass is used.
+ */
+export async function ingestHumanTrainingEvidence({ definition, preflight, campaignRoot, attemptId, envelopePath, evidencePath }) {
+  const normalized = validateDefinition(definition)
+  if (preflight?.status !== 'READY' || preflight.definitionDigest !== normalized.definitionDigest) throw new Error('Human ingestion requires a current READY preflight.')
+  await assertOwnedCampaignLease(preflight.lease, campaignRoot, normalized)
+  const changed = await verifyBoundIdentities(normalized)
+  if (changed.length) throw new Error(changed.join('; '))
+  requireSafeId(attemptId, 'human attempt id')
+  const attemptsRoot = path.join(path.resolve(campaignRoot), 'attempts')
+  const attemptDirectory = await requireRealDirectory(path.join(attemptsRoot, attemptId), attemptsRoot, 'human attempt directory')
+  if (await pathExists(path.join(attemptDirectory, 'seal.json'))) throw new Error('Human attempt is already sealed.')
+  const previous = await readLatestAttemptResult(attemptDirectory)
+  if (previous.status !== 'NEEDS_HUMAN_DECISION') throw new Error('Only a pending human request can accept a submission.')
+  const binding = findBinding(normalized, previous.contractId, previous.variantId)
+  const request = await expectedHumanRequest(normalized, attemptDirectory)
+  const lock = await acquireResourceLock(campaignRoot, `human-${attemptId}`, normalized.definitionDigest)
+  let retainReceiptPersistenceLock = false
+  try {
+    if (await pathExists(path.join(attemptDirectory, 'seal.json'))
+        || (await readLatestAttemptResult(attemptDirectory)).status !== 'NEEDS_HUMAN_DECISION') {
+      throw new Error('Only an unsealed pending human request can accept a submission.')
+    }
+    const receivedAt = new Date().toISOString()
+    try {
+      const envelopeBytes = await readBoundedSubmission(envelopePath, 256 * 1024)
+      const evidenceBytes = await readBoundedSubmission(evidencePath, 16 * 1024 * 1024)
+      await writeExclusiveBytes(path.join(attemptDirectory, 'human-envelope.json'), envelopeBytes)
+      await writeExclusiveBytes(path.join(attemptDirectory, 'human-evidence.bin'), evidenceBytes)
+      validateHumanTrainingSubmission(request, JSON.parse(envelopeBytes.toString('utf8')), evidenceBytes, receivedAt)
+    } catch {
+      try {
+        return await writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest: request.inputDigest,
+          status: 'INVALID_EVIDENCE', reason: 'External human submission could not be retained or failed signature, identity, custody or training admission validation.', binding, resumed: true })
+      } catch (error) {
+        if (isReceiptPersistenceError(error)) retainReceiptPersistenceLock = true
+        throw error
+      }
+    }
+    try {
+      return await writeExecutionReceipt({ normalized, binding, validator: validateRetainedHumanReceipt,
+        execution: { status: 'PASS', observed: { requestSha256: request.requestSha256, receivedAt },
+          evidence: ['human-request.json', 'human-envelope.json', 'human-evidence.bin'] }, captures: [],
+        attemptId, attemptDirectory, inputDigest: request.inputDigest, resumed: true })
+    } catch (error) {
+      if (isReceiptPersistenceError(error)) retainReceiptPersistenceLock = true
+      throw error
+    }
+  } finally {
+    if (!retainReceiptPersistenceLock) await releaseResourceLock(lock)
   }
 }
 
@@ -422,56 +890,70 @@ async function writeExecutionReceipt({ normalized, binding, validator, execution
     evidence: execution.evidence ?? [],
     observed: execution.observed ?? {},
   }
-  validator(receipt, binding)
-  const receiptFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json'
-  const resultFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json'
-  await writeExclusiveJson(path.join(attemptDirectory, receiptFileName), receipt)
-  await writeExclusiveJson(path.join(attemptDirectory, resultFileName), {
-    schema: 'sartracker-qualification-attempt-result-v1',
-    campaignId: normalized.campaignId,
-    attemptId,
-    definitionDigest: normalized.definitionDigest,
-    inputDigest,
-    contractId: binding.contractId,
-    variantId: binding.variantId,
-    status: execution.status,
-    deterministicFailure: execution.status === 'FAIL',
-    reason: execution.reason ?? null,
-  })
-  await appendState(attemptDirectory, { phase: execution.status === 'ABORTED_SAFE' ? 'aborted' : 'receipt-written', status: execution.status })
+  await validator(receipt, binding, { definition: normalized, attemptDirectory })
+  try {
+    const receiptFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json'
+    const resultFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json'
+    await writeExclusiveJson(path.join(attemptDirectory, receiptFileName), receipt)
+    await writeExclusiveJson(path.join(attemptDirectory, resultFileName), {
+      schema: 'sartracker-qualification-attempt-result-v1',
+      campaignId: normalized.campaignId,
+      attemptId,
+      definitionDigest: normalized.definitionDigest,
+      inputDigest,
+      contractId: binding.contractId,
+      variantId: binding.variantId,
+      status: execution.status,
+      deterministicFailure: execution.status === 'FAIL',
+      reason: execution.reason ?? null,
+    })
+    await appendState(attemptDirectory, { phase: execution.status === 'ABORTED_SAFE' ? 'aborted' : 'receipt-written', status: execution.status })
 
-  const judgePacket = buildJudgePacket({
-    attemptId,
-    result: { mode: normalized.mode },
-    captures,
-  })
-  const judgePacketFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'judge-packet') : 'judge-packet.json'
-  const judgePacketPath = path.join(attemptDirectory, judgePacketFileName)
-  await writeExclusiveJson(judgePacketPath, {
-    ...judgePacket,
-    campaignId: normalized.campaignId,
-    definitionDigest: normalized.definitionDigest,
-  })
-  const judgePacketSha256 = sha256(await readFile(judgePacketPath))
+    if (!requiresAdvisoryJudge(normalized, binding)) {
+      const pendingExternalHuman = execution.status === 'NEEDS_HUMAN_DECISION'
+        && binding.proofMode === 'external-human'
+      const sealed = !pendingExternalHuman ? await sealAttempt({ attemptDirectory,
+        campaignRoot: path.dirname(path.dirname(attemptDirectory)), campaignId: normalized.campaignId,
+        definitionDigest: normalized.definitionDigest, attemptId }) : {}
+      return Object.freeze({ ...sealed, status: execution.status, attemptId, attemptDirectory, releaseEligible: false })
+    }
 
-  if (execution.status === 'ABORTED_SAFE') {
+    const judgePacket = buildJudgePacket({
+      attemptId,
+      result: { mode: normalized.mode },
+      captures,
+    })
+    const judgePacketFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'judge-packet') : 'judge-packet.json'
+    const judgePacketPath = path.join(attemptDirectory, judgePacketFileName)
+    await writeExclusiveJson(judgePacketPath, {
+      ...judgePacket,
+      campaignId: normalized.campaignId,
+      definitionDigest: normalized.definitionDigest,
+    })
+    const judgePacketSha256 = sha256(await readFile(judgePacketPath))
+
+    if (execution.status === 'ABORTED_SAFE') {
+      return Object.freeze({
+        status: 'ABORTED_SAFE',
+        attemptId,
+        attemptDirectory,
+        judgePacketSha256,
+        anchorPath: undefined,
+        releaseEligible: false,
+      })
+    }
     return Object.freeze({
-      status: 'ABORTED_SAFE',
+      status: execution.status,
       attemptId,
       attemptDirectory,
       judgePacketSha256,
       anchorPath: undefined,
       releaseEligible: false,
     })
+  } catch (error) {
+    if (isReceiptPersistenceError(error)) throw error
+    throw createReceiptPersistenceError()
   }
-  return Object.freeze({
-    status: execution.status,
-    attemptId,
-    attemptDirectory,
-    judgePacketSha256,
-    anchorPath: undefined,
-    releaseEligible: false,
-  })
 }
 
 /**
@@ -507,7 +989,7 @@ export async function ingestAdvisoryJudgeResult({ attemptDirectory, result }) {
  * @param {object} options verification options
  * @returns {Promise<object>} verified attempt identity
  */
-export async function verifyCampaignAttempt({ attemptDirectory, anchorPath }) {
+export async function verifyCampaignAttempt({ attemptDirectory, anchorPath, definition }) {
   await verifySealedResult(attemptDirectory, anchorPath)
   const directory = path.resolve(attemptDirectory)
   const metadata = JSON.parse(await readFile(path.join(directory, 'attempt.json'), 'utf8'))
@@ -518,6 +1000,26 @@ export async function verifyCampaignAttempt({ attemptDirectory, anchorPath }) {
   }
   if (metadata.campaignId !== anchor.campaignId || metadata.definitionDigest !== anchor.definitionDigest) {
     throw new Error('Sealed attempt has cross-campaign or definition identity.')
+  }
+  if (definition !== undefined) {
+    const normalized = validateDefinition(definition)
+    const binding = findBinding(normalized, metadata.contractId, metadata.variantId)
+    const receiptPath = await latestAttemptFile(directory, /^receipt(?:-resume-\d+)?\.json$/u, 'contract receipt')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
+    for (const record of [metadata, result, receipt]) {
+      if (record.campaignId !== normalized.campaignId || record.definitionDigest !== normalized.definitionDigest
+          || record.attemptId !== metadata.attemptId || record.inputDigest !== inputDigestFor(normalized, binding)
+          || record.contractId !== binding.contractId || record.variantId !== binding.variantId) {
+        throw new Error('Retained evidence differs from its immutable campaign binding.')
+      }
+    }
+    if (receipt.adapterId !== binding.adapterId || receipt.proofMode !== binding.proofMode
+        || receipt.status !== result.status || receipt.deterministic !== true) {
+      throw new Error('Retained receipt proof tier, adapter or result differs from its binding.')
+    }
+    const validator = RECEIPT_VALIDATORS.get(binding.receiptValidatorId)
+    if (validator === undefined) throw new Error('Retained receipt validator is unavailable.')
+    await validator(receipt, binding, { definition: normalized, attemptDirectory: directory })
   }
   return Object.freeze({
     attemptId: metadata.attemptId,
@@ -540,32 +1042,51 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
   const attemptsRoot = path.join(root, 'attempts')
   const entries = await safeReadDirectories(attemptsRoot)
   const rows = new Map()
-  const evidenceErrors = []
+  const allAttempts = []
+  const evidenceErrors = await verifyBoundIdentities(normalized)
   const judgeHolds = []
   const deterministicFailures = []
-  const environmentBlockers = []
+  const productCapabilityBlockers = candidateProductCapabilityBlockers(normalized.mode)
+  const environmentBlockers = validateBindingCoverage(normalized)
   const aborted = []
+  const cleanupBlocked = []
   for (const entry of entries) {
     const attemptDirectory = path.join(attemptsRoot, entry)
     try {
       const result = await readLatestAttemptResult(attemptDirectory)
+      const binding = findBinding(normalized, result.contractId, result.variantId)
+      if (result.campaignId !== normalized.campaignId
+          || result.definitionDigest !== normalized.definitionDigest
+          || result.inputDigest !== inputDigestFor(normalized, binding)) {
+        throw new Error('Attempt does not belong to this immutable campaign and binding.')
+      }
       const rowKey = `${result.contractId}:${result.variantId}`
+      allAttempts.push(result)
       const existing = rows.get(rowKey)
       if (existing === undefined || result.attemptId > existing.attemptId) rows.set(rowKey, result)
       if (result.status === 'FAIL') deterministicFailures.push(result.contractId)
       if (result.status === 'ENVIRONMENT_BLOCKED') environmentBlockers.push(result.reason ?? result.contractId)
       if (result.status === 'ABORTED_SAFE') aborted.push(result.contractId)
+      if (result.status === 'INVALID_EVIDENCE') evidenceErrors.push(`${entry}: variant reported INVALID_EVIDENCE`)
+      if (result.status === 'NEEDS_HUMAN_DECISION') judgeHolds.push(result.contractId)
+      if (result.status === 'CLEANUP_BLOCKED') cleanupBlocked.push(result.contractId)
       const anchorPath = path.join(root, 'anchors', `${result.attemptId}.anchor.json`)
       const sealPath = path.join(attemptDirectory, 'seal.json')
       const judgeResultPath = path.join(attemptDirectory, 'judge-result.json')
       if (!(await pathExists(sealPath))) {
         if (result.status === 'ENVIRONMENT_BLOCKED') environmentBlockers.push(result.reason ?? result.contractId)
+        else if (result.status === 'NEEDS_HUMAN_DECISION' && binding.proofMode === 'external-human') {
+          const receipt = JSON.parse(await readFile(await latestAttemptFile(attemptDirectory, /^receipt(?:-resume-\d+)?\.json$/u, 'human receipt'), 'utf8'))
+          await validateRetainedHumanReceipt(receipt, binding, { definition: normalized, attemptDirectory })
+        }
         else evidenceErrors.push(`${entry}: attempt is not sealed`)
       } else {
-        await verifyCampaignAttempt({ attemptDirectory, anchorPath })
-        if (!(await pathExists(judgeResultPath))) throw new Error('sealed attempt is missing the advisory judge result.')
-        const judge = JSON.parse(await readFile(judgeResultPath, 'utf8'))
-        if (judge.verdict !== 'pass') judgeHolds.push(result.contractId)
+        await verifyCampaignAttempt({ attemptDirectory, anchorPath, definition: normalized })
+        if (requiresAdvisoryJudge(normalized, binding)) {
+          if (!(await pathExists(judgeResultPath))) throw new Error('sealed attempt is missing the advisory judge result.')
+          const judge = JSON.parse(await readFile(judgeResultPath, 'utf8'))
+          if (judge.verdict !== 'pass') judgeHolds.push(result.contractId)
+        }
       }
     } catch (error) {
       evidenceErrors.push(`${entry}: ${error.message}`)
@@ -574,14 +1095,27 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
 
   const requiredContracts = normalized.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : normalized.requiredContracts
   const requiredRows = requiredContracts.map((contractId) => {
+    const capabilityHolds = productCapabilityBlockers.filter((entry) => entry.contractIds.includes(contractId))
+    if (capabilityHolds.length) return { contractId, variantId: null, status: 'FAIL', productCapabilityBlockers: capabilityHolds }
     const candidates = [...rows.values()].filter((result) => result.contractId === contractId)
+    const bindings = normalized.bindings.filter((binding) => binding.contractId === contractId && binding.mandatory)
+    if (bindings.some((binding) => !rows.has(`${contractId}:${binding.variantId}`))) {
+      return { contractId, variantId: null, status: 'not-run' }
+    }
+    const nonPassing = candidates.find((result) => result.status !== 'PASS')
+    if (nonPassing !== undefined) return nonPassing
     const latest = candidates.sort((left, right) => left.attemptId.localeCompare(right.attemptId)).at(-1)
     return latest ?? { contractId, variantId: null, status: 'not-run' }
   })
   const missingRequired = requiredRows.filter((row) => row.status === 'not-run').map((row) => row.contractId)
+  const missingVariants = normalized.bindings.filter((binding) => binding.mandatory
+    && !rows.has(`${binding.contractId}:${binding.variantId}`))
+  environmentBlockers.push(...missingVariants.map((binding) => `missing required variant ${binding.contractId}:${binding.variantId}`))
   const status = evidenceErrors.length > 0
     ? 'INVALID_EVIDENCE'
-    : deterministicFailures.length > 0
+    : cleanupBlocked.length > 0
+      ? 'CLEANUP_BLOCKED'
+      : deterministicFailures.length > 0 || productCapabilityBlockers.length > 0
       ? 'FAIL'
       : aborted.length > 0
         ? 'ABORTED_SAFE'
@@ -593,16 +1127,39 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
   return Object.freeze({
     schema: 'sartracker-qualification-campaign-verdict-v1',
     campaignId: normalized.campaignId,
+    // A passing calibration/development campaign is evidence for that mode
+    // only. Retain the mode in the verdict so it cannot be mistaken for
+    // candidate qualification by a downstream consumer.
+    mode: normalized.mode,
     definitionDigest: normalized.definitionDigest,
     verdict: status,
+    phases: evaluateQualificationPhases(normalized.bindings, allAttempts.map((attempt) => ({ ...attempt,
+      status: attempt.status === 'PASS' && judgeHolds.includes(attempt.contractId) ? 'NEEDS_HUMAN_DECISION' : attempt.status,
+    })), evidenceErrors, productCapabilityBlockers),
     releaseEligible: false,
+    productCapabilityBlockers,
     deterministicFailures: Object.freeze(unique(deterministicFailures)),
     judgeHolds: Object.freeze(unique(judgeHolds)),
-    blockers: Object.freeze(unique([...environmentBlockers, ...missingRequired.map((id) => `missing required contract ${id}`)])),
+    blockers: Object.freeze(unique([...environmentBlockers, ...missingRequired.map((id) => `missing required contract ${id}`),
+      ...productCapabilityBlockers.map((entry) => `${entry.issueId}: ${entry.reason}`)])),
     evidenceErrors: Object.freeze(evidenceErrors),
     contractRows: Object.freeze(await allContractRows(normalized, requiredRows)),
     attempts: Object.freeze(entries),
   })
+}
+
+/** Keep source/identity/cryptographic receipts deterministic while preserving every required visual judge. */
+export function requiresAdvisoryJudge(definition, binding) {
+  if (['source', 'external-human'].includes(binding.proofMode)) return false
+  // C05's mandatory synthetic browser sibling supplies the visual judgment.
+  // Private live coordinates/screenshots never enter an oracle-blind model packet.
+  if (binding.contractId === 'C05' && binding.adapterId === 'live.get-only'
+      && definition.bindings.some((entry) => entry.contractId === 'C05' && entry.mandatory
+        && entry.proofMode === 'browser' && entry.adapterId === 'suite.browser')) return false
+  if (binding.adapterId.startsWith('calibration.')) return true
+  const contract = definition.registryCoverage.contracts.find((entry) => entry.id === binding.contractId)
+  if (!contract) throw new Error('Advisory policy has no immutable registry contract.')
+  return contract.judge === 'advisory'
 }
 
 /** Read the newest append-only result file for an attempt. */
@@ -646,8 +1203,45 @@ function appendOnlySequence(name) {
  * @returns {Promise<object>} cleanup disposition
  */
 export async function cleanupCampaignLease({ leasePath, simulateFailure = false }) {
+  const file = await lstat(leasePath)
+  if (!file.isFile() || file.isSymbolicLink() || file.size > 1024 * 1024) throw new Error('Cleanup lease ownership file is invalid.')
   const lease = JSON.parse(await readFile(leasePath, 'utf8'))
   const leaseRoot = path.dirname(path.resolve(leasePath))
+  const root = path.dirname(path.dirname(leaseRoot))
+  const expectedLockPath = path.join(root, 'campaign.lock')
+  if (path.basename(leasePath) !== 'lease.json' || lease.schema !== 'sartracker-qualification-lease-v1'
+      || lease.status !== 'ACQUIRED' || lease.campaignRoot !== root
+      || path.basename(path.dirname(leaseRoot)) !== 'leases' || path.basename(leaseRoot) !== lease.leaseId
+      || lease.campaignLockPath !== expectedLockPath || lease.host !== os.hostname()
+      || !Number.isSafeInteger(lease.pid) || lease.pid <= 0
+      || (lease.pid !== process.pid && processIsAlive(lease.pid))
+      || await realpath(leaseRoot) !== leaseRoot) throw new Error('Cleanup lease or lock ownership is invalid.')
+  const lockInfo = await lstat(expectedLockPath)
+  if (!lockInfo.isFile() || lockInfo.isSymbolicLink()) throw new Error('Cleanup campaign lock is not a regular owned file.')
+  if (lockInfo.dev !== file.dev || lockInfo.ino !== file.ino) throw new Error('Cleanup campaign lock is not the published lease inode.')
+  const lock = JSON.parse(await readFile(expectedLockPath, 'utf8'))
+  if (['campaignId', 'definitionDigest', 'leaseId', 'pid', 'host', 'bootId', 'processStart'].some((key) => lock[key] !== lease[key])) {
+    throw new Error('Cleanup campaign lock ownership differs from the lease.')
+  }
+  if (!Array.isArray(lease.disposableRoots) || lease.disposableRoots.length !== 3
+      || lease.disposableRoots.map((directory) => path.basename(directory)).sort().join(',') !== 'archives,fixtures,profiles') {
+    throw new Error('Cleanup disposable ownership inventory differs.')
+  }
+  const locksRoot = path.join(root, 'locks')
+  const locksInfo = await lstat(locksRoot).catch((error) => error?.code === 'ENOENT' ? null : Promise.reject(error))
+  if (locksInfo !== null) {
+    if (!locksInfo.isDirectory() || locksInfo.isSymbolicLink()) throw new Error('Cleanup resource-lock directory is not a regular owned directory.')
+    const retainedLocks = await readdir(locksRoot, { withFileTypes: true })
+    if (retainedLocks.length > 0) throw new Error('Cleanup blocked while resource locks remain; explicit manual recovery is required.')
+  }
+  const currentOwner = await processOwnerIdentity(process.pid)
+  if (lease.pid === process.pid && !sameProcessOwner(lease, currentOwner)) {
+    throw new Error('Cleanup lease PID was reused by a different process instance.')
+  }
+  for (const directory of lease.disposableRoots) {
+    if (path.dirname(directory) !== leaseRoot || await realpath(directory) !== directory
+        || !(await lstat(directory)).isDirectory()) throw new Error('Cleanup disposable path ownership differs.')
+  }
   const quarantineRoot = path.join(path.dirname(leaseRoot), '..', 'quarantine')
   if (simulateFailure) {
     await mkdir(quarantineRoot, { recursive: true, mode: 0o700 })
@@ -730,6 +1324,7 @@ function validatePlan(plan) {
   const bindingKeys = new Set()
   for (const binding of plan.bindings) {
     validateBinding(binding)
+    validateQualificationPhase(binding)
     const key = `${binding.contractId}:${binding.variantId}`
     if (bindingKeys.has(key)) throw new Error(`Duplicate campaign binding: ${key}.`)
     bindingKeys.add(key)
@@ -777,6 +1372,10 @@ function validateBinding(binding) {
   requireSafeId(binding.adapterId, 'binding adapter id')
   requireSafeId(binding.receiptValidatorId, 'binding receipt validator id')
   if (!PROOF_MODES.includes(binding.proofMode)) throw new Error(`Binding ${binding.contractId} proof mode is invalid.`)
+  if (binding.proofMode === 'external-human' && (binding.contractId !== 'C29'
+      || binding.sessionKind !== 'pre-release-original-machine-training')) {
+    throw new Error('External human evidence requires C29 pre-release original-machine training.')
+  }
   if (binding.mandatory !== true) throw new Error(`Binding ${binding.contractId}:${binding.variantId} must be explicitly mandatory.`)
   if (!Array.isArray(binding.command) || binding.command.length === 0 || binding.command.some((part) => typeof part !== 'string' || part === '')) {
     throw new Error(`Binding ${binding.contractId}:${binding.variantId} needs an explicit command.`)
@@ -790,7 +1389,7 @@ function validateBinding(binding) {
  * Materialize judge captures into the current attempt while rejecting symlink
  * and cross-attempt media custody.
  */
-async function materializeCaptures(captures, attemptDirectory, attemptsRoot) {
+export async function materializeCaptures(captures, attemptDirectory, attemptsRoot, campaignMode = 'candidate') {
   if (!Array.isArray(captures)) throw new Error('Capture list must be an array.')
   const canonicalAttempt = await realpath(attemptDirectory)
   const canonicalAttemptsRoot = await realpath(attemptsRoot)
@@ -799,13 +1398,22 @@ async function materializeCaptures(captures, attemptDirectory, attemptsRoot) {
     if (capture === null || typeof capture !== 'object') throw new Error('Capture identity is invalid.')
     requireSafeId(capture.name, 'capture name')
     if (capture.path === undefined) {
+      if (campaignMode !== 'calibration') throw new Error('Candidate capture requires a retained media path.')
       materialized.push(capture)
       continue
+    }
+    if (campaignMode !== 'calibration' && !Object.hasOwn(CAPTURE_BYTE_LIMITS, capture.kind)) {
+      throw new Error('Candidate capture kind is not an approved retained media kind.')
     }
     if (typeof capture.path !== 'string' || capture.path === '') throw new Error('Capture path is invalid.')
     const source = path.resolve(capture.path)
     const sourceMetadata = await lstat(source)
     if (sourceMetadata.isSymbolicLink()) throw new Error('Capture path must not be a symbolic link.')
+    if (!sourceMetadata.isFile()) throw new Error('Capture path must be a regular file.')
+    const byteLimit = CAPTURE_BYTE_LIMITS[capture.kind]
+    if (byteLimit !== undefined && sourceMetadata.size > byteLimit) {
+      throw new Error(`Capture exceeds the ${byteLimit}-byte retained media bound.`)
+    }
     const canonicalSource = await realpath(source)
     if (canonicalSource.startsWith(`${canonicalAttemptsRoot}${path.sep}`)
         && !canonicalSource.startsWith(`${canonicalAttempt}${path.sep}`)) {
@@ -815,7 +1423,15 @@ async function materializeCaptures(captures, attemptDirectory, attemptsRoot) {
     if (capture.sha256 !== undefined && capture.sha256 !== identity.sha256) throw new Error('Capture bytes do not match the declared digest.')
     if (!canonicalSource.startsWith(`${canonicalAttempt}${path.sep}`)) {
       const name = `media-${capture.name}`
-      await writeExclusiveBytes(path.join(attemptDirectory, name), await readFile(source))
+      const destination = path.join(attemptDirectory, name)
+      await copyFile(source, destination, fsConstants.COPYFILE_EXCL)
+      await chmod(destination, 0o600)
+      const copied = await strictFileIdentity(destination, 'materialized capture')
+      const sourceAfterCopy = await strictFileIdentity(source, 'capture')
+      if (copied.bytes !== identity.bytes || copied.sha256 !== identity.sha256
+          || sourceAfterCopy.bytes !== identity.bytes || sourceAfterCopy.sha256 !== identity.sha256) {
+        throw new Error('Capture bytes changed during retained media copy.')
+      }
     }
     materialized.push({ name: capture.name, kind: capture.kind, sha256: identity.sha256 })
   }
@@ -833,15 +1449,49 @@ function validateSourceIdentity(identity) {
 /** Check all exact bound file identities against their current bytes. */
 async function verifyBoundIdentities(definition) {
   const mismatches = []
+  if (definition.mode === 'candidate') {
+    try {
+      const source = await liveSourceIdentity()
+      if (source.dirty || !sameSourceIdentity(source, definition.identities.source)) mismatches.push('live checkout differs from the exact clean campaign source')
+    } catch { mismatches.push('live checkout identity could not be independently read') }
+    try {
+      if (definition.reviewedPlanIdentity?.path !== reviewedCandidatePlanPath()) throw new Error('reviewed plan path differs')
+      const current = await strictFileIdentity(reviewedCandidatePlanPath(), 'reviewed candidate plan')
+      const reviewed = JSON.parse(await readFile(current.path, 'utf8'))
+      const reviewedHuman = reviewed.externalHuman
+      const boundHuman = definition.externalHuman
+      const humanTrustDiffers = boundHuman !== null && canonicalJson({
+        authorityPath: boundHuman.authorityPath ?? null,
+        authorizationPath: boundHuman.authorizationPath ?? null,
+        trustedPublicKeySha256: boundHuman.trustedPublicKeySha256 ?? null,
+      }) !== canonicalJson({
+        authorityPath: reviewedHuman?.authorityPath ?? null,
+        authorizationPath: reviewedHuman?.authorizationPath ?? null,
+        trustedPublicKeySha256: reviewedHuman?.trustedPublicKeySha256 ?? null,
+      })
+      const reviewedRiskKey = reviewed.release?.riskAuthorityPublicKeySha256 ?? null
+      const boundRiskKey = definition.releaseInputs?.riskAuthorityPublicKeySha256 ?? null
+      const releaseTrustDiffers = boundRiskKey !== null && reviewedRiskKey !== boundRiskKey
+      if (!sameIdentity(current, definition.reviewedPlanIdentity)
+          || canonicalJson(reviewed.bindings) !== canonicalJson(definition.bindings)
+          || humanTrustDiffers || releaseTrustDiffers) {
+        mismatches.push('candidate reviewed binding or human trust root differs; runtime inputs cannot nominate a new authority')
+      }
+    } catch { mismatches.push('candidate reviewed binding matrix is unavailable or unbound') }
+  }
   const identities = [
     ['contract registry', definition.identities.contractRegistry],
     ...definition.identities.fixtures.map((identity) => ['fixture', identity]),
     ...definition.identities.validators.map((identity) => ['validator', identity]),
     ...definition.identities.candidate.artifacts.map((identity) => ['artifact', identity]),
+    ...(definition.runtimeInputs?.identities ?? []).map((identity) => ['runtime input', identity]),
+    ...(definition.externalHuman ? [['human authority', definition.externalHuman.authorityIdentity],
+      ['human authorization', definition.externalHuman.authorizationIdentity]] : []),
   ]
   for (const [label, identity] of identities) {
     try {
-      const current = await strictFileIdentity(identity.path, label)
+      const current = identity.kind === 'live-config-directory'
+        ? await hashLiveConfigDirectory(identity.path) : await strictFileIdentity(identity.path, label)
       if (!sameIdentity(current, identity)) mismatches.push(`${label} identity changed: ${identity.path}`)
     } catch (error) {
       mismatches.push(`${label} identity unavailable: ${error.message}`)
@@ -850,21 +1500,98 @@ async function verifyBoundIdentities(definition) {
   return mismatches
 }
 
+/** Locate the reviewed plan from the executing source tree, never runtime configuration. */
+function reviewedCandidatePlanPath() {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/assurance/qualification-campaign-plan.json')
+}
+
 /** Ensure candidate coverage and make unresolved rows explicit blockers. */
-function validateBindingCoverage(definition) {
+export function validateBindingCoverage(definition) {
   const blockers = []
   const expected = definition.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : definition.requiredContracts
+  if (definition.mode === 'candidate') blockers.push(...validateFixedCandidateFamilies(definition))
   if (definition.mode === 'candidate' && (definition.identities.candidate.candidateId === null || definition.identities.candidate.version === null)) {
     blockers.push('exact candidate id and version are missing')
   }
+  if (definition.mode === 'candidate' && !definition.runtimeInputs) blockers.push('exact CI/runtime input handoff is missing; local artifact paths are not provenance or installation proof')
   for (const contractId of expected) {
     const bindings = definition.bindings.filter((binding) => binding.contractId === contractId && binding.mandatory)
     if (bindings.length === 0) blockers.push(`missing mandatory adapter binding for ${contractId}`)
     for (const binding of bindings) {
+      if (definition.mode === 'candidate' && (binding.proofMode === 'synthetic'
+          || binding.adapterId.startsWith('calibration.') || binding.receiptValidatorId.startsWith('calibration.'))) {
+        blockers.push(`calibration evidence cannot satisfy candidate contract ${contractId}`)
+      }
       if (!ADAPTERS.has(binding.adapterId)) blockers.push(`missing adapter ${binding.adapterId} for ${contractId}`)
       if (!RECEIPT_VALIDATORS.has(binding.receiptValidatorId)) blockers.push(`missing receipt validator ${binding.receiptValidatorId} for ${contractId}`)
+      if (binding.adapterId.startsWith('release.') && !definition.releaseInputs) blockers.push(`missing exact release and rollback input handoff for ${contractId}`)
       if (binding.proofMode === 'ci-appimage' && !hasArtifact(definition, 'ci-appimage')) blockers.push(`missing exact CI AppImage artifact identity for ${contractId}`)
-      if (binding.proofMode === 'installed-deb' && !hasArtifact(definition, 'installed-deb')) blockers.push(`missing exact installed deb artifact identity for ${contractId}`)
+      if (binding.proofMode === 'installed-deb' && (!hasArtifact(definition, 'ci-deb') || !definition.runtimeInputs?.config.installedExecutablePath)) blockers.push(`missing exact installed deb artifact identity for ${contractId}`)
+      if (binding.proofMode === 'external-human' && (!definition.externalHuman || !hasArtifact(definition, 'ci-deb'))) {
+        blockers.push('C29 requires independently bound human authority, authorization and exact CI Debian artifact')
+      }
+      const runtimeFixtures = definition.runtimeInputs?.config?.fixtures
+      const packageScenario = binding.variantId?.replace(/-(?:appimage|installed)$/u, '')
+      const requireRuntimeFixture = (role, reason) => {
+        if (runtimeFixtures === null || typeof runtimeFixtures !== 'object' || Array.isArray(runtimeFixtures)
+            || runtimeFixtures[role] === undefined) {
+          blockers.push(reason)
+        }
+      }
+      if (binding.adapterId === 'live.get-only') {
+        requireRuntimeFixture('live-config', `${contractId} live.get-only requires the bound live-config fixture role`)
+        requireRuntimeFixture('live-selector', `${contractId} live.get-only requires the bound live-selector fixture role`)
+      }
+      if (binding.adapterId === 'package.reviewed' && binding.contractId === 'C18') {
+        requireRuntimeFixture('storage-mission', 'C18 package proof requires the bound storage-mission fixture role')
+      }
+      if (binding.adapterId === 'package.reviewed'
+          && (binding.contractId === 'C01'
+            || binding.contractId === 'C19' && packageScenario === 'legacy-startup-boundaries'
+            || binding.contractId === 'C18' && packageScenario === 'disk-full')
+          && !definition.runtimeInputs?.config?.enospcMount) {
+        blockers.push(`${binding.contractId} physical disk-full proof requires a separately provisioned bounded enospcMount input`)
+      }
+      if (binding.adapterId === 'package.reviewed' && ['C07', 'C08'].includes(binding.contractId)) {
+        requireRuntimeFixture(packageScenario, `${contractId} package proof requires the bound ${packageScenario} fixture role`)
+      }
+      if (binding.adapterId === 'soak.reviewed' && ['C24', 'C25'].includes(binding.contractId)
+          && /^field-(?:960k|2m|local-1gib|device-modes)(?:-installed)?$/u.test(binding.variantId)) {
+        const fixtureRole = binding.variantId.replace(/-installed$/u, '')
+        if (runtimeFixtures === null || typeof runtimeFixtures !== 'object' || Array.isArray(runtimeFixtures)
+            || (runtimeFixtures[fixtureRole] === undefined && runtimeFixtures.field === undefined)) {
+          blockers.push(`${contractId} ${binding.variantId} requires the bound ${fixtureRole} or field fixture role`)
+        }
+      }
+    }
+  }
+  return blockers
+}
+
+/**
+ * Require the reviewed package and soak family rows before candidate admission.
+ * Calibration plans deliberately do not enter this gate because they exercise
+ * controller mechanics and must remain small, deterministic fixtures.
+ *
+ * @param {object} definition immutable campaign definition or coverage view
+ * @returns {string[]} fixed-family blockers
+ */
+function validateFixedCandidateFamilies(definition) {
+  const blockers = []
+  const requiredFamilies = [
+    ['C25', REQUIRED_C25_CANDIDATE_VARIANTS, 'soak.reviewed', 'soak.receipt'],
+    ['C28', REQUIRED_C28_CANDIDATE_VARIANTS, 'package.reviewed', 'package.receipt'],
+  ]
+  for (const [contractId, variants, adapterId, receiptValidatorId] of requiredFamilies) {
+    for (const variantId of variants) {
+      const proofMode = variantId.endsWith('-installed') ? 'installed-deb' : 'ci-appimage'
+      const present = definition.bindings.some((binding) => binding.mandatory === true
+        && binding.contractId === contractId
+        && binding.variantId === variantId
+        && binding.adapterId === adapterId
+        && binding.receiptValidatorId === receiptValidatorId
+        && binding.proofMode === proofMode)
+      if (!present) blockers.push(`fixed mandatory candidate variant ${contractId}:${variantId} is missing for ${proofMode}`)
     }
   }
   return blockers
@@ -872,12 +1599,7 @@ function validateBindingCoverage(definition) {
 
 /** Check the required capability inventory without treating a missing tool as pass. */
 function validateCapabilities(definition) {
-  const available = new Set(['node', 'fs'])
-  if (hasCommand('git')) available.add('git')
-  if (process.versions.electron !== undefined) available.add('electron')
-  return definition.preflight.requiredCapabilities
-    .filter((capability) => !available.has(capability))
-    .map((capability) => `missing host capability ${capability}`)
+  return validateHostCapabilities(definition)
 }
 
 /** Check free space on the campaign filesystem. */
@@ -895,37 +1617,55 @@ async function checkFreeSpace(minimumBytes, campaignRoot) {
 
 /** Write a deterministic environment-blocked attempt result. */
 async function writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status, reason, binding, resumed = false }) {
-  const receiptPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json')
-  const resultPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json')
-  await writeExclusiveJson(receiptPath, {
-    schema: 'sartracker-qualification-contract-receipt-v1',
-    campaignId: normalized.campaignId,
-    attemptId,
-    definitionDigest: normalized.definitionDigest,
-    inputDigest,
-    contractId: binding.contractId,
-    variantId: binding.variantId,
-    adapterId: binding.adapterId,
-    proofMode: binding.proofMode,
-    status,
-    deterministic: true,
-    evidence: [],
-    observed: { reason },
-  })
-  await writeExclusiveJson(resultPath, {
-    schema: 'sartracker-qualification-attempt-result-v1',
-    campaignId: normalized.campaignId,
-    attemptId,
-    definitionDigest: normalized.definitionDigest,
-    inputDigest,
-    contractId: binding.contractId,
-    variantId: binding.variantId,
-    status,
-    deterministicFailure: false,
-    reason,
-  })
-  await appendState(attemptDirectory, { phase: 'blocked', status, reason })
-  return Object.freeze({ status, attemptId, attemptDirectory, anchorPath: undefined, releaseEligible: false })
+  try {
+    const receiptPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json')
+    const resultPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json')
+    await writeExclusiveJson(receiptPath, {
+      schema: 'sartracker-qualification-contract-receipt-v1',
+      campaignId: normalized.campaignId,
+      attemptId,
+      definitionDigest: normalized.definitionDigest,
+      inputDigest,
+      contractId: binding.contractId,
+      variantId: binding.variantId,
+      adapterId: binding.adapterId,
+      proofMode: binding.proofMode,
+      status,
+      deterministic: true,
+      evidence: [],
+      observed: { reason },
+    })
+    await writeExclusiveJson(resultPath, {
+      schema: 'sartracker-qualification-attempt-result-v1',
+      campaignId: normalized.campaignId,
+      attemptId,
+      definitionDigest: normalized.definitionDigest,
+      inputDigest,
+      contractId: binding.contractId,
+      variantId: binding.variantId,
+      status,
+      deterministicFailure: false,
+      reason,
+    })
+    await appendState(attemptDirectory, { phase: 'blocked', status, reason })
+    return Object.freeze({ status, attemptId, attemptDirectory, anchorPath: undefined, releaseEligible: false })
+  } catch (error) {
+    if (isReceiptPersistenceError(error)) throw error
+    throw createReceiptPersistenceError()
+  }
+}
+
+/** Create the bounded typed signal used when canonical attempt persistence fails. */
+function createReceiptPersistenceError() {
+  const error = new Error('Qualification receipt persistence failed; manual recovery is required.')
+  error.code = 'QUALIFICATION_RECEIPT_PERSISTENCE_FAILED'
+  return error
+}
+
+/** Recognize the controller-only canonical persistence failure signal. */
+function isReceiptPersistenceError(error) {
+  return error !== null && typeof error === 'object'
+    && error.code === 'QUALIFICATION_RECEIPT_PERSISTENCE_FAILED'
 }
 
 /** Write an immutable definition once, allowing only an exact same-byte rerun. */
@@ -1016,6 +1756,10 @@ async function allContractRows(definition, requiredRows) {
     required: (definition.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : definition.requiredContracts).includes(contract.id),
     status: byId.get(contract.id)?.status ?? 'not-run',
     variantId: byId.get(contract.id)?.variantId ?? null,
+    ...(byId.get(contract.id)?.productCapabilityBlockers?.length ? {
+      admissionOnly: true,
+      productCapabilityBlockers: byId.get(contract.id).productCapabilityBlockers,
+    } : {}),
   }))
 }
 
@@ -1098,11 +1842,50 @@ async function identityArtifacts(artifacts, planPath) {
 }
 
 /** Reject symlinks before following a file identity. */
+export async function readBoundJsonFile(filePath, label, maxBytes = 16 * 1024) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error(`${label} bounded size is invalid.`)
+  const resolved = path.resolve(filePath)
+  const before = await lstat(resolved)
+  if (before.isSymbolicLink() || !before.isFile()) throw new Error(`${label} must be a regular file.`)
+  if (before.size > maxBytes) throw new Error(`${label} exceeds its bounded size.`)
+  const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0)
+  const handle = await open(resolved, flags)
+  try {
+    const opened = await handle.stat()
+    if (!sameFileMetadata(before, opened)) throw new Error(`${label} changed before its bound descriptor was opened.`)
+    const boundedBytes = Buffer.allocUnsafe(maxBytes + 1)
+    let bytesRead = 0
+    while (bytesRead < boundedBytes.byteLength) {
+      const read = await handle.read(boundedBytes, bytesRead, boundedBytes.byteLength - bytesRead, null)
+      if (read.bytesRead === 0) break
+      bytesRead += read.bytesRead
+    }
+    if (bytesRead > maxBytes) throw new Error(`${label} exceeds its bounded size.`)
+    const bytes = boundedBytes.subarray(0, bytesRead)
+    const after = await handle.stat()
+    if (!sameFileMetadata(opened, after)) throw new Error(`${label} changed while being read.`)
+    const value = JSON.parse(bytes.toString('utf8'))
+    return Object.freeze({
+      identity: Object.freeze({ path: resolved, bytes: bytes.byteLength, sha256: sha256(bytes) }),
+      value,
+    })
+  } finally {
+    await handle.close()
+  }
+}
+
+/** Compare file metadata captured from one path and one bound descriptor. */
+function sameFileMetadata(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
+    && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs
+}
+
+/** Reject symlinks before following a file identity. */
 async function strictFileIdentity(filePath, label) {
   const resolved = path.resolve(filePath)
   const metadata = await lstat(resolved)
   if (metadata.isSymbolicLink()) throw new Error(`${label} must not be a symbolic link: ${filePath}.`)
-  const identity = await fileIdentity(resolved)
+  const identity = await hashCandidateFile(resolved)
   return Object.freeze({ ...identity, path: resolved })
 }
 
@@ -1165,16 +1948,6 @@ function hasArtifact(definition, role) {
   return definition.identities.candidate.artifacts.some((artifact) => artifact.role === role && artifact.localBuild !== true)
 }
 
-/** Check command availability without making it a release claim. */
-function hasCommand(command) {
-  try {
-    execFileSync(command, ['--version'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** Return a strict path list with duplicates removed. */
 function uniquePaths(paths) {
   return [...new Set(paths)]
@@ -1207,6 +1980,16 @@ function sameIdentity(left, right) {
 /** Compare the exact clean source SHA, tree and dirty-state identity. */
 function sameSourceIdentity(left, right) {
   return left?.sha === right?.sha && left?.tree === right?.tree && left?.dirty === right?.dirty
+}
+
+/** Read the executing checkout directly; caller-supplied source claims are not execution proof. */
+async function liveSourceIdentity() {
+  const cwd = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+  const options = { cwd, encoding: 'utf8', timeout: 30000, maxBuffer: 8 * 1024 * 1024 }
+  const head = await execFile('git', ['rev-parse', 'HEAD'], options)
+  const tree = await execFile('git', ['rev-parse', 'HEAD^{tree}'], options)
+  const status = await execFile('git', ['status', '--porcelain'], options)
+  return { sha: head.stdout.trim(), tree: tree.stdout.trim(), dirty: status.stdout.trim() !== '' }
 }
 
 /** Return whether a file or directory exists. */

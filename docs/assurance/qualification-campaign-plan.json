@@ -9,46 +9,3347 @@
     "explicitlyEnabled": true
   },
   "registryPath": "qualification-contracts.json",
-  "fixturePaths": ["../../tests/fixtures/outing-window-vectors.json"],
-  "validatorPaths": ["../../scripts/qualification-control-plane.mjs", "../../scripts/qualification/control-plane.mjs"],
+  "fixturePaths": [
+    "../../tests/fixtures/outing-window-vectors.json"
+  ],
+  "validatorPaths": [
+    "../../scripts/qualification-control-plane.mjs",
+    "../../scripts/qualification/control-plane.mjs"
+  ],
   "expectedPlatform": "linux",
   "expectedArch": "x64",
-  "minimumFreeBytes": 1073741824,
+  "minimumFreeBytes": 68719476736,
   "requiredContracts": [
-    "C00", "C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09",
-    "C10", "C11", "C12", "C13", "C14", "C15", "C16", "C17", "C18", "C19",
-    "C20", "C21", "C22", "C23", "C24", "C25", "C26", "C27", "C28", "C29"
+    "C00",
+    "C01",
+    "C02",
+    "C03",
+    "C04",
+    "C05",
+    "C06",
+    "C07",
+    "C08",
+    "C09",
+    "C10",
+    "C11",
+    "C12",
+    "C13",
+    "C14",
+    "C15",
+    "C16",
+    "C17",
+    "C18",
+    "C19",
+    "C20",
+    "C21",
+    "C22",
+    "C23",
+    "C24",
+    "C25",
+    "C26",
+    "C27",
+    "C28",
+    "C29"
+  ],
+  "baselinePorts": [
+    1420
   ],
   "bindings": [
-    { "contractId": "C00", "variantId": "identity-all-tiers", "adapterId": "existing.c00.identity", "receiptValidatorId": "existing.c00.receipt", "proofMode": "ci-appimage", "capability": "git", "mandatory": true, "command": ["npm", "run", "beta:verify"], "oracle": "Git, CI artifact, runtime, install and release metadata identity" },
-    { "contractId": "C01", "variantId": "startup-fault-admission", "adapterId": "existing.c01.startup", "receiptValidatorId": "existing.c01.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["node", "scripts/electron-bad-secret-smoke.mjs"], "oracle": "bounded boot state and preserved store identity" },
-    { "contractId": "C02", "variantId": "lifecycle-recovery", "adapterId": "existing.c02.lifecycle", "receiptValidatorId": "existing.c02.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["node", "scripts/electron-repair-train-d-smoke.mjs"], "oracle": "mission lifecycle and recovery receipt" },
-    { "contractId": "C03", "variantId": "outing-participant-scope", "adapterId": "existing.c03.scope", "receiptValidatorId": "existing.c03.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test", "tests/e2e/mission.spec.ts"], "oracle": "known-at-fix-time participant scope" },
-    { "contractId": "C04", "variantId": "current-position-priority", "adapterId": "existing.c04.current", "receiptValidatorId": "existing.c04.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["npm", "run", "electron:smoke:tracking-soak:ci"], "oracle": "independent current-position continuity" },
-    { "contractId": "C05", "variantId": "fix-time-ingest", "adapterId": "existing.c05.ingest", "receiptValidatorId": "existing.c05.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["node", "scripts/breadcrumb-live-exact-smoke.mjs"], "oracle": "source fixTime and evidence-health digest" },
-    { "contractId": "C06", "variantId": "stationary-stale", "adapterId": "existing.c06.attention", "receiptValidatorId": "existing.c06.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "deterministic stationary/stale attention" },
-    { "contractId": "C07", "variantId": "breadcrumb-paging", "adapterId": "existing.c07.breadcrumbs", "receiptValidatorId": "existing.c07.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["npm", "run", "breadcrumb-pr6:qualify"], "oracle": "complete paged source sequence" },
-    { "contractId": "C08", "variantId": "coverage-completion", "adapterId": "existing.c08.coverage", "receiptValidatorId": "existing.c08.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["node", "scripts/coverage-production-qualification.cjs"], "oracle": "independent coverage inventory and completion" },
-    { "contractId": "C09", "variantId": "gpx-custody", "adapterId": "existing.c09.gpx", "receiptValidatorId": "existing.c09.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["node", "scripts/electron-gpx-fidelity-smoke.mjs"], "oracle": "exact GPX bytes and provenance" },
-    { "contractId": "C10", "variantId": "known-at-time-replay", "adapterId": "existing.c10.replay", "receiptValidatorId": "existing.c10.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["npm", "run", "breadcrumb-pr6:qualify"], "oracle": "transaction-time Replay truth" },
-    { "contractId": "C11", "variantId": "search-workflow", "adapterId": "existing.c11.search", "receiptValidatorId": "existing.c11.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "immutable assignments and pass outcomes" },
-    { "contractId": "C12", "variantId": "marker-attachment", "adapterId": "existing.c12.markers", "receiptValidatorId": "existing.c12.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "marker/version/attachment identity" },
-    { "contractId": "C13", "variantId": "coordinate-measurement", "adapterId": "existing.c13.geometry", "receiptValidatorId": "existing.c13.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test", "tests/e2e/drawings.spec.ts"], "oracle": "golden transforms and bounded geometry" },
-    { "contractId": "C14", "variantId": "map-layers-overlays", "adapterId": "existing.c14.maps", "receiptValidatorId": "existing.c14.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test", "tests/e2e/app-shell.spec.ts"], "oracle": "display-only visibility and overlay state" },
-    { "contractId": "C15", "variantId": "official-offline-map", "adapterId": "existing.c15.offline-map", "receiptValidatorId": "existing.c15.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["npm", "run", "electron:smoke:official-map-qualification"], "oracle": "offline package readiness" },
-    { "contractId": "C16", "variantId": "settings-bootstrap", "adapterId": "existing.c16.settings", "receiptValidatorId": "existing.c16.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["node", "scripts/electron-bad-secret-smoke.mjs"], "oracle": "safe credential/bootstrap boundary" },
-    { "contractId": "C17", "variantId": "diagnostics-privacy", "adapterId": "existing.c17.diagnostics", "receiptValidatorId": "existing.c17.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "sanitized operator diagnostics" },
-    { "contractId": "C18", "variantId": "sqlite-recovery", "adapterId": "existing.c18.sqlite", "receiptValidatorId": "existing.c18.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["node", "scripts/electron-storage-diagnostics-kill-probe.mjs"], "oracle": "SQLite/WAL/backup recovery" },
-    { "contractId": "C19", "variantId": "migration-retention", "adapterId": "existing.c19.migrations", "receiptValidatorId": "existing.c19.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "schema and retention integrity" },
-    { "contractId": "C20", "variantId": "streamed-archive", "adapterId": "existing.c20.archive", "receiptValidatorId": "existing.c20.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["npm", "run", "electron:smoke:archive-lifecycle:ci"], "oracle": "exhaustive archive identity" },
-    { "contractId": "C21", "variantId": "archive-security", "adapterId": "existing.c21.archive-security", "receiptValidatorId": "existing.c21.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "key/authenticity/hostile-byte custody" },
-    { "contractId": "C22", "variantId": "archive-restore", "adapterId": "existing.c22.restore", "receiptValidatorId": "existing.c22.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["npm", "run", "electron:smoke:archive-lifecycle:ci"], "oracle": "restore/review/revision equality" },
-    { "contractId": "C23", "variantId": "ipc-containment", "adapterId": "existing.c23.ipc", "receiptValidatorId": "existing.c23.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "preload/IPC capability containment" },
-    { "contractId": "C24", "variantId": "responsiveness", "adapterId": "existing.c24.responsiveness", "receiptValidatorId": "existing.c24.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["npm", "run", "test:responsiveness"], "oracle": "strict main-loop and action budgets" },
-    { "contractId": "C25", "variantId": "scale-soak", "adapterId": "existing.c25.scale", "receiptValidatorId": "existing.c25.receipt", "proofMode": "ci-appimage", "capability": "electron", "mandatory": true, "command": ["npm", "run", "electron:smoke:tracking-soak:ci"], "oracle": "declared scale and long-duration bounds" },
-    { "contractId": "C26", "variantId": "package-install-parity", "adapterId": "existing.c26.package", "receiptValidatorId": "existing.c26.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["node", "scripts/electron-package.mjs"], "oracle": "AppImage/deb/install and duplicate-launch parity" },
-    { "contractId": "C27", "variantId": "release-bytes", "adapterId": "existing.c27.release", "receiptValidatorId": "existing.c27.receipt", "proofMode": "ci-appimage", "capability": "git", "mandatory": true, "command": ["npm", "run", "beta:verify"], "oracle": "exact release bytes and rollback" },
-    { "contractId": "C28", "variantId": "whole-operator-mission", "adapterId": "existing.c28.composite", "receiptValidatorId": "existing.c28.receipt", "proofMode": "browser", "capability": "node", "mandatory": true, "command": ["npx", "playwright", "test"], "oracle": "composite mission source and rendered truth" },
-    { "contractId": "C29", "variantId": "team-shadow", "adapterId": "external.c29.team-shadow", "receiptValidatorId": "external.c29.receipt", "proofMode": "installed-deb", "capability": "electron", "mandatory": true, "command": ["external-team-session"], "oracle": "named human tester and fallback evidence" }
+    {
+      "contractId": "C26",
+      "variantId": "duplicate-launch-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C26"
+      ],
+      "oracle": "Exact AppImage duplicate-launch rejection, one writer and one persisted mission across restart"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "routine-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "routine"
+      ],
+      "oracle": "Fixed C28 routine composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "routine-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "routine"
+      ],
+      "oracle": "Fixed C28 routine composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "field-scale-960k-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "field-scale-960k"
+      ],
+      "oracle": "Fixed C28 field-scale-960k composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "field-scale-960k-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "field-scale-960k"
+      ],
+      "oracle": "Fixed C28 field-scale-960k composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "field-scale-2m-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "field-scale-2m"
+      ],
+      "oracle": "Fixed C28 field-scale-2m composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "field-scale-2m-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "field-scale-2m"
+      ],
+      "oracle": "Fixed C28 field-scale-2m composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-settings-bootstrap-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-settings-bootstrap"
+      ],
+      "oracle": "Fixed C28 failure-settings-bootstrap composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-settings-bootstrap-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-settings-bootstrap"
+      ],
+      "oracle": "Fixed C28 failure-settings-bootstrap composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-mission-outing-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-mission-outing"
+      ],
+      "oracle": "Fixed C28 failure-mission-outing composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-mission-outing-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-mission-outing"
+      ],
+      "oracle": "Fixed C28 failure-mission-outing composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-gpx-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-gpx"
+      ],
+      "oracle": "Fixed C28 failure-gpx composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-gpx-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-gpx"
+      ],
+      "oracle": "Fixed C28 failure-gpx composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-marker-search-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-marker-search"
+      ],
+      "oracle": "Fixed C28 failure-marker-search composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-marker-search-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-marker-search"
+      ],
+      "oracle": "Fixed C28 failure-marker-search composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-coverage-replay-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-coverage-replay"
+      ],
+      "oracle": "Fixed C28 failure-coverage-replay composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-coverage-replay-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-coverage-replay"
+      ],
+      "oracle": "Fixed C28 failure-coverage-replay composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-pause-restart-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-pause-restart"
+      ],
+      "oracle": "Fixed C28 failure-pause-restart composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-pause-restart-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-pause-restart"
+      ],
+      "oracle": "Fixed C28 failure-pause-restart composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-finish-finalize-archive-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-finish-finalize-archive"
+      ],
+      "oracle": "Fixed C28 failure-finish-finalize-archive composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-finish-finalize-archive-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-finish-finalize-archive"
+      ],
+      "oracle": "Fixed C28 failure-finish-finalize-archive composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-archive-review-restore-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-archive-review-restore"
+      ],
+      "oracle": "Fixed C28 failure-archive-review-restore composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-archive-review-restore-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-archive-review-restore"
+      ],
+      "oracle": "Fixed C28 failure-archive-review-restore composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-sanitized-diagnostics-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-sanitized-diagnostics"
+      ],
+      "oracle": "Fixed C28 failure-sanitized-diagnostics composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "failure-sanitized-diagnostics-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "failure-sanitized-diagnostics"
+      ],
+      "oracle": "Fixed C28 failure-sanitized-diagnostics composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "archive-revision-supplement-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "archive-revision-supplement"
+      ],
+      "oracle": "Fixed C28 archive-revision-supplement composite coverage axes on the exact AppImage package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C28",
+      "variantId": "archive-revision-supplement-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C28",
+        "archive-revision-supplement"
+      ],
+      "oracle": "Fixed C28 archive-revision-supplement composite coverage axes on the exact installed Debian package tier; independent variant and process identity required"
+    },
+    {
+      "contractId": "C23",
+      "variantId": "packaged-ipc-containment",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C23"
+      ],
+      "oracle": "Real sandbox/context isolation and owning-renderer IPC admission, invalid payload and invalid sender rejection with retained raw observations"
+    },
+    {
+      "contractId": "C00",
+      "variantId": "fresh-public-bytes",
+      "adapterId": "release.public-bytes",
+      "receiptValidatorId": "release.public-receipt",
+      "proofMode": "public-release",
+      "phase": "postpublication",
+      "capability": "git",
+      "mandatory": true,
+      "command": [
+        "read-only-public-release-download"
+      ],
+      "oracle": "fresh unauthenticated public release bytes and checksums equal the prepublication qualified artifacts; mismatch blocks team rollout and requires withdrawal or rollback"
+    },
+    {
+      "contractId": "C00",
+      "variantId": "ci-installed-identity",
+      "adapterId": "identity.ci-installed",
+      "receiptValidatorId": "identity.receipt",
+      "proofMode": "ci-appimage",
+      "phase": "prepublication",
+      "capability": "git",
+      "mandatory": true,
+      "command": [
+        "read-only-ci-installed-identity"
+      ],
+      "oracle": "Exact GitHub CI archive and installer identities plus independently compared installed Debian payload; launch and public release proof remain separate mandatory variants"
+    },
+    {
+      "contractId": "C01",
+      "variantId": "startup-fault-admission",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C01"
+      ],
+      "oracle": "Exact packaged bad-secret recovery, corrupt-settings fault export and newer-schema refusal; broader startup faults remain additional required coverage",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "lifecycle-recovery",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "mission lifecycle and recovery receipt",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C04",
+      "variantId": "ci",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C04",
+        "ci"
+      ],
+      "oracle": "independent current-position continuity under the fixed 32-device CI profile; field-scale and live-provider axes remain open"
+    },
+    {
+      "contractId": "C04",
+      "variantId": "priority-100",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C04",
+        "priority-100"
+      ],
+      "oracle": "independent current-position continuity, held-history isolation, offline/reconnect and device hide/show identity under the fixed 100-device synthetic priority lane; live-provider and original-machine axes remain separate"
+    },
+    {
+      "contractId": "C05",
+      "variantId": "fix-time-ingest",
+      "adapterId": "live.get-only",
+      "receiptValidatorId": "live.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "node",
+        "scripts/release-smoke/breadcrumb-live-exact-smoke.mjs"
+      ],
+      "oracle": "source fixTime and evidence-health digest",
+      "liveAccess": "GET_ONLY",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C05",
+      "variantId": "canonical-ingest-surface-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-attention",
+        "C05",
+        "canonical-ingest-surface"
+      ],
+      "oracle": "Independent packaged canonical-ingest receipt on the exact AppImage: raw source and durable rows retain exact fixTime, reject wrong clocks, and deduplicate duplicate polls; exhaustive adversarial source/browser and real-provider GET proof remain separately bound"
+    },
+    {
+      "contractId": "C05",
+      "variantId": "canonical-ingest-surface-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-attention",
+        "C05",
+        "canonical-ingest-surface"
+      ],
+      "oracle": "Independent packaged canonical-ingest receipt on the exact installed Debian executable: raw source and durable rows retain exact fixTime, reject wrong clocks, and deduplicate duplicate polls; exhaustive adversarial source/browser and real-provider GET proof remain separately bound"
+    },
+    {
+      "contractId": "C06",
+      "variantId": "stationary-attention-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-attention",
+        "C06",
+        "stationary-attention"
+      ],
+      "oracle": "Real packaged stationary-attention provider/store/UI flow on the exact AppImage: 20-minute alert, acknowledgement, unchanged database identity, stale/disconnected state, reconnect and meaningful movement clear"
+    },
+    {
+      "contractId": "C06",
+      "variantId": "stationary-attention-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-attention",
+        "C06",
+        "stationary-attention"
+      ],
+      "oracle": "Real packaged stationary-attention provider/store/UI flow on the exact installed Debian executable: 20-minute alert, acknowledgement, unchanged database identity, stale/disconnected state, reconnect and meaningful movement clear"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-960k",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-960k"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against an independently opened 960k-row fixture; source and field scale remain separate"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-2m-1gib",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-2m-1gib"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against an independently opened 2m-row/1GiB fixture; source and field scale remain separate"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-2m",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-2m"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against the canonical 2m-row fixture; its source bytes are bound independently and the 1GiB profile remains separate"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-field-37gb",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-field-37gb"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against the 3.7GB field-envelope fixture; this remains a scale lane, not field acceptance"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-960k",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-960k"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against an independently opened 960k-row fixture; rendered coverage remains separate"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-2m-1gib",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-2m-1gib"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against an independently opened 2m-row/1GiB fixture; rendered coverage remains separate"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-2m",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-2m"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against the canonical 2m-row fixture; rendered coverage remains separate and the 1GiB profile remains separate"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-field-37gb",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-field-37gb"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against the 3.7GB field-envelope fixture; this remains a scale lane, not field acceptance"
+    },
+    {
+      "contractId": "C09",
+      "variantId": "gpx-custody",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C09"
+      ],
+      "oracle": "exact GPX bytes and provenance",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "known-at-time-replay",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "reviewed-packaged-producer",
+        "C10"
+      ],
+      "oracle": "transaction-time Replay truth"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "replay-960k",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C10",
+        "replay-960k"
+      ],
+      "oracle": "independent packaged Replay page and source-row custody against the fixed 960k-row fixture; scale is separate from transaction-time semantics"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "replay-2m",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C10",
+        "replay-2m"
+      ],
+      "oracle": "independent packaged Replay page and source-row custody against the fixed 2m-row fixture; scale is separate from transaction-time semantics"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "replay-201-outings",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C10",
+        "replay-201-outings"
+      ],
+      "oracle": "independent packaged Replay custody across the fixed 201-outing workload; original field duration remains separate"
+    },
+    {
+      "contractId": "C12",
+      "variantId": "marker-attachment",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "reviewed-packaged-producer",
+        "C12"
+      ],
+      "oracle": "marker/version/attachment identity"
+    },
+    {
+      "contractId": "C15",
+      "variantId": "official-offline-map",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C15"
+      ],
+      "oracle": "exact synthetic offline-map render readiness from one fresh retained run; licensed/private map qualification remains separate"
+    },
+    {
+      "contractId": "C16",
+      "variantId": "settings-bootstrap",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C16"
+      ],
+      "oracle": "safe credential/bootstrap boundary",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "sqlite-recovery",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "SQLite/WAL/backup recovery",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-startup-boundaries",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-startup-boundaries"
+      ],
+      "oracle": "shared packaged C01 startup receipt independently proves C19 corrupt/newer-schema refusal, permission fault and bounded ENOSPC custody; unrelated held-gate failures remain C01-only"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-schema-matrix",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-schema-matrix"
+      ],
+      "oracle": "twelve historical schema source/migration rows retain exact source custody and migrated historical observations"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-50k",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-50k"
+      ],
+      "oracle": "50k-row schema-v11 default-app recovery retains marker and GPS source custody across restart"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-50k-kill",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-50k-kill"
+      ],
+      "oracle": "50k-row schema-v11 recovery retains an observed intermediate forced-kill checkpoint and restart custody"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-local-1gib",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-local-1gib"
+      ],
+      "oracle": "schema-v11 recovery retains the fixed local 1GiB fixture and real tracking rows through restart"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-field-37gb",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-field-37gb"
+      ],
+      "oracle": "schema-v11 recovery retains the fixed field 3.7GB fixture and real tracking rows through restart"
+    },
+    {
+      "contractId": "C20",
+      "variantId": "streamed-archive",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C20"
+      ],
+      "oracle": "bounded packaged archive lifecycle with independently retained source/restored oracles; field-scale archive profiles remain separate"
+    },
+    {
+      "contractId": "C21",
+      "variantId": "archive-security",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C21"
+      ],
+      "oracle": "bounded packaged archive-security mutation corpus with independent hostile-byte, key-slot, and custody receipt validation; family and field coverage remain separate"
+    },
+    {
+      "contractId": "C22",
+      "variantId": "archive-restore",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C22"
+      ],
+      "oracle": "bounded packaged archive restore/review/revision equality with independently retained source/restored oracles; field-scale archive profiles remain separate"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "ci",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "ci"
+      ],
+      "oracle": "strict sub-200ms main/renderer/operator timing under the fixed 32-device CI profile while packaged coverage, Replay, GPX listing, archive inventory, backup, support export, cancellation and archive failure/recovery phases run; product integrity/retention/background scheduling owner gaps and field-scale axes remain explicit"
+    },
+    {
+      "contractId": "C04",
+      "variantId": "ci-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C04",
+        "ci-installed"
+      ],
+      "oracle": "Separately bound installed-deb current-priority and competing-operation observations with unchanged strict sub-200ms budgets"
+    },
+    {
+      "contractId": "C04",
+      "variantId": "priority-100-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C04",
+        "priority-100-installed"
+      ],
+      "oracle": "Separately bound installed-deb current-priority and competing-operation observations with unchanged strict sub-200ms budgets"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "ci-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "ci-installed"
+      ],
+      "oracle": "Separately bound installed-deb current-priority and competing-operation observations with unchanged strict sub-200ms budgets"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "field-960k",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "field-960k"
+      ],
+      "oracle": "Fixed field-scale competing operations after complete workload population with strict sub-200ms timing and separately bound fixture/process/custody oracles; product capability holds remain mandatory"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "field-960k-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "field-960k-installed"
+      ],
+      "oracle": "Fixed field-scale competing operations after complete workload population with strict sub-200ms timing and separately bound fixture/process/custody oracles; product capability holds remain mandatory"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "field-2m",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "field-2m"
+      ],
+      "oracle": "Fixed field-scale competing operations after complete workload population with strict sub-200ms timing and separately bound fixture/process/custody oracles; product capability holds remain mandatory"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "field-2m-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "field-2m-installed"
+      ],
+      "oracle": "Fixed field-scale competing operations after complete workload population with strict sub-200ms timing and separately bound fixture/process/custody oracles; product capability holds remain mandatory"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "field-local-1gib",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "field-local-1gib"
+      ],
+      "oracle": "Fixed field-scale competing operations after complete workload population with strict sub-200ms timing and separately bound fixture/process/custody oracles; product capability holds remain mandatory"
+    },
+    {
+      "contractId": "C24",
+      "variantId": "field-local-1gib-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C24",
+        "field-local-1gib-installed"
+      ],
+      "oracle": "Fixed field-scale competing operations after complete workload population with strict sub-200ms timing and separately bound fixture/process/custody oracles; product capability holds remain mandatory"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "normal",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "normal"
+      ],
+      "oracle": "independent five-day-equivalent 32-device long-duration source/resource receipt with two verified archive cycles and rejected archive failure recovered after restart while tracking remains active; field-scale remains open"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "extended",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "extended"
+      ],
+      "oracle": "independent fourteen-day-equivalent 32-device long-duration exact-proof receipt with two verified archive cycles and rejected archive failure recovered after restart while tracking remains active; field-scale remains open"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-960k",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-960k"
+      ],
+      "oracle": "independent 100-device, 12-outing, 960k-position field-scale raw metric receipt; the 2GiB maximum resident ceiling is enforced, while local 1GiB and field 3.7GB storage fixtures plus archive/install admission remain separately bound"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-2m",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-2m"
+      ],
+      "oracle": "independent 100-device, 12-outing, 2m-position field-scale raw metric receipt; the 2GiB maximum resident ceiling is enforced, while local 1GiB and field 3.7GB storage fixtures plus archive/install admission remain separately bound"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-local-1gib",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-local-1gib"
+      ],
+      "oracle": "independent 100-device, 12-outing, 960k-position local 1GiB field-scale storage-envelope receipt from the existing seed-mission-store local preset; this remains deterministic synthetic scale evidence"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-device-modes",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-device-modes"
+      ],
+      "oracle": "independent 100-device, 12-outing, 12-day-equivalent field-scale moving/stationary/stale workload with archive failure/restart recovery and retained raw metrics"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "normal-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "normal-installed"
+      ],
+      "oracle": "independent five-day-equivalent 32-device long-duration source/resource receipt from the exact installed Debian executable; field-scale remains open"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "extended-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 32,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "extended-installed"
+      ],
+      "oracle": "independent fourteen-day-equivalent 32-device long-duration exact-proof receipt from the exact installed Debian executable; field-scale remains open"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-960k-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-960k-installed"
+      ],
+      "oracle": "independent 100-device, 12-outing, 960k-position field-scale raw metric receipt from the exact installed Debian executable; storage fixture and archive admission remain separately bound"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-2m-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-2m-installed"
+      ],
+      "oracle": "independent 100-device, 12-outing, 2m-position field-scale raw metric receipt from the exact installed Debian executable; storage fixture and archive admission remain separately bound"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-local-1gib-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-local-1gib-installed"
+      ],
+      "oracle": "independent 100-device, 12-outing, local 1GiB field-scale storage-envelope receipt from the exact installed Debian executable; external original-field execution remains separate"
+    },
+    {
+      "contractId": "C25",
+      "variantId": "field-device-modes-installed",
+      "adapterId": "soak.reviewed",
+      "receiptValidatorId": "soak.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "missionModel": {
+        "enabled": true,
+        "expectedParticipantRows": 100,
+        "expectedParticipantAddedEvents": 0
+      },
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-soak",
+        "C25",
+        "field-device-modes-installed"
+      ],
+      "oracle": "independent 100-device, 12-outing field-scale moving/stationary/stale receipt with archive failure/restart recovery from the exact installed Debian executable"
+    },
+    {
+      "contractId": "C26",
+      "variantId": "duplicate-launch-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C26"
+      ],
+      "oracle": "Exact installed executable duplicate-launch rejection, one writer and one persisted mission across restart",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C27",
+      "variantId": "release-bytes",
+      "adapterId": "release.draft",
+      "receiptValidatorId": "release.draft-receipt",
+      "proofMode": "ci-appimage",
+      "capability": "git",
+      "mandatory": true,
+      "command": [
+        "read-only-draft-and-rollback-inspection"
+      ],
+      "oracle": "exact release bytes and rollback",
+      "phase": "prepublication"
+    },
+    {
+      "contractId": "C29",
+      "variantId": "original-machine-training",
+      "adapterId": "external.c29.training",
+      "receiptValidatorId": "external.c29.receipt",
+      "proofMode": "external-human",
+      "sessionKind": "pre-release-original-machine-training",
+      "capability": "node",
+      "mandatory": true,
+      "command": [
+        "external-team-session"
+      ],
+      "oracle": "named human original-machine training acceptance and fallback evidence; never WAR-13B field credit"
+    },
+    {
+      "contractId": "C00",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C00",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C01",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C01",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C01",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C01",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C02",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C02",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C02",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C02",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C03",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C03",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C03",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C03",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C04",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C04",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C04",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C04",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C05",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C05",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C05",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C05",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C06",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C06",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C06",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C06",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C07",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C07",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C07",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C07",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C08",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C08",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C08",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C08",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C09",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C09",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C09",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C09",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C10",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C10",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C10",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C10",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C11",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C11",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C11",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C11",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C12",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C12",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C12",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C12",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C13",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C13",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C13",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C13",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C14",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C14",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C14",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C14",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C15",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C15",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C15",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C15",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C16",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C16",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C16",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C16",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C17",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C17",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C17",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C17",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C18",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C18",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C19",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C19",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C19",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C19",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C20",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C20",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C21",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C21",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C22",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C22",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C22",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C22",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C23",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C23",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C23",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C23",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C24",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C24",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C25",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C25",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C26",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C26",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C27",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C27",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C28",
+      "proofMode": "source",
+      "variantId": "reviewed-source-regressions",
+      "adapterId": "suite.source",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "source-suites",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C28",
+        "source"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C28",
+      "proofMode": "browser",
+      "variantId": "reviewed-browser-workflows",
+      "adapterId": "suite.browser",
+      "receiptValidatorId": "suite.receipt",
+      "capability": "node",
+      "resourceKey": "browser-1420",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-suite",
+        "C28",
+        "browser"
+      ],
+      "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "graceful-close-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 graceful-close scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "reload-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 reload scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "renderer-crash-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 renderer-crash scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "main-sigkill-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 main-sigkill scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "pending-finalize-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 pending-finalize scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "disk-full-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 disk-full scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "permission-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 permission scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "corrupt-temp-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 corrupt-temp scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "busy-wal-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 busy-wal scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "concurrent-writes-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 concurrent-writes scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "worker-crash-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 worker-crash scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "stale-good-mirror-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 stale-good-mirror scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C03",
+      "variantId": "family-contract-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C03"
+      ],
+      "oracle": "Fixed C03 family-contract scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C11",
+      "variantId": "family-contract-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C11"
+      ],
+      "oracle": "Fixed C11 family-contract scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C13",
+      "variantId": "coordinate-surface-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C13"
+      ],
+      "oracle": "Fixed C13 coordinate-surface scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C14",
+      "variantId": "map-surface-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C14"
+      ],
+      "oracle": "Fixed C14 map-surface scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C17",
+      "variantId": "family-contract-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C17"
+      ],
+      "oracle": "Fixed C17 family-contract scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C23",
+      "variantId": "packaged-ipc-containment-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C23"
+      ],
+      "oracle": "Real sandbox/context isolation and owning-renderer IPC admission, invalid payload and invalid sender rejection with retained raw observations"
+    },
+    {
+      "contractId": "C01",
+      "variantId": "startup-fault-admission-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C01"
+      ],
+      "oracle": "Exact packaged bad-secret recovery, corrupt-settings fault export and newer-schema refusal; broader startup faults remain additional required coverage",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "lifecycle-recovery-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "mission lifecycle and recovery receipt",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-960k-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-960k"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against an independently opened 960k-row fixture; source and field scale remain separate"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-2m-1gib-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-2m-1gib"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against an independently opened 2m-row/1GiB fixture; source and field scale remain separate"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-2m-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-2m"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against the canonical 2m-row fixture; its source bytes are bound independently and the 1GiB profile remains separate"
+    },
+    {
+      "contractId": "C07",
+      "variantId": "paging-field-37gb-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C07",
+        "paging-field-37gb"
+      ],
+      "oracle": "complete packaged exact breadcrumb paging against the 3.7GB field-envelope fixture; this remains a scale lane, not field acceptance"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-960k-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-960k"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against an independently opened 960k-row fixture; rendered coverage remains separate"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-2m-1gib-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-2m-1gib"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against an independently opened 2m-row/1GiB fixture; rendered coverage remains separate"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-2m-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-2m"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against the canonical 2m-row fixture; rendered coverage remains separate and the 1GiB profile remains separate"
+    },
+    {
+      "contractId": "C08",
+      "variantId": "paging-field-37gb-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C08",
+        "paging-field-37gb"
+      ],
+      "oracle": "complete packaged coverage paging and manifest completion against the 3.7GB field-envelope fixture; this remains a scale lane, not field acceptance"
+    },
+    {
+      "contractId": "C09",
+      "variantId": "gpx-custody-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C09"
+      ],
+      "oracle": "exact GPX bytes and provenance",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "known-at-time-replay-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "reviewed-packaged-producer",
+        "C10"
+      ],
+      "oracle": "transaction-time Replay truth"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "replay-960k-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C10",
+        "replay-960k"
+      ],
+      "oracle": "independent packaged Replay page and source-row custody against the fixed 960k-row fixture; scale is separate from transaction-time semantics"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "replay-2m-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C10",
+        "replay-2m"
+      ],
+      "oracle": "independent packaged Replay page and source-row custody against the fixed 2m-row fixture; scale is separate from transaction-time semantics"
+    },
+    {
+      "contractId": "C10",
+      "variantId": "replay-201-outings-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C10",
+        "replay-201-outings"
+      ],
+      "oracle": "independent packaged Replay custody across the fixed 201-outing workload; original field duration remains separate"
+    },
+    {
+      "contractId": "C12",
+      "variantId": "marker-attachment-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "reviewed-packaged-producer",
+        "C12"
+      ],
+      "oracle": "marker/version/attachment identity"
+    },
+    {
+      "contractId": "C15",
+      "variantId": "official-offline-map-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C15"
+      ],
+      "oracle": "exact synthetic offline-map render readiness from one fresh retained run; licensed/private map qualification remains separate"
+    },
+    {
+      "contractId": "C16",
+      "variantId": "settings-bootstrap-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C16"
+      ],
+      "oracle": "safe credential/bootstrap boundary",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "sqlite-recovery-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "SQLite/WAL/backup recovery",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-startup-boundaries-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-startup-boundaries"
+      ],
+      "oracle": "shared packaged C01 startup receipt independently proves C19 corrupt/newer-schema refusal, permission fault and bounded ENOSPC custody; unrelated held-gate failures remain C01-only"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-schema-matrix-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-schema-matrix"
+      ],
+      "oracle": "twelve historical schema source/migration rows retain exact source custody and migrated historical observations"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-50k-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-50k"
+      ],
+      "oracle": "50k-row schema-v11 default-app recovery retains marker and GPS source custody across restart"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-50k-kill-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-50k-kill"
+      ],
+      "oracle": "50k-row schema-v11 recovery retains an observed intermediate forced-kill checkpoint and restart custody"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-local-1gib-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-local-1gib"
+      ],
+      "oracle": "schema-v11 recovery retains the fixed local 1GiB fixture and real tracking rows through restart"
+    },
+    {
+      "contractId": "C19",
+      "variantId": "legacy-v11-field-37gb-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C19",
+        "legacy-v11-field-37gb"
+      ],
+      "oracle": "schema-v11 recovery retains the fixed field 3.7GB fixture and real tracking rows through restart"
+    },
+    {
+      "contractId": "C20",
+      "variantId": "streamed-archive-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C20"
+      ],
+      "oracle": "bounded packaged archive lifecycle with independently retained source/restored oracles; field-scale archive profiles remain separate"
+    },
+    {
+      "contractId": "C21",
+      "variantId": "archive-security-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C21"
+      ],
+      "oracle": "bounded packaged archive-security mutation corpus with independent hostile-byte, key-slot, and custody receipt validation; family and field coverage remain separate"
+    },
+    {
+      "contractId": "C22",
+      "variantId": "archive-restore-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C22"
+      ],
+      "oracle": "bounded packaged archive restore/review/revision equality with independently retained source/restored oracles; field-scale archive profiles remain separate"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "graceful-close-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 graceful-close scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "reload-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 reload scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "renderer-crash-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 renderer-crash scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "main-sigkill-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 main-sigkill scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C02",
+      "variantId": "pending-finalize-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C02"
+      ],
+      "oracle": "Fixed C02 pending-finalize scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "disk-full-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 disk-full scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "permission-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 permission scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "corrupt-temp-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 corrupt-temp scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "busy-wal-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 busy-wal scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "concurrent-writes-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 concurrent-writes scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "worker-crash-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 worker-crash scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C18",
+      "variantId": "stale-good-mirror-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C18"
+      ],
+      "oracle": "Fixed C18 stale-good-mirror scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C03",
+      "variantId": "family-contract-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C03"
+      ],
+      "oracle": "Fixed C03 family-contract scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C11",
+      "variantId": "family-contract-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C11"
+      ],
+      "oracle": "Fixed C11 family-contract scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C13",
+      "variantId": "coordinate-surface-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C13"
+      ],
+      "oracle": "Fixed C13 coordinate-surface scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C14",
+      "variantId": "map-surface-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C14"
+      ],
+      "oracle": "Fixed C14 map-surface scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    },
+    {
+      "contractId": "C17",
+      "variantId": "family-contract-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "mandatory": true,
+      "command": [
+        "internal-reviewed-package",
+        "C17"
+      ],
+      "oracle": "Fixed C17 family-contract scenario with independent retained evidence and exact package identity; observed failures block admission",
+      "resourceKey": "packaged-runtime"
+    }
   ]
 }

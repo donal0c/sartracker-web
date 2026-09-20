@@ -632,7 +632,9 @@ export function MissionReviewWorkspace() {
         await openExternalPath(path)
       }
       setPathError(null)
-      setPathFeedback(reviewSource === 'archive' ? 'Opened archived attachment.' : `Opened ${path}`)
+      setPathFeedback(reviewSource === 'archive'
+        ? 'Archived attachment sent.'
+        : `Opened ${path}`)
     } catch (error) {
       setPathFeedback(null)
       setPathError(toErrorMessage(error))

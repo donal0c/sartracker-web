@@ -4,7 +4,10 @@ import path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
+import {
+  buildTrackingSoakExpectedPositionTruthEvidence,
+  startTrackingSoakMockServer,
+} from '../../build/electron-tracking-soak-mock-server.js'
 import { createTraccarClient } from '../../src/features/tracking/traccar-client'
 
 const temporaryDirectories: string[] = []
@@ -122,5 +125,95 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
     } finally {
       await server.close()
     }
+  })
+
+  it('retains bounded current/history fault observations for priority coverage', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-priority-'))
+    temporaryDirectories.push(directory)
+    const server = await startTrackingSoakMockServer({
+      statePath: path.join(directory, 'state.json'),
+      baseTimeMs: Date.parse('2026-02-01T00:00:00.000Z'),
+      intervalMs: 5_000,
+      deviceCount: 4,
+      movingDeviceCount: 4,
+      productionPollsPerBatch: 2,
+      maximumBatches: 2,
+      priorityFaults: true,
+    })
+    const headers = { Cookie: 'JSESSIONID=tracking-soak' }
+
+    try {
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      const current = await fetch(`${server.baseUrl}/api/positions`, { headers }).then((response) => response.json())
+      expect(current).toHaveLength(4)
+      server.setHistoryMode('hold-503')
+      const held = await fetch(`${server.baseUrl}/api/positions?deviceId=1&from=2026-02-01T00:00:00.000Z&to=2026-02-01T00:01:00.000Z`, { headers })
+      expect(held.status).toBe(503)
+      server.setCurrentMode('offline')
+      const offline = await fetch(`${server.baseUrl}/api/positions`, { headers })
+      expect(offline.status).toBe(503)
+      server.setCurrentMode('allow')
+      const recovered = await fetch(`${server.baseUrl}/api/positions`, { headers })
+      expect(recovered.status).toBe(200)
+      expect(server.prioritySnapshot()).toMatchObject({
+        currentSuccesses: 2,
+        currentFailures: 1,
+        heldHistoryRequests: 1,
+        currentMode: 'allow',
+        historyMode: 'hold-503',
+      })
+      expect(server.prioritySnapshot().requests.every((entry) => Number.isFinite(entry.durationMs))).toBe(true)
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('publishes independently bound next-fix source identities at priority barriers', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-priority-barrier-'))
+    temporaryDirectories.push(directory)
+    const server = await startTrackingSoakMockServer({
+      statePath: path.join(directory, 'state.json'),
+      baseTimeMs: Date.parse('2026-02-01T00:00:00.000Z'),
+      intervalMs: 5_000,
+      deviceCount: 4,
+      movingDeviceCount: 4,
+      productionPollsPerBatch: 2,
+      maximumBatches: 2,
+      priorityFaults: true,
+    })
+    const headers = { Authorization: 'Basic synthetic' }
+
+    try {
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      const initial = await fetch(`${server.baseUrl}/api/positions`, { headers }).then((response) => response.json())
+      const initialIds = initial.map((position: { id: number }) => String(position.id))
+      const barrier = await server.advancePrioritySourceVersion()
+      const advanced = await fetch(`${server.baseUrl}/api/positions`, { headers }).then((response) => response.json())
+      const advancedIds = advanced.map((position: { id: number }) => String(position.id))
+
+      expect(new Set(advancedIds)).toEqual(new Set(barrier.sourcePositionIds.map((entry) => entry.sourcePositionId)))
+      expect(new Set(advancedIds)).not.toEqual(new Set(initialIds))
+      expect(server.snapshot()).toMatchObject({ prioritySourceBatch: 1, prioritySourceVersion: 1 })
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('orders priority barrier rows by persisted source identity in the full digest', () => {
+    const truth = buildTrackingSoakExpectedPositionTruthEvidence({
+      deviceCount: 4,
+      movingDeviceCount: 4,
+      productionPollsPerBatch: 2,
+      maximumBatches: 2,
+      baseTimeMs: Date.parse('2026-02-01T00:00:00.000Z'),
+      intervalMs: 5_000,
+      statePath: '/tmp/unused-soak-truth-state.json',
+    }, 480, { batch: 1, versionCount: 1 })
+
+    expect(truth.full).toEqual({
+      rowCount: 20,
+      missingSourcePositionIdentityRows: 0,
+      sha256: 'bdd7267aab8f9b1f2065f676fe8f97ca0ecd1ec3eaca19fbb60ed61cc06c7a07',
+    })
   })
 })

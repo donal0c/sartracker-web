@@ -15,6 +15,7 @@ import {
   runContractAttempt,
   verifyCampaignAttempt,
 } from './qualification/control-plane.mjs'
+import { ingestHumanTrainingEvidence } from './qualification/candidate-control-plane.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -72,11 +73,28 @@ function emit(value) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
 }
 
+/** Convert a lease cleanup exception into a reportable fail-closed result. */
+function cleanupFailure(error) {
+  return {
+    status: 'CLEANUP_BLOCKED',
+    reason: error instanceof Error ? error.message : String(error),
+  }
+}
+
+/** Clean up a lease owned by this CLI invocation and retain failures as data. */
+async function cleanupOwnedLease(preflight) {
+  try {
+    return await cleanupCampaignLease({ leasePath: preflight.lease.leasePath })
+  } catch (error) {
+    return cleanupFailure(error)
+  }
+}
+
 /** Run the qualification controller command selected by the user. */
 async function main() {
   const { command, options } = parseArguments(process.argv.slice(2))
   if (command === 'help') {
-    emit({ commands: ['compile', 'calibration', 'preflight', 'run', 'resume', 'ingest-judge', 'verify', 'verdict', 'cleanup', 'inventory', 'dry-run'] })
+    emit({ commands: ['compile', 'calibration', 'preflight', 'run', 'resume', 'ingest-judge', 'ingest-human', 'verify', 'verdict', 'cleanup', 'inventory', 'dry-run'] })
     return
   }
   if (command === 'dry-run') {
@@ -164,10 +182,50 @@ async function main() {
     emit(await ingestAdvisoryJudgeResult({ attemptDirectory, result }))
     return
   }
+  if (command === 'ingest-human') {
+    const definitionPath = path.resolve(requireOption(options, 'campaign'))
+    const definition = await readJson(definitionPath, 'campaign definition')
+    const campaignRoot = path.resolve(requireOption(options, 'root'))
+    const preflight = await preflightCampaign({ definition, campaignRoot, currentSourceIdentity: currentSourceIdentity() })
+    if (preflight.status !== 'READY') {
+      emit(preflight)
+      process.exitCode = 2
+      return
+    }
+    let result
+    let executionError
+    let cleanup
+    try {
+      result = await ingestHumanTrainingEvidence({
+        definition,
+        preflight,
+        campaignRoot,
+        attemptId: requireOption(options, 'attempt'),
+        envelopePath: path.resolve(requireOption(options, 'envelope')),
+        evidencePath: path.resolve(requireOption(options, 'evidence')),
+      })
+    } catch (error) {
+      executionError = error
+    } finally {
+      cleanup = await cleanupOwnedLease(preflight)
+    }
+    if (executionError !== undefined) {
+      if (cleanup.status !== 'CLEANED') {
+        executionError = new Error(`${executionError instanceof Error ? executionError.message : String(executionError)}; cleanup: ${cleanup.reason ?? cleanup.status}`)
+      }
+      throw executionError
+    }
+    result = { ...result, cleanup }
+    emit(result)
+    if (cleanup.status !== 'CLEANED') process.exitCode = 2
+    if (result.status === 'INVALID_EVIDENCE' && process.exitCode === undefined) process.exitCode = 1
+    return
+  }
   if (command === 'verify') {
     const attemptDirectory = path.resolve(requireOption(options, 'attempt'))
     const anchorPath = path.resolve(options.get('anchor') ?? defaultAnchorPath(attemptDirectory))
-    emit(await verifyCampaignAttempt({ attemptDirectory, anchorPath }))
+    const definition = await readJson(requireOption(options, 'campaign'), 'campaign definition')
+    emit(await verifyCampaignAttempt({ attemptDirectory, anchorPath, definition }))
     return
   }
   if (command === 'cleanup') {
@@ -182,8 +240,16 @@ async function main() {
   const campaignRoot = path.resolve(options.get('root') ?? defaultCampaignRoot(definitionPath))
   if (command === 'preflight') {
     const preflight = await preflightCampaign({ definition, campaignRoot, currentSourceIdentity: currentSourceIdentity() })
-    emit(preflight)
-    if (preflight.status !== 'READY') process.exitCode = 2
+    if (preflight.status !== 'READY') {
+      emit(preflight)
+      process.exitCode = 2
+      return
+    }
+    const cleanup = await cleanupOwnedLease(preflight)
+    const probe = { ...preflight }
+    delete probe.lease
+    emit({ ...probe, lifecycle: 'probe', cleanup })
+    if (cleanup.status !== 'CLEANED') process.exitCode = 2
     return
   }
   if (command === 'run' || command === 'resume') {
@@ -193,18 +259,34 @@ async function main() {
       process.exitCode = 2
       return
     }
-    const resumeAttemptId = command === 'resume' ? requireOption(options, 'attempt') : options.get('attempt')
-    let contractId = options.get('contract')
-    let variantId = options.get('variant')
-    if (command === 'resume' && (contractId === undefined || variantId === undefined)) {
-      const attempt = await readJson(path.join(campaignRoot, 'attempts', resumeAttemptId, 'attempt.json'), 'attempt metadata')
-      contractId ??= attempt.contractId
-      variantId ??= attempt.variantId
+    let attempt
+    let executionError
+    let cleanup
+    try {
+      const resumeAttemptId = command === 'resume' ? requireOption(options, 'attempt') : options.get('attempt')
+      let contractId = options.get('contract')
+      let variantId = options.get('variant')
+      if (command === 'resume' && (contractId === undefined || variantId === undefined)) {
+        const attemptMetadata = await readJson(path.join(campaignRoot, 'attempts', resumeAttemptId, 'attempt.json'), 'attempt metadata')
+        contractId ??= attemptMetadata.contractId
+        variantId ??= attemptMetadata.variantId
+      }
+      attempt = await runContractAttempt({ definition, preflight, campaignRoot, contractId, variantId, resumeAttemptId })
+    } catch (error) {
+      executionError = error
+    } finally {
+      cleanup = await cleanupOwnedLease(preflight)
     }
-    const attempt = await runContractAttempt({ definition, preflight, campaignRoot, contractId, variantId, resumeAttemptId })
+    if (executionError !== undefined) {
+      if (cleanup.status !== 'CLEANED') {
+        executionError = new Error(`${executionError instanceof Error ? executionError.message : String(executionError)}; cleanup: ${cleanup.reason ?? cleanup.status}`)
+      }
+      throw executionError
+    }
+    attempt = { ...attempt, cleanup }
     emit(attempt)
-    if (attempt.status === 'ENVIRONMENT_BLOCKED') process.exitCode = 2
-    if (attempt.status === 'FAIL') process.exitCode = 1
+    if (cleanup.status !== 'CLEANED' || attempt.status === 'ENVIRONMENT_BLOCKED') process.exitCode = 2
+    if (attempt.status === 'FAIL' && process.exitCode === undefined) process.exitCode = 1
     return
   }
   if (command === 'verdict') {

@@ -6,21 +6,30 @@
 // field fixture, this marker is observable while the asynchronous copy is in flight.
 
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import {
+  chmod,
   copyFile,
+  access,
   mkdir,
   readFile,
+  readdir,
+  rm,
   stat,
+  statfs,
   writeFile,
 } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import { chromium } from 'playwright'
+import { chromium, _electron as electron } from 'playwright'
 
 import {
+  BACKUP_FAULT_VARIANTS,
+  buildStorageBackupFaultOracleInput,
+  buildStorageBackupFaultVerdict,
+  buildStorageKillProbeOracleInput,
   buildStorageKillProbeVerdict,
   parseStorageKillProbeArgs,
 } from '../build/electron-storage-diagnostics-kill-probe-lib.js'
@@ -39,6 +48,10 @@ main().catch((error) => {
 /** Runs the packaged kill/restart/export proof and writes one machine-readable verdict. */
 async function main() {
   const options = parseStorageKillProbeArgs(process.argv.slice(2))
+  if (options.variant !== undefined && options.variant !== 'abrupt-recovery') {
+    await runBackupFaultVariant(options)
+    return
+  }
   const evidenceDir = path.resolve(options.evidenceDir)
   const userDataDir = path.join(evidenceDir, 'user-data')
   const databasePath = path.join(userDataDir, 'mission-store.sqlite')
@@ -147,15 +160,20 @@ async function main() {
       userDataDir,
       os.homedir(),
     ]
-    const verdict = buildStorageKillProbeVerdict({
+    const oracleInput = buildStorageKillProbeOracleInput({
       beforeKill,
       afterRestart,
       runtimeLog,
       supportBundle,
       forbiddenValues,
     })
+    const verdict = buildStorageKillProbeVerdict({
+      ...oracleInput,
+      forbiddenValues,
+    })
     const report = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      schema: 'sartracker-storage-diagnostics-kill-probe-v2',
       issue: 'DON-244',
       recordedAt: new Date().toISOString(),
       app: {
@@ -175,10 +193,11 @@ async function main() {
       killedAt: beforeKill.activeOperation,
       recoveredAs: afterRestart.previousInterruptedOperation,
       supportBundleBasename: path.basename(supportBundlePath),
-      privacyChecks: forbiddenValues.map((value) => ({
-        label: path.basename(value) || 'home',
-        absent: !supportBundle.includes(value),
+      privacyChecks: forbiddenValues.map((_value, index) => ({
+        label: `forbidden-value-${index + 1}`,
+        absent: !supportBundle.includes(_value),
       })),
+      oracleInput,
       verdict,
     }
     await writeJson(path.join(evidenceDir, 'storage-diagnostics-kill-probe-report.json'), report)
@@ -192,6 +211,419 @@ async function main() {
     await stopLaunch(firstLaunch)
     await stopLaunch(secondLaunch)
   }
+}
+
+/**
+ * Runs one fixed C18 backup-fault variant against the supplied packaged app.
+ * Disk-full is reported as an execution precondition when no bounded quota is
+ * supplied; this producer never fills the host filesystem.
+ */
+async function runBackupFaultVariant(options) {
+  const evidenceDir = path.resolve(options.evidenceDir)
+  const variant = options.variant
+  if (!BACKUP_FAULT_VARIANTS.includes(variant)) throw new Error(`Unsupported C18 backup variant: ${variant}`)
+  await assertFreshEvidenceDirectory(evidenceDir)
+  await mkdir(evidenceDir, { recursive: true, mode: 0o700 })
+  const appProfile = path.join(evidenceDir, '.app-profile')
+  let storeProfile = path.join(evidenceDir, 'fault-store')
+  let boundedVolume = null
+  let boundedVolumeOwned = false
+  if (variant === 'disk-full') {
+    boundedVolume = await prepareBoundedEnospcVolume({
+      mountPath: options.enospcMount,
+      evidenceDir,
+      fixturePath: options.fixturePath,
+    })
+    if (boundedVolume.ready) {
+      storeProfile = boundedVolume.storeProfile
+      boundedVolumeOwned = true
+    }
+  } else {
+    await mkdir(storeProfile, { recursive: true, mode: 0o700 })
+  }
+  const sourceSha256 = await sha256File(options.fixturePath)
+  const appSha256 = await sha256File(options.appPath)
+  const workerCrashPath = path.join(evidenceDir, 'backup-worker-crash.cjs')
+  if (variant === 'worker-crash') {
+    await writeFile(workerCrashPath, 'process.exit(23)\n', { mode: 0o700, flag: 'wx' })
+  }
+
+  let app = null
+  let page = null
+  let runtime = null
+  let raw = null
+  let failure = null
+  let reportToWrite = null
+  let pendingError = null
+  const cleanup = { applicationClosed: false, appProfileRemoved: false, boundedVolumeOwnedRemoved: false }
+  try {
+    if (variant !== 'disk-full') {
+      await copyFile(options.fixturePath, path.join(storeProfile, 'mission-store.sqlite'))
+      await copyFixtureManifestIfPresent(
+        options.fixturePath,
+        path.join(storeProfile, 'mission-store.sqlite'),
+      )
+    }
+    if (variant === 'disk-full' && boundedVolume?.ready !== true) {
+      raw = {
+        variant,
+        outcome: 'unavailable',
+        precondition: boundedVolume?.precondition ?? {
+          kind: 'bounded-enospc', status: 'ENVIRONMENT_BLOCKED', observed: false,
+          deviceDistinct: false, totalBytes: null, availableBytes: null,
+          reason: 'No bounded quota or loopback ENOSPC harness was supplied; host storage was not mutated.',
+        },
+      }
+    } else {
+      app = await launchFaultPackagedApp(options.appPath, appProfile, options.extraArgs)
+      page = await app.firstWindow()
+      await page.getByTestId('app-shell').waitFor({ timeout: 60_000 })
+      runtime = await app.evaluate(({ app: runningApp }) => ({
+        isPackaged: runningApp.isPackaged,
+        appPath: runningApp.getAppPath(),
+        executablePath: process.execPath,
+        profilePath: runningApp.getPath('userData'),
+      }))
+      await page.screenshot({ path: path.join(evidenceDir, 'backup-fault-runtime.png'), fullPage: true })
+      raw = await app.evaluate(async ({ app: runningApp }, input) => {
+        const require = process.getBuiltinModule('node:module').createRequire(`${runningApp.getAppPath()}/package.json`)
+        const fs = require('node:fs/promises')
+        const fsSync = require('node:fs')
+        const pathModule = require('node:path')
+        const crypto = require('node:crypto')
+        const Database = require('better-sqlite3')
+        const { createElectronMissionStore } = require(pathModule.join(
+          runningApp.getAppPath(), 'electron/mission-store.cjs',
+        ))
+        const { runSqliteBackupInWorker } = require(pathModule.join(
+          runningApp.getAppPath(), 'electron/sqlite-backup-runner.cjs',
+        ))
+        const sourcePath = pathModule.join(input.storePath, 'mission-store.sqlite')
+        const mirrorPath = pathModule.join(input.storePath, 'mission-store.backup.sqlite')
+        const hashFile = async (filename) => {
+          const hash = crypto.createHash('sha256')
+          let bytes = 0
+          await new Promise((resolve, reject) => {
+            const stream = fsSync.createReadStream(filename)
+            stream.on('data', (chunk) => { bytes += chunk.length; hash.update(chunk) })
+            stream.on('error', reject)
+            stream.on('end', resolve)
+          })
+          return { sha256: hash.digest('hex'), bytes }
+        }
+        const fileFact = async (filename) => {
+          try { return await hashFile(filename) } catch (error) {
+            if (error?.code === 'ENOENT') return null
+            throw error
+          }
+        }
+        const mirrorFact = async () => {
+          const fact = await fileFact(mirrorPath)
+          if (fact === null) return null
+          let integrity = 'failed'
+          let database
+          try {
+            database = new Database(mirrorPath, { readonly: true, fileMustExist: true })
+            integrity = database.pragma('integrity_check', { simple: true }) === 'ok' ? 'ok' : 'failed'
+          } catch {
+            integrity = 'failed'
+          } finally { database?.close() }
+          return { ...fact, integrity }
+        }
+        const temporaryFiles = async () => (await fs.readdir(input.storePath, { withFileTypes: true }))
+          .filter((entry) => entry.isFile() && entry.name.startsWith('mission-store.backup.sqlite.tmp-'))
+          .map((entry) => entry.name)
+          .sort()
+        const safeError = (error) => {
+          const message = String(error?.message ?? error).replace(/[\r\n]+/gu, ' ').slice(0, 500)
+          const code = typeof error?.code === 'string'
+            ? error.code
+            : /EACCES|permission denied/iu.test(message) ? 'EACCES'
+              : /ENOSPC|SQLITE_FULL|no space left/iu.test(message) ? 'ENOSPC' : null
+          return { name: String(error?.name ?? 'Error').slice(0, 80), code, message }
+        }
+        const closeStore = async (store) => {
+          if (store === null) return
+          await store.prepareClose().catch(() => undefined)
+          try { store.close() } catch {}
+        }
+        const makeStore = (faultInjection = {}) => createElectronMissionStore({
+          userDataPath: input.storePath,
+          backupFaultInjection: faultInjection,
+        })
+
+        let store = makeStore()
+        let sourceBefore = await fileFact(sourcePath)
+        await store.syncBackup('c18-fault-baseline')
+        const mirrorBefore = await mirrorFact()
+        let sourceAfter = await fileFact(sourcePath)
+        let error = null
+        let operationOutcome = 'completed'
+        let permission = null
+        let snapshot = null
+        let busyWal = null
+        let concurrentWrites = null
+        let worker = null
+        let staleMirror = false
+        let diskFull = null
+        try {
+          if (input.variant === 'disk-full') {
+            const fillerPath = pathModule.join(input.storePath, 'owned-enospc-filler.bin')
+            const maxFillBytes = Number.isSafeInteger(input.fillCapBytes) && input.fillCapBytes >= 0
+              ? input.fillCapBytes : 0
+            const chunk = Buffer.alloc(1024 * 1024, 0x5a)
+            let filledBytes = 0
+            let observedEnospc = false
+            let filler
+            try {
+              filler = fsSync.openSync(fillerPath, 'wx', 0o600)
+              while (filledBytes < maxFillBytes) {
+                const nextBytes = Math.min(chunk.length, maxFillBytes - filledBytes)
+                try {
+                  const written = fsSync.writeSync(filler, chunk, 0, nextBytes)
+                  filledBytes += written
+                  if (written < nextBytes) break
+                } catch (caught) {
+                  if (caught?.code === 'ENOSPC') observedEnospc = true
+                  else throw caught
+                  break
+                }
+              }
+            } catch (caught) {
+              error = safeError(caught)
+              operationOutcome = 'failed'
+            } finally { if (filler !== undefined) fsSync.closeSync(filler) }
+            try { await store.syncBackup('c18-disk-full') } catch (caught) {
+              error = safeError(caught); operationOutcome = 'failed'
+            }
+            diskFull = {
+              fillerAttempted: true,
+              observedEnospc,
+              backupErrorObserved: error?.code === 'ENOSPC',
+              filledBytes,
+              maxFillBytes,
+            }
+          } else if (input.variant === 'permission') {
+            permission = {
+              attempted: true,
+              observed: false,
+              restored: false,
+              denial: {
+                independentWriteAttempted: false,
+                observedCode: null,
+                target: 'store-directory',
+                modeBefore: 0o700,
+                modeDenied: 0o500,
+                modeRestored: 0o700,
+              },
+            }
+            await fs.chmod(input.storePath, 0o500)
+            try { await store.syncBackup('c18-permission') } catch (caught) {
+              error = safeError(caught); operationOutcome = 'failed'
+              permission.observed = error.code === 'EACCES' || error.code === 'EPERM'
+            } finally {
+              permission.denial.independentWriteAttempted = true
+              const denialPath = pathModule.join(input.storePath, '.c18-permission-denial-check')
+              try {
+                await fs.writeFile(denialPath, 'c18-permission-check', { flag: 'wx', mode: 0o600 })
+                await fs.rm(denialPath, { force: true })
+              } catch (caught) {
+                const denialError = safeError(caught)
+                permission.denial.observedCode = denialError.code
+              }
+              // SQLite's backup worker reports this filesystem denial as a
+              // generic SqliteError without errno.  Treat it as observed only
+              // when the independent same-directory canary proves the exact
+              // denial while the directory is chmod'ed 0500.
+              permission.observed = operationOutcome === 'failed'
+                && permission.denial.observedCode !== null
+                && error?.name === 'SqliteError'
+                && /unable to open database file/iu.test(error.message)
+              await fs.chmod(input.storePath, 0o700)
+              permission.restored = true
+            }
+          } else if (input.variant === 'corrupt-temp' || input.variant === 'stale-good-mirror') {
+            if (input.variant === 'stale-good-mirror') {
+              const active = await store.getActiveMission()
+              if (active !== null) await store.pauseMission(active.id)
+              else await store.createMission({ name: 'C18 stale mirror synthetic mission' })
+              sourceAfter = await fileFact(sourcePath)
+              staleMirror = true
+            }
+            await closeStore(store)
+            store = makeStore({
+              ...(input.variant === 'corrupt-temp'
+                ? { corruptTemporarySnapshotBeforeSanityCheck: true }
+                : { afterTemporaryBackup: true }),
+            })
+            try { await store.syncBackup(`c18-${input.variant}`) } catch (caught) {
+              error = safeError(caught); operationOutcome = 'failed'
+              snapshot = input.variant === 'corrupt-temp'
+                ? { temporaryCorrupted: true, sanityRejected: true }
+                : null
+            }
+          } else if (input.variant === 'busy-wal') {
+            const targetPath = pathModule.join(input.storePath, 'busy-wal-result.sqlite')
+            const lock = new Database(sourcePath)
+            lock.pragma('journal_mode = WAL')
+            lock.exec('BEGIN IMMEDIATE')
+            let backupCompleted = false
+            try {
+              await runSqliteBackupInWorker({ sourcePath, targetPath })
+              backupCompleted = true
+            } catch (caught) { error = safeError(caught); operationOutcome = 'failed' }
+            finally { try { lock.exec('ROLLBACK') } catch {} ; lock.close() }
+            busyWal = { writeTransactionHeld: true, backupCompleted, released: true }
+            await fs.rm(targetPath, { force: true })
+          } else if (input.variant === 'concurrent-writes') {
+            const mission = await store.getActiveMission()
+              ?? await store.createMission({ name: 'C18 concurrent mutation mission' })
+            const mutationRefA = `c18-device-a-${crypto.randomUUID()}`
+            const mutationRefB = `c18-device-b-${crypto.randomUUID()}`
+            const results = await Promise.allSettled([
+              store.addMissionParticipant({
+                mission_id: mission.id,
+                kind: 'device',
+                ref: mutationRefA,
+                confirmed_by: 'C18 calibration operator',
+              }),
+              store.addMissionParticipant({
+                mission_id: mission.id,
+                kind: 'device',
+                ref: mutationRefB,
+                confirmed_by: 'C18 calibration operator',
+              }),
+            ])
+            const completedCount = results.filter((result) => result.status === 'fulfilled').length
+            const participants = completedCount === 2 ? await store.listMissionParticipants(mission.id) : []
+            const auditEvents = completedCount === 2
+              ? (await store.listMissionEvents(mission.id)).filter((event) => event?.event_type === 'participant_added')
+              : []
+            let postMutationBackupCompleted = false
+            let retryCompleted = false
+            if (completedCount === 2) {
+              try {
+                await store.syncBackup('c18-concurrent-post-mutation')
+                postMutationBackupCompleted = true
+                await store.syncBackup('c18-concurrent-retry')
+                retryCompleted = true
+              } catch (caught) {
+                error = safeError(caught)
+                operationOutcome = 'failed'
+              }
+            }
+            concurrentWrites = {
+              attemptedCount: 2,
+              completedCount,
+              serialized: completedCount === 2,
+              mutationKind: 'add-mission-participant',
+              acceptedMutationCount: participants.length,
+              durableRowCount: participants.length,
+              auditEventCount: auditEvents.length,
+              postMutationBackupCompleted,
+              retryCompleted,
+            }
+            if (completedCount !== 2) {
+              operationOutcome = 'failed'
+              error = safeError(results.find((result) => result.status === 'rejected')?.reason)
+            }
+          } else if (input.variant === 'worker-crash') {
+            const targetPath = pathModule.join(input.storePath, 'mission-store.backup.sqlite.tmp-worker-crash')
+            try {
+              await runSqliteBackupInWorker({ sourcePath, targetPath, workerPath: input.workerPath })
+              operationOutcome = 'completed'
+            } catch (caught) { error = safeError(caught); operationOutcome = 'failed' }
+            const targetAbsent = await fileFact(targetPath) === null
+            await fs.rm(targetPath, { force: true })
+            worker = { attempted: true, crashed: operationOutcome === 'failed', targetAbsent }
+          }
+        } finally {
+          await closeStore(store)
+        }
+        return {
+          variant: input.variant, outcome: operationOutcome, error,
+          sourceBefore, sourceAfter: await fileFact(sourcePath),
+          mirrorBefore, mirrorAfter: await mirrorFact(),
+          temporaryFilesAfter: await temporaryFiles(), permission, snapshot,
+          busyWal, concurrentWrites, worker, staleMirror, diskFull,
+          precondition: input.precondition,
+        }
+      }, {
+        storePath: storeProfile,
+        variant,
+        workerPath: workerCrashPath,
+        precondition: boundedVolume?.precondition ?? null,
+        fillCapBytes: boundedVolume?.fillCapBytes ?? null,
+      })
+    }
+    const oracleInput = buildStorageBackupFaultOracleInput(raw)
+    const verdict = buildStorageBackupFaultVerdict(oracleInput)
+    const runtimeIdentity = runtime === null ? null : {
+      proofMode: runtime.isPackaged === true ? 'packaged-module' : 'development-harness',
+      executablePath: path.resolve(runtime.executablePath),
+      executableSha256: await sha256File(runtime.executablePath),
+      asarPath: runtime.isPackaged === true ? path.resolve(runtime.appPath) : null,
+      asarSha256: runtime.isPackaged === true ? await sha256File(runtime.appPath) : null,
+      profilePath: runtime.profilePath,
+    }
+    reportToWrite = {
+      schemaVersion: 1,
+      schema: 'sartracker-storage-backup-fault-matrix-v1',
+      contractId: 'C18',
+      variant,
+      source: { path: path.relative(evidenceDir, options.fixturePath), sha256: sourceSha256 },
+      app: { path: path.basename(options.appPath), sha256: appSha256 },
+      runtime: runtimeIdentity,
+      store: { root: 'fault-store', source: 'fault-store/mission-store.sqlite', mirror: 'fault-store/mission-store.backup.sqlite' },
+      oracleInput,
+      verdict,
+      cleanup,
+      releaseEligible: false,
+    }
+    if (verdict.status === 'INVALID_EVIDENCE') throw new Error(`C18 ${variant} fault probe failed: ${verdict.failures.join(' ')}`)
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error)
+    if (raw === null) raw = { variant, outcome: 'failed', error: { name: 'ProducerError', code: null, message: failure } }
+    pendingError = error
+  } finally {
+    if (app !== null) {
+      try { await app.close(); cleanup.applicationClosed = true } catch {}
+    }
+    try { await rm(appProfile, { recursive: true, force: true }); cleanup.appProfileRemoved = true } catch {}
+    if (boundedVolumeOwned) {
+      try { await rm(storeProfile, { recursive: true, force: true }); cleanup.boundedVolumeOwnedRemoved = true } catch {}
+    }
+  }
+  if (pendingError !== null) {
+    await writeJson(path.join(evidenceDir, 'storage-backup-fault-matrix-failure-receipt.json'), {
+      schema: 'sartracker-storage-backup-fault-matrix-failure-v1', contractId: 'C18', variant,
+      sourceSha256, appSha256, raw, cleanup, releaseEligible: false,
+    })
+    throw pendingError
+  }
+  if (reportToWrite !== null) {
+    reportToWrite.cleanup = cleanup
+    await writeJson(path.join(evidenceDir, 'storage-backup-fault-matrix-report.json'), reportToWrite)
+  }
+  void page
+  void failure
+}
+
+/** Launches the exact packaged executable for one disposable C18 fault run. */
+async function launchFaultPackagedApp(appPath, userDataDir, extraArgs) {
+  const platformArgs = process.platform === 'linux'
+    ? ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl', '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE']
+    : []
+  return electron.launch({
+    executablePath: appPath,
+    args: [...platformArgs, ...extraArgs],
+    env: {
+      ...process.env,
+      SARTRACKER_ELECTRON_BLOCK_NETWORK: '1',
+      SARTRACKER_ELECTRON_USER_DATA_PATH: userDataDir,
+    },
+    timeout: 30_000,
+  })
 }
 
 /** Launches one isolated packaged app and returns its first ready renderer page. */
@@ -280,6 +712,79 @@ async function assertFreshEvidenceDirectory(evidenceDir) {
   })
   if (existing !== null) {
     throw new Error(`Evidence directory already exists; choose a fresh path: ${evidenceDir}`)
+  }
+}
+
+/** Validate and privately seed one reviewed small volume for a bounded ENOSPC run. */
+async function prepareBoundedEnospcVolume({ mountPath, evidenceDir, fixturePath }) {
+  const blocked = (reason, details = {}) => ({
+    ready: false,
+    precondition: {
+      kind: 'bounded-enospc', status: 'ENVIRONMENT_BLOCKED', observed: false,
+      deviceDistinct: details.deviceDistinct === true,
+      totalBytes: details.totalBytes ?? null, availableBytes: details.availableBytes ?? null,
+      reason,
+    },
+  })
+  if (typeof mountPath !== 'string' || !path.isAbsolute(mountPath)) {
+    return blocked('A reviewed absolute bounded writable mount is required via --enospc-mount.')
+  }
+  let mountInfo
+  let evidenceInfo
+  let volumeStats
+  try {
+    mountInfo = await stat(mountPath)
+    evidenceInfo = await stat(evidenceDir)
+    volumeStats = await statfs(mountPath)
+    await access(mountPath)
+  } catch (error) {
+    return blocked(`Bounded ENOSPC mount could not be inspected: ${error?.code ?? 'unavailable'}.`)
+  }
+  if (!mountInfo.isDirectory()) return blocked('Bounded ENOSPC input is not a directory.')
+  const totalBytes = Number(volumeStats.bsize) * Number(volumeStats.blocks)
+  const availableBytes = Number(volumeStats.bsize) * Number(volumeStats.bavail)
+  const deviceDistinct = mountInfo.dev !== evidenceInfo.dev
+  if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0 || totalBytes > 64 * 1024 * 1024) {
+    return blocked('Bounded ENOSPC volume must report total capacity at or below 64 MiB.', { totalBytes })
+  }
+  if (!deviceDistinct) {
+    return blocked('Bounded ENOSPC volume must use a device distinct from the evidence filesystem.', {
+      totalBytes, availableBytes,
+    })
+  }
+  let fixtureInfo
+  try { fixtureInfo = await stat(fixturePath) } catch (error) {
+    return blocked(`Fixture could not be inspected for bounded ENOSPC preparation: ${error?.code ?? 'unavailable'}.`, {
+      totalBytes, availableBytes, deviceDistinct,
+    })
+  }
+  if (fixtureInfo.size <= 0 || fixtureInfo.size > Math.max(1, availableBytes / 2)) {
+    return blocked('Fixture is too large to seed safely on the bounded ENOSPC volume.', {
+      totalBytes, availableBytes, deviceDistinct,
+    })
+  }
+  const storeProfile = path.join(mountPath, `.sartracker-c18-enospc-${randomUUID()}`)
+  try {
+    await mkdir(storeProfile, { recursive: true, mode: 0o700 })
+    await copyFile(fixturePath, path.join(storeProfile, 'mission-store.sqlite'))
+    await copyFixtureManifestIfPresent(fixturePath, path.join(storeProfile, 'mission-store.sqlite'))
+    const afterCopy = await statfs(storeProfile)
+    const copyAvailableBytes = Number(afterCopy.bsize) * Number(afterCopy.bavail)
+    return {
+      ready: true,
+      storeProfile,
+      fillCapBytes: Math.max(0, copyAvailableBytes),
+      precondition: {
+        kind: 'bounded-enospc', status: 'READY', observed: true, deviceDistinct,
+        totalBytes, availableBytes: copyAvailableBytes,
+        reason: 'Reviewed bounded writable volume passed capacity, device and fixture preflight.',
+      },
+    }
+  } catch (error) {
+    await rm(storeProfile, { recursive: true, force: true }).catch(() => undefined)
+    return blocked(`Bounded ENOSPC volume could not be seeded: ${error?.code ?? 'unavailable'}.`, {
+      totalBytes, availableBytes, deviceDistinct,
+    })
   }
 }
 

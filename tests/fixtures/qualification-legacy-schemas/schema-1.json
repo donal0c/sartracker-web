@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "46d1dbd29564414875ae5d798e871d27545079df",
+  "sourceModuleSha256": "8c36c14b3e805b619efe8ff6536f89d8109a53d9d95bcd3a5a3e4a99aefcbd91",
+  "fixtureKind": "historical-rust-ddl-with-synthetic-evidence",
+  "missionId": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+  "markerId": null,
+  "schema": [
+    {
+      "type": "table",
+      "name": "metadata",
+      "sql": "CREATE TABLE metadata (\n              key TEXT PRIMARY KEY,\n              value TEXT NOT NULL\n            )"
+    },
+    {
+      "type": "table",
+      "name": "mission_events",
+      "sql": "CREATE TABLE mission_events (\n              id TEXT PRIMARY KEY,\n              mission_id TEXT NOT NULL,\n              event_type TEXT NOT NULL,\n              timestamp TEXT NOT NULL,\n              details_json TEXT,\n              FOREIGN KEY (mission_id) REFERENCES missions(id) ON DELETE CASCADE\n            )"
+    },
+    {
+      "type": "table",
+      "name": "missions",
+      "sql": "CREATE TABLE missions (\n              id TEXT PRIMARY KEY,\n              name TEXT NOT NULL,\n              status TEXT NOT NULL CHECK(status IN ('idle', 'active', 'paused', 'finished', 'finalized')),\n              start_time TEXT NOT NULL,\n              pause_time TEXT,\n              finish_time TEXT,\n              paused_seconds INTEGER NOT NULL DEFAULT 0,\n              notes TEXT,\n              schema_version INTEGER NOT NULL\n            )"
+    },
+    {
+      "type": "index",
+      "name": "idx_mission_events_mission_timestamp",
+      "sql": "CREATE INDEX idx_mission_events_mission_timestamp\n              ON mission_events(mission_id, timestamp)"
+    },
+    {
+      "type": "index",
+      "name": "idx_missions_status",
+      "sql": "CREATE INDEX idx_missions_status ON missions(status)"
+    }
+  ],
+  "rows": {
+    "metadata": [
+      {
+        "key": "schema_version",
+        "value": "1"
+      }
+    ],
+    "mission_events": [
+      {
+        "id": "e85ffd90-aa77-48fd-b7cb-5148093a31a5",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "event_type": "mission_created",
+        "timestamp": "2026-08-20T09:00:00.000Z",
+        "details_json": "{\"name\":\"Synthetic historical schema 3\",\"notes\":null,\"start_time\":\"2026-08-20T09:00:00.000Z\"}"
+      },
+      {
+        "id": "f357dcf0-d6e8-404d-8c6c-3756c005a216",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "event_type": "device_updated",
+        "timestamp": "2026-09-19T23:31:37.581Z",
+        "details_json": "{\"device_id\":\"historical-device\",\"name\":\"Historical device\",\"status\":\"online\",\"color\":\"#2563eb\"}"
+      },
+      {
+        "id": "8e2b987a-6b65-44e6-9dc0-cbd538410456",
+        "mission_id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "event_type": "position_recorded",
+        "timestamp": "2026-08-20T10:00:00.000Z",
+        "details_json": "{\"position_id\":\"dae65a27-df74-4984-bb02-5cce939dde5d\",\"device_id\":\"historical-device\",\"timestamp\":\"2026-08-20T10:00:00.000Z\",\"data_origin\":\"live\",\"source\":null}"
+      }
+    ],
+    "missions": [
+      {
+        "id": "6d07925d-b093-4722-8fc1-dd139d805bd7",
+        "name": "Synthetic historical schema 3",
+        "status": "active",
+        "start_time": "2026-08-20T09:00:00.000Z",
+        "pause_time": null,
+        "finish_time": null,
+        "paused_seconds": 0,
+        "notes": null,
+        "schema_version": 1
+      }
+    ]
+  }
+}

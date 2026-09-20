@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import os, { tmpdir } from 'node:os'
 import path from 'node:path'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -13,6 +14,9 @@ import {
   runContractAttempt,
   verifyCampaignAttempt,
 } from '../../scripts/qualification/control-plane.mjs'
+import { ingestHumanTrainingEvidence, materializeCaptures, readBoundJsonFile, validateBindingCoverage } from '../../scripts/qualification/candidate-control-plane.mjs'
+import { canonicalJson } from '../../scripts/qualification/control-plane.mjs'
+import { C28_REQUIRED_VARIANTS } from '../../scripts/qualification/composite-coverage.mjs'
 
 const registryPath = path.resolve('docs/assurance/qualification-contracts.json')
 const sourceIdentity = { sha: 'a'.repeat(40), tree: 'b'.repeat(40), dirty: false }
@@ -80,6 +84,447 @@ async function compilePlan(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification candidate control plane', () => {
+  it('requires retained and hashed media for candidate captures while preserving calibration pathless captures', async () => {
+    temporaryRoot = await mkdtemp(path.join(tmpdir(), 'sartracker-capture-custody-'))
+    const attemptsRoot = path.join(temporaryRoot, 'attempts')
+    const attemptDirectory = path.join(attemptsRoot, 'attempt-1')
+    await mkdir(attemptDirectory, { recursive: true })
+    const source = path.join(temporaryRoot, 'capture.png')
+    await writeFile(source, 'synthetic-image-bytes\n', 'utf8')
+
+    await expect(materializeCaptures(
+      [{ name: 'missing-path', kind: 'image' }],
+      attemptDirectory,
+      attemptsRoot,
+      'candidate',
+    )).rejects.toThrow(/retained media path/iu)
+
+    const calibration = await materializeCaptures(
+      [{ name: 'synthetic', kind: 'image' }],
+      attemptDirectory,
+      attemptsRoot,
+      'calibration',
+    )
+    expect(calibration).toEqual([{ name: 'synthetic', kind: 'image' }])
+
+    const materialized = await materializeCaptures(
+      [{ name: 'captured', kind: 'image', path: source }],
+      attemptDirectory,
+      attemptsRoot,
+      'candidate',
+    )
+    expect(materialized).toEqual([{
+      name: 'captured', kind: 'image', sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    }])
+    expect(await readFile(path.join(attemptDirectory, 'media-captured'), 'utf8'))
+      .toBe('synthetic-image-bytes\n')
+  })
+
+  it('blocks packaged/live fixture role omissions before an adapter can spawn', () => {
+    const base = {
+      mode: 'candidate',
+      requiredContracts: ['C05'],
+      identities: {
+        candidate: { candidateId: 'candidate', version: '0.1.0', artifacts: [
+          { role: 'ci-appimage', localBuild: false },
+          { role: 'ci-deb', localBuild: false },
+        ] },
+      },
+      runtimeInputs: { config: { fixtures: {} } },
+    }
+    expect(validateBindingCoverage({
+      ...base,
+      bindings: [{ contractId: 'C05', adapterId: 'live.get-only', receiptValidatorId: 'live.receipt', proofMode: 'ci-appimage', mandatory: true }],
+    }).join(' ')).toMatch(/live-config.*live-selector/iu)
+    expect(validateBindingCoverage({
+      ...base,
+      requiredContracts: ['C18'],
+      bindings: [{ contractId: 'C18', adapterId: 'package.reviewed', receiptValidatorId: 'package.receipt', proofMode: 'installed-deb', mandatory: true }],
+    }).join(' ')).toMatch(/storage-mission/iu)
+    expect(validateBindingCoverage({
+      ...base,
+      requiredContracts: ['C07'],
+      bindings: [{ contractId: 'C07', variantId: 'paging-2m-1gib', adapterId: 'package.reviewed', receiptValidatorId: 'package.receipt', proofMode: 'installed-deb', mandatory: true }],
+    }).join(' ')).toMatch(/paging-2m-1gib.*fixture/iu)
+    expect(validateBindingCoverage({
+      ...base,
+      requiredContracts: ['C25'],
+      bindings: [{ contractId: 'C25', variantId: 'field-960k-installed', adapterId: 'soak.reviewed', receiptValidatorId: 'soak.receipt', proofMode: 'installed-deb', mandatory: true }],
+    }).join(' ')).toMatch(/C25.*field-960k-installed.*field fixture/iu)
+  })
+
+  it('requires the fixed C25 and C28 candidate families while leaving calibration permissive', () => {
+    const base = {
+      mode: 'candidate',
+      requiredContracts: ['C25', 'C28'],
+      identities: {
+        candidate: { candidateId: 'candidate', version: '0.1.0', artifacts: [
+          { role: 'ci-appimage', localBuild: false },
+          { role: 'ci-deb', localBuild: false },
+        ] },
+      },
+      runtimeInputs: { config: { fixtures: {}, installedExecutablePath: '/bound/installed/app' } },
+    }
+    const c25Variants = [
+      'normal', 'extended', 'field-960k', 'field-2m', 'field-local-1gib', 'field-device-modes',
+      'normal-installed', 'extended-installed', 'field-960k-installed', 'field-2m-installed',
+      'field-local-1gib-installed', 'field-device-modes-installed',
+    ].filter((variantId) => variantId !== 'field-2m-installed')
+      .map((variantId) => ({
+        contractId: 'C25', variantId, adapterId: 'soak.reviewed', receiptValidatorId: 'soak.receipt',
+        proofMode: variantId.endsWith('-installed') ? 'installed-deb' : 'ci-appimage', mandatory: true,
+      }))
+    const c28Bindings = C28_REQUIRED_VARIANTS.flatMap((variantId) => ['appimage', 'installed']
+      .filter((tier) => !(variantId === 'routine' && tier === 'installed'))
+      .map((tier) => ({
+        contractId: 'C28', variantId: `${variantId}-${tier}`, adapterId: 'package.reviewed',
+        receiptValidatorId: 'package.receipt', proofMode: tier === 'installed' ? 'installed-deb' : 'ci-appimage', mandatory: true,
+      })))
+    const blockers = validateBindingCoverage({ ...base, bindings: [...c25Variants, ...c28Bindings] }).join(' ')
+    expect(blockers).toMatch(/fixed mandatory candidate variant C25:field-2m-installed/u)
+    expect(blockers).toMatch(/fixed mandatory candidate variant C28:routine-installed/u)
+
+    const calibrationBlockers = validateBindingCoverage({
+      ...base,
+      mode: 'calibration',
+      requiredContracts: ['C25'],
+      bindings: [{ contractId: 'C25', variantId: 'calibration', adapterId: 'calibration.pass', receiptValidatorId: 'calibration.v1', proofMode: 'synthetic', mandatory: true }],
+    }).join(' ')
+    expect(calibrationBlockers).not.toMatch(/fixed mandatory candidate variant/u)
+  })
+
+  it('retains an environment-blocked result when the owned resource lock cannot be acquired', async () => {
+    const { definition } = await compilePlan()
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(preflight.status).toBe('READY')
+    await mkdir(path.join(temporaryRoot!, 'locks'), { recursive: true })
+    await writeFile(path.join(temporaryRoot!, 'locks', 'calibration.lock'), '{"ownedBy":"test"}\n', 'utf8')
+
+    const attempt = await runContractAttempt({
+      definition,
+      preflight,
+      campaignRoot: temporaryRoot!,
+      contractId: 'C00',
+      variantId: 'synthetic-pass',
+    })
+    expect(attempt.status).toBe('ENVIRONMENT_BLOCKED')
+    expect(JSON.parse(await readFile(path.join(attempt.attemptDirectory, 'receipt.json'), 'utf8')).status)
+      .toBe('ENVIRONMENT_BLOCKED')
+    expect(await readFile(path.join(attempt.attemptDirectory, 'state.ndjson'), 'utf8')).toMatch(/blocked/u)
+  })
+
+  it('retains an environment-blocked result when the leased work root disappears during setup', async () => {
+    const { definition } = await compilePlan()
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(preflight.status).toBe('READY')
+    const fixturesRoot = preflight.lease?.disposableRoots.find((root) => path.basename(root) === 'fixtures')
+    await rm(fixturesRoot!, { recursive: true, force: true })
+
+    const attempt = await runContractAttempt({
+      definition,
+      preflight,
+      campaignRoot: temporaryRoot!,
+      contractId: 'C00',
+      variantId: 'synthetic-pass',
+    })
+    expect(attempt.status).toBe('ENVIRONMENT_BLOCKED')
+    expect(JSON.parse(await readFile(path.join(attempt.attemptDirectory, 'result.json'), 'utf8')).reason)
+      .toContain('Owned attempt setup')
+    await expect(readFile(path.join(temporaryRoot!, 'locks', 'calibration.lock'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('rechecks the executing source at verdict instead of trusting a retained source claim', async () => {
+    await createFixture()
+    const planPath = path.resolve('docs/assurance/qualification-campaign-plan.json')
+    const reviewedPlan = JSON.parse(await readFile(planPath, 'utf8'))
+    const c19Binding = reviewedPlan.bindings.find((binding: { contractId: string; adapterId: string }) =>
+      binding.contractId === 'C19' && binding.adapterId === 'package.reviewed')
+    const c24Binding = reviewedPlan.bindings.find((binding: { contractId: string; adapterId: string }) =>
+      binding.contractId === 'C24' && binding.adapterId === 'soak.reviewed')
+    expect(c19Binding).toBeDefined()
+    expect(c24Binding).toBeDefined()
+    const bindings = [c19Binding!, c24Binding!]
+    const definition = await compileCampaignDefinition({
+      plan: {
+        ...reviewedPlan,
+        campaignId: 'source-verdict-check',
+        requiredContracts: ['C19', 'C24'],
+        bindings,
+      },
+      planPath,
+      sourceIdentity,
+    })
+    expect(definition.identities.validators.some((identity: { path: string }) => identity.path.endsWith('.py'))).toBe(true)
+    const verdict = await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })
+    expect(verdict.evidenceErrors.join(' ')).toMatch(/live checkout/iu)
+    expect(verdict.productCapabilityBlockers.map((entry: { issueId: string }) => entry.issueId))
+      .toEqual(['DON-249', 'DON-250', 'DON-251'])
+    expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C19')?.status).toBe('FAIL')
+    expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C24')?.status).toBe('FAIL')
+  }, 120_000)
+  it('rejects a substituted campaign lock path before deleting any leased data', async () => {
+    const { definition, fixturePath } = await compilePlan()
+    const lease = await createCampaignLease({ campaignRoot: temporaryRoot!, definition })
+    const state = JSON.parse(await readFile(lease.leasePath, 'utf8'))
+    await writeFile(lease.leasePath, JSON.stringify({ ...state, campaignLockPath: fixturePath }))
+    const { cleanupCampaignLease } = await import('../../scripts/qualification/control-plane.mjs')
+    await expect(cleanupCampaignLease({ leasePath: lease.leasePath })).rejects.toThrow(/ownership|lock/iu)
+    expect(await readFile(fixturePath, 'utf8')).toContain('calibration')
+    expect(await readFile(lease.leasePath, 'utf8')).toContain('ACQUIRED')
+  })
+  it.skipIf(process.platform !== 'linux')('compiles source regression suites with immutable test identities and preserves their proof tier', async () => {
+    const fixturePath = await createFixture()
+    const base = makePlan(fixturePath)
+    const definition = await compileCampaignDefinition({ plan: { ...base, requiredContracts: ['C13'],
+      bindings: [{ ...base.bindings[0], contractId: 'C13', variantId: 'source-regressions',
+        adapterId: 'suite.source', receiptValidatorId: 'suite.receipt', proofMode: 'source',
+        oracle: 'reviewed coordinate source regressions only' }],
+    }, sourceIdentity })
+    expect(definition.suiteExpectations['C13:source-regressions'].proofMode).toBe('source')
+    expect(definition.suiteExpectations['C13:source-regressions'].testIds.length).toBeGreaterThan(0)
+    expect(definition.suiteExpectations['C13:source-regressions'].sourceSha).toBe(sourceIdentity.sha)
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(preflight.status).toBe('READY')
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!,
+      contractId: 'C13', variantId: 'source-regressions' })
+    expect(attempt.status).toBe('PASS')
+    await expect(readFile(path.join(attempt.attemptDirectory, 'judge-result.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! }))
+      .toMatchObject({ verdict: 'PASS', mode: 'calibration' })
+    await writeFile(path.join(attempt.attemptDirectory, 'suite-report.json'), '{}')
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('INVALID_EVIDENCE')
+  }, 60_000)
+  it('rejects private key material before writing an immutable human authority definition', async () => {
+    const fixturePath = await createFixture()
+    const authorityPath = path.join(temporaryRoot!, 'private-authority.json')
+    const keys = generateKeyPairSync('ed25519')
+    await writeFile(authorityPath, JSON.stringify({ signerId: 'test', machineId: 'host', dataClass: 'synthetic',
+      profileSha256: 'd'.repeat(64), publicKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() }))
+    await expect(compileCampaignDefinition({ plan: makePlan(fixturePath, {
+      externalHuman: { authorityPath, authorizationPath: fixturePath },
+    }), sourceIdentity })).rejects.toThrow(/public key/iu)
+  })
+  it('parses human authority from the same descriptor bytes whose identity it retains', async () => {
+    await createFixture()
+    const authorityPath = path.join(temporaryRoot!, 'authority-bound.json')
+    const authority = { signerId: 'test-signer', machineId: 'host', dataClass: 'synthetic', profileSha256: 'd'.repeat(64), publicKey: 'public-key' }
+    await writeFile(authorityPath, JSON.stringify(authority), 'utf8')
+    const bound = await readBoundJsonFile(authorityPath, 'human authority')
+    await writeFile(authorityPath, JSON.stringify({ ...authority, machineId: 'substituted' }), 'utf8')
+    expect(bound.value).toEqual(authority)
+    expect(bound.identity.sha256).toBe(createHash('sha256').update(JSON.stringify(authority)).digest('hex'))
+  })
+  it('rejects an oversized bound JSON file before parsing beyond its limit', async () => {
+    await createFixture()
+    const authorityPath = path.join(temporaryRoot!, 'authority-too-large.json')
+    await writeFile(authorityPath, Buffer.alloc(16 * 1024 + 1, 0x20))
+    await expect(readBoundJsonFile(authorityPath, 'human authority')).rejects.toThrow(/bounded size/iu)
+  })
+  it.each(['signed', 'missing-file', 'invalid-authority'])('retains the C29 submission outcome without a fabricated judge: %s', async (submission) => {
+    const fixturePath = await createFixture()
+    const keys = generateKeyPairSync('ed25519')
+    const authorizationPath = path.join(temporaryRoot!, 'authorization.txt')
+    await writeFile(authorizationPath, 'synthetic test authority only')
+    const authorityPath = path.join(temporaryRoot!, 'authority.json')
+    await writeFile(authorityPath, JSON.stringify({ signerId: 'test-signer', machineId: submission === 'invalid-authority' ? '' : 'original-test-host',
+      publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+      profileSha256: 'd'.repeat(64), dataClass: 'synthetic' }))
+    const base = makePlan(fixturePath)
+    const definition = await compileCampaignDefinition({ plan: { ...base,
+      externalHuman: { authorityPath, authorizationPath },
+      artifacts: [{ role: 'ci-deb', path: fixturePath, ciRunId: 1 }],
+      requiredContracts: ['C29'], bindings: [{ ...base.bindings[0], contractId: 'C29',
+        variantId: 'original-machine-training', adapterId: 'external.c29.training', receiptValidatorId: 'external.c29.receipt',
+        proofMode: 'external-human', sessionKind: 'pre-release-original-machine-training', oracle: 'training-only named human acceptance' }],
+    }, sourceIdentity })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(preflight.status).toBe('READY')
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C29', variantId: 'original-machine-training' })
+    if (submission === 'invalid-authority') {
+      expect(attempt.status).toBe('INVALID_EVIDENCE')
+      expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('INVALID_EVIDENCE')
+      return
+    }
+    expect(attempt.status).toBe('NEEDS_HUMAN_DECISION')
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('NEEDS_HUMAN_DECISION')
+    const request = JSON.parse(await readFile(path.join(attempt.attemptDirectory, 'human-request.json'), 'utf8'))
+    const evidence = Buffer.from('synthetic sanitized test notes')
+    const payload = { schema: 'sartracker-team-training-evidence-v2', contractId: 'C29', proofMode: 'external-human',
+      campaignId: request.campaignId, definitionDigest: request.definitionDigest, attemptId: attempt.attemptId,
+      sourceSha: request.sourceSha, artifactSha256: request.artifactSha256,
+      signerId: request.authority.signerId, machineId: request.authority.machineId, authorizationSha256: request.authority.authorizationSha256,
+      profileSha256: request.authority.profileSha256, sessionKind: request.sessionKind, dataClass: 'synthetic',
+      war13bCounted: false, originalMachine: true, sessionId: 'synthetic-session',
+      startedAt: request.createdAt, endedAt: new Date(Date.parse(request.createdAt) + 1).toISOString(),
+      primarySource: 'synthetic training reference', remainedAdvisory: true, fallbackSeconds: 30,
+      comparisons: { opening: 1, transitions: 1, warnings: 1, close: 1, mismatches: 0 }, stopTriggers: [], disposition: 'accepted',
+      evidenceSha256: createHash('sha256').update(evidence).digest('hex') }
+    const envelopePath = path.join(temporaryRoot!, 'incoming.json')
+    const evidencePath = path.join(temporaryRoot!, 'incoming.bin')
+    if (submission === 'missing-file') {
+      const result = await ingestHumanTrainingEvidence({ definition, preflight, campaignRoot: temporaryRoot!, attemptId: attempt.attemptId, envelopePath, evidencePath })
+      expect(result.status).toBe('INVALID_EVIDENCE')
+      expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('INVALID_EVIDENCE')
+      await expect(ingestHumanTrainingEvidence({ definition, preflight, campaignRoot: temporaryRoot!, attemptId: attempt.attemptId, envelopePath, evidencePath })).rejects.toThrow(/pending|sealed/iu)
+      return
+    }
+    await writeFile(envelopePath, JSON.stringify({ payload, signature: sign(null, Buffer.from(canonicalJson(payload)), keys.privateKey).toString('base64') }))
+    await writeFile(evidencePath, evidence)
+    const result = await ingestHumanTrainingEvidence({ definition, preflight, campaignRoot: temporaryRoot!, attemptId: attempt.attemptId, envelopePath, evidencePath })
+    expect(result.status).toBe('PASS')
+    await expect(readFile(path.join(attempt.attemptDirectory, 'judge-result.json'))).rejects.toThrow()
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('PASS')
+    await writeFile(path.join(attempt.attemptDirectory, 'human-evidence.bin'), 'tampered')
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('INVALID_EVIDENCE')
+  })
+
+  it('keeps C29 external training authority distinct from installed-package proof', async () => {
+    const fixturePath = await createFixture()
+    const plan = makePlan(fixturePath)
+    const binding = { ...plan.bindings[0], contractId: 'C29',
+      variantId: 'original-machine-training', adapterId: 'external.c29.training',
+      receiptValidatorId: 'external.c29.receipt', proofMode: 'external-human',
+      sessionKind: 'pre-release-original-machine-training',
+      oracle: 'externally supplied original-machine training acceptance',
+    }
+    const compiled = await compileCampaignDefinition({ plan: { ...plan,
+      requiredContracts: ['C29'], bindings: [binding],
+    }, sourceIdentity })
+    expect(compiled.bindings[0].proofMode).toBe('external-human')
+    for (const invalid of [
+      { contractId: 'C28' },
+      { sessionKind: 'post-publication-field-shadow' },
+      { sessionKind: undefined },
+    ]) {
+      await expect(compileCampaignDefinition({ plan: { ...plan,
+        requiredContracts: [invalid.contractId ?? 'C29'], bindings: [{ ...binding, ...invalid }],
+      }, sourceIdentity })).rejects.toThrow(/external human|training/iu)
+    }
+  })
+
+  it('blocks calibration adapters masquerading as candidate browser evidence', async () => {
+    const fixturePath = await createFixture()
+    const plan = makePlan(fixturePath)
+    const definition = await compileCampaignDefinition({ plan: {
+      ...plan, mode: 'candidate', candidateId: 'beta13', version: '0.1.0-beta.13',
+      requiredContracts: Array.from({ length: 30 }, (_, i) => `C${String(i).padStart(2, '0')}`),
+      bindings: Array.from({ length: 30 }, (_, i) => ({ ...plan.bindings[0],
+        contractId: `C${String(i).padStart(2, '0')}`, proofMode: 'browser', oracle: 'claimed browser proof',
+      })),
+    }, sourceIdentity })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(preflight.status).toBe('ENVIRONMENT_BLOCKED')
+    expect(preflight.blockers.join(' ')).toMatch(/calibration/u)
+    const forgedSource = await preflightCampaign({ definition, campaignRoot: temporaryRoot!, currentSourceIdentity: sourceIdentity })
+    expect(forgedSource.blockers.join(' ')).toMatch(/live checkout/iu)
+    expect(forgedSource.blockers.join(' ')).toMatch(/reviewed binding/iu)
+  })
+
+  it('rejects a preflight lease borrowed from a different campaign root', async () => {
+    const { definition } = await compilePlan()
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    await expect(runContractAttempt({ definition, preflight, campaignRoot: path.join(temporaryRoot!, 'other-root'), contractId: 'C00', variantId: 'synthetic-pass' }))
+      .rejects.toThrow(/lease/u)
+  })
+
+  it('requires every mandatory variant, not merely one pass per contract', async () => {
+    const fixturePath = await createFixture()
+    const plan = makePlan(fixturePath)
+    const binding = plan.bindings[0]
+    const definition = await compileCampaignDefinition({
+      plan: { ...plan, requiredContracts: ['C00'], bindings: [binding, { ...binding, variantId: 'second-required' }] },
+      sourceIdentity,
+    })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C00', variantId: binding.variantId })
+    await ingestAdvisoryJudgeResult({ attemptDirectory: attempt.attemptDirectory, result: {
+      schema: 'sartracker-oracle-blind-judge-result-v1', campaignId: definition.campaignId,
+      attemptId: attempt.attemptId, packetSha256: attempt.judgePacketSha256, verdict: 'pass', observations: [],
+    } })
+    const verdict = await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })
+    expect(verdict.verdict).toBe('ENVIRONMENT_BLOCKED')
+    expect(verdict.blockers.join(' ')).toContain('C00:second-required')
+  })
+
+  it('revalidates retained receipt semantics against its binding at verdict time', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'] })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C00', variantId: 'synthetic-pass' })
+    const receiptPath = path.join(attempt.attemptDirectory, 'receipt.json')
+    const receipt = JSON.parse(await readFile(receiptPath, 'utf8'))
+    await writeFile(receiptPath, JSON.stringify({ ...receipt, proofMode: 'installed-deb' }))
+    await ingestAdvisoryJudgeResult({ attemptDirectory: attempt.attemptDirectory, result: {
+      schema: 'sartracker-oracle-blind-judge-result-v1', campaignId: definition.campaignId,
+      attemptId: attempt.attemptId, packetSha256: attempt.judgePacketSha256, verdict: 'pass', observations: [],
+    } })
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('INVALID_EVIDENCE')
+  })
+
+  it.each(['INVALID_EVIDENCE', 'NEEDS_HUMAN_DECISION', 'CLEANUP_BLOCKED'])('does not mask a mandatory %s variant with a passing sibling', async (status) => {
+    const fixturePath = await createFixture()
+    const plan = makePlan(fixturePath)
+    const binding = plan.bindings[0]
+    const definition = await compileCampaignDefinition({ plan: {
+      ...plan, requiredContracts: ['C00'], bindings: [binding, { ...binding, variantId: 'second-required' }],
+    }, sourceIdentity })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    for (const variantId of ['synthetic-pass', 'second-required']) {
+      const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C00', variantId })
+      if (variantId === 'synthetic-pass') {
+        for (const name of ['receipt.json', 'result.json']) {
+          const target = path.join(attempt.attemptDirectory, name)
+          const value = JSON.parse(await readFile(target, 'utf8'))
+          await writeFile(target, JSON.stringify({ ...value, status }))
+        }
+      }
+      await ingestAdvisoryJudgeResult({ attemptDirectory: attempt.attemptDirectory, result: {
+        schema: 'sartracker-oracle-blind-judge-result-v1', campaignId: definition.campaignId,
+        attemptId: attempt.attemptId, packetSha256: attempt.judgePacketSha256, verdict: 'pass', observations: [],
+      } })
+    }
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe(status)
+  })
+
+  it('rechecks bound bytes after preflight before executing an attempt', async () => {
+    const { definition, fixturePath } = await compilePlan()
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    await writeFile(fixturePath, 'changed after preflight')
+    await expect(runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C00', variantId: 'synthetic-pass' }))
+      .rejects.toThrow(/identity changed/u)
+  })
+
+  it('rejects a verdict after validator bytes have changed', async () => {
+    const fixturePath = await createFixture()
+    const validatorPath = path.join(temporaryRoot!, 'validator.mjs')
+    await writeFile(validatorPath, 'export const version = 1')
+    const plan = makePlan(fixturePath)
+    const definition = await compileCampaignDefinition({ plan: {
+      ...plan, requiredContracts: ['C00'], bindings: [plan.bindings[0]], validatorPaths: [validatorPath],
+    }, sourceIdentity })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C00', variantId: 'synthetic-pass' })
+    await ingestAdvisoryJudgeResult({ attemptDirectory: attempt.attemptDirectory, result: {
+      schema: 'sartracker-oracle-blind-judge-result-v1', campaignId: definition.campaignId,
+      attemptId: attempt.attemptId, packetSha256: attempt.judgePacketSha256, verdict: 'pass', observations: [],
+    } })
+    await writeFile(validatorPath, 'export const version = 2')
+    expect((await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })).verdict).toBe('INVALID_EVIDENCE')
+  })
+
+  it('does not accept sealed evidence belonging to another compiled campaign', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'] })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!, contractId: 'C00', variantId: 'synthetic-pass' })
+    await ingestAdvisoryJudgeResult({ attemptDirectory: attempt.attemptDirectory, result: {
+      schema: 'sartracker-oracle-blind-judge-result-v1', campaignId: definition.campaignId,
+      attemptId: attempt.attemptId, packetSha256: attempt.judgePacketSha256, verdict: 'pass', observations: [],
+    } })
+    const other = await compileCampaignDefinition({
+      plan: makePlan(definition.identities.fixtures[0].path, { campaignId: 'other-campaign', requiredContracts: ['C00'] }), sourceIdentity,
+    })
+    const verdict = await computeCampaignVerdict({ definition: other, campaignRoot: temporaryRoot! })
+    expect(verdict.verdict).toBe('INVALID_EVIDENCE')
+  })
   it('compiles an immutable exact-input definition and binds all identity classes', async () => {
     const { definition } = await compilePlan()
 
@@ -168,7 +613,8 @@ describe('qualification candidate control plane', () => {
     })
 
     const verdict = await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })
-    expect(verdict.verdict).toBe('ENVIRONMENT_BLOCKED')
+    expect(verdict.verdict).toBe('INVALID_EVIDENCE')
+    expect(verdict.evidenceErrors.join(' ')).toMatch(/reviewed binding/iu)
     expect(verdict.blockers).toContain('missing required contract C29')
     expect(verdict.contractRows.filter((row) => row.required)).toHaveLength(30)
   })
@@ -409,5 +855,26 @@ describe('qualification candidate control plane', () => {
     await expect(createCampaignLease({ campaignRoot: temporaryRoot!, definition }))
       .rejects.toThrow(/held by live process/u)
     expect(lease.status).toBe('ACQUIRED')
+  })
+  it('rolls back unpublished lease roots when acquisition preparation fails', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'], baselinePorts: [0] })
+    await expect(createCampaignLease({ campaignRoot: temporaryRoot!, definition })).rejects.toThrow(/baseline port/iu)
+    expect(await readFile(path.join(temporaryRoot!, 'campaign.lock'), 'utf8').catch(() => null)).toBeNull()
+    const leasesRoot = path.join(temporaryRoot!, 'leases')
+    expect((await readdir(leasesRoot, { withFileTypes: true })).filter((entry) => entry.isDirectory())).toHaveLength(0)
+  })
+  it('rejects a symlinked lease root before publishing campaign custody', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'] })
+    await symlink(path.dirname(temporaryRoot!), path.join(temporaryRoot!, 'leases'))
+    await expect(createCampaignLease({ campaignRoot: temporaryRoot!, definition })).rejects.toThrow(/real directory/iu)
+    expect(await readFile(path.join(temporaryRoot!, 'campaign.lock'), 'utf8').catch(() => null)).toBeNull()
+  })
+  it('rejects cleanup when the lease PID is reused by a different process instance', async () => {
+    const { definition } = await compilePlan({ requiredContracts: ['C00'] })
+    const lease = await createCampaignLease({ campaignRoot: temporaryRoot!, definition })
+    const state = JSON.parse(await readFile(lease.leasePath, 'utf8'))
+    await writeFile(lease.leasePath, JSON.stringify({ ...state, processStart: 'reused-process-instance' }), 'utf8')
+    const { cleanupCampaignLease } = await import('../../scripts/qualification/control-plane.mjs')
+    await expect(cleanupCampaignLease({ leasePath: lease.leasePath })).rejects.toThrow(/PID|process instance|ownership/iu)
   })
 })

@@ -156,6 +156,16 @@ inspection only.
 
 ### WAR-01 absolute blockers
 
+**REL-004 policy clarification — Donal, 2026-09-19:** the historical
+post-beta-hardening disposition above does not waive C27 admission. Missing
+repository safeguards block prepublication readiness unless Donal supplies a
+separate signed acceptance naming the exact candidate and every observed
+REL-004 gap, with rationale, compensating controls and expiry. Approval of this
+rule is not acceptance of today's gaps and does not authorize publication.
+The controller retains fresh before/after GitHub observations and revalidates
+the signature against independently pinned public authority. C29 training
+acceptance cannot waive REL-004 or any other release gate.
+
 All five remain `open-blocking`; no policy-valid deferral has been granted:
 
 1. **Delayed or hidden current position** (`TRK-001`, with `DON-267`/

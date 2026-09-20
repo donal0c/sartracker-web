@@ -69,7 +69,7 @@ jobs:
   build:
     name: Build and inspect Linux Electron artifacts
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 150
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@v4
@@ -129,6 +129,7 @@ jobs:
             mesa-utils \
             squashfs-tools \
             openbox \
+            python3 \
             libgtk-3-0 \
             libnss3 \
             libxdamage1 \
@@ -292,6 +293,24 @@ jobs:
           xvfb-run -a --server-args='-screen 0 1440x900x24' \
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
+
+      # 78 minutes of declared case bounds, 4.5 minutes of owned cleanup,
+      # and evidence/summary headroom. These are harness deadlines, not
+      # responsiveness or qualification thresholds.
+      - name: Candidate producer development checks (not qualification)
+        timeout-minutes: 90
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/qualification/producer-development-checks.mjs \
+              "$GITHUB_WORKSPACE/tmp/electron-dist/linux-unpacked/sartracker-web" \
+              "$GITHUB_WORKSPACE/tmp/electron-validation-evidence/candidate-producer-development" \
+              "$EXPECTED_SOURCE_SHA"
 
       - name: Packaged native coverage runtime control
         env:

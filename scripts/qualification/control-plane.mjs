@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { lstat, mkdir, open, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { hashCandidateFile } from './candidate-artifacts.mjs'
 
 const CONTRACT_IDS = Object.freeze(Array.from({ length: 30 }, (_, index) => `C${String(index).padStart(2, '0')}`))
 const REQUIRED_HAZARDS = Object.freeze([
@@ -105,12 +106,12 @@ function normalizeContract(contract) {
   })
 }
 
+/** Stream potentially multi-gigabyte evidence while detecting concurrent replacement or mutation. */
 export async function fileIdentity(filePath) {
   const resolved = await realpath(filePath)
   const metadata = await stat(resolved)
   if (!metadata.isFile()) throw new Error(`Identity target is not a regular file: ${filePath}`)
-  const bytes = await readFile(resolved)
-  return Object.freeze({ path: resolved, bytes: bytes.length, sha256: sha256(bytes) })
+  return Object.freeze(await hashCandidateFile(resolved))
 }
 
 export function evaluateCandidate({ registry, mode, identities, contractResults, blockers = [], judgeResults = [], campaignDefinition }) {

@@ -321,7 +321,7 @@ Large raw traces and databases may be stored outside Git with content-addressed 
 | `C26` | AppImage/installed `.deb` parity, native deps and duplicate launch |
 | `C27` | tag/draft/checksum/fresh-download/release integrity and rollback |
 | `C28` | composite whole-operator mission journey |
-| `C29` | controlled team shadow session and fallback evidence |
+| `C29` | pre-release original-machine training acceptance and fallback evidence |
 
 ### 4.2 WAR-01 hazard coverage
 
@@ -368,7 +368,7 @@ No row is closed by this plan. The table defines the required future proof and k
 | `REL-002` dependency/native mismatch | C00, C26, C27 | lockfile/native ELF/install dependencies and reachability review receipt | exact Linux artifacts; no unsupported platform inference |
 | `REL-003` unsigned/rollback misuse | C27, C29 | unsigned warning, no auto-update, retained prior artifact, quiet-period/fallback | accepted internal-beta residual with Donal sign-off |
 | `REL-004` repo controls bypassed | C00, C27 | live branch/ruleset/check/review/secret-control receipt | external GitHub control; must be checked at decision time |
-| `OPS-001` demo mistaken for readiness | C14, C15, C17, C28, C29 | explicit mode/build warnings, degraded-state visibility and shadow/fallback record | team-led shadow cannot be replaced by model or browser evidence |
+| `OPS-001` demo mistaken for readiness | C14, C15, C17, C28, C29 | explicit mode/build warnings, degraded-state visibility and training/fallback record | human training acceptance cannot be replaced by model/browser evidence or counted as WAR-13B field shadow |
 
 ### 4.3 PR1-PR6 and unchanged-surface accounting
 
@@ -398,6 +398,7 @@ Every catalogue entry below is a contract family. Its compiled variants are indi
 - **Authoritative oracle:** Git objects/tree, CI API/workflow receipt, SHA-256, release asset metadata, runtime build ID, executable/native-module identity, `dpkg` database and validator source hashes.
 - **Journey:** preflight only, plus runtime identity recheck at launch/restart and fresh-download recheck.
 - **Variants:** browser build; CI AppImage; installed `.deb`; draft and fresh-public bytes.
+- **Release phase (approved 2026-09-19):** source/runtime/draft identity is prepublication evidence. Fresh public-byte verification is separately mandatory immediately after controlled prerelease publication and before any team distribution or rollout approval. Authenticated draft downloads never count as public-byte proof. A mismatch blocks rollout and requires withdrawal or rollback under the release protocol; publication alone is not release completion.
 - **Forbidden outcomes:** dirty/ambiguous SHA, local substitute, moved tag, extra installer, mismatched runtime, unlisted validator file, self-retained-only seal.
 - **Evidence:** source/validator bundles, CI receipt, hash manifests, install logs, runtime/process facts and external anchor.
 - **Judge rubric:** none; identity is never model-judged.
@@ -718,6 +719,7 @@ Every catalogue entry below is a contract family. Its compiled variants are indi
 
 ### C27 — Release bytes, draft, publication and rollback
 
+- **Release phase (approved 2026-09-19):** mandatory prepublication gate while the release remains draft. Verify exact candidate/artifact identity, metadata, checksums, rollback readiness and all other safely prepublication conditions. Controlled prerelease publication follows every prepublication gate and the existing Donal approval boundary. C00 then independently verifies fresh public downloads before team distribution; neither gate can be omitted or relabelled.
 - **Goal:** ensure the exact reviewed/smoked bytes are the only publishable assets and retain a safe prior qualified rollback.
 - **Authoritative oracle:** remote tag object, gated commit, workflow run, draft state/body, asset metadata/digests, SHA256SUMS, fresh downloads and guarded-publisher validation.
 - **Journey:** create/inspect draft in dry-run or release task; download; hash; bind qualification; verify regression provenance; guarded publication only after Donal approval.
@@ -740,16 +742,16 @@ Every catalogue entry below is a contract family. Its compiled variants are indi
 - **Environment/tier:** browser CI; exact AppImage and installed `.deb` release candidate.
 - **Cleanup:** complete lease cleanup/quarantine; no composite run uses real incident data.
 
-### C29 — Controlled team shadow session
+### C29 — Pre-release original-machine training acceptance
 
-- **Goal:** collect bounded team-led evidence while SAR Tracker remains advisory and an independent primary source stays authoritative.
+- **Goal:** collect named human acceptance on the original machine before release, using synthetic, replayed or deliberately disposable training data. SAR Tracker remains advisory and an independent training reference stays authoritative. Donal approved this separation from post-publication WAR-13B field shadow on 2026-09-19.
 - **Authoritative oracle:** session/candidate identity, primary-source comparison checkpoints, stop/fallback timing and the frozen residual-risk record—not model opinion.
-- **Journey:** pre-session gate; fallback drill; bounded synthetic/training or later authorized field-shadow scenarios; compare at opening/transitions/warnings/close; stop on any trigger.
-- **Variants:** E0 ordinary feedback, E1 reproducible issue, E2 safety/regression; engineering/training versus separately authorized field shadow.
+- **Journey:** named authorization and exact candidate/original-machine binding; training pre-session gate; fallback drill; bounded training scenarios; compare at opening/transitions/warnings/close; stop on any trigger.
+- **Variants:** E0 ordinary feedback, E1 reproducible issue, E2 safety/regression within training only. Field/real-incident shadow is a separate post-publication activity and cannot substitute for this receipt.
 - **Forbidden outcomes:** primary handover, use before admission, >60-second fallback, unreviewed sensitive evidence sharing, automatic qualification/release status change.
-- **Evidence:** protocol record, exact artifact/profile, comparison counts, fallback time, proportionate redacted evidence and WAR-13B scorecard.
+- **Evidence:** externally supplied human acceptance, protocol record, exact artifact/profile and original-machine identity, comparison counts, fallback time and proportionate redacted evidence. Explicitly label the session pre-release training and non-counted for WAR-13B; neither a valid signature nor a model summary proves an unobserved session.
 - **Judge rubric:** no automatic judge. Human team feedback is the authority for comprehension/usability; models may summarize only redacted, approved material later.
-- **Environment/tier:** team/live T5 only after separate authorization and gates; unavailable hardware/server remains an external gap.
+- **Environment/tier:** external-human acceptance on the exact candidate installed on the original machine, after named training authorization. No live operational use is admitted. Missing original-machine or human evidence remains an external gap and cannot be replaced by browser/source evidence.
 - **Cleanup:** follow protocol; preserve E2 evidence in place, remove disposable fixtures, never reset a profile before scoped custody decision.
 
 ## 6. Fixture, server and fault-injection strategy
@@ -978,11 +980,11 @@ The schedule controls time and Codex/model spend by running the smallest proof t
 
 **Output:** field-scale/long-duration exact-candidate evidence. It does not close the contradictory PCLinuxOS AppImage versus Mint `.deb` report without the same-profile Mint comparison.
 
-### Tier G — team shadow testing
+### Tier G — post-publication WAR-13B field shadow
 
 **Trigger:** only after the repository shadow protocol's admission gates, BCP-17/DON-254, Donal's DON-255 decision and any required publication. Engineering/training may occur earlier only under its non-counted restrictions.
 
-**Scope:** C29, team-led. Use the independent primary process, rehearsed <=60-second fallback, exact candidate/session identity and proportional E0/E1/E2 capture. The first field sessions should be intentionally narrow: current positions and warnings before evidence/replay/archive, with each later surface admitted only after prior sessions remain clean.
+**Scope:** separately authorized WAR-13B field shadow, team-led; this is not a prerequisite for completing pre-release C29. C29 requires original-machine training acceptance before qualification can complete, and that evidence never counts toward the field scorecard. Use the independent primary process, rehearsed <=60-second fallback, exact published candidate/session identity and proportional E0/E1/E2 capture. Bind both activities to the same artifact when applicable; a changed artifact invalidates any assumed continuity. The first field sessions should be intentionally narrow: current positions and warnings before evidence/replay/archive, with each later surface admitted only after prior sessions remain clean.
 
 **Spend:** model judging is normally off. Team time is the scarce resource; collect concise comparison checkpoints and stop on uncertainty.
 
@@ -1054,7 +1056,7 @@ These are planning dispositions, not Donal's frozen candidate register. The real
 | Cross-machine archive portability and recovery-code custody/tabletop | `open-blocking` for field archive reliance under DON-254 | exact archive cross-machine restore/replay and team custody tabletop; no new domain question required now |
 | Local roster is not strong authentication | `accepted-residual` only within trusted-team-machine threat model | explicit candidate register, off-app/two-person procedure and existing DON-199/219/220/221 ownership; broader deployment requires stronger controls |
 | Unsigned Linux artifacts/no auto-update | potential `accepted-residual` for internal beta only | exact hashes, quiet-period install, retained rollback, explicit release warning and Donal sign-off |
-| Branch/ruleset/secret-scanning controls historically absent | `open-blocking` for REL-004 closure | live GitHub configuration evidence at DON-254/DON-255 decision time |
+| Branch/ruleset/secret-scanning controls historically absent | `open-blocking` for C27 readiness unless separately accepted by Donal (policy approved 2026-09-19) | fresh before/after GitHub evidence; unmet safeguards require signed exact-candidate REL-004 risk acceptance with each observed gap, rationale, compensating controls and expiry; policy approval itself is not risk acceptance or publication authority |
 | Current PR6 implementation is unmerged and mutable | `open-blocking` by definition | merged exact PR6 head, accepted reviews, CI/reference proof and full refresh in section 11 |
 
 ## 10. Implementation roadmap
@@ -1207,7 +1209,7 @@ These are execution-time confirmations, not new product questions and should not
 - the DON-248 recovery-code/custody tabletop and named key/custodian roles;
 - the exact primary operational source/process, its operator, contingency and <=60-second primary-only fallback drill for each field deployment group;
 - access to the original/representative Mint or field machine for the DON-247 same-profile comparison;
-- human comprehension/usability observations during authorized C29 shadow sessions.
+- human comprehension/usability observations during authorized C29 original-machine training sessions.
 
 No additional SAR team question is justified by this planning pass. If implementation exposes a genuinely new domain ambiguity, search and cite all related `SAR-QA-*`/`SAR-FIELD-*` answer IDs first, explain why they do not resolve it, and stop before coding through it.
 
