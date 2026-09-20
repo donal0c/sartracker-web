@@ -1728,38 +1728,9 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     fileName: 'c28-diagnostics.txt',
     contents: adversarialContents,
     familyContract,
-    events: familyContract === 'C17' ? [
-      {
-        ts: new Date().toISOString(),
-        level: 'error',
-        category: 'runtime',
-        event: 'c17-adversarial-corpus',
-        fields: {
-          password: input.c17Canaries?.eventPassword ?? input.secret,
-          profilePath: input.c17Canaries?.directContentProfilePath ?? profilePath,
-          nested: {
-            token: input.c17Canaries?.eventNestedToken ?? input.secret,
-            path: input.c17Canaries?.nestedArrayProfilePath ?? profilePath,
-            values: [input.c17Canaries?.nestedArraySecret ?? input.secret, input.c17Canaries?.nestedArrayProfilePath ?? profilePath],
-            headers: {
-              Authorization: `Bearer ${input.c17Canaries?.eventAuthorizationHeader ?? input.secret}`,
-            },
-            queryUrl: `https://host.example/api?session=${input.c17Canaries?.eventQueryCredential ?? input.secret}`,
-          },
-        },
-      },
-      {
-        ts: new Date().toISOString(),
-        level: 'warn',
-        category: 'tracking',
-        event: 'c17-adversarial-url',
-        fields: {
-          providerUrl: 'https://operator:'
-            + (input.c17Canaries?.urlCredentials ?? input.secret)
-            + '@example.invalid/sar',
-        },
-      },
-    ] : [],
+    events: familyContract === 'C17'
+      ? buildC17DiagnosticEvents({ secret, profilePath, canaries: c17Canaries })
+      : [],
     secret,
     c17Canaries,
   })
@@ -1808,6 +1779,37 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     await writeFile(result.retainedCanaryManifestPath, canaryManifest, { mode: 0o600 })
   }
   return result
+}
+
+/** Builds the fixed C17 nested diagnostic event corpus from explicit inputs. */
+export function buildC17DiagnosticEvents({ secret, profilePath, canaries, timestamp = new Date().toISOString() }) {
+  const value = (name, fallback) => canaries?.[name] ?? fallback
+  return [
+    {
+      ts: timestamp,
+      level: 'error',
+      category: 'runtime',
+      event: 'c17-adversarial-corpus',
+      fields: {
+        password: value('eventPassword', secret),
+        profilePath: value('directContentProfilePath', profilePath),
+        nested: {
+          token: value('eventNestedToken', secret),
+          path: value('nestedArrayProfilePath', profilePath),
+          values: [value('nestedArraySecret', secret), value('nestedArrayProfilePath', profilePath)],
+          headers: { Authorization: `Bearer ${value('eventAuthorizationHeader', secret)}` },
+          queryUrl: `https://host.example/api?session=${value('eventQueryCredential', secret)}`,
+        },
+      },
+    },
+    {
+      ts: timestamp,
+      level: 'warn',
+      category: 'tracking',
+      event: 'c17-adversarial-url',
+      fields: { providerUrl: `https://operator:${value('urlCredentials', secret)}@example.invalid/sar` },
+    },
+  ]
 }
 
 /** Projects the phase diagnostics into the top-level closed diagnostics envelope. */

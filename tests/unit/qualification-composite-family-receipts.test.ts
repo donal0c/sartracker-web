@@ -12,7 +12,7 @@ import {
   validateCompositeFamilyCoverage,
   validateCompositeFamilyReceipt,
 } from '../../scripts/qualification/composite-family-receipts.mjs'
-import { resolveArchivePreparation } from '../../scripts/qualification/composite-probe.mjs'
+import { buildC17DiagnosticEvents, resolveArchivePreparation } from '../../scripts/qualification/composite-probe.mjs'
 
 type JsonObject = Record<string, unknown>
 
@@ -183,6 +183,43 @@ function copy<T>(value: T): T {
 }
 
 describe('independent packaged composite family receipts', () => {
+  it('builds the C17 event corpus from the supplied canaries without hidden outer-scope names', () => {
+    const events = buildC17DiagnosticEvents({
+      secret: 'base-secret',
+      profilePath: '/tmp/c17-profile',
+      timestamp: '2026-09-20T20:30:00.000Z',
+      canaries: {
+        eventPassword: 'event-password',
+        directContentProfilePath: '/tmp/c17-profile/direct',
+        eventNestedToken: 'nested-token',
+        nestedArrayProfilePath: '/tmp/c17-profile/nested',
+        nestedArraySecret: 'array-secret',
+        eventAuthorizationHeader: 'authorization-header',
+        eventQueryCredential: 'query-credential',
+        urlCredentials: 'url-credentials',
+      },
+    })
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({
+      ts: '2026-09-20T20:30:00.000Z',
+      fields: {
+        password: 'event-password',
+        profilePath: '/tmp/c17-profile/direct',
+        nested: {
+          token: 'nested-token',
+          path: '/tmp/c17-profile/nested',
+          values: ['array-secret', '/tmp/c17-profile/nested'],
+          headers: { Authorization: 'Bearer authorization-header' },
+          queryUrl: 'https://host.example/api?session=query-credential',
+        },
+      },
+    })
+    expect(events[1]).toMatchObject({
+      fields: { providerUrl: 'https://operator:url-credentials@example.invalid/sar' },
+    })
+  })
+
   it('prepares archive only from active or paused state, with explicit finished revision reuse', () => {
     expect(resolveArchivePreparation({ status: 'active' })).toEqual({ shouldFinish: true, status: 'active' })
     expect(resolveArchivePreparation({ status: 'paused' })).toEqual({ shouldFinish: true, status: 'paused' })
