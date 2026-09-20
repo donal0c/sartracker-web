@@ -1795,6 +1795,7 @@ export function buildC17DiagnosticEvents({ secret, profilePath, canaries, timest
         profilePath: value('directContentProfilePath', profilePath),
         nested: {
           token: value('eventNestedToken', secret),
+          arrayToken: value('nestedArraySecret', secret),
           path: value('nestedArrayProfilePath', profilePath),
           values: [value('nestedArraySecret', secret), value('nestedArrayProfilePath', profilePath)],
           headers: { Authorization: `Bearer ${value('eventAuthorizationHeader', secret)}` },

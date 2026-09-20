@@ -457,6 +457,7 @@ describe('electron runtime files', () => {
 
   it('redacts secrets inside renderer-encoded nested arrays during support export [DON-237]', async () => {
     const secret = 'C17-Nested-Array-Secret-9!'
+    const compoundSecret = `${secret}-nested-array-secret`
     const files = await createRuntimeFiles({
       readRecentLog: async () => [
         {
@@ -465,8 +466,9 @@ describe('electron runtime files', () => {
           event: 'renderer_c17_adversarial_corpus',
           nested: JSON.stringify({
             token: secret,
+            arrayToken: compoundSecret,
             path: userDataPath,
-            values: [secret, userDataPath],
+            values: [compoundSecret, userDataPath],
           }),
           nestedObject: {
             token: secret,
@@ -483,6 +485,7 @@ describe('electron runtime files', () => {
 
     const bundle = await readFile(exportPath, 'utf8')
     expect(bundle).not.toContain(secret)
+    expect(bundle).not.toContain(compoundSecret)
     expect(bundle).not.toContain(userDataPath!)
     expect(bundle).toContain('[redacted-user-data-path]')
   })

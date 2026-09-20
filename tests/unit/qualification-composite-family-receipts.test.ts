@@ -208,6 +208,7 @@ describe('independent packaged composite family receipts', () => {
         profilePath: '/tmp/c17-profile/direct',
         nested: {
           token: 'nested-token',
+          arrayToken: 'array-secret',
           path: '/tmp/c17-profile/nested',
           values: ['array-secret', '/tmp/c17-profile/nested'],
           headers: { Authorization: 'Bearer authorization-header' },
