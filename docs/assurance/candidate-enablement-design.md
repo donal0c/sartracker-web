@@ -452,3 +452,14 @@ background-throttling/backgrounding controls already used by other packaged
 responsiveness probes, while retaining the strict `<200 ms` assertion. These
 changes require a fresh exact-head source cycle, independent review and Linux
 CI; the failed run remains retained and is not relabelled as qualification.
+
+Exact-head CI `35501281140` at `4334e4effb680ab90cc25155b2980228784e626c`
+confirmed the C12 and C21 packaged producers, including exact source/tree
+identity and zero owned descendants. C10 remained the sole producer failure:
+the strict frame predicate observed `216.6 ms`, with empty renderer-error and
+unexpected-request-failure diagnostics. This is retained as a real hosted
+responsiveness failure, not a flake or a relaxed threshold. The next bounded
+repair reuses the existing Linux `--disable-gpu-rasterization` control from
+the archive smoke through a small tested C10 launch helper; the WebGL path and
+the `<200 ms` predicate remain unchanged. A fresh source cycle, exact-head
+review and hosted run are required before PR43 can leave draft state.

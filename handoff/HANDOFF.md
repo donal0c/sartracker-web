@@ -172,12 +172,17 @@ the builder. A fresh exact-head CI run is required before PR43 can leave draft
 state.
 Separately, C10 now rejects success receipts containing renderer errors or
 unexpected request failures; only explicitly blocked HTTP(S) is exempted.
-Focused red/green and unpacked Mac development passed. The follow-up local
-The post-C12 source cycle passed563files/5,769tests (24skips), TypeScript, lint
-and build. The C21 packaged-controller regression is red then green (11
-focused tests); C10/C21 follow-up lint is green. A fresh full source cycle and
-exact-head manifest are required for the new follow-up before PR43 can leave
-draft state.
+Focused red/green and unpacked Mac development passed. The post-C12 source
+cycle passed 563 files / 5,769 tests (24 skips), TypeScript, lint and build.
+The C21 packaged-controller regression is red then green (11 focused tests).
+Exact-head CI `35501281140` at `4334e4e` now proves C12 and C21 producers, but
+C10 still fails its unchanged strict frame predicate at 216.6 ms; renderer
+errors and unexpected request failures are empty. The retained failure is in
+`tmp/candidate-enablement/remediation/ci-4334-evidence/`. A bounded follow-up
+adds the existing Linux `--disable-gpu-rasterization` control to C10 through a
+tested launch-argument helper; the `<200 ms` threshold and receipt predicate
+remain unchanged. Fresh source verification, exact-head review and Linux CI
+are required before PR43 can leave draft state.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

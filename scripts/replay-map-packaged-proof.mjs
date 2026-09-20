@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { validateReplayReceipt } from './qualification/replay-receipts.mjs'
 import { createReplayGeometryFixture } from './qualification/replay-probe-fixture.mjs'
 import { isExpectedBlockedReplayRequest } from './qualification/replay-probe-diagnostics.mjs'
+import { buildReplayMapLaunchArgs } from './qualification/replay-map-launch.mjs'
 
 const executablePath = process.argv[2]
 const evidence = path.resolve(process.argv[3] ?? 'tmp/batch2-packaged-proof')
@@ -19,10 +20,7 @@ let blockedNetworkRequestCount = 0
 try {
   // Match the Linux validation host's attested Mesa/ANGLE path. Chromium's
   // default selection failed WebGL context creation in retained CI 35492584673.
-  const launchArgs = process.platform === 'linux'
-    ? ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl', '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
-      '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows']
-    : []
+  const launchArgs = buildReplayMapLaunchArgs(process.platform)
   app = await electron.launch({ executablePath, args: launchArgs, env: { ...process.env,
     SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' } })
   const page = await app.firstWindow()
