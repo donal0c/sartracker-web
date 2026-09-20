@@ -3,7 +3,6 @@
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { _electron as electron } from 'playwright'
-import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 import { CASE_IDS } from './archive-security-probe.cjs'
@@ -56,7 +55,9 @@ export async function evaluateArchiveSecurityProbe({ app: runningApp }, input) {
   const nodePath = process.getBuiltinModule('node:path')
   const { createRequire } = process.getBuiltinModule('node:module')
   const load = createRequire(nodePath.join(runningApp.getAppPath(), 'package.json'))
-  const probe = load(input.controllerProbePath)
+  const controllerPath = input.controllerProbePath
+    ?? nodePath.join(runningApp.getAppPath(), 'scripts', 'qualification', 'archive-security-probe.cjs')
+  const probe = load(controllerPath)
   return probe.runArchiveSecurityProbe({
     moduleRoot: runningApp.getAppPath(),
     tier: 'packaged-module',
@@ -90,10 +91,7 @@ export async function runPackagedArchiveSecurityProbe(options) {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => undefined)
     await page.screenshot({ path: screenshotPath, fullPage: true })
-    report = await app.evaluate(evaluateArchiveSecurityProbe, {
-      controllerProbePath: controllerProbePath(),
-      sourceSha: options.expectedHead,
-    })
+    report = await app.evaluate(evaluateArchiveSecurityProbe, { sourceSha: options.expectedHead })
     const reportPath = path.join(options.evidenceDir, REPORT_FILE)
     await writeJson(reportPath, report)
     const rawReportSha256 = sha256(await readFile(reportPath))
@@ -306,15 +304,6 @@ function isAbsolute(value) {
 /** Return whether a value is a plain record. */
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-/** Resolve the source controller path for the Electron main process. */
-function controllerProbePath() {
-  try {
-    return fileURLToPath(new URL('./archive-security-probe.cjs', import.meta.url))
-  } catch {
-    return path.resolve(process.cwd(), 'scripts/qualification/archive-security-probe.cjs')
-  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

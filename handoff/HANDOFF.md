@@ -161,15 +161,23 @@ The approved narrow fix is implemented in
 `electron/archive-review-desktop-opener.cjs`: Linux uses
 `shell.openExternal(file://...)` and propagates launcher rejection;
 macOS/Windows retain `shell.openPath`. Red/green opener, staging and source
-tests pass. Exact packaged Linux CI for the new head is still required before
-PR43 can leave draft state.
+tests pass. Exact-head run `35498928827` proves the packaged C12 producer now
+passes with the replacement bytes opened and zero owned descendants. That run
+still failed overall: C10 recorded a strict 266.7 ms frame gap, and C21 loaded
+the repository Node-ABI-127 SQLite addon inside Electron ABI-143, producing
+invalid evidence. Follow-up fixes preserve both predicates: C10 adds the
+existing packaged background scheduling flags while keeping `<200 ms`, and C21
+loads its controller from the packaged ASAR with the controller included by
+the builder. A fresh exact-head CI run is required before PR43 can leave draft
+state.
 Separately, C10 now rejects success receipts containing renderer errors or
 unexpected request failures; only explicitly blocked HTTP(S) is exempted.
 Focused red/green and unpacked Mac development passed. The follow-up local
-source cycle passed563files/5,769tests (24skips), TypeScript, lint and build.
-The prior 1,410-input freeze remains valid for the pre-fix harness changes; the
-new opener and wiring require a fresh exact-head manifest after commit. PR
-remains draft pending C12 packaged Linux proof and green Linux CI.
+The post-C12 source cycle passed563files/5,769tests (24skips), TypeScript, lint
+and build. The C21 packaged-controller regression is red then green (11
+focused tests); C10/C21 follow-up lint is green. A fresh full source cycle and
+exact-head manifest are required for the new follow-up before PR43 can leave
+draft state.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

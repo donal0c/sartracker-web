@@ -429,3 +429,26 @@ PR43 stays draft and no receipt threshold or failure predicate was weakened.
 The independent C12 diagnostic review found no actionable P1/P2 and confirmed
 that its operation labels do not weaken receipt validation or turn timeout
 into PASS. Its report is `reviews/c12-stage-followup-working-tree.md`.
+
+### Exact-head C12 repair result and remaining producer blockers
+
+The first exact-head repair run `35498928827` at `f59070535d14043fb4407ce7132146afcce48dbb`
+passed source correctness, WAR-02B, browser gates, Linux packaging, native
+SQLite and llvmpipe setup. Its C12 producer passed against the exact unpacked
+Linux artifact: the marker/attachment receipt bound the exact source head and
+tree, completed the archive/review lifecycle, opened the replacement bytes,
+and left zero owned descendants. This proves the Linux external desktop
+handoff repair in the packaged producer. The run still failed overall because
+C10 recorded a 266.7 ms maximum frame gap and C21 produced invalid evidence
+from a Node ABI-127 repository `better-sqlite3` loaded inside the Electron
+ABI-143 process. The C10 renderer diagnostics were empty; its failure is the
+strict frame gate, not a renderer error or failed request.
+
+The follow-up keeps both predicates unchanged. C21 now defaults its controller
+module path to the packaged ASAR (`scripts/qualification/archive-security-probe.cjs`),
+and the builder includes that controller in the package so its native module
+resolution uses the packaged dependency. C10's Linux launch uses the same
+background-throttling/backgrounding controls already used by other packaged
+responsiveness probes, while retaining the strict `<200 ms` assertion. These
+changes require a fresh exact-head source cycle, independent review and Linux
+CI; the failed run remains retained and is not relabelled as qualification.

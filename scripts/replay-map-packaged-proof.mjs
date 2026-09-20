@@ -20,7 +20,8 @@ try {
   // Match the Linux validation host's attested Mesa/ANGLE path. Chromium's
   // default selection failed WebGL context creation in retained CI 35492584673.
   const launchArgs = process.platform === 'linux'
-    ? ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl', '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE']
+    ? ['--no-sandbox', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=gl', '--disable-features=Vulkan,DefaultANGLEVulkan,VulkanFromANGLE',
+      '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows']
     : []
   app = await electron.launch({ executablePath, args: launchArgs, env: { ...process.env,
     SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' } })

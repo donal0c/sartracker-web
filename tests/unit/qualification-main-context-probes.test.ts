@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { closeSync, openSync, readSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import os from 'node:os'
@@ -33,6 +33,27 @@ describe('qualification packaged main-context probes', () => {
         { controllerProbePath: probePath, sourceSha: HEAD },
       )
       expect(result).toEqual({ loaded: true, input: { moduleRoot: process.cwd(), tier: 'packaged-module', sourceSha: HEAD } })
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
+    }
+  })
+
+  it('defaults the C21 controller to the packaged ASAR module path', async () => {
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'sartracker-c21-packaged-controller-'))
+    const packagedController = path.join(temporary, 'scripts', 'qualification')
+    await writeFile(path.join(temporary, 'package.json'), '{"name":"packaged-test"}\n')
+    await mkdir(packagedController, { recursive: true })
+    await writeFile(path.join(packagedController, 'archive-security-probe.cjs'),
+      'module.exports = { runArchiveSecurityProbe: async input => ({ packaged: true, input }) }\n')
+    try {
+      const result = await evaluateArchiveSecurityProbe(
+        { app: { getAppPath: () => temporary } },
+        { sourceSha: HEAD },
+      )
+      expect(result).toEqual({
+        packaged: true,
+        input: { moduleRoot: temporary, tier: 'packaged-module', sourceSha: HEAD },
+      })
     } finally {
       await rm(temporary, { recursive: true, force: true })
     }

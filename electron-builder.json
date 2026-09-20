@@ -8,6 +8,7 @@
   "files": [
     "dist/**",
     "electron/**",
+    "scripts/qualification/archive-security-probe.cjs",
     "shared/**",
     "package.json"
   ],
