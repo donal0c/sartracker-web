@@ -29,6 +29,10 @@ describe('C17 packaged support-export development receipt', () => {
     })
 
     expect(receipt.zeroCanary).toBe(true)
+    expect(receipt.diagnostics.containsSecret).toBe(false)
+    expect(receipt.diagnostics.containsProfilePath).toBe(false)
+    expect(receipt.diagnostics.secretAbsent).toBe(true)
+    expect(receipt.diagnostics.profilePathAbsent).toBe(true)
     expect(receipt.complete).toBe(false)
     expect(receipt.coverageGaps).toEqual(['recursive-adversarial-corpus', 'bounded-output-scan-identity'])
     expect(receipt.qualificationExecuted).toBe(false)
@@ -61,6 +65,8 @@ describe('C17 packaged support-export development receipt', () => {
     })
 
     expect(receipt.zeroCanary).toBe(false)
+    expect(receipt.diagnostics.containsSecret).toBe(true)
+    expect(receipt.diagnostics.containsProfilePath).toBe(true)
     expect(receipt.diagnostics.leakedCanaryIds).toEqual(['nested-array-secret'])
     expect(receipt.failureReasons).toEqual(['C17 canary leaked.'])
   })

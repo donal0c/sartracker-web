@@ -2,7 +2,11 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
 
-const { sanitizeDiagnosticText, sanitizeDiagnosticValue } = require('./diagnostic-sanitizer.cjs')
+const {
+  sanitizeDiagnosticFields,
+  sanitizeDiagnosticText,
+  sanitizeDiagnosticValue,
+} = require('./diagnostic-sanitizer.cjs')
 const { formatStorageDiagnostics } = require('./storage-diagnostics-format.cjs')
 
 const TRACKING_CACHE_FILE_NAME = 'tracking-cache.json'
@@ -178,7 +182,10 @@ function formatRuntimeLog(logEntries) {
   for (const entry of entries) {
     // Re-sanitize on export as well as on write so support bundles remain safe
     // when a profile contains logs persisted by an older app version.
-    lines.push(sanitizeDiagnosticsText(JSON.stringify(sanitizeDiagnosticValue(entry))))
+    const sanitizedEntry = entry !== null && typeof entry === 'object' && !Array.isArray(entry)
+      ? sanitizeDiagnosticFields(entry)
+      : sanitizeDiagnosticValue(entry)
+    lines.push(sanitizeDiagnosticsText(JSON.stringify(sanitizedEntry)))
   }
   return lines.join('\n')
 }

@@ -3,6 +3,7 @@ const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
 const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
 const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 512
 const STRUCTURED_DIAGNOSTIC_LIMIT_MARKER = '[redacted-structured-value-too-large]'
+const SENSITIVE_VALUES_INCOMPLETE_MARKER = '__diagnostic_sensitive_values_incomplete__'
 const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
 const COORDINATE_KEY_PATTERN = /^(?:lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
 const SECRET_JSON_KEY_PATTERN = new RegExp(
@@ -61,6 +62,9 @@ function sanitizeDiagnosticValue(
   depth = 0,
 ) {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+  if (sensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -137,6 +141,7 @@ function collectSensitiveValues(
   depth = 0,
 ) {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
     return sensitiveValues
   }
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -152,6 +157,7 @@ function collectSensitiveValues(
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return sensitiveValues
     }
     for (const item of value) {
@@ -162,6 +168,7 @@ function collectSensitiveValues(
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value)
     if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return sensitiveValues
     }
     for (const [nestedKey, nestedValue] of entries) {
@@ -174,6 +181,7 @@ function collectSensitiveValues(
 /** Collects non-empty string leaves from a secret-bearing structured value. */
 function collectStringValues(value, sensitiveValues, budget, depth) {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
     return
   }
   if (typeof value === 'string' && value !== '') {
@@ -186,6 +194,7 @@ function collectStringValues(value, sensitiveValues, budget, depth) {
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return
     }
     for (const item of value) {
@@ -196,6 +205,7 @@ function collectStringValues(value, sensitiveValues, budget, depth) {
   if (value !== null && typeof value === 'object') {
     const values = Object.values(value)
     if (values.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return
     }
     for (const nestedValue of values) {
@@ -239,7 +249,7 @@ function consumeDiagnosticTraversalNode(budget, depth) {
 function redactSensitiveValues(input, sensitiveValues) {
   let redacted = input
   for (const value of [...sensitiveValues].sort((left, right) => right.length - left.length)) {
-    if (value !== '') {
+    if (value !== '' && value !== SENSITIVE_VALUES_INCOMPLETE_MARKER) {
       redacted = redacted.replaceAll(value, '[redacted]')
     }
   }

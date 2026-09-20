@@ -124,6 +124,30 @@ describe('diagnostic event log', () => {
     expect(serialized).toContain('[redacted-structured-value-too-large]')
   })
 
+  it('redacts free-form credentials before browser fallback copy/report [DON-237]', async () => {
+    const passphrase = 'C17-Browser-Passphrase-9!'
+    const recoveryCode = 'C17-Browser-Recovery-9!'
+    const bearerToken = 'browser-bearer-token-9'
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:02:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'c17_free_form_credentials',
+      fields: {
+        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics`,
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    const report = formatDiagnosticEvents(readDiagnosticEvents())
+    for (const secret of [passphrase, recoveryCode, bearerToken]) {
+      expect(serialized).not.toContain(secret)
+      expect(report).not.toContain(secret)
+    }
+    expect(report).toContain('[redacted]')
+  })
+
   it('writes Electron breadcrumbs through the preload bridge while keeping browser fallback history', async () => {
     const recordDiagnosticEventBridge = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(window, 'sartrackerElectron', {

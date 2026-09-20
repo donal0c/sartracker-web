@@ -468,6 +468,10 @@ describe('electron runtime files', () => {
             path: userDataPath,
             values: [secret, userDataPath],
           }),
+          nestedObject: {
+            token: secret,
+            values: [secret],
+          },
         },
       ],
     })

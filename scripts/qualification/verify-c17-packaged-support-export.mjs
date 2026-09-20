@@ -50,8 +50,10 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
   const phase = validation.phaseFacts ?? {}
   const diagnostics = {
     sanitized: phase.sanitized === true,
-    containsSecret: phase.containsSecret === false,
-    containsProfilePath: phase.containsProfilePath === false,
+    containsSecret: phase.containsSecret === true,
+    containsProfilePath: phase.containsProfilePath === true,
+    secretAbsent: phase.containsSecret === false,
+    profilePathAbsent: phase.containsProfilePath === false,
     exactSecretMatches: phase.exactSecretMatches,
     adversarialMatchCount: phase.adversarialMatchCount,
     canaryCount: phase.canaryCount,
@@ -74,8 +76,8 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
     releaseEligible: false,
     zeroCanary: validation.status === 'PASS' && validation.valid === true
       && diagnostics.sanitized === true
-      && diagnostics.containsSecret === true
-      && diagnostics.containsProfilePath === true
+      && diagnostics.containsSecret === false
+      && diagnostics.containsProfilePath === false
       && diagnostics.exactSecretMatches === 0
       && diagnostics.adversarialMatchCount === 0
       && diagnostics.canaryCount === 6

@@ -7,8 +7,18 @@ const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
 const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
 const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 512
 const STRUCTURED_DIAGNOSTIC_LIMIT_MARKER = '[redacted-structured-value-too-large]'
-const SECRET_KEY_PATTERN = /(password|secret|token|credential|api[-_]?key|authorization)/i
+const SENSITIVE_VALUES_INCOMPLETE_MARKER = '__diagnostic_sensitive_values_incomplete__'
+const SECRET_KEY_SOURCE = '(?:password|secret|token|credential|api[-_]?key|authorization|pass[-_]?phrase|recovery[-_]?code)'
+const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
 const COORDINATE_KEY_PATTERN = /^(lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
+const SECRET_JSON_KEY_PATTERN = new RegExp(`("${SECRET_KEY_SOURCE}\\s*:\\s*")(?:\\\\.|[^"\\\\])*"`, 'gi')
+const SECRET_ASSIGNMENT_PATTERN = new RegExp(
+  `\\b(${SECRET_KEY_SOURCE}\\s*[:=]\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\r\\n]+)`,
+  'gi',
+)
+const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
+const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
+const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
 
 type SensitiveDiagnosticValues = Set<string>
 type StructuredDiagnosticValue = Record<string, unknown> | unknown[]
@@ -179,6 +189,9 @@ function sanitizeValue(value: unknown, sensitiveValues: SensitiveDiagnosticValue
     return value
   }
   if (typeof value === 'string') {
+    if (sensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
+      return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+    }
     const structured = parseStructuredDiagnosticValue(value)
     if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
       return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
@@ -189,7 +202,7 @@ function sanitizeValue(value: unknown, sensitiveValues: SensitiveDiagnosticValue
         sanitizeNestedValue(structured, '', encodedSensitiveValues, createDiagnosticTraversalBudget()),
       ).slice(0, 240)
     }
-    return redactSensitiveValues(anonymizePath(value), sensitiveValues).slice(0, 240)
+    return sanitizeDiagnosticString(value, sensitiveValues).slice(0, 240)
   }
   return JSON.stringify(
     sanitizeNestedValue(value, '', sensitiveValues, createDiagnosticTraversalBudget()),
@@ -204,6 +217,9 @@ function sanitizeNestedValue(
   depth = 0,
 ): unknown {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+  if (sensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -221,7 +237,7 @@ function sanitizeNestedValue(
       const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(sensitiveValues))
       return sanitizeNestedValue(structured, '', encodedSensitiveValues, budget, depth + 1)
     }
-    return redactSensitiveValues(anonymizePath(value), sensitiveValues)
+    return sanitizeDiagnosticString(value, sensitiveValues)
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
@@ -253,6 +269,7 @@ function collectSensitiveValues(
   depth = 0,
 ): SensitiveDiagnosticValues {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
     return sensitiveValues
   }
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -268,6 +285,7 @@ function collectSensitiveValues(
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return sensitiveValues
     }
     for (const item of value) {
@@ -278,6 +296,7 @@ function collectSensitiveValues(
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value)
     if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return sensitiveValues
     }
     for (const [nestedKey, nestedValue] of entries) {
@@ -295,6 +314,7 @@ function collectStringValues(
   depth: number,
 ): void {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
+    sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
     return
   }
   if (typeof value === 'string' && value !== '') {
@@ -307,6 +327,7 @@ function collectStringValues(
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return
     }
     for (const item of value) {
@@ -317,6 +338,7 @@ function collectStringValues(
   if (value !== null && typeof value === 'object') {
     const values = Object.values(value)
     if (values.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
       return
     }
     for (const nestedValue of values) {
@@ -362,11 +384,22 @@ function consumeDiagnosticTraversalNode(budget: DiagnosticTraversalBudget, depth
 function redactSensitiveValues(input: string, sensitiveValues: SensitiveDiagnosticValues): string {
   let redacted = input
   for (const value of [...sensitiveValues].sort((left, right) => right.length - left.length)) {
-    if (value !== '') {
+    if (value !== '' && value !== SENSITIVE_VALUES_INCOMPLETE_MARKER) {
       redacted = redacted.replaceAll(value, '[redacted]')
     }
   }
   return redacted
+}
+
+/** Redacts free-form secret, credential, and URL patterns before storage or copy. */
+function sanitizeDiagnosticString(input: string, sensitiveValues: SensitiveDiagnosticValues): string {
+  const sanitized = input
+    .replace(SECRET_JSON_KEY_PATTERN, '$1[redacted]"')
+    .replace(SECRET_ASSIGNMENT_PATTERN, '$1[redacted]')
+    .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
+    .replace(AUTH_TOKEN_PATTERN, '[redacted]')
+    .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
+  return redactSensitiveValues(anonymizePath(sanitized), sensitiveValues)
 }
 
 function anonymizePath(value: string): string {
