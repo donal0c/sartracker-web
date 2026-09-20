@@ -321,6 +321,23 @@ describe('qualification owned process runner', () => {
     expect(result.processError).toMatch(/timeout/iu)
   })
 
+  it.skipIf(process.platform !== 'linux')('retains a producer SIGTERM instead of scoring a reaped child as exit 0', async () => {
+    const result = await runOwnedProcess({
+      file: node,
+      args: ['-e', 'process.kill(process.pid, "SIGTERM")'],
+      cwd: process.cwd(),
+      env: process.env,
+      timeoutMs: 5_000,
+      cleanupTimeoutMs: 1_000,
+      terminationGraceMs: 100,
+    })
+
+    expect(result.exitCode).not.toBe(0)
+    expect(result.signal).toBe('SIGTERM')
+    expect(result.processError).toMatch(/terminated|SIGTERM/iu)
+    expect(result.zeroDescendantsAfterRun).toBe(true)
+  })
+
   // The Linux container's /proc scan is intentionally allowed more time only for this cross-process teardown test.
   it.skipIf(process.platform !== 'linux')('cleans the producer when its Node controller is killed', async () => {
     const work = await mkdtemp(path.join(os.tmpdir(), 'sartracker-owned-controller-kill-'))

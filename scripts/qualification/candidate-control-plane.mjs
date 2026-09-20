@@ -185,7 +185,7 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
   const artifactInputs = runtimeInputs ? runtimeInputs.config.ci.installers.map((entry) => ({ ...entry,
     ciRunId: runtimeInputs.config.ci.provenance.runId, localBuild: false })) : resolvedPlan.artifacts ?? []
   const artifacts = await identityArtifacts(artifactInputs, planPath)
-  const externalHuman = await compileHumanAuthority(resolvedPlan.externalHuman, planPath)
+  const externalHuman = await compileHumanAuthority(resolvedPlan.externalHuman, planPath, resolvedPlan.mode)
   const reviewedPlanIdentity = resolvedPlan.mode === 'candidate'
     ? await strictFileIdentity(reviewedCandidatePlanPath(), 'reviewed candidate plan') : null
   validateSourceIdentity(sourceIdentity)
@@ -744,7 +744,7 @@ async function assertOwnedCampaignLease(handle, campaignRoot, definition) {
 }
 
 /** Bind externally supplied public authority and authorization files at compilation. */
-async function compileHumanAuthority(config, planPath) {
+async function compileHumanAuthority(config, planPath, mode = 'calibration') {
   if (config === undefined) return null
   if (!config || typeof config.authorityPath !== 'string' || typeof config.authorizationPath !== 'string') {
     throw new Error('External human authority and authorization paths are required.')
@@ -760,7 +760,19 @@ async function compileHumanAuthority(config, planPath) {
     throw new Error('External human authority must contain only named public training authority fields.')
   }
   validateHumanPublicKey(authority.publicKey)
-  return { authorityIdentity, authorizationIdentity, authority: { ...authority, authorizationSha256: authorizationIdentity.sha256 } }
+  const publicKeySha256 = sha256(Buffer.from(authority.publicKey, 'utf8'))
+  if (mode === 'candidate'
+      && (!SHA256_PATTERN.test(config.trustedPublicKeySha256 ?? '') || config.trustedPublicKeySha256 !== publicKeySha256)) {
+    throw new Error('Candidate human authority requires a reviewed public-key digest; a campaign cannot nominate its own signing key.')
+  }
+  return {
+    authorityPath: config.authorityPath,
+    authorizationPath: config.authorizationPath,
+    trustedPublicKeySha256: config.trustedPublicKeySha256 ?? null,
+    authorityIdentity,
+    authorizationIdentity,
+    authority: { ...authority, authorizationSha256: authorizationIdentity.sha256 },
+  }
 }
 
 /** Reconstruct the request from bound inputs and immutable attempt metadata. */
@@ -1115,6 +1127,10 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
   return Object.freeze({
     schema: 'sartracker-qualification-campaign-verdict-v1',
     campaignId: normalized.campaignId,
+    // A passing calibration/development campaign is evidence for that mode
+    // only. Retain the mode in the verdict so it cannot be mistaken for
+    // candidate qualification by a downstream consumer.
+    mode: normalized.mode,
     definitionDigest: normalized.definitionDigest,
     verdict: status,
     phases: evaluateQualificationPhases(normalized.bindings, allAttempts.map((attempt) => ({ ...attempt,
@@ -1442,9 +1458,24 @@ async function verifyBoundIdentities(definition) {
       if (definition.reviewedPlanIdentity?.path !== reviewedCandidatePlanPath()) throw new Error('reviewed plan path differs')
       const current = await strictFileIdentity(reviewedCandidatePlanPath(), 'reviewed candidate plan')
       const reviewed = JSON.parse(await readFile(current.path, 'utf8'))
+      const reviewedHuman = reviewed.externalHuman
+      const boundHuman = definition.externalHuman
+      const humanTrustDiffers = boundHuman !== null && canonicalJson({
+        authorityPath: boundHuman.authorityPath ?? null,
+        authorizationPath: boundHuman.authorizationPath ?? null,
+        trustedPublicKeySha256: boundHuman.trustedPublicKeySha256 ?? null,
+      }) !== canonicalJson({
+        authorityPath: reviewedHuman?.authorityPath ?? null,
+        authorizationPath: reviewedHuman?.authorizationPath ?? null,
+        trustedPublicKeySha256: reviewedHuman?.trustedPublicKeySha256 ?? null,
+      })
+      const reviewedRiskKey = reviewed.release?.riskAuthorityPublicKeySha256 ?? null
+      const boundRiskKey = definition.releaseInputs?.riskAuthorityPublicKeySha256 ?? null
+      const releaseTrustDiffers = boundRiskKey !== null && reviewedRiskKey !== boundRiskKey
       if (!sameIdentity(current, definition.reviewedPlanIdentity)
-          || canonicalJson(reviewed.bindings) !== canonicalJson(definition.bindings)) {
-        mismatches.push('candidate reviewed binding matrix or plan identity differs; runtime inputs cannot replace required variants or commands')
+          || canonicalJson(reviewed.bindings) !== canonicalJson(definition.bindings)
+          || humanTrustDiffers || releaseTrustDiffers) {
+        mismatches.push('candidate reviewed binding or human trust root differs; runtime inputs cannot nominate a new authority')
       }
     } catch { mismatches.push('candidate reviewed binding matrix is unavailable or unbound') }
   }

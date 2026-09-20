@@ -20,7 +20,8 @@ function report() {
   return { schemaVersion: 2, source, liveOld: lane(source.initialGeometry), liveUpdated: lane(source.updatedGeometry),
     archiveOld: lane(source.initialGeometry), archiveUpdated: lane(source.updatedGeometry),
     rendererDiagnostics: { errors: [] as string[], unexpectedRequestFailures: [] as { url: string; failure: string }[], blockedNetworkRequestCount: 0 },
-    maximumFrameGapMs: 20, popupText: 'Large retained search area', popupColor: 'rgb(28, 25, 23)' }
+    maximumFrameGapMs: 20, frameCount: 60, measurementDurationMs: 1000,
+    popupText: 'Large retained search area', popupColor: 'rgb(28, 25, 23)' }
 }
 
 describe('retained packaged replay oracle', () => {
@@ -63,5 +64,9 @@ describe('retained packaged replay oracle', () => {
     sourceChanged.source.initialGeometry = sourceChanged.source.updatedGeometry
     expect(validateReplayReceipt(sourceChanged).passed).toBe(false)
     expect(validateReplayReceipt({ ...report(), maximumFrameGapMs: 200 }).passed).toBe(false)
+  })
+  it('rejects an unrepresentative responsiveness sample even when the maximum gap is low', () => {
+    expect(validateReplayReceipt({ ...report(), frameCount: 2 }).passed).toBe(false)
+    expect(validateReplayReceipt({ ...report(), measurementDurationMs: 100 }).passed).toBe(false)
   })
 })

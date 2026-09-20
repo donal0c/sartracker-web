@@ -214,6 +214,12 @@ async function readRiskInputs(definition) {
     const actual = await hashCandidateFile(declared.path)
     if (actual.sha256 !== declared.sha256 || actual.bytes !== declared.bytes) throw new Error('Repository risk input changed after campaign compilation.')
     output[key] = await readJson(actual.path, 'repository risk input')
+    if (key === 'riskAuthority') {
+      const trusted = definition.releaseInputs?.riskAuthorityPublicKeySha256
+      if (!SHA256.test(trusted ?? '') || output[key]?.publicKeySha256 !== trusted) {
+        throw new Error('Repository risk authority is not bound to the reviewed public-key digest.')
+      }
+    }
     const after = await hashCandidateFile(actual.path)
     if (after.sha256 !== actual.sha256 || after.bytes !== actual.bytes) throw new Error('Repository risk input changed during read.')
   }
@@ -261,7 +267,15 @@ function compileExpectedReleaseInputs(normalized) {
     }
     return { name, sha256: artifact.sha256, bytes: artifact.bytes }
   })
-  const expected = { releaseId: releaseInputs.releaseId, tag: releaseInputs.tag, sourceSha, assets }
+  const expected = {
+    releaseId: releaseInputs.releaseId,
+    tag: releaseInputs.tag,
+    sourceSha,
+    assets,
+    ...(releaseInputs.riskAuthorityPublicKeySha256 === undefined
+      ? {}
+      : { riskAuthorityPublicKeySha256: releaseInputs.riskAuthorityPublicKeySha256 }),
+  }
   validateExpectedIdentity(expected)
   const rollback = structuredClone(releaseInputs.rollback)
   validateExpectedIdentity(rollback)

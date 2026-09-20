@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { copyFile, lstat, mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -345,7 +345,10 @@ export async function validateRetainedPackage(receipt, binding, { definition, at
   const pagingValidation = ['C07', 'C08'].includes(binding.contractId)
     ? await validateRetainedPagingEvidence({ receipt, report, context, binding, attemptDirectory })
     : null
-  const runtime = retainedRuntimeExpectation(receipt.runtime, observations, context, binding)
+  const revalidatedRuntime = context.campaignMode === 'candidate'
+    ? await revalidateRuntimeIdentity(context, attemptDirectory)
+    : null
+  const runtime = retainedRuntimeExpectation(receipt.runtime, observations, context, binding, revalidatedRuntime)
   if (['C02', 'C03', 'C11', 'C17', 'C19', 'C20', 'C22', 'C26', 'C28'].includes(binding.contractId)) {
     const observedEvidenceDirectory = validateOwnedProducerEvidencePath(observations.evidenceDirectory, attemptDirectory)
     context.evidenceDirectory = ['C02', 'C19', 'C20', 'C22'].includes(binding.contractId)
@@ -362,9 +365,9 @@ export async function validateRetainedPackage(receipt, binding, { definition, at
       || receipt.runtime.proofMode !== observations.proofMode
       || receipt.runtime.launchPath !== observations.launchPath
       || receipt.runtime.artifactSha256 !== observations.artifactSha256
-      || receipt.runtime.executableSha256 !== observations.executableSha256
-      || receipt.runtime.asarSha256 !== observations.asarSha256) {
-    failures.push('Retained runtime summary differs from the independently retained process observations.')
+      || receipt.runtime.executableSha256 !== runtime.executableSha256
+      || receipt.runtime.asarSha256 !== runtime.asarSha256) {
+    failures.push('Retained runtime summary differs from the independently revalidated package bytes.')
   }
   const runtimeValidation = validateRuntimeObservations(observations, runtime)
   const validationReport = ['C20', 'C22'].includes(binding.contractId)
@@ -532,6 +535,7 @@ async function validateExecutionContext(normalized, binding, attemptDirectory, w
     installedExecutablePath,
     enospcMount: config.enospcMount,
     runtimeInputs,
+    campaignMode: normalized.mode,
   }
 }
 
@@ -625,8 +629,32 @@ function runtimeExpectation(prepared, proofMode) {
   }
 }
 
-/** Reconstruct the runtime identity from retained observations without trusting mutable receipt fields. */
-function retainedRuntimeExpectation(receiptRuntime, observations, context, binding) {
+/** Re-read the exact package or installed payload before candidate revalidation. */
+async function revalidateRuntimeIdentity(context, attemptDirectory) {
+  const root = await mkdtemp(path.join(attemptDirectory, '.runtime-revalidation-'))
+  const workDirectory = path.join(root, 'work')
+  try {
+    const prepared = await preparePackageRuntime({
+      proofMode: context.bindingProofMode,
+      artifact: context.artifact,
+      version: context.version,
+      workDirectory,
+      installedExecutablePath: context.installedExecutablePath,
+    })
+    if (prepared.artifactSha256 !== context.artifact.sha256) {
+      throw new Error('Revalidated package artifact differs from the immutable candidate identity.')
+    }
+    return Object.freeze({
+      executableSha256: prepared.executableSha256,
+      asarSha256: prepared.asarSha256,
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+/** Reconstruct the runtime identity using fresh package bytes when available. */
+function retainedRuntimeExpectation(receiptRuntime, observations, context, binding, revalidatedRuntime) {
   const runtime = isRecord(receiptRuntime) ? receiptRuntime : {}
   const first = Array.isArray(observations?.observations) ? observations.observations[0] : null
   const launchPath = binding.proofMode === 'installed-deb'
@@ -637,8 +665,8 @@ function retainedRuntimeExpectation(receiptRuntime, observations, context, bindi
     launchPath,
     installedExecutablePath: context.installedExecutablePath,
     artifactSha256: context.artifact.sha256,
-    executableSha256: observations?.executableSha256 ?? runtime.executableSha256,
-    asarSha256: observations?.asarSha256 ?? runtime.asarSha256,
+    executableSha256: revalidatedRuntime?.executableSha256 ?? observations?.executableSha256 ?? runtime.executableSha256,
+    asarSha256: revalidatedRuntime?.asarSha256 ?? observations?.asarSha256 ?? runtime.asarSha256,
   }
 }
 

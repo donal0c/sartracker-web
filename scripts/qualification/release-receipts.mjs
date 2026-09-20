@@ -4,12 +4,17 @@ import { assertQualifiedAssets, assertReleaseAssetMetadata, assertReleaseUnchang
 
 /** Bind data-only future release and prior rollback identities without performing a release action. */
 export function compileReleaseInputs(input, version) {
-  if (!input || Object.keys(input).sort().join(',') !== 'releaseId,rollback,tag'
+  const allowedKeys = ['releaseId', 'rollback', 'tag', ...(Object.hasOwn(input ?? {}, 'riskAuthorityPublicKeySha256') ? ['riskAuthorityPublicKeySha256'] : [])].sort()
+  if (!input || Object.keys(input).sort().join(',') !== allowedKeys.join(',')
       || !Number.isSafeInteger(input.releaseId) || input.releaseId <= 0
       || input.tag !== `electron-v${version}` || !/^0\.1\.0-beta\.\d+(?:\.\d+)?$/u.test(version)
       || !input.rollback || Object.keys(input.rollback).sort().join(',') !== 'assets,releaseId,sourceSha,tag'
       || input.rollback.releaseId === input.releaseId || input.rollback.tag === input.tag) throw new Error('Release configuration requires exact distinct candidate and rollback data identities.')
   validateExpectedIdentity(input.rollback)
+  if (input.riskAuthorityPublicKeySha256 !== undefined
+      && !/^[a-f0-9]{64}$/u.test(input.riskAuthorityPublicKeySha256)) {
+    throw new Error('Release repository-risk authority requires a valid reviewed public-key digest.')
+  }
   return JSON.parse(JSON.stringify(input))
 }
 

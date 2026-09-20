@@ -27,6 +27,8 @@ export function validateReplayReceipt(report) {
     }
     if (report.liveOld.serialized !== report.archiveOld.serialized
         || report.liveUpdated.serialized !== report.archiveUpdated.serialized) throw new Error('Replay changed across archive custody.')
+    if (!Number.isSafeInteger(report.frameCount) || report.frameCount < 30) throw new Error('Replay responsiveness sample count is too small to support a frame-gap claim.')
+    if (!Number.isFinite(report.measurementDurationMs) || report.measurementDurationMs < 500) throw new Error('Replay responsiveness measurement duration is too short to support a frame-gap claim.')
     if (!Number.isFinite(report.maximumFrameGapMs) || report.maximumFrameGapMs < 0 || report.maximumFrameGapMs >= 200) throw new Error('Replay rendered frame gap breached the strict 200ms boundary.')
     if (!report.popupText?.includes('Large retained search area') || report.popupColor !== 'rgb(28, 25, 23)') throw new Error('Replay retained-object popup was not observed correctly.')
   } catch (error) { failureReasons.push(error.message) }

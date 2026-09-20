@@ -139,21 +139,22 @@ def descendants(root_pid: int, table: Dict[int, Tuple[int, int]]) -> Dict[int, i
     return owned
 
 
-def reap_children(producer_pid: int) -> bool:
-    """Reap adopted descendants and report whether no waitable children remain."""
-    while True:
-        try:
-            pid, _status = os.waitpid(-1, os.WNOHANG)
-        except ChildProcessError:
-            return True
-        except InterruptedError:
-            continue
-        if pid == 0:
-            return False
-        # Popen.poll owns the producer wait status.  It should already have
-        # reaped this pid; seeing it here is a supervisor consistency failure.
+def reap_children(producer_pid: int, known: Dict[int, int]) -> bool:
+    """Reap only known adopted descendants, preserving Popen's producer status."""
+    for pid in known:
         if pid == producer_pid:
-            return False
+            continue
+        while True:
+            try:
+                reaped, _status = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                break
+            except InterruptedError:
+                continue
+            if reaped == 0:
+                return False
+            break
+    return True
 
 
 def signal_identity(pid: int, expected_start_ticks: int, signum: int) -> None:
@@ -204,7 +205,7 @@ def cleanup_verified(known: Dict[int, int], conflicts: set[int], producer_pid: i
         identity = table.get(pid)
         if identity is not None and identity[1] == start_ticks:
             live.append(pid)
-    no_waitable_children = reap_children(producer_pid)
+    no_waitable_children = reap_children(producer_pid, known)
     return len(live) == 0 and no_waitable_children and not conflicts, sorted(live)
 
 
@@ -216,6 +217,11 @@ def install_signal_handlers(state: dict[str, object]) -> None:
 
     signal.signal(signal.SIGTERM, request)
     signal.signal(signal.SIGINT, request)
+
+
+def arm_producer_parent_death_signal() -> None:
+    """Arm producer death on supervisor loss before the producer execs."""
+    set_parent_death_signal(os.getppid())
 
 
 def parse_args() -> argparse.Namespace:
@@ -342,6 +348,10 @@ def run() -> int:
         stderr=sys.stderr.buffer,
         close_fds=True,
         start_new_session=False,
+        # The supervisor's own PDEATHSIG is not inherited across fork. Arm a
+        # second one in the producer before exec so a hard controller kill
+        # cannot orphan the producer tree under PID 1.
+        preexec_fn=arm_producer_parent_death_signal,
     )
     producer_pid = producer.pid
     known: Dict[int, int] = {}

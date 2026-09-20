@@ -15,12 +15,18 @@ DON-254 is In Progress; PKG-001 and WAR-01/BCP-17 remain separate blockers.
 
 ## Active work and next actions
 
-Draft [PR43](https://github.com/donal0c/sartracker-web/pull/43) on
+[PR43](https://github.com/donal0c/sartracker-web/pull/43) on
 `codex/beta13-candidate-adapters`, based on PR42. Four independent reviews at
 `bab0ddb5` produced fourteen accepted findings. Rechecks of `065e2c8b`
 identified further failure-path custody gaps; remediation is implemented.
-Current-head source checks, independent rechecks and green Linux CI remain the
-delivery gate, recorded on the PR and DON-254; merge requires Donal's decision.
+The 2026-09-20 Claude review found seven blocker defects; all seven are now
+addressed in the worktree: Linux archive handoff wording, auditable C10 samples,
+mode-labelled verdicts, reviewed C29/C27 trust-root digests, producer parent-death
+and wait-status custody, and fresh candidate package/installed-deb byte
+revalidation. The packaged C21 probe also now requires the visible renderer shell.
+Current-head source checks, browser verification, independent rechecks and green
+Linux CI remain the delivery gate, recorded on the PR and DON-254; merge requires
+Donal's decision.
 
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
@@ -198,6 +204,18 @@ qualification envelope steps were intentionally skipped by this producer
 development workflow. PR43 is now suitable to leave draft state for Donal's
 merge review; no merge, freeze, tag, publication or candidate qualification has
 occurred. Release holds remain unchanged.
+
+The review-remediation local verification on 2026-09-20 passed the focused
+qualification/control suites (8 files, 71 tests; then 4 files, 55 tests), the
+full Vitest suite serialized (568 files, 5,798 passed, 19 skipped), `npm run
+lint`, `npm run build`, and 17 rendered Chromium archive-review/mission-review
+tests. One parallel full-suite run hit the existing strict responsiveness check
+at 200.2 ms; the serial full suite passed. No Linux packaged or installed-deb
+qualification was claimed locally. The six non-blocking review suggestions
+(script lint coverage, full C21 independent corpus custody, always-on soak
+surfaces, manual lock-release verb, harness exclusion from the operator image,
+and producer-development workflow gating) remain follow-up work; they do not
+change the release HOLD.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

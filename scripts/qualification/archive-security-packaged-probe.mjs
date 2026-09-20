@@ -89,7 +89,10 @@ export async function runPackagedArchiveSecurityProbe(options) {
     })
     runtimeIdentity = await readPackagedRuntimeIdentity(app, options.appPath)
     const page = await app.firstWindow()
-    await page.waitForLoadState('domcontentloaded', { timeout: 30_000 }).catch(() => undefined)
+    await page.waitForLoadState('domcontentloaded', { timeout: 30_000 })
+    const title = page.getByTestId('app-title')
+    await title.waitFor({ state: 'visible', timeout: 30_000 })
+    if (!(await title.innerText()).includes('SAR Tracker')) throw new Error('Packaged C21 renderer did not expose the operator shell title.')
     await page.screenshot({ path: screenshotPath, fullPage: true })
     report = await app.evaluate(evaluateArchiveSecurityProbe, { sourceSha: options.expectedHead })
     const reportPath = path.join(options.evidenceDir, REPORT_FILE)
@@ -115,6 +118,7 @@ export async function runPackagedArchiveSecurityProbe(options) {
       screenshotPath,
       profile,
       closeError: null,
+      rendererReady: true,
       rawReportSha256,
       screenshotSha256,
     })
@@ -152,7 +156,7 @@ export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, ev
   }
   if (receipt.contractId !== 'C21' || receipt.proofMode !== 'packaged-module'
       || receipt.reportPath !== REPORT_FILE || receipt.screenshotPath !== SCREENSHOT_FILE
-      || receipt.profileDisposable !== true || receipt.releaseEligible !== false
+      || receipt.profileDisposable !== true || receipt.rendererReady !== true || receipt.releaseEligible !== false
       || !SHA1.test(receipt.sourceSha ?? '') || !SHA256.test(receipt.rawReportSha256 ?? '')
       || !SHA256.test(receipt.screenshotSha256 ?? '')) {
     failures.push('Packaged C21 wrapper identity or cleanup binding is invalid.')
@@ -187,7 +191,7 @@ export async function validateRetainedPackagedArchiveSecurityReceipt(receipt, ev
 }
 
 /** Build a closed package receipt from raw report and independently measured runtime identity. */
-function buildReceipt({ report, validation, runtimeIdentity, expectedHead, reportPath, screenshotPath, profile, closeError, rawReportSha256, screenshotSha256 }) {
+function buildReceipt({ report, validation, runtimeIdentity, expectedHead, reportPath, screenshotPath, profile, closeError, rendererReady, rawReportSha256, screenshotSha256 }) {
   return Object.freeze({
     schema: 'c21-packaged-archive-security-v1',
     contractId: 'C21',
@@ -198,6 +202,7 @@ function buildReceipt({ report, validation, runtimeIdentity, expectedHead, repor
     screenshotPath: path.basename(screenshotPath),
     rawReportSha256,
     screenshotSha256,
+    rendererReady: rendererReady === true,
     validation,
     profileDisposable: profile.startsWith(path.dirname(reportPath)),
     closeError: closeError ?? null,
@@ -220,6 +225,7 @@ function buildFailureReceipt({ error, runtimeIdentity, expectedHead, reportPath,
     screenshotPath: path.basename(screenshotPath),
     rawReportSha256: null,
     screenshotSha256: null,
+    rendererReady: false,
     validation: null,
     profileDisposable: profile.startsWith(path.dirname(reportPath)),
     closeError: null,

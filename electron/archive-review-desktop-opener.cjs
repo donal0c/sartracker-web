@@ -8,8 +8,8 @@ const { pathToFileURL } = require('node:url')
  *
  * Linux Electron shells can leave shell.openPath pending after the desktop
  * viewer has opened the file. shell.openExternal resolves when the external
- * URL handoff is accepted, so use it for the Linux file URI while retaining
- * the existing path handoff on platforms where it is already reliable.
+ * URL handoff is accepted, so use it for the Linux file URI and leave the
+ * operator-facing UI to describe a handoff rather than a confirmed open.
  */
 function createArchiveReviewDesktopOpener(input) {
   if (input === null || typeof input !== 'object'
@@ -27,7 +27,7 @@ function createArchiveReviewDesktopOpener(input) {
     }
     if (platform === 'linux') {
       await input.shell.openExternal(pathToFileURL(stagePath).href)
-      return ''
+      return undefined
     }
     return input.shell.openPath(stagePath)
   }

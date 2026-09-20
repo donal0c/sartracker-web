@@ -1,4 +1,4 @@
-import { lstat, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import {
@@ -72,8 +72,8 @@ export async function executeIdentityVariant({ normalized, binding, attemptDirec
 }
 
 /**
- * Revalidate a retained identity report without rerunning CI, package tools,
- * or an application process.
+ * Revalidate a retained identity report and, in candidate mode, rerun the
+ * package-manager payload inspection without launching the application.
  *
  * @param {object} receipt retained controller or adapter receipt
  * @param {object} binding contract binding
@@ -94,13 +94,48 @@ export async function validateRetainedIdentity(receipt, binding, { definition, a
       valid: false, passed: false,
       validation: Object.freeze({ status: 'INVALID_EVIDENCE', valid: false, passed: false, scope: 'ci-installation-identity-only', launchVerified: false, failureReasons: Object.freeze([report.error ?? 'Identity report failed.']) }) })
   }
+  const filesystemInstallation = definition.mode === 'candidate'
+    ? await revalidateInstalledPackage(expected, attemptRoot)
+    : null
   const validation = independentlyValidateReport(report, expected)
+  if (filesystemInstallation !== null) {
+    const relativeAsarPath = path.join(path.dirname(expected.installedExecutablePath), 'resources/app.asar').slice(1)
+    for (const relativePath of [expected.installedExecutablePath.slice(1), relativeAsarPath]) {
+      const expectedFile = filesystemInstallation.files.find((entry) => entry.path === relativePath)
+      const retainedFile = report.installation?.files?.find((entry) => entry.path === relativePath)
+      if (!expectedFile || !retainedFile || expectedFile.sha256 !== retainedFile.sha256
+          || expectedFile.size !== retainedFile.size || expectedFile.executableBits !== retainedFile.executableBits) {
+        throw new Error('Retained installed package bytes differ from a fresh package-manager payload inspection.')
+      }
+    }
+  }
   if (receipt.status !== undefined && receipt.status !== validation.status) throw new Error('Retained identity status differs from independently validated evidence.')
   if (receipt.observed?.reportPath !== undefined && receipt.observed.reportPath !== retainedPath) throw new Error('Retained identity report path differs from the owned report.')
   if (receipt.validation?.status !== undefined && receipt.validation.status !== validation.status) throw new Error('Retained identity validation differs from independently validated evidence.')
   if (receipt.observed?.validation?.status !== undefined && receipt.observed.validation.status !== validation.status) throw new Error('Retained identity observation differs from independently validated evidence.')
   return Object.freeze({ ...receipt, reportPath: retainedPath, status: validation.status, valid: validation.valid, passed: validation.passed,
     validation, releaseEligible: false })
+}
+
+/** Re-run the package-manager payload inspection so retained C00 values cannot validate themselves. */
+async function revalidateInstalledPackage(expected, attemptDirectory) {
+  const { inspectInstalledCandidate } = await import('./candidate-artifacts.mjs')
+  const root = await mkdtemp(path.join(attemptDirectory, '.identity-revalidation-'))
+  try {
+    const deb = expected.installers.find((entry) => entry.role === 'ci-deb')
+    const installation = await inspectInstalledCandidate({
+      debPath: deb.path,
+      debSha256: deb.sha256,
+      extractionDirectory: path.join(root, 'installed-deb'),
+    })
+    if (installation.version !== expected.version || await realpath(expected.installedExecutablePath) !== expected.installedExecutablePath) {
+      throw new Error('Fresh installed package inspection does not match the canonical executable path.')
+    }
+    validateCanonicalInstalledExecutable(installation, expected.installedExecutablePath)
+    return installation
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 }
 
 /** Compile exact CI, installer, and installed package identities from definition. */

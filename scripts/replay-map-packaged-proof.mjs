@@ -85,12 +85,14 @@ try {
   expect(createHash('sha256').update(live.serialized).digest('hex')).toBe(live.expectedHash)
   await page.reload()
   await page.evaluate(() => new Promise((resolve) => {
-    const evidence = { maximumGapMs: 0, previous: 0, frameId: 0 }
+    const evidence = { maximumGapMs: 0, previous: 0, frameCount: 0, startedAt: 0, frameId: 0 }
     window.__replayFrameProof = evidence
     /** Measures renderer response while the additional review map is opened and populated. */
     const frame = (time) => {
+      if (evidence.startedAt === 0) evidence.startedAt = time
       if (evidence.previous) evidence.maximumGapMs = Math.max(evidence.maximumGapMs, time - evidence.previous)
       evidence.previous = time
+      evidence.frameCount += 1
       evidence.frameId = requestAnimationFrame(frame)
       resolve()
     }
@@ -108,11 +110,26 @@ try {
   const popupText = await map.locator('.maplibregl-popup-content').innerText()
   const popupColor = await map.locator('.maplibregl-popup-content').evaluate((element) => getComputedStyle(element).color)
   expect(popupColor).toBe('rgb(28, 25, 23)')
-  const maximumFrameGapMs = await page.evaluate(() => {
+  await page.evaluate(() => new Promise((resolve) => {
+    const waitForMinimumSample = () => {
+      const evidence = window.__replayFrameProof
+      if (evidence.frameCount >= 60 && evidence.previous - evidence.startedAt >= 1_000) {
+        resolve()
+        return
+      }
+      requestAnimationFrame(waitForMinimumSample)
+    }
+    waitForMinimumSample()
+  }))
+  const frameEvidence = await page.evaluate(() => {
     cancelAnimationFrame(window.__replayFrameProof.frameId)
-    return window.__replayFrameProof.maximumGapMs
+    return {
+      maximumFrameGapMs: window.__replayFrameProof.maximumGapMs,
+      frameCount: window.__replayFrameProof.frameCount,
+      measurementDurationMs: window.__replayFrameProof.previous - window.__replayFrameProof.startedAt,
+    }
   })
-  expect(maximumFrameGapMs).toBeLessThan(200)
+  expect(frameEvidence.maximumFrameGapMs).toBeLessThan(200)
   await map.screenshot({ path: path.join(evidence, 'packaged-replay-map.png') })
   const archive = await page.evaluate(async (missionId) => {
     const store = window.sartrackerElectron.missionStore
@@ -137,7 +154,10 @@ try {
     source: { initialGeometry: seeded.initialGeometry, updatedGeometry: seeded.geometry,
       knownBeforeUpdate: seeded.knownBeforeUpdate, knownAfterUpdate: seeded.knownAfterUpdate },
     liveOld, liveUpdated: live, archiveOld, archiveUpdated: archived, popupText, popupColor,
-    liveFragments: live.fragments, archiveFragments: archived.fragments, stateSha256: live.expectedHash, maximumFrameGapMs,
+    liveFragments: live.fragments, archiveFragments: archived.fragments, stateSha256: live.expectedHash,
+    maximumFrameGapMs: frameEvidence.maximumFrameGapMs,
+    frameCount: frameEvidence.frameCount,
+    measurementDurationMs: frameEvidence.measurementDurationMs,
     boundary: 'Packaged public preload, live SQLite and independently verified encrypted archive; synthetic geometry. Native replay map rendered and selected the retained large search area.' }
   await writeFile(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2))
   const validation = validateReplayReceipt(report)

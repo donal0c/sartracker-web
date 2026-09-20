@@ -167,8 +167,11 @@ TRK-003/C05. All mandatory C00-C29 variants still govern campaign admission.
 
 C29 issues a pending training request; it never generates acceptance.
 `externalHuman` supplies `authorityPath` and `authorizationPath`. The public
-authority contains only `signerId`, `machineId`, `profileSha256`, `dataClass`
-and an Ed25519 `publicKey`. Private signing keys never enter the controller.
+authority contains only `signerId`, `machineId`, `profileSha256`, `dataClass`,
+an Ed25519 `publicKey`, and its reviewed `trustedPublicKeySha256` digest.
+Candidate mode requires that digest to be present and binds both authority paths
+and the digest to the reviewed campaign plan; a campaign cannot nominate its
+own signing key. Private signing keys never enter the controller.
 The named signer supplies the signed envelope and evidence attachment for the
 fresh request. Invalid/stale submissions and missing attachments are retained.
 Training acceptance is distinct from postpublication WAR-13B field shadow.
@@ -188,7 +191,9 @@ acceptance; missing acceptance yields `NEEDS_HUMAN_DECISION`. This approval of
 the policy did not accept current gaps. Optional immutable runtime fixture roles
 `release-risk-authority` and `release-risk-acceptance` supply bounded JSON files.
 The authority is independently approved and pinned before compilation and
-contains only `signerId: "donal0c"` and the Ed25519 public key. Never take a
+contains only `signerId: "donal0c"`, the Ed25519 public key, and its
+`publicKeySha256` digest. The release definition carries the same reviewed
+digest, and runtime risk inputs must match it byte-for-byte. Never take a
 verification key from the acceptance itself or supply private signing material.
 The signed payload schema in `scripts/qualification/repository-risk.mjs` binds
 repository, C27/REL-004, exact source/tag/release/assets, every observed gap,

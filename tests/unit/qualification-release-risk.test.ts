@@ -4,7 +4,8 @@ import { canonicalJson } from '../../scripts/qualification/control-plane.mjs'
 import { validateRepositoryRiskDecision } from '../../scripts/qualification/repository-risk.mjs'
 
 const keys = generateKeyPairSync('ed25519')
-const authority = { signerId: 'donal0c', publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString() }
+const authority = { signerId: 'donal0c', publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+  publicKeySha256: createHash('sha256').update(keys.publicKey.export({ type: 'spki', format: 'pem' })).digest('hex') }
 const expected = { sourceSha: 'a'.repeat(40), tag: 'electron-v0.1.0-beta.13', releaseId: 123,
   assets: [{ name: 'candidate.AppImage', sha256: 'b'.repeat(64), bytes: 10 }, { name: 'candidate.deb', sha256: 'c'.repeat(64), bytes: 20 }] }
 const gaps = ['required status-check enforcement is absent']
@@ -39,6 +40,7 @@ describe('explicit repository safeguard risk decision', () => {
     expect(() => validateRepositoryRiskDecision({ ...input, observedAt: '2026-09-21T22:00:00.000Z' })).toThrow(/expired/i)
     expect(() => validateRepositoryRiskDecision({ ...input, acceptance: envelope({ sourceSha: 'f'.repeat(40) }) })).toThrow(/candidate/i)
     expect(() => validateRepositoryRiskDecision({ ...input, authority: { ...authority, signerId: 'another' } })).toThrow(/Donal/i)
+    expect(() => validateRepositoryRiskDecision({ ...input, authority: { ...authority, publicKeySha256: '0'.repeat(64) } })).toThrow(/digest|key/iu)
     const changed = envelope(); changed.payload.rationale = 'Changed after signature'
     expect(() => validateRepositoryRiskDecision({ ...input, acceptance: changed })).toThrow(/signature/i)
   })

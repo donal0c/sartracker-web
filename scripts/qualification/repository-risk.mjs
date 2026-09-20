@@ -26,9 +26,13 @@ export function validateRepositoryRiskDecision({ gaps, expected, observedAt, aut
   utc(observedAt)
   if (gaps.length === 0) return Object.freeze({ status: 'PASS', riskAccepted: false, releaseEligible: false })
   if (acceptance === undefined) return Object.freeze({ status: 'NEEDS_HUMAN_DECISION', gaps, riskAccepted: false, releaseEligible: false })
-  closed(authority, ['signerId', 'publicKey'])
+  closed(authority, ['signerId', 'publicKey', 'publicKeySha256'])
   if (authority.signerId !== 'donal0c') throw new Error('Repository risk authority must be Donal.')
   validateHumanPublicKey(authority.publicKey)
+  if (!/^[a-f0-9]{64}$/u.test(authority.publicKeySha256)
+      || createHash('sha256').update(authority.publicKey, 'utf8').digest('hex') !== authority.publicKeySha256) {
+    throw new Error('Repository risk authority public-key digest is missing or does not match the supplied key.')
+  }
   closed(acceptance, ['payload', 'signature'])
   const payload = acceptance.payload
   closed(payload, ['schema', 'signerId', 'repository', 'contractId', 'riskId', 'sourceSha', 'tag', 'releaseId',

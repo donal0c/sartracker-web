@@ -26,7 +26,7 @@ describe('archive review desktop opener [DON-254]', () => {
     const opener = createArchiveReviewDesktopOpener({ platform: 'linux', shell })
     const stagePath = '/tmp/sartracker/archive-review/briefing.pdf'
 
-    await expect(opener(stagePath)).resolves.toBe('')
+    await expect(opener(stagePath)).resolves.toBeUndefined()
     expect(shell.openExternal).toHaveBeenCalledWith(pathToFileURL(stagePath).href)
     expect(shell.openPath).not.toHaveBeenCalled()
   })
