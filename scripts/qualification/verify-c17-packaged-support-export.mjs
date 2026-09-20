@@ -53,9 +53,11 @@ async function main() {
     status: validation.status,
     valid: validation.valid,
     complete: validation.complete,
+    coverageComplete: validation.coverageComplete,
+    coverageGaps: validation.coverageGaps,
     qualificationExecuted: false,
     releaseEligible: false,
-    zeroCanary: validation.status === 'PASS' && validation.complete === true
+    zeroCanary: validation.status === 'PASS' && validation.valid === true
       && diagnostics.sanitized === true
       && diagnostics.containsSecret === true
       && diagnostics.containsProfilePath === true
