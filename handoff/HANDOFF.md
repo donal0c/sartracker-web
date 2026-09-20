@@ -182,7 +182,22 @@ errors and unexpected request failures are empty. The retained failure is in
 adds the existing Linux `--disable-gpu-rasterization` control to C10 through a
 tested launch-argument helper; the `<200 ms` threshold and receipt predicate
 remain unchanged. Fresh source verification, exact-head review and Linux CI
-are required before PR43 can leave draft state.
+are required before PR43 can leave draft state. The fresh exact-head Luna
+review of `0284d62e` is clear with no actionable P0/P1/P2 finding; its report
+is `tmp/candidate-enablement/reviews/c10-raster-c12-c21-exact-head-review.md`.
+
+Exact-head CI `35503736804` at `0284d62e` is green. The local source cycle is
+564 files / 5,772 passed / 24 declared skips, with TypeScript, lint, build and
+manifest freeze/check green. Hosted C10 recorded a 166.8 ms maximum frame gap
+with empty renderer and unexpected-request-failure diagnostics; its 201-outing
+replay also cleaned up. Packaged C12 restored and opened both attachment
+variants with matching hashes; packaged C21 completed its 25-case corpus with
+valid=true, no failure reasons or coverage gaps, and no secret-canary findings.
+Every producer left zero owned descendants. The strict responsiveness and 960k
+qualification envelope steps were intentionally skipped by this producer
+development workflow. PR43 is now suitable to leave draft state for Donal's
+merge review; no merge, freeze, tag, publication or candidate qualification has
+occurred. Release holds remain unchanged.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.

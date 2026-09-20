@@ -463,3 +463,28 @@ repair reuses the existing Linux `--disable-gpu-rasterization` control from
 the archive smoke through a small tested C10 launch helper; the WebGL path and
 the `<200 ms` predicate remain unchanged. A fresh source cycle, exact-head
 review and hosted run are required before PR43 can leave draft state.
+
+### Exact-head C10 repair result
+
+The bounded C10 repair passed its red/green helper regression, the full local
+source cycle (564 files, 5,772 passed, 24 declared skips), TypeScript, lint,
+build and manifest freeze/check. The fresh exact-head Luna review of `0284d62e`
+found no actionable P0/P1/P2 issue.
+
+Hosted CI `35503736804` at `0284d62ed4c5d99c90ce5de71c278b7d1af7c35b` passed the
+required source, browser, packaging, native SQLite, renderer and packaged
+producer checks. C10-known-at-time-replay recorded a `166.8 ms` maximum frame
+gap, empty renderer errors and empty unexpected request failures; the 201
+outings replay also completed with its cleanup proof. C12 restored and opened
+the original and replacement attachment bytes with matching archive hashes.
+C21 completed its 25-case packaged-module corpus with `valid=true`, no failure
+reasons or coverage gaps, and no secret-canary findings. All producer cases
+left zero owned descendants. The workflow intentionally skipped the strict
+responsiveness qualification and the normal 960k qualification envelope; this
+run is producer-development and packaged smoke evidence, not candidate
+qualification or release approval.
+
+With this exact-head run green and the independent review clear, PR43 may leave
+draft state for human merge review. Merge remains separate from release,
+qualification and publication; the outstanding DON-249/250/251, DON-264, C17,
+C29, PKG-001, WAR-01 and BCP-17 holds still apply.
