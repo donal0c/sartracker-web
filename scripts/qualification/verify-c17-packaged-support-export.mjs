@@ -32,6 +32,21 @@ async function main() {
     sourceRoot: projectRoot,
     contractId: 'C17',
   })
+  const receipt = createC17PackagedSupportExportReceipt({
+    sourceHead: options.expectedHead,
+    appSha256: sha256(appBytes),
+    validation,
+  })
+  const receiptPath = path.join(options.evidence, 'c17-packaged-support-export-receipt.json')
+  await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+  if (receipt.zeroCanary !== true) {
+    throw new Error(`C17 exact-head packaged support export did not prove zero canaries: ${validation.failureReasons.join(' | ')}`)
+  }
+  console.log(`verify-c17-packaged-support-export: receipt=${receiptPath}`)
+}
+
+/** Builds the bounded C17 development receipt without promoting it to qualification. */
+export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, validation }) {
   const phase = validation.phaseFacts ?? {}
   const diagnostics = {
     sanitized: phase.sanitized === true,
@@ -48,8 +63,8 @@ async function main() {
     schema: 'sartracker-c17-packaged-support-export-v1',
     contractId: 'C17',
     proofMode: 'packaged-linux-unpacked-exact-head',
-    sourceHead: options.expectedHead,
-    appSha256: sha256(appBytes),
+    sourceHead,
+    appSha256,
     status: validation.status,
     valid: validation.valid,
     complete: validation.complete,
@@ -70,12 +85,7 @@ async function main() {
     diagnostics,
     failureReasons: validation.failureReasons,
   }
-  const receiptPath = path.join(options.evidence, 'c17-packaged-support-export-receipt.json')
-  await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
-  if (receipt.zeroCanary !== true) {
-    throw new Error(`C17 exact-head packaged support export did not prove zero canaries: ${validation.failureReasons.join(' | ')}`)
-  }
-  console.log(`verify-c17-packaged-support-export: receipt=${receiptPath}`)
+  return receipt
 }
 
 /** Parses the fixed verifier argument contract. */
