@@ -34,6 +34,8 @@ export async function runOwnedProcess(options) {
     '--cwd', settings.cwd,
     '--termination-grace-ms', String(settings.terminationGraceMs),
     '--cleanup-timeout-ms', String(settings.cleanupTimeoutMs),
+    '--runtime-timeout-ms', String(settings.timeoutMs),
+    '--controller-pid', String(process.pid),
     '--', settings.file, ...settings.args,
   ], {
     cwd: settings.cwd,
@@ -169,6 +171,8 @@ export async function runOwnedProcess(options) {
   }
   runFinished = true
   protocol.finish()
+  const supervisorDeadlineExceeded = protocol.complete?.deadlineExceeded === true || protocol.complete?.timedOut === true
+  if (supervisorDeadlineExceeded) timedOut = true
   if (observationErrors.length > 0) retainError(`Owned process observation failed: ${observationErrors[0]}`)
   if (timedOut) retainError(hardTimedOut
     ? `Owned process exceeded the ${settings.timeoutMs}-ms timeout and bounded supervisor cleanup did not complete.`
@@ -329,6 +333,8 @@ function createProtocolState() {
       if (record.event === 'complete') {
         if (this.complete !== null || !Array.isArray(record.remainingPids) || record.remainingPids.some((pid) => !Number.isSafeInteger(pid) || pid <= 0)
             || typeof record.cleanupVerified !== 'boolean'
+            || typeof record.timedOut !== 'boolean'
+            || typeof record.deadlineExceeded !== 'boolean'
             || (record.exitCode !== null && !Number.isSafeInteger(record.exitCode))
             || (record.signal !== null && typeof record.signal !== 'string')) {
           this.errors.push('Owned supervisor completion protocol is invalid.')
@@ -338,6 +344,8 @@ function createProtocolState() {
           exitCode: record.exitCode,
           signal: record.signal,
           cleanupVerified: record.cleanupVerified,
+          timedOut: record.timedOut,
+          deadlineExceeded: record.deadlineExceeded,
           remainingPids: [...record.remainingPids],
           error: typeof record.error === 'string' ? record.error.slice(0, 512) : null,
         }

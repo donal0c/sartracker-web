@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -8,7 +8,7 @@ vi.mock('../../scripts/qualification/owned-process.mjs', () => ({
 }))
 
 import { runOwnedProcess } from '../../scripts/qualification/owned-process.mjs'
-import { executeSoakVariant, executeSoakVariantInProcess } from '../../scripts/qualification/soak-adapter.mjs'
+import { executeSoakVariant, executeSoakVariantInProcess, validateRetainedSoak } from '../../scripts/qualification/soak-adapter.mjs'
 
 describe('soak execution boundary', () => {
   it('keeps the direct in-process validation path available to the worker', async () => {
@@ -20,7 +20,7 @@ describe('soak execution boundary', () => {
     })).rejects.toThrow(/attempt directory must be absolute/iu)
   })
 
-  it('writes one completed receipt after a bounded worker result', async () => {
+  it('returns the completed receipt to the controller without an unbounded parent filesystem write', async () => {
     const attemptDirectory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-boundary-attempt-'))
     const workDirectory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-boundary-work-'))
     const workerReceipt = {
@@ -57,8 +57,7 @@ describe('soak execution boundary', () => {
         cleanupVerified: true,
         resourceCleanupBlocked: false,
       })
-      const retained = JSON.parse(await readFile(path.join(attemptDirectory, 'soak-adapter-receipt.json'), 'utf8'))
-      expect(retained).toEqual(receipt)
+      expect(await readdir(attemptDirectory)).toEqual([])
       expect(vi.mocked(runOwnedProcess)).toHaveBeenCalledOnce()
     } finally {
       await Promise.all([
@@ -68,10 +67,13 @@ describe('soak execution boundary', () => {
     }
   })
 
-  it('returns a code-only cleanup marker when the invalid receipt cannot be retained', async () => {
+  it('returns a code-only cleanup failure without requiring any parent receipt write or artifact rehash', async () => {
     const attemptDirectory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-boundary-write-failure-'))
     const workDirectory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-boundary-write-work-'))
-    await writeFile(path.join(attemptDirectory, 'soak-adapter-receipt.json'), '{}\n', 'utf8')
+    const definition = { definitionDigest: 'd'.repeat(64), identities: {
+      source: { sha: 'a'.repeat(40), tree: 'b'.repeat(40), dirty: false },
+    } }
+    const binding = { contractId: 'C04', variantId: 'ci', proofMode: 'ci-appimage' }
     vi.mocked(runOwnedProcess).mockResolvedValueOnce({
       supervisorPid: 1234,
       processError: null,
@@ -83,15 +85,27 @@ describe('soak execution boundary', () => {
     })
 
     try {
-      await expect(executeSoakVariant({
-        normalized: { definitionDigest: 'd'.repeat(64) },
-        binding: { contractId: 'C04', variantId: 'ci', proofMode: 'ci-appimage' },
+      const receipt = await executeSoakVariant({
+        normalized: definition,
+        binding,
         attemptDirectory,
         workDirectory,
-      })).rejects.toMatchObject({
-        code: 'SOAK_RESOURCE_CLEANUP_BLOCKED',
-        resourceCleanupBlocked: true,
       })
+      expect(receipt.workerExecution).toMatchObject({ failureCode: 'WORKER_TIMEOUT_CLEANUP_UNPROVEN', resourceCleanupBlocked: true })
+      await expect(validateRetainedSoak(receipt, binding, { definition, attemptDirectory }))
+        .resolves.toMatchObject({ status: 'INVALID_EVIDENCE' })
+      expect(await readdir(attemptDirectory)).toEqual([])
+      for (const invalid of [
+        { ...receipt, status: 'PASS' },
+        { ...receipt, validation: { ...receipt.validation, passed: true } },
+        { ...receipt, sourceSha: 'f'.repeat(40) },
+        { ...receipt, definitionDigest: 'e'.repeat(64) },
+        { ...receipt, workerExecution: { ...receipt.workerExecution, failureCode: 'UNREVIEWED' } },
+        { ...receipt, workerExecution: { ...receipt.workerExecution, failureCode: 'toString' } },
+        { ...receipt, workerExecution: { ...receipt.workerExecution, cleanupVerified: true } },
+      ]) {
+        await expect(validateRetainedSoak(invalid, binding, { definition, attemptDirectory })).rejects.toThrow()
+      }
     } finally {
       vi.mocked(runOwnedProcess).mockReset()
       await Promise.all([

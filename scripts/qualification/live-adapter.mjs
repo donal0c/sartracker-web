@@ -5,6 +5,7 @@ import path from 'node:path'
 
 import { validateLiveExactReceipt } from './live-receipts.mjs'
 import { runOwnedProcess } from './owned-process.mjs'
+import { assertOwnedProcessCleanup, isOwnedProcessCleanupError } from './owned-process-custody.mjs'
 import { hashLiveConfigDirectory } from './live-config-identity.mjs'
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { observePackageProcesses, preparePackageRuntime } from './package-runtime.mjs'
@@ -44,6 +45,7 @@ export async function executeLiveVariant({ normalized, binding, attemptDirectory
   let reportBytes
   let failureCode = null
   let runtime
+  let cleanupBlockedError = null
   try {
     const runtimeDirectory = path.join(workRoot, 'package-runtime')
     await verifyLiveFixtures(expected)
@@ -80,6 +82,7 @@ export async function executeLiveVariant({ normalized, binding, attemptDirectory
         asarSha256: runtime.asarSha256,
       }),
     })
+    assertOwnedProcessCleanup(processResult, 'live.get-only')
     try { await verifyLiveFixtures(expected) } catch { failureCode = 'LIVE_FIXTURE_CHANGED' }
     const summaryPath = path.join(evidenceDirectory, 'summary.json')
     const summary = await readJsonIfPresent(summaryPath)
@@ -97,11 +100,17 @@ export async function executeLiveVariant({ normalized, binding, attemptDirectory
     } else {
       failureCode = 'LIVE_REPORT_MISSING'
     }
-  } catch {
+  } catch (error) {
+    if (isOwnedProcessCleanupError(error, 'live.get-only')) {
+      cleanupBlockedError = error
+      throw error
+    }
     failureCode = failureCode ?? 'LIVE_ADAPTER_FAILED'
   } finally {
-    try { await removePrivateEvidence(privateVisualDirectory) } catch { failureCode = failureCode ?? 'PRIVATE_EVIDENCE_CLEANUP_FAILED' }
-    try { await removePrivateEvidence(evidenceDirectory) } catch { failureCode = failureCode ?? 'LIVE_EVIDENCE_CLEANUP_FAILED' }
+    if (cleanupBlockedError === null) {
+      try { await removePrivateEvidence(privateVisualDirectory) } catch { failureCode = failureCode ?? 'PRIVATE_EVIDENCE_CLEANUP_FAILED' }
+      try { await removePrivateEvidence(evidenceDirectory) } catch { failureCode = failureCode ?? 'LIVE_EVIDENCE_CLEANUP_FAILED' }
+    }
   }
 
   const safeProcess = retainProcessEvidence(processResult, failureCode)

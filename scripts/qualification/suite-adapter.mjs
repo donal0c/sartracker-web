@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import { contractSuiteVariants, selectContractSuite } from './contract-suite-catalog.mjs'
 import { validateTestSuiteReceipt } from './test-suite-receipts.mjs'
 import { runOwnedProcess } from './owned-process.mjs'
+import { assertOwnedProcessCleanup } from './owned-process-custody.mjs'
 
 const execFile = promisify(execFileCallback)
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -91,6 +92,7 @@ export async function executeSuiteVariant({ binding, expected, attemptDirectory,
       VITEST_OUTPUT_DIR: workRoot,
     },
   })
+  assertOwnedProcessCleanup(execution, `suite.${immutableExpected.proofMode}`)
   stdout = execution.stdout
   stderr = execution.stderr
   const { exitCode, processError } = execution

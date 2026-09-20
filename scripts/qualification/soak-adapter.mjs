@@ -29,6 +29,7 @@ import {
 import {
   runSoakExecutionWorker,
 } from './soak-execution-boundary.mjs'
+import { validateSoakWorkerFailure } from './soak-worker-failure.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SHA1 = /^[a-f0-9]{40}$/u
@@ -305,11 +306,8 @@ export async function executeSoakVariant({ normalized, binding, attemptDirectory
         resourceCleanupBlocked: false,
       },
     }
-    try {
-      await writeJson(path.join(attemptDirectory, 'soak-adapter-receipt.json'), receipt)
-    } catch {
-      throw createReceiptWriteError(resourceCleanupBlocked)
-    }
+    // The controller persists the canonical receipt. All producer retention
+    // already happened inside the bounded worker; do not add parent I/O here.
     return Object.freeze(receipt)
   }
   const receipt = workerFailureReceipt({
@@ -320,11 +318,6 @@ export async function executeSoakVariant({ normalized, binding, attemptDirectory
     cleanupVerified,
     resourceCleanupBlocked,
   })
-  try {
-    await writeJson(path.join(attemptDirectory, 'soak-adapter-receipt.json'), receipt)
-  } catch {
-    throw createReceiptWriteError(resourceCleanupBlocked)
-  }
   return Object.freeze(receipt)
 }
 
@@ -504,19 +497,14 @@ function workerFailureReceipt({ normalized, binding, execution, failureCode, cle
   }
 }
 
-/** Return a code-only write failure while preserving the outer cleanup flag. */
-function createReceiptWriteError(resourceCleanupBlocked) {
-  const error = new Error('Soak receipt write failed.')
-  error.resourceCleanupBlocked = resourceCleanupBlocked === true
-  error.code = error.resourceCleanupBlocked ? 'SOAK_RESOURCE_CLEANUP_BLOCKED' : 'SOAK_RECEIPT_WRITE_FAILED'
-  return error
-}
-
 /** Re-read retained raw soak and process observations and recompute all predicates. */
 export async function validateRetainedSoak(receipt, binding, { definition, attemptDirectory }) {
   if (!isRecord(receipt)) throw new Error('Retained soak adapter receipt is required.')
-  const context = await validateExecutionContext(definition, binding, attemptDirectory, null, { retained: true })
   const variant = variantFor(binding.contractId, binding.variantId)
+  if (receipt.workerExecution?.status === 'INVALID_EVIDENCE') {
+    return validateSoakWorkerFailure(receipt, binding, definition)
+  }
+  const context = await validateExecutionContext(definition, binding, attemptDirectory, null, { retained: true })
   const failures = []
   if (!isRecord(receipt.workerExecution)
       || receipt.workerExecution.schema !== 'sartracker-soak-execution-v1'

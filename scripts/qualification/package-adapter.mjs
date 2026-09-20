@@ -18,6 +18,7 @@ import { C02_LIFECYCLE_VARIANTS, validateC02LifecycleReceipt } from './c02-lifec
 import { BACKUP_FAULT_VARIANTS, buildStorageBackupFaultVerdict } from '../../build/electron-storage-diagnostics-kill-probe-lib.js'
 import { validateArchiveFieldReceipt } from './archive-field-receipts.mjs'
 import { runOwnedProcess } from './owned-process.mjs'
+import { assertOwnedProcessCleanup } from './owned-process-custody.mjs'
 import {
   observePackageProcesses,
   preparePackageRuntime,
@@ -1148,6 +1149,7 @@ async function runFixedPackageCommand({ command, runtimeExpected, cwd, environme
     terminationGraceMs: 5_000,
     observe: ({ pid }) => observePackageProcesses(pid, runtimeExpected),
   })
+  assertOwnedProcessCleanup(execution, 'package.reviewed')
   const observations = []
   for (const sample of execution.observationResults) {
     if (!Array.isArray(sample)) continue
@@ -1163,6 +1165,8 @@ async function runFixedPackageCommand({ command, runtimeExpected, cwd, environme
     signal: execution.signal,
     timedOut: execution.timedOut,
     processError: execution.processError,
+    supervisorPid: execution.supervisorPid,
+    zeroDescendantsAfterRun: execution.zeroDescendantsAfterRun,
     runtimeObservations: {
       schema: 'sartracker-package-runtime-observations-v1',
       proofMode: runtimeExpected.proofMode,

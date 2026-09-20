@@ -22,8 +22,10 @@ from typing import Dict, Optional, Tuple
 
 
 PR_SET_CHILD_SUBREAPER = 36
+PR_SET_PDEATHSIG = 1
 MAX_PROTOCOL_LINE = 64 * 1024
 POLL_INTERVAL_SECONDS = 0.01
+INTERNAL_FAILURE_MESSAGE = "owned supervisor failed after producer launch; cleanup proof is invalid"
 
 
 class SupervisorFailure(RuntimeError):
@@ -50,6 +52,23 @@ def set_subreaper() -> None:
     if result != 0:
         error = ctypes.get_errno()
         raise SupervisorFailure(f"PR_SET_CHILD_SUBREAPER failed: errno {error}")
+
+
+def set_parent_death_signal(expected_controller_pid: int) -> None:
+    """Arm SIGTERM for controller death after checking the parent race."""
+    if expected_controller_pid <= 0:
+        raise SupervisorFailure("owned supervisor controller PID must be positive")
+    before = os.getppid()
+    if before != expected_controller_pid:
+        raise SupervisorFailure("owned supervisor controller PID does not match its parent")
+    libc = ctypes.CDLL(None, use_errno=True)
+    result = libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0)
+    if result != 0:
+        error = ctypes.get_errno()
+        raise SupervisorFailure(f"PR_SET_PDEATHSIG failed: errno {error}")
+    after = os.getppid()
+    if after != expected_controller_pid:
+        raise SupervisorFailure("owned supervisor controller exited during parent-death registration")
 
 
 def stat_identity(pid: int) -> Optional[Tuple[int, int]]:
@@ -169,9 +188,6 @@ def terminate_owned(producer_pid: int, known: Dict[int, int], conflicts: set[int
     table = process_table()
     current = descendants(os.getpid(), table)
     merge_owned(known, current, conflicts)
-    producer_identity = table.get(producer_pid)
-    if producer_identity is not None and producer_pid not in known:
-        known[producer_pid] = producer_identity[1]
     for pid, start_ticks in list(known.items()):
         if pid in conflicts:
             continue
@@ -183,9 +199,6 @@ def cleanup_verified(known: Dict[int, int], conflicts: set[int], producer_pid: i
     table = process_table()
     current = descendants(os.getpid(), table)
     merge_owned(known, current, conflicts)
-    producer_identity = table.get(producer_pid)
-    if producer_identity is not None and producer_pid not in known:
-        known[producer_pid] = producer_identity[1]
     live = []
     for pid, start_ticks in known.items():
         identity = table.get(pid)
@@ -216,11 +229,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cwd", required=True)
     parser.add_argument("--termination-grace-ms", required=True, type=int)
     parser.add_argument("--cleanup-timeout-ms", required=True, type=int)
+    parser.add_argument("--runtime-timeout-ms", required=True, type=int)
+    parser.add_argument("--controller-pid", required=True, type=int)
     result = parser.parse_args(argv[:separator])
     result.command = argv[separator + 1:]
     if not result.command:
         raise SupervisorFailure("owned producer command is missing")
-    if result.termination_grace_ms <= 0 or result.cleanup_timeout_ms <= 0:
+    if (result.termination_grace_ms <= 0 or result.cleanup_timeout_ms <= 0
+            or result.runtime_timeout_ms <= 0 or result.controller_pid <= 0):
         raise SupervisorFailure("owned supervisor bounds must be positive")
     return result
 
@@ -238,10 +254,74 @@ def producer_returncode(producer: subprocess.Popen[bytes]) -> Tuple[Optional[int
     return code, None
 
 
+def cleanup_after_internal_failure(
+    producer: subprocess.Popen[bytes],
+    producer_pid: int,
+    known: Dict[int, int],
+    identity_conflicts: set[int],
+    args: argparse.Namespace,
+    state: dict[str, object],
+    runtime_deadline: float,
+) -> int:
+    """Attempt bounded cleanup after an exception, while retaining INVALID evidence."""
+    state["stop_requested"] = True
+    cleanup_deadline = time.monotonic() + args.cleanup_timeout_ms / 1000
+    kill_deadline = time.monotonic() + args.termination_grace_ms / 1000
+    kill_sent = False
+    remaining: list[int] = []
+    while True:
+        now = time.monotonic()
+        if not kill_sent and now >= kill_deadline:
+            try:
+                terminate_owned(producer_pid, known, identity_conflicts, signal.SIGKILL)
+            except BaseException:
+                try:
+                    producer.kill()
+                except BaseException:
+                    pass
+            kill_sent = True
+        try:
+            verified, remaining = cleanup_verified(known, identity_conflicts, producer_pid)
+        except BaseException:
+            verified, remaining = False, []
+        # An internal exception invalidates the run even when the recovery
+        # attempt happens to remove every descendant.
+        if verified or now >= cleanup_deadline:
+            break
+        time.sleep(POLL_INTERVAL_SECONDS)
+    try:
+        terminate_owned(producer_pid, known, identity_conflicts, signal.SIGKILL)
+    except BaseException:
+        try:
+            producer.kill()
+        except BaseException:
+            pass
+    try:
+        producer.wait(timeout=max(0.01, args.termination_grace_ms / 1000))
+    except BaseException:
+        pass
+    deadline_exceeded = time.monotonic() >= runtime_deadline
+    if not send_protocol(
+        "complete",
+        exitCode=None,
+        signal=None,
+        cleanupVerified=False,
+        remainingPids=remaining,
+        producerPid=producer_pid,
+        terminationRequested=True,
+        timedOut=deadline_exceeded,
+        deadlineExceeded=deadline_exceeded,
+        error=INTERNAL_FAILURE_MESSAGE,
+    ):
+        return 125
+    return 125
+
+
 def run() -> int:
     """Run the producer and prove bounded descendant cleanup."""
     args = parse_args()
     state: dict[str, object] = {"stop_requested": False, "stop_signal": None}
+    runtime_deadline = time.monotonic() + args.runtime_timeout_ms / 1000
     install_signal_handlers(state)
     set_subreaper()
     require_pidfd_support()
@@ -251,6 +331,9 @@ def run() -> int:
         raise SupervisorFailure(f"owned supervisor cwd unavailable: {error}") from error
     if os.getpid() not in process_table():
         raise SupervisorFailure("Linux /proc process identity table is unavailable; ownership proof is unverified")
+    set_parent_death_signal(args.controller_pid)
+    if bool(state["stop_requested"]):
+        raise SupervisorFailure("owned supervisor controller exited before producer launch")
 
     producer = subprocess.Popen(
         args.command,
@@ -261,62 +344,79 @@ def run() -> int:
         start_new_session=False,
     )
     producer_pid = producer.pid
-    identity = stat_identity(producer_pid)
-    if identity is None:
-        producer.kill()
-        producer.wait()
-        raise SupervisorFailure("producer start identity could not be observed")
-    if not send_protocol("started", producerPid=producer_pid, producerStartTicks=identity[1]):
-        producer.kill()
-        producer.wait()
-        raise SupervisorFailure("owned supervisor protocol became unavailable")
-
-    known: Dict[int, int] = {producer_pid: identity[1]}
+    known: Dict[int, int] = {}
     identity_conflicts: set[int] = set()
     cleanup_started = False
     kill_sent = False
     cleanup_deadline = 0.0
     kill_deadline = 0.0
+    deadline_exceeded = False
 
-    while True:
-        exit_code, exit_signal = producer_returncode(producer)
-        if not cleanup_started and (exit_code is not None or exit_signal is not None or bool(state["stop_requested"])):
-            cleanup_started = True
-            cleanup_deadline = time.monotonic() + args.cleanup_timeout_ms / 1000
-            kill_deadline = time.monotonic() + args.termination_grace_ms / 1000
-            terminate_owned(producer_pid, known, identity_conflicts, signal.SIGTERM)
-        if cleanup_started:
-            table = process_table()
-            merge_owned(known, descendants(os.getpid(), table), identity_conflicts)
-            if not kill_sent and time.monotonic() >= kill_deadline:
-                terminate_owned(producer_pid, known, identity_conflicts, signal.SIGKILL)
-                kill_sent = True
-            verified, remaining = cleanup_verified(known, identity_conflicts, producer_pid)
-            if verified:
-                if not send_protocol(
-                    "complete",
-                    exitCode=exit_code,
-                    signal=exit_signal,
-                    cleanupVerified=True,
-                    remainingPids=[],
-                    producerPid=producer_pid,
-                    terminationRequested=bool(state["stop_requested"]),
-                ):
+    try:
+        identity = stat_identity(producer_pid)
+        if identity is None or identity[0] != os.getpid():
+            raise SupervisorFailure("producer start identity or parent could not be observed")
+        known[producer_pid] = identity[1]
+        if not send_protocol("started", producerPid=producer_pid, producerStartTicks=identity[1]):
+            state["stop_requested"] = True
+            state["stop_signal"] = "PROTOCOL_UNAVAILABLE"
+        while True:
+            exit_code, exit_signal = producer_returncode(producer)
+            if (not cleanup_started and exit_code is None and exit_signal is None
+                    and time.monotonic() >= runtime_deadline):
+                deadline_exceeded = True
+            if not cleanup_started and (exit_code is not None or exit_signal is not None
+                                        or bool(state["stop_requested"]) or deadline_exceeded):
+                cleanup_started = True
+                cleanup_deadline = time.monotonic() + args.cleanup_timeout_ms / 1000
+                kill_deadline = time.monotonic() + args.termination_grace_ms / 1000
+                terminate_owned(producer_pid, known, identity_conflicts, signal.SIGTERM)
+            if cleanup_started:
+                table = process_table()
+                merge_owned(known, descendants(os.getpid(), table), identity_conflicts)
+                if not kill_sent and time.monotonic() >= kill_deadline:
+                    terminate_owned(producer_pid, known, identity_conflicts, signal.SIGKILL)
+                    kill_sent = True
+                verified, remaining = cleanup_verified(known, identity_conflicts, producer_pid)
+                if verified:
+                    if not send_protocol(
+                        "complete",
+                        exitCode=exit_code,
+                        signal=exit_signal,
+                        cleanupVerified=True,
+                        remainingPids=[],
+                        producerPid=producer_pid,
+                        terminationRequested=bool(state["stop_requested"]),
+                        timedOut=deadline_exceeded,
+                        deadlineExceeded=deadline_exceeded,
+                    ):
+                        return 125
+                    return 0 if exit_code == 0 and exit_signal is None else 1
+                if time.monotonic() >= cleanup_deadline:
+                    if not send_protocol(
+                        "complete",
+                        exitCode=exit_code,
+                        signal=exit_signal,
+                        cleanupVerified=False,
+                        remainingPids=remaining,
+                        producerPid=producer_pid,
+                        error="owned descendant cleanup exceeded its bounded timeout",
+                        timedOut=deadline_exceeded,
+                        deadlineExceeded=deadline_exceeded,
+                    ):
+                        return 125
                     return 125
-                return 0 if exit_code == 0 and exit_signal is None else 1
-            if time.monotonic() >= cleanup_deadline:
-                if not send_protocol(
-                    "complete",
-                    exitCode=exit_code,
-                    signal=exit_signal,
-                    cleanupVerified=False,
-                    remainingPids=remaining,
-                    producerPid=producer_pid,
-                    error="owned descendant cleanup exceeded its bounded timeout",
-                ):
-                    return 125
-                return 125
-        time.sleep(POLL_INTERVAL_SECONDS)
+            time.sleep(POLL_INTERVAL_SECONDS)
+    except BaseException:
+        return cleanup_after_internal_failure(
+            producer,
+            producer_pid,
+            known,
+            identity_conflicts,
+            args,
+            state,
+            runtime_deadline,
+        )
 
 
 def main() -> int:

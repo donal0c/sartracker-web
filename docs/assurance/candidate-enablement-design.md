@@ -236,3 +236,32 @@ Post-remediation serial correctness passed554files /5,714tests with21skips:
 six prescribed timing exclusions and Linux-only cases on macOS. Lint and build
 passed; the build-generated version file was restored, leaving product/version
 trees unchanged. Logs are `tmp/candidate-enablement/remediation/final-*`.
+
+Independent rechecks of `065e2c8b` found additional failure-path gaps: controller
+death and internal supervisor exceptions, non-soak resource quarantine, code-only
+worker failures, and canonical receipt persistence. The next revision gives the
+Linux supervisor its own monotonic deadline and parent-death signal, carries
+unproven cleanup through every owned adapter, and validates definition-bound
+code-only soak failures without requiring nonexistent raw reports. The redundant
+parent soak receipt write is removed. Canonical persistence errors retain the
+resource lock and return a fixed recovery error without secondary receipt writes.
+
+Hosted CI `35486189960` failed the Linux sentinel test: synchronous `sleep 30`
+blocked until the unrelated sentinel had already exited. It recorded5,727passed,
+one failure and seven skips; later package steps did not run. The test now starts
+and closes that sentinel asynchronously. The earlier full-campaign setup timeout
+did not recur. Both failed CI logs remain retained; neither is qualification or
+passing delivery evidence. Final stable-source checks and exact-head rechecks
+remain required for this revision.
+
+Final second-remediation local correctness passed559files /5,737tests with24skips
+(six timing exclusions and Linux-only cases on macOS), followed by lint and build.
+The frozen1,405-file executable/test manifest remained unchanged after restoring
+only build-generated version metadata. Native Linux mechanics passed17owned-process
+tests, including controller death/freeze and the unrelated-PID regression; that
+regression fails against the previous supervisor. Actual worker preparation again
+timed out while hashing the sparse artifact and proved zero descendants. These
+results remain source/development evidence. Logs: `second-final-*`,
+`oracles-supervisor-identity-green.log`, `pid-regression-old-red.log` and
+`soak-preparation-timeout-linux-final-3.log` under the remediation directory.
+Exact-head independent re-attestation and hosted CI remain the PR readiness gate.

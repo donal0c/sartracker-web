@@ -36,6 +36,10 @@ import { validateHostCapabilities } from './host-capabilities.mjs'
 import { hashLiveConfigDirectory } from './live-config-identity.mjs'
 import { C28_REQUIRED_VARIANTS } from './composite-coverage.mjs'
 import { candidateProductCapabilityBlockers } from './product-capabilities.mjs'
+import {
+  hasOwnedProcessCleanupMarker,
+  isOwnedProcessCleanupError,
+} from './owned-process-custody.mjs'
 
 import {
   buildJudgePacket,
@@ -87,6 +91,12 @@ const REQUIRED_C28_CANDIDATE_VARIANTS = Object.freeze(
 )
 const ADAPTERS = new Map()
 const RECEIPT_VALIDATORS = new Map()
+const OWNED_PROCESS_CUSTODY_ADAPTERS = Object.freeze([
+  'live.get-only',
+  'package.reviewed',
+  'suite.source',
+  'suite.browser',
+])
 
 registerCalibrationAdapters()
 for (const proofMode of ['source', 'browser']) {
@@ -612,6 +622,15 @@ export async function runContractAttempt({
 
   let resourceLock
   let resourceCleanupBlocked = false
+  let receiptPersistenceBlocked = false
+  const persistBlockedAttempt = async (options) => {
+    try {
+      return await writeBlockedAttempt(options)
+    } catch (error) {
+      if (isReceiptPersistenceError(error)) receiptPersistenceBlocked = true
+      throw error
+    }
+  }
   try {
     let workDirectory
     try {
@@ -621,7 +640,7 @@ export async function runContractAttempt({
       workDirectory = path.join(fixturesRoot, `${attemptId}-${randomUUID()}`)
       await mkdir(workDirectory, { recursive: false, mode: 0o700 })
     } catch {
-      return await writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+      return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
         status: 'ENVIRONMENT_BLOCKED', reason: 'Owned attempt setup could not be completed before adapter execution.', binding, resumed })
     }
     let execution
@@ -640,18 +659,33 @@ export async function runContractAttempt({
       resourceCleanupBlocked = binding.adapterId === 'soak.reviewed' && (
         execution?.workerExecution?.resourceCleanupBlocked === true
         || execution?.observed?.workerExecution?.resourceCleanupBlocked === true)
+      if (OWNED_PROCESS_CUSTODY_ADAPTERS.includes(binding.adapterId)
+          && hasOwnedProcessCleanupMarker(execution)) {
+        resourceCleanupBlocked = true
+        return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+          status: 'CLEANUP_BLOCKED', reason: 'Owned producer cleanup was not proven; resource lock is retained for manual recovery.', binding, resumed })
+      }
     } catch (error) {
       // Producers retain bounded diagnostics themselves. Do not copy arbitrary
       // exception text, which may contain private configuration, into receipts.
       // The soak wrapper may report that its receipt write failed after the
       // worker cleanup boundary was unproven. Preserve that typed custody
       // signal so the resource lock cannot be released by this catch path.
-      resourceCleanupBlocked = binding.adapterId === 'soak.reviewed'
+      if (isReceiptPersistenceError(error)) {
+        receiptPersistenceBlocked = true
+        throw error
+      }
+      resourceCleanupBlocked = (binding.adapterId === 'soak.reviewed'
         && error?.code === 'SOAK_RESOURCE_CLEANUP_BLOCKED'
-        && error?.resourceCleanupBlocked === true
-      return await writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+        && error?.resourceCleanupBlocked === true)
+        || (OWNED_PROCESS_CUSTODY_ADAPTERS.includes(binding.adapterId)
+          && isOwnedProcessCleanupError(error, binding.adapterId))
+      return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
         status: resourceCleanupBlocked ? 'CLEANUP_BLOCKED' : 'INVALID_EVIDENCE',
-        reason: resourceCleanupBlocked ? 'Soak receipt retention failed while cleanup was unproven; resource lock is retained for manual recovery.'
+        reason: resourceCleanupBlocked
+          ? (binding.adapterId === 'soak.reviewed'
+            ? 'Soak receipt retention failed while cleanup was unproven; resource lock is retained for manual recovery.'
+            : 'Owned producer cleanup was not proven; resource lock is retained for manual recovery.')
           : 'Adapter terminated without a valid execution receipt; inspect retained producer evidence.',
         binding, resumed })
     }
@@ -664,18 +698,23 @@ export async function runContractAttempt({
         normalized.mode,
       )
     } catch (error) {
-      return writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
+      return await persistBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest,
         status: resourceCleanupBlocked ? 'CLEANUP_BLOCKED' : 'INVALID_EVIDENCE',
-        reason: resourceCleanupBlocked ? 'Owned soak cleanup was not proven; resource lock is retained for manual recovery.' : error.message,
+        reason: resourceCleanupBlocked ? 'Owned producer cleanup was not proven; resource lock is retained for manual recovery.' : error.message,
         binding, resumed })
     }
     const persistedExecution = resourceCleanupBlocked
       ? { ...execution, status: 'CLEANUP_BLOCKED' }
       : execution
-    return await writeExecutionReceipt({ normalized, binding, validator, execution: persistedExecution,
-      captures, attemptId, attemptDirectory, inputDigest, resumed })
+    try {
+      return await writeExecutionReceipt({ normalized, binding, validator, execution: persistedExecution,
+        captures, attemptId, attemptDirectory, inputDigest, resumed })
+    } catch (error) {
+      if (isReceiptPersistenceError(error)) receiptPersistenceBlocked = true
+      throw error
+    }
   } finally {
-    if (resourceLock !== undefined && !resourceCleanupBlocked) await releaseResourceLock(resourceLock)
+    if (resourceLock !== undefined && !resourceCleanupBlocked && !receiptPersistenceBlocked) await releaseResourceLock(resourceLock)
   }
 }
 
@@ -786,6 +825,7 @@ export async function ingestHumanTrainingEvidence({ definition, preflight, campa
   const binding = findBinding(normalized, previous.contractId, previous.variantId)
   const request = await expectedHumanRequest(normalized, attemptDirectory)
   const lock = await acquireResourceLock(campaignRoot, `human-${attemptId}`, normalized.definitionDigest)
+  let retainReceiptPersistenceLock = false
   try {
     if (await pathExists(path.join(attemptDirectory, 'seal.json'))
         || (await readLatestAttemptResult(attemptDirectory)).status !== 'NEEDS_HUMAN_DECISION') {
@@ -799,14 +839,26 @@ export async function ingestHumanTrainingEvidence({ definition, preflight, campa
       await writeExclusiveBytes(path.join(attemptDirectory, 'human-evidence.bin'), evidenceBytes)
       validateHumanTrainingSubmission(request, JSON.parse(envelopeBytes.toString('utf8')), evidenceBytes, receivedAt)
     } catch {
-      return await writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest: request.inputDigest,
-        status: 'INVALID_EVIDENCE', reason: 'External human submission could not be retained or failed signature, identity, custody or training admission validation.', binding, resumed: true })
+      try {
+        return await writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest: request.inputDigest,
+          status: 'INVALID_EVIDENCE', reason: 'External human submission could not be retained or failed signature, identity, custody or training admission validation.', binding, resumed: true })
+      } catch (error) {
+        if (isReceiptPersistenceError(error)) retainReceiptPersistenceLock = true
+        throw error
+      }
     }
-    return await writeExecutionReceipt({ normalized, binding, validator: validateRetainedHumanReceipt,
-      execution: { status: 'PASS', observed: { requestSha256: request.requestSha256, receivedAt },
-        evidence: ['human-request.json', 'human-envelope.json', 'human-evidence.bin'] }, captures: [],
-      attemptId, attemptDirectory, inputDigest: request.inputDigest, resumed: true })
-  } finally { await releaseResourceLock(lock) }
+    try {
+      return await writeExecutionReceipt({ normalized, binding, validator: validateRetainedHumanReceipt,
+        execution: { status: 'PASS', observed: { requestSha256: request.requestSha256, receivedAt },
+          evidence: ['human-request.json', 'human-envelope.json', 'human-evidence.bin'] }, captures: [],
+        attemptId, attemptDirectory, inputDigest: request.inputDigest, resumed: true })
+    } catch (error) {
+      if (isReceiptPersistenceError(error)) retainReceiptPersistenceLock = true
+      throw error
+    }
+  } finally {
+    if (!retainReceiptPersistenceLock) await releaseResourceLock(lock)
+  }
 }
 
 /** Write the deterministic receipt and oracle-blind packet after resource ownership is proven. */
@@ -827,64 +879,69 @@ async function writeExecutionReceipt({ normalized, binding, validator, execution
     observed: execution.observed ?? {},
   }
   await validator(receipt, binding, { definition: normalized, attemptDirectory })
-  const receiptFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json'
-  const resultFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json'
-  await writeExclusiveJson(path.join(attemptDirectory, receiptFileName), receipt)
-  await writeExclusiveJson(path.join(attemptDirectory, resultFileName), {
-    schema: 'sartracker-qualification-attempt-result-v1',
-    campaignId: normalized.campaignId,
-    attemptId,
-    definitionDigest: normalized.definitionDigest,
-    inputDigest,
-    contractId: binding.contractId,
-    variantId: binding.variantId,
-    status: execution.status,
-    deterministicFailure: execution.status === 'FAIL',
-    reason: execution.reason ?? null,
-  })
-  await appendState(attemptDirectory, { phase: execution.status === 'ABORTED_SAFE' ? 'aborted' : 'receipt-written', status: execution.status })
+  try {
+    const receiptFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json'
+    const resultFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json'
+    await writeExclusiveJson(path.join(attemptDirectory, receiptFileName), receipt)
+    await writeExclusiveJson(path.join(attemptDirectory, resultFileName), {
+      schema: 'sartracker-qualification-attempt-result-v1',
+      campaignId: normalized.campaignId,
+      attemptId,
+      definitionDigest: normalized.definitionDigest,
+      inputDigest,
+      contractId: binding.contractId,
+      variantId: binding.variantId,
+      status: execution.status,
+      deterministicFailure: execution.status === 'FAIL',
+      reason: execution.reason ?? null,
+    })
+    await appendState(attemptDirectory, { phase: execution.status === 'ABORTED_SAFE' ? 'aborted' : 'receipt-written', status: execution.status })
 
-  if (!requiresAdvisoryJudge(normalized, binding)) {
-    const pendingExternalHuman = execution.status === 'NEEDS_HUMAN_DECISION'
-      && binding.proofMode === 'external-human'
-    const sealed = !pendingExternalHuman ? await sealAttempt({ attemptDirectory,
-      campaignRoot: path.dirname(path.dirname(attemptDirectory)), campaignId: normalized.campaignId,
-      definitionDigest: normalized.definitionDigest, attemptId }) : {}
-    return Object.freeze({ ...sealed, status: execution.status, attemptId, attemptDirectory, releaseEligible: false })
-  }
+    if (!requiresAdvisoryJudge(normalized, binding)) {
+      const pendingExternalHuman = execution.status === 'NEEDS_HUMAN_DECISION'
+        && binding.proofMode === 'external-human'
+      const sealed = !pendingExternalHuman ? await sealAttempt({ attemptDirectory,
+        campaignRoot: path.dirname(path.dirname(attemptDirectory)), campaignId: normalized.campaignId,
+        definitionDigest: normalized.definitionDigest, attemptId }) : {}
+      return Object.freeze({ ...sealed, status: execution.status, attemptId, attemptDirectory, releaseEligible: false })
+    }
 
-  const judgePacket = buildJudgePacket({
-    attemptId,
-    result: { mode: normalized.mode },
-    captures,
-  })
-  const judgePacketFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'judge-packet') : 'judge-packet.json'
-  const judgePacketPath = path.join(attemptDirectory, judgePacketFileName)
-  await writeExclusiveJson(judgePacketPath, {
-    ...judgePacket,
-    campaignId: normalized.campaignId,
-    definitionDigest: normalized.definitionDigest,
-  })
-  const judgePacketSha256 = sha256(await readFile(judgePacketPath))
+    const judgePacket = buildJudgePacket({
+      attemptId,
+      result: { mode: normalized.mode },
+      captures,
+    })
+    const judgePacketFileName = resumed ? await nextAppendOnlyFileName(attemptDirectory, 'judge-packet') : 'judge-packet.json'
+    const judgePacketPath = path.join(attemptDirectory, judgePacketFileName)
+    await writeExclusiveJson(judgePacketPath, {
+      ...judgePacket,
+      campaignId: normalized.campaignId,
+      definitionDigest: normalized.definitionDigest,
+    })
+    const judgePacketSha256 = sha256(await readFile(judgePacketPath))
 
-  if (execution.status === 'ABORTED_SAFE') {
+    if (execution.status === 'ABORTED_SAFE') {
+      return Object.freeze({
+        status: 'ABORTED_SAFE',
+        attemptId,
+        attemptDirectory,
+        judgePacketSha256,
+        anchorPath: undefined,
+        releaseEligible: false,
+      })
+    }
     return Object.freeze({
-      status: 'ABORTED_SAFE',
+      status: execution.status,
       attemptId,
       attemptDirectory,
       judgePacketSha256,
       anchorPath: undefined,
       releaseEligible: false,
     })
+  } catch (error) {
+    if (isReceiptPersistenceError(error)) throw error
+    throw createReceiptPersistenceError()
   }
-  return Object.freeze({
-    status: execution.status,
-    attemptId,
-    attemptDirectory,
-    judgePacketSha256,
-    anchorPath: undefined,
-    releaseEligible: false,
-  })
 }
 
 /**
@@ -1529,37 +1586,55 @@ async function checkFreeSpace(minimumBytes, campaignRoot) {
 
 /** Write a deterministic environment-blocked attempt result. */
 async function writeBlockedAttempt({ normalized, attemptId, attemptDirectory, inputDigest, status, reason, binding, resumed = false }) {
-  const receiptPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json')
-  const resultPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json')
-  await writeExclusiveJson(receiptPath, {
-    schema: 'sartracker-qualification-contract-receipt-v1',
-    campaignId: normalized.campaignId,
-    attemptId,
-    definitionDigest: normalized.definitionDigest,
-    inputDigest,
-    contractId: binding.contractId,
-    variantId: binding.variantId,
-    adapterId: binding.adapterId,
-    proofMode: binding.proofMode,
-    status,
-    deterministic: true,
-    evidence: [],
-    observed: { reason },
-  })
-  await writeExclusiveJson(resultPath, {
-    schema: 'sartracker-qualification-attempt-result-v1',
-    campaignId: normalized.campaignId,
-    attemptId,
-    definitionDigest: normalized.definitionDigest,
-    inputDigest,
-    contractId: binding.contractId,
-    variantId: binding.variantId,
-    status,
-    deterministicFailure: false,
-    reason,
-  })
-  await appendState(attemptDirectory, { phase: 'blocked', status, reason })
-  return Object.freeze({ status, attemptId, attemptDirectory, anchorPath: undefined, releaseEligible: false })
+  try {
+    const receiptPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'receipt') : 'receipt.json')
+    const resultPath = path.join(attemptDirectory, resumed ? await nextAppendOnlyFileName(attemptDirectory, 'result') : 'result.json')
+    await writeExclusiveJson(receiptPath, {
+      schema: 'sartracker-qualification-contract-receipt-v1',
+      campaignId: normalized.campaignId,
+      attemptId,
+      definitionDigest: normalized.definitionDigest,
+      inputDigest,
+      contractId: binding.contractId,
+      variantId: binding.variantId,
+      adapterId: binding.adapterId,
+      proofMode: binding.proofMode,
+      status,
+      deterministic: true,
+      evidence: [],
+      observed: { reason },
+    })
+    await writeExclusiveJson(resultPath, {
+      schema: 'sartracker-qualification-attempt-result-v1',
+      campaignId: normalized.campaignId,
+      attemptId,
+      definitionDigest: normalized.definitionDigest,
+      inputDigest,
+      contractId: binding.contractId,
+      variantId: binding.variantId,
+      status,
+      deterministicFailure: false,
+      reason,
+    })
+    await appendState(attemptDirectory, { phase: 'blocked', status, reason })
+    return Object.freeze({ status, attemptId, attemptDirectory, anchorPath: undefined, releaseEligible: false })
+  } catch (error) {
+    if (isReceiptPersistenceError(error)) throw error
+    throw createReceiptPersistenceError()
+  }
+}
+
+/** Create the bounded typed signal used when canonical attempt persistence fails. */
+function createReceiptPersistenceError() {
+  const error = new Error('Qualification receipt persistence failed; manual recovery is required.')
+  error.code = 'QUALIFICATION_RECEIPT_PERSISTENCE_FAILED'
+  return error
+}
+
+/** Recognize the controller-only canonical persistence failure signal. */
+function isReceiptPersistenceError(error) {
+  return error !== null && typeof error === 'object'
+    && error.code === 'QUALIFICATION_RECEIPT_PERSISTENCE_FAILED'
 }
 
 /** Write an immutable definition once, allowing only an exact same-byte rerun. */

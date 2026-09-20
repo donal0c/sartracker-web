@@ -17,7 +17,8 @@ DON-254 is In Progress; PKG-001 and WAR-01/BCP-17 remain separate blockers.
 
 Draft [PR43](https://github.com/donal0c/sartracker-web/pull/43) on
 `codex/beta13-candidate-adapters`, based on PR42. Four independent reviews at
-`bab0ddb5` produced fourteen accepted findings; remediation is implemented.
+`bab0ddb5` produced fourteen accepted findings. Rechecks of `065e2c8b`
+identified further failure-path custody gaps; remediation is implemented.
 Current-head source checks, independent rechecks and green Linux CI remain the
 delivery gate, recorded on the PR and DON-254; merge requires Donal's decision.
 
@@ -115,7 +116,7 @@ Current local development evidence:
   overlay warning (DON-264); screenshot inspected. Raw reports and earlier failed
   harness attempts are retained. This is development mechanics, not qualification.
 
-Post-remediation local correctness passed554files /5,714tests, with21skips
+Final remediation local correctness passed559files /5,737tests, with24skips
 (six prescribed timing exclusions plus Linux-only cases on macOS). Lint/build
 passed. Strict responsiveness qualification was not run. Earlier failures and
 native crashes remain retained, including macOS CODESIGNING Invalid Page.
@@ -139,7 +140,12 @@ cancellation stages, replacing the earlier hard-coded stage evidence. These are
 development checks, not qualification. Initial CI `35482891762` failed one
 120s full-campaign setup test (5,686passed); its real C19/C24 regression setup is
 now bounded without weakening source checks or product holds. Failed receipts
-remain retained. Detail: design document's PR43 review-remediation section.
+remain retained. CI `35486189960` then failed only the Linux test's synchronous
+sentinel setup (5,727passed, one failure, seven skips); package steps did not run.
+The sentinel is now asynchronous. Supervisor-owned deadlines/parent-death cleanup,
+all-adapter quarantine, code-only soak failure receipts and canonical persistence
+failure lock retention address the independent recheck findings. Bare PID fallback
+ownership is removed. Detail: design document's PR43 review-remediation section.
 
 Older PR41/PR42 receipts remain in their merged PR/Linear records and
 `handoff/archive/`; they do not cover current edits.
