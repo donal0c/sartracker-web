@@ -173,6 +173,11 @@ function sanitizeValue(value: unknown, sensitiveValues: SensitiveDiagnosticValue
     return value
   }
   if (typeof value === 'string') {
+    const structured = parseStructuredDiagnosticValue(value)
+    if (structured !== null) {
+      const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(sensitiveValues))
+      return JSON.stringify(sanitizeNestedValue(structured, '', encodedSensitiveValues)).slice(0, 240)
+    }
     return redactSensitiveValues(anonymizePath(value), sensitiveValues).slice(0, 240)
   }
   return JSON.stringify(sanitizeNestedValue(value, '', sensitiveValues)).slice(0, 240)
@@ -186,6 +191,11 @@ function sanitizeNestedValue(value: unknown, key = '', sensitiveValues: Sensitiv
     return '[coordinate-redacted]'
   }
   if (typeof value === 'string') {
+    const structured = parseStructuredDiagnosticValue(value)
+    if (structured !== null) {
+      const encodedSensitiveValues = collectSensitiveValues(structured, '', new Set(sensitiveValues))
+      return sanitizeNestedValue(structured, '', encodedSensitiveValues)
+    }
     return redactSensitiveValues(anonymizePath(value), sensitiveValues)
   }
   if (Array.isArray(value)) {
@@ -212,6 +222,13 @@ function collectSensitiveValues(
     collectStringValues(value, sensitiveValues)
     return sensitiveValues
   }
+  if (typeof value === 'string') {
+    const structured = parseStructuredDiagnosticValue(value)
+    if (structured !== null) {
+      collectSensitiveValues(structured, '', sensitiveValues)
+    }
+    return sensitiveValues
+  }
   if (Array.isArray(value)) {
     for (const item of value) {
       collectSensitiveValues(item, '', sensitiveValues)
@@ -230,6 +247,10 @@ function collectSensitiveValues(
 function collectStringValues(value: unknown, sensitiveValues: SensitiveDiagnosticValues): void {
   if (typeof value === 'string' && value !== '') {
     sensitiveValues.add(value)
+    const structured = parseStructuredDiagnosticValue(value)
+    if (structured !== null) {
+      collectSensitiveValues(structured, '', sensitiveValues)
+    }
     return
   }
   if (Array.isArray(value)) {
@@ -242,6 +263,22 @@ function collectStringValues(value: unknown, sensitiveValues: SensitiveDiagnosti
     for (const nestedValue of Object.values(value)) {
       collectStringValues(nestedValue, sensitiveValues)
     }
+  }
+}
+
+/** Parses a JSON-encoded object or array supplied as a diagnostic field. */
+function parseStructuredDiagnosticValue(input: string): Record<string, unknown> | unknown[] | null {
+  const text = input.trim()
+  if (!text.startsWith('{') && !text.startsWith('[')) {
+    return null
+  }
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return parsed !== null && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown> | unknown[])
+      : null
+  } catch {
+    return null
   }
 }
 

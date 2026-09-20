@@ -93,6 +93,11 @@ describe('diagnostic event log', () => {
           profilePath,
           values: [secret, profilePath],
         },
+        encodedContext: JSON.stringify({
+          token: secret,
+          profilePath,
+          values: [secret, profilePath],
+        }),
       },
     })
 
