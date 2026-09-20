@@ -1,53 +1,40 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-20 during DON-254 candidate-enablement implementation.
+Updated 2026-09-20 for DON-237 diagnostics/support-export repair.
 
 ## Current state
 
 Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
-Verified base: PR42 merge `bd301484561fac372ef7c95090ab5d9cc21533f3`,
-from head `5cddbb1f086191539c7c771ea82d9b73bacd8c77`; its exact-head Linux CI
-`35454420736` passed. PR40/GEO-002 and PR41/TRK-001 are merged at
-`c916ced9` and `27687b53`. These are merge evidence, not candidate qualification.
-DON-254 is In Progress; PKG-001 and WAR-01/BCP-17 remain separate blockers.
+PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
+mergeable at exact head `c34fddc28f94f4964fbce7fed6a96329d8ecb2c5`, directly
+on PR43's merge base. The repair recursively sanitizes renderer and Electron
+diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
+C17 development receipt independently bind export paths, retained hashes,
+canary manifest and bounded rescans. The exact-head review found no actionable
+P0/P1/P2 findings.
+
+DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
+release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
+publish or promote from this work.
 
 ## Active work and next actions
 
-[PR43](https://github.com/donal0c/sartracker-web/pull/43) on
-`codex/beta13-candidate-adapters`, based on PR42. Four independent reviews at
-`bab0ddb5` produced fourteen accepted findings. Rechecks of `065e2c8b`
-identified further failure-path custody gaps; remediation is implemented.
-The 2026-09-20 Claude review found seven blocker defects; all seven are now
-addressed in the worktree: Linux archive handoff wording, auditable C10 samples,
-mode-labelled verdicts, reviewed C29/C27 trust-root digests, producer parent-death
-and wait-status custody, and fresh candidate package/installed-deb byte
-revalidation. The packaged C21 probe also now requires the visible renderer shell.
-Current-head source checks, browser verification, independent rechecks and green
-Linux CI are recorded on the PR and DON-254; merge requires Donal's decision.
-
-Remediation commit `d61aa0d0f11945190866bb35f8861792fb5abe56` is pushed. Exact-head
-Linux CI `35511794190` passed in 35m40s, including full correctness, packaging,
-producer development checks and packaged smoke lanes. PR43 is intentionally draft
-while Donal reviews the fresh evidence; the pass is merge evidence only, not
-candidate qualification or release approval.
-
-The final read-only recheck found one P2 in retained C21 admission: the package
-adapter checked wrapper identity but did not re-run the packaged wrapper's renderer
-and screenshot validator. That guard is now wired to the retained report and
-`package-ui-archive-security-runtime.png`; focused package and wrapper tests pass.
-Follow-up commit `90cb7b621872d07ba4393a542edd32802e95f81e` wires the retained
-C21 report and flattened renderer screenshot through the packaged wrapper
-validator. Focused tests passed (27/27), independent final review found no
-actionable P0/P1/P2 findings, and exact-head Linux CI `35514475637` passed in
-38m11s. PR43 is now ready for Donal's review and remains unmerged; this is merge
-evidence only, not candidate qualification or release approval.
+Active work is PR44, not PR43. PR43's earlier candidate-enablement evidence is
+historical and remains below for traceability; it does not describe the current
+DON-237 repair state.
 
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
+
+Next action: complete exact-head hosted CI and retain the packaged C17
+development receipt, then update the assurance docs and DON-237 with the exact
+run/job/artifact evidence. The C17 receipt must retain
+`coverageComplete:false` with the intentional
+`recursive-adversarial-corpus` and `bounded-output-scan-identity` gaps.
 
 Producer integration is under repair after the first Linux development matrix.
 All 124 package bindings compile and require
@@ -125,8 +112,9 @@ Current local development evidence:
 - C09 full development13 passed75,008-point import/replacement/concurrency
   custody and exact8MiB pending/retained forced-kill recovery on the default store.
 - C03 development7 passed12-outing/midnight, true later-received earlier-fix
-  exclusion and selected-device scope. C17 development2 retained a nested-array
-  synthetic secret in support export; independent raw re-scan confirms FAIL.
+  exclusion and selected-device scope. DON-237 now closes the C17 nested-array
+  support-export leak and legacy private/system path leak in source/Electron
+  paths; the exact-head packaged Linux development proof remains hosted-CI work.
 - C11 scoped development `c11-family-dev-receipt-2` retained the full report,
   all1,000pages/50,000rows and clean teardown. Independent raw-file validation
   checked every fixed ID, assignment and outcome; copies and hashes are retained.

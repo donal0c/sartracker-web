@@ -142,6 +142,7 @@ function phaseFacts(missionId = 'mission-c28') {
       supported: true,
       requested: true,
       exported: true,
+      exportedPath: path.join(expected.profilePath, 'diagnostics-reports', 'c28-diagnostics.txt'),
       sanitized: true,
       containsSecret: false,
       containsProfilePath: false,
@@ -192,7 +193,9 @@ function report(): JsonObject {
     },
     phases: phaseFacts(missionId),
     diagnostics: {
-      requested: true, exported: true, sanitized: true,
+      requested: true, exported: true,
+      exportedPath: path.join(expected.profilePath, 'diagnostics-reports', 'c28-diagnostics.txt'),
+      sanitized: true,
       containsSecret: false, containsProfilePath: false, exactSecretMatches: 0,
       adversarialMatchCount: 0,
     },
@@ -223,6 +226,17 @@ describe('C28 composite packaged receipt', () => {
       contractId: 'C28', status: 'PASS', valid: true, passed: true,
       complete: true, releaseEligible: false,
       failureReasons: [],
+    })
+  })
+
+  it('accepts an explicit sanitized diagnostics export path for existing composite families', () => {
+    const value = copy(report())
+    const exportedPath = path.join(expected.profilePath, 'diagnostics-reports', 'c28-diagnostics.txt')
+    ;(value.diagnostics as JsonObject).exportedPath = exportedPath
+    ;((value.phases as JsonObject).sanitizedDiagnostics as JsonObject).exportedPath = exportedPath
+
+    expect(validateCompositeReceipt(value, expected)).toMatchObject({
+      valid: true, passed: true, complete: true, failureReasons: [],
     })
   })
 

@@ -2,6 +2,18 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
+**Current DON-237 repair (2026-09-20):** PR44 is non-draft and mergeable at
+exact head `c34fddc28f94f4964fbce7fed6a96329d8ecb2c5`. The diagnostics/support
+export repair is recursively fail-closed across renderer, Electron and legacy
+runtime-log paths, including compound credential forms and `/private`/`/tmp`/`/var`
+paths. The C17 development receipt independently binds the disposable export
+path, retained hashes, fixed canary manifest, output bound and rescans. Exact
+hosted packaged Linux development proof is pending in run `35527863604`; if it
+passes, it must not be called candidate qualification or release evidence, and the intentional C17
+coverage gaps remain `recursive-adversarial-corpus` and
+`bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
+remain open; no merge, tag or publication is authorized by this repair.
+
 ## Planning Rule
 
 **Current post-PR42 state (2026-09-19):** verified master is

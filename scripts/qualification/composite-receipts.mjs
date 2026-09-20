@@ -666,7 +666,7 @@ function validatePhases(phases, missionId, profilePath, failures, familyContract
   }
   const diagnostics = phases.sanitizedDiagnostics
   if (!hasExactKeys(diagnostics, [
-    'adversarialMatchCount', 'containsProfilePath', 'containsSecret', 'exactSecretMatches', 'exported', 'pathWithinProfile',
+    'adversarialMatchCount', 'containsProfilePath', 'containsSecret', 'exactSecretMatches', 'exported', 'exportedPath', 'pathWithinProfile',
     'requested', 'sanitized', 'supported',
     ...(familyContract === 'C17' ? [
       'canaryCount', 'canaryManifestSha256', 'leakedCanaryIds', 'outputByteLength', 'outputSha256',
@@ -749,7 +749,7 @@ function validateGaps(phases, gaps, failures) {
 /** Requires sanitized diagnostic facts without accepting a generic green flag. */
 function validateDiagnostics(value, profilePath, failures, familyContract = undefined) {
   if (!hasExactKeys(value, [
-    'adversarialMatchCount', 'containsProfilePath', 'containsSecret', 'exactSecretMatches', 'exported', 'requested', 'sanitized',
+    'adversarialMatchCount', 'containsProfilePath', 'containsSecret', 'exactSecretMatches', 'exported', 'exportedPath', 'requested', 'sanitized',
     ...(familyContract === 'C17' ? [
       'canaryCount', 'canaryManifestSha256', 'leakedCanaryIds', 'outputByteLength', 'outputSha256',
       'outputWithinLimit',

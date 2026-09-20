@@ -191,10 +191,11 @@ These are infrastructure/source results only.
 The initial stable local correctness run passed 552 files and 5,687 tests, with the
 six prescribed correctness-mode exclusions. Lint and the production build passed.
 Current development receipts include the complete 50k C11 raw-page oracle and the nine C24 competing
-operation phases. C17's raw secret leak and C14/C24's missing visible overlay
-warning remain negative product observations. Exact-head Linux CI and four
-independent reviews are required on the delivery PR before merge readiness;
-none of these source/development results qualifies a candidate.
+operation phases. DON-237 repairs the C17 raw secret/path leak across recursive,
+encoded, compound-key and legacy Electron export paths. Exact-head Linux
+packaged development proof and the retained C17 receipt remain pending; the
+intentional recursive-corpus and bounded-output-scan coverage gaps remain open.
+None of these source/development results qualifies a candidate.
 
 ## PR43 review remediation
 
@@ -485,6 +486,8 @@ run is producer-development and packaged smoke evidence, not candidate
 qualification or release approval.
 
 With this exact-head run green and the independent review clear, PR43 may leave
-draft state for human merge review. Merge remains separate from release,
-qualification and publication; the outstanding DON-249/250/251, DON-264, C17,
-C29, PKG-001, WAR-01 and BCP-17 holds still apply.
+draft state for human merge review. DON-237 is now tracked separately in PR44;
+its hosted exact-head packaged development proof is not candidate qualification.
+Merge remains separate from release, qualification and publication; the
+outstanding DON-249/250/251, DON-264, C17 coverage gaps, C29, PKG-001, WAR-01
+and BCP-17 holds still apply.
