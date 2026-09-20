@@ -82,9 +82,14 @@ describe('electron diagnostic sanitizer', () => {
 
   it('redacts credentials in generic diagnostic URL query text [DON-237]', () => {
     const secret = 'C17-Query-Credential-9!'
-    const sanitized = sanitizeDiagnosticText(`https://host.example/api?session=${secret}`)
+    const authSecret = 'C17-Auth-Credential-9!'
+    const sanitized = sanitizeDiagnosticText(
+      `https://host.example/api?session=${secret}&auth=${authSecret} auth=${authSecret} auth: ${authSecret}`,
+    )
 
     expect(sanitized).not.toContain(secret)
+    expect(sanitized).not.toContain(authSecret)
     expect(sanitized).toContain('?session=[redacted]')
+    expect(sanitized).toContain('&auth=[redacted]')
   })
 })

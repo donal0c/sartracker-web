@@ -1,4 +1,4 @@
-const SECRET_KEY_SOURCE = String.raw`(?:password|secret|token|credential|api[-_]?key|authorization|pass[-_]?phrase|recovery[-_]?code)`
+const SECRET_KEY_SOURCE = String.raw`(?:auth(?:entication|orization)?|password|secret|token|credential|api[-_]?key|pass[-_]?phrase|recovery[-_]?code)`
 const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
 const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
 const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 512
@@ -17,7 +17,7 @@ const SECRET_ASSIGNMENT_PATTERN = new RegExp(
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
 const AUTH_TOKEN_PATTERN = /\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi
 const URL_CREDENTIALS_PATTERN = /\b(https?:\/\/)[^/\s@]+@/gi
-const URL_QUERY_CREDENTIALS_PATTERN = /([?&](?:session|password|pass[-_]?phrase|secret|token|credential|api[-_]?key|authorization|recovery[-_]?code)=)[^&#\s]+/gi
+const URL_QUERY_CREDENTIALS_PATTERN = /([?&](?:auth|session|password|pass[-_]?phrase|secret|token|credential|api[-_]?key|authorization|recovery[-_]?code)=)[^&#\s]+/gi
 const HOME_PATH_PATTERNS = Object.freeze([
   [/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]'],
   [/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]'],

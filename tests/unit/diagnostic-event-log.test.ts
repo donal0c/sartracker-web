@@ -129,6 +129,7 @@ describe('diagnostic event log', () => {
     const recoveryCode = 'C17-Browser-Recovery-9!'
     const bearerToken = 'browser-bearer-token-9'
     const queryCredential = 'browser-query-credential-9'
+    const authCredential = 'browser-auth-credential-9'
 
     await recordDiagnosticEvent({
       ts: '2026-09-20T12:02:00.000Z',
@@ -136,13 +137,13 @@ describe('diagnostic event log', () => {
       category: 'runtime',
       event: 'c17_free_form_credentials',
       fields: {
-        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics?session=${queryCredential}`,
+        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} auth=${authCredential} auth: ${authCredential} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics?session=${queryCredential}&auth=${authCredential}`,
       },
     })
 
     const serialized = JSON.stringify(readDiagnosticEvents())
     const report = formatDiagnosticEvents(readDiagnosticEvents())
-    for (const secret of [passphrase, recoveryCode, bearerToken, queryCredential]) {
+    for (const secret of [passphrase, recoveryCode, bearerToken, queryCredential, authCredential]) {
       expect(serialized).not.toContain(secret)
       expect(report).not.toContain(secret)
     }

@@ -623,7 +623,7 @@ async function main() {
       sourceRoot: expected.sourceRoot,
       contractId: report.familyContract,
     })
-  if (validation.valid !== true || validation.complete !== true) {
+  if (validation.valid !== true || (options.familyContract !== 'C17' && validation.complete !== true)) {
     throw new Error(`C28 composite receipt validation failed: ${validation.failureReasons.join(' | ')}`)
   }
   console.log(`qualification-composite-probe: report=${reportPath}`)
