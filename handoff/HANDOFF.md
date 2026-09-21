@@ -8,24 +8,25 @@ Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-mergeable at final PR head `1129e2f6d8775fd7bb864457b0ae4b120e900b5c`, directly
+mergeable at final PR head `b689133bc32fae7b305e33ada461a21e24af5111`, directly
 on PR43's merge base. The repair recursively sanitizes renderer and Electron
 diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
 C17 development receipt independently bind export paths, retained hashes,
-canary manifest and bounded rescans. The prior exact-head review of the earlier
-repair head found no actionable P0/P1/P2 findings. Final PR run
-`35543867706`, job `106166228976`, passed the full PR workflow including the
+canary manifest and bounded rescans. Final docs-tip PR run
+`35545733120`, job `106171161042`, passed the full PR workflow including the
 exact-head packaged C17 proof. Its retained artifact is
-`electron-linux-validation-evidence-1129e2f6d8775fd7bb864457b0ae4b120e900b5c`;
+`electron-linux-validation-evidence-b689133bc32fae7b305e33ada461a21e24af5111`;
 the C17 receipt is `PASS`, `valid:true`, `zeroCanary:true`, with 11 canaries,
 zero exact/adversarial matches, output hash
-`439c53e7a7847a1d01da370926d6330e447c8f0b03334b115292532e066898c7`, and
+`1d0e4993c2bb3816f371887df6bd017408346e12e166702a4331808de82858bd`, and
 manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
 The receipt correctly retains `coverageComplete:false` and is not qualification or
 release evidence. Earlier manual run `35540259983` retained a separate
 `bcp-960k` timing failure, and PR run `35541974539` retained a C10 timing-boundary
-failure; the final PR run passed those PR-mode paths. A fresh independent review
-remains the review closeout before human merge review.
+failure; the final docs-tip PR run passed those PR-mode paths. Fresh exact-head
+native review `01a0c15e-d2af-7260-b1a5-c7631e615ec7` found no actionable P0/P1/P2
+findings and marked the change suitable for human merge review. Its residual
+caveats are the declared C17 coverage gaps and Linux Electron scope.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
 release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
@@ -42,9 +43,9 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: complete the fresh exact-head independent review and leave
-merge/release decisions to the authorized human boundary. DON-237 now records
-the final run/job/artifact evidence and the historical timing boundaries. The C17 receipt retains
+Next action: leave merge/release decisions to the authorized human boundary.
+DON-237 now records the final run/job/artifact evidence, independent review and
+historical timing boundaries. The C17 receipt retains
 `coverageComplete:false` with the intentional `recursive-adversarial-corpus`
 and `bounded-output-scan-identity` gaps.
 

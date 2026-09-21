@@ -2,18 +2,20 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-**Current DON-237 repair (2026-09-20):** PR44 is non-draft and mergeable at
-final PR head `1129e2f6d8775fd7bb864457b0ae4b120e900b5c`. The diagnostics/support-
+**Current DON-237 repair (2026-09-21):** PR44 is non-draft and mergeable at
+final PR head `b689133bc32fae7b305e33ada461a21e24af5111`. The diagnostics/support-
 export repair is recursively fail-closed across renderer, Electron and legacy
 runtime-log paths, including compound credential forms and `/private`/`/tmp`/`/var`
-paths. Final PR run `35543867706` passed the full PR workflow and exact-head
+paths. Final docs-tip PR run `35545733120` passed the full PR workflow and exact-head
 packaged Linux C17 proof; its retained receipt is `PASS`, `valid:true`,
 `zeroCanary:true`, with `coverageComplete:false`, output hash
-`439c53e7a7847a1d01da370926d6330e447c8f0b03334b115292532e066898c7`, and
+`1d0e4993c2bb3816f371887df6bd017408346e12e166702a4331808de82858bd`, and
 manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
 This is development/packaged-smoke evidence, not candidate qualification or
 release evidence. Earlier runs retained separate BCP-960k and C10 timing-boundary
-failures; the final PR-mode run passed those PR paths. The intentional C17
+failures; the final docs-tip PR-mode run passed those PR paths. A fresh exact-head
+native review (`01a0c15e-d2af-7260-b1a5-c7631e615ec7`) found no actionable P0/P1/P2
+findings and marked the change suitable for human merge review. The intentional C17
 coverage gaps remain `recursive-adversarial-corpus` and
 `bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
 remain open; no merge, tag or publication is authorized by this repair.
