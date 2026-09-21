@@ -22,10 +22,11 @@ Local final evidence is green: 5,829 tests passed and 19 skipped; correctness
 passed at 5,803 passed and 25 skipped with the expected release-HOLD notice;
 TypeScript, lint, production build and bundle budgets passed. Clean browser
 harness validation booted the app, opened Diagnostics Workspace, and completed
-Copy Report. Exact-head hosted PR run `35621211230`, job `106404428399`, was in
-progress when this handoff was updated; its conclusion must be recorded before
-making a hosted claim. This local and hosted work remains development/review
-evidence, not candidate qualification or release evidence. C17 coverage gaps remain
+Copy Report. Exact-head hosted PR run `35621211230`, job `106404428399`, was
+cancelled during the full correctness step; only setup through lint completed and
+all later hosted evidence steps were skipped. No hosted pass is recorded for this
+head. This local work remains development/review evidence, not candidate
+qualification or release evidence. C17 coverage gaps remain
 `recursive-adversarial-corpus` and `bounded-output-scan-identity`.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
@@ -43,8 +44,8 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: record the conclusion of hosted run `35621211230`, then leave
-merge/release decisions to the authorized human boundary. The C17 receipt retains
+Next action: if hosted evidence is required, run a fresh exact-head validation;
+then leave merge/release decisions to the authorized human boundary. The C17 receipt retains
 `coverageComplete:false` with the intentional `recursive-adversarial-corpus`
 and `bounded-output-scan-identity` gaps.
 

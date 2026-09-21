@@ -13,9 +13,10 @@ green: 5,829 tests passed and 19 skipped; correctness passed at 5,803 passed and
 build and bundle budgets passed. Clean browser harness validation booted the app,
 opened Diagnostics Workspace, and completed Copy Report.
 
-Exact-head hosted PR run `35621211230`, job `106404428399`, was in progress when
-this entry was written; record its conclusion before making a hosted claim. The
-work remains development/review evidence, not candidate qualification or release
+Exact-head hosted PR run `35621211230`, job `106404428399`, was cancelled during
+the full correctness step; only setup through lint completed and all later hosted
+evidence steps were skipped. No hosted pass is recorded for this head. The work
+remains development/review evidence, not candidate qualification or release
 evidence. C17 retains the intentional gaps `recursive-adversarial-corpus` and
 `bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
 remain open; no merge, tag or publication is authorized by this repair.
