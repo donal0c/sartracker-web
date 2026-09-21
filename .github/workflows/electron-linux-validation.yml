@@ -312,6 +312,29 @@ jobs:
               "$GITHUB_WORKSPACE/tmp/electron-validation-evidence/candidate-producer-development" \
               "$EXPECTED_SOURCE_SHA"
 
+      - name: Exact-head packaged C17 support-export privacy proof (not qualification)
+        timeout-minutes: 20
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+        run: |
+          set -euo pipefail
+          C17_EVIDENCE="$GITHUB_WORKSPACE/tmp/electron-validation-evidence/c17-packaged-support-export"
+          mkdir -p "$C17_EVIDENCE"
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            node scripts/qualification/composite-probe.mjs \
+              --app "$GITHUB_WORKSPACE/tmp/electron-dist/linux-unpacked/sartracker-web" \
+              --evidence "$C17_EVIDENCE" \
+              --expected-head "$EXPECTED_SOURCE_SHA" \
+              --variant routine \
+              --family-contract C17
+          node scripts/qualification/verify-c17-packaged-support-export.mjs \
+            --app "$GITHUB_WORKSPACE/tmp/electron-dist/linux-unpacked/sartracker-web" \
+            --evidence "$C17_EVIDENCE" \
+            --expected-head "$EXPECTED_SOURCE_SHA"
+
       - name: Packaged native coverage runtime control
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'

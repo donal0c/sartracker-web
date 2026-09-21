@@ -455,6 +455,115 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('[coordinate-redacted]')
   })
 
+  it('redacts secrets inside renderer-encoded nested arrays during support export [DON-237]', async () => {
+    const secret = 'C17-Nested-Array-Secret-9!'
+    const compoundSecret = `${secret}-nested-array-secret`
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [
+        {
+          ts: '2026-09-20T12:00:00.000Z',
+          level: 'error',
+          event: 'renderer_c17_adversarial_corpus',
+          nested: JSON.stringify({
+            token: secret,
+            arrayToken: compoundSecret,
+            path: userDataPath,
+            values: [compoundSecret, userDataPath],
+          }),
+          nestedObject: {
+            token: secret,
+            values: [secret],
+          },
+        },
+      ],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'c17-support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain(secret)
+    expect(bundle).not.toContain(compoundSecret)
+    expect(bundle).not.toContain(userDataPath!)
+    expect(bundle).toContain('[redacted-user-data-path]')
+  })
+
+  it('collects secrets before sanitizing legacy array-root runtime entries [DON-237]', async () => {
+    const secret = 'C17-Legacy-Array-Root-Secret-9!'
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [[
+        { token: secret, repeated: secret },
+        { token: '[redacted]', repeated: secret },
+      ]],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'c17-array-root-support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain(secret)
+    expect(bundle).toContain('"repeated":"[redacted]"')
+    expect(bundle).not.toContain('[redacted-structured-value-too-large]')
+  })
+
+  it('redacts private temporary and system paths from legacy runtime logs [DON-237]', async () => {
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => [{
+        ts: '2026-09-20T12:00:00.000Z',
+        level: 'error',
+        event: 'legacy-path-leak',
+        path: '/private/var/folders/operator-private/mission.sqlite',
+        cachePath: '/tmp/sartracker/operator-private/runtime.log',
+        systemPath: '/var/lib/sartracker/operator-private/state.db',
+      }],
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'legacy-path-support-bundle.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).not.toContain('/private/var/folders/operator-private')
+    expect(bundle).not.toContain('/tmp/sartracker/operator-private')
+    expect(bundle).not.toContain('/var/lib/sartracker/operator-private')
+    expect(bundle).toContain('/private/[redacted]')
+    expect(bundle).toContain('/tmp/[redacted]')
+    expect(bundle).toContain('/var/[redacted]')
+  })
+
+  it('retains an explicit runtime-log failure instead of silently dropping the section', async () => {
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => {
+        throw new Error('log read failed')
+      },
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'runtime-log-failure-support.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).toContain('[runtime-log]')
+    expect(bundle).toContain('runtime log unavailable')
+  })
+
+  it('preserves escaped JSON quotes while redacting private paths at final write', async () => {
+    const files = await createRuntimeFiles()
+    const exportPath = await files.exportDiagnosticsReport({
+      fileName: 'escaped-path-report.txt',
+      contents: 'legacy payload: \\"/tmp/mission.db\\"',
+    })
+
+    const report = await readFile(exportPath, 'utf8')
+    expect(report).toContain('legacy payload: \\"/tmp/[redacted]\\"')
+  })
+
   async function createRuntimeFiles(
     logOverrides: {
       readonly readRecentCrashes?: () => Promise<readonly unknown[]>

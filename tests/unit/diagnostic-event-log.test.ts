@@ -78,6 +78,232 @@ describe('diagnostic event log', () => {
     expect(serialized).not.toContain('operator')
   })
 
+  it('redacts numeric secrets repeated inside nested renderer arrays', async () => {
+    const secret = 987654321987
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:30.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'numeric_secret',
+      fields: {
+        token: secret,
+        nested: { values: [secret] },
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(String(secret))
+    expect(serialized).toContain('\\"values\\":[\\"[redacted]\\"]')
+  })
+
+  it('redacts primitive secrets under long secret-bearing keys', async () => {
+    const secret = 918273
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:35.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'long_secret_key',
+      fields: {
+        [`diagnostic-secret-${'x'.repeat(90)}`]: secret,
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(String(secret))
+  })
+
+  it('does not invoke enumerable toJSON hooks while sanitizing renderer fields', async () => {
+    const secret = 'renderer-to-json-secret-9!'
+    const fields = {
+      token: secret,
+      nested: {
+        toJSON: () => ({ leaked: secret, path: '/Users/operator/private' }),
+        value: 'safe',
+      },
+    }
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:45.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'to_json_hook',
+      fields,
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain('operator')
+    expect(serialized).toContain('\\"value\\":\\"safe\\"')
+  })
+
+  it('keeps logging best-effort when diagnostic fields contain unsupported or throwing values', async () => {
+    const throwingFields = {}
+    Object.defineProperty(throwingFields, 'broken', {
+      enumerable: true,
+      get: () => {
+        throw new Error('getter failed')
+      },
+    })
+
+    await expect(recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:50.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'throwing_diagnostic',
+      fields: throwingFields,
+    })).resolves.toBeUndefined()
+
+    await expect(recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:51.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'bigint_diagnostic',
+      fields: { count: BigInt(7) },
+    })).resolves.toBeUndefined()
+  })
+
+  it('redacts sensitive values repeated inside nested arrays and encoded fields [DON-237]', async () => {
+    const secret = 'C17-Renderer-Nested-Array-Secret-9!'
+    const profilePath = '/tmp/c17-private-profile/mission-store.sqlite'
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'c17_adversarial_corpus',
+      fields: {
+        context: {
+          token: secret,
+          profilePath,
+          values: [secret, profilePath],
+        },
+        encodedContext: JSON.stringify({
+          token: secret,
+          profilePath,
+          values: [secret, profilePath],
+        }),
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain(profilePath)
+    expect(serialized).toContain('[redacted]')
+  })
+
+  it('fails visibly and bounds oversized encoded diagnostic values [DON-237]', async () => {
+    const secret = 'C17-Oversized-Encoded-Secret-9!'
+    const encoded = JSON.stringify({ token: secret, padding: 'x'.repeat(40_000) })
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:01:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'c17_oversized_encoded_payload',
+      fields: { encoded },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(secret)
+    expect(serialized).toContain('[redacted-structured-value-too-large]')
+  })
+
+  it('redacts free-form credentials before browser fallback copy/report [DON-237]', async () => {
+    const passphrase = 'C17-Browser-Passphrase-9!'
+    const recoveryCode = 'C17-Browser-Recovery-9!'
+    const bearerToken = 'browser-bearer-token-9'
+    const queryCredential = 'browser-query-credential-9'
+    const authCredential = 'browser-auth-credential-9'
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:02:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'c17_free_form_credentials',
+      fields: {
+        detail: `passphrase=${passphrase} recovery-code=${recoveryCode} auth=${authCredential} auth: ${authCredential} authToken=${authCredential} Authorization: Bearer ${bearerToken} https://operator:${passphrase}@example.test/diagnostics?session=${queryCredential}&auth=${authCredential}&access_token=${authCredential}`,
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    const report = formatDiagnosticEvents(readDiagnosticEvents())
+    for (const secret of [passphrase, recoveryCode, bearerToken, queryCredential, authCredential]) {
+      expect(serialized).not.toContain(secret)
+      expect(report).not.toContain(secret)
+    }
+    expect(report).toContain('[redacted]')
+  })
+
+  it('re-sanitizes legacy renderer events before browser fallback formatting [DON-237]', () => {
+    const secret = 'C17-Legacy-Browser-Secret-9!'
+    window.sessionStorage.setItem('sartracker:diagnostic-events', JSON.stringify([{
+      ts: '2026-09-20T12:03:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'legacy_c17_event',
+      fields: {
+        token: secret,
+        nested: { values: [secret] },
+      },
+    }]))
+
+    const events = readDiagnosticEvents()
+    const report = formatDiagnosticEvents(events)
+    expect(JSON.stringify(events)).not.toContain(secret)
+    expect(report).not.toContain(secret)
+    expect(report).toContain('[redacted]')
+  })
+
+  it('normalizes legacy categories before browser fallback formatting [DON-237]', () => {
+    const secret = 'C17-Legacy-Category-Secret-9!'
+    window.sessionStorage.setItem('sartracker:diagnostic-events', JSON.stringify([{
+      ts: '2026-09-20T12:04:00.000Z',
+      level: 'error',
+      category: `runtime:${secret}:/Users/operator/private`,
+      event: 'legacy_category_event',
+    }]))
+
+    const events = readDiagnosticEvents()
+    const report = formatDiagnosticEvents(events)
+    expect(events[0]?.category).toBe('runtime')
+    expect(report).not.toContain(secret)
+    expect(report).not.toContain('/Users/operator')
+  })
+
+  it('fails visibly for oversized renderer fields and field collections [DON-237]', async () => {
+    const oversizedFields = Object.fromEntries(
+      Array.from({ length: 513 }, (_, index) => [`field-${index}`, 'value']),
+    )
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:05:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'renderer_bounds',
+      fields: {
+        longText: 'x'.repeat(241),
+        longStructured: JSON.stringify({ value: 'x'.repeat(300) }),
+      },
+    })
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:06:00.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'renderer_root_bounds',
+      fields: oversizedFields,
+    })
+
+    const events = readDiagnosticEvents()
+    expect(events[0]?.fields).toEqual({
+      longText: '[redacted-structured-value-too-large]',
+      longStructured: '[redacted-structured-value-too-large]',
+    })
+    expect(events[1]?.fields).toEqual({
+      diagnosticFields: '[redacted-structured-value-too-large]',
+    })
+  })
+
   it('writes Electron breadcrumbs through the preload bridge while keeping browser fallback history', async () => {
     const recordDiagnosticEventBridge = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(window, 'sartrackerElectron', {

@@ -7,11 +7,12 @@ import { afterAll, describe, expect, it } from 'vitest'
 
 import {
   COMPOSITE_FAMILY_CONTRACTS,
+  C17_CANARY_IDS,
   computeExpectedPassSequenceSha256,
   validateCompositeFamilyCoverage,
   validateCompositeFamilyReceipt,
 } from '../../scripts/qualification/composite-family-receipts.mjs'
-import { resolveArchivePreparation } from '../../scripts/qualification/composite-probe.mjs'
+import { buildC17DiagnosticEvents, resolveArchivePreparation } from '../../scripts/qualification/composite-probe.mjs'
 
 type JsonObject = Record<string, unknown>
 
@@ -25,15 +26,14 @@ const retainedPackagedAppPath = '/tmp/sartracker-family-evidence/retained-packag
 mkdirSync(path.dirname(retainedPackagedAppPath), { recursive: true })
 writeFileSync(retainedPackagedAppPath, packagedAppBytes, { mode: 0o600 })
 const retainedDiagnosticPath = '/tmp/sartracker-family-evidence/c17-sanitized-output.txt'
-const retainedDiagnosticBytes = Buffer.from('sanitized diagnostics\n', 'utf8')
+const retainedDiagnosticBytes = Buffer.from([
+  'sanitized diagnostics',
+  ...C17_CANARY_IDS.map((id) => `C17-CONTROL:${id}`),
+  '',
+].join('\n'), 'utf8')
 const retainedCanaryManifestPath = '/tmp/sartracker-family-evidence/c17-canary-manifest.txt'
 const retainedCanaryManifestBytes = Buffer.from([
-  'direct-content-secret',
-  'event-password',
-  'event-nested-token',
-  'nested-array-secret',
-  'nested-array-profile-path',
-  'url-credentials',
+  ...C17_CANARY_IDS,
 ].join('\n'), 'utf8')
 const retainedPassPagesPath = '/tmp/sartracker-family-evidence/c11-pass-pages.ndjson'
 const retainedPassPagesBytes = Buffer.from(Array.from({ length: 1_000 }, (_, pageIndex) => {
@@ -82,11 +82,21 @@ function report(): JsonObject {
   const diagnostics = {
     requested: true,
     exported: true,
+    exportedPath: path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt'),
     sanitized: true,
     containsSecret: false,
     containsProfilePath: false,
     exactSecretMatches: 0,
     adversarialMatchCount: 0,
+    canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
+    outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
+    outputByteLength: retainedDiagnosticBytes.byteLength,
+    canaryCount: C17_CANARY_IDS.length,
+    positiveControlIds: [...C17_CANARY_IDS],
+    outputWithinLimit: true,
+    retainedOutputPath: retainedDiagnosticPath,
+    retainedCanaryManifestPath,
+    leakedCanaryIds: [],
   }
   return {
     schemaVersion: 1,
@@ -178,6 +188,53 @@ function copy<T>(value: T): T {
 }
 
 describe('independent packaged composite family receipts', () => {
+  it('builds the C17 event corpus from the supplied canaries without hidden outer-scope names', () => {
+    const events = buildC17DiagnosticEvents({
+      secret: 'base-secret',
+      profilePath: '/tmp/c17-profile',
+      timestamp: '2026-09-20T20:30:00.000Z',
+      canaries: {
+        eventPassword: 'event-password',
+        directContentProfilePath: '/tmp/c17-profile/direct',
+        eventNestedToken: 'nested-token',
+        nestedArrayProfilePath: '/tmp/c17-profile/nested',
+        nestedArraySecret: 'array-secret',
+        eventAuthorizationHeader: 'authorization-header',
+        eventQueryCredential: 'query-credential',
+        urlCredentials: 'url-credentials',
+      },
+    })
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({
+      ts: '2026-09-20T20:30:00.000Z',
+      fields: {
+        password: 'event-password',
+        profilePath: '/tmp/c17-profile/direct',
+        c17CanaryControlIds: expect.any(Array),
+        nested: {
+          token: 'nested-token',
+          arrayToken: 'array-secret',
+          path: '/tmp/c17-profile/nested',
+          values: ['array-secret', '/tmp/c17-profile/nested'],
+          headers: { Authorization: 'Bearer authorization-header' },
+          queryUrl: 'https://host.example/api?session=query-credential',
+        },
+      },
+    })
+    expect(events[0]?.fields?.c17CanaryControlIds).toEqual([
+      'C17-CONTROL:event-password',
+      'C17-CONTROL:event-nested-token',
+      'C17-CONTROL:event-authorization-header',
+      'C17-CONTROL:event-query-credential',
+      'C17-CONTROL:nested-array-secret',
+      'C17-CONTROL:nested-array-profile-path',
+    ])
+    expect(events[1]).toMatchObject({
+      fields: { providerUrl: 'https://operator:url-credentials@example.invalid/sar' },
+    })
+  })
+
   it('prepares archive only from active or paused state, with explicit finished revision reuse', () => {
     expect(resolveArchivePreparation({ status: 'active' })).toEqual({ shouldFinish: true, status: 'active' })
     expect(resolveArchivePreparation({ status: 'paused' })).toEqual({ shouldFinish: true, status: 'paused' })
@@ -331,7 +388,8 @@ describe('independent packaged composite family receipts', () => {
       canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
       outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
       outputByteLength: retainedDiagnosticBytes.byteLength,
-      canaryCount: 6,
+      canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
       outputWithinLimit: true,
       retainedOutputPath: retainedDiagnosticPath,
       retainedCanaryManifestPath,
@@ -339,15 +397,70 @@ describe('independent packaged composite family receipts', () => {
     })
     Object.assign(c17.diagnostics as JsonObject, c17.phases.sanitizedDiagnostics as JsonObject)
     const c17Receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
-    expect(c17Receipt.complete).toBe(true)
+    expect(c17Receipt.complete).toBe(false)
+    expect(c17Receipt.coverageComplete).toBe(false)
+    expect(c17Receipt.coverageGaps).toEqual(expect.arrayContaining([
+      'recursive-adversarial-corpus',
+      'bounded-output-scan-identity',
+    ]))
     ;(c17.phases.sanitizedDiagnostics as JsonObject).outputWithinLimit = false
     expect(validateCompositeFamilyReceipt(c17, expected('C17')).complete).toBe(false)
+  })
+
+  it('independently binds C17 export paths and rejects a retained canary leak', () => {
+    const c17 = copy(report())
+    const phase = c17.phases.sanitizedDiagnostics as JsonObject
+    Object.assign(phase, {
+      canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
+      outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
+      outputByteLength: retainedDiagnosticBytes.byteLength,
+      canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
+      outputWithinLimit: true,
+      exportedPath: path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt'),
+      retainedOutputPath: retainedDiagnosticPath,
+      retainedCanaryManifestPath,
+      leakedCanaryIds: [],
+    })
+    Object.assign(c17.diagnostics as JsonObject, phase)
+
+    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({ valid: true })
+
+    phase.exportedPath = path.join(expectedBase.evidencePath, 'wrong-export.txt')
+    expect(validateCompositeFamilyReceipt(c17, expected('C17')).valid).toBe(false)
+
+    phase.exportedPath = path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt')
+    phase.pathWithinProfile = false
+    expect(validateCompositeFamilyReceipt(c17, expected('C17')).valid).toBe(false)
+    phase.pathWithinProfile = true
+    const leaked = Buffer.from(`leaked ${'C28-Composite-Archive-9!x'}-event-password\n`, 'utf8')
+    writeFileSync(retainedDiagnosticPath, leaked, { mode: 0o600 })
+    phase.outputSha256 = createHash('sha256').update(leaked).digest('hex')
+    phase.outputByteLength = leaked.byteLength
+    ;(c17.diagnostics as JsonObject).outputSha256 = phase.outputSha256
+    ;(c17.diagnostics as JsonObject).outputByteLength = phase.outputByteLength
+    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({
+      valid: false,
+      status: 'INVALID_EVIDENCE',
+    })
+    writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+  })
+
+  it('rejects a zero-canary output when the nested-event positive controls are absent', () => {
+    const c17 = copy(report())
+    const phase = c17.phases.sanitizedDiagnostics as JsonObject
+    phase.positiveControlIds = [...C17_CANARY_IDS.slice(0, 4)]
+    ;(c17.diagnostics as JsonObject).positiveControlIds = [...C17_CANARY_IDS.slice(0, 4)]
+
+    const receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
+    expect(receipt.valid).toBe(false)
+    expect(receipt.failureReasons.join('\n')).toMatch(/positive.control|scanner/i)
   })
 
   it('keeps C17 invalid when retained raw bytes expose the fixed secret despite forged green scanner fields', () => {
     const c17 = copy(report())
     const rawLeak = Buffer.from(`nested values: ["${'C28-Composite-Archive-9!x'}"]\n`, 'utf8')
-    const rawLeakPath = '/tmp/sartracker-family-evidence/c17-raw-failure.txt'
+    const rawLeakPath = retainedDiagnosticPath
     writeFileSync(rawLeakPath, rawLeak, { mode: 0o600 })
     Object.assign(c17.phases.sanitizedDiagnostics as JsonObject, {
       sanitized: false,
@@ -357,7 +470,8 @@ describe('independent packaged composite family receipts', () => {
       canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
       outputSha256: createHash('sha256').update(rawLeak).digest('hex'),
       outputByteLength: rawLeak.byteLength,
-      canaryCount: 6,
+      canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
       outputWithinLimit: true,
       retainedOutputPath: rawLeakPath,
       retainedCanaryManifestPath,
@@ -377,7 +491,7 @@ describe('independent packaged composite family receipts', () => {
       observedProductFailure: false,
       evidenceComplete: false,
     })
-    rmSync(rawLeakPath, { force: true })
+    writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
   })
 
   it.each([

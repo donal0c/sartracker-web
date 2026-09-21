@@ -2,6 +2,25 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
+**Current DON-237 repair (2026-09-21):** PR44 is non-draft. The review-fix code
+is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; the current branch
+tip is a docs-only closeout commit. The Claude Code review remediation
+hardens numeric and long-key secret redaction, bounded traversal,
+`toJSON`/getter handling, escaped path handling, linear text scanning, logging
+failure isolation, and C17 positive-control enforcement. Local final evidence is
+green: 5,829 tests passed and 19 skipped; correctness passed at 5,803 passed and
+25 skipped with the expected release-HOLD notice; TypeScript, lint, production
+build and bundle budgets passed. Clean browser harness validation booted the app,
+opened Diagnostics Workspace, and completed Copy Report.
+
+Exact-head hosted PR run `35621211230`, job `106404428399`, was cancelled during
+the full correctness step; only setup through lint completed and all later hosted
+evidence steps were skipped. No hosted pass is recorded for this head. The work
+remains development/review evidence, not candidate qualification or release
+evidence. C17 retains the intentional gaps `recursive-adversarial-corpus` and
+`bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
+remain open; no merge, tag or publication is authorized by this repair.
+
 ## Planning Rule
 
 **Current post-PR42 state (2026-09-19):** verified master is
