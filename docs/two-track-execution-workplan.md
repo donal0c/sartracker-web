@@ -3,13 +3,13 @@
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
 **Current DON-237 repair (2026-09-21):** PR44 is non-draft and mergeable at
-final PR head `b689133bc32fae7b305e33ada461a21e24af5111`. The diagnostics/support-
+final PR head `fbf9c0c786c59e8a9b3b53752c4844919b5ad33e`. The diagnostics/support-
 export repair is recursively fail-closed across renderer, Electron and legacy
 runtime-log paths, including compound credential forms and `/private`/`/tmp`/`/var`
-paths. Final docs-tip PR run `35545733120` passed the full PR workflow and exact-head
+paths. Final post-review docs-tip PR run `35548293146` passed the full PR workflow and exact-head
 packaged Linux C17 proof; its retained receipt is `PASS`, `valid:true`,
 `zeroCanary:true`, with `coverageComplete:false`, output hash
-`1d0e4993c2bb3816f371887df6bd017408346e12e166702a4331808de82858bd`, and
+`d5036ada44bd60673279af8c8474e22de68478f057e5f96996e850e362cd1768`, and
 manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
 This is development/packaged-smoke evidence, not candidate qualification or
 release evidence. Earlier runs retained separate BCP-960k and C10 timing-boundary

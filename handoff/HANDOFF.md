@@ -8,17 +8,17 @@ Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-mergeable at final PR head `b689133bc32fae7b305e33ada461a21e24af5111`, directly
+mergeable at final PR head `fbf9c0c786c59e8a9b3b53752c4844919b5ad33e`, directly
 on PR43's merge base. The repair recursively sanitizes renderer and Electron
 diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
 C17 development receipt independently bind export paths, retained hashes,
-canary manifest and bounded rescans. Final docs-tip PR run
-`35545733120`, job `106171161042`, passed the full PR workflow including the
+canary manifest and bounded rescans. Final post-review docs-tip PR run
+`35548293146`, job `106178158463`, passed the full PR workflow including the
 exact-head packaged C17 proof. Its retained artifact is
-`electron-linux-validation-evidence-b689133bc32fae7b305e33ada461a21e24af5111`;
+`electron-linux-validation-evidence-fbf9c0c786c59e8a9b3b53752c4844919b5ad33e`;
 the C17 receipt is `PASS`, `valid:true`, `zeroCanary:true`, with 11 canaries,
 zero exact/adversarial matches, output hash
-`1d0e4993c2bb3816f371887df6bd017408346e12e166702a4331808de82858bd`, and
+`d5036ada44bd60673279af8c8474e22de68478f057e5f96996e850e362cd1768`, and
 manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
 The receipt correctly retains `coverageComplete:false` and is not qualification or
 release evidence. Earlier manual run `35540259983` retained a separate
