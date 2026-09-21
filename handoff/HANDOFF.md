@@ -7,9 +7,10 @@ Updated 2026-09-21 for the Claude Code review remediation on DON-237.
 Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
-PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-currently points at exact head `9e0cd8f6d159ed04c103d794b16b781ca111fb66`.
-Commit `9e0cd8f6` addresses the confirmed Claude Code review blockers: C17 now
+PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft. The
+review-fix code is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`;
+current branch tip `4d8e239` is a docs-only closeout commit. Commit `9e0cd8f6`
+addresses the confirmed Claude Code review blockers: C17 now
 requires independent positive-control reachability markers and records runtime-log
 read failure; renderer and Electron sanitizers redact numeric and long-key secrets,
 preserve unrelated fields under bounded traversal, ignore `toJSON` hooks, and use
