@@ -2,9 +2,11 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-**Current DON-237 repair (2026-09-21):** PR44 is non-draft. The review-fix code
-is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; the current branch
-tip is a docs-only closeout commit. The Claude Code review remediation
+**Current release state (2026-09-21):** PR44 merged at
+`8f1b4488d499a097cd521d87edb29a2c0924a1b8` from final head
+`57f6ec9fa87c2d59921cb55c87777d47f3ce8109`. The review-fix code/test tree is
+exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; later commits changed only
+this workplan and the handoff. The review remediation
 hardens numeric and long-key secret redaction, bounded traversal,
 `toJSON`/getter handling, escaped path handling, linear text scanning, logging
 failure isolation, and C17 positive-control enforcement. Local final evidence is
@@ -13,21 +15,30 @@ green: 5,829 tests passed and 19 skipped; correctness passed at 5,803 passed and
 build and bundle budgets passed. Clean browser harness validation booted the app,
 opened Diagnostics Workspace, and completed Copy Report.
 
-Exact-head hosted PR run `35621211230`, job `106404428399`, was cancelled during
-the full correctness step; only setup through lint completed and all later hosted
-evidence steps were skipped. No hosted pass is recorded for this head. The work
-remains development/review evidence, not candidate qualification or release
-evidence. C17 retains the intentional gaps `recursive-adversarial-corpus` and
+Hosted PR run `35621211230`, job `106412665500`, passed at that exact
+application/test head, including full correctness, strict responsiveness, the
+normal 960k replay envelope, Linux packaging, packaged C17 privacy proof and
+the remaining packaged smoke lanes. This remains merge/development evidence,
+not candidate qualification or release evidence. C17 retains the bounded gaps
+`recursive-adversarial-corpus` and
 `bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
-remain open; no merge, tag or publication is authorized by this repair.
+remain open; no candidate freeze, tag or publication is authorized by this repair.
+
+**Immediate ordered queue:** close the two C17 evidence gaps under DON-254;
+then take DON-264, C01, the unresolved C11 archive-finalization hang, and the
+coordinated DON-249/250/251 C19 product work as separate pre-candidate slices.
+Do not combine them into one repair PR. DON-264's non-blocking wording applies
+to beta.12.4; merged beta.13 admission controls currently make its persistent
+console-only overlay failure a candidate gate unless Donal explicitly changes
+that policy. After these holds are clear, freeze the exact beta.13 candidate
+and execute BCP-17/WAR-12.
 
 ## Planning Rule
 
-**Current post-PR42 state (2026-09-19):** verified master is
-`bd301484561fac372ef7c95090ab5d9cc21533f3`; PR42 exact head
-`5cddbb1f086191539c7c771ea82d9b73bacd8c77` passed Linux CI `35454420736`.
-PR40/41/42 are merged. DON-254 remains In Progress and release HOLD. Current
-work is candidate enablement on `codex/beta13-candidate-adapters`; see
+**Current post-PR44 state (2026-09-21):** verified master is
+`8f1b4488d499a097cd521d87edb29a2c0924a1b8`. PR40 through PR44 are merged.
+DON-254 remains In Progress and release HOLD. Current work is the bounded
+pre-candidate repair queue above; see
 [acceptance/test plan](assurance/candidate-enablement-design.md) and
 [adapter inventory](assurance/candidate-adapter-inventory.md). The historical
 reconciliation/phase snapshots below are not the current master identity.

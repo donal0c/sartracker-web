@@ -1,16 +1,18 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-21 for the Claude Code review remediation on DON-237.
+Updated 2026-09-21 after PR44 merged and its final code-head Linux validation passed.
 
 ## Current state
 
 Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
-qualification run, merge, tag, publication or promotion is authorized here.
+qualification run, tag, publication or promotion is authorized here.
 
-PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft. The
-review-fix code is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`;
-the current branch tip is a docs-only closeout commit. Commit `9e0cd8f6`
-addresses the confirmed Claude Code review blockers: C17 now
+PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) merged at
+`8f1b4488d499a097cd521d87edb29a2c0924a1b8` from final head
+`57f6ec9fa87c2d59921cb55c87777d47f3ce8109`. The review-fix code/test tree is
+exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; later commits changed only
+this handoff and the workplan. Commit `9e0cd8f6` addresses the confirmed review
+blockers: C17 now
 requires independent positive-control reachability markers and records runtime-log
 read failure; renderer and Electron sanitizers redact numeric and long-key secrets,
 preserve unrelated fields under bounded traversal, ignore `toJSON` hooks, and use
@@ -22,32 +24,34 @@ Local final evidence is green: 5,829 tests passed and 19 skipped; correctness
 passed at 5,803 passed and 25 skipped with the expected release-HOLD notice;
 TypeScript, lint, production build and bundle budgets passed. Clean browser
 harness validation booted the app, opened Diagnostics Workspace, and completed
-Copy Report. Exact-head hosted PR run `35621211230`, job `106404428399`, was
-cancelled during the full correctness step; only setup through lint completed and
-all later hosted evidence steps were skipped. No hosted pass is recorded for this
-head. This local work remains development/review evidence, not candidate
-qualification or release evidence. C17 coverage gaps remain
+Copy Report. Hosted PR run `35621211230`, job `106412665500`, passed at the
+exact application/test head `9e0cd8f6`, including full correctness, strict
+responsiveness, the normal 960k replay envelope, Linux packaging, packaged C17
+support-export privacy proof and the remaining packaged smoke lanes. This is
+merge/development evidence, not candidate qualification or release evidence.
+C17 coverage gaps remain
 `recursive-adversarial-corpus` and `bounded-output-scan-identity`.
 
-DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
-release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
-publish or promote from this work.
+DON-237 is Done. DON-254 remains In Progress and DON-255 remains Backlog;
+PKG-001, WAR-01 and BCP-17 remain separate release blockers. No candidate has
+been frozen or qualified, and no tag, publication or promotion is authorized.
 
 ## Active work and next actions
 
-Active work is PR44, not PR43. PR43's earlier candidate-enablement evidence is
-historical and remains below for traceability; it does not describe the current
-DON-237 repair state.
+There is no open PR. PR43's candidate-enablement evidence and PR44's C17 repair
+are merged development evidence; neither qualifies a candidate.
 
 Design: [candidate-enablement-design](../docs/assurance/candidate-enablement-design.md).
 Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: if hosted evidence is required, run a fresh exact-head validation;
-then leave merge/release decisions to the authorized human boundary. The C17 receipt retains
-`coverageComplete:false` with the intentional `recursive-adversarial-corpus`
-and `bounded-output-scan-identity` gaps.
+Next action: close the two bounded C17 evidence gaps
+`recursive-adversarial-corpus` and `bounded-output-scan-identity` under DON-254.
+Then continue the pre-candidate repair boundary as separate slices: DON-264's
+persistent-overlay warning, the C01 held-startup/store-fault response, the
+unresolved C11 archive-finalization hang, and the coordinated C19 product work
+owned by DON-249/250/251. Do not combine these into one repair PR.
 
 Producer integration is under repair after the first Linux development matrix.
 All 124 package bindings compile and require
@@ -67,14 +71,17 @@ later candidate-freeze step. Do not promote local development, source/browser
 or unpacked evidence into exact Linux candidate proof until the new exact-head
 CI run passes.
 
-Fresh Linear verification on 2026-09-20 confirms DON-249/250/251 remain Backlog:
+Fresh Linear verification on 2026-09-21 confirms DON-249/250/251 remain Backlog:
 background integrity/resource arbitration, mission-state-aware oversized recovery,
 and bounded telemetry retention/index policy remain separate product owners.
 C19 (and those C24 operation phases) cannot be qualified by adding probes alone.
 These are product-capability blockers, not missing host inputs or waived checks.
 Source-controlled admission holds now prevent campaign/prepublication PASS
 from successful subset probes; removing them requires the owning product work.
-DON-264's console-only persistent overlay failure likewise remains a product gate.
+DON-264's Linear description says it did not block the earlier beta.12.4 hotfix;
+that historical statement does not override the merged beta.13 C14/C24
+source-controlled admission hold. Its console-only persistent overlay failure is
+a beta.13 candidate gate unless Donal explicitly changes that policy.
 
 ## Approved decisions
 
