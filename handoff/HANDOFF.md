@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-21 for the completed DON-237 diagnostics/support-export repair.
+Updated 2026-09-21 for the Claude Code review remediation on DON-237.
 
 ## Current state
 
@@ -8,25 +8,24 @@ Release remains **HOLD**. BCP-17 is incomplete. No candidate freeze,
 qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft and
-mergeable at final PR head `fbf9c0c786c59e8a9b3b53752c4844919b5ad33e`, directly
-on PR43's merge base. The repair recursively sanitizes renderer and Electron
-diagnostics, closes legacy `/private`/`/tmp`/`/var` path leakage, and makes the
-C17 development receipt independently bind export paths, retained hashes,
-canary manifest and bounded rescans. Final post-review docs-tip PR run
-`35548293146`, job `106178158463`, passed the full PR workflow including the
-exact-head packaged C17 proof. Its retained artifact is
-`electron-linux-validation-evidence-fbf9c0c786c59e8a9b3b53752c4844919b5ad33e`;
-the C17 receipt is `PASS`, `valid:true`, `zeroCanary:true`, with 11 canaries,
-zero exact/adversarial matches, output hash
-`d5036ada44bd60673279af8c8474e22de68478f057e5f96996e850e362cd1768`, and
-manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
-The receipt correctly retains `coverageComplete:false` and is not qualification or
-release evidence. Earlier manual run `35540259983` retained a separate
-`bcp-960k` timing failure, and PR run `35541974539` retained a C10 timing-boundary
-failure; the final docs-tip PR run passed those PR-mode paths. Fresh exact-head
-native review `01a0c15e-d2af-7260-b1a5-c7631e615ec7` found no actionable P0/P1/P2
-findings and marked the change suitable for human merge review. Its residual
-caveats are the declared C17 coverage gaps and Linux Electron scope.
+currently points at exact head `9e0cd8f6d159ed04c103d794b16b781ca111fb66`.
+Commit `9e0cd8f6` addresses the confirmed Claude Code review blockers: C17 now
+requires independent positive-control reachability markers and records runtime-log
+read failure; renderer and Electron sanitizers redact numeric and long-key secrets,
+preserve unrelated fields under bounded traversal, ignore `toJSON` hooks, and use
+linear text scanning; support-export path handling and logging catch boundaries are
+also hardened. The renderer remains a separate TypeScript implementation because
+Vite's dev boundary cannot safely import the Electron `.cjs` module.
+
+Local final evidence is green: 5,829 tests passed and 19 skipped; correctness
+passed at 5,803 passed and 25 skipped with the expected release-HOLD notice;
+TypeScript, lint, production build and bundle budgets passed. Clean browser
+harness validation booted the app, opened Diagnostics Workspace, and completed
+Copy Report. Exact-head hosted PR run `35621211230`, job `106404428399`, was in
+progress when this handoff was updated; its conclusion must be recorded before
+making a hosted claim. This local and hosted work remains development/review
+evidence, not candidate qualification or release evidence. C17 coverage gaps remain
+`recursive-adversarial-corpus` and `bounded-output-scan-identity`.
 
 DON-254 and DON-255 remain open; PKG-001, WAR-01 and BCP-17 remain separate
 release blockers. Do not merge PR44, close the issues, qualify a candidate, tag,
@@ -43,9 +42,8 @@ Historical gap inventory:
 [candidate-adapter-inventory](../docs/assurance/candidate-adapter-inventory.md).
 The [two-track workplan](../docs/two-track-execution-workplan.md) remains the queue.
 
-Next action: leave merge/release decisions to the authorized human boundary.
-DON-237 now records the final run/job/artifact evidence, independent review and
-historical timing boundaries. The C17 receipt retains
+Next action: record the conclusion of hosted run `35621211230`, then leave
+merge/release decisions to the authorized human boundary. The C17 receipt retains
 `coverageComplete:false` with the intentional `recursive-adversarial-corpus`
 and `bounded-output-scan-identity` gaps.
 

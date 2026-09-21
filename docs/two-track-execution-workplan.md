@@ -2,21 +2,20 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-**Current DON-237 repair (2026-09-21):** PR44 is non-draft and mergeable at
-final PR head `fbf9c0c786c59e8a9b3b53752c4844919b5ad33e`. The diagnostics/support-
-export repair is recursively fail-closed across renderer, Electron and legacy
-runtime-log paths, including compound credential forms and `/private`/`/tmp`/`/var`
-paths. Final post-review docs-tip PR run `35548293146` passed the full PR workflow and exact-head
-packaged Linux C17 proof; its retained receipt is `PASS`, `valid:true`,
-`zeroCanary:true`, with `coverageComplete:false`, output hash
-`d5036ada44bd60673279af8c8474e22de68478f057e5f96996e850e362cd1768`, and
-manifest hash `416d8c2d7d9c1d196076ec21cbe0622b5703311ae644ad0c9c8994b8191907a0`.
-This is development/packaged-smoke evidence, not candidate qualification or
-release evidence. Earlier runs retained separate BCP-960k and C10 timing-boundary
-failures; the final docs-tip PR-mode run passed those PR paths. A fresh exact-head
-native review (`01a0c15e-d2af-7260-b1a5-c7631e615ec7`) found no actionable P0/P1/P2
-findings and marked the change suitable for human merge review. The intentional C17
-coverage gaps remain `recursive-adversarial-corpus` and
+**Current DON-237 repair (2026-09-21):** PR44 is non-draft and currently points
+at exact head `9e0cd8f6d159ed04c103d794b16b781ca111fb66`. The Claude Code review
+remediation hardens numeric and long-key secret redaction, bounded traversal,
+`toJSON`/getter handling, escaped path handling, linear text scanning, logging
+failure isolation, and C17 positive-control enforcement. Local final evidence is
+green: 5,829 tests passed and 19 skipped; correctness passed at 5,803 passed and
+25 skipped with the expected release-HOLD notice; TypeScript, lint, production
+build and bundle budgets passed. Clean browser harness validation booted the app,
+opened Diagnostics Workspace, and completed Copy Report.
+
+Exact-head hosted PR run `35621211230`, job `106404428399`, was in progress when
+this entry was written; record its conclusion before making a hosted claim. The
+work remains development/review evidence, not candidate qualification or release
+evidence. C17 retains the intentional gaps `recursive-adversarial-corpus` and
 `bounded-output-scan-identity`. DON-254/DON-255, PKG-001, WAR-01 and BCP-17
 remain open; no merge, tag or publication is authorized by this repair.
 
