@@ -9,7 +9,7 @@ qualification run, merge, tag, publication or promotion is authorized here.
 
 PR44 ([DON-237](https://linear.app/donal-oc/issue/DON-237)) is non-draft. The
 review-fix code is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`;
-current branch tip `4d8e239` is a docs-only closeout commit. Commit `9e0cd8f6`
+the current branch tip is a docs-only closeout commit. Commit `9e0cd8f6`
 addresses the confirmed Claude Code review blockers: C17 now
 requires independent positive-control reachability markers and records runtime-log
 read failure; renderer and Electron sanitizers redact numeric and long-key secrets,

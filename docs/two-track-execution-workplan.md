@@ -3,8 +3,8 @@
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
 **Current DON-237 repair (2026-09-21):** PR44 is non-draft. The review-fix code
-is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; current branch tip
-`4d8e239` is a docs-only closeout commit. The Claude Code review remediation
+is exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; the current branch
+tip is a docs-only closeout commit. The Claude Code review remediation
 hardens numeric and long-key secret redaction, bounded traversal,
 `toJSON`/getter handling, escaped path handling, linear text scanning, logging
 failure isolation, and C17 positive-control enforcement. Local final evidence is
