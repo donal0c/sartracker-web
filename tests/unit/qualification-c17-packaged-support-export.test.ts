@@ -22,6 +22,7 @@ describe('C17 packaged support-export development receipt', () => {
           exactSecretMatches: 0,
           adversarialMatchCount: 0,
           canaryCount: C17_CANARY_IDS.length,
+          positiveControlIds: [...C17_CANARY_IDS],
           leakedCanaryIds: [],
           outputByteLength: 1234,
           outputWithinLimit: true,
@@ -44,6 +45,7 @@ describe('C17 packaged support-export development receipt', () => {
     expect(receipt.qualificationExecuted).toBe(false)
     expect(receipt.releaseEligible).toBe(false)
     expect(receipt.canaryCount).toBe(C17_CANARY_IDS.length)
+    expect(receipt.positiveControlIds).toEqual(C17_CANARY_IDS)
     expect(receipt.outputSha256).toBe('b'.repeat(64))
     expect(receipt.canaryManifestSha256).toBe('c'.repeat(64))
     expect(receipt.exportedPath).toContain('c17-diagnostics-support.txt')

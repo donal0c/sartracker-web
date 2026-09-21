@@ -78,6 +78,92 @@ describe('diagnostic event log', () => {
     expect(serialized).not.toContain('operator')
   })
 
+  it('redacts numeric secrets repeated inside nested renderer arrays', async () => {
+    const secret = 987654321987
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:30.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'numeric_secret',
+      fields: {
+        token: secret,
+        nested: { values: [secret] },
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(String(secret))
+    expect(serialized).toContain('\\"values\\":[\\"[redacted]\\"]')
+  })
+
+  it('redacts primitive secrets under long secret-bearing keys', async () => {
+    const secret = 918273
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:35.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'long_secret_key',
+      fields: {
+        [`diagnostic-secret-${'x'.repeat(90)}`]: secret,
+      },
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(String(secret))
+  })
+
+  it('does not invoke enumerable toJSON hooks while sanitizing renderer fields', async () => {
+    const secret = 'renderer-to-json-secret-9!'
+    const fields = {
+      token: secret,
+      nested: {
+        toJSON: () => ({ leaked: secret, path: '/Users/operator/private' }),
+        value: 'safe',
+      },
+    }
+
+    await recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:45.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'to_json_hook',
+      fields,
+    })
+
+    const serialized = JSON.stringify(readDiagnosticEvents())
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain('operator')
+    expect(serialized).toContain('\\"value\\":\\"safe\\"')
+  })
+
+  it('keeps logging best-effort when diagnostic fields contain unsupported or throwing values', async () => {
+    const throwingFields = {}
+    Object.defineProperty(throwingFields, 'broken', {
+      enumerable: true,
+      get: () => {
+        throw new Error('getter failed')
+      },
+    })
+
+    await expect(recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:50.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'throwing_diagnostic',
+      fields: throwingFields,
+    })).resolves.toBeUndefined()
+
+    await expect(recordDiagnosticEvent({
+      ts: '2026-09-20T12:00:51.000Z',
+      level: 'error',
+      category: 'runtime',
+      event: 'bigint_diagnostic',
+      fields: { count: BigInt(7) },
+    })).resolves.toBeUndefined()
+  })
+
   it('redacts sensitive values repeated inside nested arrays and encoded fields [DON-237]', async () => {
     const secret = 'C17-Renderer-Nested-Array-Secret-9!'
     const profilePath = '/tmp/c17-private-profile/mission-store.sqlite'

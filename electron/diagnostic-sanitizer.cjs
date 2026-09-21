@@ -1,9 +1,10 @@
 const SECRET_KEY_SOURCE = String.raw`(?:auth(?:entication|orization)?|password|secret|token|credential|api[-_]?key|pass[-_]?phrase|recovery[-_]?code)`
 const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
 const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
-const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 512
+const MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS = 4_096
+const MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS = 512
 const STRUCTURED_DIAGNOSTIC_LIMIT_MARKER = '[redacted-structured-value-too-large]'
-const SENSITIVE_VALUES_INCOMPLETE_MARKER = '__diagnostic_sensitive_values_incomplete__'
+const UNSUPPORTED_DIAGNOSTIC_VALUE_MARKER = '[redacted-unsupported-value]'
 const SECRET_KEY_PATTERN = new RegExp(SECRET_KEY_SOURCE, 'i')
 const QUERY_CREDENTIAL_KEY_SOURCE = String.raw`(?:session|${SECRET_KEY_SOURCE})`
 const COORDINATE_KEY_PATTERN = /^(?:lat|lon|lng|latitude|longitude|coordinate|coordinates|bounds)$/i
@@ -12,7 +13,7 @@ const SECRET_JSON_KEY_PATTERN = new RegExp(
   'gi',
 )
 const SECRET_ASSIGNMENT_PATTERN = new RegExp(
-  `\\b([A-Za-z0-9_.-]*${SECRET_KEY_SOURCE}[A-Za-z0-9_.-]*\\s*[:=]\\s*)(?:"(?:\\\\.|[^"\\\\])*"|'[^'\\r\\n]*'|[^\\r\\n]+)`,
+  `\\b([A-Za-z0-9_.-]+\\s*[:=]\\s*)`,
   'gi',
 )
 const AUTH_HEADER_PATTERN = /\b(Authorization\s*:\s*)(?:Bearer|Basic)\s+\S+/gi
@@ -23,20 +24,21 @@ const URL_QUERY_CREDENTIALS_PATTERN = new RegExp(
   'gi',
 )
 const HOME_PATH_PATTERNS = Object.freeze([
-  [/(\/(?:home|Users)\/)[^/\s:"]+/g, '$1[redacted]'],
-  [/([A-Za-z]:\\Users\\)[^\\\s:"]+/g, '$1[redacted]'],
+  [/(\/(?:home|Users)\/)[^/\s\\"]+/g, '$1[redacted]'],
+  [/([A-Za-z]:\\Users\\)[^\\\s"]+/g, '$1[redacted]'],
 ])
 const PRIVATE_SYSTEM_PATH_PATTERNS = Object.freeze([
-  [/(\/(?:private|tmp|var)\/)[^\s:"]+/g, '$1[redacted]'],
+  [/(\/(?:private|tmp|var)\/)[^\s\\\\"]+/g, '$1[redacted]'],
 ])
+
+function diagnosticByteLength(value) {
+  return new TextEncoder().encode(value).byteLength
+}
 
 /**
  * Redacts secrets and private local identity from free-form diagnostics text.
  */
 function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
-  if (sensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
-    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
-  }
   const structured = parseStructuredDiagnosticText(input)
   if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
@@ -50,11 +52,12 @@ function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
 
   let sanitized = String(input)
     .replace(SECRET_JSON_KEY_PATTERN, '$1"[redacted]"')
-    .replace(SECRET_ASSIGNMENT_PATTERN, '$1[redacted]')
     .replace(AUTH_HEADER_PATTERN, '$1[redacted]')
     .replace(AUTH_TOKEN_PATTERN, '[redacted]')
     .replace(URL_CREDENTIALS_PATTERN, '$1[redacted]@')
     .replace(URL_QUERY_CREDENTIALS_PATTERN, '$1[redacted]')
+
+  sanitized = redactSecretAssignments(sanitized)
 
   for (const [pattern, replacement] of HOME_PATH_PATTERNS) {
     sanitized = sanitized.replace(pattern, replacement)
@@ -80,16 +83,19 @@ function sanitizeDiagnosticValue(
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
-  if (knownSensitiveValues.has(SENSITIVE_VALUES_INCOMPLETE_MARKER)) {
-    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
-  }
   if (SECRET_KEY_PATTERN.test(key)) {
+    return '[redacted]'
+  }
+  if (knownSensitiveValues.has(value)) {
     return '[redacted]'
   }
   if (COORDINATE_KEY_PATTERN.test(key)) {
     return '[coordinate-redacted]'
   }
   if (typeof value === 'string') {
+    if (knownSensitiveValues.has(value)) {
+      return '[redacted]'
+    }
     const structured = parseStructuredDiagnosticText(value)
     if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
       return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
@@ -101,13 +107,16 @@ function sanitizeDiagnosticValue(
     return sanitizeDiagnosticText(value, knownSensitiveValues)
   }
   if (Array.isArray(value)) {
-    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
       return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
     }
     return value.map((item) => sanitizeDiagnosticValue(item, '', knownSensitiveValues, budget, depth + 1))
   }
   if (value !== null && typeof value === 'object') {
     return sanitizeDiagnosticFieldsWithContext(value, new Set(), knownSensitiveValues, budget, depth)
+  }
+  if (typeof value === 'bigint') {
+    return UNSUPPORTED_DIAGNOSTIC_VALUE_MARKER
   }
   return value
 }
@@ -126,26 +135,32 @@ function sanitizeDiagnosticFields(fields, reservedKeys = new Set()) {
     collectSensitiveValues(fields),
     createDiagnosticTraversalBudget(),
     0,
+    reservedKeys.size === 0,
   )
 }
 
 /** Sanitizes structured diagnostics while carrying known secret values through arrays. */
-function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValues, budget, depth) {
+function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValues, budget, depth, compactOversized = true) {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
-  const entries = Object.entries(fields)
-  if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
+  let entries
+  try {
+    entries = Object.entries(fields)
+  } catch {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
-  const sanitized = {}
+  if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+  const sanitized = Object.create(null)
   for (const [key, value] of entries) {
-    if (reservedKeys.has(key)) {
+    if (reservedKeys.has(key) || key === 'toJSON') {
       continue
     }
     sanitized[key] = sanitizeDiagnosticValue(value, key, sensitiveValues, budget, depth + 1)
   }
-  return boundStructuredDiagnosticValue(sanitized)
+  return boundStructuredDiagnosticValue(sanitized, compactOversized)
 }
 
 /** Collects string values held by secret-bearing keys for repeated-value redaction. */
@@ -157,7 +172,6 @@ function collectSensitiveValues(
   depth = 0,
 ) {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
-    sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
     return sensitiveValues
   }
   if (SECRET_KEY_PATTERN.test(key)) {
@@ -172,8 +186,7 @@ function collectSensitiveValues(
     return sensitiveValues
   }
   if (Array.isArray(value)) {
-    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
-      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
       return sensitiveValues
     }
     for (const item of value) {
@@ -182,17 +195,13 @@ function collectSensitiveValues(
     return sensitiveValues
   }
   if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value)
-    if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
-      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+    let entries
+    try {
+      entries = Object.entries(value)
+    } catch {
       return sensitiveValues
     }
-    if (depth > 0 && entries.some(([nestedKey, nestedValue]) => SECRET_KEY_PATTERN.test(nestedKey)
-      && nestedValue === '[redacted]')
-      && entries.some(([, nestedValue]) => typeof nestedValue === 'string'
-        && nestedValue !== '[redacted]'
-        && sensitiveValues.has(nestedValue))) {
-      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+    if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
       return sensitiveValues
     }
     for (const [nestedKey, nestedValue] of entries) {
@@ -202,10 +211,9 @@ function collectSensitiveValues(
   return sensitiveValues
 }
 
-/** Collects non-empty string leaves from a secret-bearing structured value. */
+/** Collects primitive leaves from a secret-bearing structured value. */
 function collectStringValues(value, sensitiveValues, budget, depth) {
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
-    sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
     return
   }
   if (typeof value === 'string' && value !== '') {
@@ -216,9 +224,12 @@ function collectStringValues(value, sensitiveValues, budget, depth) {
     }
     return
   }
+  if ((typeof value === 'number' && Number.isFinite(value)) || typeof value === 'bigint') {
+    sensitiveValues.add(value)
+    return
+  }
   if (Array.isArray(value)) {
-    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
-      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
       return
     }
     for (const item of value) {
@@ -228,8 +239,7 @@ function collectStringValues(value, sensitiveValues, budget, depth) {
   }
   if (value !== null && typeof value === 'object') {
     const values = Object.values(value)
-    if (values.length > MAX_STRUCTURED_DIAGNOSTIC_ELEMENTS) {
-      sensitiveValues.add(SENSITIVE_VALUES_INCOMPLETE_MARKER)
+    if (values.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
       return
     }
     for (const nestedValue of values) {
@@ -244,7 +254,7 @@ function parseStructuredDiagnosticText(input) {
   if (!text.startsWith('{') && !text.startsWith('[')) {
     return null
   }
-  if (Buffer.byteLength(text, 'utf8') > MAX_STRUCTURED_DIAGNOSTIC_BYTES) {
+  if (diagnosticByteLength(text) > MAX_STRUCTURED_DIAGNOSTIC_BYTES) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
   try {
@@ -257,16 +267,52 @@ function parseStructuredDiagnosticText(input) {
 
 /** Bounds free-form diagnostic text after redaction while retaining a visible failure marker. */
 function boundDiagnosticText(value) {
-  return Buffer.byteLength(value, 'utf8') > MAX_STRUCTURED_DIAGNOSTIC_BYTES
+  return diagnosticByteLength(value) > MAX_STRUCTURED_DIAGNOSTIC_BYTES
     ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
     : value
 }
 
 /** Bounds structured diagnostic output after recursive redaction. */
-function boundStructuredDiagnosticValue(value) {
-  return boundDiagnosticText(JSON.stringify(value)) === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
-    ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
-    : value
+function boundStructuredDiagnosticValue(value, compactOversized = true) {
+  const serialized = safeJsonStringify(value)
+  if (serialized === null || diagnosticByteLength(serialized) <= MAX_STRUCTURED_DIAGNOSTIC_BYTES) {
+    return serialized === null ? STRUCTURED_DIAGNOSTIC_LIMIT_MARKER : value
+  }
+  if (!compactOversized) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+  if (Array.isArray(value)) {
+    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+
+  const compact = Object.assign(Object.create(null), value)
+  const candidates = Object.keys(compact)
+    .filter((key) => compact[key] !== STRUCTURED_DIAGNOSTIC_LIMIT_MARKER)
+    .sort((left, right) => {
+      const leftValue = compact[left]
+      const rightValue = compact[right]
+      const leftComplexity = leftValue !== null && typeof leftValue === 'object' ? 1 : 0
+      const rightComplexity = rightValue !== null && typeof rightValue === 'object' ? 1 : 0
+      if (leftComplexity !== rightComplexity) return rightComplexity - leftComplexity
+      return (safeJsonStringify(rightValue)?.length ?? 0) - (safeJsonStringify(leftValue)?.length ?? 0)
+    })
+  for (const key of candidates) {
+    if (safeJsonStringify(compact) !== null
+      && diagnosticByteLength(safeJsonStringify(compact)) <= MAX_STRUCTURED_DIAGNOSTIC_BYTES) break
+    compact[key] = STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+  }
+  const compactJson = safeJsonStringify(compact)
+  return compactJson !== null && diagnosticByteLength(compactJson) <= MAX_STRUCTURED_DIAGNOSTIC_BYTES
+    ? compact
+    : STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
+}
+
+function safeJsonStringify(value) {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
 }
 
 /** Creates a per-field budget for recursive diagnostic collection and sanitization. */
@@ -286,12 +332,70 @@ function consumeDiagnosticTraversalNode(budget, depth) {
 /** Replaces known secret values wherever they were repeated in a diagnostic string. */
 function redactSensitiveValues(input, sensitiveValues) {
   let redacted = input
-  for (const value of [...sensitiveValues].sort((left, right) => right.length - left.length)) {
-    if (value !== '' && value !== SENSITIVE_VALUES_INCOMPLETE_MARKER) {
-      redacted = redacted.replaceAll(value, '[redacted]')
-    }
+  for (const value of [...sensitiveValues].sort((left, right) => String(right).length - String(left).length)) {
+    redacted = redactSensitiveValueOccurrences(redacted, value)
   }
   return redacted
+}
+
+function redactSensitiveValueOccurrences(input, value) {
+  const needle = String(value)
+  if (needle === '') return input
+  if (needle.length >= 4) return input.replaceAll(needle, '[redacted]')
+  let result = ''
+  let cursor = 0
+  while (cursor < input.length) {
+    const matchIndex = input.indexOf(needle, cursor)
+    if (matchIndex < 0) return result + input.slice(cursor)
+    const before = matchIndex === 0 ? '' : input[matchIndex - 1]
+    const after = input[matchIndex + needle.length] ?? ''
+    const boundary = !/[A-Za-z0-9]/.test(before) && !/[A-Za-z0-9]/.test(after)
+    result += input.slice(cursor, matchIndex)
+    result += boundary ? '[redacted]' : needle
+    cursor = matchIndex + needle.length
+  }
+  return result
+}
+
+function redactSecretAssignments(input) {
+  return String(input).split('\n').map((line) => {
+    SECRET_ASSIGNMENT_PATTERN.lastIndex = 0
+    let redacted = ''
+    let cursor = 0
+    let match
+    while ((match = SECRET_ASSIGNMENT_PATTERN.exec(line)) !== null) {
+      const key = match[1].replace(/\s*[:=]\s*$/, '')
+      if (SECRET_KEY_PATTERN.test(key)) {
+        const valueStart = match.index + match[0].length
+        const valueEnd = findDiagnosticAssignmentValueEnd(line, valueStart)
+        redacted += line.slice(cursor, valueStart)
+        redacted += '[redacted]'
+        cursor = valueEnd
+        SECRET_ASSIGNMENT_PATTERN.lastIndex = valueEnd
+      }
+    }
+    return redacted + line.slice(cursor)
+  }).join('\n')
+}
+
+function findDiagnosticAssignmentValueEnd(line, start) {
+  const quote = line[start]
+  if (quote === '"' || quote === "'") {
+    let escaped = false
+    for (let index = start + 1; index < line.length; index += 1) {
+      const character = line[index]
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === quote) {
+        return index + 1
+      }
+    }
+    return line.length
+  }
+  const whitespace = line.slice(start).search(/\s/u)
+  return whitespace < 0 ? line.length : start + whitespace
 }
 
 module.exports = {

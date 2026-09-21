@@ -7,6 +7,7 @@ import {
   validateC28VariantCoverage,
 } from './composite-coverage.mjs'
 import { selectPagingSource } from './paging-source.mjs'
+import { C17_CANARY_IDS } from './composite-family-receipts.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -670,7 +671,7 @@ function validatePhases(phases, missionId, profilePath, failures, familyContract
     'requested', 'sanitized', 'supported',
     ...(familyContract === 'C17' ? [
       'canaryCount', 'canaryManifestSha256', 'leakedCanaryIds', 'outputByteLength', 'outputSha256',
-      'outputWithinLimit', 'retainedCanaryManifestPath', 'retainedOutputPath',
+      'outputWithinLimit', 'positiveControlIds', 'retainedCanaryManifestPath', 'retainedOutputPath',
     ] : []),
   ]) || diagnostics.supported !== true || diagnostics.requested !== true || diagnostics.exported !== true
     || diagnostics.sanitized !== true || diagnostics.containsSecret !== false
@@ -678,7 +679,8 @@ function validatePhases(phases, missionId, profilePath, failures, familyContract
     || diagnostics.adversarialMatchCount !== 0
     || diagnostics.pathWithinProfile !== true
     || (familyContract === 'C17'
-      && (!Array.isArray(diagnostics.leakedCanaryIds) || diagnostics.leakedCanaryIds.length !== 0))) {
+      && (!Array.isArray(diagnostics.leakedCanaryIds) || diagnostics.leakedCanaryIds.length !== 0
+        || JSON.stringify(diagnostics.positiveControlIds) !== JSON.stringify(C17_CANARY_IDS)))) {
     failures.push('C28 diagnostics were not exported through the sanitized runtime boundary.')
   }
 }
@@ -752,13 +754,14 @@ function validateDiagnostics(value, profilePath, failures, familyContract = unde
     'adversarialMatchCount', 'containsProfilePath', 'containsSecret', 'exactSecretMatches', 'exported', 'exportedPath', 'requested', 'sanitized',
     ...(familyContract === 'C17' ? [
       'canaryCount', 'canaryManifestSha256', 'leakedCanaryIds', 'outputByteLength', 'outputSha256',
-      'outputWithinLimit',
+      'outputWithinLimit', 'positiveControlIds',
     ] : []),
   ]) || value.requested !== true || value.exported !== true || value.sanitized !== true
     || value.containsSecret !== false || value.containsProfilePath !== false
     || value.exactSecretMatches !== 0 || value.adversarialMatchCount !== 0
     || (familyContract === 'C17'
-      && (!Array.isArray(value.leakedCanaryIds) || value.leakedCanaryIds.length !== 0))) {
+      && (!Array.isArray(value.leakedCanaryIds) || value.leakedCanaryIds.length !== 0
+        || JSON.stringify(value.positiveControlIds) !== JSON.stringify(C17_CANARY_IDS)))) {
     failures.push('C28 diagnostics evidence is absent or contains unsanitized values.')
   }
   if (typeof profilePath !== 'string' || !path.isAbsolute(profilePath)) {

@@ -68,10 +68,12 @@ function createElectronRuntimeFiles(options) {
 
   async function exportSupportBundle(input) {
     const incidentWindow = normalizeIncidentWindow(input?.timeFrame)
-    const [report, crashes, logEntries, storageDiagnostics] = await Promise.all([
+    const [report, crashes, logResult, storageDiagnostics] = await Promise.all([
       buildReport(input.contents),
       readRecentCrashes().catch(() => []),
-      readRecentLog().catch(() => []),
+      readRecentLog()
+        .then((entries) => ({ entries, unavailable: false }))
+        .catch(() => ({ entries: [], unavailable: true })),
       readStorageDiagnostics().catch(() => null),
     ])
     const bundle = [
@@ -79,7 +81,7 @@ function createElectronRuntimeFiles(options) {
       ...(incidentWindow === null ? [] : [formatIncidentWindow(incidentWindow), '']),
       formatCrashHistory(filterEntriesByIncidentWindow(crashes, incidentWindow), userDataPath),
       '',
-      formatRuntimeLog(filterEntriesByIncidentWindow(logEntries, incidentWindow), userDataPath),
+      formatRuntimeLog(filterEntriesByIncidentWindow(logResult.entries, incidentWindow), userDataPath, logResult.unavailable),
       '',
       formatStorageDiagnostics(storageDiagnostics ?? {}),
       '',
@@ -111,7 +113,7 @@ function createElectronRuntimeFiles(options) {
     const reportPath = path.join(userDataPath, DIAGNOSTICS_DIR_NAME, safeName)
     await writeTextAtomically(
       reportPath,
-      redactPrivateSystemPaths(contents),
+      redactPrivateSystemPaths(redactUserDataPath(contents, userDataPath)),
     )
     return reportPath
   }
@@ -123,12 +125,9 @@ function createElectronRuntimeFiles(options) {
  */
 function redactUserDataPath(contents, userDataPath) {
   const rawPath = String(userDataPath)
-  const sanitizedPath = sanitizeDiagnosticsText(rawPath)
   const pathVariants = new Set([
     rawPath,
     rawPath.replaceAll('\\', '/'),
-    sanitizedPath,
-    sanitizedPath.replaceAll('\\', '/'),
   ])
   const variants = new Set(pathVariants)
   for (const variant of pathVariants) {
@@ -145,7 +144,7 @@ function redactUserDataPath(contents, userDataPath) {
 
 /** Redacts absolute temporary/system paths after exact userData replacement. */
 function redactPrivateSystemPaths(contents) {
-  return String(contents).replace(/(\/(?:private|tmp|var)\/)[^\s:"]+/g, '$1[redacted]')
+  return String(contents).replace(/(\/(?:private|tmp|var)\/)[^\s\\"]+/g, '$1[redacted]')
 }
 
 function formatIncidentWindow(incidentWindow) {
@@ -183,9 +182,13 @@ function formatCrashHistory(crashes, userDataPath) {
   return lines.join('\n')
 }
 
-function formatRuntimeLog(logEntries, userDataPath) {
+function formatRuntimeLog(logEntries, userDataPath, unavailable = false) {
   const entries = Array.isArray(logEntries) ? logEntries : []
   const lines = ['[runtime-log]']
+  if (unavailable) {
+    lines.push('runtime log unavailable: read failed')
+    return lines.join('\n')
+  }
   if (entries.length === 0) {
     lines.push('no runtime log entries recorded')
     return lines.join('\n')
@@ -194,11 +197,39 @@ function formatRuntimeLog(logEntries, userDataPath) {
     // Re-sanitize on export as well as on write so support bundles remain safe
     // when a profile contains logs persisted by an older app version.
     const sanitizedEntry = entry !== null && typeof entry === 'object'
-      ? sanitizeDiagnosticValue(redactUserDataPath(JSON.stringify(entry), userDataPath))
+      ? sanitizeDiagnosticValue(redactUserDataPathsInValue(entry, userDataPath))
       : sanitizeDiagnosticValue(redactUserDataPath(String(entry), userDataPath))
-    lines.push(sanitizeDiagnosticsText(JSON.stringify(sanitizedEntry)))
+    const encodedEntry = safeJsonStringify(sanitizedEntry)
+    lines.push(sanitizeDiagnosticsText(redactUserDataPath(
+      encodedEntry ?? '[redacted-unsupported-value]', userDataPath,
+    )))
   }
   return lines.join('\n')
+}
+
+/** Replaces the exact profile path in legacy structured values without invoking user hooks. */
+function redactUserDataPathsInValue(value, userDataPath) {
+  if (typeof value === 'string') {
+    return redactUserDataPath(value, userDataPath)
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactUserDataPathsInValue(item, userDataPath))
+  }
+  if (value !== null && typeof value === 'object') {
+    let entries
+    try {
+      entries = Object.entries(value)
+    } catch {
+      return '[redacted-unsupported-value]'
+    }
+    const redacted = Object.create(null)
+    for (const [key, nestedValue] of entries) {
+      if (key === 'toJSON') continue
+      redacted[key] = redactUserDataPathsInValue(nestedValue, userDataPath)
+    }
+    return redacted
+  }
+  return value
 }
 
 function buildElectronDiagnosticsReport(input) {
@@ -369,6 +400,14 @@ function sanitizeDiagnosticsText(contents) {
       return line
     })
     .join('\n')
+}
+
+function safeJsonStringify(value) {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
 }
 
 function redactUrlCredentials(input) {

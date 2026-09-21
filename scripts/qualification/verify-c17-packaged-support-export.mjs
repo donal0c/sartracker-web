@@ -57,6 +57,7 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
     exactSecretMatches: phase.exactSecretMatches,
     adversarialMatchCount: phase.adversarialMatchCount,
     canaryCount: phase.canaryCount,
+    positiveControlIds: Array.isArray(phase.positiveControlIds) ? phase.positiveControlIds : null,
     leakedCanaryIds: Array.isArray(phase.leakedCanaryIds) ? phase.leakedCanaryIds : null,
     outputByteLength: phase.outputByteLength,
     outputWithinLimit: phase.outputWithinLimit === true,
@@ -65,7 +66,6 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
     retainedCanaryManifestPath: phase.retainedCanaryManifestPath,
     outputSha256: phase.outputSha256,
     canaryManifestSha256: phase.canaryManifestSha256,
-    canaryCount: phase.canaryCount,
   }
   const receipt = {
     schema: 'sartracker-c17-packaged-support-export-v1',
@@ -86,6 +86,7 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
     outputSha256: diagnostics.outputSha256,
     canaryManifestSha256: diagnostics.canaryManifestSha256,
     canaryCount: diagnostics.canaryCount,
+    positiveControlIds: diagnostics.positiveControlIds,
     zeroCanary: validation.status === 'PASS' && validation.valid === true
       && diagnostics.sanitized === true
       && diagnostics.containsSecret === false
@@ -93,6 +94,7 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
       && diagnostics.exactSecretMatches === 0
       && diagnostics.adversarialMatchCount === 0
       && diagnostics.canaryCount === C17_CANARY_IDS.length
+      && JSON.stringify(diagnostics.positiveControlIds) === JSON.stringify(C17_CANARY_IDS)
       && Array.isArray(diagnostics.leakedCanaryIds)
       && diagnostics.leakedCanaryIds.length === 0
       && diagnostics.outputWithinLimit === true,

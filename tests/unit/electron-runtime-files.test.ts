@@ -506,7 +506,8 @@ describe('electron runtime files', () => {
 
     const bundle = await readFile(exportPath, 'utf8')
     expect(bundle).not.toContain(secret)
-    expect(bundle).toContain('[redacted-structured-value-too-large]')
+    expect(bundle).toContain('"repeated":"[redacted]"')
+    expect(bundle).not.toContain('[redacted-structured-value-too-large]')
   })
 
   it('redacts private temporary and system paths from legacy runtime logs [DON-237]', async () => {
@@ -533,6 +534,34 @@ describe('electron runtime files', () => {
     expect(bundle).toContain('/private/[redacted]')
     expect(bundle).toContain('/tmp/[redacted]')
     expect(bundle).toContain('/var/[redacted]')
+  })
+
+  it('retains an explicit runtime-log failure instead of silently dropping the section', async () => {
+    const files = await createRuntimeFiles({
+      readRecentLog: async () => {
+        throw new Error('log read failed')
+      },
+    })
+
+    const exportPath = await files.exportSupportBundle({
+      fileName: 'runtime-log-failure-support.txt',
+      contents: 'Diagnostics Report',
+    })
+
+    const bundle = await readFile(exportPath, 'utf8')
+    expect(bundle).toContain('[runtime-log]')
+    expect(bundle).toContain('runtime log unavailable')
+  })
+
+  it('preserves escaped JSON quotes while redacting private paths at final write', async () => {
+    const files = await createRuntimeFiles()
+    const exportPath = await files.exportDiagnosticsReport({
+      fileName: 'escaped-path-report.txt',
+      contents: 'legacy payload: \\"/tmp/mission.db\\"',
+    })
+
+    const report = await readFile(exportPath, 'utf8')
+    expect(report).toContain('legacy payload: \\"/tmp/[redacted]\\"')
   })
 
   async function createRuntimeFiles(

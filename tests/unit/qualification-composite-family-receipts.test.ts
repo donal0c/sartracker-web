@@ -26,7 +26,11 @@ const retainedPackagedAppPath = '/tmp/sartracker-family-evidence/retained-packag
 mkdirSync(path.dirname(retainedPackagedAppPath), { recursive: true })
 writeFileSync(retainedPackagedAppPath, packagedAppBytes, { mode: 0o600 })
 const retainedDiagnosticPath = '/tmp/sartracker-family-evidence/c17-sanitized-output.txt'
-const retainedDiagnosticBytes = Buffer.from('sanitized diagnostics\n', 'utf8')
+const retainedDiagnosticBytes = Buffer.from([
+  'sanitized diagnostics',
+  ...C17_CANARY_IDS.map((id) => `C17-CONTROL:${id}`),
+  '',
+].join('\n'), 'utf8')
 const retainedCanaryManifestPath = '/tmp/sartracker-family-evidence/c17-canary-manifest.txt'
 const retainedCanaryManifestBytes = Buffer.from([
   ...C17_CANARY_IDS,
@@ -88,6 +92,7 @@ function report(): JsonObject {
     outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
     outputByteLength: retainedDiagnosticBytes.byteLength,
     canaryCount: C17_CANARY_IDS.length,
+    positiveControlIds: [...C17_CANARY_IDS],
     outputWithinLimit: true,
     retainedOutputPath: retainedDiagnosticPath,
     retainedCanaryManifestPath,
@@ -206,6 +211,7 @@ describe('independent packaged composite family receipts', () => {
       fields: {
         password: 'event-password',
         profilePath: '/tmp/c17-profile/direct',
+        c17CanaryControlIds: expect.any(Array),
         nested: {
           token: 'nested-token',
           arrayToken: 'array-secret',
@@ -216,6 +222,14 @@ describe('independent packaged composite family receipts', () => {
         },
       },
     })
+    expect(events[0]?.fields?.c17CanaryControlIds).toEqual([
+      'C17-CONTROL:event-password',
+      'C17-CONTROL:event-nested-token',
+      'C17-CONTROL:event-authorization-header',
+      'C17-CONTROL:event-query-credential',
+      'C17-CONTROL:nested-array-secret',
+      'C17-CONTROL:nested-array-profile-path',
+    ])
     expect(events[1]).toMatchObject({
       fields: { providerUrl: 'https://operator:url-credentials@example.invalid/sar' },
     })
@@ -375,6 +389,7 @@ describe('independent packaged composite family receipts', () => {
       outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
       outputByteLength: retainedDiagnosticBytes.byteLength,
       canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
       outputWithinLimit: true,
       retainedOutputPath: retainedDiagnosticPath,
       retainedCanaryManifestPath,
@@ -400,6 +415,7 @@ describe('independent packaged composite family receipts', () => {
       outputSha256: createHash('sha256').update(retainedDiagnosticBytes).digest('hex'),
       outputByteLength: retainedDiagnosticBytes.byteLength,
       canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
       outputWithinLimit: true,
       exportedPath: path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt'),
       retainedOutputPath: retainedDiagnosticPath,
@@ -430,6 +446,17 @@ describe('independent packaged composite family receipts', () => {
     writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
   })
 
+  it('rejects a zero-canary output when the nested-event positive controls are absent', () => {
+    const c17 = copy(report())
+    const phase = c17.phases.sanitizedDiagnostics as JsonObject
+    phase.positiveControlIds = [...C17_CANARY_IDS.slice(0, 4)]
+    ;(c17.diagnostics as JsonObject).positiveControlIds = [...C17_CANARY_IDS.slice(0, 4)]
+
+    const receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
+    expect(receipt.valid).toBe(false)
+    expect(receipt.failureReasons.join('\n')).toMatch(/positive.control|scanner/i)
+  })
+
   it('keeps C17 invalid when retained raw bytes expose the fixed secret despite forged green scanner fields', () => {
     const c17 = copy(report())
     const rawLeak = Buffer.from(`nested values: ["${'C28-Composite-Archive-9!x'}"]\n`, 'utf8')
@@ -444,6 +471,7 @@ describe('independent packaged composite family receipts', () => {
       outputSha256: createHash('sha256').update(rawLeak).digest('hex'),
       outputByteLength: rawLeak.byteLength,
       canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
       outputWithinLimit: true,
       retainedOutputPath: rawLeakPath,
       retainedCanaryManifestPath,

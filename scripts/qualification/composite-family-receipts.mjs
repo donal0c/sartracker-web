@@ -21,6 +21,12 @@ export const C17_CANARY_IDS = Object.freeze([
   'nested-array-profile-path',
   'url-credentials',
 ])
+export const C17_POSITIVE_CONTROL_PREFIX = 'C17-CONTROL:'
+
+/** Returns the non-secret marker proving one C17 canary reached the export. */
+export function c17PositiveControlMarker(canaryId) {
+  return `${C17_POSITIVE_CONTROL_PREFIX}${canaryId}`
+}
 
 /** The contract families which have an independently scoped composite receipt. */
 export const COMPOSITE_FAMILY_CONTRACTS = Object.freeze(['C03', 'C11', 'C17'])
@@ -87,7 +93,9 @@ export function validateCompositeFamilyReceipt(report, expected) {
   const coverageGaps = binding === null ? [] : deriveCoverageGaps(report, binding.contractId)
   const observedProductFailure = binding !== null && binding.contractId === 'C17'
     && isObservedC17PrivacyFailure(report?.phases?.sanitizedDiagnostics, binding)
-    && uniqueFailures.every(isC17ProductPredicateFailure)
+    && uniqueFailures.every((reason) => isC17ProductPredicateFailure(reason)
+      || reason.startsWith('C17 bounded diagnostic scanner facts')
+      || reason.startsWith('C17 retained output'))
   return Object.freeze({
     contractId: binding?.contractId ?? (isRecord(expected) ? expected.contractId : null),
     producerContractId: PRODUCER_CONTRACT_ID,
@@ -463,7 +471,7 @@ function validateC17Phase(phase, diagnostics, binding, failures) {
   }
   const scannerKeys = [
     'canaryManifestSha256', 'outputSha256', 'outputByteLength', 'canaryCount', 'outputWithinLimit',
-    'retainedCanaryManifestPath', 'retainedOutputPath', 'leakedCanaryIds',
+    'retainedCanaryManifestPath', 'retainedOutputPath', 'leakedCanaryIds', 'positiveControlIds',
   ]
   if (!hasRequiredKeys(phase, scannerKeys)) {
     failures.push('C17 bounded diagnostic scanner facts are missing.')
@@ -478,7 +486,8 @@ function validateC17Phase(phase, diagnostics, binding, failures) {
     || phase.canaryCount !== C17_CANARY_IDS.length
     || phase.outputWithinLimit !== true
     || !Array.isArray(phase.leakedCanaryIds)
-    || phase.leakedCanaryIds.some((id) => !C17_CANARY_IDS.includes(id))) {
+    || phase.leakedCanaryIds.some((id) => !C17_CANARY_IDS.includes(id))
+    || !hasAllC17PositiveControls(phase.positiveControlIds)) {
     failures.push('C17 bounded diagnostic scanner facts are incomplete or unsafe.')
   }
   if (diagnostics.canaryManifestSha256 !== phase.canaryManifestSha256
@@ -488,7 +497,8 @@ function validateC17Phase(phase, diagnostics, binding, failures) {
     || diagnostics.outputWithinLimit !== phase.outputWithinLimit
     || diagnostics.retainedOutputPath !== phase.retainedOutputPath
     || diagnostics.retainedCanaryManifestPath !== phase.retainedCanaryManifestPath
-    || JSON.stringify(diagnostics.leakedCanaryIds) !== JSON.stringify(phase.leakedCanaryIds)) {
+    || JSON.stringify(diagnostics.leakedCanaryIds) !== JSON.stringify(phase.leakedCanaryIds)
+    || JSON.stringify(diagnostics.positiveControlIds) !== JSON.stringify(phase.positiveControlIds)) {
     failures.push('C17 top-level diagnostics scanner facts do not match the retained phase output.')
   }
   validateIndependentC17ScannerFacts(phase, binding, failures)
@@ -517,6 +527,7 @@ function validateIndependentC17ScannerFacts(phase, binding, failures) {
       `https://operator:${PASS_PHRASE}@example.invalid/sar`,
     ]
     const leakedCanaryIds = C17_CANARY_IDS.filter((id) => values[id].some((value) => text.includes(value)))
+    const positiveControlIds = C17_CANARY_IDS.filter((id) => text.includes(c17PositiveControlMarker(id)))
     const exactSecretMatches = Object.values(values)
       .flat()
       .reduce((count, value) => count + countOccurrences(text, value), 0)
@@ -528,14 +539,24 @@ function validateIndependentC17ScannerFacts(phase, binding, failures) {
       || output.byteLength !== phase.outputByteLength
       || leakedCanaryIds.length !== 0
       || JSON.stringify(leakedCanaryIds) !== JSON.stringify(phase.leakedCanaryIds)
+      || JSON.stringify(positiveControlIds) !== JSON.stringify(phase.positiveControlIds)
       || exactSecretMatches !== phase.exactSecretMatches
       || adversarialMatchCount !== phase.adversarialMatchCount
       || containsProfilePath !== phase.containsProfilePath) {
       failures.push('C17 retained output independently fails the fixed canary or bound scan.')
     }
+    if (!hasAllC17PositiveControls(positiveControlIds)) {
+      failures.push('C17 retained output is missing one or more positive-control markers.')
+    }
   } catch {
     failures.push('C17 retained output is unavailable for the independent canary scan.')
   }
+}
+
+/** Require every fixed canary to have a distinct non-secret reachability marker. */
+function hasAllC17PositiveControls(value) {
+  return Array.isArray(value)
+    && JSON.stringify(value) === JSON.stringify(C17_CANARY_IDS)
 }
 
 /** Return every fixed C17 canary value, including both platform path spellings. */
@@ -688,7 +709,7 @@ function deriveCoverageGaps(report, contractId) {
   }
   if (contractId === 'C17' && hasRequiredKeys(phase, [
     'canaryManifestSha256', 'outputSha256', 'outputByteLength', 'canaryCount', 'outputWithinLimit',
-    'retainedCanaryManifestPath', 'retainedOutputPath', 'leakedCanaryIds',
+    'retainedCanaryManifestPath', 'retainedOutputPath', 'leakedCanaryIds', 'positiveControlIds',
   ]) && SHA256.test(phase.canaryManifestSha256) && SHA256.test(phase.outputSha256)
       && Number.isSafeInteger(phase.outputByteLength) && phase.outputByteLength >= 0
       && phase.canaryCount === C17_CANARY_IDS.length && phase.outputWithinLimit === true

@@ -14,7 +14,11 @@ import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { createCompositeSourceManifest } from './composite-manifest.mjs'
 import { C28_VARIANT_AXIS_MAP } from './composite-coverage.mjs'
 import { validateCompositeReceipt, validateCompositeVariantReceipt } from './composite-receipts.mjs'
-import { C17_CANARY_IDS, validateCompositeFamilyReceipt } from './composite-family-receipts.mjs'
+import {
+  C17_CANARY_IDS,
+  c17PositiveControlMarker,
+  validateCompositeFamilyReceipt,
+} from './composite-family-receipts.mjs'
 import { selectPagingSource } from './paging-source.mjs'
 import { inspectStandaloneSqliteFixture } from './sqlite-fixture.mjs'
 export { COMPOSITE_SOURCE_MANIFEST_PATHS } from './composite-manifest.mjs'
@@ -1709,6 +1713,7 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     `query=https://host.example/api?session=${c17Canaries?.eventQueryCredential ?? secret}`,
     `profile=${c17Canaries?.directContentProfilePath ?? profilePath}`,
     `provider url=https://operator:${c17Canaries?.urlCredentials ?? secret}@example.invalid/sar`,
+    ...C17_CANARY_IDS.slice(0, 4).map((id) => `C17 positive control ${c17PositiveControlMarker(id)}`),
   ].join('\n') + '\n'
   const returnedPath = await page.evaluate(async (input) => {
     const bridge = window.sartrackerElectron
@@ -1770,6 +1775,7 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     result.outputByteLength = contents.byteLength
     result.canaryCount = C17_CANARY_IDS.length
     result.outputWithinLimit = contents.byteLength <= 1_048_576
+    result.positiveControlIds = C17_CANARY_IDS.filter((id) => contents.toString('utf8').includes(c17PositiveControlMarker(id)))
     result.retainedOutputPath = path.join(path.dirname(profilePath), 'c17-sanitized-output.txt')
     result.retainedCanaryManifestPath = path.join(path.dirname(profilePath), 'c17-canary-manifest.txt')
     result.leakedCanaryIds = leakedCanaryIds
@@ -1793,6 +1799,7 @@ export function buildC17DiagnosticEvents({ secret, profilePath, canaries, timest
       fields: {
         password: value('eventPassword', secret),
         profilePath: value('directContentProfilePath', profilePath),
+        c17CanaryControlIds: C17_CANARY_IDS.slice(4, 10).map(c17PositiveControlMarker),
         nested: {
           token: value('eventNestedToken', secret),
           arrayToken: value('nestedArraySecret', secret),
@@ -1808,7 +1815,10 @@ export function buildC17DiagnosticEvents({ secret, profilePath, canaries, timest
       level: 'warn',
       category: 'tracking',
       event: 'c17-adversarial-url',
-      fields: { providerUrl: `https://operator:${value('urlCredentials', secret)}@example.invalid/sar` },
+      fields: {
+        providerUrl: `https://operator:${value('urlCredentials', secret)}@example.invalid/sar`,
+        c17CanaryControlIds: [c17PositiveControlMarker('url-credentials')],
+      },
     },
   ]
 }
@@ -1831,6 +1841,7 @@ function projectDiagnostics(value) {
       canaryCount: value.canaryCount,
       outputWithinLimit: value.outputWithinLimit,
       leakedCanaryIds: value.leakedCanaryIds,
+      positiveControlIds: value.positiveControlIds,
       retainedOutputPath: value.retainedOutputPath,
       retainedCanaryManifestPath: value.retainedCanaryManifestPath,
     }),
