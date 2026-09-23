@@ -41,6 +41,11 @@ their distinct gates.
   sanitizers, descriptor-only traversal that does not invoke getters, and
   independently bounded/hash-bound output and source-corpus receipts. Draft PR,
   fresh exact-head review, and Linux packaged proof are pending.
+- First independent review found that the packaged validator reopened the export
+  after deleting its temporary profile. The local fix validates the bounded,
+  retained byte snapshot against the original scan facts; a fresh review and
+  superseding exact-head Linux run are pending. Run `35926442042` remains bound
+  to the earlier PR head and is still executing.
 - PR #46 workflow `35915952562` succeeded at its exact merge SHA. It skipped
   strict timing/960k, participant backup, Train D validation, tracking soak,
   and archive lifecycle; it is baseline evidence only.
@@ -51,11 +56,13 @@ their distinct gates.
 
 ## Verification snapshot
 
-Local follow-up checks: focused C17 suites passed (35 tests); lint, build, and
+Local follow-up checks: focused C17 suites passed (36 tests after the lifecycle
+fix); lint passed after that fix; build and
 `git diff --check` passed. `npm run test:correctness -- --no-file-parallelism`
 passed before the final source-receipt shape correction; the affected focused
-suite passed after it. The generated version file was restored after build.
-Exact-head Linux packaged validation and independent review remain pending.
+suite passed after it. The full correctness run preceded the latest lifecycle
+fix. The generated version file was restored after build. Exact-head Linux
+packaged validation and independent review remain pending.
 
 ## Next actions
 

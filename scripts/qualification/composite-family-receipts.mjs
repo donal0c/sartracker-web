@@ -586,20 +586,21 @@ function validateC17OutputProof(phase, binding, failures) {
     failures.push('C17 retained scanner paths are not the exact evidence-custody paths.')
     return { identityComplete: false, canaryCorpusComplete: false }
   }
-  const exportedScan = scanC17OutputFileSync(expectedExportPath)
   const retainedScan = scanC17OutputFileSync(expectedOutputPath)
-  if (exportedScan.complete !== true || retainedScan.complete !== true
-    || exportedScan.bytes === null || retainedScan.bytes === null) {
-    failures.push('C17 output identity scan is incomplete or exceeds the fixed byte limit.')
+  if (retainedScan.complete !== true || retainedScan.bytes === null) {
+    failures.push('C17 retained output identity scan is incomplete or exceeds the fixed byte limit.')
     return { identityComplete: false, canaryCorpusComplete: false }
   }
 
+  // The packaged profile is deleted before the CLI validates this receipt.
+  // The producer retained the exact bounded export bytes before cleanup, so
+  // independently bind that snapshot back to the original scan facts here.
   const expectedIdentity = buildC17OutputScanIdentity({
     sourceHead: binding.sourceHead,
     appSha256: binding.appSha256,
     exportedPath: expectedExportPath,
     retainedOutputPath: expectedOutputPath,
-    outputScan: exportedScan,
+    outputScan: retainedScan,
     retainedScan,
   })
   const identityMatches = hasExactKeys(phase.outputScanIdentity, Object.keys(expectedIdentity))
@@ -607,14 +608,14 @@ function validateC17OutputProof(phase, binding, failures) {
     && expectedIdentity.schema === C17_OUTPUT_SCAN_IDENTITY_SCHEMA
     && expectedIdentity.scanLimitBytes === C17_OUTPUT_BYTE_LIMIT
     && expectedIdentity.exactBytesMatch === true
-  const reportedOutputMatches = phase.outputSha256 === exportedScan.sha256
-    && phase.outputByteLength === exportedScan.byteLength
+  const reportedOutputMatches = phase.outputSha256 === retainedScan.sha256
+    && phase.outputByteLength === retainedScan.byteLength
     && phase.outputWithinLimit === true
   if (!identityMatches || !reportedOutputMatches) {
     failures.push('C17 output scan identity does not match the exact packaged and retained bytes.')
   }
 
-  const output = exportedScan.bytes
+  const output = retainedScan.bytes
   const text = output.toString('utf8')
   const values = c17CanaryValues(binding.profilePath)
   const profileVariants = [binding.profilePath, binding.profilePath.replaceAll('\\', '/')]

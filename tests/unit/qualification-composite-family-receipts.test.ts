@@ -326,6 +326,21 @@ describe('independent packaged composite family receipts', () => {
     })
   })
 
+  it('validates retained C17 output after disposable profile cleanup', () => {
+    const c17 = report()
+    rmSync(expectedBase.profilePath, { recursive: true, force: true })
+    try {
+      expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({
+        valid: true,
+        complete: true,
+        coverageGaps: [],
+      })
+    } finally {
+      mkdirSync(path.dirname(exportedDiagnosticPath), { recursive: true })
+      writeFileSync(exportedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+    }
+  })
+
   it('accepts C03 only when the independent outing, known-at-fix, and exclusion facts are retained', () => {
     const enriched = copy(report())
     ;(enriched.phases.missionOutingParticipants as JsonObject).outingCount = 12
