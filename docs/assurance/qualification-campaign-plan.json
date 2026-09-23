@@ -3,6 +3,13 @@
   "campaignId": "beta13-bcp17",
   "mode": "candidate",
   "releaseEligible": false,
+  "claimScope": {
+    "id": "beta13-controlled-team-testing",
+    "permittedUse": "controlled-team-testing",
+    "allowedData": ["synthetic", "replayed", "disposable"],
+    "independentPrimaryRequired": true,
+    "notClaimedIssueIds": ["DON-249", "DON-250", "DON-251"]
+  },
   "authorization": {
     "issue": "DON-254",
     "programme": "BCP-17",

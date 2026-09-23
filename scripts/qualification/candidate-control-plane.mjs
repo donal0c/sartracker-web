@@ -28,14 +28,19 @@ import { createHumanTrainingRequest, validateHumanTrainingSubmission, validateHu
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { compileRuntimeInputs, verifyRuntimeInputs } from './runtime-inputs.mjs'
 import { compileSuiteBinding, executeSuiteVariant, validateRetainedSuite } from './suite-adapter.mjs'
-import { evaluateQualificationPhases, validateQualificationPhase } from './campaign-phases.mjs'
+import {
+  assertC27Admission,
+  assertPostpublicationAdmission,
+  evaluateQualificationPhases,
+  validateQualificationPhase,
+} from './campaign-phases.mjs'
 import { compileReleaseInputs } from './release-receipts.mjs'
 import { executeReleaseVariant, validateRetainedRelease } from './release-adapter.mjs'
 import { executeIdentityVariant, validateRetainedIdentity } from './identity-adapter.mjs'
 import { validateHostCapabilities } from './host-capabilities.mjs'
 import { hashLiveConfigDirectory } from './live-config-identity.mjs'
 import { C28_REQUIRED_VARIANTS } from './composite-coverage.mjs'
-import { candidateProductCapabilityBlockers } from './product-capabilities.mjs'
+import { candidateProductCapabilityResiduals, validateCandidateClaimScope } from './product-capabilities.mjs'
 import {
   hasOwnedProcessCleanupMarker,
   isOwnedProcessCleanupError,
@@ -208,6 +213,7 @@ export async function compileCampaignDefinition({ plan, planPath, sourceIdentity
     mode: resolvedPlan.mode,
     releaseEligible: false,
     authorization: resolvedPlan.authorization,
+    claimScope: resolvedPlan.claimScope ?? null,
     requiredContracts: resolvedPlan.requiredContracts,
     identities: {
       source: sourceIdentity,
@@ -560,7 +566,10 @@ export async function runContractAttempt({
   const binding = findBinding(normalized, contractId, variantId)
   if (binding.phase === 'postpublication') {
     const verdict = await computeCampaignVerdict({ definition: normalized, campaignRoot })
-    if (verdict.phases.prepublication.status !== 'PASS') throw new Error('Public-byte verification requires every prepublication gate to have passed; it never authorises publication.')
+    assertPostpublicationAdmission(verdict, normalized.bindings, binding)
+  } else if (normalized.mode === 'candidate' && binding.contractId === 'C27') {
+    const verdict = await computeCampaignVerdict({ definition: normalized, campaignRoot })
+    assertC27Admission(verdict, normalized.bindings, binding)
   }
   const inputDigest = inputDigestFor(normalized, binding)
   const attemptsRoot = path.join(path.resolve(campaignRoot), 'attempts')
@@ -1046,7 +1055,7 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
   const evidenceErrors = await verifyBoundIdentities(normalized)
   const judgeHolds = []
   const deterministicFailures = []
-  const productCapabilityBlockers = candidateProductCapabilityBlockers(normalized.mode)
+  const notClaimedCapabilities = candidateProductCapabilityResiduals(normalized.mode, normalized.claimScope)
   const environmentBlockers = validateBindingCoverage(normalized)
   const aborted = []
   const cleanupBlocked = []
@@ -1095,8 +1104,6 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
 
   const requiredContracts = normalized.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : normalized.requiredContracts
   const requiredRows = requiredContracts.map((contractId) => {
-    const capabilityHolds = productCapabilityBlockers.filter((entry) => entry.contractIds.includes(contractId))
-    if (capabilityHolds.length) return { contractId, variantId: null, status: 'FAIL', productCapabilityBlockers: capabilityHolds }
     const candidates = [...rows.values()].filter((result) => result.contractId === contractId)
     const bindings = normalized.bindings.filter((binding) => binding.contractId === contractId && binding.mandatory)
     if (bindings.some((binding) => !rows.has(`${contractId}:${binding.variantId}`))) {
@@ -1105,6 +1112,10 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
     const nonPassing = candidates.find((result) => result.status !== 'PASS')
     if (nonPassing !== undefined) return nonPassing
     const latest = candidates.sort((left, right) => left.attemptId.localeCompare(right.attemptId)).at(-1)
+    const contractResiduals = notClaimedCapabilities.filter((entry) => entry.contractIds.includes(contractId))
+    if (contractResiduals.length > 0) {
+      return { ...(latest ?? { contractId, variantId: null }), status: 'SCOPE_LIMITED', notClaimedCapabilities: contractResiduals }
+    }
     return latest ?? { contractId, variantId: null, status: 'not-run' }
   })
   const missingRequired = requiredRows.filter((row) => row.status === 'not-run').map((row) => row.contractId)
@@ -1115,15 +1126,18 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
     ? 'INVALID_EVIDENCE'
     : cleanupBlocked.length > 0
       ? 'CLEANUP_BLOCKED'
-      : deterministicFailures.length > 0 || productCapabilityBlockers.length > 0
-      ? 'FAIL'
-      : aborted.length > 0
-        ? 'ABORTED_SAFE'
-        : environmentBlockers.length > 0 || missingRequired.length > 0
-          ? 'ENVIRONMENT_BLOCKED'
-          : judgeHolds.length > 0
-            ? 'NEEDS_HUMAN_DECISION'
-            : requiredRows.every((row) => row.status === 'PASS') ? 'PASS' : 'INVALID_EVIDENCE'
+      : deterministicFailures.length > 0
+        ? 'FAIL'
+        : aborted.length > 0
+          ? 'ABORTED_SAFE'
+          : environmentBlockers.length > 0 || missingRequired.length > 0
+            ? 'ENVIRONMENT_BLOCKED'
+            : judgeHolds.length > 0
+              ? 'NEEDS_HUMAN_DECISION'
+              : requiredRows.every((row) => row.status === 'PASS')
+                ? 'PASS'
+                : requiredRows.every((row) => ['PASS', 'SCOPE_LIMITED'].includes(row.status))
+                  ? 'SCOPE_LIMITED' : 'INVALID_EVIDENCE'
   return Object.freeze({
     schema: 'sartracker-qualification-campaign-verdict-v1',
     campaignId: normalized.campaignId,
@@ -1135,16 +1149,19 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
     verdict: status,
     phases: evaluateQualificationPhases(normalized.bindings, allAttempts.map((attempt) => ({ ...attempt,
       status: attempt.status === 'PASS' && judgeHolds.includes(attempt.contractId) ? 'NEEDS_HUMAN_DECISION' : attempt.status,
-    })), evidenceErrors, productCapabilityBlockers),
+    })), evidenceErrors, notClaimedCapabilities),
     releaseEligible: false,
-    productCapabilityBlockers,
+    claimScope: normalized.claimScope,
+    notClaimedCapabilities,
     deterministicFailures: Object.freeze(unique(deterministicFailures)),
     judgeHolds: Object.freeze(unique(judgeHolds)),
-    blockers: Object.freeze(unique([...environmentBlockers, ...missingRequired.map((id) => `missing required contract ${id}`),
-      ...productCapabilityBlockers.map((entry) => `${entry.issueId}: ${entry.reason}`)])),
+    blockers: Object.freeze(unique([...environmentBlockers, ...missingRequired.map((id) => `missing required contract ${id}`)])),
     evidenceErrors: Object.freeze(evidenceErrors),
     contractRows: Object.freeze(await allContractRows(normalized, requiredRows)),
     attempts: Object.freeze(entries),
+    retainedAttemptStatuses: Object.freeze(allAttempts.map(({ contractId, variantId, attemptId, status }) => Object.freeze({
+      contractId, variantId, attemptId, status,
+    }))),
   })
 }
 
@@ -1314,6 +1331,8 @@ function validatePlan(plan) {
   if (plan?.schema !== 'sartracker-qualification-campaign-plan-v1') throw new Error('Campaign plan schema is invalid.')
   requireSafeId(plan.campaignId, 'campaign id')
   if (!['candidate', 'calibration'].includes(plan.mode)) throw new Error('Campaign plan mode is invalid.')
+  if (plan.mode === 'candidate') validateCandidateClaimScope(plan.claimScope)
+  else if (plan.claimScope !== undefined && plan.claimScope !== null) throw new Error('Calibration plans cannot carry a candidate release claim scope.')
   if (plan.releaseEligible !== false) throw new Error('Campaign plans must set releaseEligible false.')
   if (plan.authorization?.explicitlyEnabled !== true) throw new Error('Campaign mode requires explicit authorization.')
   if (!Array.isArray(plan.requiredContracts) || plan.requiredContracts.length === 0) throw new Error('Campaign required contracts are required.')
@@ -1342,6 +1361,7 @@ function validateDefinition(definition) {
     mode: definition.mode,
     releaseEligible: definition.releaseEligible,
     authorization: definition.authorization,
+    claimScope: definition.claimScope,
     requiredContracts: definition.requiredContracts,
     bindings: definition.bindings,
   })
@@ -1474,8 +1494,9 @@ async function verifyBoundIdentities(definition) {
       const releaseTrustDiffers = boundRiskKey !== null && reviewedRiskKey !== boundRiskKey
       if (!sameIdentity(current, definition.reviewedPlanIdentity)
           || canonicalJson(reviewed.bindings) !== canonicalJson(definition.bindings)
+          || canonicalJson(reviewed.claimScope) !== canonicalJson(definition.claimScope)
           || humanTrustDiffers || releaseTrustDiffers) {
-        mismatches.push('candidate reviewed binding or human trust root differs; runtime inputs cannot nominate a new authority')
+        mismatches.push('candidate reviewed binding, claim scope or human trust root differs; runtime inputs cannot nominate a new authority')
       }
     } catch { mismatches.push('candidate reviewed binding matrix is unavailable or unbound') }
   }
@@ -1756,9 +1777,8 @@ async function allContractRows(definition, requiredRows) {
     required: (definition.mode === 'candidate' ? REQUIRED_CANDIDATE_CONTRACTS : definition.requiredContracts).includes(contract.id),
     status: byId.get(contract.id)?.status ?? 'not-run',
     variantId: byId.get(contract.id)?.variantId ?? null,
-    ...(byId.get(contract.id)?.productCapabilityBlockers?.length ? {
-      admissionOnly: true,
-      productCapabilityBlockers: byId.get(contract.id).productCapabilityBlockers,
+    ...(byId.get(contract.id)?.notClaimedCapabilities?.length ? {
+      notClaimedCapabilities: byId.get(contract.id).notClaimedCapabilities,
     } : {}),
   }))
 }

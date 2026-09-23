@@ -136,18 +136,20 @@ submissions remain retained invalid attempts rather than disappearing.
 
 ### Product capabilities remain separate implementation owners
 
-The C19 specification explicitly retains DON-249, DON-250 and DON-251 as
-separate owners. Live Linear inspection on 2026-09-20 confirmed all three are
-Backlog. Existing migrations can be exercised through normal application
-startup; background integrity arbitration, state-aware oversized recovery and
-bounded telemetry retention cannot be established by probes when the product
-does not yet implement them. `product-capabilities.mjs` therefore records
-source-controlled candidate admission holds for C19 and the affected C24
-phases. These holds block both the campaign and prepublication verdict even
-when every implemented subset probe passes. They are not environment inputs,
-human-waivable exceptions or evidence that a test was executed. Their owners
-must implement the capability and reviewed qualification coverage before the
-holds are removed. This PR does not implement those product changes.
+The Beta 13 claim is restricted to controlled team testing with synthetic,
+replayed or disposable data and an independent primary source. DON-249, DON-250
+and DON-251 remain separately owned, unimplemented capabilities and are recorded
+as `NOT_CLAIMED`; their open hazards remain visible. This is a claim boundary,
+not a product fix or evidence that those capabilities passed. The complete C00-C29
+candidate matrix and every applicable C19/C24 probe remain mandatory. Only after
+those probes pass may C19 and C24 report `SCOPE_LIMITED`; any failed attempt,
+missing receipt or invalid evidence remains a hard failure/block. A scoped phase
+can never be `PASS`, `evidenceComplete` remains false, and `releaseEligible`,
+publication and team-rollout authority remain false. C27 still requires every
+applicable BCP-17 gate plus C29, and C00 still requires C27/C29 before fresh
+public-byte checks. The exact claim scope is immutable in the reviewed campaign
+plan. It cannot waive PST-003/004/005, IPC-003 or any of the five WAR-01 absolute
+blockers.
 
 DON-264 remains a separately observed negative C14 result: persistent overlay
 failure is console-only. Unlike the absent capabilities above, this behavior

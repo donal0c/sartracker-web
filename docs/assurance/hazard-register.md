@@ -1,11 +1,30 @@
 # SAR Tracker Whole-Application Hazard Register
 
+**Beta 13 controlled-scope overlay (2026-09-23):** DON-249/250/251 are
+`NOT_CLAIMED` for controlled team testing with synthetic, replayed or disposable
+data and an independent primary source. Their owning capabilities remain
+unimplemented and PST-003/PST-004/PST-005 plus IPC-003 remain open; this claim
+boundary does not close or waive the hazards. Applicable C19/C24 evidence is
+still required, and only a fully passing applicable matrix may report
+`SCOPE_LIMITED`. All actual failures, missing evidence and the five WAR-01
+absolute blockers remain blocking. See the [current execution decision](../two-track-execution-workplan.md#current-beta-13-decision--2026-09-23).
+
+**Repair reconciliation (2026-09-23):** PR40 merged the bounded GEO-002
+drawing/measurement input repair; PR41 merged bounded current-position
+polling/reconnect repairs. These are repair-boundary receipts, not whole-hazard
+or exact-candidate qualification. GEO-002's old row-level implementation and
+evidence description below reflect the pre-PR40 snapshot; see the
+[repair record](findings/geo-002-pre-candidate-repair.md). TRK-001 remains an
+open WAR-01 hazard for the startup, scope, pause/recovery and candidate-evidence
+gaps described below. PKG-001 remains unresolved pending same-profile package
+reproduction and qualification.
+
 **Application assurance snapshot:** `eec92812b783a795c093f37268b295dd2179a3af`
 
 **Register status:** WAR-01 post-PR5 reconciliation plus targeted WAR-04
 platform-services and WAR-04B release-control overlays.
 
-**Post-PR38 release-first disposition (2026-09-18):** PR38 merged into
+**Historical post-PR38 release-first disposition (2026-09-18; superseded):** PR38 merged into
 `master` at `e69485724044337fb5fee94bfbe5871916fdabf1` from exact head
 `92a4f680facc98fb2aa6871228616f6f0cb809e4`; required Linux workflow
 `35390687670` passed at that exact PR head. It corrects the control-plane record

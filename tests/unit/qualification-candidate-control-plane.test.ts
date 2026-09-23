@@ -17,6 +17,7 @@ import {
 import { ingestHumanTrainingEvidence, materializeCaptures, readBoundJsonFile, validateBindingCoverage } from '../../scripts/qualification/candidate-control-plane.mjs'
 import { canonicalJson } from '../../scripts/qualification/control-plane.mjs'
 import { C28_REQUIRED_VARIANTS } from '../../scripts/qualification/composite-coverage.mjs'
+import { BETA13_CLAIM_SCOPE } from '../../scripts/qualification/product-capabilities.mjs'
 
 const registryPath = path.resolve('docs/assurance/qualification-contracts.json')
 const sourceIdentity = { sha: 'a'.repeat(40), tree: 'b'.repeat(40), dirty: false }
@@ -35,7 +36,7 @@ async function createFixture(): Promise<string> {
 }
 
 function makePlan(fixturePath: string, overrides: Record<string, unknown> = {}) {
-  return {
+  const plan = {
     schema: 'sartracker-qualification-campaign-plan-v1',
     campaignId: 'calibration-campaign',
     mode: 'calibration',
@@ -71,6 +72,10 @@ function makePlan(fixturePath: string, overrides: Record<string, unknown> = {}) 
     ],
     ...overrides,
   }
+  if (plan.mode === 'candidate' && !Object.hasOwn(overrides, 'claimScope')) {
+    return { ...plan, claimScope: BETA13_CLAIM_SCOPE }
+  }
+  return plan
 }
 
 async function compilePlan(overrides: Record<string, unknown> = {}) {
@@ -257,10 +262,10 @@ describe('qualification candidate control plane', () => {
     expect(definition.identities.validators.some((identity: { path: string }) => identity.path.endsWith('.py'))).toBe(true)
     const verdict = await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })
     expect(verdict.evidenceErrors.join(' ')).toMatch(/live checkout/iu)
-    expect(verdict.productCapabilityBlockers.map((entry: { issueId: string }) => entry.issueId))
-      .toEqual(['DON-249', 'DON-250', 'DON-251'])
-    expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C19')?.status).toBe('FAIL')
-    expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C24')?.status).toBe('FAIL')
+    expect(verdict.notClaimedCapabilities.map((entry: { issueId: string; status: string }) => [entry.issueId, entry.status]))
+      .toEqual([['DON-249', 'NOT_CLAIMED'], ['DON-250', 'NOT_CLAIMED'], ['DON-251', 'NOT_CLAIMED']])
+    expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C19')?.status).toBe('not-run')
+    expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C24')?.status).toBe('not-run')
   }, 120_000)
   it('rejects a substituted campaign lock path before deleting any leased data', async () => {
     const { definition, fixturePath } = await compilePlan()
@@ -407,6 +412,7 @@ describe('qualification candidate control plane', () => {
     const plan = makePlan(fixturePath)
     const definition = await compileCampaignDefinition({ plan: {
       ...plan, mode: 'candidate', candidateId: 'beta13', version: '0.1.0-beta.13',
+      claimScope: BETA13_CLAIM_SCOPE,
       requiredContracts: Array.from({ length: 30 }, (_, i) => `C${String(i).padStart(2, '0')}`),
       bindings: Array.from({ length: 30 }, (_, i) => ({ ...plan.bindings[0],
         contractId: `C${String(i).padStart(2, '0')}`, proofMode: 'browser', oracle: 'claimed browser proof',

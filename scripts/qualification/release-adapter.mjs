@@ -25,6 +25,7 @@ import {
   validateExpectedIdentity,
   validateReleaseDownloadEvidence,
 } from './release-receipts.mjs'
+import { candidateProductCapabilityResiduals } from './product-capabilities.mjs'
 
 const execFile = promisify(execFileCallback)
 const REPOSITORY = 'donal0c/sartracker-web'
@@ -120,6 +121,8 @@ export async function executeReleaseVariant({ normalized, binding, attemptDirect
     if (repositoryControlsAfter) await writeJsonExclusive(path.join(attemptRoot, 'repository-controls-after.json'), repositoryControlsAfter)
     const riskInputs = variant === 'c27' ? await readRiskInputs(normalized) : {}
     const report = { schema: 'sartracker-release-download-report-v1', ...candidate.report, rollback: rollback?.report, releaseCi, releaseCiAfter,
+      claimScope: normalized.claimScope,
+      notClaimedCapabilities: candidateProductCapabilityResiduals(normalized.mode, normalized.claimScope),
       repositoryControls, repositoryControlsAfter, ...riskInputs }
     await writeJsonExclusive(reportPath, report)
     const repositoryDecision = variant === 'c27' ? assessReleaseControls(report, compiled.expected, riskInputs.riskAuthority) : undefined
@@ -171,6 +174,11 @@ export async function validateRetainedRelease(receipt, binding, { definition, at
     if (receipt.status !== 'INVALID_EVIDENCE') throw new Error('Retained release error report cannot support a passing receipt.')
     return Object.freeze({ ...receipt, reportPath: retainedPath, status: 'INVALID_EVIDENCE', releaseEligible: false,
       validation: Object.freeze({ status: 'INVALID_EVIDENCE', valid: false, passed: false, failureReasons: Object.freeze([report.error ?? 'Release report failed.']) }) })
+  }
+  if (JSON.stringify(report.claimScope) !== JSON.stringify(definition.claimScope)
+      || JSON.stringify(report.notClaimedCapabilities)
+        !== JSON.stringify(candidateProductCapabilityResiduals(definition.mode, definition.claimScope))) {
+    throw new Error('Retained C27/C00 report does not preserve the exact candidate claim scope.')
   }
   const expectedPhase = variant === 'c27' ? 'prepublication' : 'postpublication'
   if (report.phase !== expectedPhase) throw new Error('Retained release report phase differs from its binding.')
