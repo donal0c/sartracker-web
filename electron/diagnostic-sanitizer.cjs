@@ -107,10 +107,11 @@ function sanitizeDiagnosticValue(
     return sanitizeDiagnosticText(value, knownSensitiveValues)
   }
   if (Array.isArray(value)) {
-    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+    const values = readOwnArrayDataValues(value)
+    if (values === null) {
       return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
     }
-    return value.map((item) => sanitizeDiagnosticValue(item, '', knownSensitiveValues, budget, depth + 1))
+    return values.map((item) => sanitizeDiagnosticValue(item, '', knownSensitiveValues, budget, depth + 1))
   }
   if (value !== null && typeof value === 'object') {
     return sanitizeDiagnosticFieldsWithContext(value, new Set(), knownSensitiveValues, budget, depth)
@@ -128,6 +129,11 @@ function sanitizeDiagnosticFields(fields, reservedKeys = new Set()) {
   if (fields === null || typeof fields !== 'object' || Array.isArray(fields)) {
     return {}
   }
+  const entries = readOwnEnumerableDataEntries(fields)
+  if (entries === null) return { diagnosticFields: STRUCTURED_DIAGNOSTIC_LIMIT_MARKER }
+  if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+    return { diagnosticFields: STRUCTURED_DIAGNOSTIC_LIMIT_MARKER }
+  }
 
   return sanitizeDiagnosticFieldsWithContext(
     fields,
@@ -144,13 +150,8 @@ function sanitizeDiagnosticFieldsWithContext(fields, reservedKeys, sensitiveValu
   if (!consumeDiagnosticTraversalNode(budget, depth)) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
-  let entries
-  try {
-    entries = Object.entries(fields)
-  } catch {
-    return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
-  }
-  if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+  const entries = readOwnEnumerableDataEntries(fields)
+  if (entries === null || entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
   }
   const sanitized = Object.create(null)
@@ -186,22 +187,18 @@ function collectSensitiveValues(
     return sensitiveValues
   }
   if (Array.isArray(value)) {
-    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+    const values = readOwnArrayDataValues(value)
+    if (values === null) {
       return sensitiveValues
     }
-    for (const item of value) {
+    for (const item of values) {
       collectSensitiveValues(item, '', sensitiveValues, budget, depth + 1)
     }
     return sensitiveValues
   }
   if (value !== null && typeof value === 'object') {
-    let entries
-    try {
-      entries = Object.entries(value)
-    } catch {
-      return sensitiveValues
-    }
-    if (entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+    const entries = readOwnEnumerableDataEntries(value)
+    if (entries === null || entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
       return sensitiveValues
     }
     for (const [nestedKey, nestedValue] of entries) {
@@ -229,23 +226,69 @@ function collectStringValues(value, sensitiveValues, budget, depth) {
     return
   }
   if (Array.isArray(value)) {
-    if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
+    const values = readOwnArrayDataValues(value)
+    if (values === null) {
       return
     }
-    for (const item of value) {
+    for (const item of values) {
       collectStringValues(item, sensitiveValues, budget, depth + 1)
     }
     return
   }
   if (value !== null && typeof value === 'object') {
-    const values = Object.values(value)
-    if (values.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) {
-      return
-    }
-    for (const nestedValue of values) {
+    const entries = readOwnEnumerableDataEntries(value)
+    if (entries === null || entries.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) return
+    for (const [, nestedValue] of entries) {
       collectStringValues(nestedValue, sensitiveValues, budget, depth + 1)
     }
   }
+}
+
+/** Read enumerable own data properties without executing caller-provided getters. */
+function readOwnEnumerableDataEntries(value) {
+  let keys
+  try {
+    keys = Object.keys(value)
+  } catch {
+    return null
+  }
+  if (keys.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) return null
+
+  const entries = []
+  for (const key of keys) {
+    let descriptor
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, key)
+    } catch {
+      return null
+    }
+    if (descriptor === undefined || descriptor.enumerable !== true) continue
+    entries.push([
+      key,
+      Object.hasOwn(descriptor, 'value') ? descriptor.value : UNSUPPORTED_DIAGNOSTIC_VALUE_MARKER,
+    ])
+  }
+  return entries
+}
+
+/** Read bounded array elements through descriptors so accessors are never invoked. */
+function readOwnArrayDataValues(value) {
+  if (value.length > MAX_STRUCTURED_DIAGNOSTIC_CONTAINER_ELEMENTS) return null
+  const values = []
+  for (let index = 0; index < value.length; index += 1) {
+    let descriptor
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    } catch {
+      return null
+    }
+    if (descriptor === undefined || descriptor.enumerable !== true) {
+      values.push(undefined)
+    } else {
+      values.push(Object.hasOwn(descriptor, 'value') ? descriptor.value : UNSUPPORTED_DIAGNOSTIC_VALUE_MARKER)
+    }
+  }
+  return values
 }
 
 /** Parses an encoded structured diagnostic value without treating ordinary text as JSON. */

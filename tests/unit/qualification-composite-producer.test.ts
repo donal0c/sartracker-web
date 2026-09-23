@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMarkerAndSearch, readCoverageAndReplay } from '../../scripts/qualification/composite-probe.mjs'
+import {
+  createC17SourceCorpusReceipt,
+  createMarkerAndSearch,
+  readCoverageAndReplay,
+} from '../../scripts/qualification/composite-probe.mjs'
+import { C17_SOURCE_CORPUS_TESTS } from '../../scripts/qualification/c17-adversarial-corpus.mjs'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
@@ -7,6 +12,49 @@ afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 const page = { evaluate: async <T, R>(callback: (input: T) => Promise<R>, input: T) => callback(input) }
 
 describe('composite producer bridge observations', () => {
+  it('binds the C17 source-corpus receipt to every named test result', () => {
+    const sourceHead = 'a'.repeat(40)
+    const appSha256 = 'b'.repeat(64)
+    const sourceManifest = [{ relativePath: 'electron/diagnostic-sanitizer.cjs', sha256: 'c'.repeat(64), sizeBytes: 123 }]
+    const assertions = C17_SOURCE_CORPUS_TESTS.map(({ name }) => ({
+      fullName: `C17 source suite ${name}`,
+      status: 'passed',
+    }))
+    const receipt = createC17SourceCorpusReceipt({
+      sourceHead,
+      appSha256,
+      sourceManifest,
+      runnerSucceeded: true,
+      reporter: {
+        numPassedTests: 3,
+        numFailedTests: 0,
+        testResults: [{ assertionResults: assertions }],
+      },
+    })
+
+    expect(receipt).toMatchObject({
+      schema: 'sartracker-c17-source-corpus-receipt-v1',
+      sourceHead,
+      appSha256,
+      sourceManifestSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      status: 'PASS',
+      complete: true,
+      tests: C17_SOURCE_CORPUS_TESTS.map(({ path, name }) => ({ relativePath: path, name, passed: true })),
+      totalPassedTests: 3,
+      totalFailedTests: 0,
+    })
+
+    const failedReceipt = createC17SourceCorpusReceipt({
+      sourceHead,
+      appSha256,
+      sourceManifest,
+      runnerSucceeded: false,
+      reporter: { numPassedTests: 3, numFailedTests: 0, testResults: [{ assertionResults: assertions }] },
+    })
+    expect(failedReceipt.complete).toBe(false)
+    expect(failedReceipt.tests.every((test) => test.passed === false)).toBe(true)
+  })
+
   it('emits only routine marker fields while retaining returned store identities', async () => {
     const persist = vi.fn(async (input: Record<string, unknown>) => input)
     vi.stubGlobal('window', { sartrackerElectron: { missionStore: {
