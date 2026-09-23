@@ -66,9 +66,11 @@ function validReport() {
     overlayFailure: {
       attempted: true,
       throwHookHit: true,
-      warningText: 'Mission overlay synchronization failed; retrying.',
+      warningRegistrationId: 'markers',
+      warningText: 'Markers overlay synchronization failed; retrying.',
       operatorWarningVisible: true,
       recoveryObserved: true,
+      warningClearedAfterRecovery: true,
       consoleOnly: false,
     },
     cleanup: { applicationClosed: true, profileRemoved: true },
@@ -138,6 +140,21 @@ describe('C14 map surface receipts', () => {
     const report = validReport()
     report.overlayFailure.warningText = 'OpenTopoMap degraded: Some tiles failed to load'
     expect(() => validateMapSurfaceFacts(report)).toThrow(/overlay|warning/i)
+  })
+
+  it('rejects a warning from a different overlay registration', () => {
+    const report = validReport()
+    report.overlayFailure.warningRegistrationId = 'coverage'
+    report.overlayFailure.warningText = 'Coverage overlay synchronization failed; retrying.'
+
+    expect(() => validateMapSurfaceFacts(report)).toThrow(/marker.*overlay|overlay.*marker|registration/iu)
+  })
+
+  it('rejects a persistent warning that does not clear after verified overlay recovery', () => {
+    const report = validReport()
+    report.overlayFailure.warningClearedAfterRecovery = false
+
+    expect(() => validateMapSurfaceFacts(report)).toThrow(/warning.*clear|cleared.*sync|recovery/iu)
   })
 
   it('rejects a visibility toggle that changes the source or is not restored', () => {

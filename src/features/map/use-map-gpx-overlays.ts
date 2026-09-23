@@ -6,7 +6,7 @@ import { syncGpxOverlay } from '../gpx/sync-gpx-overlay'
 import { getEffectiveGpxTracksVisible } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { RenderableMapId } from '../../lib/map-config'
-import { registerMapStyleSync } from './map-style-sync'
+import { registerMapOverlaySync } from './register-map-overlay-sync'
 
 type UseMapGpxOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -39,7 +39,7 @@ export function useMapGpxOverlays(options: UseMapGpxOverlaysOptions): void {
       )
     }
 
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapOverlaySync(map, 'gpx', 'gpx', synchronizeOverlay)
   }, [
     groupVisibility,
     hiddenImportIds,

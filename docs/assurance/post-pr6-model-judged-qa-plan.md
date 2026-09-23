@@ -377,7 +377,7 @@ No row is closed by this plan. The table defines the required future proof and k
 | `MAP-002` no safe licensed-map path | C15, C26, C29 | package import/read/offline behavior and operator procedure | Linux only; private package and external team path remain controlled evidence |
 | `EVD-001` stored/map divergence | C05, C07, C10, C12, C14, C28 | source-to-SQLite-to-read-model-to-GeoJSON/render identity/digest | browser plus package/source oracle |
 | `EVD-002` visibility changes evidence | C07, C08, C12, C14, C28 | display-only filter/visibility with unchanged SQLite/files and reversible visible state | browser + package |
-| `EVD-003` overlay failure console-only | C14, C17, C28 | injected persistent failure, durable bounded warning, recovery-based clear | DON-264 remains separate; current Todo state stays visible |
+| `EVD-003` overlay failure console-only | C14, C17, C28 | injected persistent failure, family-bound bounded warning, recovery-based clear | DON-264 implementation is on `codex/don-264-overlay-warning`; local browser/packaged C14 only, exact-candidate qualification remains separate |
 | `EVD-004` accepted evidence silently lost | C02, C05, C18, C28 | accepted-source ledger, durable outbox/health block, lifecycle drain and zero-loss count | SIGKILL/restart/package |
 | `EVD-005` attachment identity loss | C12, C20, C22 | immutable version-to-byte digest, same-name/superseded/deleted cases, archive/restore equality | package + archive scale |
 | `SEC-001` bad settings/credentials break startup | C01, C16, C17, C26 | normal shell or actionable bounded fault/recovery export; clean pair persistence | AppImage + installed `.deb`; WAR04-SET-01..03 must turn green |
@@ -592,7 +592,7 @@ Every catalogue entry below is a contract family. Its compiled variants are indi
 - **Forbidden outcomes:** display toggle changes records, current overlay waits for tiles, wrong hit target, console-only persistent failure, warning clears before verified sync.
 - **Evidence:** map source/style snapshot, SQLite unchanged proof, DOM/ARIA, screenshots/video, console/network/diagnostics.
 - **Judge rubric:** layer visibility, degraded basemap versus operational overlays and persistent warning/recovery are coherent.
-- **Environment/tier:** browser/visual; AppImage/deb composite; DON-264 remains open until green evidence exists.
+- **Environment/tier:** browser/visual; AppImage/deb composite; DON-264 now has local browser and packaged macOS C14 evidence, but remains open until exact-candidate qualification supplies the required evidence.
 - **Cleanup:** restore visibility/settings and remove synthetic map state.
 
 ### C15 — Official offline maps and Field ready
@@ -1070,7 +1070,7 @@ These are planning dispositions, not Donal's frozen candidate register. The real
 | --- | --- | --- |
 | Contradictory long-duration package field result: PCLinuxOS AppImage responsive ~218 h; Mint `.deb` noninteractive ~182 h | `open-blocking` for any claim that the affected Mint/profile is qualified; DON-247 remains In Progress | same Mint host/profile/workload AppImage versus `.deb`, hang collector/support evidence before reset, explained outcome or bounded Donal decision consistent with field-admission rules |
 | WAR-04 nine confirmed map/settings/privacy defects | `open-blocking` for the affected whole-app/release claims; PR #8 only records investigation | WAR-11 red-to-green production repair with normal regression coverage and later WAR-12 exact-candidate package proof |
-| DON-264 persistent overlay sync warning is console-only | current Linear classification is P3/non-blocking for earlier hotfix; `open-shadow-only` candidate decision is not automatic | implement and prove visible bounded warning/recovery, or Donal explicitly constrains a non-field claim; it cannot satisfy OPS-001 while open |
+| DON-264 persistent overlay sync warning | current Linear classification is P3/non-blocking for the earlier hotfix; implementation is on `codex/don-264-overlay-warning` with local browser/visual and packaged macOS C14 evidence; `open-shadow-only` candidate decision is not automatic | complete exact PR-head CI/review and prove visible bounded warning/recovery in the applicable exact-candidate C14/C24 qualification; local branch evidence does not satisfy OPS-001 field readiness |
 | Windows unavailable/currently unbuilt | `external-gap`, not a Linux release blocker because no Windows artifact is claimed | separate build and complete platform qualification before any Windows support claim |
 | Real Mint hardware unavailable to this planning task | `external-gap`; no fabricated pass | execute same-profile evidence when access exists; constrain claims meanwhile |
 | Live team Traccar may not have 100 devices | `external-gap` for live scale; deterministic synthetic 100-device qualification still required | bounded GET-only live confirmation of actual roster plus explicit synthetic-scale statement |

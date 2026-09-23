@@ -13,6 +13,7 @@ import { useMapMeasurementOverlays } from './use-map-measurement-overlays'
 import { useMapMarkerInteractions } from './use-map-marker-interactions'
 import { useMapOverlays } from './use-map-overlays'
 import { useMapLocationTarget } from './use-map-location-target'
+import { useMapOverlayWarningStore } from './map-overlay-warning-store'
 
 type MapController = {
   readonly activeBasemapId: RenderableMapId
@@ -29,6 +30,7 @@ type MapController = {
  */
 export function useMapController(): MapController {
   const mapInstance = useMapInstance()
+  const overlayWarnings = useMapOverlayWarningStore((state) => state.warnings)
 
   useMapOverlays({
     activeBasemapId: mapInstance.activeBasemapId,
@@ -76,7 +78,7 @@ export function useMapController(): MapController {
     activeBasemapId: mapInstance.activeBasemapId,
     containerRef: mapInstance.containerRef,
     hoverCoordinate: mapInstance.hoverCoordinate,
-    mapHealth: mapInstance.mapHealth,
+    mapHealth: { ...mapInstance.mapHealth, overlayWarnings },
     mapRef: mapInstance.mapRef,
     handleBasemapChange: mapInstance.handleBasemapChange,
   }

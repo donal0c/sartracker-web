@@ -3,7 +3,7 @@ import type maplibregl from 'maplibre-gl'
 
 import { useMapTargetStore } from './map-target-store'
 import { ensureGeoJsonSource } from './map-overlay-primitives'
-import { registerMapStyleSync } from './map-style-sync'
+import { registerMapOverlaySync } from './register-map-overlay-sync'
 import { navigateMapToTarget } from './map-camera-navigation'
 
 const TARGET_SOURCE_ID = 'coordinate-target'
@@ -37,7 +37,7 @@ export function useMapLocationTarget(options: UseMapLocationTargetOptions): void
       map, [activeTarget.longitude, activeTarget.latitude],
       () => useMapTargetStore.getState().isTargetCurrent(activeTarget.id),
     )
-    const dispose = registerMapStyleSync(map, () => {
+    const dispose = registerMapOverlaySync(map, 'coordinate-target', 'coordinate-target', () => {
       if (activeTarget === null || !useMapTargetStore.getState().isTargetCurrent(activeTarget.id)) {
         clearCoordinateTargetOverlay(map)
         return

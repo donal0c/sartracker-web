@@ -2,6 +2,13 @@ import type maplibregl from 'maplibre-gl'
 
 const INITIAL_RETRY_DELAY_MS = 50
 const MAX_RETRY_DELAY_MS = 2_000
+const PERSISTENT_FAILURE_THRESHOLD = 3
+
+export type MapStyleSyncOptions = {
+  readonly onStyleUnavailable?: () => void
+  readonly onPersistentFailure?: (consecutiveFailures: number) => void
+  readonly onSynchronized?: () => void
+}
 
 /**
  * Runs a map overlay sync as soon as the style structure can accept app-owned
@@ -12,7 +19,7 @@ const MAX_RETRY_DELAY_MS = 2_000
 export function registerMapStyleSync(
   map: maplibregl.Map,
   synchronize: (signal: AbortSignal) => void | Promise<void>,
-  options: { readonly onStyleUnavailable?: () => void } = {},
+  options: MapStyleSyncOptions = {},
 ): () => void {
   const abortController = new AbortController()
   let disposed = false
@@ -20,6 +27,8 @@ export function registerMapStyleSync(
   let synchronizationRequested = false
   let retryTimer: number | null = null
   let retryDelayMs = INITIAL_RETRY_DELAY_MS
+  let consecutiveFailures = 0
+  let persistentFailureReported = false
 
   const clearRetry = () => {
     if (retryTimer !== null) {
@@ -63,8 +72,8 @@ export function registerMapStyleSync(
         return
       }
       completeSynchronization()
-    } catch (error) {
-      failSynchronization(error)
+    } catch {
+      failSynchronization()
     }
   }
 
@@ -74,19 +83,36 @@ export function registerMapStyleSync(
       return
     }
     clearRetry()
+    consecutiveFailures = 0
     if (synchronizationRequested) {
       synchronizationRequested = false
       runIfReady()
+      return
+    }
+    persistentFailureReported = false
+    try {
+      options.onSynchronized?.()
+    } catch {
+      console.error('Map overlay synchronization recovery could not be recorded.')
     }
   }
 
-  const failSynchronization = (error: unknown) => {
+  const failSynchronization = () => {
     synchronizationInFlight = false
     if (disposed) {
       return
     }
     synchronizationRequested = false
-    console.error('Map overlay synchronization failed; retrying.', error)
+    console.error('Map overlay synchronization failed; retrying.')
+    consecutiveFailures += 1
+    if (consecutiveFailures >= PERSISTENT_FAILURE_THRESHOLD && !persistentFailureReported) {
+      try {
+        options.onPersistentFailure?.(consecutiveFailures)
+        persistentFailureReported = true
+      } catch {
+        console.error('Persistent map overlay warning could not be recorded; retrying.')
+      }
+    }
     scheduleRetry()
   }
 

@@ -76,7 +76,7 @@ function validReport() {
   }
   phases.mapFault = {
     ...phases.mapFault,
-    fault: { attempted: true, throwHookHit: true, requestId: 'req-8', startedAt: '2026-09-20T10:00:00.000Z', warningText: 'Mission overlay could not be rendered.', operatorWarningVisible: true, recoveryObserved: true, consoleOnly: false, cleanupRestored: true },
+    fault: { attempted: true, throwHookHit: true, requestId: 'req-8', startedAt: '2026-09-20T10:00:00.000Z', warningRegistrationId: 'markers', warningText: 'Markers overlay could not be rendered.', operatorWarningVisible: true, recoveryObserved: true, warningClearedAfterRecovery: true, consoleOnly: false, cleanupRestored: true },
   }
   return {
     schemaVersion: 1,
@@ -150,6 +150,35 @@ describe('C24 competing operation evidence', () => {
       cleanup: { archiveId: 'archive-1', completed: true, storageState: 'archived', freshCredentialGate: true, movedRows: 0 },
     }
     expect(() => validateCompetingOperationEvidence(second, expected)).toThrow(/cleanup/u)
+  })
+
+  it('rejects a warning that stays cleared before or remains raised after verified recovery', () => {
+    const report = validReport()
+    const fault = report.phases.mapFault.fault as Record<string, unknown>
+    report.phases.mapFault = {
+      ...report.phases.mapFault,
+      fault: {
+        ...fault,
+        warningClearedAfterRecovery: false,
+      },
+    }
+
+    expect(() => validateCompetingOperationEvidence(report, expected)).toThrow(/map fault/u)
+  })
+
+  it('rejects map-fault recovery evidence from a different overlay registration', () => {
+    const report = validReport()
+    const fault = report.phases.mapFault.fault as Record<string, unknown>
+    report.phases.mapFault = {
+      ...report.phases.mapFault,
+      fault: {
+        ...fault,
+        warningRegistrationId: 'coverage',
+        warningText: 'Coverage overlay could not be rendered.',
+      },
+    }
+
+    expect(() => validateCompetingOperationEvidence(report, expected)).toThrow(/map fault.*marker|map fault|registration/u)
   })
 
   it('retains the actual map producer stage order and derives wall-clock timestamps from monotonic facts', () => {

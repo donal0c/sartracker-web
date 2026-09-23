@@ -657,10 +657,18 @@
             <strong>Convert</strong> control.
             In standard mode this is a bottom strip; in Focus Mode Plus, only the mirrored focus coordinate
             display is shown so awareness stays while the map surface stays less cluttered.
+            If an overlay repeatedly fails to synchronize, a persistent map alert names the affected
+            overlay while SAR Tracker retries. Verify against an independent operational source, open
+            Diagnostics and export a report if the warning remains, and stop or revert if uncertain. The
+            alert clears only after that overlay synchronizes successfully.
           </p>
           <figure class="screenshot">
             <img src="assets/app-shell.png" alt="SAR Tracker app shell with active mission and map" />
             <figcaption>Main operational shell during an active browser-harness mission.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/map-overlay-sync-warning.png" alt="Persistent warning naming a marker overlay that may be missing or stale" />
+            <figcaption>Synthetic browser validation: the marker warning stays visible during retries and is cleared after successful overlay synchronization. This image is not field evidence.</figcaption>
           </figure>
           <div class="card-grid">
             <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, minimized Mission Control summary, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help. On compact desktop widths, action labels shorten to DIAG, FOCUS, SET, and WX so the controls remain distinct and readable.</div>

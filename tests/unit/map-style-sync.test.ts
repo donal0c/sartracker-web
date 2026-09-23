@@ -6,9 +6,21 @@ import { registerMapStyleSync } from '../../src/features/map/map-style-sync'
 type MapEventName = 'idle' | 'style.load' | 'styledata' | 'styledataloading'
 type MapEventListener = () => void
 
+type MapStyleSyncLifecycleCallbacks = {
+  readonly onPersistentFailure: (consecutiveFailures: number) => void
+  readonly onSynchronized: () => void
+}
+
+const registerMapStyleSyncWithLifecycle = registerMapStyleSync as unknown as (
+  map: maplibregl.Map,
+  synchronize: (signal: AbortSignal) => void | Promise<void>,
+  callbacks: MapStyleSyncLifecycleCallbacks,
+) => () => void
+
 describe('registerMapStyleSync', () => {
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('synchronizes overlays while raster basemap tiles are still pending [DON-262]', () => {
@@ -80,10 +92,7 @@ describe('registerMapStyleSync', () => {
 
     const dispose = registerMapStyleSync(harness.map, synchronize)
     expect(synchronize).toHaveBeenCalledTimes(1)
-    expect(consoleError).toHaveBeenCalledWith(
-      'Map overlay synchronization failed; retrying.',
-      error,
-    )
+    expect(consoleError).toHaveBeenCalledWith('Map overlay synchronization failed; retrying.')
 
     vi.advanceTimersByTime(50)
     expect(synchronize).toHaveBeenCalledTimes(2)
@@ -107,13 +116,75 @@ describe('registerMapStyleSync', () => {
     const dispose = registerMapStyleSync(harness.map, synchronize)
     expect(synchronize).toHaveBeenCalledTimes(1)
     await Promise.resolve()
-    expect(consoleError).toHaveBeenCalledWith(
-      'Map overlay synchronization failed; retrying.',
-      error,
-    )
+    expect(consoleError).toHaveBeenCalledWith('Map overlay synchronization failed; retrying.')
 
     await vi.advanceTimersByTimeAsync(50)
     expect(synchronize).toHaveBeenCalledTimes(2)
+
+    dispose()
+    consoleError.mockRestore()
+  })
+
+  it('keeps a transient failure quiet and reports every verified synchronization', async () => {
+    vi.useFakeTimers()
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    const synchronize = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('Transient style race.') })
+      .mockImplementationOnce(() => undefined)
+    const onPersistentFailure = vi.fn()
+    const onSynchronized = vi.fn()
+
+    const dispose = registerMapStyleSyncWithLifecycle(harness.map, synchronize, {
+      onPersistentFailure,
+      onSynchronized,
+    })
+
+    expect(onPersistentFailure).not.toHaveBeenCalled()
+    expect(onSynchronized).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(50)
+
+    expect(synchronize).toHaveBeenCalledTimes(2)
+    expect(onPersistentFailure).not.toHaveBeenCalled()
+    expect(onSynchronized).toHaveBeenCalledOnce()
+
+    dispose()
+  })
+
+  it('elevates repeated failures once and reports recovery only after synchronization succeeds', async () => {
+    vi.useFakeTimers()
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    const synchronize = vi.fn(() => { throw new Error('Persistent style race.') })
+    const onPersistentFailure = vi.fn()
+    const onSynchronized = vi.fn()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const dispose = registerMapStyleSyncWithLifecycle(harness.map, synchronize, {
+      onPersistentFailure,
+      onSynchronized,
+    })
+
+    expect(onPersistentFailure).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(50)
+    expect(onPersistentFailure).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(onPersistentFailure).toHaveBeenCalledOnce()
+    expect(onPersistentFailure).toHaveBeenCalledWith(3)
+
+    await vi.advanceTimersByTimeAsync(200)
+    expect(synchronize).toHaveBeenCalledTimes(4)
+    expect(onPersistentFailure).toHaveBeenCalledOnce()
+    expect(onSynchronized).not.toHaveBeenCalled()
+
+    synchronize.mockImplementationOnce(() => undefined)
+    await vi.advanceTimersByTimeAsync(400)
+    expect(synchronize).toHaveBeenCalledTimes(5)
+    expect(onSynchronized).toHaveBeenCalledOnce()
 
     dispose()
     consoleError.mockRestore()
@@ -143,6 +214,51 @@ describe('registerMapStyleSync', () => {
     expect(synchronize).toHaveBeenCalledTimes(2)
 
     dispose()
+  })
+
+  it('keeps the persistent warning raised until a queued resynchronization succeeds', async () => {
+    vi.useFakeTimers()
+    const harness = createMapHarness({
+      styleLayers: [{ id: 'opentopomap-layer' }],
+      styleLoaded: false,
+    })
+    let resolveFourthSync = () => undefined
+    const fourthSync = new Promise<void>((resolve) => {
+      resolveFourthSync = resolve
+    })
+    const synchronize = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('Persistent style race 1.') })
+      .mockImplementationOnce(() => { throw new Error('Persistent style race 2.') })
+      .mockImplementationOnce(() => { throw new Error('Persistent style race 3.') })
+      .mockReturnValueOnce(fourthSync)
+      .mockImplementationOnce(() => { throw new Error('Queued style race.') })
+      .mockResolvedValueOnce(undefined)
+    const onPersistentFailure = vi.fn()
+    const onSynchronized = vi.fn()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const dispose = registerMapStyleSyncWithLifecycle(harness.map, synchronize, {
+      onPersistentFailure,
+      onSynchronized,
+    })
+    await vi.advanceTimersByTimeAsync(350)
+    expect(synchronize).toHaveBeenCalledTimes(4)
+    expect(onPersistentFailure).toHaveBeenCalledOnce()
+
+    harness.emit('style.load')
+    resolveFourthSync()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(synchronize).toHaveBeenCalledTimes(5)
+    expect(onSynchronized).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(50)
+    expect(synchronize).toHaveBeenCalledTimes(6)
+    expect(onSynchronized).toHaveBeenCalledOnce()
+
+    dispose()
+    consoleError.mockRestore()
   })
 
   it('does not retry an asynchronous rejection after disposal', async () => {

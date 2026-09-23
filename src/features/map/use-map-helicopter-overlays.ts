@@ -6,7 +6,7 @@ import { syncHelicopterOverlay } from '../helicopters/sync-helicopter-overlay'
 import { getEffectiveHelicopterSlotVisibility } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { RenderableMapId } from '../../lib/map-config'
-import { registerMapStyleSync } from './map-style-sync'
+import { registerMapOverlaySync } from './register-map-overlay-sync'
 
 type UseMapHelicopterOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -39,7 +39,7 @@ export function useMapHelicopterOverlays(options: UseMapHelicopterOverlaysOption
       )
     }
 
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapOverlaySync(map, 'helicopters', 'helicopter', synchronizeOverlay)
   }, [
     helicopters,
     groupVisibility,

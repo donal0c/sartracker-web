@@ -1,6 +1,7 @@
 import {
   createDegradedMapHealth,
   createLoadingMapHealth,
+  createMapOverlaySyncWarning,
   createReadyMapHealth,
 } from '../../src/lib/map-health'
 
@@ -30,6 +31,14 @@ describe('map health messages', () => {
     expect(createDegradedMapHealth('OpenStreetMap', 'WebGL context lost')).toEqual({
       status: 'degraded',
       message: 'OpenStreetMap degraded: WebGL context lost',
+    })
+  })
+
+  it('creates a sanitized, family-specific warning with existing recovery guidance', () => {
+    expect(createMapOverlaySyncWarning('markers', 'markers')).toEqual({
+      registrationId: 'markers',
+      family: 'markers',
+      message: expect.stringMatching(/Markers overlay may be missing or stale.*retrying.*independent operational source.*Diagnostics/iu),
     })
   })
 })

@@ -194,6 +194,129 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
   })
 
+  test('DON-264 keeps a persistent marker overlay warning visible until verified recovery', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Overlay Warning Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.evaluate(() => {
+      type TestMap = {
+        addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+        fire: (event: string) => void
+        getLayer: (id: string) => unknown
+        getSource: (id: string) => unknown
+        getStyle: () => {
+          layers?: readonly { readonly id: string; readonly source?: string }[]
+          sources: Record<string, { readonly type?: string }>
+        }
+        removeLayer: (id: string) => void
+        removeSource: (id: string) => void
+      }
+      type FaultState = { readonly originalAddSource: TestMap['addSource'] }
+      type TestWindow = Window & {
+        __DON264_OVERLAY_FAILURE__?: FaultState
+        __SARTRACKER_MAP__?: TestMap
+      }
+
+      const host = window as TestWindow
+      const map = host.__SARTRACKER_MAP__
+      if (map === undefined) throw new Error('DON-264 map was unavailable for failure injection.')
+
+      const originalAddSource = map.addSource
+      host.__DON264_OVERLAY_FAILURE__ = { originalAddSource }
+      map.addSource = function addSourceWithSyntheticFailure(id, source, ...rest) {
+        if (id === 'mission-markers') {
+          throw new Error('DON-264 synthetic persistent marker synchronization failure.')
+        }
+        return originalAddSource.call(map, id, source, ...rest)
+      }
+      for (const layer of map.getStyle().layers?.filter((entry) => entry.source === 'mission-markers') ?? []) {
+        if (map.getLayer(layer.id)) map.removeLayer(layer.id)
+      }
+      if (map.getSource('mission-markers')) map.removeSource('mission-markers')
+      map.fire('style.load')
+    })
+
+    const warning = page.getByTestId('map-overlay-warning-markers')
+    try {
+      await expect(warning).toBeVisible({ timeout: 5_000 })
+      await expect(warning).toContainText(/Markers overlay may be missing or stale.*retrying/iu)
+      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).not.toContainText('complete')
+      const failedDiagnostics = await page.evaluate(() => {
+        const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
+          event?: string
+          fields?: { overlayFamily?: string }
+        }>
+        return events.filter((event) => event.event === 'map_overlay_sync_failed')
+      })
+      expect(failedDiagnostics).toHaveLength(1)
+      expect(failedDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
+      expect(JSON.stringify(failedDiagnostics)).not.toContain('synthetic persistent marker synchronization failure')
+      await page.screenshot({ path: 'test-results/don264-overlay-sync-warning.png' })
+      await page.waitForTimeout(200)
+      await expect(warning).toBeVisible()
+
+      await page.evaluate(() => {
+        type TestMap = {
+          addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+          fire: (event: string) => void
+          getStyle: () => { sources: Record<string, { readonly type?: string }> }
+        }
+        type TestWindow = Window & {
+          __DON264_OVERLAY_FAILURE__?: { readonly originalAddSource: TestMap['addSource'] }
+          __SARTRACKER_MAP__?: TestMap
+        }
+        const host = window as TestWindow
+        const map = host.__SARTRACKER_MAP__
+        const fault = host.__DON264_OVERLAY_FAILURE__
+        if (map === undefined || fault === undefined) {
+          throw new Error('DON-264 map recovery state was unavailable.')
+        }
+        map.addSource = fault.originalAddSource
+        delete host.__DON264_OVERLAY_FAILURE__
+        map.fire('idle')
+      })
+
+      await expect.poll(() => page.evaluate(() => {
+        type TestMap = { getStyle: () => { sources: Record<string, { readonly type?: string }> } }
+        const map = (window as Window & { __SARTRACKER_MAP__?: TestMap }).__SARTRACKER_MAP__
+        return map?.getStyle().sources['mission-markers']?.type === 'geojson'
+      })).toBe(true)
+      await expect(warning).toBeHidden()
+      const recoveredDiagnostics = await page.evaluate(() => {
+        const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
+          event?: string
+          fields?: { overlayFamily?: string }
+        }>
+        return events.filter((event) => event.event === 'map_overlay_sync_recovered')
+      })
+      expect(recoveredDiagnostics).toHaveLength(1)
+      expect(recoveredDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
+      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).not.toContainText('complete')
+    } finally {
+      await page.evaluate(() => {
+        type TestMap = {
+          addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+          fire: (event: string) => void
+        }
+        type TestWindow = Window & {
+          __DON264_OVERLAY_FAILURE__?: { readonly originalAddSource: TestMap['addSource'] }
+          __SARTRACKER_MAP__?: TestMap
+        }
+        const host = window as TestWindow
+        const map = host.__SARTRACKER_MAP__
+        const fault = host.__DON264_OVERLAY_FAILURE__
+        if (map !== undefined && fault !== undefined) {
+          map.addSource = fault.originalAddSource
+          delete host.__DON264_OVERLAY_FAILURE__
+          map.fire('idle')
+        }
+      })
+    }
+  })
+
   test('preserves the map viewport when switching basemaps', async ({ page }) => {
     await page.evaluate(() => {
       const harness = (window as Window & { __SARTRACKER_MAP__?: {
