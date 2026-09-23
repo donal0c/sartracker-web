@@ -40,7 +40,9 @@ their distinct gates.
 - Prepare a review-ready PR for the fixed claim-scope handling, admission
   predicates, tests and planning/assurance reconciliation. Independent fresh
   review found no remaining actionable issue after the C27 `NOT_RUN` admission
-  correction. The branch PR and exact-head CI remain to be created and checked.
+  correction. PR #46 is open as a draft; GitHub reports it mergeable and the
+  exact-head required validation run passed. No GitHub approval is recorded, so
+  leave it draft pending review.
 - PR45 is merged at `f2fd1216…`; its master Linux validation run
   `35892396753` completed successfully at that exact SHA. This is baseline
   evidence only, not Beta 13 candidate qualification.
@@ -57,14 +59,20 @@ control-plane suites passed (80 passed, 1 skipped); `npm test --
 lint` passed; `npm run build` passed TypeScript, Vite and bundle budgets;
 `git diff --check` and the campaign-plan JSON parse passed. Build noted the
 repository's existing six-month-old Browserslist data. The generated version
-file was restored after build. These results do not qualify a candidate.
+file was restored after build. GitHub PR run `35903162450` passed at exact PR
+head `d836f01ddcfcdca6265278c206f3013fb8b00816`: full correctness, lint,
+WAR-02B property/rebreak, browser regressions, Linux artifact build, producer
+development checks, packaged C17/map/GPX/breadcrumb/cache/recovery checks, and
+AppImage launch all passed. It skipped strict responsiveness, 960k replay,
+packaged participant backup, independent Repair Train D validation, tracking
+soak, and archive lifecycle; the workflow records Train D qualification as
+deferred. None of these checks is candidate qualification.
 
 ## Next actions
 
-1. Finish focused tests and static checks; inspect the complete diff.
-2. Get an independent fresh review of the exact final head and address findings.
-3. Push and open the requested PR; wait for its exact-head checks and approvals.
-4. Confirm `DON-254`/related Linear state once connector authorization works;
+1. Obtain the required GitHub review approval; keep PR #46 draft until then.
+2. Recheck exact-head validation after the handoff update commit.
+3. Confirm `DON-254`/related Linear state once connector authorization works;
    until then, leave those states explicitly unverified.
 
 Detailed earlier receipts remain in [handoff/archive](archive/) and the
