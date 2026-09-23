@@ -37,15 +37,20 @@ their distinct gates.
 
 - Current worktree branch: `codex/don-254-c17-evidence`, based on PR #46's
   merged `origin/master` commit `d48ea1c562233630fc383e0ee21107167dd5d584`.
+- Draft PR #48 is at code head `3a92e31e19af6cb31dfe9ab7650324c50923f79c`.
 - The follow-up adds a fixed hostile-value corpus for renderer and Electron
   sanitizers, descriptor-only traversal that does not invoke getters, and
-  independently bounded/hash-bound output and source-corpus receipts. Draft PR,
-  fresh exact-head review, and Linux packaged proof are pending.
+  independently bounded/hash-bound output and source-corpus receipts.
 - First independent review found that the packaged validator reopened the export
   after deleting its temporary profile. The local fix validates the bounded,
-  retained byte snapshot against the original scan facts; a fresh review and
-  superseding exact-head Linux run are pending. Run `35926442042` remains bound
-  to the earlier PR head and is still executing.
+  retained byte snapshot against the original scan facts. Fresh exact-head
+  independent review is clear. Superseded run `35926442042` was canceled when
+  GitHub scheduled the replacement head.
+- Exact-head Linux run `35926950262` succeeded at `3a92e31e`. The packaged C17
+  receipt is `PASS`, `valid:true`, `complete:true`, `coverageComplete:true`,
+  `coverageGaps:[]`, and `zeroCanary:true`; the source corpus and byte-identity
+  receipts are bound to that head and the packaged app hash. This remains
+  development/package evidence, not BCP-17 qualification.
 - PR #46 workflow `35915952562` succeeded at its exact merge SHA. It skipped
   strict timing/960k, participant backup, Train D validation, tracking soak,
   and archive lifecycle; it is baseline evidence only.
@@ -56,20 +61,21 @@ their distinct gates.
 
 ## Verification snapshot
 
-Local follow-up checks: focused C17 suites passed (36 tests after the lifecycle
-fix); lint passed after that fix; build and
-`git diff --check` passed. `npm run test:correctness -- --no-file-parallelism`
-passed before the final source-receipt shape correction; the affected focused
-suite passed after it. The full correctness run preceded the latest lifecycle
-fix. The generated version file was restored after build. Exact-head Linux
-packaged validation and independent review remain pending.
+Local focused C17 suites passed (36 tests after the lifecycle fix); lint passed
+after that fix; build and `git diff --check` passed. The earlier local full
+correctness run preceded the final source-receipt and lifecycle corrections.
+Final-head Linux run `35926950262` passed full correctness, lint, build, rendered
+browser regressions, packaged C17, map, GPX, breadcrumb transport, mission-cache
+restart, legacy recovery, and AppImage smoke. It skipped strict responsiveness,
+the normal 960k replay, participant backup, independent Train D validation,
+tracking soak, and archive lifecycle; those remain distinct gates.
 
 ## Next actions
 
-1. Create and review the narrow draft PR; wait for its exact-head Linux
-   packaged C17 proof and independent review.
-2. Record the exact evidence in the handoff and a DON-254 comment. Do not merge,
-   run candidate qualification, tag, publish, or contact the SAR team.
+1. Keep PR #48 draft for review; no merge or BCP-17 qualification is authorized
+   by this evidence follow-up.
+2. Preserve DON-254's `Done` status and the release HOLD. Do not tag, publish,
+   promote, or contact the SAR team.
 
 Detailed earlier receipts remain in [handoff/archive](archive/) and the
 [two-track execution workplan](../docs/two-track-execution-workplan.md).
