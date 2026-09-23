@@ -1,4 +1,8 @@
-import { BETA13_NOT_CLAIMED_CAPABILITIES, validateCandidateClaimScope } from './product-capabilities.mjs'
+import {
+  BETA13_CLAIM_SCOPE,
+  BETA13_NOT_CLAIMED_CAPABILITIES,
+  validateCandidateClaimScope,
+} from './product-capabilities.mjs'
 
 const FAILURE_PRIORITY = ['INVALID_EVIDENCE', 'CLEANUP_BLOCKED', 'FAIL', 'ABORTED_SAFE', 'ENVIRONMENT_BLOCKED', 'NEEDS_HUMAN_DECISION']
 
@@ -12,13 +16,16 @@ export function validateQualificationPhase(binding) {
 }
 
 /** Compute phase outcomes; scoped omissions remain visible and can never become PASS. */
-export function evaluateQualificationPhases(bindings, attempts, evidenceErrors, notClaimedCapabilities = []) {
+export function evaluateQualificationPhases(bindings, attempts, evidenceErrors, notClaimedCapabilities = [], { mode = 'calibration' } = {}) {
   const prepublication = evaluatePhase('prepublication', bindings, attempts, evidenceErrors, notClaimedCapabilities)
   const postpublication = evaluatePhase('postpublication', bindings, attempts, evidenceErrors, notClaimedCapabilities)
+  const evidenceComplete = prepublication.status === 'PASS' && postpublication.status === 'PASS'
+    && notClaimedCapabilities.length === 0
+  const releaseComplete = mode === 'candidate' && evidenceComplete
   return Object.freeze({ prepublication, postpublication,
-    evidenceComplete: prepublication.status === 'PASS' && postpublication.status === 'PASS'
-      && notClaimedCapabilities.length === 0,
-    releaseComplete: false, teamRolloutEligible: false,
+    evidenceComplete,
+    releaseComplete,
+    teamRolloutEligible: releaseComplete && postpublication.status === 'PASS',
     requiredDisposition: ['FAIL', 'INVALID_EVIDENCE'].includes(postpublication.status)
       ? 'block-team-rollout-and-withdraw-or-rollback' : 'retain-release-and-rollout-gates',
   })
@@ -119,11 +126,27 @@ function hasReviewedResidualSet(verdict) {
   const actual = verdict?.notClaimedCapabilities?.map((entry) => entry.issueId)
   try {
     validateCandidateClaimScope(verdict?.claimScope)
-    return Array.isArray(actual) && actual.join(',') === 'DON-249,DON-250,DON-251'
-      && JSON.stringify(verdict.notClaimedCapabilities) === JSON.stringify(BETA13_NOT_CLAIMED_CAPABILITIES)
+    return sameStrings(actual, BETA13_CLAIM_SCOPE.notClaimedIssueIds)
+      && sameCapabilityRecords(verdict.notClaimedCapabilities, BETA13_NOT_CLAIMED_CAPABILITIES)
   } catch {
     return false
   }
+}
+
+/** Compare the reviewed residual records without depending on object key order. */
+function sameCapabilityRecords(actual, expected) {
+  return Array.isArray(actual) && Array.isArray(expected) && actual.length === expected.length
+    && actual.every((entry, index) => {
+      const reviewed = expected[index]
+      return entry && typeof entry === 'object' && !Array.isArray(entry)
+        && sameStringSets(Object.keys(entry), Object.keys(reviewed))
+        && entry.capabilityId === reviewed.capabilityId
+        && entry?.issueId === reviewed.issueId
+        && entry?.status === reviewed.status
+        && entry?.description === reviewed.description
+        && sameStrings(entry?.contractIds, reviewed.contractIds)
+        && sameStrings(entry?.hazardIds, reviewed.hazardIds)
+    })
 }
 
 /** Require every in-scope contract row to pass while allowing only listed phase rows to remain pending. */
@@ -147,5 +170,6 @@ function sameStringSets(actual, expected) {
 /** Reject any historical failed or environment-blocked attempt instead of letting a later pass erase it. */
 function allRetainedAttemptsPass(verdict) {
   return Array.isArray(verdict?.retainedAttemptStatuses)
+    && verdict.retainedAttemptStatuses.length > 0
     && verdict.retainedAttemptStatuses.every((attempt) => attempt.status === 'PASS')
 }

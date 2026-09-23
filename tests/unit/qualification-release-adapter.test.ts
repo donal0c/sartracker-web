@@ -142,6 +142,9 @@ describe('read-only release adapter', () => {
     const attemptDirectory = await mkdtemp(path.join(os.tmpdir(), 'qualification-release-adapter-'))
     try {
       const report = releaseReport({ phase: 'postpublication', releaseId: 123, tag: definition.releaseInputs.tag, assets: candidateAssets })
+      report.claimScope = Object.fromEntries(Object.entries(report.claimScope).reverse())
+      report.notClaimedCapabilities = report.notClaimedCapabilities.map((capability) =>
+        Object.fromEntries(Object.entries(capability).reverse()))
       const reportPath = path.join(attemptDirectory, 'release-report.json')
       await writeFile(reportPath, JSON.stringify(report), { flag: 'wx' })
       const receipt = await validateRetainedRelease({ reportPath, status: 'PASS' }, { contractId: 'C00', proofMode: 'public-release', phase: 'postpublication' }, { definition, attemptDirectory })

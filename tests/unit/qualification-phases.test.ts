@@ -80,10 +80,23 @@ describe('mandatory release phases', () => {
     expect(() => assertC27Admission(verdict, bindings, bindings[3])).not.toThrow()
     const failed = { ...verdict, contractRows: verdict.contractRows.map((row) => row.contractId === 'C13' ? { ...row, status: 'FAIL' } : row) }
     expect(() => assertC27Admission(failed, bindings, bindings[3])).toThrow(/every applicable/iu)
-    const changedScope = { ...verdict, phases: { prepublication: { ...verdict.phases.prepublication, missing: ['C27:draft'], notClaimedCapabilities: [] } } }
+    const changedScope = { ...verdict, phases: { ...verdict.phases,
+      prepublication: { ...verdict.phases.prepublication, missing: ['C27:draft'], notClaimedCapabilities: [] },
+    } }
     expect(() => assertC27Admission(changedScope, bindings, bindings[3])).toThrow(/every applicable/iu)
+    const alteredResidualRecord = { ...verdict,
+      notClaimedCapabilities: verdict.notClaimedCapabilities.map((entry, index) => index === 0 ? { ...entry, unexpected: true } : entry),
+    }
+    expect(() => assertC27Admission(alteredResidualRecord, bindings, bindings[3])).toThrow(/every applicable/iu)
+    const wrongPendingVariant = { ...verdict,
+      phases: { ...verdict.phases, prepublication: { ...verdict.phases.prepublication, missing: ['C27:other'] } },
+      blockers: verdict.blockers.map((blocker) => blocker.replace('C27:draft', 'C27:other')),
+    }
+    expect(() => assertC27Admission(wrongPendingVariant, bindings, bindings[3])).toThrow(/every applicable/iu)
     const noHumanAcceptance = { ...verdict, contractRows: verdict.contractRows.map((row) => row.contractId === 'C29' ? { ...row, status: 'not-run' } : row) }
     expect(() => assertC27Admission(noHumanAcceptance, bindings, bindings[3])).toThrow(/every applicable/iu)
+    const noRetainedAttempts = { ...verdict, retainedAttemptStatuses: [] }
+    expect(() => assertC27Admission(noRetainedAttempts, bindings, bindings[3])).toThrow(/every applicable/iu)
     const retainedEnvironmentBlocker = { ...verdict,
       blockers: [...verdict.blockers, 'missing required variant C13:startup'],
       retainedAttemptStatuses: [{ contractId: 'C13', variantId: 'startup', status: 'ENVIRONMENT_BLOCKED' }],
@@ -114,8 +127,21 @@ describe('mandatory release phases', () => {
     expect(() => assertPostpublicationAdmission(verdict, bindings, bindings[4])).not.toThrow()
     const lostResidual = { ...verdict, notClaimedCapabilities: [] }
     expect(() => assertPostpublicationAdmission(lostResidual, bindings, bindings[4])).toThrow(/scope/iu)
+    const changedClaimScope = { ...verdict, claimScope: { ...BETA13_CLAIM_SCOPE, allowedData: ['synthetic'] } }
+    expect(() => assertPostpublicationAdmission(changedClaimScope, bindings, bindings[4])).toThrow(/scope/iu)
+    const unscopedPrepublicationPass = { ...verdict, phases: { ...verdict.phases,
+      prepublication: { ...verdict.phases.prepublication, status: 'PASS' },
+    } }
+    expect(() => assertPostpublicationAdmission(unscopedPrepublicationPass, bindings, bindings[4])).toThrow(/scope/iu)
     const noDraftDecision = { ...verdict, contractRows: verdict.contractRows.map((row) => row.contractId === 'C27' ? { ...row, status: 'not-run' } : row) }
     expect(() => assertPostpublicationAdmission(noDraftDecision, bindings, bindings[4])).toThrow(/C27/u)
+    const unrelatedPendingC00 = { ...verdict,
+      phases: { ...verdict.phases,
+        postpublication: { ...verdict.phases.postpublication, missing: ['C00:public', 'C00:unexpected'] },
+      },
+      blockers: [...verdict.blockers, 'missing required variant C00:unexpected'],
+    }
+    expect(() => assertPostpublicationAdmission(unrelatedPendingC00, bindings, bindings[4])).toThrow(/C00/u)
     const failedEvidence = { ...verdict, deterministicFailures: ['C19 failed'] }
     expect(() => assertPostpublicationAdmission(failedEvidence, bindings, bindings[4])).toThrow(/failures/iu)
     const priorBlocker = { ...verdict,
@@ -123,5 +149,7 @@ describe('mandatory release phases', () => {
       retainedAttemptStatuses: [{ contractId: 'C13', variantId: 'startup', status: 'ENVIRONMENT_BLOCKED' }],
     }
     expect(() => assertPostpublicationAdmission(priorBlocker, bindings, bindings[4])).toThrow(/C00|blockers/iu)
+    const noRetainedAttempts = { ...verdict, retainedAttemptStatuses: [] }
+    expect(() => assertPostpublicationAdmission(noRetainedAttempts, bindings, bindings[4])).toThrow(/C00/iu)
   })
 })

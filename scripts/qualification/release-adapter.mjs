@@ -10,6 +10,7 @@ import { promisify } from 'node:util'
 import { lstat, mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { canonicalJson } from './control-plane.mjs'
 
 import {
   assertQualifiedAssets,
@@ -175,9 +176,9 @@ export async function validateRetainedRelease(receipt, binding, { definition, at
     return Object.freeze({ ...receipt, reportPath: retainedPath, status: 'INVALID_EVIDENCE', releaseEligible: false,
       validation: Object.freeze({ status: 'INVALID_EVIDENCE', valid: false, passed: false, failureReasons: Object.freeze([report.error ?? 'Release report failed.']) }) })
   }
-  if (JSON.stringify(report.claimScope) !== JSON.stringify(definition.claimScope)
-      || JSON.stringify(report.notClaimedCapabilities)
-        !== JSON.stringify(candidateProductCapabilityResiduals(definition.mode, definition.claimScope))) {
+  if (canonicalJson(report.claimScope) !== canonicalJson(definition.claimScope)
+      || canonicalJson(report.notClaimedCapabilities)
+        !== canonicalJson(candidateProductCapabilityResiduals(definition.mode, definition.claimScope))) {
     throw new Error('Retained C27/C00 report does not preserve the exact candidate claim scope.')
   }
   const expectedPhase = variant === 'c27' ? 'prepublication' : 'postpublication'

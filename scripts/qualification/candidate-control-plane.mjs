@@ -40,7 +40,11 @@ import { executeIdentityVariant, validateRetainedIdentity } from './identity-ada
 import { validateHostCapabilities } from './host-capabilities.mjs'
 import { hashLiveConfigDirectory } from './live-config-identity.mjs'
 import { C28_REQUIRED_VARIANTS } from './composite-coverage.mjs'
-import { candidateProductCapabilityResiduals, validateCandidateClaimScope } from './product-capabilities.mjs'
+import {
+  candidateClaimScopeMatchesReviewedPlan,
+  candidateProductCapabilityResiduals,
+  validateCandidateClaimScope,
+} from './product-capabilities.mjs'
 import {
   hasOwnedProcessCleanupMarker,
   isOwnedProcessCleanupError,
@@ -1106,17 +1110,18 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
   const requiredRows = requiredContracts.map((contractId) => {
     const candidates = [...rows.values()].filter((result) => result.contractId === contractId)
     const bindings = normalized.bindings.filter((binding) => binding.contractId === contractId && binding.mandatory)
+    const latest = candidates.sort((left, right) => left.attemptId.localeCompare(right.attemptId)).at(-1)
+    if (latest === undefined) return { contractId, variantId: null, status: 'not-run' }
     if (bindings.some((binding) => !rows.has(`${contractId}:${binding.variantId}`))) {
       return { contractId, variantId: null, status: 'not-run' }
     }
     const nonPassing = candidates.find((result) => result.status !== 'PASS')
     if (nonPassing !== undefined) return nonPassing
-    const latest = candidates.sort((left, right) => left.attemptId.localeCompare(right.attemptId)).at(-1)
     const contractResiduals = notClaimedCapabilities.filter((entry) => entry.contractIds.includes(contractId))
     if (contractResiduals.length > 0) {
-      return { ...(latest ?? { contractId, variantId: null }), status: 'SCOPE_LIMITED', notClaimedCapabilities: contractResiduals }
+      return { ...latest, status: 'SCOPE_LIMITED', notClaimedCapabilities: contractResiduals }
     }
-    return latest ?? { contractId, variantId: null, status: 'not-run' }
+    return latest
   })
   const missingRequired = requiredRows.filter((row) => row.status === 'not-run').map((row) => row.contractId)
   const missingVariants = normalized.bindings.filter((binding) => binding.mandatory
@@ -1149,7 +1154,7 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
     verdict: status,
     phases: evaluateQualificationPhases(normalized.bindings, allAttempts.map((attempt) => ({ ...attempt,
       status: attempt.status === 'PASS' && judgeHolds.includes(attempt.contractId) ? 'NEEDS_HUMAN_DECISION' : attempt.status,
-    })), evidenceErrors, notClaimedCapabilities),
+    })), evidenceErrors, notClaimedCapabilities, { mode: normalized.mode }),
     releaseEligible: false,
     claimScope: normalized.claimScope,
     notClaimedCapabilities,
@@ -1494,7 +1499,7 @@ async function verifyBoundIdentities(definition) {
       const releaseTrustDiffers = boundRiskKey !== null && reviewedRiskKey !== boundRiskKey
       if (!sameIdentity(current, definition.reviewedPlanIdentity)
           || canonicalJson(reviewed.bindings) !== canonicalJson(definition.bindings)
-          || canonicalJson(reviewed.claimScope) !== canonicalJson(definition.claimScope)
+          || !candidateClaimScopeMatchesReviewedPlan(reviewed.claimScope, definition.claimScope)
           || humanTrustDiffers || releaseTrustDiffers) {
         mismatches.push('candidate reviewed binding, claim scope or human trust root differs; runtime inputs cannot nominate a new authority')
       }

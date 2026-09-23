@@ -12,6 +12,7 @@ import {
   getCandidateAdapterInventory,
   ingestAdvisoryJudgeResult,
   preflightCampaign,
+  qualificationVerdictExitCode,
   runContractAttempt,
   verifyCampaignAttempt,
 } from './qualification/control-plane.mjs'
@@ -292,7 +293,7 @@ async function main() {
   if (command === 'verdict') {
     const verdict = await computeCampaignVerdict({ definition, campaignRoot })
     emit(verdict)
-    if (verdict.verdict !== 'PASS') process.exitCode = 2
+    process.exitCode = qualificationVerdictExitCode(verdict)
     return
   }
   throw new Error(`Unknown qualification command: ${command}.`)

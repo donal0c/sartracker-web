@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BETA13_CLAIM_SCOPE,
   BETA13_NOT_CLAIMED_CAPABILITIES,
+  candidateClaimScopeMatchesReviewedPlan,
   candidateProductCapabilityResiduals,
   validateCandidateClaimScope,
 } from '../../scripts/qualification/product-capabilities.mjs'
@@ -33,6 +34,26 @@ describe('Beta 13 not-claimed capability scope', () => {
       .toThrow(/scope/iu)
     expect(() => validateCandidateClaimScope({ ...BETA13_CLAIM_SCOPE, allowedData: ['live'] }))
       .toThrow(/scope/iu)
+    expect(() => validateCandidateClaimScope({ ...BETA13_CLAIM_SCOPE, allowedData: ['synthetic,replayed,disposable'] }))
+      .toThrow(/scope/iu)
+    expect(() => validateCandidateClaimScope({ ...BETA13_CLAIM_SCOPE, allowedData: [['synthetic', 'replayed', 'disposable']] }))
+      .toThrow(/scope/iu)
+    expect(() => validateCandidateClaimScope({ ...BETA13_CLAIM_SCOPE, notClaimedIssueIds: ['DON-249,DON-250,DON-251'] }))
+      .toThrow(/scope/iu)
+    expect(() => validateCandidateClaimScope({ ...BETA13_CLAIM_SCOPE, notClaimedIssueIds: [['DON-249', 'DON-250', 'DON-251']] }))
+      .toThrow(/scope/iu)
+  })
+
+  it('checks retained claim scope against the reviewed plan and keeps the issue inventory aligned', () => {
+    const campaign = JSON.parse(readFileSync('docs/assurance/qualification-campaign-plan.json', 'utf8'))
+    expect(campaign.claimScope.notClaimedIssueIds).toEqual(BETA13_CLAIM_SCOPE.notClaimedIssueIds)
+    expect(BETA13_CLAIM_SCOPE.notClaimedIssueIds)
+      .toEqual(BETA13_NOT_CLAIMED_CAPABILITIES.map((entry) => entry.issueId))
+    const reorderedKeys = Object.fromEntries(Object.entries(BETA13_CLAIM_SCOPE).reverse())
+    expect(candidateClaimScopeMatchesReviewedPlan(BETA13_CLAIM_SCOPE, reorderedKeys)).toBe(true)
+    expect(candidateClaimScopeMatchesReviewedPlan(BETA13_CLAIM_SCOPE, {
+      ...BETA13_CLAIM_SCOPE, allowedData: ['synthetic', 'replayed'],
+    })).toBe(false)
   })
 
   it('never turns scoped omissions into PASS and preserves any observed failure or missing receipt', () => {
@@ -43,7 +64,7 @@ describe('Beta 13 not-claimed capability scope', () => {
       { contractId: 'C00', variantId: 'public', mandatory: true, phase: 'postpublication' },
     ]
     const passingApplicableRows = bindings.map((binding) => ({ ...binding, status: 'PASS' }))
-    const limited = evaluateQualificationPhases(bindings, passingApplicableRows, [], capabilities)
+    const limited = evaluateQualificationPhases(bindings, passingApplicableRows, [], capabilities, { mode: 'candidate' })
     expect(limited.prepublication.status).toBe('SCOPE_LIMITED')
     expect(limited.prepublication.notClaimedCapabilities.map((entry) => entry.issueId))
       .toEqual(['DON-249', 'DON-250', 'DON-251'])

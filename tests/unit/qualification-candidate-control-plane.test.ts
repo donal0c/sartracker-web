@@ -242,13 +242,8 @@ describe('qualification candidate control plane', () => {
     await createFixture()
     const planPath = path.resolve('docs/assurance/qualification-campaign-plan.json')
     const reviewedPlan = JSON.parse(await readFile(planPath, 'utf8'))
-    const c19Binding = reviewedPlan.bindings.find((binding: { contractId: string; adapterId: string }) =>
-      binding.contractId === 'C19' && binding.adapterId === 'package.reviewed')
-    const c24Binding = reviewedPlan.bindings.find((binding: { contractId: string; adapterId: string }) =>
-      binding.contractId === 'C24' && binding.adapterId === 'soak.reviewed')
-    expect(c19Binding).toBeDefined()
-    expect(c24Binding).toBeDefined()
-    const bindings = [c19Binding!, c24Binding!]
+    const bindings = reviewedPlan.bindings.filter((binding: { contractId: string }) => binding.contractId === 'C00')
+    expect(bindings.length).toBeGreaterThan(0)
     const definition = await compileCampaignDefinition({
       plan: {
         ...reviewedPlan,
@@ -266,6 +261,10 @@ describe('qualification candidate control plane', () => {
       .toEqual([['DON-249', 'NOT_CLAIMED'], ['DON-250', 'NOT_CLAIMED'], ['DON-251', 'NOT_CLAIMED']])
     expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C19')?.status).toBe('not-run')
     expect(verdict.contractRows.find((row: { contractId: string }) => row.contractId === 'C24')?.status).toBe('not-run')
+    expect(verdict.blockers.join(' ')).toMatch(/missing mandatory adapter binding for C19/u)
+    expect(verdict.blockers.join(' ')).toMatch(/missing mandatory adapter binding for C24/u)
+    expect(verdict.blockers.join(' ')).toMatch(/missing required contract C19/u)
+    expect(verdict.blockers.join(' ')).toMatch(/missing required contract C24/u)
   }, 120_000)
   it('rejects a substituted campaign lock path before deleting any leased data', async () => {
     const { definition, fixturePath } = await compilePlan()
