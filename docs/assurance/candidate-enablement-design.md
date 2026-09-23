@@ -492,3 +492,18 @@ its hosted exact-head packaged development proof is not candidate qualification.
 Merge remains separate from release, qualification and publication; the
 outstanding DON-249/250/251, DON-264, C17 coverage gaps, C29, PKG-001, WAR-01
 and BCP-17 holds still apply.
+
+### PR44 C17 repair result
+
+PR44 merged at `8f1b4488d499a097cd521d87edb29a2c0924a1b8`. Its final
+application/test head `9e0cd8f6d159ed04c103d794b16b781ca111fb66`
+passed hosted Linux run `35621211230`, job `106412665500`, including full
+correctness, strict responsiveness, the normal 960k replay envelope, Linux
+packaging, the packaged C17 support-export privacy proof and the remaining
+packaged smoke lanes. Later PR-head commits changed only the handoff and
+workplan. This closes the observed nested-array and legacy private/system-path
+product leaks under DON-237; it is merge/development evidence, not beta.13
+candidate qualification. The C17 receipt remains `coverageComplete:false` for
+`recursive-adversarial-corpus` and `bounded-output-scan-identity`. Those two
+bounded evidence gaps are the next DON-254 slice. All other holds named above
+remain unchanged.
