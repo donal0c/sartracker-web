@@ -8,6 +8,7 @@ import {
   buildReleaseRequestPlan,
   validateRetainedRelease,
 } from '../../scripts/qualification/release-adapter.mjs'
+import { BETA13_CLAIM_SCOPE, BETA13_NOT_CLAIMED_CAPABILITIES } from '../../scripts/qualification/product-capabilities.mjs'
 
 const sourceSha = 'a'.repeat(40)
 const candidateAssets = [
@@ -20,6 +21,8 @@ const rollbackAssets = [
 ]
 
 const definition = {
+  mode: 'candidate',
+  claimScope: BETA13_CLAIM_SCOPE,
   identities: {
     source: { sha: sourceSha },
     candidate: {
@@ -100,6 +103,8 @@ function releaseReport({ phase, releaseId, tag, assets }: { phase: string, relea
   }
   return {
     phase,
+    claimScope: BETA13_CLAIM_SCOPE,
+    notClaimedCapabilities: BETA13_NOT_CLAIMED_CAPABILITIES,
     before: release,
     after: structuredClone(release),
     tagBefore: sourceSha,
@@ -137,6 +142,9 @@ describe('read-only release adapter', () => {
     const attemptDirectory = await mkdtemp(path.join(os.tmpdir(), 'qualification-release-adapter-'))
     try {
       const report = releaseReport({ phase: 'postpublication', releaseId: 123, tag: definition.releaseInputs.tag, assets: candidateAssets })
+      report.claimScope = Object.fromEntries(Object.entries(report.claimScope).reverse())
+      report.notClaimedCapabilities = report.notClaimedCapabilities.map((capability) =>
+        Object.fromEntries(Object.entries(capability).reverse()))
       const reportPath = path.join(attemptDirectory, 'release-report.json')
       await writeFile(reportPath, JSON.stringify(report), { flag: 'wx' })
       const receipt = await validateRetainedRelease({ reportPath, status: 'PASS' }, { contractId: 'C00', proofMode: 'public-release', phase: 'postpublication' }, { definition, attemptDirectory })
@@ -148,6 +156,21 @@ describe('read-only release adapter', () => {
       await expect(validateRetainedRelease({ reportPath, status: 'PASS' }, { contractId: 'C00', proofMode: 'public-release', phase: 'postpublication' }, { definition, attemptDirectory })).rejects.toThrow(/Fresh release transfer|retained release/i)
       await truncate(reportPath, 16 * 1024 * 1024 + 1)
       await expect(validateRetainedRelease({ reportPath, status: 'PASS' }, { contractId: 'C00', proofMode: 'public-release', phase: 'postpublication' }, { definition, attemptDirectory })).rejects.toThrow(/bounded/iu)
+    } finally {
+      await rm(attemptDirectory, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a retained C27/C00 report whose NOT_CLAIMED record was altered', async () => {
+    const attemptDirectory = await mkdtemp(path.join(os.tmpdir(), 'qualification-release-adapter-'))
+    try {
+      const report = releaseReport({ phase: 'postpublication', releaseId: 123, tag: definition.releaseInputs.tag, assets: candidateAssets })
+      report.notClaimedCapabilities = []
+      const reportPath = path.join(attemptDirectory, 'release-report.json')
+      await writeFile(reportPath, JSON.stringify(report), { flag: 'wx' })
+      await expect(validateRetainedRelease({ reportPath, status: 'PASS' },
+        { contractId: 'C00', proofMode: 'public-release', phase: 'postpublication' },
+        { definition, attemptDirectory })).rejects.toThrow(/claim scope/iu)
     } finally {
       await rm(attemptDirectory, { recursive: true, force: true })
     }

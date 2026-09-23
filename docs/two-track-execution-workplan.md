@@ -2,7 +2,49 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-**Current release state (2026-09-21):** PR44 merged at
+## Current Beta 13 decision — 2026-09-23
+
+Release is **HOLD**. PR45 merged documentation/control-plane evidence only; no
+Beta 13 candidate is frozen, qualified, tagged, published or distributed. The
+current change is a reviewable DON-254 release-scope update and adds no product
+behavior.
+
+The candidate claim is limited to controlled team testing using synthetic,
+replayed or disposable data with an independent primary source. Use the prepared
+private MBTiles route. Defer map administration and raw licensed-source package
+distribution to the next release. DON-249/250/251 remain separate, unimplemented
+capabilities marked `NOT_CLAIMED`; preserve PST-003/PST-004/PST-005 and IPC-003
+as open hazards. All C00-C29 contracts and applicable C19/C24 probes remain
+required. Only after every applicable probe passes may those two contract rows
+be `SCOPE_LIMITED`; actual failures, missing evidence, invalid evidence and
+other holds retain their blocking status. `SCOPE_LIMITED` is never `PASS` or
+`QUALIFIED`, does not set `releaseEligible`, and authorizes no publication or
+distribution.
+
+**Execution order:** close bounded defects and evidence gaps; freeze one exact
+candidate/version and CI artifacts; run `bcp17-final`; complete independent C29
+acceptance; make the separate C27 draft-publication decision; after publication,
+verify fresh public bytes with C00; then decide controlled team distribution.
+`war12-hardening` runs later after WAR-11. Bring its work forward only if the
+exact candidate exposes a concrete P1/P2 or absolute blocker. Keep C17 residuals,
+C01, C11, DON-264, PKG-001, C29, C27 and C00 in their existing separate gates.
+The five WAR-01 blockers remain unwaived: delayed/hidden current position,
+silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
+mission-scale work on Electron main. Broad WAR scope is not a blanket
+pre-candidate prerequisite.
+
+**Next steps:** finish exact-scope controls and focused tests; obtain a fresh
+independent review and green exact-head CI for the review PR; refresh live
+Linear state when authorization works. Linear connector reauthentication failed
+for DON-249/250/251/254/264, so their current issue state is unverified and no
+Linear mutation is claimed. Do not contact SAR team members, run candidate
+qualification, tag, publish, or promote from this work.
+
+Everything below this dated decision is earlier planning and evidence retained
+for provenance. Older status and sequencing statements are superseded wherever
+they conflict with this section.
+
+**Historical release snapshot (2026-09-21; superseded):** PR44 merged at
 `8f1b4488d499a097cd521d87edb29a2c0924a1b8` from final head
 `57f6ec9fa87c2d59921cb55c87777d47f3ce8109`. The review-fix code/test tree is
 exact commit `9e0cd8f6d159ed04c103d794b16b781ca111fb66`; later commits changed only
@@ -33,7 +75,7 @@ console-only overlay failure a candidate gate unless Donal explicitly changes
 that policy. After these holds are clear, freeze the exact beta.13 candidate
 and execute BCP-17/WAR-12.
 
-## Planning Rule
+## Historical planning rule snapshot (superseded 2026-09-23)
 
 **Current post-PR44 state (2026-09-21):** verified master is
 `8f1b4488d499a097cd521d87edb29a2c0924a1b8`. PR40 through PR44 are merged.
@@ -143,7 +185,7 @@ zero-busy-timeout, non-blocking `wal_checkpoint(PASSIVE)` repair at exact head
 fixed. The failed receipt remains retained, and the merged workflow is not
 candidate qualification or authorization for BCP-17/WAR-12.
 
-## Locked path to the next team beta — 2026-09-17
+## Historical locked path to the next team beta — 2026-09-17 (superseded)
 
 The next delivery milestone is one extensively qualified, controlled internal
 team beta. It is not completion of every retained UI, map-administration or

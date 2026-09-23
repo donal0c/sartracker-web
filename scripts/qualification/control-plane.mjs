@@ -533,6 +533,13 @@ export async function computeCampaignVerdict(options) {
   return module.computeCampaignVerdict(options)
 }
 
+/** Map a completed campaign verdict to the qualification CLI's process status. */
+export function qualificationVerdictExitCode(verdict) {
+  if (verdict?.verdict === 'PASS' || verdict?.verdict === 'SCOPE_LIMITED') return 0
+  if (verdict?.verdict === 'FAIL') return 1
+  return 2
+}
+
 /**
  * Clean up a controller lease or quarantine it on failure.
  *

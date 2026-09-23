@@ -1,10 +1,40 @@
 # Coordinated Team, Audit, and WAR Work Ledger
 
-Updated: 2026-09-19
+Updated: 2026-09-23
 
 Status: active coordination record. The canonical execution order remains
 `docs/two-track-execution-workplan.md`; this ledger prevents the three current
 sources of work from being lost, duplicated, or qualified in the wrong order.
+
+## Beta 13 release-scope decision — 2026-09-23
+
+This is Donal's release direction from 2026-09-23, not a SAR-team answer or a
+new product requirement.
+
+The first post-PR6 candidate claim is controlled team testing with synthetic,
+replayed or disposable data and an independent primary source. The prepared
+private MBTiles route remains the map path; map administration and raw licensed
+source distribution stay in the next-release work. No product behavior is
+added by this decision.
+
+DON-249/250/251 remain unimplemented and separately owned. The candidate plan
+records them as `NOT_CLAIMED`, with their affected contracts and open
+PST-003/PST-004/PST-005/IPC-003 hazards. This does not clear, waive or pass any
+hazard. Keep all C00-C29 rows and applicable C19/C24 probes mandatory; only the
+fully passing applicable matrix can report `SCOPE_LIMITED`. Failures, missing
+receipts, integrity errors and the five WAR-01 absolute blockers keep their
+existing blocking effect. A limited scope is never `PASS`, `QUALIFIED`,
+release-eligible, a publication decision or authority to distribute.
+
+Sequence: bounded defect/evidence closure; exact candidate/version and CI
+artifact freeze; `bcp17-final`; independent C29; separate C27 draft decision;
+publication only under its own authority; fresh public C00; then a controlled
+team-distribution decision. `war12-hardening` remains a later campaign after
+WAR-11 and is not a blanket prerequisite. Advance a WAR item only when exact
+candidate evidence exposes a concrete blocker. Linear connector
+reauthentication failed during this reconciliation, so live issue statuses and
+comments for DON-249/250/251/254/264 are unverified and no issue update is
+claimed. No SAR-team question or message was sent.
 
 ## Governing decision
 
@@ -136,15 +166,15 @@ is “repaired boundary awaiting exact-candidate qualification.” A concrete ne
 P1/P2 or safety-critical defect found during triage or qualification returns to
 a separate repair PR and blocks promotion.
 
-### Current-head bounded blocker triage
+### Historical bounded blocker triage (source head `e694857`; superseded)
 
-This is a short read-only triage of the records and current production seams on
-`e69485724044337fb5fee94bfbe5871916fdabf1`; it is not execution of WAR-03,
+This was a short read-only triage of records and production seams on
+`e69485724044337fb5fee94bfbe5871916fdabf1`; it was not execution of WAR-03,
 WAR-07, WAR-08, WAR-09 or WAR-10 and does not replace exact-candidate proof. No
-checks were executed for this triage; the triage below is source and record
-inspection only.
+checks were executed; the findings below record source and evidence at that
+head, before PR40 and PR41 merged.
 
-| Item | Current evidence and judgment | Disposition |
+| Item | Evidence and judgment at the triage head | Disposition at the triage head |
 | --- | --- | --- |
 | `TRK-001` delayed/hidden current position | The current hazard row remains accurate: pre-window startup, renderer cold-start, participant/error, reload drain/replacement, pause and automatic-recovery paths can leave current position delayed, withheld or without an active request path. Existing tests cover bounded pieces but do not close the held-gate paths. | **Confirmed unresolved production blocker requiring a separate repair before candidate selection.** Smallest coherent chunk: current-position priority through startup/reload/replacement/recovery, with held-gate regressions and visible bounded failure. Owner seam: DON-267/DON-179/DON-250; complexity 9/10; recommended model Luna x-high. |
 | `GEO-002` unsafe bearing/distance/measurement input | Current `drawing-math.ts` still accepts non-finite and out-of-range coordinates/bearings, and `segments=Infinity` can make the synchronous point loops unbounded. Existing tests cover negative radius/distance and degenerate bearing only; `start-measurement-runtime.ts` passes clicked values directly to the math boundary. | **Confirmed unresolved production blocker requiring a separate repair before candidate selection.** Smallest coherent chunk: finite/range validation at the public math boundary, bounded segment validation, red/green adversarial tests and affected drawing/measurement consumer review. Owner: DON-6/DON-254; complexity 6/10; recommended model Luna x-high. |
@@ -153,6 +183,20 @@ inspection only.
 | WAR-01: silent evidence loss; false `Complete`/`100%`; corrupted evidence; unbounded mission-scale main work | The merged controls and negative tests provide bounded repair evidence, but the required packaged fault, exact-scale, archive/restore, interruption, field and strict-responsiveness proof has not run on beta13. No new current-head data-loss, false-completeness, corruption or main-stall reproduction was created by this triage. | **Repaired boundary awaiting exact-candidate qualification.** These remain `open-blocking` qualification gates after candidate selection; they are not evidence that a test candidate is already qualified. |
 | Other unscored `unenforced-invariant` rows (`MAP-001`, `EVD-003`, `PKG-002`, `REL-001`, `REL-002`, `REL-004` and `OPS-001`) | The bounded source/record inspection found control gaps, not a new confirmed current-head production failure beyond the three blockers above. Existing owners, warnings and exact qualification requirements remain authoritative. | **Lower-severity/post-beta hardening with rationale.** Retain explicit owners and qualification/field gates; do not describe these as cleared or silently use them to waive a mandatory receipt. |
 | `GEO-001` (`evidence-tier-gap`) | The bounded source/record inspection found a coordinate transform/parser/format evidence gap, not a new confirmed current-head production failure beyond the three blockers above. Existing owners and exact qualification requirements remain authoritative. | **Lower-severity/post-beta hardening with rationale.** Retain the `DON-238`/`DON-6` evidence boundary; do not describe the gap as cleared or silently use it to waive a mandatory receipt. |
+
+**Post-triage merge reconciliation (2026-09-23):** PR40 merged
+`GEO-002`'s bounded drawing/measurement input repair at `c916ced9`; its
+[repair record](findings/geo-002-pre-candidate-repair.md) documents focused
+source, unit, browser and build evidence. That merged repair supersedes the
+triage's claim that the production math boundary still needed a separate code
+repair. Exact-candidate/package/field qualification remains outstanding. PR41
+merged scoped current-position polling/reconnect repairs at `27687b53`; it
+supersedes the triage's claim that this bounded repair was still pending, but
+does not close the wider TRK-001 startup, scope, pause/recovery and exact-candidate
+evidence gaps in WAR-01. `PKG-001` remains unresolved: the retained long-run
+observations use different package profiles, and same-profile reproduction and
+qualification evidence are still outstanding. This reconciliation updates
+the current disposition; it does not promote either merge to candidate proof.
 
 ### WAR-01 absolute blockers
 
@@ -473,23 +517,16 @@ inputs, stop condition, retained red receipts, and next disposition before work
 starts. This section restores the charter; it does not authorise BCP-17/WAR-12,
 a release, a freeze, or any product-code change.
 
-### Candidate-selection decision
+### Historical candidate-selection decision (2026-09-19; superseded)
 
-Test-candidate selection is **BLOCKED / not declared** by the current-head
-triage's three concrete production/operational blockers: `TRK-001`, `GEO-002`
-and `PKG-001`. Each requires a separate bounded repair before selection. No
-Donal architecture decision authorising selection with an unrepaired blocker
-has been made in this record; a future exception would need a separate,
-explicit decision naming the blocker, selection consequence, qualification and
-promotion prohibition, and approving authority. This is distinct from
-qualification HOLD: the five WAR-01 absolute blockers, exact-candidate evidence, the dry-run's
-`releaseEligible: false`, open `DON-247` original-machine qualification and the
-absence of beta13 artifact/fixture hashes remain qualification/promotion gates
-after a candidate is selected. WAR-03/WAR-07/WAR-08/WAR-09/WAR-10 are not
-blanket pre-candidate gates, but concrete findings in their scopes remain
-promotion-blocking. The merge-ready procedure, including
-`reconciliationMergeSha`, version, artifact names, Linux matrix, rollback and
-fail-closed stop conditions, remains in the [two-track workplan](../two-track-execution-workplan.md).
+At the historical `e694857` source head, selection was blocked on separate
+`TRK-001`, `GEO-002` and `PKG-001` repairs. PR40/PR41 have since merged bounded
+GEO-002 and TRK-001 repair slices as recorded above. `PKG-001`, the five WAR-01
+absolute blockers, exact-candidate evidence, `releaseEligible: false`, open
+DON-247 original-machine qualification, and absent beta13 artifact/fixture
+hashes remain unresolved gates. This old selection decision is not a current
+authorization or a current full selection assessment. The current scope and
+sequence live in the [two-track workplan](../two-track-execution-workplan.md).
 
 ## Historical post-PR32 coordinated disposition — 2026-09-17
 

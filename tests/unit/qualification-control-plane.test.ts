@@ -9,6 +9,7 @@ import {
   compileCoverageRegistry,
   evaluateCandidate,
   fileIdentity,
+  qualificationVerdictExitCode,
   verifySealedResult,
   writeSealedResult,
 } from '../../scripts/qualification/control-plane.mjs'
@@ -23,6 +24,13 @@ afterEach(async () => {
 })
 
 describe('qualification control plane', () => {
+  it('treats a computed scope-limited verdict as a successful command result while retaining its hold', () => {
+    expect(qualificationVerdictExitCode({ verdict: 'PASS' })).toBe(0)
+    expect(qualificationVerdictExitCode({ verdict: 'SCOPE_LIMITED', releaseEligible: false })).toBe(0)
+    expect(qualificationVerdictExitCode({ verdict: 'FAIL' })).toBe(1)
+    expect(qualificationVerdictExitCode({ verdict: 'ENVIRONMENT_BLOCKED' })).toBe(2)
+  })
+
   it('compiles exactly C00-C29 with complete unique release-critical hazard ownership', async () => {
     const registry = JSON.parse(await readFile(registryPath, 'utf8'))
     const compiled = compileCoverageRegistry(registry)

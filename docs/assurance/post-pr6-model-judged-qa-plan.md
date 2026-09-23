@@ -53,6 +53,28 @@ Build one reusable SAR validation subsystem, but keep two qualification profiles
 
 This preserves the current programme sequencing while avoiding two harnesses. An exact sealed attempt may be referenced by both campaign reports only when candidate, artifact, validator, contract, fixture, platform and evidence hashes are identical and both profiles declare that row applicable. Referencing is not rerunning; a different candidate means a new attempt.
 
+### Beta 13 controlled-team-testing claim boundary — 2026-09-23
+
+The first post-PR6 candidate claim is limited to controlled team testing with
+synthetic, replayed or disposable data and an independent primary source. This
+scope does not change product behavior or certify live-data, field, map-package
+administration, or general-use readiness. The prepared private MBTiles route
+remains the map path for this beta; raw licensed-source packaging and map
+administration stay in the next-release work.
+
+DON-249, DON-250 and DON-251 remain unimplemented, separate product capabilities
+and are explicitly `NOT_CLAIMED`. Their PST-003/PST-004/PST-005 and IPC-003
+hazards stay open. All C00-C29 contracts and applicable C19/C24 probes remain
+required. Passing those applicable probes while retaining these capability
+residuals may produce `SCOPE_LIMITED`, never `PASS` or `QUALIFIED`; any actual
+failure, absent receipt, invalid evidence, remaining absolute blocker, or other
+hold retains its existing blocking disposition. This bounded claim does not waive
+the five WAR-01 absolute blockers, C17 coverage residuals, C01/C11, DON-264,
+PKG-001, C29, C27, C00, or any live-input/host prerequisite required by the
+selected evidence. `bcp17-final` remains the first release qualification;
+`war12-hardening` remains later after WAR-11 and is not a Beta 13 prerequisite
+unless the exact candidate exposes a concrete blocking finding.
+
 ## 2. Principles and proof boundaries
 
 ### Non-negotiable rules
@@ -338,9 +360,9 @@ No row is closed by this plan. The table defines the required future proof and k
 | `MIS-003` participant mis-scope | C03, C07, C08, C28 | group/device known-at-fix-time source truth, backfill checkpoint and excluded-device zero-row gates | 100 devices/12 groups |
 | `PST-001` partial write/unsafe migration | C18, C19, C22 | SQLite integrity/schema/digest, kill point matrix, original-file preservation | CI + field-scale package; every supported schema |
 | `PST-002` bad rolling backup | C18, C19 | pinned source/WAL snapshot, backup digest/open/query, good-mirror preservation | small fault matrix + field-scale Ubuntu |
-| `PST-003` integrity re-freeze/absence | C19, C24, C25 | corruption detection plus main/event-loop/I/O budgets and cancellation | background/local large + final field scale; DON-249 remains separate from PR6 |
-| `PST-004` unbounded growth | C19, C24, C25 | declared table retention, row/byte slopes, query plans, RSS/disk/event-loop ceilings | five-/14-day and 3.7 GB; operational history never purged |
-| `PST-005` oversized startup | C01, C19, C25 | bounded preflight/classification, no automatic rename/delete/vacuum, original-set digest | >2 GiB and 3.7 GB Ubuntu; DON-250 remains separate |
+| `PST-003` integrity re-freeze/absence | C19, C24, C25 | corruption detection plus main/event-loop/I/O budgets and cancellation | background/local large + final field scale; DON-249 remains separate from PR6 and `NOT_CLAIMED` for Beta 13; hazard remains open even if applicable probes support `SCOPE_LIMITED` |
+| `PST-004` unbounded growth | C19, C24, C25 | declared table retention, row/byte slopes, query plans, RSS/disk/event-loop ceilings | five-/14-day and 3.7 GB; operational history never purged; DON-251 is `NOT_CLAIMED` for Beta 13 and the hazard remains open |
+| `PST-005` oversized startup | C01, C19, C25 | bounded preflight/classification, no automatic rename/delete/vacuum, original-set digest | >2 GiB and 3.7 GB Ubuntu; DON-250 remains separate and `NOT_CLAIMED` for Beta 13; hazard remains open |
 | `RPL-001` false Complete/100% | C08, C28 | independent selected-chunk inventory/revisions/digests, incomplete/fault mutants | 960k + 2m headroom, package/UI judge advisory only |
 | `RPL-002` present-state Replay | C10, C22, C28 | transaction-time versions and known-at-T oracle across writes/revisions/late fixes | 960k/2m + archive-restored replay |
 | `RPL-003` invented/lost GPX time | C09, C10, C22 | exact bytes/digest, explicit timed/untimed classification, no invented timestamps | 8 MiB boundary, malformed corpus, kill/restart |
@@ -1196,8 +1218,8 @@ The repository-backed Q&A ledger and raw transcript already answer the domain qu
 1. **Programme authority for the eight slices.** Confirm whether they remain inside the BCP-17 branch/PR exception or receive a separate assurance-programme exception. Recommended: eight logical slices with the PR boundaries above; do not add them to mutable PR6.
 2. **Validator trust boundary.** Approve a protected validator ref and an external location/actor that retains the campaign seal before local bundles can be changed. Recommended: CI/protected repository artifact plus a separately retained hash in the DON-254 record.
 3. **Judge model and egress budget.** Approve the explicit model, synthetic/redacted-only policy, protected-holdout size and maximum release-campaign calls. Recommended: affected-only per PR, wider nightly sampling, fresh no-cache holdout/full visible sweep once per exact release candidate.
-4. **BCP-17 versus WAR-12 sequencing.** Confirm the current default: `bcp17-final` is the first post-PR6 release qualification; `war12-hardening` is later after WAR-11 and does not retroactively qualify the earlier candidate. If Donal wants WAR-11/WAR-12 to become prerequisites to the first release, update the workplan/Linear before execution.
-5. **Current WAR-04 and DON-264 disposition.** WAR-04's confirmed defects cannot be waived by this harness. Confirm the WAR-11 repair sequence and whether DON-264's current P3 warning gap must be repaired before BCP-17 or carried as a candidate-specific limitation consistent with field-admission rules.
+4. **BCP-17 versus WAR-12 sequencing — resolved 2026-09-23.** `bcp17-final` is the first post-PR6 release qualification; `war12-hardening` is later after WAR-11 and does not retroactively qualify the earlier candidate. The broad WAR catalogue is not a blanket prerequisite; an exact-candidate concrete P1/P2 or absolute blocker still stops qualification.
+5. **DON-264 disposition — resolved 2026-09-23.** The candidate scope does not waive DON-264 or its existing C14 warning predicate. Retain the applicable failure as a separate gate; do not convert the console-only warning into a pass or candidate limitation.
 6. **Required host claims.** Confirm that the release claim remains Linux x86-64 AppImage plus installed `.deb`, with Windows unclaimed and real Mint evidence external until available. Recommended: do not widen the support claim.
 7. **Large-fixture host/storage allocation.** Name the reference Ubuntu host and private storage budget for source cache, working copy, >2 GiB/3.7 GB archive, restore scratch and evidence. This is capacity authorization, not permission to run the campaign now.
 8. **Live-provider scope.** Approve the exact read-only GET-only final confirmation and credential custody. Synthetic 100-device proof remains mandatory and must be labelled synthetic if the live roster is smaller.
