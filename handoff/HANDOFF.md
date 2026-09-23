@@ -37,7 +37,9 @@ their distinct gates.
 
 - Current worktree branch: `codex/don-254-c17-evidence`, based on PR #46's
   merged `origin/master` commit `d48ea1c562233630fc383e0ee21107167dd5d584`.
-- Draft PR #48 is at code head `3a92e31e19af6cb31dfe9ab7650324c50923f79c`.
+- Draft PR #48 contains reviewed code/test head
+  `3a92e31e19af6cb31dfe9ab7650324c50923f79c`; later commits update this handoff
+  only.
 - The follow-up adds a fixed hostile-value corpus for renderer and Electron
   sanitizers, descriptor-only traversal that does not invoke getters, and
   independently bounded/hash-bound output and source-corpus receipts.
@@ -64,8 +66,9 @@ their distinct gates.
 Local focused C17 suites passed (36 tests after the lifecycle fix); lint passed
 after that fix; build and `git diff --check` passed. The earlier local full
 correctness run preceded the final source-receipt and lifecycle corrections.
-Final-head Linux run `35926950262` passed full correctness, lint, build, rendered
-browser regressions, packaged C17, map, GPX, breadcrumb transport, mission-cache
+Linux run `35926950262` passed at the code/test head `3a92e31e`: full
+correctness, lint, build, rendered browser regressions, packaged C17, map, GPX,
+breadcrumb transport, mission-cache
 restart, legacy recovery, and AppImage smoke. It skipped strict responsiveness,
 the normal 960k replay, participant backup, independent Train D validation,
 tracking soak, and archive lifecycle; those remain distinct gates.
