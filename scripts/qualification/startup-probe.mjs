@@ -818,7 +818,9 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     dialogObservedAtMs = earlyExit.dialogObservedAtMs
     if (earlyExit.timedOut === true && dialogWindowId === null) {
       dialogWindowId = await findSarTrackerErrorDialog(appProcess.pid, 500)
-      if (dialogWindowId !== null) dialogObservedAtMs = performance.now() - launchStartedAt
+      if (dialogWindowId !== null) {
+        dialogObservedAtMs = Math.max(0, Math.round(performance.now() - launchStartedAt))
+      }
     }
     if (dialogWindowId !== null) {
       try {
@@ -996,20 +998,41 @@ export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt =
   const deadline = startedAt + timeoutMs
   while (now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      return { timedOut: false, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+      return {
+        timedOut: false,
+        elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+        dialogWindowId: null,
+        dialogObservedAtMs: null,
+      }
     }
     const dialogWindowId = await findDialog(child.pid, Math.min(250, Math.max(1, deadline - now())))
     const observedAtMs = now() - startedAt
     if (dialogWindowId !== null && observedAtMs <= timeoutMs) {
-      return { timedOut: false, elapsedMs: observedAtMs, dialogWindowId, dialogObservedAtMs: observedAtMs }
+      const roundedObservationMs = Math.max(0, Math.round(observedAtMs))
+      return {
+        timedOut: false,
+        elapsedMs: roundedObservationMs,
+        dialogWindowId,
+        dialogObservedAtMs: roundedObservationMs,
+      }
     }
     if (now() >= deadline) break
     if (child.exitCode !== null || child.signalCode !== null) {
-      return { timedOut: false, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+      return {
+        timedOut: false,
+        elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+        dialogWindowId: null,
+        dialogObservedAtMs: null,
+      }
     }
     await wait(Math.min(100, deadline - now()))
   }
-  return { timedOut: true, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+  return {
+    timedOut: true,
+    elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+    dialogWindowId: null,
+    dialogObservedAtMs: null,
+  }
 }
 
 /** Observe a product-owned exit after the held-gate dialog has been dismissed. */

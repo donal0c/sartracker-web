@@ -61,8 +61,9 @@ the module-load deadline with one 10-second watchdog starting after Electron
 readiness and covering awaited asynchronous startup through renderer load and
 its evidence-loss fence. The operational window stays hidden until that fence
 succeeds. The held-gate observer uses monotonic time for its 20-second response
-bound and separately requires the product's exit code 1 within 12 seconds after
-dialog dismissal;
+bound and rounds recorded elapsed times to receipt-safe integer milliseconds.
+It separately requires the product's exit code 1 within 12 seconds after dialog
+dismissal;
 lock-holder setup has its own 5-second bound and the held-gate producer budget
 is 120 seconds. Failure evidence, receipt truthfulness, scheduler attribution,
 manual guidance, and producer-vs-infrastructure verdicts are repaired in this PR.
@@ -80,7 +81,7 @@ it is running. `app.whenReady()` remains outside the deadline by selection.
 Before the monotonic held-gate follow-up, local verification passed seven
 focused files / 102 tests and full correctness (5,863 passed / 25 skipped);
 lint and `npm run electron:pack` passed. After that follow-up, the targeted
-probe/receipt suites passed (36 tests) and lint passed. The packaged macOS
+probe/receipt suites passed (37 tests) and lint passed. The packaged macOS
 legacy-recovery smoke passed with 60.11 ms first-main and 55.90 ms restart
 main-loop maxima and 1.59/0.14/1.40 ms phase gaps. It ran from a dirty tree and
 macOS scheduler counters were unavailable, so it is diagnostic only. Linux run

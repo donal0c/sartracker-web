@@ -39,7 +39,9 @@ DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 - Before the monotonic held-gate follow-up, local verification passed seven
   focused files / 102 tests and full correctness (5,863 passed / 25 skipped);
   lint and `npm run electron:pack` passed. After that follow-up, the targeted
-  probe/receipt suites passed (36 tests) and lint passed.
+  probe/receipt suites passed (37 tests) and lint passed. Held-gate timing stays
+  monotonic while evidence elapsed milliseconds are rounded to receipt-safe
+  integers.
   The packaged macOS legacy-recovery smoke passed (60.11 ms first-main,
   55.90 ms restart main-loop maxima; phase gaps 1.59/0.14/1.40 ms). The smoke
   used a dirty tree before commit; macOS scheduler counters are unavailable,

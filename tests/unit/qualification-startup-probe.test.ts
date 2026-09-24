@@ -57,7 +57,7 @@ describe('C01 held-gate product exit observation', () => {
   })
 
   it('uses a monotonic clock for the held-gate response deadline', async () => {
-    let monotonicNow = 0
+    let monotonicNow = 0.25
     let wallClockNow = 100_000
     vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
     vi.spyOn(Date, 'now').mockImplementation(() => wallClockNow)
@@ -70,7 +70,7 @@ describe('C01 held-gate product exit observation', () => {
       findDialog: async () => null,
       wait: async (milliseconds) => {
         monotonicNow += milliseconds
-        if (monotonicNow === 100) wallClockNow -= 15_000
+        if (monotonicNow === 100.25) wallClockNow -= 15_000
         else wallClockNow += milliseconds
       },
     })
@@ -81,7 +81,32 @@ describe('C01 held-gate product exit observation', () => {
       dialogWindowId: null,
       dialogObservedAtMs: null,
     })
-    expect(monotonicNow).toBe(20_000)
+    expect(monotonicNow).toBe(20_000.25)
+    expect(Number.isSafeInteger(observation.elapsedMs)).toBe(true)
+  })
+
+  it('records fractional monotonic dialog times as integer receipt milliseconds', async () => {
+    let monotonicNow = 100.25
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null as number | null,
+      signalCode: null as NodeJS.Signals | null,
+    })
+
+    const observation = await waitForOwnedProcessOrTimeout(child, 20_000, 100.25, {
+      now: () => monotonicNow,
+      findDialog: async () => {
+        monotonicNow = 1_234.56
+        return '501'
+      },
+    })
+
+    expect(observation).toMatchObject({
+      timedOut: false,
+      elapsedMs: 1_134,
+      dialogWindowId: '501',
+      dialogObservedAtMs: 1_134,
+    })
+    expect(Number.isSafeInteger(observation.dialogObservedAtMs)).toBe(true)
   })
 
   it('captures the child exit while the dismissal command is completing', async () => {
