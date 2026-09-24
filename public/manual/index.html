@@ -660,7 +660,9 @@
             If an overlay repeatedly fails to synchronize, a persistent map alert names the affected
             overlay while SAR Tracker retries. Verify against an independent operational source, open
             Diagnostics and export a report if the warning remains, and stop or revert if uncertain. The
-            alert clears only after that overlay synchronizes successfully.
+            alert clears only after that overlay synchronizes successfully. When several overlays warn at
+            once, the bounded alert region shows the active warning count and can be scrolled with the
+            mouse wheel or by focusing the region and pressing Page Down to review each affected overlay.
           </p>
           <figure class="screenshot">
             <img src="assets/app-shell.png" alt="SAR Tracker app shell with active mission and map" />

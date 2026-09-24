@@ -325,6 +325,108 @@ test.describe('M2 map shell', () => {
     }
   })
 
+  test('keeps concurrent overlay warnings in a bounded keyboard-scrollable map region', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 700 })
+    await page.evaluate(async () => {
+      const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
+        import('/src/features/map/map-overlay-warning-store.ts'),
+        import('/src/lib/map-health.ts'),
+      ])
+      const warnings = [
+        ['tracking', 'tracking'],
+        ['coverage', 'coverage'],
+        ['markers', 'markers'],
+        ['drawings', 'drawings'],
+        ['drawing-preview', 'drawings'],
+        ['gpx', 'gpx'],
+        ['helicopters', 'helicopter'],
+        ['measurements', 'measurements'],
+        ['measurement-preview', 'measurements'],
+        ['coordinate-target', 'coordinate-target'],
+      ] as const
+      for (const [registrationId, family] of warnings) {
+        useMapOverlayWarningStore.getState().raiseWarning(
+          createMapOverlaySyncWarning(registrationId, family),
+        )
+      }
+    })
+
+    const warningRegion = page.getByTestId('map-degraded-alert')
+    await expect(warningRegion).toBeVisible()
+    await expect(warningRegion).toHaveAttribute('aria-label', 'Active map alerts, 10 overlay warnings')
+    await expect(warningRegion).toHaveAttribute('tabindex', '0')
+    await expect(warningRegion.getByTestId('map-overlay-warning-tracking')).toBeVisible()
+    await expect(warningRegion.getByTestId('map-overlay-warning-coordinate-target')).toBeVisible()
+    await expect.poll(() => warningRegion.evaluate((element) => getComputedStyle(element).overflowY))
+      .toBe('auto')
+
+    const dimensions = await warningRegion.evaluate((element) => {
+      const region = element.getBoundingClientRect()
+      const surface = element.closest('.relative.overflow-hidden')?.getBoundingClientRect()
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: getComputedStyle(element).overflowY,
+        regionTop: region.top,
+        regionBottom: region.bottom,
+        regionHeight: region.height,
+        surfaceTop: surface?.top ?? Number.NaN,
+        surfaceBottom: surface?.bottom ?? Number.NaN,
+        surfaceHeight: surface?.height ?? Number.NaN,
+        trackingFullyVisible: (() => {
+          const warning = element.querySelector('[data-testid="map-overlay-warning-tracking"]')
+          if (!(warning instanceof HTMLElement)) return false
+          const warningRect = warning.getBoundingClientRect()
+          const regionRect = element.getBoundingClientRect()
+          return warningRect.top >= regionRect.top && warningRect.bottom <= regionRect.bottom
+        })(),
+      }
+    })
+    expect(dimensions.overflowY).toBe('auto')
+    expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight)
+    expect(dimensions.regionTop).toBeGreaterThanOrEqual(dimensions.surfaceTop)
+    expect(dimensions.regionBottom).toBeLessThanOrEqual(dimensions.surfaceBottom - 72)
+    expect(dimensions.regionHeight).toBeLessThanOrEqual(dimensions.surfaceHeight * 0.5 + 1)
+    expect(dimensions.trackingFullyVisible).toBe(true)
+    await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-top.png' })
+
+    const trackingCard = warningRegion.getByTestId('map-overlay-warning-tracking')
+    const trackingCardBounds = await trackingCard.boundingBox()
+    expect(trackingCardBounds).not.toBeNull()
+    if (trackingCardBounds !== null) {
+      await page.mouse.move(
+        trackingCardBounds.x + trackingCardBounds.width / 2,
+        trackingCardBounds.y + trackingCardBounds.height / 2,
+      )
+      await page.mouse.wheel(0, 450)
+      await expect.poll(() => warningRegion.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0)
+    }
+    await warningRegion.evaluate((element) => { element.scrollTop = 0 })
+    await warningRegion.focus()
+    await expect.poll(() => warningRegion.evaluate((element) => document.activeElement === element))
+      .toBe(true)
+    for (let pageDown = 0; pageDown < 10; pageDown += 1) {
+      await page.keyboard.press('PageDown')
+      const atScrollEnd = await warningRegion.evaluate(
+        (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+      )
+      if (atScrollEnd) break
+    }
+    await expect.poll(() => warningRegion.evaluate(
+      (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+    )).toBe(true)
+    const finalWarningFullyVisible = await warningRegion.evaluate((element) => {
+      const warning = element.querySelector('[data-testid="map-overlay-warning-coordinate-target"]')
+      if (!(warning instanceof HTMLElement)) return false
+      const warningRect = warning.getBoundingClientRect()
+      const regionRect = element.getBoundingClientRect()
+      return warningRect.top >= regionRect.top && warningRect.bottom <= regionRect.bottom
+    })
+    expect(finalWarningFullyVisible).toBe(true)
+    await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-bottom.png' })
+  })
+
   test('preserves the map viewport when switching basemaps', async ({ page }) => {
     await page.evaluate(() => {
       const harness = (window as Window & { __SARTRACKER_MAP__?: {

@@ -22,8 +22,11 @@ export function MapDegradedAlert({ mapHealth, offlineReadiness }: MapDegradedAle
 
   return (
     <div
-      className="pointer-events-none absolute bottom-20 right-3 z-10 flex max-w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2"
+      aria-label={`Active map alerts${overlayWarnings.length > 0 ? `, ${overlayWarnings.length} overlay warnings` : ''}`}
+      className="pointer-events-none absolute bottom-20 right-3 z-10 flex max-h-[min(50%,calc(100%-6rem))] max-w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2 overflow-y-auto"
       data-testid="map-degraded-alert"
+      role="region"
+      tabIndex={0}
     >
       {showMapDegraded ? (
         <div
