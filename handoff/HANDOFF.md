@@ -9,20 +9,16 @@ Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
 PR #47 (`codex/c01-startup-store-fault-response`) remains draft. Exact-head
-Linux run `36047200408` failed in the candidate producer's three C01 held-gate
-checks; other preceding checks passed. The dialogs were clicked, then the
-processes were killed after no observed exit. The producer marked them
-dismissed without checking that the X11 windows actually closed, so the
-product-exit finding is not yet conclusive. Independent read-only review found
-no actionable code finding on that head. A fresh review found that the first
-observer update could exceed its two-second bound and understate the following
-exit interval. The working correction caps each X11 probe to the remaining
-deadline, rejects late observations, and anchors exit timing to the confirmed
-monotonic close time. Exact-head Linux validation and re-review are pending.
-Previous run `36025809540` passed the
-packaged C19 gate on an older head but skipped strict responsiveness. The
-historical 261.161 ms Linux C19 failure (`35984100420`) remains unresolved;
-master’s 50.836 ms pass does not explain or clear it.
+Linux run `36053525791` failed in the candidate producer's C01 held-gate
+observation; earlier gates passed. Its X11 state check failed to read a window
+state in two cases and timed out while one dialog stayed visible, so it did not
+produce a product-exit measurement. The working correction replaces `xwininfo`
+with the probe's existing `xdotool` visible-window search. Review of `7e009798`
+found no actionable issue; exact-head Linux validation and review of this
+correction are pending. Previous run `36025809540` passed the packaged C19 gate
+on an older head but skipped strict responsiveness. The historical 261.161 ms
+Linux C19 failure (`35984100420`) remains unresolved; master’s 50.836 ms pass
+does not explain or clear it.
 
 DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 
@@ -57,10 +53,11 @@ DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 - The C19 200 ms main-loop gate and failed receipts are preserved. Linux now
   reports scheduler attribution as explicitly unavailable if kernel accounting
   is disabled; the independent main-loop limit remains authoritative.
-- Held-gate observer now confirms the X11 window is hidden within a strict
-  2-second deadline and measures product exit from that monotonic observation.
-  Local probe/receipt/source tests pass (42 tests) and lint passes; the Linux
-  window-state path still needs exact-head CI validation.
+- Held-gate observer confirms dismissal within a strict 2-second deadline and
+  measures product exit from that monotonic observation. The current working
+  version uses `xdotool` visible-window search after the prior `xwininfo` path
+  failed on Linux. Local probe/receipt/source tests pass (43 tests) and lint
+  passes; the replacement still needs exact-head Linux validation.
 - C01 receipts distinguish matrix validity from full contract coverage; they
   remain `coverageComplete:false` and `qualificationEligible:false` while the
   pre-readiness and synchronous-store axes remain open. The stronger held-gate
@@ -68,8 +65,9 @@ DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 
 ## Next actions
 
-1. Finish exact-head review and Linux pull-request package CI for the current PR head,
-   including the unchanged packaged C19 200 ms gate. Preserve the old failure;
+1. Commit/push the `xdotool` visibility query; finish exact-head review and
+   Linux pull-request package CI, including the unchanged packaged C19 200 ms
+   gate. Preserve the old failure;
    the separate full-candidate strict responsiveness qualification is not a PR
    merge check and must not be claimed from this run.
 2. Update DON-179 with exact commands and evidence. Mark PR #47 ready only if

@@ -1055,6 +1055,13 @@ export async function waitForDialogDismissal(isDialogVisible, timeoutMs, depende
   throw new Error('C01 could not confirm the startup error dialog closed after the dismissal click.')
 }
 
+/** Identify xdotool's empty, exit-code-one result for a search with no matching windows. */
+export function isNoVisibleX11WindowSearchResult(error) {
+  return error?.code === 1
+    && String(error.stdout ?? '').trim() === ''
+    && String(error.stderr ?? '').trim() === ''
+}
+
 /** Observe a product-owned exit after the held-gate dialog has been dismissed. */
 export async function waitForOwnedProcessExitAfterDialog(
   child,
@@ -1721,28 +1728,23 @@ async function dismissErrorDialog(windowId, pid) {
     'mousemove', '--window', windowId, String(width - 52), String(height - 42), 'click', '1',
   ])
   return waitForDialogDismissal(
-    (remainingMs) => isErrorDialogVisible(windowId, remainingMs),
+    (remainingMs) => isErrorDialogVisible(windowId, pid, remainingMs),
     DIALOG_DISMISSAL_TIMEOUT_MS,
   )
 }
 
-/** Read the native X11 window state so a successful click is not mistaken for dismissal. */
-async function isErrorDialogVisible(windowId, remainingMs) {
+/** Search for the owned visible X11 error dialog so a successful click is not mistaken for dismissal. */
+async function isErrorDialogVisible(windowId, pid, remainingMs) {
   try {
-    const { stdout } = await execFileAsync(
-      'xwininfo', ['-id', windowId], {
+    const { stdout } = await execFileAsync('xdotool', [
+      'search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$',
+    ], {
         timeout: Math.max(1, Math.floor(Math.min(500, remainingMs))),
         killSignal: 'SIGKILL',
-      },
-    )
-    const mapState = /^\s*Map State:\s*(\S+)\s*$/mu.exec(stdout)?.[1]
-    if (mapState === undefined) {
-      throw new Error('C01 could not read the startup error dialog window state.')
-    }
-    return mapState === 'IsViewable'
+      })
+    return stdout.trim().split(/\s+/u).includes(windowId)
   } catch (error) {
-    const diagnostic = `${error?.message ?? ''}\n${error?.stderr ?? ''}`
-    if (/BadWindow|No such window|window id .* does not exist/iu.test(diagnostic)) return false
+    if (isNoVisibleX11WindowSearchResult(error)) return false
     throw error
   }
 }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   C01_STORE_LOCK_READY_TIMEOUT_MS,
+  isNoVisibleX11WindowSearchResult,
   waitForDialogDismissal,
   waitForOwnedProcessOrTimeout,
   waitForOwnedProcessExitAfterDialog,
@@ -63,6 +64,12 @@ describe('C01 held-gate product exit observation', () => {
       now: () => monotonicNow,
     })).rejects.toThrow('C01 could not confirm the startup error dialog closed after the dismissal click.')
     expect(isDialogVisible).toHaveBeenCalledOnce()
+  })
+
+  it('recognizes xdotool search exit 1 with no output as no visible dialog', () => {
+    expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: '' })).toBe(true)
+    expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: 'Cannot open display' })).toBe(false)
+    expect(isNoVisibleX11WindowSearchResult({ code: 0, stdout: '', stderr: '' })).toBe(false)
   })
 
   it('measures the application exit after dialog dismissal', async () => {

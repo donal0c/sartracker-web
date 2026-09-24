@@ -41,18 +41,17 @@ mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
 **PR #47 status:** the branch is based on current `master` (`30cb7d45`). Exact-head
-Linux run `36047200408` failed in the candidate producer's three C01 held-gate
-checks; all preceding checks passed. The dialogs were clicked and the
-processes were later killed, but the observer marked dismissal without
-confirming the X11 windows closed. The reported product-exit failure is
-therefore not conclusive. Independent review then found the first observer
-update could exceed its two-second bound and understate the following exit
-interval. The correction caps each X11 probe to the remaining deadline,
-rejects late observations, and measures exit from the confirmed monotonic close
-time. Local related probe/receipt/source tests pass (42 tests) and lint passes;
-fresh exact-head Linux validation and review are pending. Independent
-read-only review of `104432a4` found no actionable code finding. Previous run
-`36025809540` passed the packaged C19
+Linux run `36047200408` failed in three C01 held-gate product-exit checks, but
+its observer only sent a click and did not confirm that any X11 window closed.
+The follow-up run `36053525791` failed earlier in dismissal observation: its
+`xwininfo` query returned an unusable state in two cases and timed out while
+one dialog stayed visible. It supplied no product-exit measurement. Review of
+the corrected strict two-second deadline and monotonic exit anchor at
+`7e009798` found no actionable issue. The working follow-up replaces
+`xwininfo` with the probe's existing `xdotool` visible-window search. Related
+probe/receipt/source tests pass (43 tests) and lint passes; exact-head Linux
+validation and review are pending. Keep the PR draft until they complete.
+Previous run `36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be
 claimed from the prior run. Keep the PR draft until exact-head CI and review
