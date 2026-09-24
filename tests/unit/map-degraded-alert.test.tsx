@@ -23,7 +23,7 @@ describe('map overlay warning alert', () => {
 
     expect(markup).toContain('data-testid="map-degraded-alert"')
     expect(markup).toContain('role="region"')
-    expect(markup).toContain('aria-label="Active map alerts, 1 overlay warnings"')
+    expect(markup).toContain('aria-label="Active map alerts, 1 overlay warning"')
     expect(markup).toContain('tabindex="0"')
     expect(markup).toContain('max-h-[min(50%,calc(100%-6rem))]')
     expect(markup).toContain('overflow-y-auto')

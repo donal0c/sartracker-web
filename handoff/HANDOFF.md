@@ -43,12 +43,10 @@ the map remains usable while each active warning remains reachable.
 
 ## Next actions
 
-1. Commit these refreshed DON-264 handoff, workplan and assurance records, then
-   push the final branch head with a lease.
-2. Confirm normal PR checks run and pass on the pushed head; obtain fresh
-   independent review of that exact head; verify no unresolved review threads
-   and confirm mergeability. Keep PR #49 draft until each is green.
-3. Keep DON-264 separate from C17 residuals and all BCP-17 gates. Do not merge,
+1. Confirm normal PR checks and the fresh independent review apply to the
+   current pushed head; verify there are no unresolved review threads and PR
+   #49 remains mergeable. Mark it ready only if all final-head checks are green.
+2. Keep DON-264 separate from C17 residuals and all BCP-17 gates. Do not merge,
    qualify a candidate, tag, publish, promote, or claim field readiness.
 
 The release HOLD and C17 scope remain governed by the

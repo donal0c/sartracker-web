@@ -41,8 +41,8 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**Next steps:** push the final DON-264 PR head, obtain normal exact-head CI and
-a fresh independent review, and verify mergeability and review threads. Live
+**Next steps:** verify normal exact-head CI and a fresh independent review apply
+to the current DON-264 PR head; check mergeability and review threads. Live
 Linear confirms DON-264 remains `In Progress`; no issue completion is claimed.
 Do not contact SAR team members, run candidate qualification, tag, publish, or
 promote from this work.
