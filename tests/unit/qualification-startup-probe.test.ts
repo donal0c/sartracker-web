@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   C01_STORE_LOCK_READY_TIMEOUT_MS,
+  boundedX11SearchTimeoutMs,
+  serializeHeldGateObservationError,
   isWindowInVisibleX11Search,
   isNoVisibleX11WindowSearchResult,
   waitForDialogDismissal,
@@ -80,6 +82,31 @@ describe('C01 held-gate product exit observation', () => {
       .toThrow('C01 X11 visible-window search returned malformed window IDs.')
     expect(isWindowInVisibleX11Search('501\n', '501')).toBe(true)
     expect(isWindowInVisibleX11Search('502\n', '501')).toBe(false)
+  })
+
+  it('uses only the remaining dismissal window for each X11 query', () => {
+    expect(boundedX11SearchTimeoutMs(1_750)).toBe(1_750)
+    expect(boundedX11SearchTimeoutMs(2_500)).toBe(2_000)
+    expect(boundedX11SearchTimeoutMs(0)).toBe(1)
+  })
+
+  it('retains sanitized command failure details for held-gate diagnosis', () => {
+    const error = Object.assign(new Error('Command failed in /tmp/private-profile'), {
+      code: 'ETIMEDOUT',
+      signal: 'SIGKILL',
+      killed: true,
+      stdout: 'partial /tmp/private-profile output',
+      stderr: 'X server unavailable',
+    })
+
+    expect(serializeHeldGateObservationError(error, '/tmp/private-profile')).toEqual({
+      message: 'Command failed in [disposable-profile]',
+      code: 'ETIMEDOUT',
+      signal: 'SIGKILL',
+      killed: true,
+      stdout: 'partial [disposable-profile] output',
+      stderr: 'X server unavailable',
+    })
   })
 
   it('measures the application exit after dialog dismissal', async () => {

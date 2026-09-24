@@ -47,14 +47,17 @@ The follow-up run `36053525791` failed earlier in dismissal observation: its
 `xwininfo` query returned an unusable state in two cases and timed out while
 one dialog stayed visible. It supplied no product-exit measurement. Review of
 the corrected strict two-second deadline and monotonic exit anchor at
-`7e009798` found no actionable issue. The working follow-up replaces
-`xwininfo` with the probe's existing `xdotool` visible-window search. Related
-At `8a6de198`, Linux run `36058474722` is still in progress. Independent review
-found the successful-search path could accept empty or malformed stdout as
-dismissal. The local correction rejects those results; 44 focused
-probe/receipt/source tests and lint pass, but the correction is not yet pushed
-and has no exact-head CI/review evidence. Keep the PR draft until fresh
-exact-head Linux validation and review complete.
+`7e009798` found no actionable issue. Commit `8a6de198` replaced `xwininfo`
+with `xdotool`; review then found and fixed empty-success output being mistaken
+for dismissal at `4d76dcfa`. Its exact-head review found no issue. Linux run
+`36058990392` passed full correctness and rendered regressions but failed all
+three held-gate cases when `xdotool` visibility searches errored. Receipts
+record no confirmed dismissal or product exit, so they do not establish a
+product fault. The local follow-up uses the remaining two-second budget per
+query and retains sanitized error code/signal/output. Its focused
+probe/receipt/source tests pass (46 tests) and lint passes; the change is not
+yet pushed or reviewed. Keep the PR draft pending new exact-head Linux CI and
+review.
 Previous run `36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be

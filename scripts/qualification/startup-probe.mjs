@@ -774,6 +774,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   let forcedKill = false
   let appStdout = null
   let appStderr = null
+  let observationFailureDetails = null
   try {
     if (heldPath !== null) {
       await mkdir(path.dirname(heldPath), { recursive: true })
@@ -836,6 +837,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
         )
       } catch (error) {
         observationFailure = sanitizeError(error, profile)
+        observationFailureDetails = serializeHeldGateObservationError(error, profile)
       }
     }
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
@@ -920,6 +922,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     originalFiles: { before, after },
     cleanup,
     ...(observationFailure === null ? {} : { observationFailure }),
+    ...(observationFailureDetails === null ? {} : { observationFailureDetails }),
     ...(productExitFailed
       ? { productGap: `C01 ${gateKind} startup showed an in-bound fault dialog but did not produce the required exit code 1 without a signal within ${C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS}ms after dismissal.` }
       : timedOutWithoutAction
@@ -1071,6 +1074,28 @@ export function isWindowInVisibleX11Search(stdout, windowId) {
     throw new Error('C01 X11 visible-window search returned malformed window IDs.')
   }
   return windowIds.includes(windowId)
+}
+
+/** Bound one X11 query to the smaller of its remaining budget and the full dismissal window. */
+export function boundedX11SearchTimeoutMs(remainingMs) {
+  const finiteRemainingMs = Number.isFinite(remainingMs) ? remainingMs : 0
+  return Math.max(1, Math.floor(Math.min(DIALOG_DISMISSAL_TIMEOUT_MS, finiteRemainingMs)))
+}
+
+/** Preserve sanitized process details when a held-gate dismissal observation fails. */
+export function serializeHeldGateObservationError(error, privateRoot = '') {
+  const details = error !== null && typeof error === 'object' ? error : {}
+  const code = typeof details.code === 'number' || typeof details.code === 'string'
+    ? details.code
+    : null
+  return {
+    message: sanitizeError(error, privateRoot),
+    code,
+    signal: typeof details.signal === 'string' ? details.signal : null,
+    killed: details.killed === true,
+    stdout: sanitizeError(details.stdout ?? '', privateRoot),
+    stderr: sanitizeError(details.stderr ?? '', privateRoot),
+  }
 }
 
 /** Observe a product-owned exit after the held-gate dialog has been dismissed. */
@@ -1750,7 +1775,7 @@ async function isErrorDialogVisible(windowId, pid, remainingMs) {
     const { stdout } = await execFileAsync('xdotool', [
       'search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$',
     ], {
-        timeout: Math.max(1, Math.floor(Math.min(500, remainingMs))),
+        timeout: boundedX11SearchTimeoutMs(remainingMs),
         killSignal: 'SIGKILL',
       })
     return isWindowInVisibleX11Search(stdout, windowId)
