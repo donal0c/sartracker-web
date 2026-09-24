@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   C01_STORE_LOCK_READY_TIMEOUT_MS,
+  waitForDialogDismissal,
   waitForOwnedProcessOrTimeout,
   waitForOwnedProcessExitAfterDialog,
 } from '../../scripts/qualification/startup-probe.mjs'
@@ -23,6 +24,31 @@ describe('C01 held-gate product exit observation', () => {
     expect(C01_STORE_LOCK_READY_TIMEOUT_MS).toBe(5_000)
     expect(C01_HELD_GATE_TIMEOUT_MS).toBe(20_000)
     expect(C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS).toBe(12_000)
+  })
+
+  it('confirms the native dialog is no longer visible after the dismissal click', async () => {
+    let monotonicNow = 0
+    let visibleChecks = 0
+    const isDialogVisible = vi.fn(async () => {
+      visibleChecks += 1
+      return visibleChecks < 3
+    })
+
+    await expect(waitForDialogDismissal(isDialogVisible, 100, {
+      now: () => monotonicNow,
+      wait: async (milliseconds) => { monotonicNow += milliseconds },
+    })).resolves.toBeUndefined()
+    expect(isDialogVisible).toHaveBeenCalledTimes(3)
+    expect(monotonicNow).toBeGreaterThan(0)
+  })
+
+  it('does not report dismissal while the native dialog remains visible', async () => {
+    let monotonicNow = 0
+    await expect(waitForDialogDismissal(async () => true, 100, {
+      now: () => monotonicNow,
+      wait: async (milliseconds) => { monotonicNow += milliseconds },
+    })).rejects.toThrow('C01 could not confirm the startup error dialog closed after the dismissal click.')
+    expect(monotonicNow).toBe(100)
   })
 
   it('measures the application exit after dialog dismissal', async () => {

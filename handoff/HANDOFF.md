@@ -8,13 +8,18 @@ and assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 (`codex/c01-startup-store-fault-response`) remains draft on the latest
-branch head, which includes the monotonic held-gate response-time correction.
-Fresh exact-head Linux CI and independent read-only review are pending for that
-source. Previous run `36025809540` passed the packaged C19 gate on an older
-head but skipped strict responsiveness. The historical 261.161 ms Linux C19
-failure (`35984100420`) remains unresolved; master’s 50.836 ms pass does not
-explain or clear it.
+PR #47 (`codex/c01-startup-store-fault-response`) remains draft. Exact-head
+Linux run `36047200408` failed in the candidate producer's three C01 held-gate
+checks; other preceding checks passed. The dialogs were clicked, then the
+processes were killed after no observed exit. The producer marked them
+dismissed without checking that the X11 windows actually closed, so the
+product-exit finding is not yet conclusive. Independent read-only review found
+no actionable code finding on that head. The observer now waits up to two
+seconds to confirm the X11 window closed; exact-head Linux validation is
+pending. Previous run `36025809540` passed the
+packaged C19 gate on an older head but skipped strict responsiveness. The
+historical 261.161 ms Linux C19 failure (`35984100420`) remains unresolved;
+master’s 50.836 ms pass does not explain or clear it.
 
 DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 
@@ -49,6 +54,9 @@ DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 - The C19 200 ms main-loop gate and failed receipts are preserved. Linux now
   reports scheduler attribution as explicitly unavailable if kernel accounting
   is disabled; the independent main-loop limit remains authoritative.
+- Held-gate observer currently gains a 2-second X11 visibility check after the
+  dismissal click. Local probe/receipt/source tests pass (40 tests) and lint
+  passes; the Linux window-state path still needs exact-head CI validation.
 - C01 receipts distinguish matrix validity from full contract coverage; they
   remain `coverageComplete:false` and `qualificationEligible:false` while the
   pre-readiness and synchronous-store axes remain open. The stronger held-gate

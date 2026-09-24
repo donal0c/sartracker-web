@@ -40,14 +40,19 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**PR #47 status:** the branch is based on current `master` (`30cb7d45`) and its
-latest repair includes the monotonic held-gate response-time correction. Fresh
-exact-head Linux CI and read-only review are pending for the latest pushed
-source. Previous run `36025809540` passed the packaged C19 200 ms gate on an
-older head, but skipped the separate strict responsiveness qualification. That
-qualification is not a PR merge check and must not be claimed from the prior
-run. Keep the PR draft until exact-head CI and review complete. Do not merge,
-tag, publish, or promote from this work.
+**PR #47 status:** the branch is based on current `master` (`30cb7d45`). Exact-head
+Linux run `36047200408` failed in the candidate producer's three C01 held-gate
+checks; all preceding checks passed. The dialogs were clicked and the
+processes were later killed, but the observer marked dismissal without
+confirming the X11 windows closed. The reported product-exit failure is
+therefore not conclusive. The observer now waits up to two seconds for the X11
+window to close; exact-head Linux validation is pending. Independent
+read-only review of `104432a4` found no
+actionable code finding. Previous run `36025809540` passed the packaged C19
+200 ms gate on an older head, but skipped the separate strict responsiveness
+qualification. That qualification is not a PR merge check and must not be
+claimed from the prior run. Keep the PR draft until exact-head CI and review
+complete. Do not merge, tag, publish, or promote from this work.
 
 Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
 261.161 ms against 200 ms; same-Linux master run `36001695717` measured

@@ -57,6 +57,7 @@ const SHA256 = /^[a-f0-9]{64}$/u
 export const C01_STORE_LOCK_READY_TIMEOUT_MS = 5_000
 const APP_CLOSE_TIMEOUT_MS = 20_000
 const DIALOG_TIMEOUT_MS = 20_000
+const DIALOG_DISMISSAL_TIMEOUT_MS = 2_000
 const BAD_SECRET_WARNING =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
 const SYNTHETIC_BASE_URL = 'https://c01.synthetic.invalid.example'
@@ -1035,6 +1036,20 @@ export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt =
   }
 }
 
+/** Confirm the native startup dialog is no longer visible after sending its dismissal click. */
+export async function waitForDialogDismissal(isDialogVisible, timeoutMs, dependencies = {}) {
+  const now = dependencies.now ?? (() => performance.now())
+  const wait = dependencies.wait ?? delay
+  const deadline = now() + timeoutMs
+  while (true) {
+    if (!await isDialogVisible()) return
+    const remainingMs = deadline - now()
+    if (remainingMs <= 0) break
+    await wait(Math.min(50, remainingMs))
+  }
+  throw new Error('C01 could not confirm the startup error dialog closed after the dismissal click.')
+}
+
 /** Observe a product-owned exit after the held-gate dialog has been dismissed. */
 export async function waitForOwnedProcessExitAfterDialog(
   child,
@@ -1698,6 +1713,28 @@ async function dismissErrorDialog(windowId, pid) {
   await execFileAsync('xdotool', [
     'mousemove', '--window', windowId, String(width - 52), String(height - 42), 'click', '1',
   ])
+  await waitForDialogDismissal(
+    () => isErrorDialogVisible(windowId),
+    DIALOG_DISMISSAL_TIMEOUT_MS,
+  )
+}
+
+/** Read the native X11 window state so a successful click is not mistaken for dismissal. */
+async function isErrorDialogVisible(windowId) {
+  try {
+    const { stdout } = await execFileAsync(
+      'xwininfo', ['-id', windowId], { timeout: 500, killSignal: 'SIGKILL' },
+    )
+    const mapState = /^\s*Map State:\s*(\S+)\s*$/mu.exec(stdout)?.[1]
+    if (mapState === undefined) {
+      throw new Error('C01 could not read the startup error dialog window state.')
+    }
+    return mapState === 'IsViewable'
+  } catch (error) {
+    const diagnostic = `${error?.message ?? ''}\n${error?.stderr ?? ''}`
+    if (/BadWindow|No such window|window id .* does not exist/iu.test(diagnostic)) return false
+    throw error
+  }
 }
 
 /** Count renderer pages exposed by the live CDP endpoint. */
