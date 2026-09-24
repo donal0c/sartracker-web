@@ -7,7 +7,7 @@ type MapEventName = 'idle' | 'style.load' | 'styledata' | 'styledataloading'
 type MapEventListener = () => void
 
 type MapStyleSyncLifecycleCallbacks = {
-  readonly onPersistentFailure: (consecutiveFailures: number) => void
+  readonly onPersistentFailure: (failure: { readonly consecutiveFailures: number; readonly errorClass: string }) => void
   readonly onSynchronized: () => void
 }
 
@@ -174,7 +174,7 @@ describe('registerMapStyleSync', () => {
     expect(onPersistentFailure).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(100)
     expect(onPersistentFailure).toHaveBeenCalledOnce()
-    expect(onPersistentFailure).toHaveBeenCalledWith(3)
+    expect(onPersistentFailure).toHaveBeenCalledWith({ consecutiveFailures: 3, errorClass: 'Error' })
 
     await vi.advanceTimersByTimeAsync(200)
     expect(synchronize).toHaveBeenCalledTimes(4)

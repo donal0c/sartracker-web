@@ -6,9 +6,33 @@ const PERSISTENT_FAILURE_THRESHOLD = 3
 
 export type MapStyleSyncOptions = {
   readonly onStyleUnavailable?: () => void
-  readonly onPersistentFailure?: (consecutiveFailures: number) => void
+  readonly onPersistentFailure?: (failure: MapStyleSyncFailure) => void
   readonly onSynchronized?: () => void
+  readonly failureState?: MapStyleSyncFailureState
 }
+
+export type MapStyleSyncFailure = {
+  readonly consecutiveFailures: number
+  readonly errorClass: string
+}
+
+/** Mutable failure streak shared by registrations for the same overlay. */
+export type MapStyleSyncFailureState = {
+  consecutiveFailures: number
+  persistentFailureReported: boolean
+}
+
+const SAFE_ERROR_CLASSES = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'URIError',
+  'EvalError',
+  'AggregateError',
+  'AbortError',
+])
 
 /**
  * Runs a map overlay sync as soon as the style structure can accept app-owned
@@ -27,8 +51,10 @@ export function registerMapStyleSync(
   let synchronizationRequested = false
   let retryTimer: number | null = null
   let retryDelayMs = INITIAL_RETRY_DELAY_MS
-  let consecutiveFailures = 0
-  let persistentFailureReported = false
+  const failureState = options.failureState ?? {
+    consecutiveFailures: 0,
+    persistentFailureReported: false,
+  }
 
   const clearRetry = () => {
     if (retryTimer !== null) {
@@ -72,8 +98,8 @@ export function registerMapStyleSync(
         return
       }
       completeSynchronization()
-    } catch {
-      failSynchronization()
+    } catch (error) {
+      failSynchronization(error)
     }
   }
 
@@ -83,13 +109,13 @@ export function registerMapStyleSync(
       return
     }
     clearRetry()
-    consecutiveFailures = 0
+    failureState.consecutiveFailures = 0
     if (synchronizationRequested) {
       synchronizationRequested = false
       runIfReady()
       return
     }
-    persistentFailureReported = false
+    failureState.persistentFailureReported = false
     try {
       options.onSynchronized?.()
     } catch {
@@ -97,18 +123,24 @@ export function registerMapStyleSync(
     }
   }
 
-  const failSynchronization = () => {
+  const failSynchronization = (error: unknown) => {
     synchronizationInFlight = false
     if (disposed) {
       return
     }
     synchronizationRequested = false
     console.error('Map overlay synchronization failed; retrying.')
-    consecutiveFailures += 1
-    if (consecutiveFailures >= PERSISTENT_FAILURE_THRESHOLD && !persistentFailureReported) {
+    failureState.consecutiveFailures += 1
+    if (
+      failureState.consecutiveFailures >= PERSISTENT_FAILURE_THRESHOLD &&
+      !failureState.persistentFailureReported
+    ) {
       try {
-        options.onPersistentFailure?.(consecutiveFailures)
-        persistentFailureReported = true
+        options.onPersistentFailure?.({
+          consecutiveFailures: failureState.consecutiveFailures,
+          errorClass: getSafeErrorClass(error),
+        })
+        failureState.persistentFailureReported = true
       } catch {
         console.error('Persistent map overlay warning could not be recorded; retrying.')
       }
@@ -139,4 +171,18 @@ function hasStyleStructure(map: maplibregl.Map): boolean {
   } catch {
     return false
   }
+}
+
+/** Returns only a fixed JavaScript error name suitable for support diagnostics. */
+function getSafeErrorClass(error: unknown): string {
+  try {
+    const isKnownError = error instanceof Error ||
+      (typeof DOMException !== 'undefined' && error instanceof DOMException)
+    if (isKnownError && SAFE_ERROR_CLASSES.has(error.name)) {
+      return error.name
+    }
+  } catch {
+    // A hostile error object must not prevent the synchronization retry path.
+  }
+  return 'UnknownError'
 }

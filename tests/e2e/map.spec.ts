@@ -246,12 +246,20 @@ test.describe('M2 map shell', () => {
       const failedDiagnostics = await page.evaluate(() => {
         const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
           event?: string
-          fields?: { overlayFamily?: string }
+          fields?: {
+            registrationId?: string
+            overlayFamily?: string
+            consecutiveFailures?: number
+            errorClass?: string
+          }
         }>
         return events.filter((event) => event.event === 'map_overlay_sync_failed')
       })
       expect(failedDiagnostics).toHaveLength(1)
+      expect(failedDiagnostics[0]?.fields?.registrationId).toBe('markers')
       expect(failedDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
+      expect(failedDiagnostics[0]?.fields?.consecutiveFailures).toBeGreaterThanOrEqual(3)
+      expect(failedDiagnostics[0]?.fields?.errorClass).toBe('Error')
       expect(JSON.stringify(failedDiagnostics)).not.toContain('synthetic persistent marker synchronization failure')
       await page.screenshot({ path: 'test-results/don264-overlay-sync-warning.png' })
       await page.waitForTimeout(200)
