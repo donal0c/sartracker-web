@@ -94,28 +94,54 @@ jobs:
         id: observers
         continue-on-error: true
         run: |
-          set -uo pipefail
+          set -euo pipefail
           app="$GITHUB_WORKSPACE/tmp/c01-observer-isolation/deb-root/opt/SAR Tracker Electron Validation/sartracker-web"
           receipts="$EVIDENCE_DIR/receipts"
           logs="$EVIDENCE_DIR/logs"
           mkdir -p "$logs"
           : > "$EVIDENCE_DIR/command-exits.tsv"
+          export APP_PATH="$app" RECEIPTS_DIR="$receipts" LOGS_DIR="$logs"
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- bash <<'EOF'
+          set -uo pipefail
+          openbox --sm-disable > "$LOGS_DIR/openbox.log" 2>&1 &
+          wm_pid=$!
+          trap 'kill "$wm_pid" 2>/dev/null || true; wait "$wm_pid" 2>/dev/null || true' EXIT
+          wm_ready=0
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$wm_pid" 2>/dev/null; then
+              cat "$LOGS_DIR/openbox.log" >&2
+              exit 1
+            fi
+            if xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null \
+              | grep -Eq '_NET_SUPPORTING_WM_CHECK\(WINDOW\): window id # 0x[0-9a-f]+'; then
+              wm_ready=1
+              break
+            fi
+            sleep 0.1
+          done
+          if [ "$wm_ready" != "1" ]; then
+            echo "Openbox did not become ready in the isolated C01 observer." >&2
+            cat "$LOGS_DIR/openbox.log" >&2
+            exit 1
+          fi
           result=0
           for gate in diagnostics crash store; do
-            set +e
-            xvfb-run -a --server-args='-screen 0 1440x900x24' \
-              dbus-run-session -- \
-              node scripts/qualification/producer-development-held-gate.mjs \
-                "$app" "$receipts/$gate" "$gate" \
-              > "$logs/$gate.stdout.log" 2> "$logs/$gate.stderr.log"
-            status=$?
-            set -e
+            if node scripts/qualification/producer-development-held-gate.mjs \
+              "$APP_PATH" "$RECEIPTS_DIR/$gate" "$gate" \
+              > "$LOGS_DIR/$gate.stdout.log" 2> "$LOGS_DIR/$gate.stderr.log"; then
+              status=0
+            else
+              status=$?
+              result=1
+            fi
             printf '%s\t%s\n' "$gate" "$status" >> "$EVIDENCE_DIR/command-exits.tsv"
-            if [ ! -s "$receipts/$gate/development-mechanics.json" ]; then
+            if [ ! -s "$RECEIPTS_DIR/$gate/development-mechanics.json" ]; then
               result=1
             fi
           done
           exit "$result"
+          EOF
 
       - name: Upload all isolated observer receipts
         if: always()
