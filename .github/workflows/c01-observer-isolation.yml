@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     env:
-      SOURCE_SHA: 49918966b7d1121542c29f1c99f8d0de87458eb0
+      SOURCE_SHA: ${{ github.sha }}
       EVIDENCE_DIR: ${{ github.workspace }}/tmp/c01-observer-isolation
       LIBGL_ALWAYS_SOFTWARE: '1'
       GALLIUM_DRIVER: llvmpipe
@@ -93,6 +93,8 @@ jobs:
       - name: Run only the three held-gate observers
         id: observers
         continue-on-error: true
+        env:
+          SARTRACKER_C01_CAPTURE_X11_DIAGNOSTICS: '1'
         run: |
           set -euo pipefail
           app="$GITHUB_WORKSPACE/tmp/c01-observer-isolation/deb-root/opt/SAR Tracker Electron Validation/sartracker-web"

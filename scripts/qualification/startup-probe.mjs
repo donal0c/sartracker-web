@@ -224,6 +224,7 @@ export async function runStartupHeldGateDevelopmentProbe(options) {
       appPath: options.appPath,
       evidenceDir,
       developmentTestHarness: options.launchPackagedTarget !== true,
+      captureX11Diagnostics: process.env.SARTRACKER_C01_CAPTURE_X11_DIAGNOSTICS === '1',
     }, path.join(disposableRoot, options.gateKind), {}, options.gateKind)
     const report = {
       schema: 'sartracker-c01-startup-held-gate-development-v1',
@@ -830,7 +831,13 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
           appProcess,
           C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
           async () => {
-            const confirmedDismissalAt = await dismissErrorDialog(dialogWindowId, appProcess.pid)
+            const confirmedDismissalAt = await dismissErrorDialog(
+              dialogWindowId,
+              appProcess.pid,
+              options.captureX11Diagnostics === true
+                ? { evidenceDir: options.evidenceDir, gateKind, privateRoot: profile }
+                : null,
+            )
             dialogDismissed = true
             return confirmedDismissalAt
           },
@@ -1080,6 +1087,51 @@ export function isWindowInVisibleX11Search(stdout, windowId) {
 export function boundedX11SearchTimeoutMs(remainingMs) {
   const finiteRemainingMs = Number.isFinite(remainingMs) ? remainingMs : 0
   return Math.max(1, Math.floor(Math.min(DIALOG_DISMISSAL_TIMEOUT_MS, finiteRemainingMs)))
+}
+
+/** Run one best-effort X11 diagnostic command with a strict child-process timeout. */
+export async function runBoundedX11DiagnosticCommand(
+  command,
+  args,
+  timeoutMs,
+  execute = execFileAsync,
+  privateRoot = '',
+) {
+  const boundedTimeoutMs = Math.max(1, Math.floor(Number.isFinite(timeoutMs) ? timeoutMs : 1))
+  const startedAt = performance.now()
+  try {
+    const { stdout = '', stderr = '' } = await execute(command, args, {
+      timeout: boundedTimeoutMs,
+      killSignal: 'SIGKILL',
+    })
+    return {
+      command,
+      args: args.map((value) => sanitizeError(value, privateRoot)),
+      timeoutMs: boundedTimeoutMs,
+      elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      code: 0,
+      signal: null,
+      killed: false,
+      stdout: sanitizeError(stdout, privateRoot),
+      stderr: sanitizeError(stderr, privateRoot),
+    }
+  } catch (error) {
+    const details = error !== null && typeof error === 'object' ? error : {}
+    const code = typeof details.code === 'number' || typeof details.code === 'string'
+      ? details.code
+      : null
+    return {
+      command,
+      args: args.map((value) => sanitizeError(value, privateRoot)),
+      timeoutMs: boundedTimeoutMs,
+      elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      code,
+      signal: typeof details.signal === 'string' ? details.signal : null,
+      killed: details.killed === true,
+      stdout: sanitizeError(details.stdout ?? '', privateRoot),
+      stderr: sanitizeError(details.stderr ?? '', privateRoot),
+    }
+  }
 }
 
 /** Preserve sanitized process details when a held-gate dismissal observation fails. */
@@ -1752,7 +1804,7 @@ async function isSarTrackerErrorDialog(windowId, timeoutMs = 1_000) {
 }
 
 /** Dismiss the native dialog using verified window-relative geometry. */
-async function dismissErrorDialog(windowId, pid) {
+async function dismissErrorDialog(windowId, pid, diagnostics = null) {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Refusal dialog requires the owned process PID.')
   const { stdout: observedPid } = await execFileAsync('xdotool', ['getwindowpid', windowId])
   if (observedPid.trim() !== String(pid)) throw new Error('Refusing to dismiss another process\'s dialog.')
@@ -1760,12 +1812,63 @@ async function dismissErrorDialog(windowId, pid) {
   const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
   const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
   if (!Number.isInteger(width) || !Number.isInteger(height)) throw new Error('C01 could not read refusal dialog geometry.')
+  const diagnosticRecord = diagnostics === null ? null : {
+    schema: 'sartracker-c01-x11-dismissal-diagnostics-v1',
+    gateKind: diagnostics.gateKind,
+    pid,
+    windowId,
+    geometry: { width, height },
+    click: { x: width - 52, y: height - 42 },
+    beforeClickScreenshot: await captureX11RootScreenshot(
+      diagnostics.evidenceDir,
+      `x11-${diagnostics.gateKind}-before-click.png`,
+      diagnostics.privateRoot,
+    ),
+  }
   await execFileAsync('xdotool', [
     'mousemove', '--window', windowId, String(width - 52), String(height - 42), 'click', '1',
   ])
-  return waitForDialogDismissal(
-    (remainingMs) => isErrorDialogVisible(windowId, pid, remainingMs),
-    DIALOG_DISMISSAL_TIMEOUT_MS,
+  try {
+    return await waitForDialogDismissal(
+      (remainingMs) => isErrorDialogVisible(windowId, pid, remainingMs),
+      DIALOG_DISMISSAL_TIMEOUT_MS,
+    )
+  } catch (error) {
+    if (diagnosticRecord !== null) {
+      diagnosticRecord.observationFailure = serializeHeldGateObservationError(error, diagnostics.privateRoot)
+      diagnosticRecord.afterClickScreenshot = await captureX11RootScreenshot(
+        diagnostics.evidenceDir,
+        `x11-${diagnostics.gateKind}-after-click.png`,
+        diagnostics.privateRoot,
+      )
+      diagnosticRecord.postFailureCommands = await Promise.all([
+        runBoundedX11DiagnosticCommand(
+          'xdotool', ['search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$'], 350,
+          execFileAsync, diagnostics.privateRoot,
+        ),
+        runBoundedX11DiagnosticCommand(
+          'xdotool', ['getwindowgeometry', '--shell', windowId], 350, execFileAsync, diagnostics.privateRoot,
+        ),
+        runBoundedX11DiagnosticCommand(
+          'xprop', ['-id', windowId, 'WM_NAME', 'WM_CLASS', 'WM_STATE', '_NET_WM_PID'], 350,
+          execFileAsync, diagnostics.privateRoot,
+        ),
+        runBoundedX11DiagnosticCommand(
+          'xwininfo', ['-id', windowId], 350, execFileAsync, diagnostics.privateRoot,
+        ),
+      ])
+      await writeJson(
+        path.join(diagnostics.evidenceDir, 'x11-dismissal-diagnostics.json'), diagnosticRecord,
+      ).catch(() => undefined)
+    }
+    throw error
+  }
+}
+
+/** Capture the synthetic C01 display without allowing image inspection to block the probe. */
+async function captureX11RootScreenshot(evidenceDir, filename, privateRoot) {
+  return runBoundedX11DiagnosticCommand(
+    'import', ['-window', 'root', path.join(evidenceDir, filename)], 750, execFileAsync, privateRoot,
   )
 }
 

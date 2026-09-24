@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   C01_STORE_LOCK_READY_TIMEOUT_MS,
   boundedX11SearchTimeoutMs,
+  runBoundedX11DiagnosticCommand,
   serializeHeldGateObservationError,
   isWindowInVisibleX11Search,
   isNoVisibleX11WindowSearchResult,
@@ -73,6 +74,26 @@ describe('C01 held-gate product exit observation', () => {
     expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: '' })).toBe(true)
     expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: 'Cannot open display' })).toBe(false)
     expect(isNoVisibleX11WindowSearchResult({ code: 0, stdout: '', stderr: '' })).toBe(false)
+    expect(isNoVisibleX11WindowSearchResult({
+      code: null, signal: 'SIGKILL', killed: true, stdout: '', stderr: '',
+    })).toBe(false)
+    expect(isNoVisibleX11WindowSearchResult({
+      code: null, signal: 'SIGPIPE', killed: true, stdout: '', stderr: '',
+    })).toBe(false)
+  })
+
+  it.each(['SIGKILL', 'SIGPIPE'])('does not confirm dialog dismissal when the X11 query ends with %s', async (signal) => {
+    const queryError = Object.assign(new Error('xdotool query failed'), {
+      code: null,
+      signal,
+      killed: true,
+      stdout: '',
+      stderr: '',
+    })
+    const isDialogVisible = vi.fn(async () => { throw queryError })
+
+    await expect(waitForDialogDismissal(isDialogVisible, 100)).rejects.toBe(queryError)
+    expect(isDialogVisible).toHaveBeenCalledOnce()
   })
 
   it('treats an empty successful visibility search as invalid evidence', () => {
@@ -88,6 +109,33 @@ describe('C01 held-gate product exit observation', () => {
     expect(boundedX11SearchTimeoutMs(1_750)).toBe(1_750)
     expect(boundedX11SearchTimeoutMs(2_500)).toBe(2_000)
     expect(boundedX11SearchTimeoutMs(0)).toBe(1)
+  })
+
+  it('bounds diagnostic X11 commands and preserves timeout details without treating them as absence', async () => {
+    const queryError = Object.assign(new Error('X11 query timed out'), {
+      code: null,
+      signal: 'SIGKILL',
+      killed: true,
+      stdout: '',
+      stderr: '',
+    })
+    const execute = vi.fn(async () => { throw queryError })
+
+    await expect(runBoundedX11DiagnosticCommand(
+      'xdotool', ['search', '--onlyvisible', '--pid', '42'], 300, execute,
+    )).resolves.toMatchObject({
+      command: 'xdotool',
+      timeoutMs: 300,
+      code: null,
+      signal: 'SIGKILL',
+      killed: true,
+      stdout: '',
+      stderr: '',
+    })
+    expect(execute).toHaveBeenCalledWith(
+      'xdotool', ['search', '--onlyvisible', '--pid', '42'],
+      { timeout: 300, killSignal: 'SIGKILL' },
+    )
   })
 
   it('retains sanitized command failure details for held-gate diagnosis', () => {
