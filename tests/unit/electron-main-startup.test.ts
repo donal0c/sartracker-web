@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,14 +17,13 @@ const originalProcessListeners = {
   uncaughtException: new Set(process.listeners('uncaughtException')),
   unhandledRejection: new Set(process.listeners('unhandledRejection')),
 }
-const testUserDataPath = path.join(
-  os.tmpdir(),
-  `sartracker-electron-main-startup-test-${process.pid}-${process.env.VITEST_WORKER_ID ?? '0'}`,
-)
+let testUserDataPathSequence = 0
+let testUserDataPath = createTestUserDataPath()
 
 describe('Electron main startup', () => {
   afterEach(() => {
     Module._load = originalLoad
+    vi.useRealTimers()
     Object.defineProperty(process, 'platform', {
       value: originalPlatform,
     })
@@ -31,6 +31,7 @@ describe('Electron main startup', () => {
     removeTestProcessListeners('uncaughtException')
     removeTestProcessListeners('unhandledRejection')
     rmSync(testUserDataPath, { force: true, recursive: true })
+    testUserDataPath = createTestUserDataPath()
     delete process.env.SARTRACKER_ELECTRON_BLOCK_NETWORK
     delete process.env.ELECTRON_RENDERER_URL
     delete require.cache[require.resolve('../../electron/main.cjs')]
@@ -70,7 +71,9 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await Promise.resolve()
+    await vi.waitFor(() => expect(
+      session.defaultSession.webRequest.onBeforeRequest,
+    ).toHaveBeenCalled())
 
     expect(session.defaultSession.webRequest.onBeforeRequest).toHaveBeenCalledWith(
       { urls: ['http://*/*', 'https://*/*'] },
@@ -1323,6 +1326,536 @@ describe('Electron main startup', () => {
     expect(runtimeLog).not.toContain('unhandled_rejection')
   })
 
+  it('reports the timed-out startup step when startup diagnostics remain held', async () => {
+    vi.useFakeTimers()
+    const held = new Promise<never>(() => {})
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const crashLog = { hadUncleanShutdown: vi.fn(async () => false), record: vi.fn(async () => undefined) }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const createRuntimeLog = vi.fn(() => runtimeLog)
+    const createCrashLog = vi.fn(() => crashLog)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: () => held }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds.*does not mean the mission data is damaged/iu),
+    )
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+    expect(createCrashLog).toHaveBeenCalledTimes(1)
+    expect(createRuntimeLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses Electron error reporting for a readiness rejection before application logs exist', async () => {
+    const readinessError = new Error(
+      'Could not open /home/fieldoperator/profile token=private-startup-token',
+    )
+    const electronMock = createElectronMock(vi.fn())
+    electronMock.app.whenReady.mockRejectedValue(readinessError)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/could not open its operational data safely/iu),
+    )
+    expect(electronMock.app.getPath).not.toHaveBeenCalled()
+  })
+
+  it('opens the normal window after a 3.5-second readiness delay', async () => {
+    vi.useFakeTimers()
+    let monotonicNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    let resolveReady: () => void = () => {
+      throw new Error('Electron readiness was not released by the test.')
+    }
+    const readiness = new Promise<void>((resolve) => {
+      resolveReady = resolve
+    })
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    electronMock.app.whenReady.mockReturnValue(readiness)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(3_500)
+    monotonicNow = 3_500
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    resolveReady()
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(electronMock.app.on).toHaveBeenCalledWith(
+      'before-quit',
+      expect.any(Function),
+    ))
+
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+  })
+
+  it('starts the 10-second watchdog after readiness, excluding module-load and readiness delay', async () => {
+    vi.useFakeTimers()
+    let monotonicNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    let resolveReady: () => void = () => {
+      throw new Error('Electron readiness was not released by the test.')
+    }
+    const readiness = new Promise<void>((resolve) => {
+      resolveReady = resolve
+    })
+    const held = new Promise<never>(() => {})
+    const initializeDiagnostics = vi.fn(() => held)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    electronMock.app.whenReady.mockReturnValue(readiness)
+    const crashLog = { hadUncleanShutdown: vi.fn(async () => false), record: vi.fn(async () => undefined) }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: initializeDiagnostics }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+    monotonicNow = 3_500
+    resolveReady()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(initializeDiagnostics).toHaveBeenCalledOnce()
+
+    monotonicNow = 13_499
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    monotonicNow = 13_500
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds/iu),
+    )
+    await Promise.resolve()
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  it('does not start the pre-window watchdog until Electron is ready', async () => {
+    vi.useFakeTimers()
+    let monotonicNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    let resolveReady: () => void = () => {
+      throw new Error('Electron readiness was not released by the test.')
+    }
+    const readiness = new Promise<void>((resolve) => {
+      resolveReady = resolve
+    })
+    const startupError = new Error('test startup stopped after readiness')
+    const initializeDiagnostics = vi.fn(async () => undefined)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    electronMock.app.whenReady.mockReturnValue(readiness)
+    electronMock.app.isReady.mockReturnValue(false)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: initializeDiagnostics }) }
+      }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: vi.fn(() => { throw startupError }) }
+      }
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+    monotonicNow = 20_000
+    await vi.advanceTimersByTimeAsync(20_000)
+
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    expect(initializeDiagnostics).not.toHaveBeenCalled()
+
+    monotonicNow = 20_001
+    electronMock.app.isReady.mockReturnValue(true)
+    resolveReady()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/could not open its operational data safely/iu),
+    )
+    expect(initializeDiagnostics).toHaveBeenCalledOnce()
+    expect(electronMock.app.isReady).toHaveReturnedWith(true)
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  it('starts independent diagnostics and crash-state reads in parallel', async () => {
+    vi.useFakeTimers()
+    let releaseDiagnostics: (() => void) | undefined
+    const diagnosticsInitialization = new Promise<void>((resolve) => {
+      releaseDiagnostics = resolve
+    })
+    const startupError = new Error('stop after startup state inspection')
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const initializeDiagnostics = vi.fn(() => diagnosticsInitialization)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: initializeDiagnostics }) }
+      }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: vi.fn(() => { throw startupError }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(initializeDiagnostics).toHaveBeenCalledOnce()
+    expect(crashLog.hadUncleanShutdown).toHaveBeenCalledOnce()
+    releaseDiagnostics?.()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/could not open its operational data safely/iu),
+    )
+  })
+
+  it('applies the same watchdog to a later active-mission read', async () => {
+    vi.useFakeTimers()
+    let monotonicNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    const held = new Promise<never>(() => {})
+    const initializeDiagnostics = vi.fn(async () => undefined)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const createCrashLog = vi.fn(() => crashLog)
+    const createRuntimeLog = vi.fn(() => runtimeLog)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './runtime-log.cjs') return { createRuntimeLog }
+      if (request === './crash-log.cjs') return { createCrashLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: initializeDiagnostics }) }
+      }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: () => ({
+          info: vi.fn(async () => ({ schema_version: 1 })),
+          getActiveMission: vi.fn(() => held),
+        }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(0)
+    monotonicNow = 10_000
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(initializeDiagnostics).toHaveBeenCalledOnce()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/active mission lookup.*10 seconds/iu),
+    )
+    await Promise.resolve()
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+    expect(createCrashLog).toHaveBeenCalledTimes(1)
+    expect(createRuntimeLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies the same watchdog to the operational window load', async () => {
+    vi.useFakeTimers()
+    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
+    const heldLoad = new Promise<never>(() => {})
+    const electronMock = createElectronMock(vi.fn(), undefined, true, [], () => heldLoad)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const storageDiagnostics = {
+      initialize: vi.fn(async () => undefined),
+      configurePolling: vi.fn(async () => undefined),
+      configureStore: vi.fn(async () => undefined),
+      recordRestart: vi.fn(async () => undefined),
+      readSupportSnapshot: vi.fn(async () => ({})),
+    }
+    const missionStore = new Proxy({
+      info: vi.fn(async () => ({ schema_version: 1 })),
+      getActiveMission: vi.fn(async () => null),
+    }, {
+      get(target, property) {
+        if (property in target) return target[property as keyof typeof target]
+        return vi.fn(async () => undefined)
+      },
+    })
+    const proxyFactory = () => new Proxy({}, {
+      get(_target, property) {
+        if (property === 'then') return undefined
+        return vi.fn(async () => undefined)
+      },
+    })
+    const settingsStore = {
+      loadRuntimeBootstrapSettings: vi.fn(async () => ({ trackingPollIntervalMs: 10_000 })),
+      loadAppSettings: vi.fn(async () => ({ missionDefaults: { adminRoster: [] } })),
+    }
+    const rendererTeardownCoordinator = {
+      markRendererUnavailable: vi.fn(async () => undefined),
+      markRendererAvailable: vi.fn(async () => undefined),
+      prepare: vi.fn(async () => undefined),
+      ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    const archiveReviewSessionManager = {
+      sweepStartup: vi.fn(async () => undefined),
+      closeForSender: vi.fn(async () => undefined),
+      hasReviewActivity: vi.fn(() => false),
+      open: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      cancel: vi.fn(async () => undefined),
+      read: vi.fn(async () => undefined),
+      recordMutationDenied: vi.fn(async () => undefined),
+      acquireCleanupLease: vi.fn(async () => ({ release: vi.fn() })),
+      beginCorrectionSnapshotUse: vi.fn(async () => ({ release: vi.fn() })),
+      completeCorrectionSnapshot: vi.fn(async () => undefined),
+      prepareClose: vi.fn(async () => undefined),
+      dispose: vi.fn(),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-watchdog.cjs') return originalLoad(request, parent, isMain)
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './crash-log.cjs') {
+        return { createCrashLog: () => crashLog, isRendererFaultReason: () => false }
+      }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => storageDiagnostics }
+      }
+      if (request === './settings-store.cjs') {
+        return { createElectronSettingsStore: () => settingsStore }
+      }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: () => missionStore }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => rendererTeardownCoordinator }
+      }
+      if (request === './runtime-files.cjs') {
+        return { createElectronRuntimeFiles: proxyFactory }
+      }
+      if (request === './file-system.cjs') {
+        return { createElectronFileSystem: proxyFactory }
+      }
+      if (request === './archive-review-sessions.cjs') {
+        return { createArchiveReviewSessionManager: () => archiveReviewSessionManager }
+      }
+      if (request === './archive-cleanup-startup.cjs') {
+        return { startInterruptedMissionCleanupRecovery: async () => ({ completion: Promise.resolve() }) }
+      }
+      if (request === './official-map-proxy.cjs') {
+        return { createElectronOfficialMapProxy: proxyFactory }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/operational window content load.*10 seconds/iu),
+    )
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+  })
+
+  it('keeps the C01 response deadline bounded when the wall clock moves backwards', async () => {
+    vi.useFakeTimers()
+    let wallClockMovedBackwards = false
+    let monotonicNow = 0
+    const originalDateNow = Date.now.bind(Date)
+    vi.spyOn(Date, 'now').mockImplementation(() =>
+      originalDateNow() - (wallClockMovedBackwards ? 60_000 : 0),
+    )
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    const held = new Promise<never>(() => {})
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(() => held),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({
+          initialize: () => new Promise((resolve) => setTimeout(() => {
+            monotonicNow = 2_500
+            wallClockMovedBackwards = true
+            resolve(undefined)
+          }, 2_500)),
+        }) }
+      }
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(2_500)
+    expect(crashLog.hadUncleanShutdown).toHaveBeenCalledOnce()
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    monotonicNow = 10_000
+    await vi.advanceTimersByTimeAsync(7_500)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds/iu),
+    )
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  it('shows the C01 startup fault before blocked crash and runtime log writes settle', async () => {
+    vi.useFakeTimers()
+    let releaseHeld: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      releaseHeld = resolve
+    })
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(() => held),
+      record: vi.fn(() => held),
+    }
+    const runtimeLog = { append: vi.fn(() => held) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: vi.fn(async () => undefined) }) }
+      }
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(crashLog.hadUncleanShutdown).toHaveBeenCalledOnce()
+    expect(crashLog.record).toHaveBeenCalledOnce()
+    expect(runtimeLog.append).toHaveBeenCalled()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds/iu),
+    )
+    await vi.advanceTimersByTimeAsync(300)
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+    releaseHeld?.()
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+  })
+
+  it('keeps a store startup fault actionable when crash evidence writes are held', async () => {
+    vi.useFakeTimers()
+    let releaseHeld: (() => void) | undefined
+    const held = new Promise<void>((resolve) => {
+      releaseHeld = resolve
+    })
+    const startupError = new Error('SQLITE_BUSY: mission store startup lock is held.')
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(() => held),
+    }
+    const runtimeLog = { append: vi.fn(() => held) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: vi.fn(async () => undefined) }) }
+      }
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: vi.fn(() => { throw startupError }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/preserve the profile and contact support/iu),
+    )
+    expect(crashLog.record).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'startupFailure',
+      summary: expect.stringContaining(startupError.message),
+    }))
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+    releaseHeld?.()
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+  })
+
   it('keeps arbitrary startup-failure detail out of the operator dialog [DON-260]', async () => {
     const startupError = new Error(
       'Could not open /home/fieldoperator/mission-store.sqlite token=private-startup-token',
@@ -1347,7 +1880,7 @@ describe('Electron main startup', () => {
     await vi.waitFor(() => {
       expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
         'SAR Tracker could not start',
-        'SAR Tracker could not open its operational data safely. The fault was recorded and the application will now close. Preserve the profile and contact support before retrying.',
+        'SAR Tracker could not open its operational data safely. Preserve the profile and contact support before retrying. The application will now close.',
       )
       expect(electronMock.app.exit).toHaveBeenCalledWith(1)
     })
@@ -1620,12 +2153,13 @@ function createElectronMock(
   },
   ready = false,
   existingWindows: unknown[] = [],
+  windowLoadURL: () => Promise<unknown> = () => Promise.resolve(),
 ) {
   const BrowserWindow = vi.fn(function MockBrowserWindow() {
     return {
       close: vi.fn(),
       destroy: vi.fn(),
-      loadURL: vi.fn(() => Promise.resolve()),
+      loadURL: vi.fn(windowLoadURL),
       on: vi.fn(),
       webContents: {
         getURL: vi.fn(() => ''),
@@ -1651,6 +2185,7 @@ function createElectronMock(
         return testUserDataPath
       }),
       getVersion: vi.fn(() => '0.1.0-test'),
+      isReady: vi.fn(() => ready),
       on: vi.fn(),
       quit: vi.fn(),
       relaunch: vi.fn(),
@@ -1677,4 +2212,13 @@ function createElectronMock(
       fork: vi.fn(),
     },
   }
+}
+
+/** Returns a distinct profile directory for each startup test invocation. */
+function createTestUserDataPath() {
+  testUserDataPathSequence += 1
+  return path.join(
+    os.tmpdir(),
+    `sartracker-electron-main-startup-test-${process.pid}-${process.env.VITEST_WORKER_ID ?? '0'}-${testUserDataPathSequence}`,
+  )
 }

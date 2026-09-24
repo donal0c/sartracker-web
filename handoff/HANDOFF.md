@@ -5,51 +5,57 @@ qualification history remains in the workplan and assurance records.
 
 ## Current state
 
-Release remains **HOLD**. No Beta 13 candidate is frozen, no qualification run
-or tag has been started, and no publication or team distribution has occurred.
-PR #48 is merged; current `master` is
-`a81dd4a388196d241a48205ad45e961c1ab26c9b`, including the post-merge C17
-change that records any fixed-canary leak as an observed privacy failure.
+Release remains **HOLD**. No Beta 13 candidate is frozen or qualified, and no
+tag, publication, or team distribution has occurred. Current `master` is
+`30cb7d45ed6011adc3da034d815bb7d8742bd6a3`, after PR #49 merged. It includes
+the C17 fixed-canary leak classification and DON-264 persistent overlay warning
+behavior.
 
-PR #49 is open for DON-264 on `codex/don-264-overlay-warning`, rebased onto
-current master. Failure streaks persist by map and stable
-overlay registration ID across hook re-registration. Diagnostic events retain
-only the allow-listed error class, never raw exception text. Concurrent overlay
-warnings are presented in a bounded keyboard- and wheel-scrollable region, so
-the map remains usable while each active warning remains reachable.
+PR #47 remains draft on `codex/c01-startup-store-fault-response` while it is
+rebased and its local C01 review fixes are reapplied. Exact old head
+`8cdf6f62` failed Linux C19 run `35984100420`: one 261.161 ms main-loop gap
+against 200 ms. Master run `36001695717` passed the same packaged observer at
+50.836 ms, making a one-off host pause more plausible but not proving it. Keep
+the old failure unresolved and do not mark PR #47 ready from the master pass.
+
+DON-179 remains **In Review**; PR #47 does not complete its opt-in diagnostic
+upload scope.
 
 ## Active work and evidence
 
-- The quick re-registration regression was red on the rebased pre-fix
-  `a0e17d9f` and green after the fix. Full correctness passed after the
-  warning-region fix: 570 files, 5,832 passed, 25 skipped. The subsequent
-  accessibility-label wording fix passed its focused unit regression; lint
-  passed on the final source.
-- DON-264 Chromium warning/recovery and ten-warning scrolling checks passed.
-  The visual runtime warning/recovery check passed and its screenshot was
-  inspected locally. Browser and visual harness results are not field
-  acceptance.
-- `npm run electron:pack` passed, including production build and macOS arm64
-  packaging. Packaged local C14 passed marker warning, recovery, clearance and
-  cleanup; receipt `/tmp/don264-c14-closeout.klCU9Z/map-surface-report.json`
-  reports `releaseEligible: false`. This is package evidence, not candidate
-  qualification.
-- The fresh independent review at final head `02758843` confirmed the clipping
-  fix and accessibility/documentation cleanup, with no actionable P1-P3
-  findings. GitHub reports no unresolved inline threads and the PR is
-  mergeable.
-- At last check GitHub reported no unresolved inline threads and the PR
-  mergeable. Read the live PR to verify its current head, CI, review, and draft
-  state before changing readiness. Superseded CI runs and the canceled manual
-  workflow dispatch are not final-head green evidence.
+- The local C01 review fixes bound failure-evidence waiting to ten seconds and
+  validate the held-gate dialog against its exact 20-second producer deadline.
+  Before rebase they passed 77 focused tests, full correctness (568 files,
+  5,836 passed, 25 skipped), lint and build; independent review found both
+  findings resolved. Reapply and reverify them on the rebased source.
+- Linux failure receipt checksum:
+  `314d88880af4132654a574c21b1133bc828820f74e897363e15ac0db8195f88c`.
+  Its measured block combines mutation, `prepareClose` and `close`; it has no
+  CPU, scheduler or storage attribution. Seven implicated MissionStore files
+  and the Electron executable hash match the master pass; the ASAR differs.
+  Darwin same-profile readings were 52.40 ms (base), 54.41 ms (prior head),
+  and 54.53 ms (old PR head). None resolves the Linux outlier.
+- The separate first Darwin package attempt showed a native startup dialog
+  because my symlinked packaging setup omitted `bindings` from packaged
+  `better-sqlite3`. Redacted logs and the failed first-launch receipt are
+  retained; the corrected package passed. This was a harness packaging fault,
+  not C19 or an injected product fault. It used an isolated temporary profile;
+  normal profile files had no comparison-date modifications. The exact outer
+  command and absolute executable path were removed with the temporary wrapper.
+- Master run `36001695717` passed Linux lint, full correctness, production
+  build, browser regressions, candidate-producer checks, packaged C17, and
+  packaged legacy recovery. Its push trigger skipped strict responsiveness.
 
 ## Next actions
 
-1. Confirm normal PR checks pass on the current pushed head; verify the fresh
-   independent review, no unresolved review threads, and mergeability still
-   apply. Change draft readiness only after live exact-head verification.
-2. Keep DON-264 separate from C17 residuals and all BCP-17 gates. Do not merge,
-   qualify a candidate, tag, publish, promote, or claim field readiness.
+1. Finish the rebase, reapply only the reviewed C01 fixes, then run focused,
+   fault, browser, packaged, correctness, lint and build checks.
+2. Obtain fresh independent final-head review, address its findings, push and
+   require exact-head Linux CI. Keep PR #47 draft while the historical C19
+   cause remains unresolved; the master pass is supporting evidence, not
+   clearance.
+3. Preserve the Beta 13 release hold; do not merge, qualify, tag, publish, or
+   distribute.
 
 The release HOLD and C17 scope remain governed by the
 [two-track execution workplan](../docs/two-track-execution-workplan.md) and

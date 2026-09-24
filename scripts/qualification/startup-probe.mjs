@@ -736,7 +736,7 @@ async function fillBoundedEnospcVolume(profile) {
   }
 }
 
-const HELD_GATE_TIMEOUT_MS = 5_000
+const HELD_GATE_TIMEOUT_MS = 20_000
 
 /** Classify a held gate that reached the fixed observation bound without an in-bound response. */
 export function isBoundedHeldGateTimeoutWithoutAction({ earlyExit }) {

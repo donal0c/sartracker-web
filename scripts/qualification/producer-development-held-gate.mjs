@@ -12,6 +12,7 @@ if (![appPath, evidenceDir].every(value => typeof value === 'string' && path.isA
 const report = await runStartupHeldGateDevelopmentProbe({ appPath, evidenceDir, gateKind, launchPackagedTarget: true })
 const result = inspectHeldGateDevelopment(report, gateKind)
 await writeFile(path.join(evidenceDir, 'development-mechanics.json'), JSON.stringify(result, null, 2), { flag: 'wx' })
-// A negative product observation remains FAIL in the retained result. This exit
-// code asserts only that the fault was exercised and all owned processes closed.
+// Exit 2 retains an observed product failure while preserving the successful
+// producer mechanics receipt. Exit 1 remains reserved for infrastructure faults.
 if (!result.infrastructurePassed) process.exitCode = 1
+else if (!result.producerCheckPassed) process.exitCode = 2

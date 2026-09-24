@@ -258,7 +258,7 @@ describe('qualification C01 startup receipt validator', () => {
     })).toBe(false)
   })
 
-  it('accepts only a dialog observed within the five-second polling bound', () => {
+  it('accepts only a dialog observed within the supplied polling bound', () => {
     const observed = { earlyExit: { timedOut: false }, dialogWindowId: '123', timeoutMs: 5_000 }
     expect(isActionableHeldGateObservation({ ...observed, dialogObservedAtMs: 4_999 })).toBe(true)
     expect(isActionableHeldGateObservation({ ...observed, dialogObservedAtMs: 5_001 })).toBe(false)
@@ -339,6 +339,8 @@ describe('qualification C01 startup receipt validator', () => {
     expect(STARTUP_PROBE_DESCRIPTOR.coverage.join('\n')).toMatch(/newer.*schema|corrupt.*settings|bad.*secret/iu)
     expect(STARTUP_PROBE_DESCRIPTOR.profileKinds).toEqual([...C01_STARTUP_PROFILE_KINDS])
     expect(STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.join('\n')).toMatch(/field|AppImage|provider/iu)
+    expect(STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.join('\n'))
+      .toMatch(/Electron bootstrap.*never reaches app readiness.*20-second.*does not prove bounded recovery.*C01 contract forbids indefinite blank.*system-level bootstrap/iu)
   })
 
   it('recomputes each packaged profile from observations and ignores forged result', () => {
@@ -361,10 +363,10 @@ describe('qualification C01 startup receipt validator', () => {
       activeRecoverableMission: true,
       custody: true,
     })
-    expect(result.coverageComplete).toBe(true)
-    expect(result.qualificationEligible).toBe(true)
+    expect(result.coverageComplete).toBe(false)
+    expect(result.qualificationEligible).toBe(false)
     expect(result.releaseEligible).toBe(false)
-    expect(result.uncoveredAxes).toEqual([])
+    expect(result.uncoveredAxes).toEqual([...STARTUP_PROBE_DESCRIPTOR.uncoveredAxes])
   })
 
   it('rejects forged pass when the newer-schema profile changes a retained byte', () => {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { compileProducerDevelopmentPlan } from './producer-development-plan.mjs'
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { runOwnedProcess } from './owned-process.mjs'
+import { inspectHeldGateExecution } from './producer-development-policy.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const [app, output, sourceSha] = process.argv.slice(2)
@@ -55,12 +56,16 @@ for (const entry of plan) {
   }
   await writeFile(path.join(output, `${id}-stdout.log`), execution.stdout, { flag: 'wx' })
   await writeFile(path.join(output, `${id}-stderr.log`), execution.stderr, { flag: 'wx' })
-  const infrastructurePassed = execution.exitCode === 0 && !execution.timedOut
-    && execution.processError === null && execution.zeroDescendantsAfterRun
-    && (!entry.mechanicsOnly || mechanics?.infrastructurePassed === true)
+  const heldGateExecution = entry.mechanicsOnly
+    ? inspectHeldGateExecution({ ...execution, mechanics })
+    : null
+  const infrastructurePassed = heldGateExecution?.infrastructurePassed
+    ?? (execution.exitCode === 0 && !execution.timedOut
+      && execution.processError === null && execution.zeroDescendantsAfterRun)
+  const productCheckPassed = heldGateExecution?.productCheckPassed ?? null
   const result = { id, contractId, exitCode: execution.exitCode, timedOut: execution.timedOut,
     processError: execution.processError, zeroDescendantsAfterRun: execution.zeroDescendantsAfterRun,
-    infrastructurePassed, qualificationExecuted: false, mechanics }
+    infrastructurePassed, productCheckPassed, qualificationExecuted: false, mechanics }
   results.push(result)
   await writeFile(path.join(output, `${id}-development-result.json`), JSON.stringify(result, null, 2), { flag: 'wx' })
   if (execution.zeroDescendantsAfterRun !== true) {
@@ -70,9 +75,10 @@ for (const entry of plan) {
 }
 const infrastructurePassed = cancellationSignal === null && results.length === plan.length
   && results.every(result => result.infrastructurePassed)
+const productChecksPassed = results.every(result => result.productCheckPassed !== false)
 await writeFile(path.join(output, 'development-summary.json'), JSON.stringify({
   schema: 'sartracker-producer-development-v1', sourceSha, sourceTree, appIdentity, asarIdentity, results, infrastructurePassed,
-  cancellationSignal, cleanupBlocked, plannedCases: plan.length, completedCases: results.length,
+  productChecksPassed, cancellationSignal, cleanupBlocked, plannedCases: plan.length, completedCases: results.length,
   proofMode: 'unpacked-package-producer-development', qualificationExecuted: false,
   releaseEligible: false, candidateReceipt: false,
   notRun: ['full C01 startup matrix including physical ENOSPC and field storage',
@@ -83,3 +89,4 @@ await writeFile(path.join(output, 'development-summary.json'), JSON.stringify({
 process.off('SIGTERM', onTerminate)
 process.off('SIGINT', onInterrupt)
 if (!infrastructurePassed) process.exitCode = 1
+else if (!productChecksPassed) process.exitCode = 2

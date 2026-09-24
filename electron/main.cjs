@@ -13,6 +13,8 @@ const path = require('node:path')
 const { monitorEventLoopDelay } = require('node:perf_hooks')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 
+const C01_STARTUP_RESPONSE_TIMEOUT_MS = 10_000
+
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
@@ -49,6 +51,7 @@ const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
+const { createStartupWatchdog, StartupTimeoutError } = require('./startup-watchdog.cjs')
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
 const {
@@ -84,7 +87,6 @@ const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 const MAX_MISSION_NAME_BYTES = 1_024
 const MAX_MISSION_START_TIME_BYTES = 64
 const MAX_MISSION_NOTES_BYTES = 2_000
-
 const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
   open: 'sartracker:archive-review:open',
   close: 'sartracker:archive-review:close',
@@ -274,6 +276,7 @@ async function createWindow(
   runtimeLog,
   rendererTeardownCoordinator,
   archiveReviewSessionManager,
+  startupWatchdog,
 ) {
   const window = new BrowserWindow({
     width: 1440,
@@ -344,15 +347,26 @@ async function createWindow(
     })
   }
 
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL
-  if (rendererUrl !== undefined && rendererUrl.trim() !== '') {
-    await window.loadURL(withOptionalValidationQuery(rendererUrl))
+  let rendererUrl
+  const configuredRendererUrl = process.env.ELECTRON_RENDERER_URL
+  if (configuredRendererUrl !== undefined && configuredRendererUrl.trim() !== '') {
+    rendererUrl = withOptionalValidationQuery(configuredRendererUrl)
   } else {
     const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
     addValidationQueryIfRequested(indexUrl)
-    await window.loadURL(indexUrl.toString())
+    rendererUrl = indexUrl.toString()
   }
-  await rendererTeardownCoordinator.markRendererAvailable()
+  const loadRenderer = () => window.loadURL(rendererUrl)
+  if (startupWatchdog === undefined) await loadRenderer()
+  else await startupWatchdog.run('operational window content load', loadRenderer)
+  if (startupWatchdog === undefined) {
+    await rendererTeardownCoordinator.markRendererAvailable()
+  } else {
+    await startupWatchdog.run(
+      'operational renderer availability fence',
+      () => rendererTeardownCoordinator.markRendererAvailable(),
+    )
+  }
 }
 
 /**
@@ -1171,7 +1185,15 @@ function normalizeTimeout(value) {
 }
 
 if (ownsSingleInstanceLock) {
-  app.whenReady().then(startElectronApp).catch(handleStartupFailure)
+  app.whenReady()
+    .then(() => {
+      const startupWatchdog = createStartupWatchdog({
+        timeoutMs: C01_STARTUP_RESPONSE_TIMEOUT_MS,
+      })
+      return startElectronApp(startupWatchdog)
+        .finally(() => startupWatchdog.dispose())
+    })
+    .catch(handleStartupFailure)
 }
 
 /**
@@ -1179,28 +1201,31 @@ if (ownsSingleInstanceLock) {
  * without relaunching into the same persistent fault.
  */
 async function handleStartupFailure(error) {
-  const userDataPath = app.getPath('userData')
-  const crashLog =
-    electronRuntimeContext.crashLog ?? createCrashLog({ userDataPath })
-  const runtimeLog =
-    electronRuntimeContext.runtimeLog ?? createRuntimeLog({ userDataPath })
   const summary =
     error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown startup failure'
-  await Promise.all([
-    crashLog.record({
-      kind: 'startupFailure',
-      summary,
-      detail:
-        error instanceof Error && typeof error.stack === 'string'
-          ? error.stack
-          : undefined,
-    }),
-    runtimeLog.append({
-      level: 'error',
-      event: 'startup_failure',
-      fields: { name: error instanceof Error ? error.name : 'Error' },
-    }),
-  ])
+  let evidenceWrites = Promise.resolve()
+  if (app.isReady()) {
+    const userDataPath = app.getPath('userData')
+    const crashLog =
+      electronRuntimeContext.crashLog ?? createCrashLog({ userDataPath })
+    const runtimeLog =
+      electronRuntimeContext.runtimeLog ?? createRuntimeLog({ userDataPath })
+    evidenceWrites = Promise.allSettled([
+      startBestEffortStartupWrite(() => crashLog.record({
+        kind: 'startupFailure',
+        summary,
+        detail:
+          error instanceof Error && typeof error.stack === 'string'
+            ? error.stack
+            : undefined,
+      })),
+      startBestEffortStartupWrite(() => runtimeLog.append({
+        level: 'error',
+        event: 'startup_failure',
+        fields: startupFailureLogFields(error),
+      })),
+    ])
+  }
 
   try {
     dialog.showErrorBox(
@@ -1208,17 +1233,41 @@ async function handleStartupFailure(error) {
       startupFailureOperatorMessage(error),
     )
   } catch {
-    // A native dialog may be unavailable in headless validation. The durable
-    // logs above and non-zero exit still preserve a fail-closed result.
+    // A native dialog may be unavailable in headless validation; retain the
+    // non-zero exit even when only best-effort logging is possible.
   }
+  await evidenceWrites
   app.exit(1)
 }
 
+/** Starts one startup failure write without allowing a synchronous adapter throw to hide the fault. */
+function startBestEffortStartupWrite(write) {
+  try {
+    return Promise.resolve(write())
+  } catch {
+    return Promise.resolve()
+  }
+}
+
+/** Adds bounded timeout details to the startup event without exposing arbitrary error text. */
+function startupFailureLogFields(error) {
+  const fields = { name: error instanceof Error ? error.name : 'Error' }
+  if (error instanceof StartupTimeoutError) {
+    fields.stage = error.stage
+    fields.timeoutMs = error.timeoutMs
+    fields.elapsedMs = error.elapsedMs
+  }
+  return fields
+}
+
 /**
- * Exposes only a known-safe actionable schema refusal; arbitrary startup
- * errors remain in the sanitized crash log rather than the native dialog.
+ * Exposes only a known-safe schema refusal or recovery action, without
+ * assuming that startup diagnostics or crash records were writable.
  */
 function startupFailureOperatorMessage(error) {
+  if (error instanceof StartupTimeoutError) {
+    return `Startup could not complete because ${error.stage} did not finish within ${Math.ceil(error.timeoutMs / 1_000)} seconds after Electron was ready. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
+  }
   const message = error instanceof Error ? error.message : ''
   if (
     /^Cannot open mission store created by newer mission store schema \d+; this build supports schema \d+\.$/u.test(
@@ -1227,27 +1276,38 @@ function startupFailureOperatorMessage(error) {
   ) {
     return `${message}\n\nThe mission database was left unchanged. Install a newer SAR Tracker build or use a compatible preserved profile. Do not overwrite or edit this profile.`
   }
-  return 'SAR Tracker could not open its operational data safely. The fault was recorded and the application will now close. Preserve the profile and contact support before retrying.'
+  return 'SAR Tracker could not open its operational data safely. Preserve the profile and contact support before retrying. The application will now close.'
 }
 
 /**
  * Starts the SAR Tracker runtime once this process owns the single-instance lock.
  */
-async function startElectronApp() {
+async function startElectronApp(startupWatchdog) {
   installValidationNetworkBlock()
   const userDataPath = app.getPath('userData')
   const runtimeLog = createRuntimeLog({ userDataPath })
+  const crashLog = createCrashLog({ userDataPath })
+  electronRuntimeContext.runtimeLog = runtimeLog
+  electronRuntimeContext.crashLog = crashLog
   const storageDiagnostics = createStorageDiagnostics({
     userDataPath,
     runtimeLog,
     validationMode: validationUserDataPath !== undefined,
   })
-  await storageDiagnostics.initialize()
-  const crashLog = createCrashLog({ userDataPath })
-  const previousSessionEndedUncleanly = await crashLog.hadUncleanShutdown()
-  await crashLog.markSessionStart()
-  electronRuntimeContext.crashLog = crashLog
-  electronRuntimeContext.runtimeLog = runtimeLog
+  const previousSessionEndedUncleanly = await startupWatchdog.run(
+    'startup storage and crash-state inspection',
+    async () => {
+      const [, previousSessionEndedUncleanly] = await Promise.all([
+        storageDiagnostics.initialize(),
+        crashLog.hadUncleanShutdown(),
+      ])
+      return previousSessionEndedUncleanly
+    },
+  )
+  await startupWatchdog.run(
+    'session start marker persistence',
+    () => crashLog.markSessionStart(),
+  )
   installCrashCapture(crashLog, runtimeLog)
   void runtimeLog.append({
     level: 'info',
@@ -1320,7 +1380,10 @@ async function startElectronApp() {
   })
   electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
   if (previousSessionEndedUncleanly) {
-    await rendererTeardownCoordinator.markRendererUnavailable()
+    await startupWatchdog.run(
+      'previous-session renderer fence',
+      () => rendererTeardownCoordinator.markRendererUnavailable(),
+    )
   }
   void missionStore
     .info()
@@ -1330,9 +1393,15 @@ async function startElectronApp() {
       }),
     )
     .catch(() => undefined)
-  const activeMission = await missionStore.getActiveMission()
+  const activeMission = await startupWatchdog.run(
+    'active mission lookup',
+    () => missionStore.getActiveMission(),
+  )
   if (activeMission !== null) {
-    await storageDiagnostics.recordRestart({ startedAt: activeMission.start_time })
+    await startupWatchdog.run(
+      'mission restart diagnostic persistence',
+      () => storageDiagnostics.recordRestart({ startedAt: activeMission.start_time }),
+    )
   }
   const fileSystem = createElectronFileSystem({
     userDataPath: app.getPath('userData'),
@@ -1360,16 +1429,22 @@ async function startElectronApp() {
     }),
   })
   electronRuntimeContext.archiveReviewSessionManager = archiveReviewSessionManager
-  await archiveReviewSessionManager.sweepStartup()
-  const archiveCleanupStartupRecovery = await startInterruptedMissionCleanupRecovery({
-    missionStore,
-    sessionManager: archiveReviewSessionManager,
-    onFailure: ({ code }) => runtimeLog.append({
-      level: 'error',
-      event: 'archive_cleanup_restart_failed',
-      fields: { code },
+  await startupWatchdog.run(
+    'archive review startup sweep',
+    () => archiveReviewSessionManager.sweepStartup(),
+  )
+  const archiveCleanupStartupRecovery = await startupWatchdog.run(
+    'interrupted archive cleanup recovery setup',
+    () => startInterruptedMissionCleanupRecovery({
+      missionStore,
+      sessionManager: archiveReviewSessionManager,
+      onFailure: ({ code }) => runtimeLog.append({
+        level: 'error',
+        event: 'archive_cleanup_restart_failed',
+        fields: { code },
+      }),
     }),
-  })
+  )
   electronRuntimeContext.archiveCleanupStartupRecovery = archiveCleanupStartupRecovery
   void archiveCleanupStartupRecovery.completion.catch(() => runtimeLog.append({
     level: 'error',
@@ -1397,12 +1472,13 @@ async function startElectronApp() {
     runtimeLog,
     archiveReviewSessionManager,
   )
-  await createWindow(
+  await startupWatchdog.run('operational window startup', () => createWindow(
     crashLog,
     runtimeLog,
     rendererTeardownCoordinator,
     archiveReviewSessionManager,
-  )
+    startupWatchdog,
+  ))
   electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
   app.on('before-quit', (event) => {

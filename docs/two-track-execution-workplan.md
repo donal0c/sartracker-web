@@ -7,16 +7,14 @@
 Release is **HOLD**. PR45 merged documentation/control-plane evidence only; no
 Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
 #48 is merged; current `master` is
-`a81dd4a388196d241a48205ad45e961c1ab26c9b`, including the post-merge C17
-canary-leak classification fix. The current change is the separately owned
-DON-264 operator-warning repair on `codex/don-264-overlay-warning`, rebased onto
-that master. The implementation retains failure streaks across quick hook
-re-registration and presents concurrent overlay warnings in a bounded,
-keyboard-scrollable map region. Post-rebase local correctness, lint, browser,
-visual and packaged map-surface checks passed. Fresh independent review of
-final head `02758843` found no actionable P1-P3 findings. Verify current
-exact-head PR checks live before deciding draft readiness. Local package
-evidence is not candidate qualification.
+`30cb7d45ed6011adc3da034d815bb7d8742bd6a3`, including the post-merge C17
+canary-leak classification fix and merged DON-264 overlay-warning repair. PR
+#49's current-master CI run `36001695717` passed full correctness, lint,
+production build, browser regressions, producer checks, packaged C17 and
+packaged C19 recovery. Its push trigger skipped strict responsiveness. The
+active PR is #47's separate C01 startup repair; it remains draft during rebase
+and C19 follow-up. Do not treat master CI or packaged receipts as candidate
+qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -42,11 +40,37 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**Next steps:** verify the current DON-264 PR head, normal CI, mergeability and
-review threads before changing draft readiness. The fresh independent review
-is clean at `02758843`. Live Linear confirms DON-264 remains `In Progress`; no
-issue completion is claimed. Do not contact SAR team members, run candidate
-qualification, tag, publish, or promote from this work.
+**Next steps:** finish PR #47's rebase and targeted verification; obtain fresh
+independent exact-head review, push and require green exact-head Linux CI.
+Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
+261.161 ms against 200 ms, while same-Linux master run `36001695717` measured
+50.836 ms on the same post-settlement mutation/close observer. The latter makes
+a one-off host pause more plausible but does not prove scheduler/storage cause
+or exclude other PR-head code. Do not clear or dismiss the retained failure or
+mark PR #47 ready on this comparison alone. Do not run candidate qualification,
+tag, publish, or promote from this work.
+
+**Current C01 review repair — 2026-09-24:** PR #47 replaces the module-load
+deadline with one 10-second watchdog starting after Electron readiness and
+running through the operational window. The held-gate observer and receipt
+validator share a 20-second response bound. Fresh review of old PR head
+`8cdf6f6` found an unbounded failure-evidence write wait and a receipt validator
+that accepted late dialogs; local repairs are independently reviewed and had
+passed 77 focused tests, full correctness (5,836 passed, 25 skipped), lint and
+build before rebase. They must be reapplied and reverified on current master.
+
+The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
+one post-settlement mutation/close interval against the 200 ms limit. The same
+Linux observer passed on current master `30cb7d4` in run `36001695717` at
+50.836 ms; the seven implicated MissionStore files and Electron executable
+hash match, while the ASAR differs. The failed interval is not split into
+mutation, `prepareClose` and `close`, and no CPU/scheduler/storage telemetry
+proves its cause. This pass supports an isolated host pause but does not prove
+it. Retain the failure as unresolved and keep PR #47 draft. Same-host Darwin
+results (52.40, 54.41 and 54.53 ms) do not clear the Linux result. The current
+master push workflow skipped strict responsiveness qualification. C01 still
+lacks a bounded response when Electron never becomes ready; this work does not
+qualify C01 or change the Beta 13 release hold.
 
 Everything below this dated decision is earlier planning and evidence retained
 for provenance. Older status and sequencing statements are superseded wherever

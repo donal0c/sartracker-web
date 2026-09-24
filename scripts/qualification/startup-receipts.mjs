@@ -65,6 +65,7 @@ export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
     'field-scale Ubuntu admission with genuinely allocated 3.7 GB operational data',
     'real provider/current polling request continuity and AppImage/deb installation parity',
     'browser-only boot states and WAR-13B/publication or field acceptance evidence',
+    'Electron bootstrap that never reaches app readiness; the 20-second held-dependency observation starts before process launch, but no profile holds Electron readiness, so C01 does not prove bounded recovery here. The C01 contract forbids indefinite blank startup; a Linux GUI failure before Electron readiness requires a system-level bootstrap outside Electron',
   ]),
 })
 
@@ -741,14 +742,12 @@ function makeResult(predicates, failures, status = 'INVALID_EVIDENCE') {
     valid,
     passed: valid,
     recomputedPredicates: Object.freeze({ ...predicates }),
-    // These fields describe this fixed packaged startup matrix. Family and
-    // cross-tier admission are evaluated by the campaign controller; a valid
-    // receipt must not remain permanently incomplete because other tiers or
-    // external acceptance are still pending.
-    coverageComplete: valid,
-    qualificationEligible: valid,
+    // A valid receipt proves this packaged matrix only. The known C01 gaps
+    // remain visible and keep the full contract incomplete and ineligible.
+    coverageComplete: valid && STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.length === 0,
+    qualificationEligible: valid && STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.length === 0,
     releaseEligible: false,
-    uncoveredAxes: valid ? Object.freeze([]) : STARTUP_PROBE_DESCRIPTOR.uncoveredAxes,
+    uncoveredAxes: STARTUP_PROBE_DESCRIPTOR.uncoveredAxes,
     failureReasons: Object.freeze(uniqueFailures),
   })
 }

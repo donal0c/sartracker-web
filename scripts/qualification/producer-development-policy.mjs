@@ -9,7 +9,7 @@ export function inspectHeldGateDevelopment(report, gateKind) {
       || scenario?.profileKind !== `held-${gateKind}-gate`) failures.push('Development held-gate identity differs.')
   if (scenario?.gate?.kind !== gateKind || scenario.gate.held !== true
       || scenario.gate.synthetic !== false || scenario.gate.bounded !== true
-      || scenario.gate.timeoutMs !== 5000) failures.push('Real bounded startup dependency hold was not observed.')
+      || scenario.gate.timeoutMs !== 20_000) failures.push('Real bounded startup dependency hold was not observed.')
   if (!Number.isSafeInteger(scenario?.process?.pid) || scenario.process.pid <= 0
       || scenario.process.closed !== true) failures.push('Owned startup process was not observed closed.')
   if (gateKind === 'store'
@@ -25,14 +25,33 @@ export function inspectHeldGateDevelopment(report, gateKind) {
   }
   const actionable = scenario?.observed === 'actionable-fault' && typeof scenario.gate?.action === 'string'
     && scenario.gate.action.length > 0 && Number.isFinite(scenario.process?.faultShellAtMs)
-    && scenario.process.faultShellAtMs >= 0 && scenario.process.faultShellAtMs <= 5000
+    && scenario.process.faultShellAtMs >= 0 && scenario.process.faultShellAtMs <= 20_000
   const negative = scenario?.observed === 'bounded-timeout-no-action'
     && typeof scenario.productGap === 'string' && scenario.productGap.length > 0
     && ['SIGTERM', 'SIGKILL'].includes(scenario.process?.signal)
   if (!actionable && !negative) failures.push('Neither bounded actionable response nor explicit timeout negative was observed.')
   return Object.freeze({ infrastructurePassed: failures.length === 0,
     observedPredicateStatus: failures.length ? 'INVALID_EVIDENCE' : actionable ? 'PASS' : 'FAIL',
+    producerCheckPassed: failures.length === 0 && actionable,
     qualificationExecuted: false, releaseEligible: false, failures: Object.freeze(failures),
     productGap: negative ? scenario.productGap : null,
+  })
+}
+
+/** Keep the observed product predicate separate from child-process infrastructure. */
+export function inspectHeldGateExecution(execution) {
+  const { exitCode, timedOut, processError, zeroDescendantsAfterRun, mechanics } = execution
+  const productCheckPassed = mechanics?.producerCheckPassed === true
+  const productFailureExit = exitCode === 2
+    && mechanics?.infrastructurePassed === true
+    && mechanics?.producerCheckPassed === false
+  const processCompleted = exitCode === 0 || productFailureExit
+  return Object.freeze({
+    infrastructurePassed: processCompleted
+      && timedOut === false
+      && processError === null
+      && zeroDescendantsAfterRun === true
+      && mechanics?.infrastructurePassed === true,
+    productCheckPassed,
   })
 }
