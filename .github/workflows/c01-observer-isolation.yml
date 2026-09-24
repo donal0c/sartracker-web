@@ -1,0 +1,146 @@
+name: C01 held-gate observer isolation
+
+on:
+  push:
+    branches:
+      - codex/c01-startup-store-fault-response
+    paths:
+      - .github/workflows/c01-observer-isolation.yml
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  isolate:
+    name: Observe held C01 faults against retained Linux package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      SOURCE_SHA: 49918966b7d1121542c29f1c99f8d0de87458eb0
+      EVIDENCE_DIR: ${{ github.workspace }}/tmp/c01-observer-isolation
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      GALLIUM_DRIVER: llvmpipe
+      NO_AT_BRIDGE: '1'
+    steps:
+      - name: Check out the exact probe source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Install the Linux runtime used by package validation
+        run: |
+          set -euo pipefail
+          test -s /etc/apt/sources.list
+          sudo apt-get -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourceparts=- install -y \
+            dbus-x11 \
+            gnome-keyring \
+            imagemagick \
+            libasound2 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libcups2 \
+            libdrm2 \
+            libfuse2 \
+            libgbm1 \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            mesa-utils \
+            squashfs-tools \
+            openbox \
+            python3 \
+            libgtk-3-0 \
+            libnss3 \
+            libxdamage1 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libxss1 \
+            xdotool \
+            x11-utils \
+            xvfb \
+            xauth
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install exact-source probe dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: npm ci --no-audit --no-fund
+
+      - name: Download retained exact-head Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: electron-linux-artifacts-49918966b7d1121542c29f1c99f8d0de87458eb0
+          run-id: 36064148886
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: tmp/electron-dist
+
+      - name: Verify package and extract it without rebuilding
+        run: |
+          set -euo pipefail
+          sha256sum --check tmp/electron-dist/SHA256SUMS
+          mkdir -p tmp/c01-observer-isolation/deb-root
+          dpkg-deb -x \
+            tmp/electron-dist/sartracker-electron-validation_0.1.0-beta.12.11_linux_amd64.deb \
+            tmp/c01-observer-isolation/deb-root
+          test -x 'tmp/c01-observer-isolation/deb-root/opt/SAR Tracker Electron Validation/sartracker-web'
+
+      - name: Run only the three held-gate observers
+        id: observers
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          app="$GITHUB_WORKSPACE/tmp/c01-observer-isolation/deb-root/opt/SAR Tracker Electron Validation/sartracker-web"
+          receipts="$EVIDENCE_DIR/receipts"
+          logs="$EVIDENCE_DIR/logs"
+          mkdir -p "$logs"
+          : > "$EVIDENCE_DIR/command-exits.tsv"
+          result=0
+          for gate in diagnostics crash store; do
+            set +e
+            xvfb-run -a --server-args='-screen 0 1440x900x24' \
+              dbus-run-session -- \
+              node scripts/qualification/producer-development-held-gate.mjs \
+                "$app" "$receipts/$gate" "$gate" \
+              > "$logs/$gate.stdout.log" 2> "$logs/$gate.stderr.log"
+            status=$?
+            set -e
+            printf '%s\t%s\n' "$gate" "$status" >> "$EVIDENCE_DIR/command-exits.tsv"
+            if [ ! -s "$receipts/$gate/development-mechanics.json" ]; then
+              result=1
+            fi
+          done
+          exit "$result"
+
+      - name: Upload all isolated observer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c01-observer-isolation-49918966-${{ github.run_id }}
+          path: tmp/c01-observer-isolation
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Report observer and product predicates
+        if: always()
+        run: |
+          set -euo pipefail
+          failed=0
+          for gate in diagnostics crash store; do
+            receipt="$EVIDENCE_DIR/receipts/$gate/development-mechanics.json"
+            if [ ! -s "$receipt" ]; then
+              echo "::error::Missing $gate observer receipt."
+              failed=1
+              continue
+            fi
+            jq '{infrastructurePassed, observedPredicateStatus, producerCheckPassed, failures, productGap}' "$receipt"
+            if ! jq -e '.infrastructurePassed == true and .producerCheckPassed == true' "$receipt" >/dev/null; then
+              failed=1
+            fi
+          done
+          exit "$failed"
