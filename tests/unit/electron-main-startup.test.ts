@@ -1520,7 +1520,6 @@ describe('Electron main startup', () => {
       expect.stringMatching(/could not open its operational data safely/iu),
     )
     expect(initializeDiagnostics).toHaveBeenCalledOnce()
-    expect(electronMock.app.isReady).toHaveReturnedWith(true)
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })

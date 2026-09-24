@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
-import { collectMainEventLoopEvidence, installMainEventLoopProbe, validateMainEventLoopEvidence } from '../../build/main-event-loop-probe.js'
+import {
+  collectMainEventLoopEvidence,
+  installMainEventLoopProbe,
+  validateMainEventLoopEvidence,
+  validateMainPhaseEvidence,
+} from '../../build/main-event-loop-probe.js'
 
 describe('independent packaged main-loop gate [DON-254]', () => {
   it('fails collection within a bounded deadline when main never services the stop timer', async () => {
@@ -74,5 +79,56 @@ describe('independent packaged main-loop gate [DON-254]', () => {
     time = 500
     expect(probe.stop()).toEqual(evidence)
     expect(validateMainEventLoopEvidence([evidence], 1)).not.toEqual([])
+  })
+
+  it('records per-operation wall, CPU and Linux scheduler timing', () => {
+    let time = 0
+    let cpu = { user: 10_000, system: 2_000 }
+    let resource = { voluntaryContextSwitches: 3, involuntaryContextSwitches: 4 }
+    const schedulerSnapshots = [
+      '1000000 200000 3',
+      '51000000 10200000 5',
+    ]
+    const timers: Array<() => void> = []
+    const root = {
+      performance: { now: () => time, timeOrigin: 1_000 },
+      setInterval: (callback: () => void) => { timers.push(callback); return callback },
+      clearInterval: () => undefined,
+      process: {
+        platform: 'linux',
+        cpuUsage: (previous?: { readonly user: number; readonly system: number }) => previous === undefined
+          ? { ...cpu }
+          : { user: cpu.user - previous.user, system: cpu.system - previous.system },
+        resourceUsage: () => ({ ...resource }),
+        getBuiltinModule: () => ({ readFileSync: () => schedulerSnapshots.shift() }),
+      },
+    }
+    const probe = installMainEventLoopProbe(root)
+    const phase = probe.startPhase('marker-mutation')
+    time = 50
+    cpu = { user: 22_000, system: 5_000 }
+    resource = { voluntaryContextSwitches: 4, involuntaryContextSwitches: 6 }
+    for (const tick of timers) tick()
+
+    const evidence = phase.finish()
+    expect(evidence).toMatchObject({
+      name: 'marker-mutation',
+      wallDurationMs: 50,
+      processCpuMs: { user: 12, system: 3, total: 15 },
+      scheduler: {
+        status: 'measured',
+        threadRuntimeMs: 50,
+        threadRunQueueWaitMs: 10,
+        threadTimeSlices: 2,
+        processVoluntaryContextSwitches: 1,
+        processInvoluntaryContextSwitches: 2,
+      },
+      mainLoop: { maximumGapMs: 50, samples: 1 },
+    })
+    expect(validateMainPhaseEvidence([evidence], ['marker-mutation'], 'linux')).toEqual([])
+    expect(validateMainPhaseEvidence([evidence], ['prepare-close'], 'linux')).not.toEqual([])
+    expect(validateMainPhaseEvidence([
+      { ...evidence, mainLoop: { ...evidence.mainLoop, maximumGapMs: 200 } },
+    ], ['marker-mutation'], 'linux')).not.toEqual([])
   })
 })

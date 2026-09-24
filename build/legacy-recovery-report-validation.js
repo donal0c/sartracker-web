@@ -2,6 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+
+import { validateMainPhaseEvidence } from './main-event-loop-probe.js'
 import checkpointContract from '../electron/legacy-evidence-backfill-checkpoint.cjs'
 
 const { validateLegacyEvidenceBackfillCheckpoint } = checkpointContract
@@ -47,6 +49,9 @@ export function validateLegacyRecoveryReport(report, options = {}) {
   if (report.failure !== undefined && report.failure !== null) failures.push('Report contains a failure alongside passed=true.')
   if (report.expectedBaselineRows !== EXPECTED_BASELINE_ROWS) {
     failures.push('Report expected baseline is not exactly 50,000 rows.')
+  }
+  if (!['linux', 'darwin', 'win32'].includes(report.hostPlatform)) {
+    failures.push('Report host platform is missing or unsupported.')
   }
 
   const source = readGitSource(projectRoot, failures)
@@ -222,6 +227,11 @@ function validateRestart(report, failures) {
   } else {
     if (typeof mutation.markerId !== 'string' || mutation.markerId.length === 0) failures.push('Post-settlement marker ID is missing.')
     validateMainTimer(mutation.timer, 'post-settlement mutation timer', failures)
+    failures.push(...validateMainPhaseEvidence(
+      mutation.phaseTimings,
+      ['marker-mutation', 'prepare-close', 'close'],
+      report.hostPlatform,
+    ))
   }
   validateCustody(restart.postSettlementCustody, mutation?.markerId, failures)
   validateCleanExit(restart.appClose, 'restart', failures)

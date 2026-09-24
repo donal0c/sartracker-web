@@ -31,6 +31,7 @@ const reportFixturePath = 'docs/evidence/legacy-object-recovery/claude-remediati
 /** Reads the retained native report into a synthetic current-source fixture. */
 function syntheticReport(): JsonObject {
   const report = JSON.parse(readFileSync(reportFixturePath, 'utf8')) as JsonObject
+  report.hostPlatform = 'linux'
   report.sourceHead = expectedSourceSha
   report.sourceTree = expectedSourceTree
   report.sourceDirty = false
@@ -59,6 +60,30 @@ function syntheticReport(): JsonObject {
   packagedFiles[checkpointPath] = { checkoutSha256: checkpointHash, packagedSha256: checkpointHash }
   const restart = objectAt(report, 'restart')
   restart.openTimer = structuredClone(objectAt(firstLaunch, 'mainTimer'))
+  objectAt(restart, 'postSettlementMutation').phaseTimings = [
+    'marker-mutation',
+    'prepare-close',
+    'close',
+  ].map((name) => ({
+    name,
+    wallDurationMs: 25,
+    processCpuMs: { user: 4, system: 1, total: 5 },
+    scheduler: {
+      status: 'measured',
+      threadRuntimeMs: 20,
+      threadRunQueueWaitMs: 1,
+      threadTimeSlices: 2,
+      processVoluntaryContextSwitches: 1,
+      processInvoluntaryContextSwitches: 0,
+    },
+    mainLoop: {
+      intervalMs: 50,
+      samples: 0,
+      startedAtMs: 0,
+      stoppedAtMs: 25,
+      maximumGapMs: 25,
+    },
+  }))
   return report
 }
 
@@ -140,6 +165,11 @@ describe('legacy recovery terminal report validation [DON-254]', () => {
     ['restart open timer samples', (report: JsonObject) => { objectAt(objectAt(report, 'restart'), 'openTimer').samples = 0 }],
     ['restart open timing threshold', (report: JsonObject) => { objectAt(objectAt(report, 'restart'), 'openTimer').maximumGapMs = 200 }],
     ['restart mutation timer threshold', (report: JsonObject) => { objectAt(objectAt(objectAt(report, 'restart'), 'postSettlementMutation'), 'timer').maximumGapMs = 200 }],
+    ['missing restart operation timings', (report: JsonObject) => { delete objectAt(objectAt(report, 'restart'), 'postSettlementMutation').phaseTimings }],
+    ['prepare-close phase timing threshold', (report: JsonObject) => {
+      const timings = objectAt(objectAt(report, 'restart'), 'postSettlementMutation').phaseTimings as JsonObject[]
+      objectAt(timings[1]!, 'mainLoop').maximumGapMs = 200
+    }],
     ['restart open call threshold', (report: JsonObject) => { objectAt(report, 'restart').openMs = 200 }],
   ])('rejects %s', (_label, mutate) => {
     const report = syntheticReport()
