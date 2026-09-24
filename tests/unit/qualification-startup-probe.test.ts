@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   C01_STORE_LOCK_READY_TIMEOUT_MS,
+  isWindowInVisibleX11Search,
   isNoVisibleX11WindowSearchResult,
   waitForDialogDismissal,
   waitForOwnedProcessOrTimeout,
@@ -70,6 +71,15 @@ describe('C01 held-gate product exit observation', () => {
     expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: '' })).toBe(true)
     expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: 'Cannot open display' })).toBe(false)
     expect(isNoVisibleX11WindowSearchResult({ code: 0, stdout: '', stderr: '' })).toBe(false)
+  })
+
+  it('treats an empty successful visibility search as invalid evidence', () => {
+    expect(() => isWindowInVisibleX11Search('', '501'))
+      .toThrow('C01 X11 visible-window search returned no window IDs.')
+    expect(() => isWindowInVisibleX11Search('not-a-window-id', '501'))
+      .toThrow('C01 X11 visible-window search returned malformed window IDs.')
+    expect(isWindowInVisibleX11Search('501\n', '501')).toBe(true)
+    expect(isWindowInVisibleX11Search('502\n', '501')).toBe(false)
   })
 
   it('measures the application exit after dialog dismissal', async () => {

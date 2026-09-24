@@ -1062,6 +1062,17 @@ export function isNoVisibleX11WindowSearchResult(error) {
     && String(error.stderr ?? '').trim() === ''
 }
 
+/** Parse a successful xdotool search, rejecting empty or malformed window evidence. */
+export function isWindowInVisibleX11Search(stdout, windowId) {
+  const output = String(stdout ?? '').trim()
+  if (output === '') throw new Error('C01 X11 visible-window search returned no window IDs.')
+  const windowIds = output.split(/\s+/u)
+  if (windowIds.some((id) => !/^\d+$/u.test(id))) {
+    throw new Error('C01 X11 visible-window search returned malformed window IDs.')
+  }
+  return windowIds.includes(windowId)
+}
+
 /** Observe a product-owned exit after the held-gate dialog has been dismissed. */
 export async function waitForOwnedProcessExitAfterDialog(
   child,
@@ -1742,7 +1753,7 @@ async function isErrorDialogVisible(windowId, pid, remainingMs) {
         timeout: Math.max(1, Math.floor(Math.min(500, remainingMs))),
         killSignal: 'SIGKILL',
       })
-    return stdout.trim().split(/\s+/u).includes(windowId)
+    return isWindowInVisibleX11Search(stdout, windowId)
   } catch (error) {
     if (isNoVisibleX11WindowSearchResult(error)) return false
     throw error

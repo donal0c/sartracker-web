@@ -8,17 +8,19 @@ and assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 (`codex/c01-startup-store-fault-response`) remains draft. Exact-head
-Linux run `36053525791` failed in the candidate producer's C01 held-gate
-observation; earlier gates passed. Its X11 state check failed to read a window
-state in two cases and timed out while one dialog stayed visible, so it did not
-produce a product-exit measurement. The working correction replaces `xwininfo`
-with the probe's existing `xdotool` visible-window search. Review of `7e009798`
-found no actionable issue; exact-head Linux validation and review of this
-correction are pending. Previous run `36025809540` passed the packaged C19 gate
-on an older head but skipped strict responsiveness. The historical 261.161 ms
-Linux C19 failure (`35984100420`) remains unresolved; master’s 50.836 ms pass
-does not explain or clear it.
+PR #47 (`codex/c01-startup-store-fault-response`) remains draft. Run
+`36053525791` failed in the candidate producer's C01 held-gate observation;
+unusable `xwininfo` reads and a still-visible dialog meant it produced no
+product-exit measurement. The follow-up `xdotool` observer is at
+`8a6de198`; exact-head run `36058474722` is still in progress. Independent
+review found that exit-0 with empty or malformed window IDs could be mistaken
+for dismissal. The local correction now rejects that evidence; 44 focused
+tests and lint pass, but this correction is not yet pushed or validated by CI.
+Keep the PR draft until fresh exact-head Linux validation and review complete.
+Previous run `36025809540` passed the packaged C19 gate on an older head but
+skipped strict responsiveness. The historical 261.161 ms Linux C19 failure
+(`35984100420`) remains unresolved; master’s 50.836 ms pass does not explain or
+clear it.
 
 DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 
@@ -65,11 +67,11 @@ DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 
 ## Next actions
 
-1. Commit/push the `xdotool` visibility query; finish exact-head review and
-   Linux pull-request package CI, including the unchanged packaged C19 200 ms
-   gate. Preserve the old failure;
-   the separate full-candidate strict responsiveness qualification is not a PR
-   merge check and must not be claimed from this run.
+1. Commit/push the fail-closed `xdotool` result parser; finish exact-head review
+   and Linux pull-request package CI, including the unchanged packaged C19
+   200 ms gate. Preserve the old failure; the separate full-candidate strict
+   responsiveness qualification is not a PR merge check and must not be
+   claimed from this run.
 2. Update DON-179 with exact commands and evidence. Mark PR #47 ready only if
    the exact-head checks pass and no in-scope review finding remains. Do not
    merge, tag, publish, or release from this work.
