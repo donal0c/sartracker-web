@@ -12,9 +12,9 @@ canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
 packaged C19 recovery. Its push trigger skipped strict responsiveness. The
-active PR is #47's separate C01 startup repair; it remains draft during rebase
-and C19 follow-up. Do not treat master CI or packaged receipts as candidate
-qualification.
+active PR is #47's separate C01 startup repair; its local verification is in
+progress and it remains draft pending exact-head checks and review. Do not treat
+master CI or packaged receipts as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -40,27 +40,52 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**Next steps:** finish PR #47's rebase and targeted verification; obtain fresh
-independent exact-head review, push and require green exact-head Linux CI.
-Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
-261.161 ms against 200 ms, while same-Linux master run `36001695717` measured
-50.836 ms on the same post-settlement mutation/close observer. The latter makes
-a one-off host pause more plausible but does not prove scheduler/storage cause
-or exclude other PR-head code. Do not clear or dismiss the retained failure or
-mark PR #47 ready on this comparison alone. Do not run candidate qualification,
-tag, publish, or promote from this work.
+**PR #47 status:** the branch is based on current `master` (`30cb7d45`) and the
+checked-in PR head is `5b4f0b25`; local remediation is not yet committed or
+pushed. Linux run `36025809540` passed on that old head, but skipped the strict
+responsiveness step. Finish local verification, push the new head, then obtain
+fresh exact-head review and Linux package evidence including the unchanged
+packaged C19 200 ms gate. The separate strict candidate-responsiveness step is
+not a PR merge check and must not be claimed from this run. Keep the PR draft
+until the exact-head checks complete. Do not run candidate qualification, tag,
+publish, or promote from this work.
 
-**Current C01 review repair — 2026-09-24:** PR #47 replaces the module-load
-deadline with one 10-second watchdog starting after Electron readiness and
-running through the operational window. The held-gate observer has a 20-second
-response bound. Review of old PR head `8cdf6f6` found an unbounded
-failure-evidence write wait and a receipt validator that accepted late dialogs;
-local repairs were reapplied on current master at `70c8c4c3` and `95b3cd5c`.
-After the latest narrow timing/test changes, local verification passed 123
-focused tests, full correctness (5,850 passed, 25 skipped), full lint, build,
-and the packaged macOS disposable-store smoke. The timing receipt is dirty-tree
-diagnostic evidence, not exact-head/Linux proof. Donal confirmed synchronous
-SQLite startup/open/migration belongs in C01; DON-250 remains separate.
+Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
+261.161 ms against 200 ms; same-Linux master run `36001695717` measured
+50.836 ms. The old failure has no scheduler-state evidence, so the comparison
+does not establish its cause or clear it. Current probes report scheduler data
+as explicitly unavailable when Linux kernel accounting is disabled; the
+independent 200 ms main-loop gate remains authoritative.
+
+**Current C01 review repair — 2026-09-24:** the local PR #47 patch replaces
+the module-load deadline with one 10-second watchdog starting after Electron
+readiness and covering awaited asynchronous startup through renderer load and
+its evidence-loss fence. The operational window stays hidden until that fence
+succeeds. The held-gate observer has a 20-second response bound and separately
+requires the product's exit code 1 within 12 seconds after dialog dismissal;
+lock-holder setup has its own 5-second bound and the held-gate producer budget
+is 120 seconds. Failure evidence, receipt truthfulness, scheduler attribution,
+manual guidance, and producer-vs-infrastructure verdicts are repaired locally.
+The stronger held-gate exit fields and explicit uncovered axes advance the raw
+C01 observation schema to v3; retain historical v2 receipts unchanged.
+
+The selected 10-second budget is a hard post-readiness total: if a stage is
+still pending, startup exits even when the cause is a healthy but slow device;
+a late success is ignored. The operational window stays hidden until renderer
+load and the evidence-loss fence complete. `createElectronMissionStore()` is
+wrapped to attribute a late return to the store-open/migration stage, but a
+synchronous native call still blocks Electron main and cannot be preempted while
+it is running. `app.whenReady()` remains outside the deadline by selection.
+
+Local verification on this patch: seven focused files / 102 tests passed; full
+correctness 5,863 passed / 25 skipped; lint passed; `npm run electron:pack`
+completed; packaged macOS legacy-recovery smoke passed with 55.90 ms restart
+main-loop maximum and 1.59/0.14/1.40 ms phase gaps. The package smoke ran from a
+dirty tree and macOS scheduler counters were unavailable, so it is diagnostic
+only. Linux run `36025809540`
+is green only for the old pushed head and skipped strict responsiveness. Fresh
+exact-head review and Linux checks remain required. DON-179 remains In Review;
+opt-in diagnostic upload is outside this repair.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it
@@ -78,20 +103,29 @@ the sole owner of runtime/crash logs. On deadline, fence the startup generation
 and ignore any late ready result; do not kill a worker or main process during
 migration until interruption and WAL recovery safety are demonstrated.
 
-This is broader than PR #47's watchdog repair. Stop before implementation until
-that scope is explicitly expanded; keep the synchronous-open P1 unresolved and
-PR #47 draft. `app.whenReady()` also remains outside the watchdog by design,
-because the selected deadline starts only after readiness. Verify the design
-with an independently timed held-open and
-held-migration package probe, responsive visible fault state, late-success
-fencing, unchanged original-profile digests on fault, and an interruption/WAL
-recovery test on Linux. This does not absorb DON-250's oversized-store
-assessment/recovery or introduce data-compaction behavior.
+The user-selected boundary for this repair leaves `app.whenReady()` outside the
+watchdog and synchronous `createElectronMissionStore()` open/migration
+non-preemptible. The UI/manual, receipt and PR must state that limit and must
+not claim complete C01 coverage. Keep the broader store-ownership gap as a
+separate follow-on rather than silently folding a persistence redesign into
+this PR. Its acceptance
+criterion is a packaged Linux probe that holds real SQLite open and migration
+while independently proving a visible, bounded fault response, a responsive
+main loop, late-success fencing, unchanged original-profile digests, and safe
+interruption/WAL recovery. The smallest architecture change is utility-process
+ownership of the live store behind an asynchronous main-process facade, with
+the store callers, attachment-ingest custody, coverage notifications, and
+orderly close/drain bridged explicitly. This does not absorb DON-250's
+oversized-store assessment/recovery or introduce data-compaction behavior.
 
-**Review finding disposition:** #1 and #2 remain open at the synchronous native
-SQLite open/migration boundary and before Electron readiness; the post-ready
-async startup steps are watchdog-bounded. #3–#7 and #9–#10 are fixed in local
-code. #8 was not reproduced: startup tests with fake timers mock the log
+**Review finding disposition:** #1 and #2 are fixed for the selected post-ready
+asynchronous startup contract; the explicit pre-readiness and synchronous
+SQLite limits above remain open follow-on work. The hard 10-second cutoff can
+also close a healthy launch that is slower than budget; that trade-off is now
+explicit in the manual and planning record. #3–#7 and #9–#10 are fixed in local
+code. C01 matrix-valid v3 receipts now remain explicitly coverage-incomplete
+and qualification-ineligible while these axes are open. #8 was not reproduced:
+startup tests with fake timers mock the log
 adapters, and the real filesystem logger test uses real timers. #11 is
 disproved: the `app.isReady()` false branch handles a rejected Electron
 readiness promise before logs/profile access exists. #12 is a cleanup suggestion
@@ -111,10 +145,12 @@ mutation, `prepareClose` and `close`, and no CPU/scheduler/storage telemetry
 proves its cause. New smoke instrumentation measures marker mutation,
 `prepareClose`, and `close` separately with wall, process CPU, main-loop, and
 Linux scheduler deltas while retaining the combined 200 ms gate. The packaged
-macOS smoke passed with phase gaps 1.62/0.16/1.74 ms; it cannot supply Linux
+macOS smoke passed with phase gaps 1.59/0.14/1.40 ms; it cannot supply Linux
 scheduler evidence. Retain the old failure unresolved and require exact-head
-Linux CI. Same-host Darwin results (52.40, 54.41 and 54.53 ms) do not clear the
-Linux result. The current master push workflow skipped strict responsiveness
+Linux CI. Same-host Darwin results (52.40, 54.41, 54.53, and this patch's
+55.90 ms) do not clear the Linux result. This patch's phases measured
+1.59/0.14/1.40 ms; macOS has no Linux scheduler counters. The current master
+push workflow skipped strict responsiveness
 qualification. This work does not qualify C01 or change the Beta 13 release
 hold.
 

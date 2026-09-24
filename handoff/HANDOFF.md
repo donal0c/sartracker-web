@@ -1,57 +1,65 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-24. This is the operational baton; detailed release and review
-history stays in the workplan and assurance records.
+Updated 2026-09-24. Detailed review and release history stays in the workplan
+and assurance records.
 
 ## Current state
 
-Beta 13 remains **HOLD**. No candidate is frozen or qualified, and no tag,
+Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 (`codex/c01-startup-store-fault-response`) remains a draft. Local work is
-rebased on `30cb7d45`; GitHub still points to `8cdf6f62` on the old base and
-reports a merge conflict plus a failed Linux check. The branch changes and new
-C19 timing instrumentation have not yet been pushed. The old Linux failure
-`35984100420` measured 261.161 ms against 200 ms. Preserve it as unresolved;
-master's 50.836 ms pass does not explain it.
+PR #47 (`codex/c01-startup-store-fault-response`) is still draft. The PR head
+and branch are `5b4f0b25`; the branch is based on current `origin/master`. The
+review repairs below remain uncommitted locally. Linux run `36025809540` passed
+on the old pushed head but skipped strict responsiveness. The historical
+261.161 ms Linux C19 failure (`35984100420`) remains unresolved; master’s
+50.836 ms pass does not explain or clear it.
 
-DON-179 remains **In Review**; opt-in diagnostic upload is not complete.
+DON-179 remains **In Review**; opt-in diagnostic upload is outside this repair.
 
-## Active work and verification
+## Active work and evidence
 
-- PR fixes use a 10-second monotonic watchdog starting after Electron readiness,
-  with a 20-second held-gate observer. Failure evidence waits for writes to
-  settle, with a cap for pending writes; timeout messages identify the stage.
-- **C01 remains open:** `app.whenReady()` itself is not bounded, and
-  `createElectronMissionStore()` synchronously opens/migrates SQLite on Electron
-  main. The watchdog cannot run while native SQLite blocks that thread. A full
-  bound needs utility-owned live store access and an async main-process facade;
-  this is a wider persistence redesign. Do not implement it without the scoped
-  decision recorded in the workplan. Keep PR #47 draft until the remaining
-  readiness decision is made.
-- The C19 smoke now records marker mutation, `prepareClose`, and `close`
-  separately, including CPU and Linux scheduler deltas; the 200 ms gate is
-  unchanged. Local packaged macOS disposable-store smoke passed, with gaps
-  1.62/0.16/1.74 ms. macOS has no Linux scheduler counters; exact-head Linux CI
-  must validate them. Do not replace the historical 261.161 ms receipt.
-- Local checks passed: 123 focused unit tests; correctness 5,850 passed and 25
-  skipped; full lint and production build; packaged macOS legacy-recovery smoke.
-  The package-smoke receipt was made from a dirty working tree and is diagnostic
-  only, not exact-head or Linux evidence.
-- Fresh exact-head independent review and Linux CI remain outstanding. The
-  branch still needs a protected force-with-lease update against the observed
-  remote head `8cdf6f62` before those checks can run.
+- Local patch uses a hard 10-second total deadline after Electron readiness
+  through the hidden-window renderer safety fence. A healthy but slower startup
+  also closes at the deadline; late success is ignored. Held-gate observation
+  is 20 seconds; product exit after dialog
+  dismissal is separately bounded at 12 seconds. The lock-holder readiness
+  bound is 5 seconds; its producer budget is 120 seconds.
+- **Explicit C01 limit:** `app.whenReady()` is outside the deadline. Synchronous
+  store creation/open/migration is wrapped to identify a late return, but a
+  blocked native call also blocks the main event loop and cannot be interrupted.
+  Do not claim full C01 coverage.
+  Follow-on acceptance is a packaged Linux held-open/held-migration probe that
+  proves visible bounded failure, main-loop responsiveness, late-success
+  fencing, unchanged original-profile digests, and safe interruption/WAL
+  recovery. Smallest architectural fix: utility-process store ownership behind
+  an async main-process facade with explicit caller, attachment, coverage, and
+  orderly-close bridges. DON-250 stays separate.
+- Local verification on the patch: seven focused files / 102 tests passed;
+  full correctness 5,863 passed / 25 skipped; lint passed; `npm run electron:pack`
+  completed; packaged macOS legacy-recovery smoke passed (55.90 ms restart
+  main-loop maximum; phase gaps 1.59/0.14/1.40 ms). The smoke used a dirty tree;
+  macOS scheduler counters are unavailable, so it is diagnostic rather than
+  exact-head/Linux evidence.
+- The C19 200 ms main-loop gate and failed receipts are preserved. Linux now
+  reports scheduler attribution as explicitly unavailable if kernel accounting
+  is disabled; the independent main-loop limit remains authoritative.
+- C01 receipts distinguish matrix validity from full contract coverage; they
+  remain `coverageComplete:false` and `qualificationEligible:false` while the
+  pre-readiness and synchronous-store axes remain open. The stronger held-gate
+  observations use receipt schema v3; preserve older v2 evidence unchanged.
 
 ## Next actions
 
-1. Update the existing PR with the verified commits using a protected
-   force-with-lease against the observed remote head `8cdf6f62`. Keep it draft;
-   do not merge or release.
-2. Run exact-head Linux CI and request the fresh independent review; retain all
-   failed receipts and reconcile every review finding in the PR record.
-3. Present Donal the single remaining scope decision: approve utility-owned
-   live MissionStore plus async facade work, or accept this narrower draft with
-   the C01 synchronous-open gap still unresolved. Keep DON-179 In Review.
+1. Finish diff review, refresh PR description and handoff evidence, then commit
+   and push the verified patch against the observed remote head `5b4f0b25`.
+2. Obtain read-only exact-head review and green Linux pull-request package CI,
+   including the unchanged packaged C19 200 ms gate. Preserve the old failure;
+   the separate full-candidate strict responsiveness qualification is not a PR
+   merge check and must not be claimed from this run.
+3. Update DON-179 with exact commands and evidence. Mark PR #47 ready only if
+   the exact-head checks pass and no in-scope review finding remains. Do not
+   merge, tag, publish, or release from this work.
 
 The release hold and C17 scope remain governed by the
 [two-track execution workplan](../docs/two-track-execution-workplan.md) and

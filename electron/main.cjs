@@ -286,6 +286,9 @@ async function createWindow(
     minHeight: 760,
     backgroundColor: '#050505',
     title: 'SAR Tracker Electron Validation',
+    // Keep the startup window hidden until renderer availability and its
+    // evidence-loss safety fence have both completed.
+    show: startupWatchdog === undefined,
     webPreferences: {
       backgroundThrottling: false,
       contextIsolation: true,
@@ -367,6 +370,11 @@ async function createWindow(
       'operational renderer availability fence',
       () => rendererTeardownCoordinator.markRendererAvailable(),
     )
+    // The shell is usable only after the renderer safety fence succeeds. Stop
+    // the startup budget immediately before revealing it so later work cannot
+    // turn a visible, ready shell into a fatal startup timeout.
+    startupWatchdog.dispose()
+    window.show()
   }
 }
 
@@ -1278,7 +1286,7 @@ function startupFailureLogFields(error) {
  */
 function startupFailureOperatorMessage(error) {
   if (error instanceof StartupTimeoutError) {
-    return `Startup could not complete because ${error.stage} did not finish within ${Math.ceil(error.timeoutMs / 1_000)} seconds after Electron was ready. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
+    return `Startup could not complete because ${error.stage} was still pending when the ${Math.ceil(error.timeoutMs / 1_000)} seconds after Electron was ready elapsed. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
   }
   const message = error instanceof Error ? error.message : ''
   if (
@@ -1363,29 +1371,32 @@ async function startElectronApp(startupWatchdog) {
     readRecentLog: () => runtimeLog.readRecent(1000),
     readStorageDiagnostics: () => storageDiagnostics.readSupportSnapshot(),
   })
-  const missionStore = createElectronMissionStore({
-    userDataPath: app.getPath('userData'),
-    createArchiveCorrectionUtilityProcess,
-    storageDiagnostics,
-    readAdminRoster: async () => {
-      const settings = await settingsStore.loadAppSettings()
-      return settings.missionDefaults.adminRoster
-    },
-    onCoverageChanged: (missionId, changeSeq) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.webContents.isDestroyed()) {
-          window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+  const missionStore = await startupWatchdog.run(
+    'mission store open and migration',
+    () => createElectronMissionStore({
+      userDataPath: app.getPath('userData'),
+      createArchiveCorrectionUtilityProcess,
+      storageDiagnostics,
+      readAdminRoster: async () => {
+        const settings = await settingsStore.loadAppSettings()
+        return settings.missionDefaults.adminRoster
+      },
+      onCoverageChanged: (missionId, changeSeq) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.webContents.isDestroyed()) {
+            window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+          }
         }
-      }
-    },
-    onCoverageRendererFailed: () => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.webContents.isDestroyed()) {
-          window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+      },
+      onCoverageRendererFailed: () => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.webContents.isDestroyed()) {
+            window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+          }
         }
-      }
-    },
-  })
+      },
+    }),
+  )
   const rendererTeardownCoordinator = createRendererTeardownCoordinator({
     ipcMain,
     missionStore,
@@ -1484,13 +1495,13 @@ async function startElectronApp(startupWatchdog) {
     runtimeLog,
     archiveReviewSessionManager,
   )
-  await startupWatchdog.run('operational window startup', () => createWindow(
+  await createWindow(
     crashLog,
     runtimeLog,
     rendererTeardownCoordinator,
     archiveReviewSessionManager,
     startupWatchdog,
-  ))
+  )
   electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
   app.on('before-quit', (event) => {

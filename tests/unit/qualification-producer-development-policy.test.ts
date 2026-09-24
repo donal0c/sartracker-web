@@ -27,8 +27,11 @@ describe('development fault mechanics are distinct from qualification', () => {
     expect(negativeResult.productGap).toBe(report.scenario.productGap)
     const actionable = { ...report, scenario: { ...report.scenario,
       observed: 'actionable-fault',
-      gate: { ...report.scenario.gate, action: 'preserve-profile-and-contact-support' },
-      process: { ...report.scenario.process, faultShellAtMs: 904 },
+      gate: { ...report.scenario.gate, action: 'preserve-profile-and-contact-support',
+        response: 'native-error-dialog', dialogObserved: true },
+      process: { ...report.scenario.process, exitCode: 1, signal: null, forcedKill: false,
+        dialogObserved: true, dialogDismissed: true, timedOut: false, dialogObservedAtMs: 904,
+        productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, faultShellAtMs: 904 },
     } }
     expect(inspectHeldGateDevelopment(actionable, 'diagnostics')).toMatchObject({
       infrastructurePassed: true, observedPredicateStatus: 'PASS', producerCheckPassed: true,
@@ -40,6 +43,25 @@ describe('development fault mechanics are distinct from qualification', () => {
     expect(inspectHeldGateDevelopment({ ...report, scenario: { ...report.scenario,
       process: { ...report.scenario.process, closed: false } } }, 'diagnostics').infrastructurePassed).toBe(false)
     expect(inspectHeldGateDevelopment(report, 'store').infrastructurePassed).toBe(false)
+
+    const dialogWithoutProductExit = { ...actionable, scenario: { ...actionable.scenario,
+      process: { ...actionable.scenario.process, exitCode: null, signal: 'SIGTERM', forcedKill: false,
+        productExitCode: null, productExitSignal: null, exitAfterDialogMs: null },
+      productGap: 'Application showed the fault dialog but did not exit after dismissal.',
+    } }
+    expect(inspectHeldGateDevelopment(dialogWithoutProductExit, 'diagnostics')).toMatchObject({
+      infrastructurePassed: true, observedPredicateStatus: 'FAIL', producerCheckPassed: false,
+      productGap: dialogWithoutProductExit.scenario.productGap,
+    })
+
+    const forcedProductExit = { ...actionable, scenario: { ...actionable.scenario,
+      process: { ...actionable.scenario.process, exitCode: null, signal: 'SIGKILL', forcedKill: true,
+        productExitCode: null, productExitSignal: null, exitAfterDialogMs: null },
+      productGap: 'Application showed the fault dialog but did not exit after dismissal.',
+    } }
+    expect(inspectHeldGateDevelopment(forcedProductExit, 'diagnostics')).toMatchObject({
+      infrastructurePassed: true, observedPredicateStatus: 'FAIL', producerCheckPassed: false,
+    })
   })
 
   it('keeps an observed product timeout separate from producer infrastructure', () => {

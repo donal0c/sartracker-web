@@ -196,26 +196,26 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-store-gate': {
         profileKind: 'held-store-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
+        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
         cleanup: { lockHolderClosed: true, heldPathRemoved: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 106, closed: true, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
+        process: { pid: 106, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'held-diagnostics-gate': {
         profileKind: 'held-diagnostics-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, lateDialogAfterTimeout: false },
+        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 108, closed: true, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
+        process: { pid: 108, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'held-crash-gate': {
         profileKind: 'held-crash-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, lateDialogAfterTimeout: false },
+        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 109, closed: true, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
+        process: { pid: 109, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'active-recoverable': {
         profileKind: 'active-recoverable',
@@ -240,6 +240,16 @@ function report(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification C01 startup receipt validator', () => {
+  it('versions the stronger held-gate and uncovered-axis observations as C01 v3', () => {
+    expect(STARTUP_PROBE_DESCRIPTOR.schema).toBe('sartracker-c01-startup-admission-v3')
+    const previousVersion = report({ schema: 'sartracker-c01-startup-admission-v2' })
+
+    const result = validateStartupContractEvidence('C01', previousVersion, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/schema or contract identity is invalid/iu)
+  })
+
   it('rejects held-gate dialogs first observed after the fixed response deadline', () => {
     const late = report()
     const scenario = (late.scenarios as Record<string, Record<string, Record<string, unknown>>>)['held-store-gate']!
@@ -250,6 +260,22 @@ describe('qualification C01 startup receipt validator', () => {
 
     expect(result.passed).toBe(false)
     expect(result.failureReasons.join('\n')).toMatch(/held-store-gate.*20.?000|20.?000.*held-store-gate/iu)
+  })
+
+  it.each([
+    ['harness signal termination', { exitCode: null, signal: 'SIGTERM', forcedKill: false }],
+    ['a forced kill', { exitCode: 1, signal: null, forcedKill: true }],
+    ['a non-failure application exit', { exitCode: 0, signal: null, forcedKill: false }],
+    ['a missing post-dismissal exit time', { exitCode: 1, signal: null, forcedKill: false, exitAfterDialogMs: null }],
+  ])('rejects held-gate evidence without the product-owned exit (%s)', (_label, overrides) => {
+    const held = report()
+    const scenario = (held.scenarios as Record<string, Record<string, Record<string, unknown>>>)['held-store-gate']!
+    scenario.process = { ...scenario.process, ...overrides }
+
+    const result = validateStartupContractEvidence('C01', held, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-store-gate|exit/iu)
   })
 
   it('requires the observed timeout and preserves late-dialog timeout negatives', () => {
@@ -378,6 +404,9 @@ describe('qualification C01 startup receipt validator', () => {
     expect(result.coverageComplete).toBe(false)
     expect(result.qualificationEligible).toBe(false)
     expect(result.releaseEligible).toBe(false)
+    expect(result.nonQualificationReason).toMatch(/never reaches app readiness/iu)
+    expect(result.nonQualificationReason).toMatch(/synchronous mission-store.*migration.*main thread/iu)
+    expect(result.uncoveredAxes.join('\n')).toMatch(/synchronous mission-store.*migration.*main thread/iu)
     expect(result.uncoveredAxes).toEqual([...STARTUP_PROBE_DESCRIPTOR.uncoveredAxes])
   })
 

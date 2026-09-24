@@ -100,7 +100,8 @@ describe('independent packaged main-loop gate [DON-254]', () => {
           ? { ...cpu }
           : { user: cpu.user - previous.user, system: cpu.system - previous.system },
         resourceUsage: () => ({ ...resource }),
-        getBuiltinModule: () => ({ readFileSync: () => schedulerSnapshots.shift() }),
+        getBuiltinModule: () => ({ readFileSync: (file: string) =>
+          file === '/proc/sys/kernel/sched_schedstats' ? '1\n' : schedulerSnapshots.shift() }),
       },
     }
     const probe = installMainEventLoopProbe(root)
@@ -130,5 +131,70 @@ describe('independent packaged main-loop gate [DON-254]', () => {
     expect(validateMainPhaseEvidence([
       { ...evidence, mainLoop: { ...evidence.mainLoop, maximumGapMs: 200 } },
     ], ['marker-mutation'], 'linux')).not.toEqual([])
+  })
+
+  it('marks Linux scheduler counters unavailable when kernel accounting is disabled', () => {
+    let time = 0
+    const root = {
+      performance: { now: () => time, timeOrigin: 1_000 },
+      setInterval: () => 1,
+      clearInterval: () => undefined,
+      process: {
+        platform: 'linux',
+        cpuUsage: (previous?: { readonly user: number; readonly system: number }) => previous === undefined
+          ? { user: 10_000, system: 2_000 }
+          : { user: 1_000, system: 500 },
+        resourceUsage: () => ({ voluntaryContextSwitches: 2, involuntaryContextSwitches: 1 }),
+        getBuiltinModule: () => ({ readFileSync: (file: string) =>
+          file === '/proc/sys/kernel/sched_schedstats' ? '0\n' : '1000000 0 0\n' }),
+      },
+    }
+    const probe = installMainEventLoopProbe(root)
+    const phase = probe.startPhase('marker-mutation')
+    time = 50
+    const evidence = phase.finish()
+
+    expect(evidence.scheduler).toEqual({
+      status: 'unavailable',
+      code: 'SCHEDSTATS_DISABLED',
+      processVoluntaryContextSwitches: 0,
+      processInvoluntaryContextSwitches: 0,
+    })
+    expect(validateMainPhaseEvidence([evidence], ['marker-mutation'], 'linux')).toEqual([])
+    expect(validateMainPhaseEvidence([{
+      ...evidence,
+      scheduler: { ...evidence.scheduler, code: undefined },
+    }], ['marker-mutation'], 'linux')).not.toEqual([])
+  })
+
+  it('keeps scheduler evidence unavailable when only the start snapshot failed', () => {
+    let time = 0
+    let statReads = 0
+    const root = {
+      performance: { now: () => time, timeOrigin: 1_000 },
+      setInterval: () => 1,
+      clearInterval: () => undefined,
+      process: {
+        platform: 'linux',
+        cpuUsage: (previous?: { readonly user: number; readonly system: number }) => previous === undefined
+          ? { user: 10_000, system: 2_000 }
+          : { user: 1_000, system: 500 },
+        resourceUsage: () => ({ voluntaryContextSwitches: 2, involuntaryContextSwitches: 1 }),
+        getBuiltinModule: () => ({ readFileSync: (file: string) => {
+          if (file === '/proc/sys/kernel/sched_schedstats') return '1\n'
+          statReads += 1
+          if (statReads === 1) throw Object.assign(new Error('interrupted'), { code: 'EINTR' })
+          return '51000000 10200000 5\n'
+        } }),
+      },
+    }
+    const probe = installMainEventLoopProbe(root)
+    const phase = probe.startPhase('marker-mutation')
+    time = 50
+    const evidence = phase.finish()
+
+    expect(evidence.scheduler).toMatchObject({ status: 'unavailable', code: 'EINTR' })
+    expect(evidence.scheduler).not.toHaveProperty('threadRuntimeMs')
+    expect(validateMainPhaseEvidence([evidence], ['marker-mutation'], 'linux')).toEqual([])
   })
 })

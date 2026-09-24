@@ -1379,7 +1379,7 @@ describe('Electron main startup', () => {
     expect(electronMock.app.getPath).not.toHaveBeenCalled()
   })
 
-  it('opens the normal window after a 3.5-second readiness delay', async () => {
+  it('opens the normal window after a 3.5-second readiness delay without a post-shell timeout', async () => {
     vi.useFakeTimers()
     let monotonicNow = 0
     vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
@@ -1389,7 +1389,14 @@ describe('Electron main startup', () => {
     const readiness = new Promise<void>((resolve) => {
       resolveReady = resolve
     })
-    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const electronMock = createElectronMock(
+      vi.fn(),
+      undefined,
+      true,
+      [],
+      undefined,
+      () => { monotonicNow = 10_500 },
+    )
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
       markSessionStart: vi.fn(async () => undefined),
@@ -1410,6 +1417,8 @@ describe('Electron main startup', () => {
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
     resolveReady()
     await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const window = electronMock.BrowserWindow.mock.results[0]?.value
+    expect(window.show).toHaveBeenCalledOnce()
     await vi.waitFor(() => expect(electronMock.app.on).toHaveBeenCalledWith(
       'before-quit',
       expect.any(Function),
@@ -1565,6 +1574,52 @@ describe('Electron main startup', () => {
     )
   })
 
+  it('attributes a synchronous SQLite store constructor that returns after the shared deadline', async () => {
+    vi.useFakeTimers()
+    let monotonicNow = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const missionStoreFactory = vi.fn(() => {
+      monotonicNow = 10_001
+      return {
+        info: vi.fn(async () => ({ schema_version: 1 })),
+        getActiveMission: vi.fn(async () => null),
+      }
+    })
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({
+          initialize: vi.fn(async () => undefined),
+          recordRestart: vi.fn(async () => undefined),
+        }) }
+      }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: missionStoreFactory }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(missionStoreFactory).toHaveBeenCalledOnce()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/mission store open and migration.*10 seconds/iu),
+    )
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
   it('applies the same watchdog to a later active-mission read', async () => {
     vi.useFakeTimers()
     let monotonicNow = 0
@@ -1613,11 +1668,16 @@ describe('Electron main startup', () => {
     expect(createRuntimeLog).toHaveBeenCalledTimes(1)
   })
 
-  it('applies the same watchdog to the operational window load', async () => {
+  it.each([
+    ['operational window content load', true],
+    ['operational renderer availability fence', false],
+  ])('keeps the operational window hidden when %s times out', async (heldStage, holdLoad) => {
     vi.useFakeTimers()
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
-    const heldLoad = new Promise<never>(() => {})
-    const electronMock = createElectronMock(vi.fn(), undefined, true, [], () => heldLoad)
+    const held = new Promise<never>(() => {})
+    const electronMock = createElectronMock(
+      vi.fn(), undefined, true, [], holdLoad ? () => held : undefined,
+    )
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
       markSessionStart: vi.fn(async () => undefined),
@@ -1636,6 +1696,7 @@ describe('Electron main startup', () => {
       getActiveMission: vi.fn(async () => null),
     }, {
       get(target, property) {
+        if (property === 'then') return undefined
         if (property in target) return target[property as keyof typeof target]
         return vi.fn(async () => undefined)
       },
@@ -1652,7 +1713,7 @@ describe('Electron main startup', () => {
     }
     const rendererTeardownCoordinator = {
       markRendererUnavailable: vi.fn(async () => undefined),
-      markRendererAvailable: vi.fn(async () => undefined),
+      markRendererAvailable: holdLoad ? vi.fn(async () => undefined) : vi.fn(() => held),
       prepare: vi.fn(async () => undefined),
       ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
       dispose: vi.fn(),
@@ -1713,13 +1774,17 @@ describe('Electron main startup', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    expect(electronMock.BrowserWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ show: false }),
+    )
     await vi.advanceTimersByTimeAsync(10_000)
 
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
-      expect.stringMatching(/operational window content load.*10 seconds/iu),
+      expect.stringMatching(new RegExp(`${heldStage}.*10 seconds`, 'iu')),
     )
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.BrowserWindow.mock.results[0]?.value.show).not.toHaveBeenCalled()
   })
 
   it('keeps the C01 response deadline bounded when the wall clock moves backwards', async () => {
@@ -2150,6 +2215,7 @@ function createElectronMock(
   ready = false,
   existingWindows: unknown[] = [],
   windowLoadURL: () => Promise<unknown> = () => Promise.resolve(),
+  windowShow: () => void = () => undefined,
 ) {
   const BrowserWindow = vi.fn(function MockBrowserWindow() {
     return {
@@ -2157,6 +2223,7 @@ function createElectronMock(
       destroy: vi.fn(),
       loadURL: vi.fn(windowLoadURL),
       on: vi.fn(),
+      show: vi.fn(windowShow),
       webContents: {
         getURL: vi.fn(() => ''),
         id: 1,

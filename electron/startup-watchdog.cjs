@@ -4,7 +4,7 @@ const { performance } = require('node:perf_hooks')
 class StartupTimeoutError extends Error {
   /** Creates a timeout with the pending startup stage and its measured budget. */
   constructor(stage, timeoutMs, elapsedMs) {
-    super(`Startup step "${stage}" did not finish within ${timeoutMs} ms after Electron was ready.`)
+    super(`The ${timeoutMs} ms startup deadline after Electron readiness expired while "${stage}" was pending.`)
     this.name = 'StartupTimeoutError'
     this.stage = stage
     this.timeoutMs = timeoutMs

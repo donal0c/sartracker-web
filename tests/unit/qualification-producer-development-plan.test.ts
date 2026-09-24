@@ -20,6 +20,8 @@ describe('bounded PR producer development inventory', () => {
     expect(new Set(cases.map(entry => entry.id)).size).toBe(cases.length)
     expect(cases.filter(entry => entry.contractId === 'C01')).toHaveLength(3)
     expect(cases.filter(entry => entry.contractId === 'C01').every(entry => entry.mechanicsOnly)).toBe(true)
+    expect(cases.filter(entry => entry.contractId === 'C01')
+      .every(entry => entry.command.timeoutMs === 120000)).toBe(true)
     expect(cases.find(entry => entry.id === 'C28-routine')?.command.args).toContain('routine')
     expect(cases.find(entry => entry.id === 'C19-legacy-schema-matrix')?.command.script).toContain('legacy-schema-probe')
     expect(cases.find(entry => entry.id === 'C10-replay-201-outings')?.command.script).toContain('replay-outing-probe')

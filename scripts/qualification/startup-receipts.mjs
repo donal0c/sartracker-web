@@ -8,6 +8,9 @@ export const C01_STARTUP_PROOF_MODE = 'packaged-electron-startup-admission'
 /** Fixed observation bound for deliberately held startup dependencies. */
 export const C01_HELD_GATE_TIMEOUT_MS = 20_000
 
+/** Allows evidence writes and process shutdown to settle after dialog dismissal. */
+export const C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS = 12_000
+
 /** Fixed C01 startup matrix; every entry must have an independent observation. */
 export const C01_STARTUP_PROFILE_KINDS = Object.freeze([
   'absent-schema',
@@ -38,7 +41,7 @@ const BAD_SECRET_WARNING =
 export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
   contractId: 'C01',
   proofMode: C01_STARTUP_PROOF_MODE,
-  schema: 'sartracker-c01-startup-admission-v2',
+  schema: 'sartracker-c01-startup-admission-v3',
   producer: 'scripts/qualification/startup-probe.mjs',
   reportPath: 'receipt.json',
   profileKinds: C01_STARTUP_PROFILE_KINDS,
@@ -68,6 +71,7 @@ export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
     'field-scale Ubuntu admission with genuinely allocated 3.7 GB operational data',
     'real provider/current polling request continuity and AppImage/deb installation parity',
     'browser-only boot states and WAR-13B/publication or field acceptance evidence',
+    'synchronous mission-store SQLite open, pragmas and migration run on Electron main thread; the held-store lock profile does not prove bounded open or migration',
     'Electron bootstrap that never reaches app readiness; the 20-second held-dependency observation starts before process launch, but no profile holds Electron readiness, so C01 does not prove bounded recovery here. The C01 contract forbids indefinite blank startup; a Linux GUI failure before Electron readiness requires a system-level bootstrap outside Electron',
   ]),
 })
@@ -473,7 +477,7 @@ function validateHeldGate(scenario, gateKind, failures) {
     passed = false
   }
   if (!validateHeldGateResponse(scenario, label, failures)) passed = false
-  if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'faultShellAtMs')) passed = false
+  if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'faultShellAtMs', true)) passed = false
   if (!validateUnchangedFiles(scenario.originalFiles, 'C01 ' + label + ' profile', failures)) passed = false
   return passed
 }
@@ -488,7 +492,14 @@ function validateHeldGateResponse(scenario, label, failures) {
     && scenario.process?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
     && scenario.process?.timedOut === false
     && scenario.process?.dialogObserved === true
+    && scenario.process?.dialogDismissed === true
     && scenario.process?.lateDialogAfterTimeout === false
+    && scenario.process?.forcedKill === false
+    && scenario.process?.productExitCode === 1
+    && scenario.process?.productExitSignal === null
+    && Number.isSafeInteger(scenario.process?.exitAfterDialogMs)
+    && scenario.process.exitAfterDialogMs >= 0
+    && scenario.process.exitAfterDialogMs <= C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS
     && Number.isSafeInteger(observedAtMs)
     && observedAtMs >= 0
     && observedAtMs <= C01_HELD_GATE_TIMEOUT_MS
@@ -767,11 +778,12 @@ function makeResult(predicates, failures, status = 'INVALID_EVIDENCE') {
     valid,
     passed: valid,
     recomputedPredicates: Object.freeze({ ...predicates }),
-    // A valid receipt proves this packaged matrix only. The known C01 gaps
-    // remain visible and keep the full contract incomplete and ineligible.
-    coverageComplete: valid && STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.length === 0,
-    qualificationEligible: valid && STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.length === 0,
+    // This matrix can be valid while full C01 coverage and qualification remain
+    // false; pre-readiness and synchronous store open/migration are not covered.
+    coverageComplete: false,
+    qualificationEligible: false,
     releaseEligible: false,
+    nonQualificationReason: 'The packaged startup matrix does not cover an Electron bootstrap that never reaches app readiness or synchronous mission-store SQLite open and migration on the main thread.',
     uncoveredAxes: STARTUP_PROBE_DESCRIPTOR.uncoveredAxes,
     failureReasons: Object.freeze(uniqueFailures),
   })

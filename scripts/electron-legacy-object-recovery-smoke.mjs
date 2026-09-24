@@ -244,7 +244,6 @@ async function main() {
   )
   assert.deepEqual(phaseFailures, [], `Restart operation timing evidence was invalid: ${phaseFailures.join('; ')}`)
   assertTimer(mutation.timer, 'restart')
-  const phaseMaximum = Math.max(...mutation.phaseTimings.map(phase => phase.mainLoop.maximumGapMs))
   report.restart.rowsAfterMutation = inspectRows(path.join(fixtureDir, 'mission-store.sqlite'), mission.id)
   assertRows(report.restart.rowsAfterMutation)
   assert.equal(report.restart.rowsAfterMutation.markerDigest, report.seededMarkerDigest)

@@ -2242,19 +2242,25 @@ sh "$COLLECTOR" --screenshot</code></pre>
           </p>
           <h3>Startup Faults</h3>
           <p>
-            Some local startup and recovery checks run before the operational window opens. If one cannot
-            complete promptly or the mission store cannot be opened safely, SAR Tracker shows an actionable
-            native error and closes without opening the mission console. Preserve the profile and contact
-            support before retrying; do not overwrite or edit the profile. If the renderer starts but a runtime
-            service then fails, SAR Tracker shows a startup fault panel instead of a partially disabled
-            mission console. That panel can export a startup-fault support bundle before the normal
-            Diagnostics workspace is available. Use Reload once after exporting or recording the fault. If
-            the same fault returns, do not treat the app as ready for operational use.
+            Some local startup and recovery checks run before the operational window opens. The operational
+            window stays hidden until the renderer loads and its startup evidence-loss fence completes. If a
+            bounded asynchronous check exceeds its deadline or the mission store cannot be opened safely,
+            SAR Tracker shows an actionable native error and closes without opening the mission console.
+            Preserve the profile and contact support before retrying; do not overwrite or edit the profile.
+            If the renderer starts but a runtime service then fails, SAR Tracker shows a startup fault panel
+            instead of a partially disabled mission console. That panel can export a startup-fault support
+            bundle before the normal Diagnostics workspace is available. Use Reload once after exporting or
+            recording the fault. If the same fault returns, do not treat the app as ready for operational use.
           </p>
           <p>
-            If an awaited startup step does not finish within 10 seconds after Electron is ready, SAR Tracker
-            names the step in a native error message and closes. That timeout alone does not establish that
-            mission data is damaged. Preserve the profile and contact support before retrying.
+            The 10-second startup deadline is a hard total budget after Electron reports that it is ready,
+            covering awaited startup through the renderer's evidence-loss fence. A healthy but slower startup
+            can also reach this limit and close; a late successful result does not reopen the app. The deadline
+            cannot interrupt Electron's readiness wait or a synchronous native SQLite open or migration on
+            Electron's main thread. If that call returns after the deadline, SAR Tracker reports the store
+            stage; if it never returns, the blocked main thread cannot display the error. A timeout alone does
+            not establish that mission data is damaged. Preserve the profile and contact support before
+            retrying.
           </p>
           <p>
             On Linux, Electron cannot show its startup error box graphically before it is ready. When

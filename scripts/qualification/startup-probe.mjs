@@ -28,6 +28,7 @@ import { createReadStream } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { performance } from 'node:perf_hooks'
 import { promisify } from 'node:util'
 
 import { _electron as electron } from 'playwright'
@@ -37,6 +38,7 @@ import { generateMissionStoreFixture } from '../../build/seed-mission-store-runt
 import {
   C01_STARTUP_PROOF_MODE,
   C01_HELD_GATE_TIMEOUT_MS,
+  C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
   C01_OVERSIZED_STORE_BYTES,
   C01_STARTUP_PROFILE_KINDS,
   STARTUP_PROBE_DESCRIPTOR,
@@ -50,6 +52,9 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
+
+/** Bounds only the disposable SQLite lock-holder setup, not the app response. */
+export const C01_STORE_LOCK_READY_TIMEOUT_MS = 5_000
 const APP_CLOSE_TIMEOUT_MS = 20_000
 const DIALOG_TIMEOUT_MS = 20_000
 const BAD_SECRET_WARNING =
@@ -784,6 +789,8 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   let earlyExit = null
   let dialogWindowId = null
   let dialogObservedAtMs = null
+  let dialogDismissed = false
+  let productExit = null
   let observationFailure = setupFailure
   if (setupFailure === null) {
     const appEnvironment = {
@@ -814,7 +821,18 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       if (dialogWindowId !== null) dialogObservedAtMs = Date.now() - launchStartedAt
     }
     if (dialogWindowId !== null) {
-      await dismissErrorDialog(dialogWindowId, appProcess.pid).catch(() => undefined)
+      try {
+        productExit = await waitForOwnedProcessExitAfterDialog(
+          appProcess,
+          C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
+          async () => {
+            await dismissErrorDialog(dialogWindowId, appProcess.pid)
+            dialogDismissed = true
+          },
+        )
+      } catch (error) {
+        observationFailure = sanitizeError(error, profile)
+      }
     }
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
       appProcess.kill('SIGTERM')
@@ -840,6 +858,8 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
   })
   const lateDialogAfterTimeout = earlyExit?.timedOut === true && dialogWindowId !== null
+  const productExitFailed = actionable && dialogDismissed
+    && (productExit === null || productExit.code !== 1 || productExit.signal !== null)
   const processObservation = {
     pid: appProcess?.pid ?? process.pid,
     closed: appProcess === null || appProcess.exitCode !== null || appProcess.signalCode !== null,
@@ -851,6 +871,10 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     forcedKill,
     dialogObserved: dialogWindowId !== null,
     dialogObservedAtMs,
+    dialogDismissed,
+    productExitCode: productExit?.code ?? null,
+    productExitSignal: productExit?.signal ?? null,
+    exitAfterDialogMs: productExit?.elapsedMs ?? null,
     lateDialogAfterTimeout,
     faultShellAtMs: actionable ? earlyExit?.elapsedMs ?? null : null,
   }
@@ -877,6 +901,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
           ? 'native-error-dialog-after-bound'
           : 'no-native-dialog-no-shell',
       dialogObserved: dialogWindowId !== null,
+      dialogDismissed,
       lateDialogAfterTimeout,
       dependencyPath: heldPath,
       lockHolder: gateKind === 'store' ? { pid: holder?.pid ?? null, closed: cleanup.lockHolderClosed } : null,
@@ -891,9 +916,11 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     originalFiles: { before, after },
     cleanup,
     ...(observationFailure === null ? {} : { observationFailure }),
-    ...(timedOutWithoutAction
-      ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${C01_HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
-      : {}),
+    ...(productExitFailed
+      ? { productGap: `C01 ${gateKind} startup showed an in-bound fault dialog but did not produce the required exit code 1 without a signal within ${C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS}ms after dismissal.` }
+      : timedOutWithoutAction
+        ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${C01_HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
+        : {}),
   }
 }
 
@@ -929,7 +956,7 @@ async function startStoreLockHolder(databasePath) {
   const stdout = collectChildOutput(child.stdout, child)
   collectChildOutput(child.stderr, child)
   try {
-    await waitForChildOutput(stdout, 'C01_STORE_LOCK_READY', C01_HELD_GATE_TIMEOUT_MS)
+    await waitForChildOutput(stdout, 'C01_STORE_LOCK_READY', C01_STORE_LOCK_READY_TIMEOUT_MS)
   } catch (error) {
     child.kill('SIGTERM')
     await waitForChildClose(child, 2_000).catch(() => undefined)
@@ -983,6 +1010,51 @@ export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt =
     await wait(Math.min(100, deadline - now()))
   }
   return { timedOut: true, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+}
+
+/** Observe a product-owned exit after the held-gate dialog has been dismissed. */
+export async function waitForOwnedProcessExitAfterDialog(
+  child,
+  timeoutMs,
+  dismissDialog,
+  now = () => performance.now(),
+) {
+  if (child.exitCode !== null || child.signalCode !== null) return null
+  let dismissedAt
+  let observedExit
+  let timer
+  let resolveExit
+  const exitPromise = new Promise((resolve) => { resolveExit = resolve })
+  const handleExit = (code, signal) => {
+    observedExit = { code, signal, at: now() }
+    if (dismissedAt !== undefined) resolveExit(observedExit)
+  }
+  child.once('exit', handleExit)
+  try {
+    await dismissDialog()
+    dismissedAt = now()
+    if (observedExit !== undefined) {
+      return {
+        code: observedExit.code,
+        signal: observedExit.signal,
+        elapsedMs: Math.max(0, Math.round(observedExit.at - dismissedAt)),
+      }
+    }
+    const timeoutPromise = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), timeoutMs)
+    })
+    const exit = await Promise.race([exitPromise, timeoutPromise])
+    return exit === null
+      ? null
+      : {
+        code: exit.code,
+        signal: exit.signal,
+        elapsedMs: Math.max(0, Math.round(exit.at - dismissedAt)),
+      }
+  } finally {
+    clearTimeout(timer)
+    child.removeListener('exit', handleExit)
+  }
 }
 
 /** Await a child close without extending the bounded observation window. */

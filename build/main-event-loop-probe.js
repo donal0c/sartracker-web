@@ -126,6 +126,18 @@ export function installMainEventLoopProbe(root = globalThis) {
       if (typeof fileSystem?.readFileSync !== 'function') {
         return Object.freeze({ status: 'unavailable', code: 'FS_MODULE_UNAVAILABLE' })
       }
+      const schedulerAccounting = fileSystem.readFileSync(
+        '/proc/sys/kernel/sched_schedstats',
+        'utf8',
+      ).trim()
+      if (schedulerAccounting !== '1') {
+        return Object.freeze({
+          status: 'unavailable',
+          code: schedulerAccounting === '0'
+            ? 'SCHEDSTATS_DISABLED'
+            : 'SCHEDSTATS_STATE_INVALID',
+        })
+      }
       const values = fileSystem.readFileSync('/proc/thread-self/schedstat', 'utf8')
         .trim()
         .split(/\s+/u)
@@ -159,7 +171,7 @@ export function installMainEventLoopProbe(root = globalThis) {
     }
     if (start.status !== 'measured' || end.status !== 'measured') {
       return Object.freeze({
-        status: start.status === 'not_linux' ? 'not_linux' : end.status,
+        status: start.status !== 'measured' ? start.status : end.status,
         code: end.code ?? start.code ?? null,
         processVoluntaryContextSwitches: contextSwitchDelta('voluntaryContextSwitches'),
         processInvoluntaryContextSwitches: contextSwitchDelta('involuntaryContextSwitches'),
@@ -235,8 +247,8 @@ export function validateMainPhaseEvidence(phases, expectedNames, hostPlatform) {
       failures.push(`${label} process CPU timing is missing or invalid.`)
     }
     const scheduler = phase.scheduler
-    if (!scheduler || (hostPlatform === 'linux' && scheduler.status !== 'measured')) {
-      failures.push(`${label} Linux scheduler timing is missing.`)
+    if (!scheduler) {
+      failures.push(`${label} scheduler timing status is missing.`)
     } else if (scheduler.status === 'measured') {
       if (!['threadRuntimeMs', 'threadRunQueueWaitMs', 'threadTimeSlices']
         .every((key) => Number.isFinite(scheduler[key]) && scheduler[key] >= 0)) {
@@ -247,6 +259,15 @@ export function validateMainPhaseEvidence(phases, expectedNames, hostPlatform) {
           || (Number.isSafeInteger(scheduler[key]) && scheduler[key] >= 0))) {
         failures.push(`${label} context-switch deltas are invalid.`)
       }
+    } else if (hostPlatform === 'linux'
+        && (scheduler.status !== 'unavailable'
+          || typeof scheduler.code !== 'string'
+          || scheduler.code.trim() === '')) {
+      // Scheduler counters refine attribution; the independent 200 ms main-loop
+      // gate remains authoritative when the kernel does not expose them.
+      failures.push(`${label} Linux scheduler timing is neither measured nor explicitly unavailable.`)
+    } else if (hostPlatform !== 'linux' && scheduler.status !== 'not_linux') {
+      failures.push(`${label} non-Linux scheduler status is inconsistent with the host.`)
     }
     const mainLoop = phase.mainLoop
     if (!mainLoop || mainLoop.intervalMs !== 50
