@@ -829,8 +829,9 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
           appProcess,
           C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
           async () => {
-            await dismissErrorDialog(dialogWindowId, appProcess.pid)
+            const confirmedDismissalAt = await dismissErrorDialog(dialogWindowId, appProcess.pid)
             dialogDismissed = true
+            return confirmedDismissalAt
           },
         )
       } catch (error) {
@@ -1042,10 +1043,14 @@ export async function waitForDialogDismissal(isDialogVisible, timeoutMs, depende
   const wait = dependencies.wait ?? delay
   const deadline = now() + timeoutMs
   while (true) {
-    if (!await isDialogVisible()) return
     const remainingMs = deadline - now()
     if (remainingMs <= 0) break
-    await wait(Math.min(50, remainingMs))
+    const visible = await isDialogVisible(remainingMs)
+    const confirmedAt = now()
+    if (!visible && confirmedAt <= deadline) return confirmedAt
+    const remainingAfterProbeMs = deadline - confirmedAt
+    if (remainingAfterProbeMs <= 0) break
+    await wait(Math.min(50, remainingAfterProbeMs))
   }
   throw new Error('C01 could not confirm the startup error dialog closed after the dismissal click.')
 }
@@ -1069,8 +1074,10 @@ export async function waitForOwnedProcessExitAfterDialog(
   }
   child.once('exit', handleExit)
   try {
-    await dismissDialog()
-    dismissedAt = now()
+    const confirmedDismissalAt = await dismissDialog()
+    dismissedAt = Number.isFinite(confirmedDismissalAt)
+      ? Math.min(now(), confirmedDismissalAt)
+      : now()
     if (observedExit !== undefined) {
       return {
         code: observedExit.code,
@@ -1713,17 +1720,20 @@ async function dismissErrorDialog(windowId, pid) {
   await execFileAsync('xdotool', [
     'mousemove', '--window', windowId, String(width - 52), String(height - 42), 'click', '1',
   ])
-  await waitForDialogDismissal(
-    () => isErrorDialogVisible(windowId),
+  return waitForDialogDismissal(
+    (remainingMs) => isErrorDialogVisible(windowId, remainingMs),
     DIALOG_DISMISSAL_TIMEOUT_MS,
   )
 }
 
 /** Read the native X11 window state so a successful click is not mistaken for dismissal. */
-async function isErrorDialogVisible(windowId) {
+async function isErrorDialogVisible(windowId, remainingMs) {
   try {
     const { stdout } = await execFileAsync(
-      'xwininfo', ['-id', windowId], { timeout: 500, killSignal: 'SIGKILL' },
+      'xwininfo', ['-id', windowId], {
+        timeout: Math.max(1, Math.floor(Math.min(500, remainingMs))),
+        killSignal: 'SIGKILL',
+      },
     )
     const mapState = /^\s*Map State:\s*(\S+)\s*$/mu.exec(stdout)?.[1]
     if (mapState === undefined) {

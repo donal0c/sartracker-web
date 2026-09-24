@@ -31,14 +31,14 @@ describe('C01 held-gate product exit observation', () => {
     let visibleChecks = 0
     const isDialogVisible = vi.fn(async () => {
       visibleChecks += 1
-      return visibleChecks < 3
+      return visibleChecks < 2
     })
 
     await expect(waitForDialogDismissal(isDialogVisible, 100, {
       now: () => monotonicNow,
       wait: async (milliseconds) => { monotonicNow += milliseconds },
-    })).resolves.toBeUndefined()
-    expect(isDialogVisible).toHaveBeenCalledTimes(3)
+    })).resolves.toBe(50)
+    expect(isDialogVisible).toHaveBeenCalledTimes(2)
     expect(monotonicNow).toBeGreaterThan(0)
   })
 
@@ -49,6 +49,20 @@ describe('C01 held-gate product exit observation', () => {
       wait: async (milliseconds) => { monotonicNow += milliseconds },
     })).rejects.toThrow('C01 could not confirm the startup error dialog closed after the dismissal click.')
     expect(monotonicNow).toBe(100)
+  })
+
+  it('does not accept a hidden-window observation that completes after its deadline', async () => {
+    let monotonicNow = 0
+    const isDialogVisible = vi.fn(async (timeoutMs: number) => {
+      expect(timeoutMs).toBe(100)
+      monotonicNow = 101
+      return false
+    })
+
+    await expect(waitForDialogDismissal(isDialogVisible, 100, {
+      now: () => monotonicNow,
+    })).rejects.toThrow('C01 could not confirm the startup error dialog closed after the dismissal click.')
+    expect(isDialogVisible).toHaveBeenCalledOnce()
   })
 
   it('measures the application exit after dialog dismissal', async () => {
@@ -146,6 +160,32 @@ describe('C01 held-gate product exit observation', () => {
       code: 1,
       signal: null,
       elapsedMs: 0,
+    })
+  })
+
+  it('measures exit time from the monotonic instant the dialog was confirmed closed', async () => {
+    vi.useFakeTimers()
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null as number | null,
+      signalCode: null as NodeJS.Signals | null,
+    })
+    let monotonicNow = 120
+    const exitObservation = waitForOwnedProcessExitAfterDialog(
+      child,
+      12_000,
+      async () => 100,
+      () => monotonicNow,
+    )
+
+    await vi.advanceTimersByTimeAsync(250)
+    monotonicNow = 350
+    child.exitCode = 1
+    child.emit('exit', 1, null)
+
+    await expect(exitObservation).resolves.toEqual({
+      code: 1,
+      signal: null,
+      elapsedMs: 250,
     })
   })
 })

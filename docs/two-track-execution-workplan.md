@@ -45,10 +45,14 @@ Linux run `36047200408` failed in the candidate producer's three C01 held-gate
 checks; all preceding checks passed. The dialogs were clicked and the
 processes were later killed, but the observer marked dismissal without
 confirming the X11 windows closed. The reported product-exit failure is
-therefore not conclusive. The observer now waits up to two seconds for the X11
-window to close; exact-head Linux validation is pending. Independent
-read-only review of `104432a4` found no
-actionable code finding. Previous run `36025809540` passed the packaged C19
+therefore not conclusive. Independent review then found the first observer
+update could exceed its two-second bound and understate the following exit
+interval. The correction caps each X11 probe to the remaining deadline,
+rejects late observations, and measures exit from the confirmed monotonic close
+time. Local related probe/receipt/source tests pass (42 tests) and lint passes;
+fresh exact-head Linux validation and review are pending. Independent
+read-only review of `104432a4` found no actionable code finding. Previous run
+`36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be
 claimed from the prior run. Keep the PR draft until exact-head CI and review
