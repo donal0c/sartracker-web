@@ -1,9 +1,11 @@
 import { EventEmitter } from 'node:events'
+import { performance } from 'node:perf_hooks'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   C01_STORE_LOCK_READY_TIMEOUT_MS,
+  waitForOwnedProcessOrTimeout,
   waitForOwnedProcessExitAfterDialog,
 } from '../../scripts/qualification/startup-probe.mjs'
 import {
@@ -14,6 +16,7 @@ import {
 describe('C01 held-gate product exit observation', () => {
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('keeps lock-holder readiness and product-exit observation budgets independent', () => {
@@ -51,6 +54,34 @@ describe('C01 held-gate product exit observation', () => {
 
     await expect(waitForOwnedProcessExitAfterDialog(child, 12_000, dismissDialog)).resolves.toBeNull()
     expect(dismissDialog).not.toHaveBeenCalled()
+  })
+
+  it('uses a monotonic clock for the held-gate response deadline', async () => {
+    let monotonicNow = 0
+    let wallClockNow = 100_000
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+    vi.spyOn(Date, 'now').mockImplementation(() => wallClockNow)
+    const child = Object.assign(new EventEmitter(), {
+      exitCode: null as number | null,
+      signalCode: null as NodeJS.Signals | null,
+    })
+
+    const observation = await waitForOwnedProcessOrTimeout(child, 20_000, undefined, {
+      findDialog: async () => null,
+      wait: async (milliseconds) => {
+        monotonicNow += milliseconds
+        if (monotonicNow === 100) wallClockNow -= 15_000
+        else wallClockNow += milliseconds
+      },
+    })
+
+    expect(observation).toEqual({
+      timedOut: true,
+      elapsedMs: 20_000,
+      dialogWindowId: null,
+      dialogObservedAtMs: null,
+    })
+    expect(monotonicNow).toBe(20_000)
   })
 
   it('captures the child exit while the dismissal command is completing', async () => {

@@ -40,15 +40,14 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**PR #47 status:** the branch is based on current `master` (`30cb7d45`) and the
-checked-in PR head is `5b4f0b25`; local remediation is not yet committed or
-pushed. Linux run `36025809540` passed on that old head, but skipped the strict
-responsiveness step. Finish local verification, push the new head, then obtain
-fresh exact-head review and Linux package evidence including the unchanged
-packaged C19 200 ms gate. The separate strict candidate-responsiveness step is
-not a PR merge check and must not be claimed from this run. Keep the PR draft
-until the exact-head checks complete. Do not run candidate qualification, tag,
-publish, or promote from this work.
+**PR #47 status:** the branch is based on current `master` (`30cb7d45`) and its
+latest repair includes the monotonic held-gate response-time correction. Fresh
+exact-head Linux CI and read-only review are pending for the latest pushed
+source. Previous run `36025809540` passed the packaged C19 200 ms gate on an
+older head, but skipped the separate strict responsiveness qualification. That
+qualification is not a PR merge check and must not be claimed from the prior
+run. Keep the PR draft until exact-head CI and review complete. Do not merge,
+tag, publish, or promote from this work.
 
 Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
 261.161 ms against 200 ms; same-Linux master run `36001695717` measured
@@ -57,15 +56,16 @@ does not establish its cause or clear it. Current probes report scheduler data
 as explicitly unavailable when Linux kernel accounting is disabled; the
 independent 200 ms main-loop gate remains authoritative.
 
-**Current C01 review repair — 2026-09-24:** the local PR #47 patch replaces
+**Current C01 review repair — 2026-09-24:** the PR #47 patch replaces
 the module-load deadline with one 10-second watchdog starting after Electron
 readiness and covering awaited asynchronous startup through renderer load and
 its evidence-loss fence. The operational window stays hidden until that fence
-succeeds. The held-gate observer has a 20-second response bound and separately
-requires the product's exit code 1 within 12 seconds after dialog dismissal;
+succeeds. The held-gate observer uses monotonic time for its 20-second response
+bound and separately requires the product's exit code 1 within 12 seconds after
+dialog dismissal;
 lock-holder setup has its own 5-second bound and the held-gate producer budget
 is 120 seconds. Failure evidence, receipt truthfulness, scheduler attribution,
-manual guidance, and producer-vs-infrastructure verdicts are repaired locally.
+manual guidance, and producer-vs-infrastructure verdicts are repaired in this PR.
 The stronger held-gate exit fields and explicit uncovered axes advance the raw
 C01 observation schema to v3; retain historical v2 receipts unchanged.
 
@@ -77,15 +77,16 @@ wrapped to attribute a late return to the store-open/migration stage, but a
 synchronous native call still blocks Electron main and cannot be preempted while
 it is running. `app.whenReady()` remains outside the deadline by selection.
 
-Local verification on this patch: seven focused files / 102 tests passed; full
-correctness 5,863 passed / 25 skipped; lint passed; `npm run electron:pack`
-completed; packaged macOS legacy-recovery smoke passed with 55.90 ms restart
-main-loop maximum and 1.59/0.14/1.40 ms phase gaps. The package smoke ran from a
-dirty tree and macOS scheduler counters were unavailable, so it is diagnostic
-only. Linux run `36025809540`
-is green only for the old pushed head and skipped strict responsiveness. Fresh
-exact-head review and Linux checks remain required. DON-179 remains In Review;
-opt-in diagnostic upload is outside this repair.
+Before the monotonic held-gate follow-up, local verification passed seven
+focused files / 102 tests and full correctness (5,863 passed / 25 skipped);
+lint and `npm run electron:pack` passed. After that follow-up, the targeted
+probe/receipt suites passed (36 tests) and lint passed. The packaged macOS
+legacy-recovery smoke passed with 60.11 ms first-main and 55.90 ms restart
+main-loop maxima and 1.59/0.14/1.40 ms phase gaps. It ran from a dirty tree and
+macOS scheduler counters were unavailable, so it is diagnostic only. Linux run
+`36025809540` passed only on an older head and skipped strict responsiveness.
+Fresh exact-head review and Linux checks remain required. DON-179 remains In
+Review; opt-in diagnostic upload is outside this repair.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it

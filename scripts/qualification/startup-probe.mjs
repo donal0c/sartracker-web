@@ -785,7 +785,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     setupFailure = sanitizeError(error, profile)
   }
 
-  const launchStartedAt = Date.now()
+  const launchStartedAt = performance.now()
   let earlyExit = null
   let dialogWindowId = null
   let dialogObservedAtMs = null
@@ -818,7 +818,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     dialogObservedAtMs = earlyExit.dialogObservedAtMs
     if (earlyExit.timedOut === true && dialogWindowId === null) {
       dialogWindowId = await findSarTrackerErrorDialog(appProcess.pid, 500)
-      if (dialogWindowId !== null) dialogObservedAtMs = Date.now() - launchStartedAt
+      if (dialogWindowId !== null) dialogObservedAtMs = performance.now() - launchStartedAt
     }
     if (dialogWindowId !== null) {
       try {
@@ -989,8 +989,8 @@ function collectChildOutput(stream, child) {
 }
 
 /** Wait for an owned process or an in-bound native dialog without exceeding the fixed observation bound. */
-export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt = Date.now(), dependencies = {}) {
-  const now = dependencies.now ?? Date.now
+export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt = performance.now(), dependencies = {}) {
+  const now = dependencies.now ?? (() => performance.now())
   const findDialog = dependencies.findDialog ?? findSarTrackerErrorDialog
   const wait = dependencies.wait ?? delay
   const deadline = startedAt + timeoutMs
