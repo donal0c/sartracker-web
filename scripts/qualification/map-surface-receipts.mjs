@@ -71,10 +71,12 @@ export function validateMapSurfaceFacts(report) {
 
   const failure = report.overlayFailure
   if (failure?.attempted !== true || failure.throwHookHit !== true
-      || typeof failure.warningText !== 'string' || !/overlay|layer|marker|mission/iu.test(failure.warningText)
+      || failure.warningRegistrationId !== 'markers'
+      || typeof failure.warningText !== 'string' || !/markers\s+overlay/iu.test(failure.warningText)
       || /tile|basemap|map.*degraded/iu.test(failure.warningText)
-      || failure.operatorWarningVisible !== true || failure.recoveryObserved !== true || failure.consoleOnly === true) {
-    throw new Error('Persistent overlay failure remained console-only or recovery was not proven.')
+      || failure.operatorWarningVisible !== true || failure.recoveryObserved !== true
+      || failure.warningClearedAfterRecovery !== true || failure.consoleOnly === true) {
+    throw new Error('Persistent marker-overlay warning was missing, console-only, failed to clear after synchronization recovery, or recovery was not proven.')
   }
   return Object.freeze({
     status: 'PASS',

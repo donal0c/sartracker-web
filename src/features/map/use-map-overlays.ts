@@ -27,7 +27,7 @@ import {
 import { selectCoverageCatalogForMission } from '../tracking/mission-coverage-scope'
 import type { RenderableMapId } from '../../lib/map-config'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
-import { registerMapStyleSync } from './map-style-sync'
+import { registerMapOverlaySync } from './register-map-overlay-sync'
 
 type UseMapOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -87,7 +87,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       )
     }
 
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapOverlaySync(map, 'tracking', 'tracking', synchronizeOverlay)
   }, [
     options.activeBasemapId,
     options.mapReadyVersion,
@@ -150,7 +150,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
         throw error
       }
     }
-    return registerMapStyleSync(map, synchronizeOverlay, {
+    return registerMapOverlaySync(map, 'coverage', 'coverage', synchronizeOverlay, {
       onStyleUnavailable: () => {
         coverageController?.notifyRendererDetached()
       },
@@ -183,7 +183,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       )
     }
 
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapOverlaySync(map, 'markers', 'markers', synchronizeOverlay)
   }, [
     groupVisibility,
     hiddenMarkerIds,

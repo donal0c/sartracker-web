@@ -593,9 +593,11 @@ function validateDiagnostics(phase) {
 function validateMapFault(phase) {
   const fault = phase.fault
   if (!isRecord(fault) || fault.attempted !== true || fault.throwHookHit !== true || fault.operatorWarningVisible !== true
-    || fault.recoveryObserved !== true || fault.consoleOnly === true || fault.cleanupRestored !== true || !nonEmpty(fault.warningText)
-    || !nonEmpty(fault.requestId) || !validTimestamp(fault.startedAt)) throw new Error('C24 map fault did not produce raw operator-visible recovery evidence.')
-  if (!/overlay|layer|marker|mission/iu.test(fault.warningText) || /tile|basemap|map.*degraded/iu.test(fault.warningText)) {
+    || fault.recoveryObserved !== true || fault.warningClearedAfterRecovery !== true
+    || fault.consoleOnly === true || fault.cleanupRestored !== true || !nonEmpty(fault.warningText)
+    || fault.warningRegistrationId !== 'markers' || !nonEmpty(fault.requestId)
+    || !validTimestamp(fault.startedAt)) throw new Error('C24 map fault did not produce raw operator-visible recovery evidence.')
+  if (!/markers\s+overlay/iu.test(fault.warningText) || /tile|basemap|map.*degraded/iu.test(fault.warningText)) {
     throw new Error('C24 map fault warning is not distinct from a basemap or tile warning.')
   }
 }

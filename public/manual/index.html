@@ -657,10 +657,20 @@
             <strong>Convert</strong> control.
             In standard mode this is a bottom strip; in Focus Mode Plus, only the mirrored focus coordinate
             display is shown so awareness stays while the map surface stays less cluttered.
+            If an overlay repeatedly fails to synchronize, a persistent map alert names the affected
+            overlay while SAR Tracker retries. Verify against an independent operational source, open
+            Diagnostics and export a report if the warning remains, and stop or revert if uncertain. The
+            alert clears only after that overlay synchronizes successfully. When several overlays warn at
+            once, the bounded alert region shows the active warning count and can be scrolled with the
+            mouse wheel or by focusing the region and pressing Page Down to review each affected overlay.
           </p>
           <figure class="screenshot">
             <img src="assets/app-shell.png" alt="SAR Tracker app shell with active mission and map" />
             <figcaption>Main operational shell during an active browser-harness mission.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/map-overlay-sync-warning.png" alt="Persistent warning naming a marker overlay that may be missing or stale" />
+            <figcaption>Synthetic browser validation: the marker warning stays visible during retries and is cleared after successful overlay synchronization. This image is not field evidence.</figcaption>
           </figure>
           <div class="card-grid">
             <div class="card"><strong>Command mast</strong><br />Mission name, phase, timers, minimized Mission Control summary, device count, tracking cell (mode plus separate FIX and STALE counts), system state, autosave warning state, current app version, Diagnostics, Focus Mode, Settings, Weather, and Help. On compact desktop widths, action labels shorten to DIAG, FOCUS, SET, and WX so the controls remain distinct and readable.</div>
@@ -2142,8 +2152,9 @@
             marks which device trails were simplified for display. Beta.8 incident bundles also include
             sanitized diagnostic breadcrumbs for map and tracking context, such as basemap changes, map
             health changes, marker saves, completed measurements, tracking status changes, and tracking
-            snapshot counts. These breadcrumbs do not include precise coordinates, credentials, private map
-            package paths, or raw mission data.
+            snapshot counts. Overlay synchronization failures also include an allow-listed error class for
+            diagnosis, but never the exception message or stack. These breadcrumbs do not include precise
+            coordinates, credentials, private map package paths, or raw mission data.
           </p>
           <p>
             Diagnostics also keeps a bounded <strong>Tracking Poll Ledger</strong> for the current app

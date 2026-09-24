@@ -194,6 +194,239 @@ test.describe('M2 map shell', () => {
     await expect(page.getByTestId('basemap-btn-esri_topo')).toHaveClass(/bg-amber-300/)
   })
 
+  test('DON-264 keeps a persistent marker overlay warning visible until verified recovery', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Overlay Warning Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+
+    await page.evaluate(() => {
+      type TestMap = {
+        addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+        fire: (event: string) => void
+        getLayer: (id: string) => unknown
+        getSource: (id: string) => unknown
+        getStyle: () => {
+          layers?: readonly { readonly id: string; readonly source?: string }[]
+          sources: Record<string, { readonly type?: string }>
+        }
+        removeLayer: (id: string) => void
+        removeSource: (id: string) => void
+      }
+      type FaultState = { readonly originalAddSource: TestMap['addSource'] }
+      type TestWindow = Window & {
+        __DON264_OVERLAY_FAILURE__?: FaultState
+        __SARTRACKER_MAP__?: TestMap
+      }
+
+      const host = window as TestWindow
+      const map = host.__SARTRACKER_MAP__
+      if (map === undefined) throw new Error('DON-264 map was unavailable for failure injection.')
+
+      const originalAddSource = map.addSource
+      host.__DON264_OVERLAY_FAILURE__ = { originalAddSource }
+      map.addSource = function addSourceWithSyntheticFailure(id, source, ...rest) {
+        if (id === 'mission-markers') {
+          throw new Error('DON-264 synthetic persistent marker synchronization failure.')
+        }
+        return originalAddSource.call(map, id, source, ...rest)
+      }
+      for (const layer of map.getStyle().layers?.filter((entry) => entry.source === 'mission-markers') ?? []) {
+        if (map.getLayer(layer.id)) map.removeLayer(layer.id)
+      }
+      if (map.getSource('mission-markers')) map.removeSource('mission-markers')
+      map.fire('style.load')
+    })
+
+    const warning = page.getByTestId('map-overlay-warning-markers')
+    try {
+      await expect(warning).toBeVisible({ timeout: 5_000 })
+      await expect(warning).toContainText(/Markers overlay may be missing or stale.*retrying/iu)
+      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).not.toContainText('complete')
+      const failedDiagnostics = await page.evaluate(() => {
+        const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
+          event?: string
+          fields?: {
+            registrationId?: string
+            overlayFamily?: string
+            consecutiveFailures?: number
+            errorClass?: string
+          }
+        }>
+        return events.filter((event) => event.event === 'map_overlay_sync_failed')
+      })
+      expect(failedDiagnostics).toHaveLength(1)
+      expect(failedDiagnostics[0]?.fields?.registrationId).toBe('markers')
+      expect(failedDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
+      expect(failedDiagnostics[0]?.fields?.consecutiveFailures).toBeGreaterThanOrEqual(3)
+      expect(failedDiagnostics[0]?.fields?.errorClass).toBe('Error')
+      expect(JSON.stringify(failedDiagnostics)).not.toContain('synthetic persistent marker synchronization failure')
+      await page.screenshot({ path: 'test-results/don264-overlay-sync-warning.png' })
+      await page.waitForTimeout(200)
+      await expect(warning).toBeVisible()
+
+      await page.evaluate(() => {
+        type TestMap = {
+          addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+          fire: (event: string) => void
+          getStyle: () => { sources: Record<string, { readonly type?: string }> }
+        }
+        type TestWindow = Window & {
+          __DON264_OVERLAY_FAILURE__?: { readonly originalAddSource: TestMap['addSource'] }
+          __SARTRACKER_MAP__?: TestMap
+        }
+        const host = window as TestWindow
+        const map = host.__SARTRACKER_MAP__
+        const fault = host.__DON264_OVERLAY_FAILURE__
+        if (map === undefined || fault === undefined) {
+          throw new Error('DON-264 map recovery state was unavailable.')
+        }
+        map.addSource = fault.originalAddSource
+        delete host.__DON264_OVERLAY_FAILURE__
+        map.fire('idle')
+      })
+
+      await expect.poll(() => page.evaluate(() => {
+        type TestMap = { getStyle: () => { sources: Record<string, { readonly type?: string }> } }
+        const map = (window as Window & { __SARTRACKER_MAP__?: TestMap }).__SARTRACKER_MAP__
+        return map?.getStyle().sources['mission-markers']?.type === 'geojson'
+      })).toBe(true)
+      await expect(warning).toBeHidden()
+      const recoveredDiagnostics = await page.evaluate(() => {
+        const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
+          event?: string
+          fields?: { overlayFamily?: string }
+        }>
+        return events.filter((event) => event.event === 'map_overlay_sync_recovered')
+      })
+      expect(recoveredDiagnostics).toHaveLength(1)
+      expect(recoveredDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
+      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).not.toContainText('complete')
+    } finally {
+      await page.evaluate(() => {
+        type TestMap = {
+          addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+          fire: (event: string) => void
+        }
+        type TestWindow = Window & {
+          __DON264_OVERLAY_FAILURE__?: { readonly originalAddSource: TestMap['addSource'] }
+          __SARTRACKER_MAP__?: TestMap
+        }
+        const host = window as TestWindow
+        const map = host.__SARTRACKER_MAP__
+        const fault = host.__DON264_OVERLAY_FAILURE__
+        if (map !== undefined && fault !== undefined) {
+          map.addSource = fault.originalAddSource
+          delete host.__DON264_OVERLAY_FAILURE__
+          map.fire('idle')
+        }
+      })
+    }
+  })
+
+  test('keeps concurrent overlay warnings in a bounded keyboard-scrollable map region', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 700 })
+    await page.evaluate(async () => {
+      const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
+        import('/src/features/map/map-overlay-warning-store.ts'),
+        import('/src/lib/map-health.ts'),
+      ])
+      const warnings = [
+        ['tracking', 'tracking'],
+        ['coverage', 'coverage'],
+        ['markers', 'markers'],
+        ['drawings', 'drawings'],
+        ['drawing-preview', 'drawings'],
+        ['gpx', 'gpx'],
+        ['helicopters', 'helicopter'],
+        ['measurements', 'measurements'],
+        ['measurement-preview', 'measurements'],
+        ['coordinate-target', 'coordinate-target'],
+      ] as const
+      for (const [registrationId, family] of warnings) {
+        useMapOverlayWarningStore.getState().raiseWarning(
+          createMapOverlaySyncWarning(registrationId, family),
+        )
+      }
+    })
+
+    const warningRegion = page.getByTestId('map-degraded-alert')
+    await expect(warningRegion).toBeVisible()
+    await expect(warningRegion).toHaveAttribute('aria-label', 'Active map alerts, 10 overlay warnings')
+    await expect(warningRegion).toHaveAttribute('tabindex', '0')
+    await expect(warningRegion.getByTestId('map-overlay-warning-tracking')).toBeVisible()
+    await expect(warningRegion.getByTestId('map-overlay-warning-coordinate-target')).toBeVisible()
+    await expect.poll(() => warningRegion.evaluate((element) => getComputedStyle(element).overflowY))
+      .toBe('auto')
+
+    const dimensions = await warningRegion.evaluate((element) => {
+      const region = element.getBoundingClientRect()
+      const surface = element.closest('.relative.overflow-hidden')?.getBoundingClientRect()
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        overflowY: getComputedStyle(element).overflowY,
+        regionTop: region.top,
+        regionBottom: region.bottom,
+        regionHeight: region.height,
+        surfaceTop: surface?.top ?? Number.NaN,
+        surfaceBottom: surface?.bottom ?? Number.NaN,
+        surfaceHeight: surface?.height ?? Number.NaN,
+        trackingFullyVisible: (() => {
+          const warning = element.querySelector('[data-testid="map-overlay-warning-tracking"]')
+          if (!(warning instanceof HTMLElement)) return false
+          const warningRect = warning.getBoundingClientRect()
+          const regionRect = element.getBoundingClientRect()
+          return warningRect.top >= regionRect.top && warningRect.bottom <= regionRect.bottom
+        })(),
+      }
+    })
+    expect(dimensions.overflowY).toBe('auto')
+    expect(dimensions.scrollHeight).toBeGreaterThan(dimensions.clientHeight)
+    expect(dimensions.regionTop).toBeGreaterThanOrEqual(dimensions.surfaceTop)
+    expect(dimensions.regionBottom).toBeLessThanOrEqual(dimensions.surfaceBottom - 72)
+    expect(dimensions.regionHeight).toBeLessThanOrEqual(dimensions.surfaceHeight * 0.5 + 1)
+    expect(dimensions.trackingFullyVisible).toBe(true)
+    await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-top.png' })
+
+    const trackingCard = warningRegion.getByTestId('map-overlay-warning-tracking')
+    const trackingCardBounds = await trackingCard.boundingBox()
+    expect(trackingCardBounds).not.toBeNull()
+    if (trackingCardBounds !== null) {
+      await page.mouse.move(
+        trackingCardBounds.x + trackingCardBounds.width / 2,
+        trackingCardBounds.y + trackingCardBounds.height / 2,
+      )
+      await page.mouse.wheel(0, 450)
+      await expect.poll(() => warningRegion.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(0)
+    }
+    await warningRegion.evaluate((element) => { element.scrollTop = 0 })
+    await warningRegion.focus()
+    await expect.poll(() => warningRegion.evaluate((element) => document.activeElement === element))
+      .toBe(true)
+    for (let pageDown = 0; pageDown < 10; pageDown += 1) {
+      await page.keyboard.press('PageDown')
+      const atScrollEnd = await warningRegion.evaluate(
+        (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+      )
+      if (atScrollEnd) break
+    }
+    await expect.poll(() => warningRegion.evaluate(
+      (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
+    )).toBe(true)
+    const finalWarningFullyVisible = await warningRegion.evaluate((element) => {
+      const warning = element.querySelector('[data-testid="map-overlay-warning-coordinate-target"]')
+      if (!(warning instanceof HTMLElement)) return false
+      const warningRect = warning.getBoundingClientRect()
+      const regionRect = element.getBoundingClientRect()
+      return warningRect.top >= regionRect.top && warningRect.bottom <= regionRect.bottom
+    })
+    expect(finalWarningFullyVisible).toBe(true)
+    await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-bottom.png' })
+  })
+
   test('preserves the map viewport when switching basemaps', async ({ page }) => {
     await page.evaluate(() => {
       const harness = (window as Window & { __SARTRACKER_MAP__?: {

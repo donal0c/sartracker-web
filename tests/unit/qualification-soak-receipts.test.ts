@@ -102,7 +102,7 @@ function competingOperationEvidence() {
   phases.archiveRestore = { ...phases.archiveRestore, restore: { sessionId: 'review-1', archiveId: 'archive-1', missionId: 'finished-mission', identityMatched: true, plaintextResidual: 'permission_restricted_session_open' } }
   phases.archiveCleanup = { ...phases.archiveCleanup, cleanup: { archiveId: 'archive-1', completed: true, storageState: 'archived', freshCredentialGate: true, movedRows: 4, reviewClosed: true } }
   phases.diagnostics = { ...phases.diagnostics, fault: { requested: 'invalid-file-name', fileName: C24_INVALID_DIAGNOSTIC_FILE_NAME, rejected: true, errorObserved: true, requestId: 'req-7' }, recovery: { requested: 'valid-file-name', exported: true, pathBasename: 'c24-diagnostics-recovery.txt' } }
-  phases.mapFault = { ...phases.mapFault, fault: { attempted: true, throwHookHit: true, requestId: 'req-8', startedAt: '2026-09-20T10:00:00.000Z', warningText: 'Mission overlay could not be rendered.', operatorWarningVisible: true, recoveryObserved: true, consoleOnly: false, cleanupRestored: true } }
+  phases.mapFault = { ...phases.mapFault, fault: { attempted: true, throwHookHit: true, requestId: 'req-8', startedAt: '2026-09-20T10:00:00.000Z', warningRegistrationId: 'markers', warningText: 'Markers overlay could not be rendered.', operatorWarningVisible: true, recoveryObserved: true, warningClearedAfterRecovery: true, consoleOnly: false, cleanupRestored: true } }
   return {
     schemaVersion: 1,
     schema: 'sartracker-competing-operation-v1',

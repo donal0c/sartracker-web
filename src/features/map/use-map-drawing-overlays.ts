@@ -9,7 +9,7 @@ import {
 import { getEffectiveDrawingTypeVisibility } from '../layers/effective-overlay-visibility'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import type { RenderableMapId } from '../../lib/map-config'
-import { registerMapStyleSync } from './map-style-sync'
+import { registerMapOverlaySync } from './register-map-overlay-sync'
 
 type UseMapDrawingOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -46,7 +46,7 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
       )
     }
 
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapOverlaySync(map, 'drawings', 'drawings', synchronizeOverlay)
   }, [
     drawings,
     groupVisibility,
@@ -72,7 +72,7 @@ export function useMapDrawingOverlays(options: UseMapDrawingOverlaysOptions): vo
       })
     }
 
-    return registerMapStyleSync(map, synchronizePreview)
+    return registerMapOverlaySync(map, 'drawing-preview', 'drawings', synchronizePreview)
   }, [
     activeTool,
     groupVisibility,

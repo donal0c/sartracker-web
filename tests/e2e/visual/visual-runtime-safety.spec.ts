@@ -190,4 +190,82 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       ],
     })
   })
+
+  test('persistent marker overlay sync failure has a clear operator warning', async ({ page }) => {
+    await startMission(page, 'Visual Overlay Warning')
+    await page.evaluate(() => {
+      type TestMap = {
+        addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown
+        fire: (event: string) => void
+        getLayer: (id: string) => unknown
+        getSource: (id: string) => unknown
+        getStyle: () => { layers?: readonly { readonly id: string; readonly source?: string }[] }
+        removeLayer: (id: string) => void
+        removeSource: (id: string) => void
+      }
+      type TestWindow = Window & {
+        __SARTRACKER_MAP__?: TestMap
+        __VISUAL_OVERLAY_FAULT__?: { readonly originalAddSource: TestMap['addSource'] }
+      }
+      const host = window as TestWindow
+      const map = host.__SARTRACKER_MAP__
+      if (map === undefined) throw new Error('Visual overlay map was unavailable.')
+      const originalAddSource = map.addSource
+      host.__VISUAL_OVERLAY_FAULT__ = { originalAddSource }
+      map.addSource = function addSourceWithVisualFailure(id, source, ...rest) {
+        if (id === 'mission-markers') throw new Error('Synthetic marker overlay failure.')
+        return originalAddSource.call(map, id, source, ...rest)
+      }
+      for (const layer of map.getStyle().layers?.filter((entry) => entry.source === 'mission-markers') ?? []) {
+        if (map.getLayer(layer.id)) map.removeLayer(layer.id)
+      }
+      if (map.getSource('mission-markers')) map.removeSource('mission-markers')
+      map.fire('style.load')
+    })
+
+    const warning = page.getByTestId('map-overlay-warning-markers')
+    try {
+      await expect(warning).toBeVisible({ timeout: 5_000 })
+      await expect(warning).toContainText(/Markers overlay may be missing or stale/u)
+      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(warning.getByRole('button')).toHaveCount(0)
+
+      await captureAndRegister(page, {
+        testId: 'persistent-marker-overlay-warning',
+        testName: 'Persistent marker overlay warning',
+        area: 'recovery',
+        severity: 'critical',
+        verificationPrompt: `Verify this screenshot of SAR Tracker during a persistent marker overlay synchronization failure:
+1. The map workspace and active mission controls remain visible
+2. A high-visibility alert appears over the map and names the Markers overlay
+3. The message says the overlay may be missing or stale and that SAR Tracker is retrying
+4. The guidance tells the operator to verify against an independent operational source and export Diagnostics if the problem remains
+5. The warning is not presented as a basemap or tile failure
+6. The warning has no dismiss or acknowledgement control
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+        playwrightAssertions: [
+          'marker overlay warning is visible and family-specific',
+          'mission control remains active',
+          'warning has no button action',
+        ],
+      })
+    } finally {
+      await page.evaluate(() => {
+        type TestMap = { addSource: (id: string, source: unknown, ...rest: unknown[]) => unknown; fire: (event: string) => void }
+        type TestWindow = Window & {
+          __SARTRACKER_MAP__?: TestMap
+          __VISUAL_OVERLAY_FAULT__?: { readonly originalAddSource: TestMap['addSource'] }
+        }
+        const host = window as TestWindow
+        const map = host.__SARTRACKER_MAP__
+        const fault = host.__VISUAL_OVERLAY_FAULT__
+        if (map !== undefined && fault !== undefined) {
+          map.addSource = fault.originalAddSource
+          delete host.__VISUAL_OVERLAY_FAULT__
+          map.fire('idle')
+        }
+      })
+    }
+    await expect(warning).toBeHidden()
+  })
 })

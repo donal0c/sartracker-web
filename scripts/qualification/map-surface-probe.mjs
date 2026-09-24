@@ -135,17 +135,6 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
     report.overlayFailure = await exerciseOverlayFailure(page, consoleLines, options.evidence)
     report.map.after = await readMapSnapshot(page)
     report.persisted.after = await readPersistedSnapshot(page, missionId)
-    try {
-      report.validation = developmentTestHarness
-        ? validateMapSurfaceFacts(report)
-        : validateMapSurface(report)
-    } catch (error) {
-      report.validation = {
-        status: 'FAIL',
-        error: error instanceof Error ? error.message : String(error),
-      }
-      if (!developmentTestHarness) throw error
-    }
   } catch (error) {
     failure = error
     report.failure = error instanceof Error ? error.message.slice(0, 1000) : 'C14 map producer failed.'
@@ -165,6 +154,20 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
         report.cleanup.profileRemoved = true
       } catch (error) {
         failure ??= error
+      }
+    }
+    if (failure === undefined && report.failure === null) {
+      try {
+        report.validation = developmentTestHarness
+          ? validateMapSurfaceFacts(report)
+          : validateMapSurface(report)
+      } catch (error) {
+        const message = error instanceof Error ? error.message.slice(0, 1000) : 'C14 map report validation failed.'
+        report.validation = { status: 'FAIL', error: message }
+        if (!developmentTestHarness) {
+          failure = error
+          report.failure = message
+        }
       }
     }
     if (failure && report.validation === null) {
@@ -261,7 +264,7 @@ export async function exerciseOverlayFailure(page, consoleLines, evidenceDirecto
   const injection = await page.evaluate(() => {
     const map = window.__SARTRACKER_MAP__
     if (!map) throw new Error('C14 map was unavailable for failure injection.')
-    const baselineWarningTexts = [...document.querySelectorAll('[data-testid="map-health-degraded"], [data-testid="map-offline-warning"]')]
+    const baselineWarningTexts = [...document.querySelectorAll('[data-testid="map-health-degraded"], [data-testid="map-offline-warning"], [data-testid^="map-overlay-warning-"]')]
       .map((element) => element.textContent?.trim() ?? '')
       .filter((text) => text.length > 0)
     const originalAddSource = map.addSource
@@ -293,21 +296,22 @@ export async function exerciseOverlayFailure(page, consoleLines, evidenceDirecto
     const map = window.__SARTRACKER_MAP__
     const state = window.__C14_OVERLAY_FAILURE__
     if (!map || state === undefined) throw new Error('C14 overlay failure state was lost.')
-    const warningTexts = [...document.querySelectorAll('[data-testid="map-health-degraded"], [data-testid="map-offline-warning"]')]
-      .map((element) => element.textContent?.trim() ?? '')
-      .filter((text) => text.length > 0)
-    const warningText = warningTexts.find((text) => !state.baselineWarningTexts.includes(text)) ?? null
+    const markerWarning = document.querySelector('[data-testid="map-overlay-warning-markers"]')
+    const warningText = markerWarning?.textContent?.trim() ?? null
     const operatorWarningVisible = warningText !== null
-      && /overlay|layer|marker|mission/iu.test(warningText)
+      && /markers\s+overlay/iu.test(warningText)
       && !/tile|basemap|map.*degraded/iu.test(warningText)
     map.addSource = state.originalAddSource
     map.fire('idle')
     await new Promise((resolve) => window.setTimeout(resolve, 750))
     const recoveryObserved = map.getStyle().sources['mission-markers']?.type === 'geojson'
       && map.getStyle().sources['mission-drawings']?.type === 'geojson'
+    const warningClearedAfterRecovery = recoveryObserved
+      && document.querySelector('[data-testid="map-overlay-warning-markers"]') === null
     delete window.__C14_OVERLAY_FAILURE__
     return { attempted: true, throwHookHit: state.throwHookHit, baselineWarningTexts: state.baselineWarningTexts,
-      warningText, operatorWarningVisible, recoveryObserved, consoleOnly: false }
+      warningRegistrationId: markerWarning === null ? null : 'markers', warningText, operatorWarningVisible,
+      recoveryObserved, warningClearedAfterRecovery, consoleOnly: false }
   })
   result.consoleOnly = result.throwHookHit === true
     && consoleLines.some((line) => /Map overlay synchronization failed/u.test(line))

@@ -40,6 +40,20 @@ describe('diagnostics model', () => {
             lat: '[coordinate-redacted]',
           },
         },
+        {
+          ts: '2026-06-22T15:05:02.000Z',
+          level: 'warn',
+          category: 'map',
+          event: 'map_overlay_sync_failed',
+          fields: { overlayFamily: 'markers' },
+        },
+        {
+          ts: '2026-06-22T15:05:04.000Z',
+          level: 'info',
+          category: 'map',
+          event: 'map_overlay_sync_recovered',
+          fields: { overlayFamily: 'markers' },
+        },
       ],
       trackingPollLedger: [
         {
@@ -91,6 +105,9 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).toContain('official map package 2: official_discovery_topo missing mbtiles')
     expect(snapshot.supportReport).toContain('[diagnostic-breadcrumbs]')
     expect(snapshot.supportReport).toContain('basemap_changed')
+    expect(snapshot.supportReport).toContain('map_overlay_sync_failed')
+    expect(snapshot.supportReport).toContain('map_overlay_sync_recovered')
+    expect(snapshot.supportReport).toContain('"overlayFamily":"markers"')
     expect(snapshot.supportReport).toContain('[tracking-poll-ledger]')
     expect(snapshot.supportReport).toContain('"failureKind":"timeout"')
     expect(snapshot.supportReport).not.toContain('52.0599')

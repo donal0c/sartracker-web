@@ -9,7 +9,7 @@ import {
   syncMeasurementPreviewOverlay,
 } from '../measurements/sync-measurement-overlay'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
-import { registerMapStyleSync } from './map-style-sync'
+import { registerMapOverlaySync } from './register-map-overlay-sync'
 
 type UseMapMeasurementOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -44,7 +44,7 @@ export function useMapMeasurementOverlays(
       )
     }
 
-    return registerMapStyleSync(map, synchronizeOverlay)
+    return registerMapOverlaySync(map, 'measurements', 'measurements', synchronizeOverlay)
   }, [
     groupVisibility,
     hiddenMeasurementIds,
@@ -72,7 +72,7 @@ export function useMapMeasurementOverlays(
       })
     }
 
-    return registerMapStyleSync(map, synchronizePreview)
+    return registerMapOverlaySync(map, 'measurement-preview', 'measurements', synchronizePreview)
   }, [
     draftStart,
     groupVisibility,
