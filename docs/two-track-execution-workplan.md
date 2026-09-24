@@ -11,10 +11,10 @@ Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
 canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
-packaged C19 recovery. Its push trigger skipped strict responsiveness. The
-active PR is #47's separate C01 startup repair; its local verification is in
-progress and it remains draft pending exact-head checks and review. Do not treat
-master CI or packaged receipts as candidate qualification.
+packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
+separate C01 repair remains draft after exact-head Linux run `36064148886`
+failed the held-gate observer. Do not treat master CI or packaged receipts as
+candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -53,11 +53,34 @@ for dismissal at `4d76dcfa`. Its exact-head review found no issue. Linux run
 `36058990392` passed full correctness and rendered regressions but failed all
 three held-gate cases when `xdotool` visibility searches errored. Receipts
 record no confirmed dismissal or product exit, so they do not establish a
-product fault. The local follow-up uses the remaining two-second budget per
-query and retains sanitized error code/signal/output. Its focused
-probe/receipt/source tests pass (46 tests) and lint passes; the change is not
-yet pushed or reviewed. Keep the PR draft pending new exact-head Linux CI and
-review.
+product fault. Commit `49918966` uses the remaining two-second budget per
+query and retains sanitized error code/signal/output. Its 46 focused tests and
+lint passed; exact-head review found no issue. Linux run `36064148886` passed
+correctness, rendered regressions, and Linux packaging, then failed the C01
+held-gate observer. Receipts show query `SIGKILL`, `SIGPIPE`, or exit 0 with
+empty output; every case has no confirmed dismissal or product exit and ends
+with harness cleanup. They do not establish product behavior.
+
+Focused native Ubuntu run `36072072977` repeated the invalid observation with
+Openbox active, ruling out the missing window manager as the sole cause. Run
+`36072959447` retained before/after screenshots and bounded X11 probes. The
+previous `height - 42` click landed just above the bottom acknowledgement row;
+the post-failure probes still found the dialog mapped, while the first
+visibility search timed out. The local observer now targets the center of that
+row (`width / 2`, `height - 17`) and limits screenshot/X11 diagnostics to the
+development calibration. Geometry regression tests pass; require a fresh
+native Ubuntu run before changing the full CI observer or claiming product exit.
+
+Local Linux/Xvfb checks confirmed xdotool returns exit 1 with empty output for
+an absent window and exit 0 with an ID for a visible match. Stopping Xvfb
+produced the expected bounded-query error (`code:null`, `signal:SIGKILL`,
+`killed:true`). The exact retained x86_64 Electron package cannot run reliably
+in the local ARM64 Docker VM; it fails during GPU startup under emulation. That
+attempt is not product evidence. Regression tests pin query and cleanup
+classification plus the corrected click point. A focused native Ubuntu
+isolation against the retained artifact must verify the click before another
+full pipeline; do not increase timeouts or count harness cleanup as product
+exit. Keep PR #47 draft.
 Previous run `36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be
@@ -141,14 +164,17 @@ SQLite limits above remain open follow-on work. The hard 10-second cutoff can
 also close a healthy launch that is slower than budget; that trade-off is now
 explicit in the manual and planning record. #3–#7 and #9–#10 are fixed in local
 code. C01 matrix-valid v3 receipts now remain explicitly coverage-incomplete
-and qualification-ineligible while these axes are open. #8 was not reproduced:
-startup tests with fake timers mock the log
-adapters, and the real filesystem logger test uses real timers. #11 is
+and qualification-ineligible while these axes are open. The exact fake-timer
+cases in #8 use mocked log adapters. A related teardown race did reproduce in
+the real-timer renderer-crash tests under the full suite: real crash/runtime
+log writes could outlive profile cleanup, and the failed teardown then caused a
+module-cache cascade. Those tests now use in-memory log adapters; the latest
+full correctness run passes (5,878 passed, 25 skipped). #11 is
 disproved: the `app.isReady()` false branch handles a rejected Electron
 readiness promise before logs/profile access exists. #12 is a cleanup suggestion
 with distinct semantics for pending evidence writes and stage deadlines. #13's
-self-asserting readiness expectation was removed. #14's commits reference
-DON-179; a factual Linear progress update remains due after exact-head checks.
+self-asserting readiness expectation was removed. #14's commits all reference
+DON-179; its current exact-head CI and observer status is now recorded there.
 #15's handoff has been compressed to the required operational snapshot. The
 exact-head PR record must be refreshed after push with these dispositions and
 the resulting CI/review evidence.

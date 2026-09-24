@@ -5,6 +5,45 @@ import {
 } from '../../scripts/qualification/producer-development-policy.mjs'
 
 describe('development fault mechanics are distinct from qualification', () => {
+  it('keeps failed X11 observation and harness cleanup as invalid evidence', () => {
+    const file = { bytes: 100, sha256: 'a'.repeat(64) }
+    const report = {
+      schema: 'sartracker-c01-startup-held-gate-development-v1',
+      gateKind: 'crash',
+      proofMode: 'development-electron-held-gate-calibration',
+      qualification: { eligible: false },
+      scenario: {
+        profileKind: 'held-crash-gate',
+        observed: 'not-observed',
+        gate: {
+          kind: 'crash', held: true, bounded: true, synthetic: false, timeoutMs: 20000,
+          response: 'native-error-dialog', dialogObserved: true, dialogDismissed: false,
+        },
+        process: {
+          pid: 123, closed: true, exitCode: null, signal: 'SIGKILL', forcedKill: true,
+          timedOut: false, dialogObserved: true, dialogDismissed: false,
+          productExitCode: null, productExitSignal: null, exitAfterDialogMs: null,
+        },
+        cleanup: { heldPathRemoved: true },
+        originalFiles: {
+          before: { 'mission-store.sqlite': file, 'settings.json': file },
+          after: { 'mission-store.sqlite': file, 'settings.json': file },
+        },
+        observationFailure: 'C01 X11 visibility query failed.',
+        observationFailureDetails: {
+          code: null, signal: 'SIGPIPE', killed: true, stdout: '', stderr: '',
+        },
+      },
+    }
+
+    expect(inspectHeldGateDevelopment(report, 'crash')).toMatchObject({
+      infrastructurePassed: false,
+      observedPredicateStatus: 'INVALID_EVIDENCE',
+      producerCheckPassed: false,
+      productGap: null,
+    })
+  })
+
   it('retains a real bounded negative without promoting it to contract PASS', () => {
     const file = { bytes: 100, sha256: 'a'.repeat(64) }
     const report = {

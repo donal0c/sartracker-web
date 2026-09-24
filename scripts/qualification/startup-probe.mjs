@@ -58,6 +58,7 @@ export const C01_STORE_LOCK_READY_TIMEOUT_MS = 5_000
 const APP_CLOSE_TIMEOUT_MS = 20_000
 const DIALOG_TIMEOUT_MS = 20_000
 const DIALOG_DISMISSAL_TIMEOUT_MS = 2_000
+const X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX = 17
 const BAD_SECRET_WARNING =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
 const SYNTHETIC_BASE_URL = 'https://c01.synthetic.invalid.example'
@@ -1089,6 +1090,18 @@ export function boundedX11SearchTimeoutMs(remainingMs) {
   return Math.max(1, Math.floor(Math.min(DIALOG_DISMISSAL_TIMEOUT_MS, finiteRemainingMs)))
 }
 
+/** Return the center of the bottom acknowledgement row in a native Linux error dialog. */
+export function x11ErrorDialogAcknowledgementPoint(width, height) {
+  if (!Number.isSafeInteger(width) || width < 2
+      || !Number.isSafeInteger(height) || height < X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX * 2) {
+    throw new Error('C01 refusal dialog geometry is too small.')
+  }
+  return {
+    x: Math.floor(width / 2),
+    y: height - X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX,
+  }
+}
+
 /** Run one best-effort X11 diagnostic command with a strict child-process timeout. */
 export async function runBoundedX11DiagnosticCommand(
   command,
@@ -1812,13 +1825,14 @@ async function dismissErrorDialog(windowId, pid, diagnostics = null) {
   const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
   const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
   if (!Number.isInteger(width) || !Number.isInteger(height)) throw new Error('C01 could not read refusal dialog geometry.')
+  const acknowledgementPoint = x11ErrorDialogAcknowledgementPoint(width, height)
   const diagnosticRecord = diagnostics === null ? null : {
     schema: 'sartracker-c01-x11-dismissal-diagnostics-v1',
     gateKind: diagnostics.gateKind,
     pid,
     windowId,
     geometry: { width, height },
-    click: { x: width - 52, y: height - 42 },
+    click: acknowledgementPoint,
     beforeClickScreenshot: await captureX11RootScreenshot(
       diagnostics.evidenceDir,
       `x11-${diagnostics.gateKind}-before-click.png`,
@@ -1826,7 +1840,8 @@ async function dismissErrorDialog(windowId, pid, diagnostics = null) {
     ),
   }
   await execFileAsync('xdotool', [
-    'mousemove', '--window', windowId, String(width - 52), String(height - 42), 'click', '1',
+    'mousemove', '--sync', '--window', windowId,
+    String(acknowledgementPoint.x), String(acknowledgementPoint.y), 'click', '1',
   ])
   try {
     return await waitForDialogDismissal(

@@ -497,6 +497,7 @@ describe('Electron main startup', () => {
 
   it('destroys a crashed WebContents before its same-window reload can outrun archive cleanup [DON-253]', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const logs = createInMemoryStartupLogs()
     let releaseArchiveCleanup: (() => void) | undefined
     const archiveCleanup = new Promise<void>((resolve) => {
       releaseArchiveCleanup = resolve
@@ -508,6 +509,12 @@ describe('Electron main startup', () => {
     const rendererTeardownCoordinator = rendererTeardownCoordinatorStub()
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createCrashLog: () => logs.crashLog }
+      }
+      if (request === './runtime-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createRuntimeLog: () => logs.runtimeLog }
+      }
       if (request === './archive-review-sessions.cjs') {
         return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
       }
@@ -538,6 +545,7 @@ describe('Electron main startup', () => {
 
   it('retries transient archive cleanup after renderer crash before opening a replacement [DON-253]', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const logs = createInMemoryStartupLogs()
     const cleanupFailure = Object.assign(new Error('archive cleanup audit unavailable'), {
       code: 'ARCHIVE_REVIEW_PLAINTEXT_CLEANUP_FAILED',
     })
@@ -556,6 +564,12 @@ describe('Electron main startup', () => {
     }
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createCrashLog: () => logs.crashLog }
+      }
+      if (request === './runtime-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createRuntimeLog: () => logs.runtimeLog }
+      }
       if (request === './archive-review-sessions.cjs') {
         return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
       }
@@ -1246,6 +1260,16 @@ describe('Electron main startup', () => {
   it('reserves interrupted cleanup before review IPC without waiting for row batches', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     const order: string[] = []
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      readRecent: vi.fn(async () => []),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = {
+      append: vi.fn(async () => undefined),
+      readRecent: vi.fn(async () => []),
+    }
     const sessionManager = {
       ...archiveReviewSessionManagerStub(),
       sweepStartup: vi.fn(async () => { order.push('plaintext-sweep') }),
@@ -1260,6 +1284,12 @@ describe('Electron main startup', () => {
     })
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createCrashLog: () => crashLog }
+      }
+      if (request === './runtime-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createRuntimeLog: () => runtimeLog }
+      }
       if (request === './archive-review-sessions.cjs') {
         return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
       }
@@ -2200,6 +2230,23 @@ function rendererTeardownCoordinatorStub() {
     markRendererAvailable: vi.fn(async () => undefined),
     ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
     dispose: vi.fn(),
+  }
+}
+
+/** Provides in-memory log adapters for renderer-fault cleanup tests. */
+function createInMemoryStartupLogs() {
+  return {
+    crashLog: {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      markCleanExit: vi.fn(async () => undefined),
+      readRecent: vi.fn(async () => []),
+      record: vi.fn(async () => undefined),
+    },
+    runtimeLog: {
+      append: vi.fn(async () => undefined),
+      readRecent: vi.fn(async () => []),
+    },
   }
 }
 

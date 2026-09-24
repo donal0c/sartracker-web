@@ -8,6 +8,7 @@ import {
   boundedX11SearchTimeoutMs,
   runBoundedX11DiagnosticCommand,
   serializeHeldGateObservationError,
+  x11ErrorDialogAcknowledgementPoint,
   isWindowInVisibleX11Search,
   isNoVisibleX11WindowSearchResult,
   waitForDialogDismissal,
@@ -109,6 +110,13 @@ describe('C01 held-gate product exit observation', () => {
     expect(boundedX11SearchTimeoutMs(1_750)).toBe(1_750)
     expect(boundedX11SearchTimeoutMs(2_500)).toBe(2_000)
     expect(boundedX11SearchTimeoutMs(0)).toBe(1)
+  })
+
+  it('targets the center of the native dialog acknowledgement row for observed Linux sizes', () => {
+    expect(x11ErrorDialogAcknowledgementPoint(652, 180)).toEqual({ x: 326, y: 163 })
+    expect(x11ErrorDialogAcknowledgementPoint(613, 146)).toEqual({ x: 306, y: 129 })
+    expect(() => x11ErrorDialogAcknowledgementPoint(0, 180)).toThrow('C01 refusal dialog geometry is too small.')
+    expect(() => x11ErrorDialogAcknowledgementPoint(652, 16)).toThrow('C01 refusal dialog geometry is too small.')
   })
 
   it('bounds diagnostic X11 commands and preserves timeout details without treating them as absence', async () => {
