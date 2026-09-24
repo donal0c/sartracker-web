@@ -58,7 +58,12 @@ validator share a 20-second response bound. Fresh review of old PR head
 that accepted late dialogs; local repairs are independently reviewed and had
 passed 77 focused tests, full correctness (5,836 passed, 25 skipped), lint and
 build before rebase. The fixes are reapplied on current master at
-`70c8c4c3`; post-rebase verification remains pending.
+`70c8c4c3`, with the follow-up receipt/evidence fixes at `95b3cd5c`. Post-rebase
+verification passed: 77 focused tests, 5,847 correctness tests (25 skipped),
+lint and build. Fresh review found synchronous `createElectronMissionStore`
+open/migration still blocks Electron's main thread outside the watchdog. Scope
+against existing DON-250 is awaiting direction; do not claim this watchdog can
+preempt that native call.
 
 The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
 one post-settlement mutation/close interval against the 200 ms limit. The same

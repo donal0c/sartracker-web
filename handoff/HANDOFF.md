@@ -11,9 +11,10 @@ tag, publication, or team distribution has occurred. Current `master` is
 the C17 fixed-canary leak classification and DON-264 persistent overlay warning
 behavior.
 
-PR #47 remains draft on `codex/c01-startup-store-fault-response`, rebased onto
-current master at `70c8c4c3`; the reviewed local C01 fixes are reapplied and
-post-rebase verification is pending. Exact old head
+PR #47 remains draft on `codex/c01-startup-store-fault-response`. The local
+branch is rebased onto current master at `30cb7d45` with fixes through
+`95b3cd5c`; GitHub still has old head `8cdf6f62` on base `a81dd4a3` and reports
+a merge conflict. Exact old head
 `8cdf6f62` failed Linux C19 run `35984100420`: one 261.161 ms main-loop gap
 against 200 ms. Master run `36001695717` passed the same packaged observer at
 50.836 ms, making a one-off host pause more plausible but not proving it. Keep
@@ -26,9 +27,11 @@ upload scope.
 
 - The reapplied C01 fixes bound failure-evidence waiting to ten seconds and
   validate the held-gate dialog against its exact 20-second producer deadline.
-  Before rebase they passed 77 focused tests, full correctness (568 files,
-  5,836 passed, 25 skipped), lint and build; independent review found both
-  findings resolved. Reverify them on the rebased source.
+  Post-rebase focused tests passed (77); full correctness passed (571 files,
+  5,847 passed, 25 skipped), lint and production build passed. Fresh review
+  found synchronous `createElectronMissionStore` open/migration still runs on
+  Electron's main thread outside the watchdog; it can block the timer. Scope
+  against DON-250 is awaiting Donal's direction.
 - Linux failure receipt checksum:
   `314d88880af4132654a574c21b1133bc828820f74e897363e15ac0db8195f88c`.
   Its measured block combines mutation, `prepareClose` and `close`; it has no
@@ -49,12 +52,11 @@ upload scope.
 
 ## Next actions
 
-1. Run focused, fault, browser, packaged, correctness, lint and build checks on
-   the rebased source, then commit the reviewed C01 fixes.
-2. Obtain fresh independent final-head review, address its findings, push and
-   require exact-head Linux CI. Keep PR #47 draft while the historical C19
-   cause remains unresolved; the master pass is supporting evidence, not
-   clearance.
+1. Resolve whether synchronous SQLite startup work belongs in PR #47 or the
+   existing DON-250 scope; do not claim the watchdog bounds that native call.
+2. After scope is settled, complete the needed review and exact-head Linux CI.
+   Keep PR #47 draft while the historical C19 cause remains unresolved; the
+   master pass is supporting evidence, not clearance.
 3. Preserve the Beta 13 release hold; do not merge, qualify, tag, publish, or
    distribute.
 
