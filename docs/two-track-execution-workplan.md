@@ -52,18 +52,55 @@ tag, publish, or promote from this work.
 
 **Current C01 review repair — 2026-09-24:** PR #47 replaces the module-load
 deadline with one 10-second watchdog starting after Electron readiness and
-running through the operational window. The held-gate observer and receipt
-validator share a 20-second response bound. Fresh review of old PR head
-`8cdf6f6` found an unbounded failure-evidence write wait and a receipt validator
-that accepted late dialogs; local repairs are independently reviewed and had
-passed 77 focused tests, full correctness (5,836 passed, 25 skipped), lint and
-build before rebase. The fixes are reapplied on current master at
-`70c8c4c3`, with the follow-up receipt/evidence fixes at `95b3cd5c`. Post-rebase
-verification passed: 77 focused tests, 5,847 correctness tests (25 skipped),
-lint and build. Fresh review found synchronous `createElectronMissionStore`
-open/migration still blocks Electron's main thread outside the watchdog. Scope
-against existing DON-250 is awaiting direction; do not claim this watchdog can
-preempt that native call.
+running through the operational window. The held-gate observer has a 20-second
+response bound. Review of old PR head `8cdf6f6` found an unbounded
+failure-evidence write wait and a receipt validator that accepted late dialogs;
+local repairs were reapplied on current master at `70c8c4c3` and `95b3cd5c`.
+After the latest narrow timing/test changes, local verification passed 123
+focused tests, full correctness (5,850 passed, 25 skipped), full lint, build,
+and the packaged macOS disposable-store smoke. The timing receipt is dirty-tree
+diagnostic evidence, not exact-head/Linux proof. Donal confirmed synchronous
+SQLite startup/open/migration belongs in C01; DON-250 remains separate.
+
+**C01 design assessment:** an early standalone startup window with its own
+renderer timer can show which pre-window phase has exceeded ten seconds, but it
+cannot make Electron's blocked main process responsive or bound/cancel SQLite
+open and migration. A utility supervisor and direct message channel can also
+report a timeout independently; it still cannot safely terminate the in-flight
+native database operation. Neither option alone meets C01's ban on
+database-size-dependent startup work on Electron main. The bounded path is for
+a utility process to own the live store and database connection, with the main
+process retaining an asynchronous facade for the existing store callers.
+Preserve the caller API where practical, but explicitly bridge request IDs,
+serializable results/errors, query cancellation/session lifetime, coverage
+notifications, attachment-ingest custody, and orderly close/drain. Main remains
+the sole owner of runtime/crash logs. On deadline, fence the startup generation
+and ignore any late ready result; do not kill a worker or main process during
+migration until interruption and WAL recovery safety are demonstrated.
+
+This is broader than PR #47's watchdog repair. Stop before implementation until
+that scope is explicitly expanded; keep the synchronous-open P1 unresolved and
+PR #47 draft. `app.whenReady()` also remains outside the watchdog by design,
+because the selected deadline starts only after readiness. Verify the design
+with an independently timed held-open and
+held-migration package probe, responsive visible fault state, late-success
+fencing, unchanged original-profile digests on fault, and an interruption/WAL
+recovery test on Linux. This does not absorb DON-250's oversized-store
+assessment/recovery or introduce data-compaction behavior.
+
+**Review finding disposition:** #1 and #2 remain open at the synchronous native
+SQLite open/migration boundary and before Electron readiness; the post-ready
+async startup steps are watchdog-bounded. #3–#7 and #9–#10 are fixed in local
+code. #8 was not reproduced: startup tests with fake timers mock the log
+adapters, and the real filesystem logger test uses real timers. #11 is
+disproved: the `app.isReady()` false branch handles a rejected Electron
+readiness promise before logs/profile access exists. #12 is a cleanup suggestion
+with distinct semantics for pending evidence writes and stage deadlines. #13's
+self-asserting readiness expectation was removed. #14's commits reference
+DON-179; a factual Linear progress update remains due after exact-head checks.
+#15's handoff has been compressed to the required operational snapshot. The
+exact-head PR record must be refreshed after push with these dispositions and
+the resulting CI/review evidence.
 
 The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
 one post-settlement mutation/close interval against the 200 ms limit. The same
@@ -71,12 +108,15 @@ Linux observer passed on current master `30cb7d4` in run `36001695717` at
 50.836 ms; the seven implicated MissionStore files and Electron executable
 hash match, while the ASAR differs. The failed interval is not split into
 mutation, `prepareClose` and `close`, and no CPU/scheduler/storage telemetry
-proves its cause. This pass supports an isolated host pause but does not prove
-it. Retain the failure as unresolved and keep PR #47 draft. Same-host Darwin
-results (52.40, 54.41 and 54.53 ms) do not clear the Linux result. The current
-master push workflow skipped strict responsiveness qualification. C01 still
-lacks a bounded response when Electron never becomes ready; this work does not
-qualify C01 or change the Beta 13 release hold.
+proves its cause. New smoke instrumentation measures marker mutation,
+`prepareClose`, and `close` separately with wall, process CPU, main-loop, and
+Linux scheduler deltas while retaining the combined 200 ms gate. The packaged
+macOS smoke passed with phase gaps 1.62/0.16/1.74 ms; it cannot supply Linux
+scheduler evidence. Retain the old failure unresolved and require exact-head
+Linux CI. Same-host Darwin results (52.40, 54.41 and 54.53 ms) do not clear the
+Linux result. The current master push workflow skipped strict responsiveness
+qualification. This work does not qualify C01 or change the Beta 13 release
+hold.
 
 Everything below this dated decision is earlier planning and evidence retained
 for provenance. Older status and sequencing statements are superseded wherever

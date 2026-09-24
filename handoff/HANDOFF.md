@@ -1,65 +1,58 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-24. Use this file as the current baton; detailed release and
-qualification history remains in the workplan and assurance records.
+Updated 2026-09-24. This is the operational baton; detailed release and review
+history stays in the workplan and assurance records.
 
 ## Current state
 
-Release remains **HOLD**. No Beta 13 candidate is frozen or qualified, and no
-tag, publication, or team distribution has occurred. Current `master` is
-`30cb7d45ed6011adc3da034d815bb7d8742bd6a3`, after PR #49 merged. It includes
-the C17 fixed-canary leak classification and DON-264 persistent overlay warning
-behavior.
+Beta 13 remains **HOLD**. No candidate is frozen or qualified, and no tag,
+publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 remains draft on `codex/c01-startup-store-fault-response`. The local
-branch is rebased onto current master at `30cb7d45` with fixes through
-`95b3cd5c`; GitHub still has old head `8cdf6f62` on base `a81dd4a3` and reports
-a merge conflict. Exact old head
-`8cdf6f62` failed Linux C19 run `35984100420`: one 261.161 ms main-loop gap
-against 200 ms. Master run `36001695717` passed the same packaged observer at
-50.836 ms, making a one-off host pause more plausible but not proving it. Keep
-the old failure unresolved and do not mark PR #47 ready from the master pass.
+PR #47 (`codex/c01-startup-store-fault-response`) remains a draft. Local work is
+rebased on `30cb7d45`; GitHub still points to `8cdf6f62` on the old base and
+reports a merge conflict plus a failed Linux check. The branch changes and new
+C19 timing instrumentation have not yet been pushed. The old Linux failure
+`35984100420` measured 261.161 ms against 200 ms. Preserve it as unresolved;
+master's 50.836 ms pass does not explain it.
 
-DON-179 remains **In Review**; PR #47 does not complete its opt-in diagnostic
-upload scope.
+DON-179 remains **In Review**; opt-in diagnostic upload is not complete.
 
-## Active work and evidence
+## Active work and verification
 
-- The reapplied C01 fixes bound failure-evidence waiting to ten seconds and
-  validate the held-gate dialog against its exact 20-second producer deadline.
-  Post-rebase focused tests passed (77); full correctness passed (571 files,
-  5,847 passed, 25 skipped), lint and production build passed. Fresh review
-  found synchronous `createElectronMissionStore` open/migration still runs on
-  Electron's main thread outside the watchdog; it can block the timer. Scope
-  against DON-250 is awaiting Donal's direction.
-- Linux failure receipt checksum:
-  `314d88880af4132654a574c21b1133bc828820f74e897363e15ac0db8195f88c`.
-  Its measured block combines mutation, `prepareClose` and `close`; it has no
-  CPU, scheduler or storage attribution. Seven implicated MissionStore files
-  and the Electron executable hash match the master pass; the ASAR differs.
-  Darwin same-profile readings were 52.40 ms (base), 54.41 ms (prior head),
-  and 54.53 ms (old PR head). None resolves the Linux outlier.
-- The separate first Darwin package attempt showed a native startup dialog
-  because my symlinked packaging setup omitted `bindings` from packaged
-  `better-sqlite3`. Redacted logs and the failed first-launch receipt are
-  retained; the corrected package passed. This was a harness packaging fault,
-  not C19 or an injected product fault. It used an isolated temporary profile;
-  normal profile files had no comparison-date modifications. The exact outer
-  command and absolute executable path were removed with the temporary wrapper.
-- Master run `36001695717` passed Linux lint, full correctness, production
-  build, browser regressions, candidate-producer checks, packaged C17, and
-  packaged legacy recovery. Its push trigger skipped strict responsiveness.
+- PR fixes use a 10-second monotonic watchdog starting after Electron readiness,
+  with a 20-second held-gate observer. Failure evidence waits for writes to
+  settle, with a cap for pending writes; timeout messages identify the stage.
+- **C01 remains open:** `app.whenReady()` itself is not bounded, and
+  `createElectronMissionStore()` synchronously opens/migrates SQLite on Electron
+  main. The watchdog cannot run while native SQLite blocks that thread. A full
+  bound needs utility-owned live store access and an async main-process facade;
+  this is a wider persistence redesign. Do not implement it without the scoped
+  decision recorded in the workplan. Keep PR #47 draft until the remaining
+  readiness decision is made.
+- The C19 smoke now records marker mutation, `prepareClose`, and `close`
+  separately, including CPU and Linux scheduler deltas; the 200 ms gate is
+  unchanged. Local packaged macOS disposable-store smoke passed, with gaps
+  1.62/0.16/1.74 ms. macOS has no Linux scheduler counters; exact-head Linux CI
+  must validate them. Do not replace the historical 261.161 ms receipt.
+- Local checks passed: 123 focused unit tests; correctness 5,850 passed and 25
+  skipped; full lint and production build; packaged macOS legacy-recovery smoke.
+  The package-smoke receipt was made from a dirty working tree and is diagnostic
+  only, not exact-head or Linux evidence.
+- Fresh exact-head independent review and Linux CI remain outstanding. The
+  branch still needs a protected force-with-lease update against the observed
+  remote head `8cdf6f62` before those checks can run.
 
 ## Next actions
 
-1. Resolve whether synchronous SQLite startup work belongs in PR #47 or the
-   existing DON-250 scope; do not claim the watchdog bounds that native call.
-2. After scope is settled, complete the needed review and exact-head Linux CI.
-   Keep PR #47 draft while the historical C19 cause remains unresolved; the
-   master pass is supporting evidence, not clearance.
-3. Preserve the Beta 13 release hold; do not merge, qualify, tag, publish, or
-   distribute.
+1. Update the existing PR with the verified commits using a protected
+   force-with-lease against the observed remote head `8cdf6f62`. Keep it draft;
+   do not merge or release.
+2. Run exact-head Linux CI and request the fresh independent review; retain all
+   failed receipts and reconcile every review finding in the PR record.
+3. Present Donal the single remaining scope decision: approve utility-owned
+   live MissionStore plus async facade work, or accept this narrower draft with
+   the C01 synchronous-open gap still unresolved. Keep DON-179 In Review.
 
-The release HOLD and C17 scope remain governed by the
+The release hold and C17 scope remain governed by the
 [two-track execution workplan](../docs/two-track-execution-workplan.md) and
 [assurance records](../docs/assurance/).
