@@ -2,15 +2,17 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-## Current Beta 13 decision — 2026-09-23
+## Current Beta 13 decision — 2026-09-24
 
 Release is **HOLD**. PR45 merged documentation/control-plane evidence only; no
-Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR #46
-records the DON-254 release-scope update and adds no product behavior; it is
-merged at `d48ea1c562233630fc383e0ee21107167dd5d584`. The current change is the
-separately owned DON-264 operator-warning repair on
-`codex/don-264-overlay-warning`; it adds product behavior and has local checks
-complete, with PR-head CI and candidate qualification still pending.
+Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
+#48 is merged; current `master` is
+`a81dd4a388196d241a48205ad45e961c1ab26c9b`, including the post-merge C17
+canary-leak classification fix. The current change is the separately owned
+DON-264 operator-warning repair on `codex/don-264-overlay-warning`, rebased onto
+that master. Post-rebase local correctness, lint, browser, visual and packaged
+map-surface checks passed. Exact-head PR CI and fresh independent review remain
+pending; local package evidence is not candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -36,12 +38,11 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**Next steps:** finish exact-scope controls and focused tests; obtain a fresh
-independent review and green exact-head CI for the review PR; refresh live
-Linear state when authorization works. Linear connector reauthentication failed
-for DON-249/250/251/254/264, so their current issue state is unverified and no
-Linear mutation is claimed. Do not contact SAR team members, run candidate
-qualification, tag, publish, or promote from this work.
+**Next steps:** push the rebased DON-264 PR head, obtain normal exact-head CI and
+a fresh independent review, and verify mergeability and review threads. Live
+Linear confirms DON-264 remains `In Progress`; no issue completion is claimed.
+Do not contact SAR team members, run candidate qualification, tag, publish, or
+promote from this work.
 
 Everything below this dated decision is earlier planning and evidence retained
 for provenance. Older status and sequencing statements are superseded wherever
@@ -1766,7 +1767,7 @@ This is the default order when the user says “work on the next task.”
 | Done | [PR #8](https://github.com/donal0c/sartracker-web/pull/8): WAR-04 platform-services resilience investigation | Map / Settings / Diagnostics / Assurance | `DON-7` / `DON-76` / `DON-177` / `DON-226` / `DON-237`; `DON-264` assessed separately | Investigation/evidence only, merged at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` from final head `3a2278ee8804a9ded0f2fd26626c4c00743c05a6`; no shipping-code remediation. Nine confirmed findings route to three bounded WAR-11 clusters. Twelve isolated synthetic checks preserve the confirmed red states. The normal gates, two exact-head independent reviews and the exact-head Linux branch gate were green. Broad package/provider/platform/scale/soak proof remains WAR-12. |
 | Done | [PR #9](https://github.com/donal0c/sartracker-web/pull/9): WAR-04B release integrity, dependency and repository-control audit | Whole application / Assurance / Release reliability | `DON-146` / `DON-254` / `DON-255` | Investigation/docs only, merged at `0ca331ff816800e83134142cb109903e5d2c2992`; no remediation or release mutation. Confirmed blockers are EOL Electron `40.10.0` and the `electron-builder@26.0.12 -> app-builder-lib@26.0.12` AppImage launcher advisory. At that historical snapshot the production npm graph was advisory-clean; the 2026-09-09 refresh now finds one MapLibre record. A full audit is required because release-bearing Electron/builder code is classified as development dependencies. Live GitHub evidence also confirms mutable unsigned releases, no enforced master/tag review/check boundary, disabled security visibility, no SBOM/attestation, and incomplete ASAR/private-evidence exclusion. `better-sqlite3` PR #1475 is merged and available from `12.10.1`, so `DON-146` is no longer upstream-blocked. PR #8's merge at `341d95add5a7eceb6db506a2afd0ea70cb1fc944` left all audited package, lock, builder, release-workflow, publisher and support-policy inputs blob-identical; its WAR-04 evidence remains separate and supplies no release proof. Use the controlled upgrade order and exact post-programme-PR-6 refresh checklist in `docs/assurance/findings/WAR-04B.md`; PR #10 has since merged; its source-bound archive proof does not establish final release qualification. This is separate from the merged WAR-01 GitHub PR #6 in the row above. Exact-head review/recheck evidence is retained on PR #9. |
 | Done | Exact post-PR6 WAR-04B refresh | Assurance / Release integrity | `DON-146` / `DON-254` / `DON-255` | [PR #12](https://github.com/donal0c/sartracker-web/pull/12) merged at `c51e4b3537c4b026f7079dd40193a894cedcdd9f`. Both audits/live controls were refreshed; 265 focused tests and local native/inventory passed, while the retained local lifecycle timing rejection remains evidence rather than being erased. Independent Linux and final PR-head CI passed all workflow gates. HOLD remains; no dependency remediation or publication occurred. [Report](assurance/findings/WAR-04B.md). |
-| In Progress | [DON-264](https://linear.app/donal-oc/issue/DON-264): surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | Implemented on `codex/don-264-overlay-warning`, based on PR46 merge `d48ea1c562233630fc383e0ee21107167dd5d584`. Full local correctness (567 files; 5,822 passed; 25 skipped), lint/build, browser/visual, independent review and packaged macOS C14 pass. PR-head CI/review recheck and candidate qualification remain separate; local C14 receipt is not qualification. |
+| In Progress | [DON-264](https://linear.app/donal-oc/issue/DON-264): surface persistent overlay synchronization failures in diagnostics and map health | S2 Electron / Shared Map / Diagnostics | `DON-264` | Rebased `codex/don-264-overlay-warning` onto current master `a81dd4a388196d241a48205ad45e961c1ab26c9b`. The quick re-registration regression is red at `a0e17d9f` and green at the streak fix; full post-rebase correctness passed (570 files; 5,832 passed; 25 skipped), lint, Chromium + visual warning/recovery, production build/macOS arm64 `electron:pack`, and local packaged C14 warning/recovery/cleanup (`releaseEligible:false`). Exact-head PR CI and fresh independent review are pending; package evidence is not candidate qualification. |
 | Done | Make Breadcrumb Dots source-exact and independently release-gated | S2 Electron / Shared Tracking / Verification | `DON-260` | Published beta.12.11 at exact tag `bced8052b85c` after green CI run `31482052296`, full AppImage and genuinely installed `.deb` package matrices, synthetic 279,936/1,935,384-fix exact-page proofs, target-only live-provider equality, diagnostics privacy, and unchanged performance/RSS gates. The guarded publisher and a second public download revalidated both installer hashes and `SHA256SUMS`; the fresh public AppImage independently passed settings persistence, same-mission recovery, finalization, and archive creation. Dots is source-exact and paged; Line alone remains simplified. Beta.12.9/.12.10 are not the correction. |
 | Done | Build deterministic field-scale mission-store fixtures | S2 Electron / Verification | `DON-242` | Small/CI/local/field plus 5-day and 14-day continuous-mission presets; Ubuntu field fixture is 3.704 GB with measured table accounting and restart checkpoints. |
 | Done | Reproduce and attribute beta.11 freeze on packaged Ubuntu | S2 Electron / Verification | `DON-243` | Three independent packaged runs: main stalls 5.70-5.82 s; integrity validation 6.11-6.36 s across nine autosaves. |
