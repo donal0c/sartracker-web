@@ -12,6 +12,14 @@ import {
   validateCompositeFamilyCoverage,
   validateCompositeFamilyReceipt,
 } from '../../scripts/qualification/composite-family-receipts.mjs'
+import { COMPOSITE_SOURCE_MANIFEST_PATHS } from '../../scripts/qualification/composite-manifest.mjs'
+import {
+  C17_ADVERSARIAL_CASE_IDS,
+  C17_LONG_SECRET_KEY,
+  C17_NUMERIC_SECRET,
+  C17_SOURCE_CORPUS_TESTS,
+} from '../../scripts/qualification/c17-adversarial-corpus.mjs'
+import { buildC17OutputScanIdentity, scanC17OutputFileSync } from '../../scripts/qualification/c17-output-scan.mjs'
 import { buildC17DiagnosticEvents, resolveArchivePreparation } from '../../scripts/qualification/composite-probe.mjs'
 
 type JsonObject = Record<string, unknown>
@@ -26,6 +34,7 @@ const retainedPackagedAppPath = '/tmp/sartracker-family-evidence/retained-packag
 mkdirSync(path.dirname(retainedPackagedAppPath), { recursive: true })
 writeFileSync(retainedPackagedAppPath, packagedAppBytes, { mode: 0o600 })
 const retainedDiagnosticPath = '/tmp/sartracker-family-evidence/c17-sanitized-output.txt'
+const exportedDiagnosticPath = '/tmp/sartracker-family-evidence/.profile-composite/diagnostics-reports/c17-diagnostics-support.txt'
 const retainedDiagnosticBytes = Buffer.from([
   'sanitized diagnostics',
   ...C17_CANARY_IDS.map((id) => `C17-CONTROL:${id}`),
@@ -55,10 +64,12 @@ const retainedPassPagesBytes = Buffer.from(Array.from({ length: 1_000 }, (_, pag
 }).join('\n'), 'utf8')
 mkdirSync(path.dirname(retainedDiagnosticPath), { recursive: true })
 writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+mkdirSync(path.dirname(exportedDiagnosticPath), { recursive: true })
+writeFileSync(exportedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
 writeFileSync(retainedCanaryManifestPath, retainedCanaryManifestBytes, { mode: 0o600 })
 writeFileSync(retainedPassPagesPath, retainedPassPagesBytes, { mode: 0o600 })
 
-const sourceFiles = ['electron/main.cjs', 'electron/preload.cjs', 'electron/mission-store.cjs']
+const sourceFiles = [...COMPOSITE_SOURCE_MANIFEST_PATHS]
 const sourceManifest = sourceFiles.map((relativePath) => {
   const bytes = readFileSync(path.join(repoRoot, relativePath))
   return {
@@ -76,13 +87,40 @@ const expectedBase = {
   sourceManifest,
   sourceRoot: repoRoot,
 }
+const sourceManifestSha256 = createHash('sha256').update(JSON.stringify(sourceManifest)).digest('hex')
+const sourceCorpusReceiptPath = path.join(expectedBase.evidencePath, 'c17-source-corpus-receipt.json')
+const sourceCorpusReceiptBytes = Buffer.from(`${JSON.stringify({
+  schema: 'sartracker-c17-source-corpus-receipt-v1',
+  sourceHead: expectedBase.sourceHead,
+  appSha256: expectedBase.appSha256,
+  sourceManifestSha256,
+  status: 'PASS',
+  complete: true,
+  modes: ['renderer', 'electron-main'],
+  corpusCaseIds: [...C17_ADVERSARIAL_CASE_IDS],
+  tests: C17_SOURCE_CORPUS_TESTS.map((test) => ({ relativePath: test.path, name: test.name, passed: true })),
+  totalPassedTests: 3,
+  totalFailedTests: 0,
+}, null, 2)}\n`, 'utf8')
+writeFileSync(sourceCorpusReceiptPath, sourceCorpusReceiptBytes, { mode: 0o600 })
+
+function c17OutputScanIdentity() {
+  return buildC17OutputScanIdentity({
+    sourceHead: expectedBase.sourceHead,
+    appSha256: expectedBase.appSha256,
+    exportedPath: exportedDiagnosticPath,
+    retainedOutputPath: retainedDiagnosticPath,
+    outputScan: scanC17OutputFileSync(exportedDiagnosticPath),
+    retainedScan: scanC17OutputFileSync(retainedDiagnosticPath),
+  })
+}
 
 function report(): JsonObject {
   const missionId = 'mission-family'
   const diagnostics = {
     requested: true,
     exported: true,
-    exportedPath: path.join(expectedBase.profilePath, 'diagnostics-reports', 'c17-diagnostics-support.txt'),
+    exportedPath: exportedDiagnosticPath,
     sanitized: true,
     containsSecret: false,
     containsProfilePath: false,
@@ -94,6 +132,9 @@ function report(): JsonObject {
     canaryCount: C17_CANARY_IDS.length,
     positiveControlIds: [...C17_CANARY_IDS],
     outputWithinLimit: true,
+    sourceCorpusReceiptPath,
+    sourceCorpusReceiptSha256: createHash('sha256').update(sourceCorpusReceiptBytes).digest('hex'),
+    outputScanIdentity: c17OutputScanIdentity(),
     retainedOutputPath: retainedDiagnosticPath,
     retainedCanaryManifestPath,
     leakedCanaryIds: [],
@@ -220,16 +261,13 @@ describe('independent packaged composite family receipts', () => {
           headers: { Authorization: 'Bearer authorization-header' },
           queryUrl: 'https://host.example/api?session=query-credential',
         },
+        recoveryCode: C17_NUMERIC_SECRET,
+        [C17_LONG_SECRET_KEY]: 'base-secret-long-key-secret',
       },
     })
-    expect(events[0]?.fields?.c17CanaryControlIds).toEqual([
-      'C17-CONTROL:event-password',
-      'C17-CONTROL:event-nested-token',
-      'C17-CONTROL:event-authorization-header',
-      'C17-CONTROL:event-query-credential',
-      'C17-CONTROL:nested-array-secret',
-      'C17-CONTROL:nested-array-profile-path',
-    ])
+    expect(events[0]?.fields?.c17CanaryControlIds).toEqual(
+      C17_CANARY_IDS.slice(4).map((id) => `C17-CONTROL:${id}`),
+    )
     expect(events[1]).toMatchObject({
       fields: { providerUrl: 'https://operator:url-credentials@example.invalid/sar' },
     })
@@ -276,15 +314,31 @@ describe('independent packaged composite family receipts', () => {
   })
 
   it('validates C17 sanitized export facts and adversarial scan facts', () => {
-    expect(validateCompositeFamilyReceipt(report(), expected('C17'))).toMatchObject({
+    const receipt = validateCompositeFamilyReceipt(report(), expected('C17'))
+    expect(receipt).toMatchObject({
       contractId: 'C17',
       producerContractId: 'C28',
       status: 'PASS',
       valid: true,
       evidenceComplete: true,
-      complete: false,
+      complete: true,
       campaignEligible: false,
     })
+  })
+
+  it('validates retained C17 output after disposable profile cleanup', () => {
+    const c17 = report()
+    rmSync(expectedBase.profilePath, { recursive: true, force: true })
+    try {
+      expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({
+        valid: true,
+        complete: true,
+        coverageGaps: [],
+      })
+    } finally {
+      mkdirSync(path.dirname(exportedDiagnosticPath), { recursive: true })
+      writeFileSync(exportedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+    }
   })
 
   it('accepts C03 only when the independent outing, known-at-fix, and exclusion facts are retained', () => {
@@ -397,14 +451,53 @@ describe('independent packaged composite family receipts', () => {
     })
     Object.assign(c17.diagnostics as JsonObject, c17.phases.sanitizedDiagnostics as JsonObject)
     const c17Receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
-    expect(c17Receipt.complete).toBe(false)
-    expect(c17Receipt.coverageComplete).toBe(false)
-    expect(c17Receipt.coverageGaps).toEqual(expect.arrayContaining([
-      'recursive-adversarial-corpus',
-      'bounded-output-scan-identity',
-    ]))
+    expect(c17Receipt).toMatchObject({ complete: true, coverageComplete: true, coverageGaps: [] })
     ;(c17.phases.sanitizedDiagnostics as JsonObject).outputWithinLimit = false
     expect(validateCompositeFamilyReceipt(c17, expected('C17')).complete).toBe(false)
+  })
+
+  it('clears each C17 coverage gap only while its bound source and output proofs remain valid', () => {
+    const c17 = copy(report())
+    const phase = c17.phases.sanitizedDiagnostics as JsonObject
+    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({
+      valid: true,
+      complete: true,
+      coverageGaps: [],
+    })
+
+    phase.sourceCorpusReceiptSha256 = 'f'.repeat(64)
+    let receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
+    expect(receipt.complete).toBe(false)
+    expect(receipt.coverageGaps).toContain('recursive-adversarial-corpus')
+    expect(receipt.failureReasons.join('\n')).toMatch(/source corpus/i)
+
+    phase.sourceCorpusReceiptSha256 = createHash('sha256').update(sourceCorpusReceiptBytes).digest('hex')
+    phase.outputScanIdentity = { ...(phase.outputScanIdentity as JsonObject), exactBytesMatch: false }
+    ;(c17.diagnostics as JsonObject).outputScanIdentity = phase.outputScanIdentity
+    receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
+    expect(receipt.complete).toBe(false)
+    expect(receipt.coverageGaps).toContain('bounded-output-scan-identity')
+    expect(receipt.failureReasons.join('\n')).toMatch(/output.*identity|byte/i)
+  })
+
+  it('rejects changed retained bytes and a missing source-corpus receipt', () => {
+    const c17 = copy(report())
+    const phase = c17.phases.sanitizedDiagnostics as JsonObject
+    const changedBytes = Buffer.concat([retainedDiagnosticBytes, Buffer.from('changed')])
+    try {
+      writeFileSync(retainedDiagnosticPath, changedBytes, { mode: 0o600 })
+      const receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
+      expect(receipt.coverageGaps).toContain('bounded-output-scan-identity')
+      expect(receipt.failureReasons.join('\n')).toMatch(/output.*identity|byte/i)
+    } finally {
+      writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+    }
+
+    phase.sourceCorpusReceiptPath = path.join(expectedBase.evidencePath, 'missing-c17-source-receipt.json')
+    ;(c17.diagnostics as JsonObject).sourceCorpusReceiptPath = phase.sourceCorpusReceiptPath
+    const receipt = validateCompositeFamilyReceipt(c17, expected('C17'))
+    expect(receipt.coverageGaps).toContain('recursive-adversarial-corpus')
+    expect(receipt.failureReasons.join('\n')).toMatch(/source corpus/i)
   })
 
   it('independently binds C17 export paths and rejects a retained canary leak', () => {
@@ -424,7 +517,7 @@ describe('independent packaged composite family receipts', () => {
     })
     Object.assign(c17.diagnostics as JsonObject, phase)
 
-    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({ valid: true })
+    expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({ valid: true, complete: true })
 
     phase.exportedPath = path.join(expectedBase.evidencePath, 'wrong-export.txt')
     expect(validateCompositeFamilyReceipt(c17, expected('C17')).valid).toBe(false)

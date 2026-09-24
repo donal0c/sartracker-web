@@ -1,6 +1,17 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+import {
+  C17_ADVERSARIAL_CASE_IDS,
+  C17_NUMERIC_SECRET,
+  C17_SOURCE_CORPUS_TESTS,
+} from './c17-adversarial-corpus.mjs'
+import {
+  buildC17OutputScanIdentity,
+  C17_OUTPUT_BYTE_LIMIT,
+  C17_OUTPUT_SCAN_IDENTITY_SCHEMA,
+  scanC17OutputFileSync,
+} from './c17-output-scan.mjs'
 
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
@@ -20,6 +31,8 @@ export const C17_CANARY_IDS = Object.freeze([
   'nested-array-secret',
   'nested-array-profile-path',
   'url-credentials',
+  'event-numeric-recovery-code',
+  'event-long-secret-key',
 ])
 export const C17_POSITIVE_CONTROL_PREFIX = 'C17-CONTROL:'
 
@@ -85,16 +98,18 @@ const EXPECTED_KEYS = Object.freeze([
  */
 export function validateCompositeFamilyReceipt(report, expected) {
   const failures = []
+  const proof = {}
   const binding = readExpected(expected, failures)
   if (binding !== null) validateReportIdentity(report, binding, failures)
-  if (binding !== null) validateFamilyPhase(report, binding.contractId, binding, failures)
+  if (binding !== null) validateFamilyPhase(report, binding.contractId, binding, failures, proof)
   const uniqueFailures = [...new Set(failures)]
   const valid = uniqueFailures.length === 0
-  const coverageGaps = binding === null ? [] : deriveCoverageGaps(report, binding.contractId)
+  const coverageGaps = binding === null ? [] : deriveCoverageGaps(report, binding.contractId, proof)
   const observedProductFailure = binding !== null && binding.contractId === 'C17'
     && isObservedC17PrivacyFailure(report?.phases?.sanitizedDiagnostics, binding)
     && uniqueFailures.every((reason) => isC17ProductPredicateFailure(reason)
       || reason.startsWith('C17 bounded diagnostic scanner facts')
+      || reason.startsWith('C17 output scan identity')
       || reason.startsWith('C17 retained output'))
   return Object.freeze({
     contractId: binding?.contractId ?? (isRecord(expected) ? expected.contractId : null),
@@ -320,7 +335,7 @@ function validateRuntime(run, stderr, failures, contractId = null) {
 }
 
 /** Validate only the requested retained phase, keeping family axes separate. */
-function validateFamilyPhase(report, contractId, binding, failures) {
+function validateFamilyPhase(report, contractId, binding, failures, proof) {
   if (!COMPOSITE_FAMILY_CONTRACTS.includes(contractId)) return
   const phase = report?.phases?.[COMPOSITE_FAMILY_PHASES[contractId]]
   if (!isRecord(phase)) {
@@ -329,7 +344,7 @@ function validateFamilyPhase(report, contractId, binding, failures) {
   }
   if (contractId === 'C03') validateC03Phase(phase, report?.mission?.missionId, failures)
   if (contractId === 'C11') validateC11Phase(phase, report?.mission?.missionId, binding, failures)
-  if (contractId === 'C17') validateC17Phase(phase, report?.diagnostics, binding, failures)
+  if (contractId === 'C17') validateC17Phase(phase, report?.diagnostics, binding, failures, proof)
 }
 
 /** Validate mission, outing, participant and backfill facts for the C03 slice. */
@@ -445,7 +460,7 @@ function validateRawPassPages(passPaging, assignmentId, binding) {
 }
 
 /** Validate both phase and top-level raw scanner facts for the C17 slice. */
-function validateC17Phase(phase, diagnostics, binding, failures) {
+function validateC17Phase(phase, diagnostics, binding, failures, proof) {
   if (!hasRequiredKeys(phase, [
     'adversarialMatchCount', 'containsProfilePath', 'containsSecret', 'exactSecretMatches',
     'exported', 'exportedPath', 'pathWithinProfile', 'requested', 'sanitized', 'supported',
@@ -472,6 +487,7 @@ function validateC17Phase(phase, diagnostics, binding, failures) {
   const scannerKeys = [
     'canaryManifestSha256', 'outputSha256', 'outputByteLength', 'canaryCount', 'outputWithinLimit',
     'retainedCanaryManifestPath', 'retainedOutputPath', 'leakedCanaryIds', 'positiveControlIds',
+    'sourceCorpusReceiptPath', 'sourceCorpusReceiptSha256', 'outputScanIdentity',
   ]
   if (!hasRequiredKeys(phase, scannerKeys)) {
     failures.push('C17 bounded diagnostic scanner facts are missing.')
@@ -497,59 +513,139 @@ function validateC17Phase(phase, diagnostics, binding, failures) {
     || diagnostics.outputWithinLimit !== phase.outputWithinLimit
     || diagnostics.retainedOutputPath !== phase.retainedOutputPath
     || diagnostics.retainedCanaryManifestPath !== phase.retainedCanaryManifestPath
+    || diagnostics.sourceCorpusReceiptPath !== phase.sourceCorpusReceiptPath
+    || diagnostics.sourceCorpusReceiptSha256 !== phase.sourceCorpusReceiptSha256
+    || JSON.stringify(diagnostics.outputScanIdentity) !== JSON.stringify(phase.outputScanIdentity)
     || JSON.stringify(diagnostics.leakedCanaryIds) !== JSON.stringify(phase.leakedCanaryIds)
     || JSON.stringify(diagnostics.positiveControlIds) !== JSON.stringify(phase.positiveControlIds)) {
     failures.push('C17 top-level diagnostics scanner facts do not match the retained phase output.')
   }
-  validateIndependentC17ScannerFacts(phase, binding, failures)
-  validateRetainedDiagnosticOutput(phase, binding, failures)
+  proof.c17SourceCorpusComplete = validateC17SourceCorpusReceipt(phase, diagnostics, binding, failures)
+  const outputProof = validateC17OutputProof(phase, binding, failures)
+  proof.c17OutputIdentityComplete = outputProof.identityComplete
+  proof.c17PackagedCorpusComplete = outputProof.canaryCorpusComplete
   validateRetainedCanaryManifest(phase, binding, failures)
 }
 
-/** Recompute the fixed C17 canary corpus and scan retained bytes independently. */
-function validateIndependentC17ScannerFacts(phase, binding, failures) {
+/** Validate the retained source-mode runner receipt against the exact source and package bindings. */
+function validateC17SourceCorpusReceipt(phase, diagnostics, binding, failures) {
+  const receiptPath = path.join(retainedEvidenceRoot(binding), 'c17-source-corpus-receipt.json')
+  if (phase.sourceCorpusReceiptPath !== receiptPath
+    || !SHA256.test(phase.sourceCorpusReceiptSha256)
+    || diagnostics.sourceCorpusReceiptPath !== receiptPath
+    || diagnostics.sourceCorpusReceiptSha256 !== phase.sourceCorpusReceiptSha256) {
+    failures.push('C17 source corpus receipt path or digest is missing or outside evidence custody.')
+    return false
+  }
+  const scan = scanC17OutputFileSync(receiptPath)
+  if (scan.complete !== true || scan.bytes === null
+    || scan.sha256 !== phase.sourceCorpusReceiptSha256) {
+    failures.push('C17 source corpus receipt is unavailable, oversized or does not match its retained digest.')
+    return false
+  }
+
+  try {
+    const receipt = JSON.parse(scan.bytes.toString('utf8'))
+    const expectedManifestSha256 = sha256Text(JSON.stringify(binding.sourceManifest))
+    const expectedTests = C17_SOURCE_CORPUS_TESTS.map(({ path: relativePath, name }) => ({ relativePath, name, passed: true }))
+    const complete = hasExactKeys(receipt, [
+      'appSha256', 'complete', 'corpusCaseIds', 'modes', 'schema', 'sourceHead',
+      'sourceManifestSha256', 'status', 'tests', 'totalFailedTests', 'totalPassedTests',
+    ]) && receipt.schema === 'sartracker-c17-source-corpus-receipt-v1'
+      && receipt.sourceHead === binding.sourceHead
+      && receipt.appSha256 === binding.appSha256
+      && receipt.sourceManifestSha256 === expectedManifestSha256
+      && receipt.status === 'PASS' && receipt.complete === true
+      && JSON.stringify(receipt.modes) === JSON.stringify(['renderer', 'electron-main'])
+      && JSON.stringify(receipt.corpusCaseIds) === JSON.stringify(C17_ADVERSARIAL_CASE_IDS)
+      && Array.isArray(receipt.tests) && receipt.tests.length === expectedTests.length
+      && receipt.tests.every((test, index) => hasExactKeys(test, ['name', 'passed', 'relativePath'])
+        && test.name === expectedTests[index].name
+        && test.relativePath === expectedTests[index].relativePath
+        && test.passed === true)
+      && Number.isSafeInteger(receipt.totalPassedTests)
+      && receipt.totalPassedTests >= expectedTests.length
+      && receipt.totalFailedTests === 0
+    if (!complete) failures.push('C17 source corpus receipt does not prove the fixed renderer and Electron source tests passed for this head and app.')
+    return complete
+  } catch {
+    failures.push('C17 source corpus receipt is malformed or unreadable.')
+    return false
+  }
+}
+
+/** Scan packaged and retained output bytes independently and recompute all fixed C17 facts. */
+function validateC17OutputProof(phase, binding, failures) {
   const retainedRoot = retainedEvidenceRoot(binding)
   const expectedOutputPath = path.join(retainedRoot, 'c17-sanitized-output.txt')
   const expectedManifestPath = path.join(retainedRoot, 'c17-canary-manifest.txt')
-  if (phase.retainedOutputPath !== expectedOutputPath || phase.retainedCanaryManifestPath !== expectedManifestPath) {
+  const expectedExportPath = path.join(binding.profilePath, ...C17_EXPORT_PATH)
+  if (phase.exportedPath !== expectedExportPath
+    || phase.retainedOutputPath !== expectedOutputPath
+    || phase.retainedCanaryManifestPath !== expectedManifestPath) {
     failures.push('C17 retained scanner paths are not the exact evidence-custody paths.')
-    return
+    return { identityComplete: false, canaryCorpusComplete: false }
   }
-  try {
-    const output = readFileSync(phase.retainedOutputPath)
-    const text = output.toString('utf8')
-    const values = c17CanaryValues(binding.profilePath)
-    const profileVariants = [binding.profilePath, binding.profilePath.replaceAll('\\', '/')]
-    const adversarialValues = [
-      ...Object.values(values).flat(),
-      ...profileVariants,
-      `operator:${PASS_PHRASE}@example.invalid`,
-      `https://operator:${PASS_PHRASE}@example.invalid/sar`,
-    ]
-    const leakedCanaryIds = C17_CANARY_IDS.filter((id) => values[id].some((value) => text.includes(value)))
-    const positiveControlIds = C17_CANARY_IDS.filter((id) => text.includes(c17PositiveControlMarker(id)))
-    const exactSecretMatches = Object.values(values)
-      .flat()
-      .reduce((count, value) => count + countOccurrences(text, value), 0)
-    const adversarialMatchCount = adversarialValues
-      .reduce((count, value) => count + countOccurrences(text, value), 0)
-    const containsProfilePath = profileVariants.some((value) => text.includes(value))
-    if (output.byteLength > 1_048_576
-      || sha256(output) !== phase.outputSha256
-      || output.byteLength !== phase.outputByteLength
-      || leakedCanaryIds.length !== 0
-      || JSON.stringify(leakedCanaryIds) !== JSON.stringify(phase.leakedCanaryIds)
-      || JSON.stringify(positiveControlIds) !== JSON.stringify(phase.positiveControlIds)
-      || exactSecretMatches !== phase.exactSecretMatches
-      || adversarialMatchCount !== phase.adversarialMatchCount
-      || containsProfilePath !== phase.containsProfilePath) {
-      failures.push('C17 retained output independently fails the fixed canary or bound scan.')
-    }
-    if (!hasAllC17PositiveControls(positiveControlIds)) {
-      failures.push('C17 retained output is missing one or more positive-control markers.')
-    }
-  } catch {
-    failures.push('C17 retained output is unavailable for the independent canary scan.')
+  const retainedScan = scanC17OutputFileSync(expectedOutputPath)
+  if (retainedScan.complete !== true || retainedScan.bytes === null) {
+    failures.push('C17 retained output identity scan is incomplete or exceeds the fixed byte limit.')
+    return { identityComplete: false, canaryCorpusComplete: false }
+  }
+
+  // The packaged profile is deleted before the CLI validates this receipt.
+  // The producer retained the exact bounded export bytes before cleanup, so
+  // independently bind that snapshot back to the original scan facts here.
+  const expectedIdentity = buildC17OutputScanIdentity({
+    sourceHead: binding.sourceHead,
+    appSha256: binding.appSha256,
+    exportedPath: expectedExportPath,
+    retainedOutputPath: expectedOutputPath,
+    outputScan: retainedScan,
+    retainedScan,
+  })
+  const identityMatches = hasExactKeys(phase.outputScanIdentity, Object.keys(expectedIdentity))
+    && Object.entries(expectedIdentity).every(([key, value]) => phase.outputScanIdentity[key] === value)
+    && expectedIdentity.schema === C17_OUTPUT_SCAN_IDENTITY_SCHEMA
+    && expectedIdentity.scanLimitBytes === C17_OUTPUT_BYTE_LIMIT
+    && expectedIdentity.exactBytesMatch === true
+  const reportedOutputMatches = phase.outputSha256 === retainedScan.sha256
+    && phase.outputByteLength === retainedScan.byteLength
+    && phase.outputWithinLimit === true
+  if (!identityMatches || !reportedOutputMatches) {
+    failures.push('C17 output scan identity does not match the exact packaged and retained bytes.')
+  }
+
+  const output = retainedScan.bytes
+  const text = output.toString('utf8')
+  const values = c17CanaryValues(binding.profilePath)
+  const profileVariants = [binding.profilePath, binding.profilePath.replaceAll('\\', '/')]
+  const adversarialValues = [
+    ...Object.values(values).flat(),
+    ...profileVariants,
+    `operator:${PASS_PHRASE}@example.invalid`,
+    `https://operator:${PASS_PHRASE}@example.invalid/sar`,
+  ]
+  const leakedCanaryIds = C17_CANARY_IDS.filter((id) => values[id].some((value) => text.includes(value)))
+  const positiveControlIds = C17_CANARY_IDS.filter((id) => text.includes(c17PositiveControlMarker(id)))
+  const exactSecretMatches = Object.values(values)
+    .flat()
+    .reduce((count, value) => count + countOccurrences(text, value), 0)
+  const adversarialMatchCount = adversarialValues
+    .reduce((count, value) => count + countOccurrences(text, value), 0)
+  const containsProfilePath = profileVariants.some((value) => text.includes(value))
+  const scanFactsMatch = leakedCanaryIds.length === 0
+    && JSON.stringify(leakedCanaryIds) === JSON.stringify(phase.leakedCanaryIds)
+    && JSON.stringify(positiveControlIds) === JSON.stringify(phase.positiveControlIds)
+    && exactSecretMatches === phase.exactSecretMatches
+    && adversarialMatchCount === phase.adversarialMatchCount
+    && containsProfilePath === phase.containsProfilePath
+  if (!scanFactsMatch) failures.push('C17 retained output independently fails the fixed canary or bounded content scan.')
+  if (!hasAllC17PositiveControls(positiveControlIds)) {
+    failures.push('C17 retained output is missing one or more positive-control markers.')
+  }
+  return {
+    identityComplete: identityMatches && reportedOutputMatches,
+    canaryCorpusComplete: scanFactsMatch && hasAllC17PositiveControls(positiveControlIds),
   }
 }
 
@@ -576,35 +672,14 @@ function c17CanaryValues(profilePath) {
     'nested-array-secret': secret('nested-array-secret'),
     'nested-array-profile-path': profile('nested-array-profile'),
     'url-credentials': secret('url-credentials'),
+    'event-numeric-recovery-code': [String(C17_NUMERIC_SECRET)],
+    'event-long-secret-key': secret('long-key-secret'),
   }
 }
 
 /** Count non-overlapping occurrences in independently retained diagnostic text. */
 function countOccurrences(value, needle) {
   return needle === '' ? 0 : value.split(needle).length - 1
-}
-
-/** Rehash and rescan the retained sanitized output when the producer retains one. */
-function validateRetainedDiagnosticOutput(phase, binding, failures) {
-  if (typeof phase.retainedOutputPath !== 'string' || !path.isAbsolute(phase.retainedOutputPath)
-    || path.resolve(phase.retainedOutputPath) !== phase.retainedOutputPath
-    || !isWithin(phase.retainedOutputPath, retainedEvidenceRoot(binding))) {
-    failures.push('C17 retained sanitized output path is missing or outside evidence custody.')
-    return
-  }
-  try {
-    const bytes = readFileSync(phase.retainedOutputPath)
-    const text = bytes.toString('utf8')
-    const profileVariants = [binding.profilePath, binding.profilePath.replaceAll('\\', '/')]
-    if (sha256(bytes) !== phase.outputSha256 || bytes.byteLength !== phase.outputByteLength
-      || bytes.byteLength > 1_048_576) {
-      failures.push('C17 retained sanitized output custody bytes do not match the independent scanner boundary.')
-    } else if (text.includes(PASS_PHRASE) || profileVariants.some((value) => text.includes(value))) {
-      failures.push('C17 retained output contains a fixed adversarial canary.')
-    }
-  } catch {
-    failures.push('C17 retained sanitized output is unavailable for independent re-scan.')
-  }
 }
 
 /** Rehash the non-secret C17 canary manifest retained beside every raw output. */
@@ -617,11 +692,12 @@ function validateRetainedCanaryManifest(phase, binding, failures) {
     return
   }
   try {
-    const bytes = readFileSync(phase.retainedCanaryManifestPath)
+    const scan = scanC17OutputFileSync(phase.retainedCanaryManifestPath)
     const expected = Buffer.from(C17_CANARY_IDS.join('\n'), 'utf8')
-    if (sha256(bytes) !== phase.canaryManifestSha256
-      || bytes.byteLength !== expected.byteLength
-      || !bytes.equals(expected)
+    if (scan.complete !== true || scan.bytes === null
+      || scan.sha256 !== phase.canaryManifestSha256
+      || scan.byteLength !== expected.byteLength
+      || !scan.bytes.equals(expected)
       || phase.canaryCount !== C17_CANARY_IDS.length) {
       failures.push('C17 retained canary manifest bytes do not match the fixed scanner corpus.')
     }
@@ -641,14 +717,16 @@ function isObservedC17PrivacyFailure(phase, binding) {
   if (!isWithin(phase.retainedOutputPath, retainedEvidenceRoot(binding))
     || !isWithin(phase.retainedCanaryManifestPath, retainedEvidenceRoot(binding))) return false
   try {
-    const output = readFileSync(phase.retainedOutputPath)
-    const manifest = readFileSync(phase.retainedCanaryManifestPath)
+    const output = scanC17OutputFileSync(phase.retainedOutputPath)
+    const manifest = scanC17OutputFileSync(phase.retainedCanaryManifestPath)
     const expectedManifest = Buffer.from(C17_CANARY_IDS.join('\n'), 'utf8')
-    return sha256(output) === phase.outputSha256
+    return output.complete === true && output.bytes !== null
+      && manifest.complete === true && manifest.bytes !== null
+      && output.sha256 === phase.outputSha256
       && output.byteLength === phase.outputByteLength
-      && sha256(manifest) === phase.canaryManifestSha256
-      && manifest.equals(expectedManifest)
-      && output.toString('utf8').includes(PASS_PHRASE)
+      && manifest.sha256 === phase.canaryManifestSha256
+      && manifest.bytes.equals(expectedManifest)
+      && output.bytes.toString('utf8').includes(PASS_PHRASE)
   } catch {
     return false
   }
@@ -663,7 +741,7 @@ function isC17ProductPredicateFailure(reason) {
 }
 
 /** Derive only fixed coverage gaps from retained facts; never read producer flags. */
-function deriveCoverageGaps(report, contractId) {
+function deriveCoverageGaps(report, contractId, proof = {}) {
   const gaps = [...(FAMILY_COVERAGE_GAPS[contractId] ?? [])]
   const phase = report?.phases?.[COMPOSITE_FAMILY_PHASES[contractId]]
   if (contractId === 'C03' && hasRequiredKeys(phase, ['outingCount', 'midnightCrossings', 'scopeOracle'])) {
@@ -707,16 +785,16 @@ function deriveCoverageGaps(report, contractId) {
       return []
     }
   }
-  if (contractId === 'C17' && hasRequiredKeys(phase, [
-    'canaryManifestSha256', 'outputSha256', 'outputByteLength', 'canaryCount', 'outputWithinLimit',
-    'retainedCanaryManifestPath', 'retainedOutputPath', 'leakedCanaryIds', 'positiveControlIds',
-  ]) && SHA256.test(phase.canaryManifestSha256) && SHA256.test(phase.outputSha256)
-      && Number.isSafeInteger(phase.outputByteLength) && phase.outputByteLength >= 0
-      && phase.canaryCount === C17_CANARY_IDS.length && phase.outputWithinLimit === true
-      && Array.isArray(phase.leakedCanaryIds) && phase.leakedCanaryIds.length === 0) {
-    // C17's recursive corpus and bounded scanner remain development coverage
-    // gaps until their separate qualification work is explicitly executed.
-    return gaps
+  if (contractId === 'C17') {
+    return gaps.filter((gap) => {
+      if (gap === 'recursive-adversarial-corpus') {
+        return !(proof.c17SourceCorpusComplete === true && proof.c17PackagedCorpusComplete === true)
+      }
+      if (gap === 'bounded-output-scan-identity') {
+        return proof.c17OutputIdentityComplete !== true
+      }
+      return true
+    })
   }
   return gaps
 }
@@ -848,6 +926,11 @@ function validPid(value) {
 /** Compute a SHA-256 digest for bytes. */
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex')
+}
+
+/** Hash one stable UTF-8 text identity. */
+function sha256Text(value) {
+  return sha256(Buffer.from(value, 'utf8'))
 }
 
 /** Clone report facts so callers cannot mutate the retained receipt. */

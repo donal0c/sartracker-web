@@ -3,7 +3,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { execFile } from 'node:child_process'
-import { access, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +15,16 @@ import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { createCompositeSourceManifest } from './composite-manifest.mjs'
 import { C28_VARIANT_AXIS_MAP } from './composite-coverage.mjs'
 import { validateCompositeReceipt, validateCompositeVariantReceipt } from './composite-receipts.mjs'
+import {
+  C17_LONG_SECRET_KEY,
+  C17_NUMERIC_SECRET,
+  C17_ADVERSARIAL_CASE_IDS,
+  C17_SOURCE_CORPUS_TESTS,
+} from './c17-adversarial-corpus.mjs'
+import {
+  buildC17OutputScanIdentity,
+  scanC17OutputFileSync,
+} from './c17-output-scan.mjs'
 import {
   C17_CANARY_IDS,
   c17PositiveControlMarker,
@@ -108,6 +119,9 @@ export async function runCompositeProbe(input) {
     retainedPackagedAppPath: null,
     retainedPackagedAppSha256: null,
   }
+  const c17SourceCorpus = options.familyContract === 'C17'
+    ? await runC17SourceCorpusProbe(options, sourceManifest, app.sha256)
+    : null
   const phases = createUnsupportedPhaseInventory()
   const gaps = []
   const startedAt = Date.now()
@@ -245,7 +259,15 @@ export async function runCompositeProbe(input) {
     }
     if (options.familyContract === 'C17') {
       currentPhase = 'sanitizedDiagnostics'
-      phases.sanitizedDiagnostics = await exportSanitizedDiagnostics(page, profilePath, passphraseInMemory, options.familyContract)
+      phases.sanitizedDiagnostics = await exportSanitizedDiagnostics(
+        page,
+        profilePath,
+        passphraseInMemory,
+        options.familyContract,
+        c17SourceCorpus,
+        options.expectedHead,
+        app.sha256,
+      )
       const sourceAfter = await readSourceState()
       if (sourceAfter.head !== options.expectedHead || sourceAfter.dirty !== sourceBefore.dirty) {
         throw new Error('Composite family probe source identity changed during the run.')
@@ -627,7 +649,7 @@ async function main() {
       sourceRoot: expected.sourceRoot,
       contractId: report.familyContract,
     })
-  if (validation.valid !== true || (options.familyContract !== 'C17' && validation.complete !== true)) {
+  if (validation.valid !== true || validation.complete !== true) {
     throw new Error(`C28 composite receipt validation failed: ${validation.failureReasons.join(' | ')}`)
   }
   console.log(`qualification-composite-probe: report=${reportPath}`)
@@ -1681,8 +1703,94 @@ async function runArchiveReview(page, missionId, archiveId, passphrase, selected
   }
 }
 
+/** Execute the fixed source-mode adversarial suite and retain only its bounded result receipt. */
+async function runC17SourceCorpusProbe(options, sourceManifest, appSha256) {
+  const receiptPath = path.join(options.evidencePath, 'c17-source-corpus-receipt.json')
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sartracker-c17-source-corpus-'))
+  const reporterPath = path.join(temporaryRoot, 'vitest-report.json')
+  let runnerSucceeded = false
+  let reporter = null
+  try {
+    try {
+      await execFileAsync(process.execPath, [
+        path.join(projectRoot, 'node_modules', 'vitest', 'vitest.mjs'),
+        'run',
+        ...C17_SOURCE_CORPUS_TESTS.map((test) => test.path),
+        '--reporter=json',
+        `--outputFile=${reporterPath}`,
+      ], {
+        cwd: projectRoot,
+        timeout: 120_000,
+        maxBuffer: 1_048_576,
+        windowsHide: true,
+      })
+      runnerSucceeded = true
+    } catch {
+      // Keep raw reporter/stdio output out of retained evidence and operator logs.
+    }
+    try {
+      reporter = JSON.parse(await readFile(reporterPath, 'utf8'))
+    } catch {
+      reporter = null
+    }
+  } finally {
+    await rm(temporaryRoot, { recursive: true, force: true })
+  }
+
+  const receipt = createC17SourceCorpusReceipt({
+    sourceHead: options.expectedHead,
+    appSha256,
+    sourceManifest,
+    runnerSucceeded,
+    reporter,
+  })
+  const receiptBytes = Buffer.from(`${JSON.stringify(receipt, null, 2)}\n`, 'utf8')
+  await writeFile(receiptPath, receiptBytes, { encoding: 'utf8', mode: 0o600 })
+  if (receipt.complete !== true) throw new Error('C17 source adversarial corpus did not complete successfully.')
+  return Object.freeze({ path: receiptPath, sha256: sha256(receiptBytes) })
+}
+
+/** Build a bounded source-corpus receipt from the fixed Vitest assertions. */
+export function createC17SourceCorpusReceipt({ sourceHead, appSha256, sourceManifest, runnerSucceeded, reporter }) {
+  const assertions = Array.isArray(reporter?.testResults)
+    ? reporter.testResults.flatMap((result) => Array.isArray(result?.assertionResults) ? result.assertionResults : [])
+    : []
+  const tests = C17_SOURCE_CORPUS_TESTS.map(({ path: relativePath, name }) => ({
+    relativePath,
+    name,
+    passed: runnerSucceeded === true && assertions.some((assertion) => assertion.status === 'passed'
+      && typeof assertion.fullName === 'string' && assertion.fullName.endsWith(name)),
+  }))
+  const totalPassedTests = Number.isSafeInteger(reporter?.numPassedTests) ? reporter.numPassedTests : 0
+  const totalFailedTests = Number.isSafeInteger(reporter?.numFailedTests) ? reporter.numFailedTests : 1
+  const complete = tests.every((test) => test.passed)
+    && totalPassedTests >= C17_SOURCE_CORPUS_TESTS.length
+    && totalFailedTests === 0
+  return Object.freeze({
+    schema: 'sartracker-c17-source-corpus-receipt-v1',
+    sourceHead,
+    appSha256,
+    sourceManifestSha256: sha256Text(JSON.stringify(sourceManifest)),
+    status: complete ? 'PASS' : 'FAIL',
+    complete,
+    modes: ['renderer', 'electron-main'],
+    corpusCaseIds: [...C17_ADVERSARIAL_CASE_IDS],
+    tests,
+    totalPassedTests,
+    totalFailedTests,
+  })
+}
+
 /** Exports sanitized diagnostics and scans the retained file for secrets and profile leakage. */
-async function exportSanitizedDiagnostics(page, profilePath, secret, familyContract = null) {
+async function exportSanitizedDiagnostics(
+  page,
+  profilePath,
+  secret,
+  familyContract = null,
+  c17SourceCorpus = null,
+  sourceHead = null,
+  appSha256 = null,
+) {
   const c17Canaries = familyContract === 'C17' ? {
     directContentSecret: `${secret}-direct-content`,
     directContentPassphrase: `${secret}-direct-passphrase`,
@@ -1695,6 +1803,8 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     nestedArraySecret: `${secret}-nested-array-secret`,
     nestedArrayProfilePath: `${profilePath}/nested-array-profile`,
     urlCredentials: `${secret}-url-credentials`,
+    numericRecoveryCode: C17_NUMERIC_SECRET,
+    longSecretKey: `${secret}-long-key-secret`,
   } : null
   const secretCanaries = c17Canaries === null ? [secret] : Object.values(c17Canaries)
   const adversarialValues = [
@@ -1739,7 +1849,11 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     secret,
     c17Canaries,
   })
-  const contents = await readFile(returnedPath)
+  const exportedPath = path.resolve(returnedPath)
+  const c17OutputScan = familyContract === 'C17' ? scanC17OutputFileSync(exportedPath) : null
+  const contents = c17OutputScan === null
+    ? await readFile(returnedPath)
+    : c17OutputScan.bytes ?? Buffer.alloc(0)
   const text = contents.toString('utf8')
   const canaryMatches = c17Canaries === null ? null : Object.fromEntries(
     Object.entries(c17Canaries).map(([id, value]) => [id, countOccurrences(text, value)]),
@@ -1750,13 +1864,17 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
   const profileVariants = [profilePath, profilePath.replaceAll('\\', '/')]
   const adversarialMatchCount = adversarialValues.reduce((count, value) => count + countOccurrences(text, value), 0)
   const result = {
-    supported: true, requested: true, exported: true, sanitized: adversarialMatchCount === 0,
+    supported: true, requested: true, exported: true,
+    sanitized: adversarialMatchCount === 0 && (c17OutputScan === null || c17OutputScan.complete === true),
     containsSecret: exactSecretMatches > 0, containsProfilePath: profileVariants.some((value) => text.includes(value)),
     exactSecretMatches, adversarialMatchCount,
-    exportedPath: path.resolve(returnedPath),
-    pathWithinProfile: path.resolve(returnedPath).startsWith(path.resolve(profilePath) + path.sep),
+    exportedPath,
+    pathWithinProfile: isPathWithin(exportedPath, profilePath),
   }
   if (familyContract === 'C17') {
+    if (c17SourceCorpus === null || typeof sourceHead !== 'string' || typeof appSha256 !== 'string') {
+      throw new Error('C17 source corpus proof is unavailable for the packaged diagnostics phase.')
+    }
     const canaryManifest = C17_CANARY_IDS.join('\n')
     const leakedCanaryIds = []
     if (canaryMatches.directContentSecret > 0) leakedCanaryIds.push('direct-content-secret')
@@ -1770,19 +1888,36 @@ async function exportSanitizedDiagnostics(page, profilePath, secret, familyContr
     if (canaryMatches.nestedArraySecret > 0) leakedCanaryIds.push('nested-array-secret')
     if (canaryMatches.nestedArrayProfilePath > 0) leakedCanaryIds.push('nested-array-profile-path')
     if (canaryMatches.urlCredentials > 0) leakedCanaryIds.push('url-credentials')
+    if (canaryMatches.numericRecoveryCode > 0) leakedCanaryIds.push('event-numeric-recovery-code')
+    if (canaryMatches.longSecretKey > 0) leakedCanaryIds.push('event-long-secret-key')
     result.canaryManifestSha256 = sha256Text(canaryManifest)
-    result.outputSha256 = sha256(contents)
-    result.outputByteLength = contents.byteLength
+    result.outputSha256 = c17OutputScan.sha256
+    result.outputByteLength = c17OutputScan.byteLength
     result.canaryCount = C17_CANARY_IDS.length
-    result.outputWithinLimit = contents.byteLength <= 1_048_576
+    result.outputWithinLimit = c17OutputScan.complete === true && c17OutputScan.withinLimit === true
     result.positiveControlIds = C17_CANARY_IDS.filter((id) => contents.toString('utf8').includes(c17PositiveControlMarker(id)))
     result.retainedOutputPath = path.join(path.dirname(profilePath), 'c17-sanitized-output.txt')
     result.retainedCanaryManifestPath = path.join(path.dirname(profilePath), 'c17-canary-manifest.txt')
     result.leakedCanaryIds = leakedCanaryIds
+    result.sourceCorpusReceiptPath = c17SourceCorpus.path
+    result.sourceCorpusReceiptSha256 = c17SourceCorpus.sha256
     // Retain both successful and failed raw outputs before disposable profile
-    // cleanup. The independent validator decides whether these bytes are safe.
-    await writeFile(result.retainedOutputPath, contents, { mode: 0o600 })
+    // cleanup. Failed/oversized output is represented only by bounded facts.
+    if (c17OutputScan.complete === true && c17OutputScan.bytes !== null) {
+      await writeFile(result.retainedOutputPath, c17OutputScan.bytes, { mode: 0o600 })
+    }
     await writeFile(result.retainedCanaryManifestPath, canaryManifest, { mode: 0o600 })
+    const retainedScan = c17OutputScan.complete === true
+      ? scanC17OutputFileSync(result.retainedOutputPath)
+      : null
+    result.outputScanIdentity = buildC17OutputScanIdentity({
+      sourceHead,
+      appSha256,
+      exportedPath,
+      retainedOutputPath: result.retainedOutputPath,
+      outputScan: c17OutputScan,
+      retainedScan,
+    })
   }
   return result
 }
@@ -1799,7 +1934,9 @@ export function buildC17DiagnosticEvents({ secret, profilePath, canaries, timest
       fields: {
         password: value('eventPassword', secret),
         profilePath: value('directContentProfilePath', profilePath),
-        c17CanaryControlIds: C17_CANARY_IDS.slice(4, 10).map(c17PositiveControlMarker),
+        c17CanaryControlIds: C17_CANARY_IDS.slice(4).map(c17PositiveControlMarker),
+        recoveryCode: value('numericRecoveryCode', C17_NUMERIC_SECRET),
+        [C17_LONG_SECRET_KEY]: value('longSecretKey', `${secret}-long-key-secret`),
         nested: {
           token: value('eventNestedToken', secret),
           arrayToken: value('nestedArraySecret', secret),
@@ -1844,6 +1981,9 @@ function projectDiagnostics(value) {
       positiveControlIds: value.positiveControlIds,
       retainedOutputPath: value.retainedOutputPath,
       retainedCanaryManifestPath: value.retainedCanaryManifestPath,
+      sourceCorpusReceiptPath: value.sourceCorpusReceiptPath,
+      sourceCorpusReceiptSha256: value.sourceCorpusReceiptSha256,
+      outputScanIdentity: value.outputScanIdentity,
     }),
   }
 }
@@ -1939,6 +2079,13 @@ function normalizeInput(input) {
     ...input, variant, familyContract,
     developmentTestHarness: input.developmentTestHarness === true,
   })
+}
+
+/** Determine whether one canonical path is a strict descendant of another. */
+function isPathWithin(child, parent) {
+  if (typeof child !== 'string' || typeof parent !== 'string') return false
+  const relative = path.relative(path.resolve(parent), path.resolve(child))
+  return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
 }
 
 /** Hashes one byte sequence. */

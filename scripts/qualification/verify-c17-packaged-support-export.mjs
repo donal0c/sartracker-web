@@ -66,6 +66,9 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
     retainedCanaryManifestPath: phase.retainedCanaryManifestPath,
     outputSha256: phase.outputSha256,
     canaryManifestSha256: phase.canaryManifestSha256,
+    sourceCorpusReceiptPath: phase.sourceCorpusReceiptPath,
+    sourceCorpusReceiptSha256: phase.sourceCorpusReceiptSha256,
+    outputScanIdentity: phase.outputScanIdentity ?? null,
   }
   const receipt = {
     schema: 'sartracker-c17-packaged-support-export-v1',
@@ -87,7 +90,12 @@ export function createC17PackagedSupportExportReceipt({ sourceHead, appSha256, v
     canaryManifestSha256: diagnostics.canaryManifestSha256,
     canaryCount: diagnostics.canaryCount,
     positiveControlIds: diagnostics.positiveControlIds,
+    sourceCorpusReceiptPath: diagnostics.sourceCorpusReceiptPath,
+    sourceCorpusReceiptSha256: diagnostics.sourceCorpusReceiptSha256,
+    outputScanIdentity: diagnostics.outputScanIdentity,
     zeroCanary: validation.status === 'PASS' && validation.valid === true
+      && validation.complete === true && validation.coverageComplete === true
+      && Array.isArray(validation.coverageGaps) && validation.coverageGaps.length === 0
       && diagnostics.sanitized === true
       && diagnostics.containsSecret === false
       && diagnostics.containsProfilePath === false

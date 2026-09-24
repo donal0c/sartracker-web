@@ -9,12 +9,11 @@ Release remains **HOLD**. PR45 is merged documentation/control-plane evidence;
 it did not qualify or release Beta 13. No Beta 13 candidate is frozen, and no
 qualification run, tag, publication, or team distribution has occurred.
 
-PR #46 carries the bounded DON-254 Beta 13 claim: controlled team testing with
-synthetic, replayed, or disposable data and an independent primary source. This
-follow-up hardens exact claim matching, missing-attempt rows and release-phase
-admission; it adds no application behavior. The prepared private MBTiles route
-is in scope; map administration and raw licensed-source packaging remain
-next-release work.
+PR #46 is merged at `d48ea1c562233630fc383e0ee21107167dd5d584`. Its successful
+Linux workflow (`35915952562`) is baseline only. DON-254 remains `Done`, while
+its latest issue note records two C17 coverage gaps: adversarial recursive
+sanitization and bounded output identity. The current follow-up addresses only
+those evidence gaps; it does not qualify BCP-17 or change release state.
 
 DON-249/250/251 remain separate, unimplemented capabilities and are recorded as
 `NOT_CLAIMED`, not passed or waived. The complete C00-C29 matrix and applicable
@@ -36,43 +35,50 @@ their distinct gates.
 
 ## Active work and blockers
 
-- Current worktree branch: `codex/beta13-release-scope-control`, based on clean
-  `origin/master` `f2fd1216b64f6363150dbaa0a8fa961f52789345`.
-- PR #46 is the active review request for this work. The current follow-up fixes
-  comma/nested-array claim-scope acceptance, preserves no-attempt C19/C24 rows
-  as `not-run`, treats `SCOPE_LIMITED` as a completed CLI verdict while keeping
-  release/rollout gates false, and covers the reviewed-plan and C27/C00 rejection
-  paths. The two affected hazard rows now reflect the Beta 13 overlay.
-- PR45 is merged at `f2fd1216…`; its master Linux validation run
-  `35892396753` completed successfully at that exact SHA. This is baseline
-  evidence only, not Beta 13 candidate qualification.
-- Linear connector reauthentication failed for DON-249/250/251/254/264. Their
-  live status/comments were not verified or changed; do not infer issue state.
+- Current worktree branch: `codex/don-254-c17-evidence`, based on PR #46's
+  merged `origin/master` commit `d48ea1c562233630fc383e0ee21107167dd5d584`.
+- Draft PR #48 contains reviewed code/test head
+  `3a92e31e19af6cb31dfe9ab7650324c50923f79c`; later commits update this handoff
+  only.
+- The follow-up adds a fixed hostile-value corpus for renderer and Electron
+  sanitizers, descriptor-only traversal that does not invoke getters, and
+  independently bounded/hash-bound output and source-corpus receipts.
+- First independent review found that the packaged validator reopened the export
+  after deleting its temporary profile. The local fix validates the bounded,
+  retained byte snapshot against the original scan facts. Fresh exact-head
+  independent review is clear. Superseded run `35926442042` was canceled when
+  GitHub scheduled the replacement head.
+- Exact-head Linux run `35926950262` succeeded at `3a92e31e`. The packaged C17
+  receipt is `PASS`, `valid:true`, `complete:true`, `coverageComplete:true`,
+  `coverageGaps:[]`, and `zeroCanary:true`; the source corpus and byte-identity
+  receipts are bound to that head and the packaged app hash. This remains
+  development/package evidence, not BCP-17 qualification.
+- PR #46 workflow `35915952562` succeeded at its exact merge SHA. It skipped
+  strict timing/960k, participant backup, Train D validation, tracking soak,
+  and archive lifecycle; it is baseline evidence only.
+- Linear DON-254 is `Done`; the follow-up is evidence work and does not change
+  that status. BCP-17 qualification and release remain on HOLD.
 - Do not contact SAR team members, start qualification, tag/publish, promote,
   or claim field/operational readiness as part of this work.
 
 ## Verification snapshot
 
-Final local source checks on this worktree: the focused follow-up qualification
-suites passed (66 passed, 1 skipped); `npm test -- --no-file-parallelism` passed
-(569 files, 5,837 passed, 19 skipped); `npm run lint` passed; `npm run build`
-passed TypeScript, Vite and bundle budgets; `git diff --check` passed. Build noted the
-repository's existing six-month-old Browserslist data. The generated version
-file was restored after build. GitHub PR run `35903162450` passed at prior PR
-head `d836f01ddcfcdca6265278c206f3013fb8b00816`: full correctness, lint,
-WAR-02B property/rebreak, browser regressions, Linux artifact build, producer
-development checks, packaged C17/map/GPX/breadcrumb/cache/recovery checks, and
-AppImage launch all passed. It skipped strict responsiveness, 960k replay,
-packaged participant backup, independent Repair Train D validation, tracking
-soak, and archive lifecycle; the workflow records Train D qualification as
-deferred. None of these checks is candidate qualification.
+Local focused C17 suites passed (36 tests after the lifecycle fix); lint passed
+after that fix; build and `git diff --check` passed. The earlier local full
+correctness run preceded the final source-receipt and lifecycle corrections.
+Linux run `35926950262` passed at the code/test head `3a92e31e`: full
+correctness, lint, build, rendered browser regressions, packaged C17, map, GPX,
+breadcrumb transport, mission-cache
+restart, legacy recovery, and AppImage smoke. It skipped strict responsiveness,
+the normal 960k replay, participant backup, independent Train D validation,
+tracking soak, and archive lifecycle; those remain distinct gates.
 
 ## Next actions
 
-1. Review PR #46 and complete its required GitHub review; do not merge or run
-   candidate qualification from this follow-up.
-2. Confirm `DON-254`/related Linear state once connector authorization works;
-   until then, leave those states explicitly unverified.
+1. Keep PR #48 draft for review; no merge or BCP-17 qualification is authorized
+   by this evidence follow-up.
+2. Preserve DON-254's `Done` status and the release HOLD. Do not tag, publish,
+   promote, or contact the SAR team.
 
 Detailed earlier receipts remain in [handoff/archive](archive/) and the
 [two-track execution workplan](../docs/two-track-execution-workplan.md).
