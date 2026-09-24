@@ -5,6 +5,9 @@ const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u
 /** The bounded packaged C01 startup-admission proof tier. */
 export const C01_STARTUP_PROOF_MODE = 'packaged-electron-startup-admission'
 
+/** Fixed observation bound for deliberately held startup dependencies. */
+export const C01_HELD_GATE_TIMEOUT_MS = 20_000
+
 /** Fixed C01 startup matrix; every entry must have an independent observation. */
 export const C01_STARTUP_PROFILE_KINDS = Object.freeze([
   'absent-schema',
@@ -469,8 +472,30 @@ function validateHeldGate(scenario, gateKind, failures) {
     failures.push('C01 ' + label + ' cleanup was not positively verified.')
     passed = false
   }
+  if (!validateHeldGateResponse(scenario, label, failures)) passed = false
   if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'faultShellAtMs')) passed = false
   if (!validateUnchangedFiles(scenario.originalFiles, 'C01 ' + label + ' profile', failures)) passed = false
+  return passed
+}
+
+/** Recompute that the held-gate dialog was observed inside the producer's fixed window. */
+function validateHeldGateResponse(scenario, label, failures) {
+  const observedAtMs = scenario.process?.dialogObservedAtMs
+  const passed = scenario.gate?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
+    && scenario.gate?.response === 'native-error-dialog'
+    && scenario.gate?.dialogObserved === true
+    && scenario.gate?.lateDialogAfterTimeout === false
+    && scenario.process?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
+    && scenario.process?.timedOut === false
+    && scenario.process?.dialogObserved === true
+    && scenario.process?.lateDialogAfterTimeout === false
+    && Number.isSafeInteger(observedAtMs)
+    && observedAtMs >= 0
+    && observedAtMs <= C01_HELD_GATE_TIMEOUT_MS
+    && scenario.process?.faultShellAtMs === observedAtMs
+  if (!passed) {
+    failures.push('C01 ' + label + ' dialog response did not satisfy the fixed 20000 ms observation bound.')
+  }
   return passed
 }
 

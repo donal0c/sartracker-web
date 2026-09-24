@@ -196,26 +196,26 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-store-gate': {
         profileKind: 'held-store-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', lockHolder: { pid: 110, closed: true } },
+        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
         cleanup: { lockHolderClosed: true, heldPathRemoved: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 106, closed: true, faultShellAtMs: 1800 },
+        process: { pid: 106, closed: true, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'held-diagnostics-gate': {
         profileKind: 'held-diagnostics-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support' },
+        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 108, closed: true, faultShellAtMs: 1800 },
+        process: { pid: 108, closed: true, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'held-crash-gate': {
         profileKind: 'held-crash-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support' },
+        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 109, closed: true, faultShellAtMs: 1800 },
+        process: { pid: 109, closed: true, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'active-recoverable': {
         profileKind: 'active-recoverable',
@@ -240,6 +240,18 @@ function report(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification C01 startup receipt validator', () => {
+  it('rejects held-gate dialogs first observed after the fixed response deadline', () => {
+    const late = report()
+    const scenario = (late.scenarios as Record<string, Record<string, Record<string, unknown>>>)['held-store-gate']!
+    scenario.process!.dialogObservedAtMs = 20_001
+    scenario.process!.faultShellAtMs = 20_001
+
+    const result = validateStartupContractEvidence('C01', late, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-store-gate.*20.?000|20.?000.*held-store-gate/iu)
+  })
+
   it('requires the observed timeout and preserves late-dialog timeout negatives', () => {
     expect(isBoundedHeldGateTimeoutWithoutAction({
       earlyExit: { timedOut: false }, dialogWindowId: null, forcedKill: true,

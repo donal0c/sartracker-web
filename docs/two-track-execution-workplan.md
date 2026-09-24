@@ -57,7 +57,8 @@ validator share a 20-second response bound. Fresh review of old PR head
 `8cdf6f6` found an unbounded failure-evidence write wait and a receipt validator
 that accepted late dialogs; local repairs are independently reviewed and had
 passed 77 focused tests, full correctness (5,836 passed, 25 skipped), lint and
-build before rebase. They must be reapplied and reverified on current master.
+build before rebase. The fixes are reapplied on current master at
+`70c8c4c3`; post-rebase verification remains pending.
 
 The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
 one post-settlement mutation/close interval against the 200 ms limit. The same

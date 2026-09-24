@@ -14,6 +14,7 @@ const { monitorEventLoopDelay } = require('node:perf_hooks')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 
 const C01_STARTUP_RESPONSE_TIMEOUT_MS = 10_000
+const STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
@@ -1236,7 +1237,7 @@ async function handleStartupFailure(error) {
     // A native dialog may be unavailable in headless validation; retain the
     // non-zero exit even when only best-effort logging is possible.
   }
-  await evidenceWrites
+  await waitForStartupEvidenceWrites(evidenceWrites)
   app.exit(1)
 }
 
@@ -1247,6 +1248,17 @@ function startBestEffortStartupWrite(write) {
   } catch {
     return Promise.resolve()
   }
+}
+
+/** Waits for ordinary evidence writes to finish and bounds only writes that remain pending. */
+function waitForStartupEvidenceWrites(evidenceWrites) {
+  let timeout
+  return Promise.race([
+    evidenceWrites,
+    new Promise((resolve) => {
+      timeout = setTimeout(resolve, STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS)
+    }),
+  ]).finally(() => clearTimeout(timeout))
 }
 
 /** Adds bounded timeout details to the startup event without exposing arbitrary error text. */

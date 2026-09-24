@@ -36,6 +36,7 @@ import { countDescendantElectronRenderers } from '../../build/release-smoke-lib.
 import { generateMissionStoreFixture } from '../../build/seed-mission-store-runtime.js'
 import {
   C01_STARTUP_PROOF_MODE,
+  C01_HELD_GATE_TIMEOUT_MS,
   C01_OVERSIZED_STORE_BYTES,
   C01_STARTUP_PROFILE_KINDS,
   STARTUP_PROBE_DESCRIPTOR,
@@ -736,8 +737,6 @@ async function fillBoundedEnospcVolume(profile) {
   }
 }
 
-const HELD_GATE_TIMEOUT_MS = 20_000
-
 /** Classify a held gate that reached the fixed observation bound without an in-bound response. */
 export function isBoundedHeldGateTimeoutWithoutAction({ earlyExit }) {
   return earlyExit?.timedOut === true
@@ -807,7 +806,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     })
     appStdout = collectChildOutput(appProcess.stdout, appProcess)
     appStderr = collectChildOutput(appProcess.stderr, appProcess)
-    earlyExit = await waitForOwnedProcessOrTimeout(appProcess, HELD_GATE_TIMEOUT_MS, launchStartedAt)
+    earlyExit = await waitForOwnedProcessOrTimeout(appProcess, C01_HELD_GATE_TIMEOUT_MS, launchStartedAt)
     dialogWindowId = earlyExit.dialogWindowId
     dialogObservedAtMs = earlyExit.dialogObservedAtMs
     if (earlyExit.timedOut === true && dialogWindowId === null) {
@@ -838,7 +837,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     ? ''
     : await readFile(path.join(profile, 'crashes', 'crash-log.json'), 'utf8').catch(() => '')
   const actionable = isActionableHeldGateObservation({
-    earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: HELD_GATE_TIMEOUT_MS,
+    earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
   })
   const lateDialogAfterTimeout = earlyExit?.timedOut === true && dialogWindowId !== null
   const processObservation = {
@@ -846,7 +845,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     closed: appProcess === null || appProcess.exitCode !== null || appProcess.signalCode !== null,
     exitCode: appProcess?.exitCode ?? null,
     signal: appProcess?.signalCode ?? null,
-    timeoutMs: HELD_GATE_TIMEOUT_MS,
+    timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
     timedOut: earlyExit?.timedOut ?? null,
     observationElapsedMs: earlyExit?.elapsedMs ?? null,
     forcedKill,
@@ -871,7 +870,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       bounded: setupFailure === null,
       action: actionable ? 'preserve-profile-and-contact-support' : '',
       synthetic: false,
-      timeoutMs: HELD_GATE_TIMEOUT_MS,
+      timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
       response: actionable
         ? 'native-error-dialog'
         : lateDialogAfterTimeout
@@ -893,7 +892,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     cleanup,
     ...(observationFailure === null ? {} : { observationFailure }),
     ...(timedOutWithoutAction
-      ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
+      ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${C01_HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
       : {}),
   }
 }
@@ -930,7 +929,7 @@ async function startStoreLockHolder(databasePath) {
   const stdout = collectChildOutput(child.stdout, child)
   collectChildOutput(child.stderr, child)
   try {
-    await waitForChildOutput(stdout, 'C01_STORE_LOCK_READY', HELD_GATE_TIMEOUT_MS)
+    await waitForChildOutput(stdout, 'C01_STORE_LOCK_READY', C01_HELD_GATE_TIMEOUT_MS)
   } catch (error) {
     child.kill('SIGTERM')
     await waitForChildClose(child, 2_000).catch(() => undefined)

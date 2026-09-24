@@ -1811,12 +1811,9 @@ describe('Electron main startup', () => {
     await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
   })
 
-  it('keeps a store startup fault actionable when crash evidence writes are held', async () => {
+  it('exits after the bounded wait when startup failure evidence writes stay held', async () => {
     vi.useFakeTimers()
-    let releaseHeld: (() => void) | undefined
-    const held = new Promise<void>((resolve) => {
-      releaseHeld = resolve
-    })
+    const held = new Promise<void>(() => {})
     const startupError = new Error('SQLITE_BUSY: mission store startup lock is held.')
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
@@ -1840,7 +1837,7 @@ describe('Electron main startup', () => {
 
     require('../../electron/main.cjs')
     await Promise.resolve()
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(9_999)
 
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
@@ -1852,8 +1849,8 @@ describe('Electron main startup', () => {
     }))
     expect(electronMock.app.exit).not.toHaveBeenCalled()
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
-    releaseHeld?.()
-    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
   })
 
   it('keeps arbitrary startup-failure detail out of the operator dialog [DON-260]', async () => {
