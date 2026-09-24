@@ -56,6 +56,12 @@ their distinct gates.
 - PR #46 workflow `35915952562` succeeded at its exact merge SHA. It skipped
   strict timing/960k, participant backup, Train D validation, tracking soak,
   and archive lifecycle; it is baseline evidence only.
+- Post-merge review fix (on `master`, after PR #48): the C17 receipt now
+  classifies a retained export as an observed privacy `FAIL` when it leaks any
+  fixed canary (numeric recovery code, profile path), not only the pass-phrase.
+  Before this, those leaks were rejected as `INVALID_EVIDENCE`. Either way
+  eligibility is unchanged. Focused qualification + sanitizer suites
+  (611 passed, 19 skipped) and lint passed locally.
 - Linear DON-254 is `Done`; the follow-up is evidence work and does not change
   that status. BCP-17 qualification and release remain on HOLD.
 - Do not contact SAR team members, start qualification, tag/publish, promote,

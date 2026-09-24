@@ -726,10 +726,20 @@ function isObservedC17PrivacyFailure(phase, binding) {
       && output.byteLength === phase.outputByteLength
       && manifest.sha256 === phase.canaryManifestSha256
       && manifest.bytes.equals(expectedManifest)
-      && output.bytes.toString('utf8').includes(PASS_PHRASE)
+      && retainedTextLeaksC17Secret(output.bytes.toString('utf8'), binding.profilePath)
   } catch {
     return false
   }
+}
+
+/**
+ * Detect any fixed C17 secret in retained text: the shared pass-phrase, every
+ * canary value (including the numeric recovery code), or a bare profile path.
+ */
+function retainedTextLeaksC17Secret(text, profilePath) {
+  const profileVariants = [profilePath, profilePath.replaceAll('\\', '/')]
+  return [PASS_PHRASE, ...Object.values(c17CanaryValues(profilePath)).flat(), ...profileVariants]
+    .some((value) => text.includes(value))
 }
 
 /** Keep a well-formed C17 product predicate failure distinct from identity/custody errors. */

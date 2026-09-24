@@ -588,6 +588,39 @@ describe('independent packaged composite family receipts', () => {
   })
 
   it.each([
+    ['numeric recovery code', () => `recoveryCode: ${C17_NUMERIC_SECRET}\n`],
+    ['profile path', () => `path: ${expectedBase.profilePath}/direct-content-profile\n`],
+  ])('labels a C17 export leaking only the %s canary as an observed FAIL, not malformed evidence', (_label, leakText) => {
+    const c17 = copy(report())
+    const rawLeak = Buffer.from(leakText(), 'utf8')
+    expect(rawLeak.toString('utf8')).not.toContain('C28-Composite-Archive-9!x')
+    writeFileSync(retainedDiagnosticPath, rawLeak, { mode: 0o600 })
+    Object.assign(c17.phases.sanitizedDiagnostics as JsonObject, {
+      sanitized: false,
+      canaryManifestSha256: createHash('sha256').update(retainedCanaryManifestBytes).digest('hex'),
+      outputSha256: createHash('sha256').update(rawLeak).digest('hex'),
+      outputByteLength: rawLeak.byteLength,
+      canaryCount: C17_CANARY_IDS.length,
+      positiveControlIds: [...C17_CANARY_IDS],
+      outputWithinLimit: true,
+      retainedOutputPath: retainedDiagnosticPath,
+      retainedCanaryManifestPath,
+      leakedCanaryIds: [],
+    })
+    Object.assign(c17.diagnostics as JsonObject, c17.phases.sanitizedDiagnostics as JsonObject)
+    try {
+      expect(validateCompositeFamilyReceipt(c17, expected('C17'))).toMatchObject({
+        valid: false,
+        status: 'FAIL',
+        observedProductFailure: true,
+        evidenceComplete: true,
+      })
+    } finally {
+      writeFileSync(retainedDiagnosticPath, retainedDiagnosticBytes, { mode: 0o600 })
+    }
+  })
+
+  it.each([
     ['source proof', 'C03', (value: JsonObject) => { value.proofKind = 'source-suite-v1' }],
     ['browser proof', 'C03', (value: JsonObject) => { value.proofKind = 'browser-suite-v1' }],
     ['mission substitution', 'C03', (value: JsonObject) => {
