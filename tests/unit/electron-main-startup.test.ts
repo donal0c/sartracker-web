@@ -1149,6 +1149,60 @@ describe('Electron main startup', () => {
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
   })
 
+  it('shows the fatal error and exits when crash evidence recording rejects', async () => {
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn().mockRejectedValue(new Error('startup evidence utility process exited')),
+    }
+    const runtimeLog = {
+      append: vi.fn(async () => undefined),
+      readRecent: vi.fn(async () => []),
+    }
+    const markRendererUnavailable = vi.fn(async () => undefined)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable,
+            markRendererAvailable: vi.fn(),
+            dispose: vi.fn(),
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    let unhandledRejectionHandler: ((reason: unknown) => void) | undefined
+    await vi.waitFor(() => {
+      unhandledRejectionHandler = processOn.mock.calls
+        .filter(([eventName]) => eventName === 'unhandledRejection')
+        .map(([, listener]) => listener)
+        .find((listener) => String(listener).includes('handleFatalMainProcessError')) as
+        | ((reason: unknown) => void)
+        | undefined
+      expect(unhandledRejectionHandler).toBeDefined()
+    })
+
+    unhandledRejectionHandler?.(new Error('fatal runtime fault'))
+
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker runtime fault',
+      expect.stringContaining('fault details may not have been saved'),
+    ))
+    expect(crashLog.record).toHaveBeenCalledOnce()
+    expect(markRendererUnavailable).toHaveBeenCalledOnce()
+    expect(electronMock.app.relaunch).toHaveBeenCalledOnce()
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+  })
+
   it('does not relaunch a fatal runtime when the durable evidence fence fails', async () => {
     const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
     const electronMock = createElectronMock(vi.fn(), undefined, true)

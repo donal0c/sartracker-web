@@ -639,19 +639,23 @@ async function handleFatalMainProcessError(input) {
       : input.kind === 'unhandledRejection'
         ? `Unhandled rejection: ${String(input.error)}`
         : 'Uncaught exception'
-  await input.crashLog.record({
-    kind: input.kind,
-    summary,
-    detail:
-      input.error instanceof Error && typeof input.error.stack === 'string'
-        ? input.error.stack
-        : undefined,
-  })
-  await input.runtimeLog.append({
-    level: 'error',
-    event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
-    fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
-  })
+  const [crashEvidence, runtimeEvidence] = await Promise.allSettled([
+    Promise.resolve().then(() => input.crashLog.record({
+      kind: input.kind,
+      summary,
+      detail:
+        input.error instanceof Error && typeof input.error.stack === 'string'
+          ? input.error.stack
+          : undefined,
+    })),
+    Promise.resolve().then(() => input.runtimeLog.append({
+      level: 'error',
+      event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
+      fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
+    })),
+  ])
+  const evidenceWasSaved =
+    crashEvidence.status === 'fulfilled' && runtimeEvidence.status === 'fulfilled'
 
   const rendererTeardownCoordinator =
     electronRuntimeContext.rendererTeardownCoordinator
@@ -667,7 +671,9 @@ async function handleFatalMainProcessError(input) {
   try {
     dialog.showErrorBox(
       'SAR Tracker runtime fault',
-      'SAR Tracker hit a fatal runtime fault. The fault has been logged and the app will relaunch so operators get a clean runtime.',
+      evidenceWasSaved
+        ? 'SAR Tracker hit a fatal runtime fault. Diagnostic evidence was saved and the app will relaunch so operators get a clean runtime.'
+        : 'SAR Tracker hit a fatal runtime fault. Diagnostic evidence could not be confirmed, so the fault details may not have been saved. The app will relaunch so operators get a clean runtime.',
     )
   } catch {
     // showErrorBox is unavailable in some headless/test contexts.

@@ -166,32 +166,36 @@ both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
 timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
 CI and fresh review remain pending; keep PR #47 draft.
 
-**C01 current PR follow-up — 2026-09-25:** PR #47 remains draft at
-`f35cb23266e6ef4799503741e627d2408e776f3c`; exact-head Linux run `36098634511`
-failed the C01 candidate producer check because the dismissed fault window was
-followed by harness cleanup rather than product exit. The local repair routes
-runtime/crash log I/O through an Electron utility process, wires sender-checked
-IPC for fault-window dismissal, and reaps a stuck writer before `app.exit(1)`.
-The 10-second startup watchdog starts after Electron readiness; failure
-evidence gets up to 10 seconds after dismissal. Utility-process readiness gets
-the same ten-second allowance. If fork or initialization fails, a named
-watchdog stage surfaces the error and Electron main does not fall back to
-direct crash-log I/O.
+**C01 current PR follow-up — 2026-09-25:** PR #47 remains draft. Exact-head
+Linux run `36098634511` failed because the dismissed fault window was followed
+by harness cleanup rather than product exit. The repair routes runtime/crash
+log I/O through an Electron utility process, wires sender-checked IPC for
+fault-window dismissal, and reaps a stuck writer before `app.exit(1)`. The
+10-second startup watchdog starts after Electron readiness; failure evidence
+gets up to 10 seconds after dismissal. Utility-process readiness gets the same
+ten-second allowance. If fork or initialization fails, a named watchdog stage
+surfaces the error and Electron main does not fall back to direct crash-log
+I/O.
 
-On the current local source, Linux packaged development probes pass: held
-diagnostics exits code 1 with no signal or harness kill (10,078 ms after
-dismissal); held crash-log `fsync` resumes after dismissal, writes the failure
-record, leaves no temp file, and exits code 1 (886 ms). These are development
-mechanics checks, not exact-head CI or C01 qualification. After the final
-helper-timeout adjustment, startup-focused tests pass (66/66), as do lint,
-Linux packaging and both focused Linux probes. The preceding full strict suite
-passed `npm test -- --maxWorkers=4` (5,937 passed, 19 skipped); its earlier
-attempt measured 216 ms in the existing 200 ms mission-evidence guard, while
-the isolated test and subsequent full run passed. macOS packaging passed
-before the timeout-only adjustment. `app.whenReady()` and synchronous SQLite
-open/migration remain outside the watchdog. Commit/push, exact-head Linux CI,
-and fresh review remain pending; keep PR #47 draft and DON-179 In Review. No
-C01 qualification is claimed.
+Linux packaged development probes passed on that repair: held diagnostics
+exited code 1 with no signal or harness kill (10,078 ms after dismissal); held
+crash-log `fsync` resumed after dismissal, wrote the failure record, left no
+temp file, and exited code 1 (886 ms). These are development mechanics checks,
+not C01 qualification. Fresh review then found that a rejected crash-log write
+could leave fatal handling unhandled before the operator dialog. The follow-up
+now settles crash/runtime evidence writes independently and tells the operator
+when evidence could not be confirmed. Its regression failed before the change
+with no dialog and an unhandled rejection; the complete startup test file now
+passes (60/60), as does lint. Linux run `36110808782` was still in progress on
+preceding commit `ace6dc0` when this edge was found; it cannot verify the final
+follow-up. Exact-head Linux CI and fresh review remain required. `app.whenReady()`
+and synchronous SQLite open/migration remain outside the watchdog; DON-179
+remains In Review; no C01 qualification is claimed.
+
+The preceding full strict suite passed `npm test -- --maxWorkers=4` (5,937
+passed, 19 skipped); its earlier attempt measured 216 ms in the existing 200 ms
+mission-evidence guard, while the isolated test and subsequent full run
+passed. No responsiveness threshold changed.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it
