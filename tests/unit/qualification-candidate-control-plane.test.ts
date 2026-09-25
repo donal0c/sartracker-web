@@ -165,6 +165,11 @@ describe('qualification candidate control plane', () => {
     }).join(' ')).toMatch(/storage-mission/iu)
     expect(validateBindingCoverage({
       ...base,
+      requiredContracts: ['C15'],
+      bindings: [{ contractId: 'C15', variantId: 'private-offline-map-appimage', adapterId: 'package.reviewed', receiptValidatorId: 'package.receipt', proofMode: 'ci-appimage', mandatory: true }],
+    }).join(' ')).toMatch(/private-map.*fixture/iu)
+    expect(validateBindingCoverage({
+      ...base,
       requiredContracts: ['C07'],
       bindings: [{ contractId: 'C07', variantId: 'paging-2m-1gib', adapterId: 'package.reviewed', receiptValidatorId: 'package.receipt', proofMode: 'installed-deb', mandatory: true }],
     }).join(' ')).toMatch(/paging-2m-1gib.*fixture/iu)
@@ -205,6 +210,8 @@ describe('qualification candidate control plane', () => {
     const blockers = validateBindingCoverage({ ...base, bindings: [...c25Variants, ...c28Bindings] }).join(' ')
     expect(blockers).toMatch(/fixed mandatory candidate variant C25:field-2m-installed/u)
     expect(blockers).toMatch(/fixed mandatory candidate variant C28:routine-installed/u)
+    expect(blockers).toMatch(/fixed mandatory candidate variant C15:private-offline-map-appimage/u)
+    expect(blockers).toMatch(/fixed mandatory candidate variant C15:private-offline-map-installed/u)
 
     const calibrationBlockers = validateBindingCoverage({
       ...base,

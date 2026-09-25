@@ -343,7 +343,8 @@ function normalizePosition(value, key) {
     typeof value.lat !== 'number' || !Number.isFinite(value.lat) ||
     value.lat < -90 || value.lat > 90 ||
     typeof value.lon !== 'number' || !Number.isFinite(value.lon) ||
-    value.lon < -180 || value.lon > 180
+    value.lon < -180 || value.lon > 180 ||
+    !['live', 'cache'].includes(value.data_origin)
   ) {
     throw invalidResult('chunk page', 'position is invalid')
   }
@@ -354,6 +355,7 @@ function normalizePosition(value, key) {
     timestamp: value.timestamp,
     lat: value.lat,
     lon: value.lon,
+    data_origin: value.data_origin,
   }
 }
 

@@ -8,11 +8,62 @@ import {
   createDeterministicId,
   createFixturePlan,
   fixtureManifestPath,
+  fixtureGeneratorVersionForPlan,
   listFixturePresets,
   parseSeedMissionStoreArgs,
 } from '../../build/seed-mission-store-lib.js'
 
 describe('mission-store fixture plans [DON-242]', () => {
+  it.each([
+    ['bcp-960k-paging', 960_000],
+    ['bcp-2m-paging', 2_000_000],
+    ['bcp-field-37gb', 4_000_000],
+  ])('declares %s as a separate synthetic complete-backfill paging scenario [DON-254]', (preset, positionCount) => {
+    const plan = createFixturePlan(preset)
+    expect(plan).toMatchObject({ positionCount, backfillScenario: 'synthetic-complete' })
+    expect(fixtureGeneratorVersionForPlan(plan)).toBe(6)
+    expect(createBreadcrumbProgrammeScenario(plan).participantBackfillWindows.every((window) => window.completed)).toBe(true)
+    expect(createBreadcrumbProgrammeScenario(createFixturePlan('bcp-960k')).participantBackfillWindows.filter((window) => !window.completed)).toHaveLength(1)
+    expect(buildFixtureManifest({ plan, databaseBytes: 4_000_000_000,
+      rowCounts: { positions: positionCount, deviceUpdatedEvents: 0, positionRecordedEvents: 0, backupEvents: 0 },
+      tableBytes: {},
+    }).workload.backfillScenario).toBe('synthetic-complete')
+    expect(createFixturePlan('bcp-960k')).not.toHaveProperty('backfillScenario')
+    expect(createFixturePlan('bcp-2m')).not.toHaveProperty('backfillScenario')
+    for (const scenarioPlan of [plan, createFixturePlan('bcp-960k'), createFixturePlan('bcp-2m')]) {
+      const manifest = buildFixtureManifest({ plan: scenarioPlan, databaseBytes: 4_000_000_000,
+        rowCounts: {}, tableBytes: {}, scenario: createBreadcrumbProgrammeScenario(scenarioPlan) })
+      expect(manifest.scenario.participantBackfillWindows).toEqual([
+        { deviceId: 'synthetic-device-096', completed: true },
+        { deviceId: 'synthetic-device-095', completed: scenarioPlan.backfillScenario === 'synthetic-complete' },
+      ])
+    }
+  })
+  it('defines bounded field paging from BCP fixes and declared historical audit records [DON-254]', () => {
+    const plan = createFixturePlan('bcp-field-37gb')
+    expect(plan).toMatchObject({
+      mode: 'breadcrumb-programme', positionCount: 4_000_000,
+      deviceCount: 100, activePositionDeviceCount: 100, outingCount: 12,
+      minimumDatabaseBytes: 3_700_000_000,
+      legacyPositionAudit: true,
+      positionRecordedEventCount: 3_999_988,
+    })
+    expect(plan.positionCount - 12).toBeLessThanOrEqual(4_000_000)
+    expect(fixtureGeneratorVersionForPlan(plan)).toBe(6)
+    expect(fixtureGeneratorVersionForPlan(createFixturePlan('bcp-2m'))).toBe(5)
+    expect(fixtureGeneratorVersionForPlan(createFixturePlan('field'))).toBe(2)
+    expect(() => buildFixtureManifest({ plan, databaseBytes: 3_699_999_999, rowCounts: {} }))
+      .toThrow(/minimum.*3700000000/iu)
+    expect(buildFixtureManifest({
+      plan, databaseBytes: 3_700_000_000, rowCounts: {
+        positions: 4_000_000, deviceUpdatedEvents: 0, positionRecordedEvents: 3_999_988, backupEvents: 0,
+      }, tableBytes: {},
+    })).toMatchObject({
+      generatorVersion: 6, syntheticDataOnly: true,
+      workload: { storageProfile: 'synthetic-beta11-position-audit-echoes',
+        minimumDatabaseBytes: 3_700_000_000, realPositionRows: 4_000_000, redundantTelemetryRows: 3_999_988 },
+    })
+  })
   it('defines byte-scale presets for developer, CI, local, and field validation', () => {
     expect(createFixturePlan('small')).toMatchObject({
       preset: 'small',

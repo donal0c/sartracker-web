@@ -5,6 +5,18 @@ const context = { app: '/owned/candidate.AppImage', evidence: '/owned/evidence',
   sourceSha: 'a'.repeat(40), fixture: '/owned/copy.sqlite' }
 
 describe('fixed packaged qualification commands', () => {
+  it('routes private-map supplements separately and requires their bound map path [DON-254]', () => {
+    for (const [suffix, proofMode] of [['appimage', 'ci-appimage'], ['installed', 'installed-deb']]) {
+      const input = { ...context, variantId: `private-offline-map-${suffix}`, proofMode, privateMap: '/private/input.mbtiles' }
+      const command = compilePackageCommand('C15', input)
+      expect(command.script).toBe('scripts/qualification/private-map-probe.mjs')
+      expect(command.report).toBe('private-map-report.json')
+      expect(command.args).toEqual([context.app, context.evidence, input.privateMap])
+      expect(() => compilePackageCommand('C15', { ...input, privateMap: undefined })).toThrow(/private map/iu)
+    }
+    expect(compilePackageCommand('C15', { ...context, variantId: 'official-offline-map' }).script)
+      .toBe('scripts/electron-official-map-qualification-smoke.mjs')
+  })
   it('normalizes only reviewed tier suffixes and preserves proof-tier binding', () => {
     expect(normalizePackagedVariant('C28', 'routine-appimage', 'ci-appimage')).toEqual({
       outerVariantId: 'routine-appimage', producerVariantId: 'routine', tier: 'ci-appimage',

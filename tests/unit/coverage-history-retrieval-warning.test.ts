@@ -37,8 +37,10 @@ it('must revoke all-mission-history completion when actual history reconciliatio
     INSERT INTO devices VALUES ('device-row-1', 'mission-1', '1');
     INSERT INTO mission_participants VALUES ('participant-1', 'mission-1', 'device', '1', NULL, NULL);
     INSERT INTO participant_backfill_checkpoints VALUES ('mission-1', 1);
-    INSERT INTO positions VALUES ('position-1', 'mission-1', '1', '1', '2026-08-24T08:00:00.000Z', 52, -9.7, 'fix');
-    INSERT INTO positions VALUES ('position-100', 'mission-1', '1', '100', '2026-08-24T09:00:00.000Z', 52.001, -9.701, 'fix');
+    INSERT INTO positions (id, mission_id, device_id, source_position_id, timestamp, lat, lon, timestamp_source)
+      VALUES ('position-1', 'mission-1', '1', '1', '2026-08-24T08:00:00.000Z', 52, -9.7, 'fix');
+    INSERT INTO positions (id, mission_id, device_id, source_position_id, timestamp, lat, lon, timestamp_source)
+      VALUES ('position-100', 'mission-1', '1', '100', '2026-08-24T09:00:00.000Z', 52.001, -9.701, 'fix');
     INSERT INTO coverage_chunks VALUES ('mission-1', '1', 'unassigned', '', 1, 1, 2, 'digest', '2026-08-24T08:00:00.000Z', '2026-08-24T09:00:00.000Z', '2026-08-24T09:00:00.000Z');
     UPDATE coverage_missions SET enumerated = 1;
   `)

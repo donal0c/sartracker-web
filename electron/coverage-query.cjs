@@ -481,7 +481,7 @@ function createCoverageRowsQuery(database, missionId, key, cursor = null, limit 
     const endParams = outing.ended_at === null ? [] : [outing.ended_at]
     return {
       statement: database.prepare(`SELECT position.id, position.source_position_id,
-          position.device_id, position.timestamp, position.lat, position.lon
+          position.device_id, position.timestamp, position.lat, position.lon, position.data_origin
         FROM positions AS position
         WHERE position.mission_id = ? AND position.device_id = ?
           AND position.timestamp_source = 'fix'
@@ -502,7 +502,7 @@ function createCoverageRowsQuery(database, missionId, key, cursor = null, limit 
   }
   return {
     statement: database.prepare(`SELECT position.id, position.source_position_id,
-        position.device_id, position.timestamp, position.lat, position.lon
+        position.device_id, position.timestamp, position.lat, position.lon, position.data_origin
       FROM positions AS position
       WHERE position.mission_id = ? AND position.device_id = ?
         AND position.timestamp_source = 'fix'${cursorSql}

@@ -86,6 +86,7 @@ type CoverageChunk = CoverageKey & {
 }
 
 type PositionRow = {
+  readonly data_origin: string
   readonly id: string
   readonly source_position_id: string | null
   readonly device_id: string
@@ -352,6 +353,25 @@ describe('Electron coverage query', () => {
     )
   })
 
+  it('preserves stored provenance through outing and unassigned coverage pages [DON-254]', () => {
+    seedMissionModel(database)
+    database.exec(`UPDATE positions SET data_origin = CASE id
+      WHEN 'position-1' THEN 'live' ELSE 'cache' END;
+      INSERT INTO coverage_chunks (mission_id, device_id, period_kind, period_id, content_rev, built_rev, updated_at)
+      VALUES ('mission-1', 'device-1', 'outing', 'outing-1', 1, NULL, '2026-08-24T12:00:00.000Z'),
+        ('mission-1', 'device-1', 'unassigned', '', 1, NULL, '2026-08-24T12:00:00.000Z')`)
+    for (const key of [
+      { device_id: 'device-1', period_kind: 'outing', period_id: 'outing-1' },
+      { device_id: 'device-1', period_kind: 'unassigned', period_id: '' },
+    ] as const) {
+      const page = readCoverageChunkPage(database, { missionId: 'mission-1', key, expectedContentRev: 1, limit: 100 })
+      expect(page.positions.length).toBeGreaterThan(0)
+      for (const row of page.positions) {
+        expect(row.data_origin).toBe(database.prepare('SELECT data_origin FROM positions WHERE id = ?').get(row.id)?.data_origin)
+      }
+    }
+  })
+
   it('rejects only a moved chunk revision and keeps logical identity stable when pages shift', () => {
     seedMissionModel(database)
     database.exec(`INSERT INTO coverage_chunks (
@@ -430,7 +450,7 @@ function createSchema(database: Database): void {
     CREATE TABLE positions (
       id TEXT PRIMARY KEY, mission_id TEXT NOT NULL, device_id TEXT NOT NULL,
       source_position_id TEXT, timestamp TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,
-      timestamp_source TEXT DEFAULT 'fix'
+      timestamp_source TEXT DEFAULT 'fix', data_origin TEXT NOT NULL DEFAULT 'live'
     );
     CREATE INDEX idx_positions_mission_device_timestamp
       ON positions(mission_id, device_id, timestamp);
