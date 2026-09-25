@@ -34,7 +34,7 @@ export function inspectHeldGateDevelopment(report, gateKind) {
   }
   const actionable = scenario?.observed === 'actionable-fault' && typeof scenario.gate?.action === 'string'
     && scenario.gate.action.length > 0
-    && scenario.gate.response === 'native-error-dialog'
+    && scenario.gate.response === 'startup-fault-window'
     && scenario.gate.dialogObserved === true
     && scenario.process.dialogObserved === true
     && scenario.process.timedOut === false
@@ -71,7 +71,7 @@ export function inspectHeldGateDevelopment(report, gateKind) {
     && scenario.process.forcedKill === (scenario.process.signal === 'SIGKILL')
     && scenario.process.closed === true
   const productFailedToExit = scenario?.observed === 'actionable-fault'
-    && scenario.gate?.response === 'native-error-dialog'
+    && scenario.gate?.response === 'startup-fault-window'
     && scenario.gate.dialogObserved === true
     && scenario.process?.dialogObserved === true
     && scenario.process?.timedOut === false

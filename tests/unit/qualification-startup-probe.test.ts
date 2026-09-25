@@ -11,6 +11,10 @@ import {
   x11ErrorDialogAcknowledgementPoint,
   isWindowInVisibleX11Search,
   isNoVisibleX11WindowSearchResult,
+  isSarTrackerStartupWindowClass,
+  isStartupDialogWindowName,
+  startupDialogWindowSearchArguments,
+  x11StartupFailureCloseButtonCenter,
   waitForDialogDismissal,
   waitForOwnedProcessOrTimeout,
   waitForOwnedProcessExitAfterDialog,
@@ -73,6 +77,11 @@ describe('C01 held-gate product exit observation', () => {
 
   it('recognizes xdotool search exit 1 with no output as no visible dialog', () => {
     expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: '' })).toBe(true)
+    expect(isNoVisibleX11WindowSearchResult({
+      code: 1,
+      stdout: '',
+      stderr: 'X Error: BadWindow during X_QueryTree for a window that closed during the search',
+    })).toBe(true)
     expect(isNoVisibleX11WindowSearchResult({ code: 1, stdout: '', stderr: 'Cannot open display' })).toBe(false)
     expect(isNoVisibleX11WindowSearchResult({ code: 0, stdout: '', stderr: '' })).toBe(false)
     expect(isNoVisibleX11WindowSearchResult({
@@ -81,6 +90,25 @@ describe('C01 held-gate product exit observation', () => {
     expect(isNoVisibleX11WindowSearchResult({
       code: null, signal: 'SIGPIPE', killed: true, stdout: '', stderr: '',
     })).toBe(false)
+  })
+
+  it('recognizes both pre-readiness and post-readiness startup dialog titles', () => {
+    expect(isStartupDialogWindowName('Error')).toBe(true)
+    expect(isStartupDialogWindowName('SAR Tracker could not start')).toBe(true)
+    expect(isStartupDialogWindowName('SAR Tracker')).toBe(false)
+    expect(isStartupDialogWindowName('Other application error')).toBe(false)
+  })
+
+  it('recognizes Linux Electron class casing for the SAR Tracker startup window', () => {
+    expect(isSarTrackerStartupWindowClass('WM_CLASS(STRING) = "sartracker-web", "sartracker-web"')).toBe(true)
+    expect(isSarTrackerStartupWindowClass('WM_CLASS(STRING) = "sartracker-web", "Sartracker-web"')).toBe(true)
+    expect(isSarTrackerStartupWindowClass('WM_CLASS(STRING) = "other-app", "Other App"')).toBe(false)
+  })
+
+  it('builds a valid visible-window search with both startup fault titles', () => {
+    expect(startupDialogWindowSearchArguments()).toEqual([
+      'search', '--onlyvisible', '--name', '^(Error|SAR Tracker could not start)$',
+    ])
   })
 
   it.each(['SIGKILL', 'SIGPIPE'])('does not confirm dialog dismissal when the X11 query ends with %s', async (signal) => {
@@ -119,6 +147,12 @@ describe('C01 held-gate product exit observation', () => {
     expect(() => x11ErrorDialogAcknowledgementPoint(652, 16)).toThrow('C01 refusal dialog geometry is too small.')
   })
 
+  it('targets the close button in the post-readiness startup fault window', () => {
+    expect(x11StartupFailureCloseButtonCenter(620, 360)).toEqual({ x: 310, y: 316 })
+    expect(() => x11StartupFailureCloseButtonCenter(0, 360))
+      .toThrow('C01 startup fault window geometry is too small.')
+  })
+
   it('bounds diagnostic X11 commands and preserves timeout details without treating them as absence', async () => {
     const queryError = Object.assign(new Error('X11 query timed out'), {
       code: null,
@@ -130,7 +164,7 @@ describe('C01 held-gate product exit observation', () => {
     const execute = vi.fn(async () => { throw queryError })
 
     await expect(runBoundedX11DiagnosticCommand(
-      'xdotool', ['search', '--onlyvisible', '--pid', '42'], 300, execute,
+      'xdotool', startupDialogWindowSearchArguments(), 300, execute,
     )).resolves.toMatchObject({
       command: 'xdotool',
       timeoutMs: 300,
@@ -141,7 +175,7 @@ describe('C01 held-gate product exit observation', () => {
       stderr: '',
     })
     expect(execute).toHaveBeenCalledWith(
-      'xdotool', ['search', '--onlyvisible', '--pid', '42'],
+      'xdotool', startupDialogWindowSearchArguments(),
       { timeout: 300, killSignal: 'SIGKILL' },
     )
   })

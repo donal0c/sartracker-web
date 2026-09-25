@@ -59,8 +59,8 @@ export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
     'packaged absent-schema and valid-schema profiles reach the normal shell with the expected current schema',
     'packaged disposable profile with an undecryptable legacy credential reaches the normal shell',
     'packaged corrupt-settings profile reaches the runtime fault shell and exports a bounded support bundle',
-    'packaged corrupt-schema profile reaches the native startup refusal without renderer work',
-    'packaged newer-schema profile shows the native refusal, exits once, starts no renderer and preserves profile bytes',
+    'packaged corrupt-schema profile reaches the startup fault window without renderer work',
+    'packaged newer-schema profile shows the startup fault window, exits once, starts no renderer and preserves profile bytes',
     'packaged oversized profile generates, hashes and launches the fixed 8 MiB and 3.7 GB stores through separate disposable package profiles; other fault paths retain explicit observations or failed attempts',
     'packaged active-recoverable profile exposes the existing mission without data loss',
     'source HEAD/tree, supplied executable, packaged ASAR and Electron runtime identity are retained',
@@ -339,7 +339,7 @@ function validateNativeRefusal(scenario, label, faultKind, failures) {
   let passed = scenario.observed === 'native-startup-fault'
     && scenario.faultKind === faultKind
     && scenario.dialog?.observed === true
-    && scenario.dialog?.windowName === 'Error'
+    && scenario.dialog?.windowName === 'SAR Tracker could not start'
     && scenario.dialog?.operatorTitle === 'SAR Tracker could not start'
   if (!passed) failures.push('C01 ' + label + ' native fault observation is incomplete.')
   if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'dialogAtMs', true)) passed = false
@@ -486,7 +486,7 @@ function validateHeldGate(scenario, gateKind, failures) {
 function validateHeldGateResponse(scenario, label, failures) {
   const observedAtMs = scenario.process?.dialogObservedAtMs
   const passed = scenario.gate?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
-    && scenario.gate?.response === 'native-error-dialog'
+    && scenario.gate?.response === 'startup-fault-window'
     && scenario.gate?.dialogObserved === true
     && scenario.gate?.lateDialogAfterTimeout === false
     && scenario.process?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
@@ -662,10 +662,10 @@ function validateNewerSchema(scenario, expected, failures) {
   if (
     !isRecord(dialog) ||
     dialog.observed !== true ||
-    dialog.windowName !== 'Error' ||
+    dialog.windowName !== 'SAR Tracker could not start' ||
     dialog.operatorTitle !== 'SAR Tracker could not start'
   ) {
-    failures.push('C01 newer-schema native refusal dialog observation is incomplete.')
+    failures.push('C01 newer-schema startup fault window observation is incomplete.')
     passed = false
   }
   if (!isRecord(scenario.process) || scenario.process.exitCode !== 1 || scenario.process.signal !== null) {

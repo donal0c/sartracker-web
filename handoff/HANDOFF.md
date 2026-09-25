@@ -9,26 +9,23 @@ assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 is open and draft. The last exact-head Linux receipt is for remote head
-`5e2d607`; run `36079044261` failed the C01 producer check: diagnostics and
-crash-held dialogs were dismissed, but the app did not exit with code 1 within
-12 seconds; the harness sent SIGKILL. The SQLite-held case exited with code 1.
-Profile digests were unchanged. Packaged checks after the failed producer step
-were skipped. Keep this receipt as history; harness cleanup is not product exit.
-The repair is committed locally; exact-head CI and review have not yet run for
-the new commit.
+PR #47 is open and draft at `719c371d`. Exact-head Linux run `36085152426`
+failed the C01 producer step; later packaged checks were skipped. Diagnostics
+and crash cases had been dismissed but did not exit with code 1; the store case
+exited. Keep that receipt as history; harness cleanup is not product exit.
 
 ## Active work
 
-Uncommitted local repair: after the bounded evidence-write wait, call
-`process.exit(1)` directly; track concurrent diagnostics/crash-state reads as
-distinct watchdog stages; ignore activate/window-close events until the first
-operational window is shown; extend the product-exit observer to 20 seconds.
-Focused startup/watchdog/producer tests pass (75/75), serial correctness passes
-(5,880 passed, 25 skipped), lint and production build pass. Strict `npm test`
-had an under-load 220.3 ms GPX responsiveness result and a 5-second unrelated
-worker-import timeout; both affected tests passed alone. The isolated timing
-result is diagnostic, not qualification.
+Uncommitted C01 repair adds a retained, closeable post-readiness failure window,
+rejects non-regular crash/diagnostics paths before reading, and hardens Linux
+window observation against the verified X11 dismissal race. The 10-second
+watchdog starts after Electron readiness and ends when the operational window
+is shown. Focused tests (134, then 22 for the final observer change), serial
+correctness (5,892 passed, 25 skipped), lint and production build pass. Local
+Linux packaged development calibrations pass for diagnostics, crash and store;
+they are not qualification evidence. Exact-head CI and review have not run for
+these edits. DON-179 remains **In Review** because opt-in upload and private
+retention are outside this repair.
 
 The 10-second watchdog starts after Electron readiness and ends when the
 operational window is shown. `app.whenReady()` and synchronous SQLite open or
@@ -41,8 +38,6 @@ private retention are outside this repair.
 ## Next actions
 
 1. Commit and push the verified repair with DON-179 in the message.
-2. Run exact-head Linux CI. Require all three held-gate cases to dismiss and
-   exit with code 1 without harness signals; inspect every skipped downstream
-   package check.
+2. Run exact-head Linux CI and inspect every skipped downstream package check.
 3. Obtain fresh review on the resulting exact head. Keep PR #47 draft until CI
    and review clear. Do not merge, tag, publish, or release.

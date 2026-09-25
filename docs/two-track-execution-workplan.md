@@ -165,6 +165,18 @@ both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
 timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
 CI and fresh review remain pending; keep PR #47 draft.
 
+**C01 local packaged follow-up — 2026-09-25:** latest remote head remains
+`719c371d5a12b01affcac39e205e3270301222ca`; run `36085152426` failed the
+candidate producer check and skipped downstream packaged checks. The uncommitted
+repair now keeps the operator fault window alive through dismissal, guards
+FIFO-backed evidence paths before reads, and treats the reproduced X11
+`BadWindow` during post-click observation as a closed window. Serial
+correctness passes (574 files, 5,892 passed, 25 skipped), lint and production
+build pass. The locally patched Linux package passes the diagnostics, crash and
+store development held-gate calibrations, with code 1 after dismissal and no
+harness kill. These calibrations are not qualification; commit/push, exact-head
+Linux CI and fresh review remain pending.
+
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it
 cannot make Electron's blocked main process responsive or bound/cancel SQLite

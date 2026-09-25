@@ -63,7 +63,7 @@ function nativeFaultScenario(profileKind: string, faultKind: string, overrides: 
     faultKind,
     dialog: {
       observed: true,
-      windowName: 'Error',
+      windowName: 'SAR Tracker could not start',
       operatorTitle: 'SAR Tracker could not start',
     },
     process: { pid: 110, exitCode: 1, signal: null, dialogAtMs: 1000, exitAfterDialogMs: 220 },
@@ -145,7 +145,7 @@ function report(overrides: Record<string, unknown> = {}) {
         supportedSchemaVersion: 13,
         dialog: {
           observed: true,
-          windowName: 'Error',
+          windowName: 'SAR Tracker could not start',
           operatorTitle: 'SAR Tracker could not start',
         },
         process: { exitCode: 1, signal: null, dialogAtMs: 900, exitAfterDialogMs: 220 },
@@ -196,7 +196,7 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-store-gate': {
         profileKind: 'held-store-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
+        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
         cleanup: { lockHolderClosed: true, heldPathRemoved: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 106, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
@@ -204,7 +204,7 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-diagnostics-gate': {
         profileKind: 'held-diagnostics-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
+        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 108, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
@@ -212,7 +212,7 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-crash-gate': {
         profileKind: 'held-crash-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'native-error-dialog', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
+        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 109, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
@@ -383,6 +383,7 @@ describe('qualification C01 startup receipt validator', () => {
 
   it('recomputes each packaged profile from observations and ignores forged result', () => {
     const result = validateStartupContractEvidence('C01', report(), expected)
+    expect(result.failureReasons).toEqual([])
     expect(result.passed).toBe(true)
     expect(result.recomputedPredicates).toEqual({
       absentSchemaAdmission: true,
@@ -592,6 +593,7 @@ describe('qualification C01 startup receipt validator', () => {
 
   it('applies C19 legacy startup boundaries to the shared C01 observations', () => {
     const valid = validateLegacyStartupReceipt(report(), expected)
+    expect(valid.failureReasons).toEqual([])
     expect(valid.passed).toBe(true)
 
     const missingPermission = report()

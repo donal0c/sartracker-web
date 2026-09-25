@@ -1342,10 +1342,7 @@ describe('Electron main startup', () => {
     require('../../electron/main.cjs')
 
     await vi.waitFor(() => {
-      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-        'SAR Tracker could not start',
-        expect.stringContaining(startupError.message),
-      )
+      expectStartupFailureWindow(electronMock, expect.stringContaining(startupError.message))
       expect(startupProcessExit).toHaveBeenCalledWith(1)
     })
 
@@ -1383,14 +1380,51 @@ describe('Electron main startup', () => {
     await Promise.resolve()
     await vi.advanceTimersByTimeAsync(10_000)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/storage diagnostics initialization.*10 seconds.*does not mean the mission data is damaged/iu),
     )
     expect(startupProcessExit).toHaveBeenCalledWith(1)
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     expect(createCrashLog).toHaveBeenCalledTimes(1)
     expect(createRuntimeLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for dismissal of the startup fault window before exiting', async () => {
+    vi.useFakeTimers()
+    const held = new Promise<never>(() => {})
+    const electronMock = createElectronMock(vi.fn(), undefined, true, [], undefined, undefined, false)
+    const crashLog = { hadUncleanShutdown: vi.fn(async () => false), record: vi.fn(async () => undefined) }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: () => held }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expectStartupFailureWindow(
+      electronMock,
+      expect.stringMatching(/storage diagnostics initialization.*10 seconds/iu),
+    )
+    expect(startupProcessExit).not.toHaveBeenCalled()
+
+    const failureWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const closeHandler = failureWindow?.once.mock.calls.find(([eventName]) => eventName === 'closed')?.[1]
+    closeHandler?.()
+    await vi.waitFor(() => expect(startupProcessExit).toHaveBeenCalledWith(1))
+
+    expect(runtimeLog.append).toHaveBeenCalledWith({
+      level: 'error',
+      event: 'startup_failure_dialog_closed',
+      fields: {},
+    })
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
   })
 
   it('uses Electron error reporting for a readiness rejection before application logs exist', async () => {
@@ -1502,8 +1536,8 @@ describe('Electron main startup', () => {
     monotonicNow = 13_500
     await vi.advanceTimersByTimeAsync(1)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/storage diagnostics initialization.*10 seconds/iu),
     )
     expect(runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
@@ -1515,7 +1549,6 @@ describe('Electron main startup', () => {
     }))
     await Promise.resolve()
     expect(startupProcessExit).toHaveBeenCalledWith(1)
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   it('keeps activation and window-close events from bypassing the startup fault response', async () => {
@@ -1556,8 +1589,8 @@ describe('Electron main startup', () => {
 
     await vi.advanceTimersByTimeAsync(10_000)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/storage diagnostics initialization.*10 seconds/iu),
     )
     expect(startupProcessExit).toHaveBeenCalledWith(1)
@@ -1611,13 +1644,12 @@ describe('Electron main startup', () => {
     resolveReady()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/could not open its operational data safely/iu),
     )
     expect(initializeDiagnostics).toHaveBeenCalledOnce()
     expect(startupProcessExit).toHaveBeenCalledWith(1)
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   it('starts independent diagnostics and crash-state reads in parallel', async () => {
@@ -1655,8 +1687,8 @@ describe('Electron main startup', () => {
     expect(crashLog.hadUncleanShutdown).toHaveBeenCalledOnce()
     releaseDiagnostics?.()
     await vi.advanceTimersByTimeAsync(0)
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/could not open its operational data safely/iu),
     )
   })
@@ -1699,12 +1731,11 @@ describe('Electron main startup', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(missionStoreFactory).toHaveBeenCalledOnce()
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/mission store open and migration.*10 seconds/iu),
     )
     expect(startupProcessExit).toHaveBeenCalledWith(1)
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   it('applies the same watchdog to a later active-mission read', async () => {
@@ -1744,13 +1775,12 @@ describe('Electron main startup', () => {
     await vi.advanceTimersByTimeAsync(10_000)
 
     expect(initializeDiagnostics).toHaveBeenCalledOnce()
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/active mission lookup.*10 seconds/iu),
     )
     await Promise.resolve()
     expect(startupProcessExit).toHaveBeenCalledWith(1)
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     expect(createCrashLog).toHaveBeenCalledTimes(1)
     expect(createRuntimeLog).toHaveBeenCalledTimes(1)
   })
@@ -1866,8 +1896,8 @@ describe('Electron main startup', () => {
     )
     await vi.advanceTimersByTimeAsync(10_000)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(new RegExp(`${heldStage}.*10 seconds`, 'iu')),
     )
     expect(startupProcessExit).toHaveBeenCalledWith(1)
@@ -1914,8 +1944,8 @@ describe('Electron main startup', () => {
     monotonicNow = 10_000
     await vi.advanceTimersByTimeAsync(7_500)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/previous crash-state inspection.*10 seconds/iu),
     )
     expect(runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
@@ -1926,7 +1956,6 @@ describe('Electron main startup', () => {
       }),
     }))
     expect(startupProcessExit).toHaveBeenCalledWith(1)
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
   it('shows the C01 startup fault before blocked crash and runtime log writes settle', async () => {
@@ -1958,13 +1987,12 @@ describe('Electron main startup', () => {
     expect(crashLog.hadUncleanShutdown).toHaveBeenCalledOnce()
     expect(crashLog.record).toHaveBeenCalledOnce()
     expect(runtimeLog.append).toHaveBeenCalled()
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/previous crash-state inspection.*10 seconds/iu),
     )
     await vi.advanceTimersByTimeAsync(300)
     expect(startupProcessExit).not.toHaveBeenCalled()
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     releaseHeld?.()
     await vi.waitFor(() => expect(startupProcessExit).toHaveBeenCalledWith(1))
   })
@@ -1997,8 +2025,8 @@ describe('Electron main startup', () => {
     await Promise.resolve()
     await vi.advanceTimersByTimeAsync(9_999)
 
-    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker could not start',
+    expectStartupFailureWindow(
+      electronMock,
       expect.stringMatching(/preserve the profile and contact support/iu),
     )
     expect(crashLog.record).toHaveBeenCalledWith(expect.objectContaining({
@@ -2006,7 +2034,6 @@ describe('Electron main startup', () => {
       summary: expect.stringContaining(startupError.message),
     }))
     expect(electronMock.app.exit).not.toHaveBeenCalled()
-    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
     expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.app.exit).not.toHaveBeenCalled()
@@ -2034,8 +2061,8 @@ describe('Electron main startup', () => {
     require('../../electron/main.cjs')
 
     await vi.waitFor(() => {
-      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-        'SAR Tracker could not start',
+      expectStartupFailureWindow(
+        electronMock,
         'SAR Tracker could not open its operational data safely. Preserve the profile and contact support before retrying. The application will now close.',
       )
       expect(startupProcessExit).toHaveBeenCalledWith(1)
@@ -2328,14 +2355,26 @@ function createElectronMock(
   existingWindows: unknown[] = [],
   windowLoadURL: () => Promise<unknown> = () => Promise.resolve(),
   windowShow: () => void = () => undefined,
+  startupFailureWindowClosesOnShow = true,
 ) {
-  const BrowserWindow = vi.fn(function MockBrowserWindow() {
+  const BrowserWindow = vi.fn(function MockBrowserWindow(options: { title?: string } = {}) {
+    let closeHandler: (() => void) | undefined
     return {
-      close: vi.fn(),
+      close: vi.fn(() => closeHandler?.()),
       destroy: vi.fn(),
-      loadURL: vi.fn(windowLoadURL),
+      loadURL: vi.fn(() => options.title === 'SAR Tracker could not start'
+        ? Promise.resolve()
+        : windowLoadURL()),
       on: vi.fn(),
-      show: vi.fn(windowShow),
+      once: vi.fn((eventName: string, handler: () => void) => {
+        if (eventName === 'closed') closeHandler = handler
+      }),
+      show: vi.fn(() => {
+        windowShow()
+        if (options.title === 'SAR Tracker could not start' && startupFailureWindowClosesOnShow) {
+          closeHandler?.()
+        }
+      }),
       webContents: {
         getURL: vi.fn(() => ''),
         id: 1,
@@ -2387,6 +2426,35 @@ function createElectronMock(
       fork: vi.fn(),
     },
   }
+}
+
+/** Asserts the isolated operator window and its escaped startup message. */
+function expectStartupFailureWindow(
+  electronMock: ReturnType<typeof createElectronMock>,
+  expectedMessage: unknown,
+) {
+  expect(electronMock.BrowserWindow).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'SAR Tracker could not start',
+    show: false,
+    resizable: false,
+    webPreferences: expect.objectContaining({ contextIsolation: true, nodeIntegration: false, sandbox: true }),
+  }))
+  const failureWindow = electronMock.BrowserWindow.mock.results
+    .map((result) => result.value)
+    .find((window) => window.loadURL.mock.calls.some(([url]) => typeof url === 'string' && url.startsWith('data:text/html')))
+  expect(failureWindow).toBeDefined()
+  const pageUrl = failureWindow?.loadURL.mock.calls.find(
+    ([url]) => typeof url === 'string' && url.startsWith('data:text/html'),
+  )?.[0] as string
+  const page = decodeURIComponent(pageUrl.slice(pageUrl.indexOf(',') + 1))
+  const messageMatches = typeof expectedMessage === 'string'
+    ? page.includes(expectedMessage)
+    : expectedMessage !== null
+      && typeof expectedMessage === 'object'
+      && 'asymmetricMatch' in expectedMessage
+      && typeof expectedMessage.asymmetricMatch === 'function'
+      && expectedMessage.asymmetricMatch(page)
+  expect(messageMatches).toBe(true)
 }
 
 /** Returns a distinct profile directory for each startup test invocation. */

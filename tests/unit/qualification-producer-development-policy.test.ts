@@ -17,7 +17,7 @@ describe('development fault mechanics are distinct from qualification', () => {
         observed: 'not-observed',
         gate: {
           kind: 'crash', held: true, bounded: true, synthetic: false, timeoutMs: 20000,
-          response: 'native-error-dialog', dialogObserved: true, dialogDismissed: false,
+          response: 'startup-fault-window', dialogObserved: true, dialogDismissed: false,
         },
         process: {
           pid: 123, closed: true, exitCode: null, signal: 'SIGKILL', forcedKill: true,
@@ -67,7 +67,7 @@ describe('development fault mechanics are distinct from qualification', () => {
     const actionable = { ...report, scenario: { ...report.scenario,
       observed: 'actionable-fault',
       gate: { ...report.scenario.gate, action: 'preserve-profile-and-contact-support',
-        response: 'native-error-dialog', dialogObserved: true },
+        response: 'startup-fault-window', dialogObserved: true },
       process: { ...report.scenario.process, exitCode: 1, signal: null, forcedKill: false,
         dialogObserved: true, dialogDismissed: true, timedOut: false, dialogObservedAtMs: 904,
         productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, faultShellAtMs: 904 },

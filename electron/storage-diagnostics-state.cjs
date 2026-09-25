@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { assertRegularFileOrAbsent } = require('./regular-file-guard.cjs')
 
 const STATE_FILE_NAME = 'storage-diagnostics.json'
 const STATE_VERSION = 1
@@ -52,9 +53,10 @@ function createEmptyMissionState() {
 }
 
 /** Reads and normalizes the bounded checkpoint, tolerating a torn/corrupt file. */
-async function readState(statePath) {
+async function readState(statePath, fileSystem = fs) {
+  if (!(await assertRegularFileOrAbsent(statePath, fileSystem))) return createEmptyState()
   try {
-    const parsed = JSON.parse(await fs.readFile(statePath, 'utf8'))
+    const parsed = JSON.parse(await fileSystem.readFile(statePath, 'utf8'))
     return normalizeState(parsed)
   } catch (error) {
     if (error?.code === 'ENOENT' || error instanceof SyntaxError) {
@@ -96,9 +98,9 @@ async function readStorageFileSizes(userDataPath) {
 /** Reads only allow-listed synthetic fixture metadata in explicit validation mode. */
 async function readValidationMetadata(userDataPath) {
   try {
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(userDataPath, `${DATABASE_FILE_NAME}.manifest.json`), 'utf8'),
-    )
+    const manifestPath = path.join(userDataPath, `${DATABASE_FILE_NAME}.manifest.json`)
+    if (!(await assertRegularFileOrAbsent(manifestPath))) return null
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'))
     const preset = String(manifest?.preset ?? '')
     const fixtureSha256 = String(manifest?.database?.sha256 ?? '').toLowerCase()
     if (!/^[a-z0-9-]{1,40}$/u.test(preset) || !/^[a-f0-9]{64}$/u.test(fixtureSha256)) {

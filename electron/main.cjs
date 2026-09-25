@@ -53,6 +53,7 @@ const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
+const { showStartupFailureWindow } = require('./startup-failure-window.cjs')
 const { createStartupWatchdog, StartupTimeoutError } = require('./startup-watchdog.cjs')
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
@@ -1215,12 +1216,15 @@ async function handleStartupFailure(error) {
   const summary =
     error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown startup failure'
   let evidenceWrites = Promise.resolve()
-  if (app.isReady()) {
+  let failureRuntimeLog
+  const appIsReady = app.isReady()
+  if (appIsReady) {
     const userDataPath = app.getPath('userData')
     const crashLog =
       electronRuntimeContext.crashLog ?? createCrashLog({ userDataPath })
     const runtimeLog =
       electronRuntimeContext.runtimeLog ?? createRuntimeLog({ userDataPath })
+    failureRuntimeLog = runtimeLog
     evidenceWrites = Promise.allSettled([
       startBestEffortStartupWrite(() => crashLog.record({
         kind: 'startupFailure',
@@ -1238,14 +1242,37 @@ async function handleStartupFailure(error) {
     ])
   }
 
+  const content = startupFailureOperatorMessage(error)
   try {
-    dialog.showErrorBox(
-      'SAR Tracker could not start',
-      startupFailureOperatorMessage(error),
-    )
-  } catch {
-    // A native dialog may be unavailable in headless validation; retain the
-    // non-zero exit even when only best-effort logging is possible.
+    if (appIsReady) {
+      await showStartupFailureWindow({
+        BrowserWindow,
+        message: content,
+      })
+    } else {
+      dialog.showErrorBox('SAR Tracker could not start', content)
+    }
+  } catch (dialogError) {
+    if (appIsReady) {
+      startBestEffortStartupWrite(() => failureRuntimeLog.append({
+        level: 'error',
+        event: 'startup_failure_window_failed',
+        fields: { name: dialogError instanceof Error ? dialogError.name : 'Error' },
+      }))
+      try {
+        dialog.showErrorBox('SAR Tracker could not start', content)
+      } catch {
+        // Keep the non-zero exit even when both operator surfaces are unavailable.
+      }
+    }
+  }
+  if (appIsReady && failureRuntimeLog !== undefined) {
+    const dialogClosedWrite = startBestEffortStartupWrite(() => failureRuntimeLog.append({
+      level: 'error',
+      event: 'startup_failure_dialog_closed',
+      fields: {},
+    }))
+    evidenceWrites = Promise.allSettled([evidenceWrites, dialogClosedWrite])
   }
   await waitForStartupEvidenceWrites(evidenceWrites)
   // Exit Node directly: packaged held-gate runs showed app.exit() can leave the

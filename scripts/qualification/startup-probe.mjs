@@ -65,6 +65,11 @@ const SYNTHETIC_BASE_URL = 'https://c01.synthetic.invalid.example'
 const LEGACY_SECRET_CANARY = 'C01_SYNTHETIC_LEGACY_CIPHERTEXT_DO_NOT_EXPORT'
 const REENTRY_SECRET_CANARY = 'C01_SYNTHETIC_REENTRY_SECRET_DO_NOT_EXPORT'
 
+/** Builds a valid xdotool search for the two supported startup-fault titles. */
+export function startupDialogWindowSearchArguments() {
+  return ['search', '--onlyvisible', '--name', '^(Error|SAR Tracker could not start)$']
+}
+
 /** Parse the exact packaged C01 invocation; arbitrary app flags are rejected. */
 export function parseStartupProbeArgs(argv) {
   if (!Array.isArray(argv)) throw new Error('C01 startup probe arguments must be an array.')
@@ -910,9 +915,9 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       synthetic: false,
       timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
       response: actionable
-        ? 'native-error-dialog'
+        ? 'startup-fault-window'
         : lateDialogAfterTimeout
-          ? 'native-error-dialog-after-bound'
+          ? 'startup-fault-window-after-bound'
           : 'no-native-dialog-no-shell',
       dialogObserved: dialogWindowId !== null,
       dialogDismissed,
@@ -1068,9 +1073,12 @@ export async function waitForDialogDismissal(isDialogVisible, timeoutMs, depende
 
 /** Identify xdotool's empty, exit-code-one result for a search with no matching windows. */
 export function isNoVisibleX11WindowSearchResult(error) {
+  const stderr = String(error?.stderr ?? '')
+  const noMatches = stderr.trim() === ''
+  const windowClosedDuringSearch = /BadWindow/u.test(stderr) && /X_QueryTree/u.test(stderr)
   return error?.code === 1
     && String(error.stdout ?? '').trim() === ''
-    && String(error.stderr ?? '').trim() === ''
+    && (noMatches || windowClosedDuringSearch)
 }
 
 /** Parse a successful xdotool search, rejecting empty or malformed window evidence. */
@@ -1100,6 +1108,15 @@ export function x11ErrorDialogAcknowledgementPoint(width, height) {
     x: Math.floor(width / 2),
     y: height - X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX,
   }
+}
+
+/** Return the center of the dedicated startup fault window's close button. */
+export function x11StartupFailureCloseButtonCenter(width, height) {
+  if (!Number.isSafeInteger(width) || width < 2
+      || !Number.isSafeInteger(height) || height < 88) {
+    throw new Error('C01 startup fault window geometry is too small.')
+  }
+  return { x: Math.floor(width / 2), y: height - 44 }
 }
 
 /** Run one best-effort X11 diagnostic command with a strict child-process timeout. */
@@ -1230,12 +1247,13 @@ async function findSarTrackerErrorDialog(pid, timeoutMs = 1_000) {
   try {
     const commandOptions = { timeout: boundedTimeoutMs, killSignal: 'SIGKILL' }
     const { stdout } = await execFileAsync(
-      'xdotool', ['search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$'], commandOptions,
+      'xdotool', startupDialogWindowSearchArguments(), commandOptions,
     )
     for (const windowId of stdout.trim().split(/\s+/u)) {
       if (Date.now() >= deadline) break
       const remainingMs = Math.max(1, deadline - Date.now())
-      if (/^\d+$/u.test(windowId) && await isSarTrackerErrorDialog(windowId, remainingMs)) return windowId
+      if (/^\d+$/u.test(windowId)
+          && await isSarTrackerErrorDialog(windowId, remainingMs, pid)) return windowId
     }
   } catch {
     // Headless environments retain the absence as raw evidence.
@@ -1293,7 +1311,7 @@ async function observeNativeStartupFault(options, profile, report, profileKind, 
     faultKind,
     dialog: {
       observed: dialogWindowId !== null,
-      windowName: 'Error',
+      windowName: 'SAR Tracker could not start',
       operatorTitle: 'SAR Tracker could not start',
     },
     process: {
@@ -1500,7 +1518,7 @@ async function runNewerSchemaScenario(options, profile, report) {
     supportedSchemaVersion: CURRENT_SCHEMA_VERSION,
     dialog: {
       observed: dialogWindowId !== null,
-      windowName: 'Error',
+      windowName: 'SAR Tracker could not start',
       operatorTitle: 'SAR Tracker could not start',
     },
     process: {
@@ -1767,9 +1785,12 @@ async function waitForDialog(appProcess, timeoutMs) {
     }
     try {
       if (!Number.isSafeInteger(appProcess.pid) || appProcess.pid <= 0) throw new Error('Owned startup process PID is unavailable.')
-      const { stdout } = await execFileAsync('xdotool', ['search', '--all', '--onlyvisible', '--pid', String(appProcess.pid), '--name', '^Error$'])
+      const { stdout } = await execFileAsync(
+        'xdotool', startupDialogWindowSearchArguments(),
+      )
       for (const windowId of stdout.trim().split(/\s+/u)) {
-        if (/^\d+$/u.test(windowId) && await isSarTrackerErrorDialog(windowId)) return windowId
+        if (/^\d+$/u.test(windowId)
+            && await isSarTrackerErrorDialog(windowId, 1_000, appProcess.pid)) return windowId
       }
     } catch {
       // Retry until the bounded native-dialog deadline.
@@ -1800,17 +1821,34 @@ async function waitForProcessExit(appProcess, timeoutMs) {
   })
 }
 
-/** Reject unrelated desktop error windows by class and minimum geometry. */
-async function isSarTrackerErrorDialog(windowId, timeoutMs = 1_000) {
+/** Accept only the startup fault titles Electron exposes before and after readiness. */
+export function isStartupDialogWindowName(title) {
+  return title === 'Error' || title === 'SAR Tracker could not start'
+}
+
+/** Accepts the packaged Linux Electron window class regardless of its casing. */
+export function isSarTrackerStartupWindowClass(windowClass) {
+  return typeof windowClass === 'string'
+    && /"sartracker-web",\s*"sartracker-web"/iu.test(windowClass)
+}
+
+/** Reject unrelated desktop windows by title, class, and minimum geometry. */
+async function isSarTrackerErrorDialog(windowId, timeoutMs = 1_000, expectedPid) {
   try {
     const commandOptions = { timeout: timeoutMs, killSignal: 'SIGKILL' }
-    const [{ stdout: windowClass }, { stdout: geometry }] = await Promise.all([
+    const [{ stdout: title }, { stdout: windowClass }, { stdout: geometry }, { stdout: processId }] = await Promise.all([
+      execFileAsync('xdotool', ['getwindowname', windowId], commandOptions),
       execFileAsync('xprop', ['-id', windowId, 'WM_CLASS'], commandOptions),
       execFileAsync('xdotool', ['getwindowgeometry', '--shell', windowId], commandOptions),
+      execFileAsync('xdotool', ['getwindowpid', windowId], commandOptions),
     ])
     const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
     const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
-    return /"sartracker-web",\s*"Sartracker-web"/u.test(windowClass) && width >= 300 && height >= 100
+    return isStartupDialogWindowName(title.trim())
+      && isSarTrackerStartupWindowClass(windowClass)
+      && (expectedPid === undefined || processId.trim() === String(expectedPid))
+      && width >= 300
+      && height >= 100
   } catch {
     return false
   }
@@ -1822,10 +1860,13 @@ async function dismissErrorDialog(windowId, pid, diagnostics = null) {
   const { stdout: observedPid } = await execFileAsync('xdotool', ['getwindowpid', windowId])
   if (observedPid.trim() !== String(pid)) throw new Error('Refusing to dismiss another process\'s dialog.')
   const { stdout: geometry } = await execFileAsync('xdotool', ['getwindowgeometry', '--shell', windowId])
+  const { stdout: windowTitle } = await execFileAsync('xdotool', ['getwindowname', windowId])
   const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
   const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
   if (!Number.isInteger(width) || !Number.isInteger(height)) throw new Error('C01 could not read refusal dialog geometry.')
-  const acknowledgementPoint = x11ErrorDialogAcknowledgementPoint(width, height)
+  const acknowledgementPoint = windowTitle.trim() === 'SAR Tracker could not start'
+    ? x11StartupFailureCloseButtonCenter(width, height)
+    : x11ErrorDialogAcknowledgementPoint(width, height)
   const diagnosticRecord = diagnostics === null ? null : {
     schema: 'sartracker-c01-x11-dismissal-diagnostics-v1',
     gateKind: diagnostics.gateKind,
@@ -1858,7 +1899,7 @@ async function dismissErrorDialog(windowId, pid, diagnostics = null) {
       )
       diagnosticRecord.postFailureCommands = await Promise.all([
         runBoundedX11DiagnosticCommand(
-          'xdotool', ['search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$'], 350,
+          'xdotool', startupDialogWindowSearchArguments(), 350,
           execFileAsync, diagnostics.privateRoot,
         ),
         runBoundedX11DiagnosticCommand(
@@ -1891,7 +1932,7 @@ async function captureX11RootScreenshot(evidenceDir, filename, privateRoot) {
 async function isErrorDialogVisible(windowId, pid, remainingMs) {
   try {
     const { stdout } = await execFileAsync('xdotool', [
-      'search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$',
+      ...startupDialogWindowSearchArguments(),
     ], {
         timeout: boundedX11SearchTimeoutMs(remainingMs),
         killSignal: 'SIGKILL',
