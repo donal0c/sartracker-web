@@ -107,6 +107,31 @@ describe('C00 CI and installation identity adapter', () => {
     }
   })
 
+  it('revalidates retained producer and consumer lineage after a failed-job-only rerun', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'qualification-identity-rerun-'))
+    try {
+      const retained = structuredClone(report())
+      retained.ciMetadata.run.run_attempt = 2
+      retained.ciMetadata.artifact.name = `electron-linux-artifacts-${sourceSha}-attempt-1`
+      retained.ci.provenance.runAttempt = 2
+      const jobs = [
+        { name: 'Build exact Linux package', run_attempt: 1 },
+        { name: 'Packaged Linux checks', run_attempt: 2 },
+      ].map(job => ({ ...job, run_id: 123, head_sha: sourceSha, status: 'completed', conclusion: 'success' }))
+      const reportPath = path.join(directory, 'identity-report.json')
+      await writeFile(reportPath, JSON.stringify({ ...retained, ciMetadata: { ...retained.ciMetadata, jobs } }))
+      const rerunDefinition = structuredClone(definition)
+      rerunDefinition.runtimeInputs.config.ci.provenance.runAttempt = 2
+      await expect(validateRetainedIdentity({ reportPath, status: 'PASS' }, { contractId: 'C00', proofMode: 'ci-appimage' },
+        { definition: rerunDefinition, attemptDirectory: directory })).resolves.toBeDefined()
+      await writeFile(reportPath, JSON.stringify(retained))
+      await expect(validateRetainedIdentity({ reportPath, status: 'PASS' }, { contractId: 'C00', proofMode: 'ci-appimage' },
+        { definition: rerunDefinition, attemptDirectory: directory })).rejects.toThrow(/lineage/)
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it.each([
     ['run source', (value: ReturnType<typeof report>) => { value.ciMetadata.run.head_sha = 'f'.repeat(40) }],
     ['archive hash', (value: ReturnType<typeof report>) => { value.ci.archive.sha256 = 'f'.repeat(64) }],

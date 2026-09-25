@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { validateReplayReceipt } from '../../scripts/qualification/replay-receipts.mjs'
+import { validateReplayReceipt, validateReplayCorrectnessReceipt } from '../../scripts/qualification/replay-receipts.mjs'
 import { createReplayGeometryFixture } from '../../scripts/qualification/replay-probe-fixture.mjs'
 import { isExpectedBlockedReplayRequest } from '../../scripts/qualification/replay-probe-diagnostics.mjs'
 
@@ -25,6 +25,14 @@ function report() {
 }
 
 describe('retained packaged replay oracle', () => {
+  it('keeps development correctness separate from strict candidate timing', () => {
+    const value = { ...report(), maximumFrameGapMs: 200, proofMode: 'development-correctness-only' }
+    expect(validateReplayCorrectnessReceipt(value).passed).toBe(true)
+    expect(validateReplayReceipt(value).passed).toBe(false)
+    expect(validateReplayReceipt({ ...value, maximumFrameGapMs: 20 }).passed).toBe(false)
+    expect(validateReplayCorrectnessReceipt({ ...value, archiveOld: {} }).passed).toBe(false)
+    expect(validateReplayCorrectnessReceipt({ ...value, maximumFrameGapMs: NaN }).passed).toBe(false)
+  })
   it('allows only explicitly blocked HTTP network requests, never local assets or other network errors', () => {
     expect(isExpectedBlockedReplayRequest('https://tiles.example/1.png', 'net::ERR_BLOCKED_BY_CLIENT')).toBe(true)
     expect(isExpectedBlockedReplayRequest('file:///app/replay.js', 'net::ERR_BLOCKED_BY_CLIENT')).toBe(false)

@@ -14,7 +14,7 @@ const SHA256 = /^[a-f0-9]{64}$/u
 export const CANONICAL_INSTALLED_EXECUTABLE_PATH = '/opt/SAR Tracker Electron Validation/sartracker-web'
 
 /** Validate live GitHub metadata; a ZIP identity is deliberately not an installer identity. */
-export function validateCiArtifactProvenance(run, artifact, expected) {
+export function validateCiArtifactProvenance(run, artifact, expected, jobs = []) {
   const releaseWorkflow = run.path === RELEASE_WORKFLOW
   const validWorkflow = releaseWorkflow
     ? /^0\.1\.0-beta\.\d+(?:\.\d+)?$/u.test(expected.version ?? '') && run.head_branch === `electron-v${expected.version}`
@@ -28,7 +28,30 @@ export function validateCiArtifactProvenance(run, artifact, expected) {
       || run.repository?.full_name !== REPOSITORY || run.head_repository?.full_name !== REPOSITORY) {
     throw new Error('Candidate requires the exact successful postmerge repository/workflow/run identity.')
   }
-  if (artifact.id !== expected.artifactId || artifact.name !== (releaseWorkflow ? 'electron-linux-artifacts' : `electron-linux-artifacts-${expected.sourceSha}`)
+  const allowedNames = releaseWorkflow ? ['electron-linux-artifacts']
+    : [...(expected.runAttempt === 1 ? [`electron-linux-artifacts-${expected.sourceSha}`] : []),
+      `electron-linux-artifacts-${expected.sourceSha}-attempt-${expected.runAttempt}`]
+  const prefix = `electron-linux-artifacts-${expected.sourceSha}-attempt-`
+  const suffix = typeof artifact.name === 'string' && artifact.name.startsWith(prefix) ? artifact.name.slice(prefix.length) : ''
+  const packageAttempt = /^[1-9]\d*$/u.test(suffix) ? Number(suffix) : expected.runAttempt
+  if (!releaseWorkflow && Number.isSafeInteger(packageAttempt) && packageAttempt > 0 && packageAttempt < expected.runAttempt) {
+    // Re-run-failed-jobs retains the successful producer's outputs. The reviewed
+    // consumer downloads that exact producer transfer and verifies its SHA256.
+    // Do not accept arbitrary older installers after a later package rebuild.
+    const latest = (name) => jobs.filter(job => job.name === name)
+      .sort((a, b) => b.run_attempt - a.run_attempt)[0]
+    const producer = latest('Build exact Linux package')
+    const consumer = latest('Packaged Linux checks')
+    const validJob = job => job && job.run_id === run.id && job.head_sha === expected.sourceSha
+      && job.status === 'completed' && job.conclusion === 'success'
+      && Number.isSafeInteger(job.run_attempt) && job.run_attempt > 0 && job.run_attempt <= expected.runAttempt
+    if (!validJob(producer) || !validJob(consumer) || producer.run_attempt !== packageAttempt
+        || consumer.run_attempt < packageAttempt) {
+      throw new Error('Earlier candidate package requires successful exact-source producer and consumer job lineage.')
+    }
+    allowedNames.push(`${prefix}${packageAttempt}`)
+  }
+  if (artifact.id !== expected.artifactId || !allowedNames.includes(artifact.name)
       || artifact.expired !== false || artifact.workflow_run?.id !== run.id
       || artifact.workflow_run?.head_sha !== expected.sourceSha
       || typeof artifact.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(artifact.digest)
@@ -36,7 +59,7 @@ export function validateCiArtifactProvenance(run, artifact, expected) {
     throw new Error('Candidate artifact metadata does not match the exact CI archive.')
   }
   return Object.freeze({ repository: REPOSITORY, workflow: run.path, sourceSha: expected.sourceSha,
-    runId: run.id, runAttempt: run.run_attempt, artifactId: artifact.id,
+    runId: run.id, runAttempt: run.run_attempt, packageAttempt, artifactId: artifact.id,
     archiveSha256: artifact.digest.slice(7), archiveBytes: artifact.size_in_bytes })
 }
 
@@ -87,7 +110,11 @@ export async function inspectCiCandidateArchive({ archivePath, outputDirectory, 
       || ![expected.runId, expected.runAttempt, expected.artifactId].every((value) => Number.isSafeInteger(value) && value > 0)) throw new Error('Exact numeric CI identities and source SHA are required before querying GitHub.')
   const run = JSON.parse(await readCommand('gh', ['api', `repos/${REPOSITORY}/actions/runs/${expected.runId}`]))
   const artifact = JSON.parse(await readCommand('gh', ['api', `repos/${REPOSITORY}/actions/artifacts/${expected.artifactId}`]))
-  const provenance = validateCiArtifactProvenance(run, artifact, { ...expected, version })
+  const jobs = run.path === WORKFLOW && run.run_attempt > 1
+    ? JSON.parse(await readCommand('gh', ['api', '--paginate', '--slurp',
+      `repos/${REPOSITORY}/actions/runs/${expected.runId}/jobs?filter=all&per_page=100`])).flatMap(page => page.jobs)
+    : []
+  const provenance = validateCiArtifactProvenance(run, artifact, { ...expected, version }, jobs)
   const archive = await hashCandidateFile(archivePath)
   if (archive.sha256 !== provenance.archiveSha256 || archive.bytes !== provenance.archiveBytes) {
     throw new Error('Downloaded CI ZIP bytes differ from GitHub artifact metadata.')
@@ -114,7 +141,7 @@ export async function inspectCiCandidateArchive({ archivePath, outputDirectory, 
   }
   const archiveAfter = await hashCandidateFile(archive.path)
   if (archiveAfter.sha256 !== archive.sha256) throw new Error('CI archive changed during extraction.')
-  return { schema: 'sartracker-candidate-ci-artifacts-v1', provenance, archive, ciMetadata: { run, artifact },
+  return { schema: 'sartracker-candidate-ci-artifacts-v1', provenance, archive, ciMetadata: { run, artifact, jobs },
     version, installers: installers.map((entry, index) => ({ ...entry, role: index === 0 ? 'ci-appimage' : 'ci-deb' })) }
 }
 

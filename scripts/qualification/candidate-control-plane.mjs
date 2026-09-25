@@ -513,7 +513,7 @@ export async function preflightCampaign({ definition, campaignRoot, currentSourc
   blockers.push(...validateCapabilities(normalized))
   blockers.push(...await checkFreeSpace(normalized.preflight.minimumFreeBytes, campaignRoot))
 
-  if (blockers.length > 0) return preflightBlocked(normalized, uniqueStrings(blockers, 'blockers'))
+  if (blockers.length > 0) return preflightBlocked(normalized, blockers)
 
   let lease
   try {

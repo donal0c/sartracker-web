@@ -15,7 +15,10 @@ export function compileProducerDevelopmentPlan({ app, output, sourceSha, appSha2
     const evidence = path.join(output, id)
     const command = compilePackageCommand(contractId, { app, evidence, sourceSha, appSha256, variantId })
     return Object.freeze({ id, contractId, evidence, mechanicsOnly: false,
-      command: Object.freeze({ ...command, timeoutMs: Math.min(command.timeoutMs, 300000) }),
+      command: Object.freeze({ ...command,
+        args: contractId === 'C10' && variantId === 'known-at-time-replay'
+          ? Object.freeze([...command.args, '--development-correctness-only']) : command.args,
+        timeoutMs: Math.min(command.timeoutMs, 300000) }),
     })
   })
   for (const gateKind of ['diagnostics', 'crash-write', 'crash', 'store']) {

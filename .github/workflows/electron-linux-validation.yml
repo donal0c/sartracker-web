@@ -66,10 +66,10 @@ env:
   EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
-  build:
-    name: Build and inspect Linux Electron artifacts
+  correctness:
+    name: Correctness and browser regressions
     runs-on: ubuntu-22.04
-    timeout-minutes: 160
+    timeout-minutes: 60
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@v4
@@ -220,6 +220,113 @@ jobs:
             tmp/native-runtime-repair/claude-coverage-recovered.png \
             tmp/electron-validation-evidence/native-coverage-browser/
 
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-correctness-evidence-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
+          path: |
+            tmp/electron-validation-evidence
+            tmp/electron-validation-evidence/repair-train-d/receipt.json
+            test-results/war06-mission-scope
+            test-results/war11-map-freshness
+            test-results/train-c
+            tmp/war-11/browser-view-checked.png
+            tmp/war-11/browser-package-removed.png
+            tmp/war-11/browser-negative-result-retained.png
+            tmp/beta-artifacts/tracking-soak-ci
+            tmp/breadcrumb-pr5-evidence
+            tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json
+            tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json
+          if-no-files-found: warn
+
+  package:
+    name: Build exact Linux package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    outputs:
+      sha256: ${{ steps.package_transfer.outputs.sha256 }}
+      source: ${{ steps.package_transfer.outputs.source }}
+      artifact: ${{ steps.package_transfer.outputs.artifact }}
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
+
+      - name: Bind exact source head and tree
+        run: |
+          set -euo pipefail
+          ACTUAL_SOURCE_SHA="$(git rev-parse HEAD)"
+          SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          SOURCE_DIRTY="$(git status --porcelain --untracked-files=all)"
+          if [ "$ACTUAL_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]; then
+            echo "::error::Checked-out source head does not match EXPECTED_SOURCE_SHA."
+            exit 1
+          fi
+          if [ -n "$SOURCE_DIRTY" ]; then
+            echo "::error::Checked-out source tree is not clean."
+            exit 1
+          fi
+          echo "EXPECTED_SOURCE_TREE=$SOURCE_TREE_SHA" >> "$GITHUB_ENV"
+          mkdir -p tmp/electron-validation-evidence
+          export ACTUAL_SOURCE_SHA SOURCE_TREE_SHA
+          node --input-type=module <<'NODE' \
+            > tmp/electron-validation-evidence/source-binding.json
+          const binding = {
+            schema: 'sartracker-electron-linux-source-binding-v1',
+            repositoryHead: process.env.ACTUAL_SOURCE_SHA,
+            repositoryTree: process.env.SOURCE_TREE_SHA,
+            repositoryDirty: false,
+          }
+          process.stdout.write(`${JSON.stringify(binding, null, 2)}\n`)
+          NODE
+
+      - name: Verify complete legacy recovery evidence manifest
+        run: node scripts/verify-legacy-recovery-evidence.mjs
+
+      - name: Install Linux Electron runtime deps
+        run: |
+          # These packages come from Ubuntu, not runner-added Chrome or
+          # Microsoft feeds. Keep their index failures out of this install.
+          test -s /etc/apt/sources.list
+          sudo apt-get -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourceparts=- install -y \
+            dbus-x11 \
+            gnome-keyring \
+            imagemagick \
+            libasound2 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libcups2 \
+            libdrm2 \
+            libfuse2 \
+            libgbm1 \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            mesa-utils \
+            squashfs-tools \
+            openbox \
+            python3 \
+            libgtk-3-0 \
+            libnss3 \
+            libxdamage1 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libxss1 \
+            xdotool \
+            x11-utils \
+            xvfb
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
       - name: Build Electron Linux artifacts
         # This workflow is an internal qualification lane. Release packaging
         # deliberately omits this flag until the programme's final gate.
@@ -245,10 +352,6 @@ jobs:
             git status --short --untracked-files=all
             exit 1
           fi
-
-      - name: Qualify mission evidence replay at the normal 960k envelope
-        if: ${{ github.event_name == 'workflow_dispatch' }}
-        run: npm run breadcrumb-pr5:qualify -- --preset=bcp-960k
 
       - name: Inspect artifacts and native SQLite module
         id: inspect_linux_artifacts
@@ -283,6 +386,163 @@ jobs:
             stat --printf='%n %s bytes\n' "$APPIMAGE"
             stat --printf='%n %s bytes\n' "$DEB"
           } | tee tmp/electron-validation-evidence/artifacts.txt
+
+      - name: Preserve exact package for independent checks
+        id: package_transfer
+        run: |
+          set -euo pipefail
+          tar -czf tmp/validation-package.tar.gz tmp/electron-dist dist
+          {
+            echo "sha256=$(sha256sum tmp/validation-package.tar.gz | cut -d ' ' -f1)"
+            echo "source=$EXPECTED_SOURCE_SHA"
+            echo "artifact=validation-package-$EXPECTED_SOURCE_SHA-attempt-$GITHUB_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact package transfer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package_transfer.outputs.artifact }}
+          path: tmp/validation-package.tar.gz
+          if-no-files-found: error
+
+      - name: Upload Electron Linux artifacts
+        if: ${{ always() && steps.inspect_linux_artifacts.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-linux-artifacts-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
+          path: |
+            tmp/electron-dist/*.AppImage
+            tmp/electron-dist/*.deb
+            tmp/electron-dist/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-package-evidence-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
+          path: |
+            tmp/electron-validation-evidence
+            tmp/electron-validation-evidence/repair-train-d/receipt.json
+            test-results/war06-mission-scope
+            test-results/war11-map-freshness
+            test-results/train-c
+            tmp/war-11/browser-view-checked.png
+            tmp/war-11/browser-package-removed.png
+            tmp/war-11/browser-negative-result-retained.png
+            tmp/beta-artifacts/tracking-soak-ci
+            tmp/breadcrumb-pr5-evidence
+            tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json
+            tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json
+          if-no-files-found: warn
+
+  build:
+    name: Packaged Linux checks
+    needs: [package]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 160
+    steps:
+      - name: Checkout exact source head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
+
+      - name: Bind exact source head and tree
+        run: |
+          set -euo pipefail
+          ACTUAL_SOURCE_SHA="$(git rev-parse HEAD)"
+          SOURCE_TREE_SHA="$(git rev-parse 'HEAD^{tree}')"
+          SOURCE_DIRTY="$(git status --porcelain --untracked-files=all)"
+          if [ "$ACTUAL_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ]; then
+            echo "::error::Checked-out source head does not match EXPECTED_SOURCE_SHA."
+            exit 1
+          fi
+          if [ -n "$SOURCE_DIRTY" ]; then
+            echo "::error::Checked-out source tree is not clean."
+            exit 1
+          fi
+          echo "EXPECTED_SOURCE_TREE=$SOURCE_TREE_SHA" >> "$GITHUB_ENV"
+          mkdir -p tmp/electron-validation-evidence
+          export ACTUAL_SOURCE_SHA SOURCE_TREE_SHA
+          node --input-type=module <<'NODE' \
+            > tmp/electron-validation-evidence/source-binding.json
+          const binding = {
+            schema: 'sartracker-electron-linux-source-binding-v1',
+            repositoryHead: process.env.ACTUAL_SOURCE_SHA,
+            repositoryTree: process.env.SOURCE_TREE_SHA,
+            repositoryDirty: false,
+          }
+          process.stdout.write(`${JSON.stringify(binding, null, 2)}\n`)
+          NODE
+
+      - name: Verify complete legacy recovery evidence manifest
+        run: node scripts/verify-legacy-recovery-evidence.mjs
+
+      - name: Install Linux Electron runtime deps
+        run: |
+          # These packages come from Ubuntu, not runner-added Chrome or
+          # Microsoft feeds. Keep their index failures out of this install.
+          test -s /etc/apt/sources.list
+          sudo apt-get -o Dir::Etc::sourceparts=- update
+          sudo apt-get -o Dir::Etc::sourceparts=- install -y \
+            dbus-x11 \
+            gnome-keyring \
+            imagemagick \
+            libasound2 \
+            libatk-bridge2.0-0 \
+            libatk1.0-0 \
+            libcups2 \
+            libdrm2 \
+            libfuse2 \
+            libgbm1 \
+            libgl1-mesa-dri \
+            libglx-mesa0 \
+            mesa-utils \
+            squashfs-tools \
+            openbox \
+            python3 \
+            libgtk-3-0 \
+            libnss3 \
+            libxdamage1 \
+            libxkbcommon0 \
+            libxrandr2 \
+            libxss1 \
+            xdotool \
+            x11-utils \
+            xvfb
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Download exact package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.package.outputs.artifact }}
+          path: tmp/package-transfer
+
+      - name: Verify and restore exact package
+        env:
+          TRANSFER_SHA256: ${{ needs.package.outputs.sha256 }}
+          TRANSFER_SOURCE: ${{ needs.package.outputs.source }}
+        run: |
+          set -euo pipefail
+          test "$TRANSFER_SOURCE" = "$EXPECTED_SOURCE_SHA"
+          test -n "$TRANSFER_SHA256"
+          echo "$TRANSFER_SHA256  tmp/package-transfer/validation-package.tar.gz" | sha256sum -c -
+          tar -xzf tmp/package-transfer/validation-package.tar.gz
+          test -f dist/index.html
+          sha256sum -c tmp/electron-dist/SHA256SUMS
+          test -x tmp/electron-dist/linux-unpacked/sartracker-web
+
+      - name: Qualify mission evidence replay at the normal 960k envelope
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: npm run breadcrumb-pr5:qualify -- --preset=bcp-960k
 
       - name: Attest Mesa llvmpipe renderer
         env:
@@ -674,22 +934,11 @@ jobs:
           trap - EXIT
           EOF
 
-      - name: Upload Electron Linux artifacts
-        if: ${{ always() && steps.inspect_linux_artifacts.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: electron-linux-artifacts-${{ env.EXPECTED_SOURCE_SHA }}
-          path: |
-            tmp/electron-dist/*.AppImage
-            tmp/electron-dist/*.deb
-            tmp/electron-dist/SHA256SUMS
-          if-no-files-found: error
-
       - name: Upload validation evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: electron-linux-validation-evidence-${{ env.EXPECTED_SOURCE_SHA }}
+          name: electron-linux-validation-evidence-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
           path: |
             tmp/electron-validation-evidence
             tmp/electron-validation-evidence/repair-train-d/receipt.json
@@ -704,3 +953,24 @@ jobs:
             tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-report.json
             tmp/breadcrumb-pr6-packaged-archive-smoke/electron-archive-lifecycle-smoke-failure.json
           if-no-files-found: warn
+
+  required:
+    name: Build and inspect Linux Electron artifacts
+    if: ${{ always() }}
+    needs: [correctness, package, build]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every validation lane
+        env:
+          CORRECTNESS: ${{ needs.correctness.result }}
+          PACKAGE: ${{ needs.package.result }}
+          PACKAGED: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          for result in "$CORRECTNESS" "$PACKAGE" "$PACKAGED"; do
+            if [[ "$result" != success ]]; then
+              echo "::error::Required validation lane failed, skipped or cancelled: $result"
+              exit 1
+            fi
+          done

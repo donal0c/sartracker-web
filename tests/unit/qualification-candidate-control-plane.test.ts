@@ -89,6 +89,23 @@ async function compilePlan(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification candidate control plane', () => {
+  it('reports repeated prerequisite failures once without throwing or acquiring a lease', async () => {
+    const { definition } = await compilePlan({
+      requiredContracts: ['C00'],
+      bindings: ['first', 'second'].map((variantId) => ({
+        contractId: 'C00', variantId, adapterId: 'missing.adapter',
+        receiptValidatorId: 'calibration.v1', proofMode: 'synthetic',
+        capability: 'node', resourceKey: 'calibration', mandatory: true,
+        command: ['internal-calibration', 'pass'],
+      })),
+    })
+    const result = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(result.status).toBe('ENVIRONMENT_BLOCKED')
+    expect(result.releaseEligible).toBe(false)
+    expect(result.blockers).toEqual(['missing adapter missing.adapter for C00'])
+    expect(result).not.toHaveProperty('lease')
+  })
+
   it('requires retained and hashed media for candidate captures while preserving calibration pathless captures', async () => {
     temporaryRoot = await mkdtemp(path.join(tmpdir(), 'sartracker-capture-custody-'))
     const attemptsRoot = path.join(temporaryRoot, 'attempts')

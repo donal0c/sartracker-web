@@ -81,17 +81,17 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
   it('separates ordinary correctness from mandatory unchanged release timing [DON-254]', () => {
     const workflow = readWorkflow('.github/workflows/electron-linux-validation.yml')
     const job = workflow.jobs.build
-    const correctness = selectStep(job, 'Full correctness unit gate')
+    const correctness = selectStep(workflow.jobs.correctness, 'Full correctness unit gate')
     expect(correctness.run).toBe('npm run test:correctness -- --no-file-parallelism')
     expect(correctness.if).toBeUndefined()
     for (const name of ['Strict responsiveness qualification (<200 ms)',
       'Qualify mission evidence replay at the normal 960k envelope',
       'Packaged tracking soak (CI profile)', 'Packaged archive lifecycle smoke']) {
-      expect(selectStep(job, name).if).toBe("${{ github.event_name == 'workflow_dispatch' }}")
+      expect(selectStep(name === 'Strict responsiveness qualification (<200 ms)' ? workflow.jobs.correctness : job, name).if).toBe("${{ github.event_name == 'workflow_dispatch' }}")
     }
-    expect(selectStep(job, 'Strict responsiveness qualification (<200 ms)').run)
+    expect(selectStep(workflow.jobs.correctness, 'Strict responsiveness qualification (<200 ms)').run)
       .toBe('npm run test:responsiveness')
-    expect(selectStep(job, 'Record PR qualification boundary').run).toContain('release HOLD')
+    expect(selectStep(workflow.jobs.correctness, 'Record PR qualification boundary').run).toContain('release HOLD')
     const source = readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')
     expect(source).toContain("- 'vitest*.config.ts'")
     expect(source).not.toContain('continue-on-error: true')
@@ -169,7 +169,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const validation = readWorkflow('.github/workflows/electron-linux-validation.yml')
     const release = readWorkflow('.github/workflows/electron-release.yml')
 
-    expect(selectStep(validation.jobs.build, 'Build Electron Linux artifacts').env).toMatchObject({
+    expect(selectStep(validation.jobs.package, 'Build Electron Linux artifacts').env).toMatchObject({
       VITE_SARTRACKER_MISSION_MODEL: '1',
     })
     expect(selectStep(release.jobs['bundle-linux'], 'Build Electron Linux artifacts').env)
@@ -183,7 +183,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     const job = workflow.jobs.build
     const checkout = selectStep(job, 'Checkout exact source head')
     const binding = selectStep(job, 'Bind exact source head and tree')
-    const restoreSource = selectStep(job, 'Restore exact source tree after packaging')
+    const restoreSource = selectStep(workflow.jobs.package, 'Restore exact source tree after packaging')
     const archiveSmoke = selectStep(job, 'Packaged archive lifecycle smoke')
     const evidenceUpload = selectStep(job, 'Upload validation evidence')
     const versionGenerator = readFileSync('scripts/generate-app-version.mjs', 'utf8')
