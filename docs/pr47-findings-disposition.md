@@ -16,6 +16,11 @@ findings (O), seven subsequent findings (R/P), six smaller review observations
 
 ## Evidence boundary
 
+**Superseded 2026-09-25:** review-fix source `1dd316f2` (V01-V16 below)
+replaces `0e6db8a` as the behavior-bearing head; its exact-source Linux run
+[`36136413925`](https://github.com/donal0c/sartracker-web/actions/runs/36136413925)
+passed. The paragraph below is the historical boundary for `0e6db8a`.
+
 The behavior-bearing source head `0e6db8a26b62327055d76f1b61782e6d600caa96`
 has a clean independent review and passing exact-source Linux run
 `36116343282`. The independent Codex review was performed in the PR47 task;
