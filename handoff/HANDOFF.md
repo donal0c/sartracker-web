@@ -6,6 +6,31 @@ assurance records.
 
 ## Current state
 
+### PR50 CI repair — 2026-09-25
+
+PR50 initial CI `36145799283` at `c13efa63` failed after 36m47s, not during
+packaging: 5,964 correctness tests passed, then C10 known-at-time replay observed
+a renderer frame gap of exactly 200ms against `<200`. Other 18 producer cases
+passed. Original receipts retained; this is not the earlier SQLite main-thread
+failure and is not explained away as runner noise.
+
+Donal authorized separating PR correctness from strict release timing and splitting
+CI reruns. Current bounded repair splits correctness/browser, package build and
+packaged checks with a fail-closed aggregate under the existing required check
+name. Package transfer is source-bound and SHA256-checked. Development replay
+keeps all live/archive geometry oracles and records timing; strict candidate
+validator rejects development-only receipts and still rejects gaps >=200ms.
+No change to application code or release budgets. Exact-head CI remains required
+before merge; no candidate qualification or release claimed.
+
+Repair verification: 73 focused tests passed; lint, TypeScript and actionlint
+passed. Independent Luna review cleared the final rerun/provenance changes.
+Ubuntu replay using the retained c13 CI AppImage and revised external harness
+passed live/archive correctness (115 frames, 33.3ms maximum gap); strict candidate
+validation correctly rejected that development-only receipt. This is diagnostic
+proof, not final-head CI or qualification. The original 200ms failure remains
+retained. Next: push this repair on PR50 and verify fresh exact-head CI.
+
 ### Release preparation update — 2026-09-25 after PR47 merge
 
 PR47 is merged. Clean preparation checkout:

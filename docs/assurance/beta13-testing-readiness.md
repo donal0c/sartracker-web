@@ -128,6 +128,29 @@ and initial metadata drafting are now completed locally, not merged.
 
 ## Stop/continue rule
 
+### PR50 CI feedback loop repair
+
+Retained failure: run `36145799283`, source `c13efa63`, completed correctness
+5,964 passed, failed C10 renderer maximum frame gap exactly 200ms. This is not
+SQLite/main-thread evidence. Do not erase the failed receipt or call it noise.
+
+CI now separates correctness/browser, package production and packaged checks.
+The original required-check name is a fail-closed aggregate of all three lanes.
+Only the packaged lane depends on package production; it verifies source and
+SHA256 of the transferred package and checks installer hashes before execution.
+Failed packaged jobs can be rerun against the successful package in that run;
+new source requires a new package. Evidence/transfer/installer uploads are
+attempt-specific so failed receipts are retained. Final candidate provenance
+requires artifacts matching the declared successful run attempt; a failed-job-only
+rerun does not automatically turn earlier-attempt installers into that identity.
+
+Only development C10 known-at-time replay uses `--development-correctness-only`.
+It retains timing and runs all live/archive geometry checks. Its receipt is
+explicitly rejected by strict candidate validation even if timing is fast.
+Default/candidate replay still requires `<200ms`; raw timing is written before
+archive work, and the strict verdict is made after correctness checks. No threshold
+was raised. Do not use development success as release qualification.
+
 ### Host preparation completed — 2026-09-25
 
 With Donal's explicit administrator authorization, xvfb/xauth/xdotool are now

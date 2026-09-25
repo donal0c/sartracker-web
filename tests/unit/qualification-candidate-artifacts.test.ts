@@ -16,6 +16,11 @@ const artifact = { id: 456, name: `electron-linux-artifacts-${sha}`, expired: fa
   digest: `sha256:${digest}`, workflow_run: { id: 123, head_sha: sha }, size_in_bytes: 50 }
 
 describe('exact candidate CI and installed package boundaries', () => {
+  it('binds attempt-specific validation artifacts without accepting another attempt', () => {
+    expect(validateCiArtifactProvenance(run, { ...artifact, name: `${artifact.name}-attempt-1` }, expected).sourceSha).toBe(sha)
+    expect(() => validateCiArtifactProvenance(run, { ...artifact, name: `${artifact.name}-attempt-2` }, expected)).toThrow()
+    expect(() => validateCiArtifactProvenance({ ...run, run_attempt: 2 }, artifact, { ...expected, runAttempt: 2 })).toThrow()
+  })
   it('binds the tag-driven release workflow separately from postmerge validation artifacts', () => {
     const releaseRun = { ...run, path: '.github/workflows/electron-release.yml', head_branch: 'electron-v0.1.0-beta.13' }
     const releaseArtifact = { ...artifact, name: 'electron-linux-artifacts' }

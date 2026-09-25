@@ -28,7 +28,10 @@ export function validateCiArtifactProvenance(run, artifact, expected) {
       || run.repository?.full_name !== REPOSITORY || run.head_repository?.full_name !== REPOSITORY) {
     throw new Error('Candidate requires the exact successful postmerge repository/workflow/run identity.')
   }
-  if (artifact.id !== expected.artifactId || artifact.name !== (releaseWorkflow ? 'electron-linux-artifacts' : `electron-linux-artifacts-${expected.sourceSha}`)
+  const allowedNames = releaseWorkflow ? ['electron-linux-artifacts']
+    : [...(expected.runAttempt === 1 ? [`electron-linux-artifacts-${expected.sourceSha}`] : []),
+      `electron-linux-artifacts-${expected.sourceSha}-attempt-${expected.runAttempt}`]
+  if (artifact.id !== expected.artifactId || !allowedNames.includes(artifact.name)
       || artifact.expired !== false || artifact.workflow_run?.id !== run.id
       || artifact.workflow_run?.head_sha !== expected.sourceSha
       || typeof artifact.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(artifact.digest)

@@ -35,6 +35,7 @@ const plan = compileProducerDevelopmentPlan({ app, output, sourceSha, appSha256:
 for (const entry of plan) {
   if (cancellationSignal !== null) break
   const { id, contractId, evidence, command } = entry
+  console.log(`Starting producer development case: ${id}`)
   await mkdir(evidence, { mode: 0o700 })
   let execution
   let mechanics = null
@@ -67,6 +68,8 @@ for (const entry of plan) {
     processError: execution.processError, zeroDescendantsAfterRun: execution.zeroDescendantsAfterRun,
     infrastructurePassed, productCheckPassed, qualificationExecuted: false, mechanics }
   results.push(result)
+  console.log(`${id}: infrastructure=${infrastructurePassed}, product=${productCheckPassed}, exit=${execution.exitCode}; evidence=${evidence}`)
+  if (!infrastructurePassed || productCheckPassed === false) console.error(execution.stderr.slice(-4000))
   await writeFile(path.join(output, `${id}-development-result.json`), JSON.stringify(result, null, 2), { flag: 'wx' })
   if (execution.zeroDescendantsAfterRun !== true) {
     cleanupBlocked = true

@@ -2,9 +2,20 @@ import { createHash } from 'node:crypto'
 
 /** Recompute the two fixed large-geometry truths without trusting producer pass fields. */
 export function validateReplayReceipt(report) {
+  return validateReplay(report, true)
+}
+
+/** Development only: preserve every correctness oracle, never candidate timing proof. */
+export function validateReplayCorrectnessReceipt(report) {
+  return validateReplay(report, false)
+}
+
+/** Validate observations with an explicit caller-owned timing boundary. */
+function validateReplay(report, strictTiming) {
   const failureReasons = []
   try {
     if (report?.schemaVersion !== 2) throw new Error('Replay raw oracle schema is missing.')
+    if (strictTiming && report.proofMode === 'development-correctness-only') throw new Error('Development correctness evidence cannot qualify a candidate.')
     const diagnostics = report.rendererDiagnostics
     if (!Array.isArray(diagnostics?.errors) || diagnostics.errors.length !== 0
         || !Array.isArray(diagnostics.unexpectedRequestFailures) || diagnostics.unexpectedRequestFailures.length !== 0
@@ -29,7 +40,8 @@ export function validateReplayReceipt(report) {
         || report.liveUpdated.serialized !== report.archiveUpdated.serialized) throw new Error('Replay changed across archive custody.')
     if (!Number.isSafeInteger(report.frameCount) || report.frameCount < 30) throw new Error('Replay responsiveness sample count is too small to support a frame-gap claim.')
     if (!Number.isFinite(report.measurementDurationMs) || report.measurementDurationMs < 500) throw new Error('Replay responsiveness measurement duration is too short to support a frame-gap claim.')
-    if (!Number.isFinite(report.maximumFrameGapMs) || report.maximumFrameGapMs < 0 || report.maximumFrameGapMs >= 200) throw new Error('Replay rendered frame gap breached the strict 200ms boundary.')
+    if (!Number.isFinite(report.maximumFrameGapMs) || report.maximumFrameGapMs < 0) throw new Error('Replay frame-gap measurement is invalid.')
+    if (strictTiming && report.maximumFrameGapMs >= 200) throw new Error('Replay rendered frame gap breached the strict 200ms boundary.')
     if (!report.popupText?.includes('Large retained search area') || report.popupColor !== 'rgb(28, 25, 23)') throw new Error('Replay retained-object popup was not observed correctly.')
   } catch (error) { failureReasons.push(error.message) }
   return { status: failureReasons.length ? 'INVALID_EVIDENCE' : 'PASS', passed: failureReasons.length === 0,

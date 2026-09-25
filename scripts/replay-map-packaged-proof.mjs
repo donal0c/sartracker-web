@@ -3,12 +3,15 @@ import { _electron as electron, expect } from '@playwright/test'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { validateReplayReceipt } from './qualification/replay-receipts.mjs'
+import { validateReplayReceipt, validateReplayCorrectnessReceipt } from './qualification/replay-receipts.mjs'
 import { createReplayGeometryFixture } from './qualification/replay-probe-fixture.mjs'
 import { isExpectedBlockedReplayRequest } from './qualification/replay-probe-diagnostics.mjs'
 import { buildReplayMapLaunchArgs } from './qualification/replay-map-launch.mjs'
 
 const executablePath = process.argv[2]
+const options = process.argv.slice(4)
+if (options.length > 1 || options.some(option => option !== '--development-correctness-only')) throw new Error('Unsupported replay proof option.')
+const developmentOnly = options[0] === '--development-correctness-only'
 const evidence = path.resolve(process.argv[3] ?? 'tmp/batch2-packaged-proof')
 if (!path.isAbsolute(executablePath ?? '')) throw new Error('Supply an absolute packaged executable path.')
 await mkdir(evidence, { recursive: true })
@@ -129,7 +132,10 @@ try {
       measurementDurationMs: window.__replayFrameProof.previous - window.__replayFrameProof.startedAt,
     }
   })
-  expect(frameEvidence.maximumFrameGapMs).toBeLessThan(200)
+  // Retain timing before archive work, including when a later correctness check fails.
+  await writeFile(path.join(evidence, 'frame-timing.json'), JSON.stringify({ ...frameEvidence,
+    strictLimitMs: 200, strictPassed: frameEvidence.maximumFrameGapMs < 200,
+    qualificationExecuted: !developmentOnly, releaseEligible: false }, null, 2))
   await map.screenshot({ path: path.join(evidence, 'packaged-replay-map.png') })
   const archive = await page.evaluate(async (missionId) => {
     const store = window.sartrackerElectron.missionStore
@@ -150,6 +156,7 @@ try {
   expect(archived.serialized).toBe(live.serialized)
   await page.screenshot({ path: path.join(evidence, 'packaged-shell.png') })
   const report = { schemaVersion: 2, executablePath,
+    proofMode: developmentOnly ? 'development-correctness-only' : 'strict-packaged-proof',
     rendererDiagnostics: { errors: rendererErrors, unexpectedRequestFailures: rendererRequestsFailed, blockedNetworkRequestCount },
     source: { initialGeometry: seeded.initialGeometry, updatedGeometry: seeded.geometry,
       knownBeforeUpdate: seeded.knownBeforeUpdate, knownAfterUpdate: seeded.knownAfterUpdate },
@@ -160,7 +167,7 @@ try {
     measurementDurationMs: frameEvidence.measurementDurationMs,
     boundary: 'Packaged public preload, live SQLite and independently verified encrypted archive; synthetic geometry. Native replay map rendered and selected the retained large search area.' }
   await writeFile(path.join(evidence, 'report.json'), JSON.stringify(report, null, 2))
-  const validation = validateReplayReceipt(report)
+  const validation = developmentOnly ? validateReplayCorrectnessReceipt(report) : validateReplayReceipt(report)
   if (!validation.passed) throw new Error(validation.failureReasons.join('; '))
 } catch (error) {
   await writeFile(path.join(evidence, 'renderer-errors.json'), JSON.stringify(rendererErrors, null, 2))

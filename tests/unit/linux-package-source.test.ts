@@ -8,8 +8,8 @@ import { load } from 'js-yaml'
 
 describe('Linux package build provenance [DON-146]', () => {
   it('restores only the preceding CI web build metadata and rejects unrelated edits', () => {
-    const workflow = load(readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')) as { jobs: { build: { steps: { name: string; run: string }[] } } }
-    const script = workflow.jobs.build.steps.find(step => step.name === 'Production web build and bundle budgets')!.run
+    const workflow = load(readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')) as { jobs: { correctness: { steps: { name: string; run: string }[] } } }
+    const script = workflow.jobs.correctness.steps.find(step => step.name === 'Production web build and bundle budgets')!.run
     const root = mkdtempSync(join(tmpdir(), 'sartracker-web-build-'))
     const bin = mkdtempSync(join(tmpdir(), 'sartracker-fake-npm-'))
     try {
