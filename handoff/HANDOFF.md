@@ -6,6 +6,26 @@ assurance records.
 
 ## Current state
 
+### Post-PR50 release unblock — 2026-09-25
+
+PR50 merged as `c6097f36`. Its PR CI `36155469082` passed. Postmerge run
+`36162564135` built the package and passed packaged Linux checks, but failed one
+fatal-writer unit-test assertion (5,974 passed). Release remains HOLD.
+The bounded repair only changes the two parameterized fatal-writer tests: wait
+for completed startup on real timers, then inject the runtime fault and advance
+the simulated 10-second evidence deadline. A deliberately held window-load gate
+proves capture-handler registration is not operational readiness. All original
+deadline, writer-termination, fencing, relaunch and exit assertions remain.
+No application code, release timing budget or qualification gate changes.
+
+Verification: 94 startup/watchdog/evidence/terminal-state tests passed; ten preset
+targeted repeats (20 case executions), lint and TypeScript passed. Initial
+local diagnostic failures also involved missing SQLite bindings (not a reproduction
+of the CI cause); `npm rebuild better-sqlite3` corrected that setup. Keep the CI
+failure as evidence. Next: review/merge this test-only repair, successful postmerge
+CI, bind exact installers, then the existing release qualification campaign.
+No new functionality, broader WAR or database redesign.
+
 ### PR50 CI repair — 2026-09-25
 
 PR50 initial CI `36145799283` at `c13efa63` failed after 36m47s, not during
