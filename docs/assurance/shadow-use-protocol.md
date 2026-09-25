@@ -89,7 +89,7 @@ or deliberately disposable training data. Those sessions do not count toward
 the WAR-13B field scorecard, even if they are otherwise useful engineering
 evidence.
 
-Donal's 2026-09-19 decision separates mandatory pre-release C29 acceptance
+Donal's 2026-09-19 decision separates mandatory C29 acceptance
 from this field gate. C29 is a named human session on the original machine
 using the exact candidate and only synthetic, replayed or disposable training
 data. It records training acceptance and fallback evidence before DON-254 can
@@ -97,6 +97,12 @@ complete; it does not require publication and never counts toward WAR-13B.
 Post-publication field shadow remains separately authorized under every gate
 above. Record the exact artifact for each activity; earlier training does not
 prove a later build or authorize operational use.
+
+On 2026-09-25 Donal clarified the order: Ubuntu technical validation first,
+approved controlled handover to Eamonn second, original-machine acceptance third.
+C29 signer setup does not block technical checks. Technical readiness is only
+ready for an approval decision; publication/distribution need separate approval,
+and human acceptance remains required before operational suitability.
 
 For this gate, an "open confirmed release-blocking P1/P2" is a current-candidate
 or programme-wide safety finding explicitly recorded at that severity in an

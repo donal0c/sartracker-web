@@ -1614,6 +1614,7 @@
       "adapterId": "external.c29.training",
       "receiptValidatorId": "external.c29.receipt",
       "proofMode": "external-human",
+      "phase": "posthandover",
       "sessionKind": "pre-release-original-machine-training",
       "capability": "node",
       "mandatory": true,

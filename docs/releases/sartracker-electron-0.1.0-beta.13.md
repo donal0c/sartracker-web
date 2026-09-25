@@ -39,6 +39,14 @@ and operator manual rather than claim that merging established operational safet
 
 ## Verification and acceptance — all pending
 
+Approved sequence: complete Ubuntu technical validation, obtain Donal's final
+controlled-handover approval, then hand the exact testing build to Eamonn for
+C29 original-machine acceptance. Technical readiness is not operational suitability.
+C29 signer setup does not block Ubuntu checks; C29 remains pending until actual
+human evidence. Public-byte verification follows separately approved publication.
+Candidate tag/unpublished draft preparation is authorized; publication and
+distribution are not yet approved.
+
 Existing C00–C29 contracts, deterministic/source/browser checks, independent
 recorded-UI judging, exact CI package provenance, Ubuntu AppImage and installed
 `.deb`, scale and long-running/fault/recovery matrix, applicable live GET-only

@@ -110,6 +110,13 @@ human acceptance remain separately executed qualification obligations.
 
 ## Approved C29 separation (2026-09-19)
 
+**Sequence clarification, 2026-09-25:** Donal directed Ubuntu technical validation
+first, approved controlled handover to Eamonn second, then original-machine human
+acceptance before operational suitability. This supersedes the original
+pre-release ordering below, not the separation from field shadow. Technical
+preflight requires no C29 signer. The signed session-kind identifier is retained;
+no signature, human outcome or operational approval is fabricated.
+
 Donal approved separating mandatory pre-release original-machine/training
 acceptance (C29) from post-publication WAR-13B field shadow. C29 uses only
 synthetic, replayed or disposable training data and requires named external
@@ -145,9 +152,11 @@ candidate matrix and every applicable C19/C24 probe remain mandatory. Only after
 those probes pass may C19 and C24 report `SCOPE_LIMITED`; any failed attempt,
 missing receipt or invalid evidence remains a hard failure/block. A scoped phase
 can never be `PASS`, `evidenceComplete` remains false, and `releaseEligible`,
-publication and team-rollout authority remain false. C27 still requires every
-applicable BCP-17 gate plus C29, and C00 still requires C27/C29 before fresh
-public-byte checks. The exact claim scope is immutable in the reviewed campaign
+publication and team-rollout authority remain false. C27 requires every applicable
+technical BCP-17 gate; C00 public-byte checks require C27 and actual publication,
+with C29 allowed to remain pending. Controlled handover still requires Donal's
+approval; C29 human evidence remains required for complete qualification and
+operational-suitability claims. The exact claim scope is immutable in the reviewed campaign
 plan. It cannot waive PST-003/004/005, IPC-003 or any of the five WAR-01 absolute
 blockers.
 

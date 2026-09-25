@@ -1,19 +1,28 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-25. Release remains **HOLD**. Master
-`00f1a8a9af4c57436f152c3cc1a51d69190da9e6` passed exact-source CI
-[36179770541](https://github.com/donal0c/sartracker-web/actions/runs/36179770541).
-No final candidate is frozen or qualified; no tag/publication/distribution is authorized.
+Updated 2026-09-25. Release remains **HOLD**. PR52 merged at
+`b1bc51a2ed5e479b8eeaaf21b759001f2a208838`; exact-source CI
+[36192361874](https://github.com/donal0c/sartracker-web/actions/runs/36192361874) passed.
+No final candidate is frozen or qualified. Donal authorized candidate tag and
+unpublished draft after verified source; publication/distribution need final approval.
 
 ## Authority and active work
 
 Donal authorized release-first stabilization and the existing `bcp17-final`
 C00–C29 campaign. Small contained verified fixes may go directly to master;
-the combined preparation now uses `codex/beta13-input-qualification` and requires
+the sequencing correction uses `codex/beta13-staged-admission` and requires
 a PR plus independent exact-head review. Do not merge without Donal's authority.
 No new features, full mapping, broad WAR, database redesign or Claude/Fable.
-DON-254 comment `00ce69cd-ff6f-47f7-b6e9-fd3360fe509f` records current authority;
+DON-254 comment `75075194-78a0-4782-be1d-73f86e794e50` records the clarified sequence;
 its historical Done state is not whole-candidate qualification. DON-255 is downstream.
+
+Donal clarified the sequence through CoS on 2026-09-25: complete Ubuntu technical
+validation first, then controlled handover to Eamonn after approval, then C29
+acceptance on the original team machine before any operational-suitability claim.
+Do not require Eamonn's signer to start technical testing. C29 remains mandatory
+and pending; technical readiness is only `READY_FOR_APPROVAL`, never qualification
+or publication/distribution authority. All applicable C00–C28 variants, package
+tiers, exact provenance, 200 ms thresholds, fixed soaks and retained failures stay.
 
 - Source/test/CI and canonical records: Astra `01a0d9f5-7727-7060-ab59-4549f3a513c8`, worktree `1608`.
 - Sole Ubuntu installation/runtime/performance owner: Sol `01a0d9f5-771a-7993-9e10-4ae1cbb1e3bb`, worktree `3226`.
@@ -25,40 +34,27 @@ Serialize Ubuntu workloads through Sol.
 
 ## Verified baseline and diagnosed deltas
 
-The master repair fixed C12's viewer-held output pipes after Electron exited,
-and exact installer names (`x86_64.AppImage` / `amd64.deb`). Retained exact-CI
-C12 evidence confirms exit 0, no timeout/error and zero descendants. Source,
-browser and packaged CI jobs passed; this is development verification, not
-sealed campaign qualification. Earlier failed run `36174038700` and artifact
-`10880449533` remain diagnostic evidence. Successful installer artifact:
-`10884001990`; full hashes and closeout are in DON-254 comment
-`7461fc0a-2f8c-40ec-840c-647f7690c3c8`.
+The earlier C12 viewer-held-pipe and installer-name repair passed exact CI with
+exit 0, no timeout/error and zero descendants. Failed run `36174038700` remains
+retained; full prior identities are in the Ubuntu report and DON-254 comment
+`7461fc0a-2f8c-40ec-840c-647f7690c3c8`. Development proof is not qualification.
 
-Current reviewed-PR scope:
-1. Separate v6 `bcp-960k-paging`, `bcp-2m-paging` and `bcp-field-37gb`
-   synthetic-complete fixtures. Existing v5 mixed-backfill profiles remain intact.
-   Field data models explicitly labelled historical position audit echoes;
-   every echo links to one real primary fix. No padding or gate relaxation.
-2. C08 provenance repair: preserve stored `live`/`cache` through both coverage
-   SQL branches and the worker envelope; narrow the page type to its seven
-   actual fields. The independent oracle remains unchanged.
-3. Separate private-map C15 valid/offline/readiness supplement for both package
-   tiers, independent PNG decoding and closed sanitized receipts. Keep the
-   synthetic fault matrix. No product map changes or private map screenshots.
+PR52 merged separate v6 paging-ready fixtures (960k/2m/field), preserved C08
+stored live/cache provenance through SQL/IPC, and added a separate private-map
+C15 supplement for both package tiers. Existing mixed-backfill regressions,
+synthetic map faults and independent oracles remain; no product map change.
 
-Sol admitted the three new fixture files independently. The field file is
-5,320,654,848 bytes, SHA-256
-`43cbe38949bdcb3b419c1a745a8f36aee8d4ec62cb55a219babcf8922dd25ed2`:
-3,999,988 primary fixes + 12 legacy, 100 devices, 12 outings, two complete
-backfill checkpoints, exact one-to-one audit links, integrity/quick checks good,
-no sidecars. This is input preparation only. Retain both C08 failures: original
-v5 incomplete backfill, then ready-v6 first-page missing `data_origin` in the
-old package. Exact repaired-package paging remains pending.
+Sol independently admitted all three fixtures; field is 5.32 GB, 3,999,988 primary
+fixes + 12 legacy, 100 devices/12 outings, complete backfill and exact audit links.
+Full hashes are in the Ubuntu report. Retain both C08 failures: incomplete v5
+backfill, then missing stored provenance in the old package. Repaired PR-CI
+AppImage diagnostic passed: 959,988 primary rows,
+1,500 pages, 1,300 chunks and independent exact sequence oracle; cleanup passed.
+This is not final tagged-candidate qualification.
 
-Private-map diagnostics retain the original input rejection: metadata says zoom
-8–16, actual tiles 9–16; the product correctly rejects it. A separately hashed
-metadata-only disposable derivative is authorized for positive-path diagnostics,
-with unchanged tile bytes and explicit provenance; never certify the original.
+Retain original private-map rejection: declared zoom8–16 versus actual9–16.
+Only the separately hashed metadata-only derivative is authorized, with unchanged
+tile bytes and private provenance; never certify the original.
 That derivative (`16e55b8e…ec8b233`) passed the full old-installer diagnostic:
 31,729 independent PNG decodes, exact registration/serve/render, 15/15 required
 local tiles and Field ready, no external map requests, clean process/profile exit.
@@ -67,17 +63,25 @@ with owner-private lineage; C29 acceptance remains separate.
 
 ## Verification and next actions
 
-Full serial correctness passed 580 files / 6,013 tests, with 26 documented skips;
-lint, type check, production build/bundle budgets and browser coverage 7/7 passed.
-The first full run found one positional SQL fixture insert incompatible with the
-updated test schema; reproduced, repaired with named columns, then full rerun green.
-Ready-fixture/C08/private-map focused checks and independent reviews passed.
-Final committed-head review and PR CI remain pending. Current changes add no
-operator controls or workflow; the manual remains applicable.
+PR52 full correctness (6,013 tests), lint/type/build, browser coverage 7/7,
+independent review and CI passed. Final merged zoom-clamp delta passed review
+and 26 focused tests; detail-only minZoom>12 remains fail-closed and outside the
+bound minZoom9 map scope.
 
-Finish the exact-head review, open the reviewed PR, and wait for exact-head CI. After
-authorized merge, bind the final successful installers and all inputs to one
-immutable campaign; execute all mandatory rows and retain failures.
+Staged admission: `npm run test:correctness -- --no-file-parallelism` passed
+580 files / 6,019 tests (26 existing skips) on unchanged final code/test hashes;
+52 focused checks passed (one skip). `npm run lint` and `npm run build` passed.
+The inbuilt browser verified the rendered manual's controlled-handover guidance.
+Independent native working-tree review accepted the boundary; exact-head review
+and CI readiness are recorded in the PR and DON-254, not candidate qualification.
+
+Finish staged-admission tests/review/PR CI. After authorized merge, create the
+authorized tag/unpublished draft, bind the exact release-workflow installers and
+all technical inputs to one immutable campaign, and execute applicable technical
+rows serially. C27 inspects the draft after other technical rows; public-byte C00
+only follows actual approved publication. Eamonn's C29 acceptance follows approved
+handover and cannot be inferred from Ubuntu evidence. No cross-campaign promotion
+or late mutation of sealed inputs is introduced.
 
 Prepared inputs now include private offline map, schema-12 storage baseline,
 private live config/selector and verified public beta12.11 rollback installers.
