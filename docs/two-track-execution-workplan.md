@@ -11,11 +11,16 @@ Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
 canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
-packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47
-is open at `0e6db8a26b62327055d76f1b61782e6d600caa96`; exact-head Linux run
-`36116343282` passed and independent exact-head review found no actionable
-findings; PR #47 is ready for review. No C01 qualification is claimed. Do not
-treat master CI or packaged receipts as candidate qualification.
+packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
+behavior-bearing source is `0e6db8a26b62327055d76f1b61782e6d600caa96`;
+exact-source Linux run `36116343282` passed and independent review found no
+actionable findings. Later PR commits are documentation-only; verify the
+latest push-triggered workflow before merging. PR #47 is ready for review. The
+full finding inventory is in the [PR47 findings register](pr47-findings-disposition.md),
+and the independent `5b4f0b25` review is retained at
+[assurance/findings/pr47-review-5b4f0b25.md](assurance/findings/pr47-review-5b4f0b25.md).
+No C01 qualification is claimed. Do not treat master CI or packaged receipts
+as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared

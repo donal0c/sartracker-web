@@ -9,9 +9,13 @@ assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 is open at `0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-head
-Linux run `36116343282` passed, and an independent exact-head review found no
-actionable findings. The PR is ready for review. Do not merge, tag, publish,
+PR #47's behavior-bearing source is at
+`0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-source Linux run
+`36116343282` passed, and an independent review of that source found no
+actionable findings. The PR is ready for review. Later PR commits are
+documentation-only; verify the latest push-triggered workflow before merging.
+The complete disposition is in the [PR47 findings register](../docs/pr47-findings-disposition.md),
+and the source review is retained under assurance. Do not merge, tag, publish,
 or release from this repair.
 
 ## Active work
