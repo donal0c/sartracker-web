@@ -14,11 +14,14 @@ production build, browser regressions, producer checks, packaged C17 and
 packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
 behavior-bearing source is `0e6db8a26b62327055d76f1b61782e6d600caa96`;
 exact-source Linux run `36116343282` passed and independent review found no
-actionable findings. Later PR commits are documentation-only; verify the
-latest push-triggered workflow before merging. PR #47 is ready for review. The
-full finding inventory is in the [PR47 findings register](pr47-findings-disposition.md),
-and the independent `5b4f0b25` review is retained at
+actionable findings. PR #47 is open and out of draft, but its latest exact-head
+Linux workflow is still running, so merge remains blocked. Later PR commits
+are documentation-only; verify the latest push-triggered workflow before
+merging. The full finding inventory is in the [PR47 findings register](pr47-findings-disposition.md),
+and the historical `5b4f0b25` review is retained at
 [assurance/findings/pr47-review-5b4f0b25.md](assurance/findings/pr47-review-5b4f0b25.md).
+That archived report found seven issues and is not the clean review of the
+repair source; the source-review outcome is recorded in the findings register.
 No C01 qualification is claimed. Do not treat master CI or packaged receipts
 as candidate qualification.
 
@@ -87,8 +90,9 @@ acknowledgement-row click on native Ubuntu. The subsequent exact-head run
 `36074972856` confirms dismissal in all three held-gate cases: diagnostics and
 crash did not exit with code 1 after dismissal and were eventually killed by
 the harness, while store exited with code 1. Original mission/settings
-digests remained unchanged. Do not count harness cleanup as product exit. Keep
-PR #47 draft pending the shutdown fix and a new exact-head Linux run.
+digests remained unchanged. Do not count harness cleanup as product exit. At
+this historical checkpoint PR #47 remained draft pending the shutdown fix and
+a new exact-head Linux run. The current status is recorded above.
 Previous run `36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be
@@ -165,7 +169,8 @@ and production build. The unfiltered parallel `npm test` run had one unrelated
 5-second worker-import timeout and a 220.3 ms GPX responsiveness observation;
 both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
 timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
-CI and fresh review remain pending; keep PR #47 draft.
+CI and fresh review were pending at this historical checkpoint. The current
+status is recorded above.
 
 **C01 current PR follow-up — 2026-09-25:** PR #47 is open at
 `0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-head Linux run

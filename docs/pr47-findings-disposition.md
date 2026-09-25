@@ -18,13 +18,17 @@ findings (O), seven subsequent findings (R/P), six smaller review observations
 
 The behavior-bearing source head `0e6db8a26b62327055d76f1b61782e6d600caa96`
 has a clean independent review and passing exact-source Linux run
-`36116343282`. The subsequent `58bb8a7837d3cb035f331d6ed3fdecf8f3fe269c`
-commit changes documentation only; no production or test files changed. Its
-push started a separate Linux workflow. Later commits that add this register
-and archived review are also documentation-only. Refresh the live branch tip
-and checks before a merge decision; do not transfer source-head evidence to a
-different source tree. Merge, development probe success, candidate
-qualification and release approval remain separate.
+`36116343282`. The independent Codex review was performed in the PR47 task;
+its result is recorded here, but no GitHub review or standalone review report
+was retained for that clean result. The only archived review report is the
+historical review of `5b4f0b25`, which found seven issues. The subsequent
+`58bb8a7837d3cb035f331d6ed3fdecf8f3fe269c` commit and later PR commits change
+documentation only; no production or test files changed. A review of the
+`df17e242` documentation delta identified an ambiguous handoff reference to
+the archived report; that wording is corrected in this update. Refresh the
+live branch tip and checks before a merge decision; do not transfer
+source-head evidence to a different source tree. Merge, development probe
+success, candidate qualification and release approval remain separate.
 
 ## Original review disposition (as recorded by the implementing task)
 
