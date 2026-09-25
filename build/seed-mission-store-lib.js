@@ -1,6 +1,7 @@
 import path from 'node:path'
 
 export const FIXTURE_GENERATOR_VERSION = 5
+export const PAGING_FIXTURE_GENERATOR_VERSION = 6
 export const LEGACY_FIXTURE_GENERATOR_VERSION = 2
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -61,11 +62,32 @@ const PRESET_DEFINITIONS = Object.freeze({
     qualification: 'headroom-renderer-rejection',
     restartCheckpointsDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   },
+  'bcp-field-37gb': {
+    mode: 'breadcrumb-programme',
+    positionCount: 4_000_000,
+    durationDays: 12,
+    deviceCount: 100,
+    activePositionDeviceCount: 100,
+    groupCount: 12,
+    outingCount: 12,
+    qualification: 'field-paging-synthetic-historical-audit',
+    minimumDatabaseBytes: 3_700_000_000,
+    legacyPositionAudit: true,
+    backfillScenario: 'synthetic-complete',
+    restartCheckpointsDays: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+  },
+})
+
+// Paging admission requires complete backfill; the original mixed-state BCP
+// profiles remain unchanged for incomplete-history regression coverage.
+const PAGING_PRESET_DEFINITIONS = Object.freeze({
+  'bcp-960k-paging': { ...PRESET_DEFINITIONS['bcp-960k'], backfillScenario: 'synthetic-complete' },
+  'bcp-2m-paging': { ...PRESET_DEFINITIONS['bcp-2m'], backfillScenario: 'synthetic-complete' },
 })
 
 /** Returns the supported deterministic fixture preset names in display order. */
 export function listFixturePresets() {
-  return Object.keys(PRESET_DEFINITIONS)
+  return [...Object.keys(PRESET_DEFINITIONS), ...Object.keys(PAGING_PRESET_DEFINITIONS)]
 }
 
 /**
@@ -76,7 +98,7 @@ export function listFixturePresets() {
  * on-disk size is reached.
  */
 export function createFixturePlan(preset) {
-  const definition = PRESET_DEFINITIONS[preset]
+  const definition = PRESET_DEFINITIONS[preset] ?? PAGING_PRESET_DEFINITIONS[preset]
   if (definition === undefined) {
     throw new Error(
       `Unknown mission-store fixture preset: ${String(preset)}. Expected one of ${listFixturePresets().join(', ')}.`,
@@ -118,7 +140,7 @@ export function createFixturePlan(preset) {
       pollCount,
       positionCount: definition.positionCount,
       deviceUpdatedEventCount: 0,
-      positionRecordedEventCount: 0,
+      positionRecordedEventCount: definition.legacyPositionAudit ? definition.positionCount - 12 : 0,
       backupEventCount: 0,
       pollIntervalMs: Math.floor(
         (definition.durationDays * DAY_MS) / pollCount,
@@ -127,6 +149,11 @@ export function createFixturePlan(preset) {
       outingCount: definition.outingCount,
       qualification: definition.qualification,
       missionModelScenario: true,
+      ...(definition.backfillScenario ? { backfillScenario: definition.backfillScenario } : {}),
+      ...(definition.legacyPositionAudit ? {
+        legacyPositionAudit: true,
+        minimumDatabaseBytes: definition.minimumDatabaseBytes,
+      } : {}),
     })
   }
 
@@ -192,7 +219,7 @@ export function createBreadcrumbProgrammeScenario(plan) {
     legacyNoOutingMissionCount: 1,
     participantBackfillWindows: Object.freeze([
       Object.freeze({ deviceId: 'synthetic-device-096', completed: true }),
-      Object.freeze({ deviceId: 'synthetic-device-095', completed: false }),
+      Object.freeze({ deviceId: 'synthetic-device-095', completed: plan.backfillScenario === 'synthetic-complete' }),
     ]),
     stationaryCases: Object.freeze([
       Object.freeze({ deviceId: 'synthetic-device-001', kind: 'attention' }),
@@ -283,6 +310,7 @@ export function fixtureManifestPath(databasePath) {
 
 /** Keeps established field-scale fixture caches compatible across BCP-only generator changes. */
 export function fixtureGeneratorVersionForPlan(plan) {
+  if (plan.backfillScenario === 'synthetic-complete') return PAGING_FIXTURE_GENERATOR_VERSION
   return plan.mode === 'breadcrumb-programme'
     ? FIXTURE_GENERATOR_VERSION
     : LEGACY_FIXTURE_GENERATOR_VERSION
@@ -291,6 +319,9 @@ export function fixtureGeneratorVersionForPlan(plan) {
 /** Shapes the durable manifest written beside every generated fixture. */
 export function buildFixtureManifest(input) {
   const plan = input.plan
+  if (plan.minimumDatabaseBytes !== undefined && input.databaseBytes < plan.minimumDatabaseBytes) {
+    throw new Error(`Generated fixture is below its minimum ${plan.minimumDatabaseBytes} database bytes.`)
+  }
   const rowCounts = input.rowCounts
   const redundantTelemetryRows =
     rowCounts.deviceUpdatedEvents +
@@ -313,6 +344,11 @@ export function buildFixtureManifest(input) {
       restartCheckpointsDays: [...plan.restartCheckpointsDays],
       realPositionRows: rowCounts.positions,
       redundantTelemetryRows,
+      ...(plan.backfillScenario ? { backfillScenario: plan.backfillScenario } : {}),
+      ...(plan.legacyPositionAudit ? {
+        storageProfile: 'synthetic-beta11-position-audit-echoes',
+        minimumDatabaseBytes: plan.minimumDatabaseBytes,
+      } : {}),
     },
     database: {
       bytes: input.databaseBytes,

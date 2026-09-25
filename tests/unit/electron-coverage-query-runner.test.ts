@@ -172,7 +172,7 @@ async function createCoverageDatabase(): Promise<string> {
     CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT, started_at TEXT, ended_at TEXT);
     CREATE TABLE positions (
       id TEXT PRIMARY KEY, mission_id TEXT, device_id TEXT, source_position_id TEXT,
-      timestamp TEXT, lat REAL, lon REAL, timestamp_source TEXT DEFAULT 'fix'
+      timestamp TEXT, lat REAL, lon REAL, timestamp_source TEXT DEFAULT 'fix', data_origin TEXT NOT NULL DEFAULT 'live'
     );
     CREATE INDEX idx_positions_mission_device_timestamp
       ON positions(mission_id, device_id, timestamp);

@@ -923,6 +923,30 @@
       "oracle": "exact synthetic offline-map render readiness from one fresh retained run; licensed/private map qualification remains separate"
     },
     {
+      "contractId": "C15",
+      "variantId": "private-offline-map-appimage",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "ci-appimage",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": ["internal-reviewed-package", "C15"],
+      "oracle": "exact controlled private-map hash and independent PNG decode; packaged offline render and operator Check View; sanitized receipt only, private custody retained; synthetic fault matrix and human field acceptance remain separate"
+    },
+    {
+      "contractId": "C15",
+      "variantId": "private-offline-map-installed",
+      "adapterId": "package.reviewed",
+      "receiptValidatorId": "package.receipt",
+      "proofMode": "installed-deb",
+      "capability": "package-host",
+      "resourceKey": "packaged-runtime",
+      "mandatory": true,
+      "command": ["internal-reviewed-package", "C15"],
+      "oracle": "exact controlled private-map hash and independent PNG decode; packaged offline render and operator Check View; sanitized receipt only, private custody retained; synthetic fault matrix and human field acceptance remain separate"
+    },
+    {
       "contractId": "C16",
       "variantId": "settings-bootstrap",
       "adapterId": "package.reviewed",

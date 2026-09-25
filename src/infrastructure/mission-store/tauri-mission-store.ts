@@ -121,9 +121,13 @@ export type CoverageChunkCursor = {
   readonly id: string
 }
 
+/** Source-exact bounded coverage row, without unrelated full-position metadata. */
+export type CoverageChunkPosition = Pick<Position,
+  'id' | 'device_id' | 'source_position_id' | 'timestamp' | 'lat' | 'lon' | 'data_origin'>
+
 export type CoverageChunkPage = {
   readonly contentRev: number
-  readonly positions: readonly Position[]
+  readonly positions: readonly CoverageChunkPosition[]
   readonly nextCursor: CoverageChunkCursor | null
 }
 

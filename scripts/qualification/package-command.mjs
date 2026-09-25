@@ -63,7 +63,7 @@ const REVIEWED_TIERED_SCENARIOS = Object.freeze({
   C12: Object.freeze(['marker-attachment']),
   C13: Object.freeze(['coordinate-surface']),
   C14: Object.freeze(['map-surface']),
-  C15: Object.freeze(['official-offline-map']),
+  C15: Object.freeze(['official-offline-map', 'private-offline-map']),
   C16: Object.freeze(['settings-bootstrap']),
   C17: Object.freeze(['routine', 'family-contract']),
   C18: Object.freeze([...BACKUP_FAULT_VARIANTS, ...C18_LEGACY_VARIANTS]),
@@ -183,6 +183,10 @@ export function compilePackageCommand(contractId, context) {
     if (!PAGING_VARIANTS.has(producerVariantId)) throw new Error('Paging probe requires one reviewed paging profile.')
     args = [context.app, context.evidence, context.fixture, contractId]
   }
+  else if (contractId === 'C15' && producerVariantId === 'private-offline-map') {
+    if (typeof context.privateMap !== 'string' || !path.isAbsolute(context.privateMap)) throw new Error('Private map requires an exact bound absolute input.')
+    args = [context.app, context.evidence, context.privateMap]
+  }
   else if (contractId === 'C15') args = ['--app', context.app, '--evidence-dir', context.evidence]
   else {
     args = ['--app', context.app, '--evidence', context.evidence]
@@ -211,7 +215,9 @@ export function compilePackageCommand(contractId, context) {
   const replayScale = contractId === 'C10' && Object.hasOwn(REPLAY_SCALE_PROFILES, producerVariantId)
   const replayOuting = contractId === 'C10' && producerVariantId === REPLAY_OUTING_VARIANT
   return Object.freeze({
-    script: replayScale
+    script: contractId === 'C15' && producerVariantId === 'private-offline-map'
+      ? 'scripts/qualification/private-map-probe.mjs'
+      : replayScale
       ? 'scripts/qualification/replay-scale-probe.mjs'
       : replayOuting
         ? 'scripts/qualification/replay-outing-probe.mjs'
@@ -226,7 +232,9 @@ export function compilePackageCommand(contractId, context) {
           : producer[0],
     args: Object.freeze(args),
     producerVariantId,
-    report: replayScale
+    report: contractId === 'C15' && producerVariantId === 'private-offline-map'
+      ? 'private-map-report.json'
+      : replayScale
       ? 'replay-scale-report.json'
       : replayOuting
         ? 'replay-outing-report.json'

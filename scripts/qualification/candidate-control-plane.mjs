@@ -1571,6 +1571,9 @@ export function validateBindingCoverage(definition) {
       if (binding.adapterId === 'package.reviewed' && binding.contractId === 'C18') {
         requireRuntimeFixture('storage-mission', 'C18 package proof requires the bound storage-mission fixture role')
       }
+      if (binding.adapterId === 'package.reviewed' && binding.contractId === 'C15' && packageScenario === 'private-offline-map') {
+        requireRuntimeFixture('private-map', 'C15 private-map proof requires the bound private-map fixture role')
+      }
       if (binding.adapterId === 'package.reviewed'
           && (binding.contractId === 'C01'
             || binding.contractId === 'C19' && packageScenario === 'legacy-startup-boundaries'
@@ -1605,6 +1608,7 @@ export function validateBindingCoverage(definition) {
 function validateFixedCandidateFamilies(definition) {
   const blockers = []
   const requiredFamilies = [
+    ['C15', ['private-offline-map-appimage', 'private-offline-map-installed'], 'package.reviewed', 'package.receipt'],
     ['C25', REQUIRED_C25_CANDIDATE_VARIANTS, 'soak.reviewed', 'soak.receipt'],
     ['C28', REQUIRED_C28_CANDIDATE_VARIANTS, 'package.reviewed', 'package.receipt'],
   ]

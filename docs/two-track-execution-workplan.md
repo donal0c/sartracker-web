@@ -4,15 +4,36 @@
 
 ## Current Beta 13 decision — 2026-09-25
 
-**Current release-first queue:** PR50 and PR51 are merged; refreshed base master
-is `3b27b1c586d02dfa2c3d0b019d8a73d878e5f918`. Run `36174038700` passed
-correctness/package production but failed C12 infrastructure timeout. Ubuntu
-confirmed successful Electron exit with external attachment-viewer pipes holding
-Playwright close open. A narrow external-harness repair passed with the retained
-installer and unchanged supervisor; this is diagnostic proof, not qualification.
-Consolidate it with the independently confirmed exact installer-name admission
-fix (`x86_64.AppImage` / `amd64.deb`), finish stable source verification and
-independent review, push, then require successful exact-head CI before binding.
+**Current release-first queue:** master `00f1a8a9af4c57436f152c3cc1a51d69190da9e6`
+passed exact-source CI `36179770541`, including C12 cleanup, correctness/browser
+and packaged checks. PR50/51 and the contained C12/installer-name repair are
+integrated. Earlier failed run `36174038700` remains evidence; no candidate is frozen.
+
+The next substantive slice is a reviewed PR on `codex/beta13-input-qualification`:
+explicit v6 paging-ready fixtures (preserving incomplete-backfill regressions),
+the observed C08 stored-provenance omission through SQL/worker IPC, and a distinct
+private-map C15 qualification supplement with independent PNG decode and sanitized
+candidate-bound evidence. Preserve the synthetic map fault matrix and all oracles.
+Sol independently admitted the 5.32GB/4m field fixture and both smaller ready
+fixtures; final package paging and campaign bindings remain unproven. Complete
+independent exact-head review and PR CI; stable local checks passed 6,013 tests
+with 26 documented skips, lint/type/build and browser coverage 7/7. The bounded
+derived-map/older-installer diagnostic passed; no sealed candidate claim follows.
+Do not merge without Donal's authority. No product mapping feature work is included.
+
+Private map, live config/selector, storage baseline and public beta12.11 rollback
+assets are located and prepared. Donal explicitly authorized C05 GET-only reuse
+of the existing configured account and selected tracker on 2026-09-25; Sol alone
+executes after preflight/candidate binding, with no writes or expanded targets.
+Live proof remains pending. C29 human acceptance and authenticated
+beta13 Debian installation remain distinct gates. Current evidence and exact
+identities are in the canonical handoff and Ubuntu report, not the older snapshots.
+The original private map is correctly rejected for declared zoom 8–16 versus
+actual rows 9–16. Preserve that failure; only a separately named/hash-bound,
+metadata-only disposable derivative is authorized for positive-path diagnosis.
+No original-map qualification or silent campaign substitution is permitted.
+Final admission may bind the explicit derivative as a new immutable campaign
+input with private lineage and unchanged-tile evidence; C29 remains separate.
 
 Donal's 2026-09-25 authority permits small contained verified fixes directly on
 master; larger/safety-sensitive combined changes still require PR and independent
@@ -24,7 +45,9 @@ no weakened timing/cleanup gate or automatic publication. Final approval remains
 Donal's. Exact lane IDs, retained failed evidence and next actions are in
 `handoff/HANDOFF.md`. The older preparation/PR snapshots below are historical.
 
-**Post-PR47 preparation update:** PR47 is merged at master
+### Historical post-PR47 preparation snapshot (superseded)
+
+PR47 was merged at master
 `a703338a919159dd3a386671dba8aca969463255`; the older open-PR and master
 identities below are historical. No open PRs remained at the preceding stocktake.
 Follow [the testing readiness checklist](assurance/beta13-testing-readiness.md)

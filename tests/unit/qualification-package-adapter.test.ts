@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
+import { createPrivateMapPublicBinding } from '../../scripts/qualification/private-map-receipt.mjs'
+import { createSyntheticRasterTilePng } from '../../build/electron-official-map-qualification-smoke-lib.js'
 
 import {
   PACKAGE_ADAPTER_CONTRACTS,
@@ -261,6 +264,10 @@ it('requires exactly one fresh C15 run directory before flattening its report', 
   temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sartracker-map-run-'))
   const evidenceDirectory = path.join(temporaryRoot, 'evidence')
   await mkdir(evidenceDirectory)
+  await expect(resolveProducerReportLocation('C15', evidenceDirectory,
+    path.join(evidenceDirectory, 'private-map-report.json'), 'private-offline-map')).resolves.toEqual({
+    reportPath: path.join(evidenceDirectory, 'private-map-report.json'), captureDirectories: [],
+  })
   await mkdir(path.join(evidenceDirectory, 'run-fresh123'))
   await expect(resolveProducerReportLocation(
     'C15', evidenceDirectory, path.join(evidenceDirectory, 'summary.json'),
@@ -478,6 +485,45 @@ afterEach(async () => {
 })
 
 describe('packaged qualification adapter', () => {
+  it('revalidates a retained private-map receipt and rejects a substituted public candidate binding', async () => {
+    const fixture = await writeRetainedFixture()
+    const mapPath = path.join(temporaryRoot!, 'private-map.mbtiles')
+    const Database = createRequire(import.meta.url)('better-sqlite3')
+    const database = new Database(mapPath)
+    database.exec('CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB)')
+    database.prepare('INSERT INTO tiles VALUES (12, 1935, 2743, ?)').run(createSyntheticRasterTilePng('a'))
+    database.close()
+    const mapBytes = await readFile(mapPath)
+    const mapSha256 = sha256(mapBytes)
+    Object.assign(fixture.definition.runtimeInputs.config.fixtures, {
+      'private-map': { path: mapPath, bytes: mapBytes.length, sha256: mapSha256 },
+    })
+    const report = {
+      schema: 'sartracker-private-offline-map-v1',
+      runtime: { isPackaged: true, executableSha256: executableSha, asarSha256: asarSha },
+      map: { sha256: mapSha256, bytes: mapBytes.length, tileCount: 1, decodedTileCount: 1, minZoom: 12, maxZoom: 12 },
+      observations: { providerDisabled: true, networkBlocked: true, externalMapRequests: 0,
+        servedTileMatchesSource: true, servedTileDecoded: true, sourceLoaded: true, renderFrameObserved: true, targetViewConfirmed: true,
+        viewComplete: true, fieldReady: true, viewTotalTiles: 1, viewUsableTiles: 1, privateInputUnchanged: true },
+      custody: { privateBytesRetained: false, privateScreenshotsRetained: false },
+      process: { exitCode: 0, signal: null },
+    }
+    const reportBytes = Buffer.from(JSON.stringify(report))
+    await writeFile(path.join(fixture.attemptDirectory, 'package-raw-report.json'), reportBytes)
+    const privateMapPublicBinding = createPrivateMapPublicBinding({
+      definitionDigest: fixture.definition.definitionDigest, attemptId: path.basename(fixture.attemptDirectory),
+      sourceSha, sourceTree, version: '0.1.0-beta.13', proofMode: 'ci-appimage', artifactSha256: fixture.artifactSha,
+      executableSha256: executableSha, asarSha256: asarSha, mapSha256, mapBytes: mapBytes.length, rawReportSha256: sha256(reportBytes),
+    })
+    const binding = { contractId: 'C15', variantId: 'private-offline-map-appimage', proofMode: 'ci-appimage' }
+    const receipt = { ...fixture.receipt, ...binding, rawReportSha256: sha256(reportBytes), privateMapPublicBinding }
+    const options = { definition: fixture.definition, attemptDirectory: fixture.attemptDirectory }
+    expect((await validateRetainedPackage(receipt, binding, options)).status).toBe('PASS')
+    const tampered = { ...receipt, privateMapPublicBinding: { ...privateMapPublicBinding, sourceSha: 'f'.repeat(40) } }
+    const result = await validateRetainedPackage(tampered, binding, options)
+    expect(result.status).toBe('INVALID_EVIDENCE')
+    expect(result.failureReasons.join(' ')).toContain('Private-map public binding differs')
+  })
   it('exposes only reviewed packaged producer contracts and refuses missing runtime inputs', async () => {
     expect(PACKAGE_ADAPTER_CONTRACTS).toEqual(['C01', 'C02', 'C03', 'C05', 'C06', 'C07', 'C08', 'C09', 'C10', 'C11', 'C12', 'C13', 'C14', 'C15', 'C16', 'C17', 'C18', 'C19', 'C20', 'C21', 'C22', 'C23', 'C26', 'C28'])
     await expect(executePackageVariant({

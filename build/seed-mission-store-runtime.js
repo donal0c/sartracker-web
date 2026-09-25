@@ -218,6 +218,11 @@ function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultIn
         altitude, speed, battery, accuracy, source, timestamp, data_origin,
         received_at, content_hash, source_kind, timestamp_source
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'synthetic-fixture', ?, 'live', ?, ?, 'traccar_id', 'fix')`)
+    // This explicit field preset models the historical position audit echo
+    // already represented by legacy field fixtures; it is not current ingest.
+    const insertPositionAudit = plan.legacyPositionAudit ? db.prepare(`INSERT INTO mission_events
+      (id, mission_id, event_type, timestamp, details_json)
+      VALUES (?, ?, 'position_recorded', ?, ?)`) : null
     const mainPositionCount = plan.positionCount - 12
     const positionBatch = db.transaction((fromIndex, toIndex) => {
       for (let index = fromIndex; index < toIndex; index += 1) {
@@ -237,6 +242,12 @@ function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultIn
           row.timestamp,
           row.receivedAt,
           row.contentHash,
+        )
+        insertPositionAudit?.run(
+          createDeterministicId('bcp-position-audit', index),
+          FIXTURE_MISSION_ID,
+          row.timestamp,
+          syntheticPositionAuditDetails(row.id, row.deviceId, row.timestamp),
         )
       }
     })
@@ -276,6 +287,9 @@ function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultIn
       throw new Error(
         `Breadcrumb programme fixture position count drifted: expected ${plan.positionCount}, got ${rowCounts.positions}.`,
       )
+    }
+    if (rowCounts.positionRecordedEvents !== plan.positionRecordedEventCount) {
+      throw new Error('Breadcrumb programme fixture historical position audit count drifted.')
     }
     db.pragma('journal_mode = WAL')
     return {
@@ -445,8 +459,10 @@ function insertBreadcrumbProgrammeFoundation(db, plan, scenario) {
       programmeDeviceId(94),
       isoDay(0),
       isoDay(1),
-      new Date(FIXTURE_START_MS + 2 * 60 * 60 * 1000).toISOString(),
-      0,
+      plan.backfillScenario === 'synthetic-complete'
+        ? isoDay(1)
+        : new Date(FIXTURE_START_MS + 2 * 60 * 60 * 1000).toISOString(),
+      plan.backfillScenario === 'synthetic-complete' ? 1 : 0,
       isoDay(1),
     )
 
@@ -809,6 +825,7 @@ function readBreadcrumbProgrammeRowCounts(db) {
   ).pluck().get(eventType))
   const missionEvents = count('mission_events')
   const restartCheckpointEvents = eventCount('fixture_restart_checkpoint')
+  const positionRecordedEvents = eventCount('position_recorded')
   return {
     missions: count('missions'),
     devices: count('devices'),
@@ -816,10 +833,10 @@ function readBreadcrumbProgrammeRowCounts(db) {
     missionEvents,
     deviceCreatedEvents: eventCount('device_created'),
     deviceUpdatedEvents: eventCount('device_updated'),
-    positionRecordedEvents: eventCount('position_recorded'),
+    positionRecordedEvents,
     backupEvents: eventCount('mission_backup_synced'),
     restartCheckpointEvents,
-    operationalEvents: missionEvents,
+    operationalEvents: missionEvents - positionRecordedEvents,
     outings: count('outings'),
     missionTeams: count('mission_teams'),
     missionParticipants: count('mission_participants'),
@@ -992,14 +1009,7 @@ function insertSyntheticPoll({ statements, plan, counters }) {
       FIXTURE_MISSION_ID,
       'position_recorded',
       timestamp,
-      JSON.stringify({
-        synthetic_fixture: true,
-        position_id: positionId,
-        device_id: deviceId,
-        timestamp,
-        data_origin: 'live',
-        source: 'synthetic-fixture',
-      }),
+      syntheticPositionAuditDetails(positionId, deviceId, timestamp),
     )
     counters.positions += 1
     counters.missionEvents += 1
@@ -1122,6 +1132,18 @@ function syntheticDeviceColor(index) {
   return colors[index % colors.length]
 }
 
+/** Encode the real historical audit-echo shape shared by synthetic field profiles. */
+function syntheticPositionAuditDetails(positionId, deviceId, timestamp) {
+  return JSON.stringify({
+    synthetic_fixture: true,
+    position_id: positionId,
+    device_id: deviceId,
+    timestamp,
+    data_origin: 'live',
+    source: 'synthetic-fixture',
+  })
+}
+
 /** Reads and verifies a compatible cached fixture, or returns null when none exists. */
 async function readVerifiedCachedFixture(outputPath, manifestPath, plan) {
   let manifest
@@ -1142,6 +1164,10 @@ async function readVerifiedCachedFixture(outputPath, manifestPath, plan) {
     throw new Error(
       `Cached mission-store fixture is incompatible with preset ${plan.preset}; rerun with --force.`,
     )
+  }
+  if (plan.minimumDatabaseBytes !== undefined
+      && (await stat(outputPath)).size < plan.minimumDatabaseBytes) {
+    throw new Error(`Cached fixture is below its minimum ${plan.minimumDatabaseBytes} database bytes.`)
   }
   const actualSha256 = await sha256File(outputPath)
   if (actualSha256 !== manifest.database?.sha256) {

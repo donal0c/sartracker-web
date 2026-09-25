@@ -42,6 +42,8 @@ import { validateReplayReceipt } from './replay-receipts.mjs'
 import { validateMarkerAttachmentReceipt } from './marker-attachment-receipts.mjs'
 import { validateCoordinateSurface } from './coordinate-surface-receipts.mjs'
 import { validateMapSurface } from './map-surface-receipts.mjs'
+import { bindPrivateMapInput } from './private-map-input.mjs'
+import { createPrivateMapPublicBinding, validatePrivateMapReceipt } from './private-map-receipt.mjs'
 import { validateAttentionSurface } from './attention-receipts.mjs'
 import { validateCanonicalIngestSurface } from './canonical-ingest-receipts.mjs'
 import { validatePagingFiles, PAGING_PROFILES } from './paging-file-oracle.mjs'
@@ -118,6 +120,7 @@ export async function executePackageVariant({ normalized, binding, attemptDirect
     proofMode: binding.proofMode,
     appSha256: binding.proofMode === 'ci-appimage' ? artifact.sha256 : prepared.executableSha256,
     ...(fixture === null ? {} : { fixture: fixture.destination }),
+    ...(context.privateMap === null ? {} : { privateMap: context.privateMap.path }),
     ...((binding.contractId === 'C01'
       || (binding.contractId === 'C19' && binding.variantId === LEGACY_STARTUP_VARIANT)
       || (binding.contractId === 'C18' && binding.variantId === 'disk-full'))
@@ -141,7 +144,7 @@ export async function executePackageVariant({ normalized, binding, attemptDirect
     },
   })
   const reportPath = path.join(evidenceDirectory, command.report)
-  const reportLocation = await resolveProducerReportLocation(binding.contractId, evidenceDirectory, reportPath)
+  const reportLocation = await resolveProducerReportLocation(binding.contractId, evidenceDirectory, reportPath, context.bindingVariantId)
   const retained = await retainRawArtifacts({
     contractId: binding.contractId,
     variantId: context.bindingVariantId,
@@ -191,6 +194,8 @@ export async function executePackageVariant({ normalized, binding, attemptDirect
     stdoutPath: retained.stdoutPath,
     stderrPath: retained.stderrPath,
     rawReportSha256: retained.rawReportSha256,
+    ...(binding.contractId === 'C15' && context.bindingVariantId === 'private-offline-map'
+      ? { privateMapPublicBinding: privateMapPublicBinding(context, prepared, normalized.definitionDigest, retained.rawReportSha256) } : {}),
     c21WrapperReceiptPath: retained.c21WrapperReceiptPath,
     c21WrapperReceiptSha256: retained.c21WrapperReceiptSha256,
     c21WrapperReceiptError: retained.c21WrapperReceiptError,
@@ -219,7 +224,7 @@ export async function executePackageVariant({ normalized, binding, attemptDirect
     },
     validation,
     runtimeValidation: runtimeValid,
-    scopeGaps: scopeGaps(binding.contractId, binding.proofMode),
+    scopeGaps: scopeGaps(binding.contractId, binding.proofMode, context.bindingVariantId),
     evidence: [retained.rawReportPath, retained.runtimeObservationsPath, retained.stdoutPath, retained.stderrPath,
       ...(retained.pagingRowsPath === null ? [] : [retained.pagingRowsPath]),
       ...(retained.replayRowsPath === null ? [] : [retained.replayRowsPath]),
@@ -391,6 +396,10 @@ export async function validateRetainedPackage(receipt, binding, { definition, at
   const validation = ['C07', 'C08'].includes(binding.contractId)
     ? pagingValidation
     : await validateProducerReport(binding.contractId, validationReport, context, runtime, observations)
+  if (binding.contractId === 'C15' && context.bindingVariantId === 'private-offline-map'
+      && JSON.stringify(receipt.privateMapPublicBinding) !== JSON.stringify(privateMapPublicBinding(context, runtime, definition.definitionDigest, rawReportSha256))) {
+    failures.push('Private-map public binding differs from the independently retained candidate evidence.')
+  }
   const observedProductFailure = validation.status === 'FAIL' && validation.observedProductFailure === true
     && validation.evidenceComplete === true && [0, 1].includes(receipt.process?.exitCode)
   if (receipt.process?.exitCode !== 0 && !observedProductFailure) failures.push('Retained package process exited nonzero or has no terminal exit.')
@@ -439,7 +448,7 @@ export async function validateRetainedPackage(receipt, binding, { definition, at
     runtimeObservations: observations,
     failureReasons: Object.freeze(uniqueFailures),
     releaseEligible: false,
-    scopeGaps: scopeGaps(binding.contractId, binding.proofMode),
+    scopeGaps: scopeGaps(binding.contractId, binding.proofMode, context.bindingVariantId),
   })
 }
 
@@ -544,6 +553,8 @@ async function validateExecutionContext(normalized, binding, attemptDirectory, w
     enospcMount: config.enospcMount,
     runtimeInputs,
     campaignMode: normalized.mode,
+    privateMap: binding.contractId === 'C15' && normalizedVariant.producerVariantId === 'private-offline-map'
+      ? await bindPrivateMapInput(config.fixtures) : null,
   }
 }
 
@@ -693,6 +704,12 @@ export function validateOwnedProducerEvidencePath(filename, attemptDirectory) {
 
 /** Invoke only the existing independent producer oracle for the selected contract. */
 async function validateProducerReport(contractId, report, context, runtime, observations = null) {
+  if (contractId === 'C15' && context.bindingVariantId === 'private-offline-map') {
+    return validatePrivateMapReceipt(report, { executableSha256: runtime.executableSha256,
+      asarSha256: runtime.asarSha256, mapSha256: context.privateMap.sha256,
+      mapBytes: context.privateMap.bytes, tileCount: context.privateMap.tileCount,
+      minZoom: context.privateMap.minZoom, maxZoom: context.privateMap.maxZoom })
+  }
   if (contractId === 'C01' || (contractId === 'C19' && context.bindingVariantId === LEGACY_STARTUP_VARIANT)) {
     const { default: missionStore } = await import('../../electron/mission-store.cjs')
     const expected = {
@@ -1221,7 +1238,8 @@ async function runFixedPackageCommand({ command, runtimeExpected, cwd, environme
 }
 
 /** Resolve C15's one fresh producer run directory without guessing at an older report. */
-export async function resolveProducerReportLocation(contractId, evidenceDirectory, reportPath) {
+export async function resolveProducerReportLocation(contractId, evidenceDirectory, reportPath, variantId) {
+  if (contractId === 'C15' && variantId === 'private-offline-map') return { reportPath, captureDirectories: [] }
   if (contractId !== 'C15') return { reportPath, captureDirectories: [] }
   const entries = await readdir(evidenceDirectory, { withFileTypes: true })
   const runDirectories = entries.filter((entry) => entry.isDirectory() && /^run-[a-z0-9]+$/iu.test(entry.name))
@@ -1713,6 +1731,15 @@ function validateRuntimeObservations(observations, expected) {
 }
 
 /** Summarize a prepared runtime without retaining working-directory implementation details. */
+function privateMapPublicBinding(context, runtime, definitionDigest, rawReportSha256) {
+  return createPrivateMapPublicBinding({ definitionDigest, attemptId: path.basename(context.attemptDirectory),
+    sourceSha: context.sourceSha, sourceTree: context.sourceTree, version: context.version,
+    proofMode: context.bindingProofMode, artifactSha256: context.artifact.sha256,
+    executableSha256: runtime.executableSha256, asarSha256: runtime.asarSha256,
+    mapSha256: context.privateMap.sha256, mapBytes: context.privateMap.bytes, rawReportSha256 })
+}
+
+/** Summarize a prepared runtime for private campaign revalidation; paths are not public evidence. */
 function safeRuntimeSummary(prepared) {
   return {
     proofMode: prepared.proofMode,
@@ -1725,7 +1752,7 @@ function safeRuntimeSummary(prepared) {
 }
 
 /** Return explicit bounded adapter gaps instead of upgrading a smoke to a contract claim. */
-function scopeGaps(contractId, proofMode) {
+function scopeGaps(contractId, proofMode, variantId) {
   const gaps = [
     'producer validator provenance remains separate from the wrapper actual-process proof',
     'this adapter does not create field, release-publication, or operator-acceptance evidence',
@@ -1737,7 +1764,9 @@ function scopeGaps(contractId, proofMode) {
   if (contractId === 'C06') gaps.push('C06 uses a deterministic loopback provider and synthetic two-device attention path; field GPS distributions and operator acceptance remain separate')
   if (contractId === 'C18') gaps.push('C18 uses a copied storage-mission fixture and does not mutate the bound source fixture')
   if (contractId === 'C19') gaps.push('C19 covers fixed default-profile schema-v11 recovery, forced-kill, restart, large local/field envelopes, the twelve-schema migration matrix and shared C01 startup-boundary predicates; field operator acceptance remains separate, while DON-249/250/251 product capabilities remain explicit blockers')
-  if (contractId === 'C15') gaps.push('C15 covers the existing synthetic offline map package and one fresh run directory; it does not qualify licensed/private map coverage or a field package')
+  if (contractId === 'C15') gaps.push(variantId === 'private-offline-map'
+    ? 'C15 private supplement proves only this exact controlled map and candidate at one bounded offline view; synthetic fault matrix, field workflow and human acceptance remain separate. Campaign definitions/runtime input paths and raw logs remain private; only the closed sanitized producer receipt is shareable.'
+    : 'C15 covers the existing synthetic offline map package and one fresh run directory; it does not qualify licensed/private map coverage or a field package')
   if (['C20', 'C22'].includes(contractId)) gaps.push(`C${contractId.slice(1)} covers the fixed field-archive-37gb lane with its 3.7GB source and 3.5GB ciphertext floors; smaller routine and paging-scale archive profiles remain separate package variants`)
   if (contractId === 'C23') gaps.push('C23 proves packaged IPC containment only; it does not establish field, release-publication, or operator acceptance')
   if (contractId === 'C13') gaps.push('C13 covers the fixed packaged coordinate golden vectors and one bearing persistence/render path; exhaustive coordinate corpus and field acceptance remain separate')

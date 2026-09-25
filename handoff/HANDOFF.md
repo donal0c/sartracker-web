@@ -1,101 +1,104 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-25. Release remains **HOLD**. PR50 and PR51 are merged;
-refreshed base master is `3b27b1c586d02dfa2c3d0b019d8a73d878e5f918`.
-Earlier pending-PR/Fable requirements are superseded by current authority.
-No candidate is frozen or qualified; no tag/publication/distribution is authorized.
+Updated 2026-09-25. Release remains **HOLD**. Master
+`00f1a8a9af4c57436f152c3cc1a51d69190da9e6` passed exact-source CI
+[36179770541](https://github.com/donal0c/sartracker-web/actions/runs/36179770541).
+No final candidate is frozen or qualified; no tag/publication/distribution is authorized.
 
-## Authority and active lanes
+## Authority and active work
 
 Donal authorized release-first stabilization and the existing `bcp17-final`
-C00–C29 campaign. Small contained, verified fixes may go directly to master;
-larger/safety-sensitive combined changes require a PR and independent review.
+C00–C29 campaign. Small contained verified fixes may go directly to master;
+the combined preparation now uses `codex/beta13-input-qualification` and requires
+a PR plus independent exact-head review. Do not merge without Donal's authority.
 No new features, full mapping, broad WAR, database redesign or Claude/Fable.
-Donal retains final release approval.
+DON-254 comment `00ce69cd-ff6f-47f7-b6e9-fd3360fe509f` records current authority;
+its historical Done state is not whole-candidate qualification. DON-255 is downstream.
 
-- Source/test/CI and canonical handoff/workplan: Astra task
-  `01a0d9f5-7727-7060-ab59-4549f3a513c8`, isolated worktree `1608`.
-- Sole Ubuntu installation/runtime/performance owner: Sol task
-  `01a0d9f5-771a-7993-9e10-4ae1cbb1e3bb`; serialize host workloads.
-- Artifact/fixture/campaign preparation: Luna task
-  `01a0d9f5-774b-7f42-bfc5-dc94f4523e6c`; report findings to the integrator.
-- Coordination: `01a023b0-f891-75f2-b0f3-7cb8b6b17abe`.
+- Source/test/CI and canonical records: Astra `01a0d9f5-7727-7060-ab59-4549f3a513c8`, worktree `1608`.
+- Sole Ubuntu installation/runtime/performance owner: Sol `01a0d9f5-771a-7993-9e10-4ae1cbb1e3bb`, worktree `3226`.
+- Preparation audit is finished; use its report, not its older handoff snapshot.
+- Coordinator: `01a023b0-f891-75f2-b0f3-7cb8b6b17abe`.
 
 Do not alter the dirty original checkout or coordinator's release-prep checkout.
-DON-254's historical Done state is not whole-candidate qualification; DON-255
-remains downstream. Authority: DON-254 comment
-`00ce69cd-ff6f-47f7-b6e9-fd3360fe509f`.
+Serialize Ubuntu workloads through Sol.
 
-## Current repair and verification
+## Verified baseline and diagnosed deltas
 
-Run `36174038700` passed correctness/package production, but C12 exceeded the
-unchanged 300000-ms infrastructure deadline despite exit 0 and a written receipt.
-Artifact `10880449533` is diagnostic input, not an admitted candidate.
-Failed receipts remain in the coordinator's
-`tmp/pr51-postmerge-failure/tmp/electron-validation-evidence/` directory.
+The master repair fixed C12's viewer-held output pipes after Electron exited,
+and exact installer names (`x86_64.AppImage` / `amd64.deb`). Retained exact-CI
+C12 evidence confirms exit 0, no timeout/error and zero descendants. Source,
+browser and packaged CI jobs passed; this is development verification, not
+sealed campaign qualification. Earlier failed run `36174038700` and artifact
+`10880449533` remain diagnostic evidence. Successful installer artifact:
+`10884001990`; full hashes and closeout are in DON-254 comment
+`7461fc0a-2f8c-40ec-840c-647f7690c3c8`.
 
-Ubuntu confirmed Electron exited 0 while xdg-open/GNOME Text Editor retained
-its stdout/stderr pipes, leaving Playwright `app.close()` pending. The bounded
-C12 harness repair releases its output read ends only after physical Electron
-exit, still awaits Playwright close, and rejects nonzero/signal/unobserved exit.
-Application handoff, supervisor cleanup and timeout gates are unchanged.
-Updated harness plus the same installer passed: exit 0, no timeout/error,
-positive cleanup proof and zero descendants. This is diagnostic evidence only.
-Raw Ubuntu evidence is under
-`/home/donal/sartracker-beta13-diagnostic-3b27b1c5/tmp/`:
-`ubuntu-c12-lifetime-console.log`, `ubuntu-c12-lifetime-evidence/`,
-`ubuntu-c12-patched-execution.json` and `ubuntu-c12-patched-evidence/`.
+Current reviewed-PR scope:
+1. Separate v6 `bcp-960k-paging`, `bcp-2m-paging` and `bcp-field-37gb`
+   synthetic-complete fixtures. Existing v5 mixed-backfill profiles remain intact.
+   Field data models explicitly labelled historical position audit echoes;
+   every echo links to one real primary fix. No padding or gate relaxation.
+2. C08 provenance repair: preserve stored `live`/`cache` through both coverage
+   SQL branches and the worker envelope; narrow the page type to its seven
+   actual fields. The independent oracle remains unchanged.
+3. Separate private-map C15 valid/offline/readiness supplement for both package
+   tiers, independent PNG decoding and closed sanitized receipts. Keep the
+   synthetic fault matrix. No product map changes or private map screenshots.
 
-Candidate admission also expected nonexistent `linux_x64` installer names.
-Actual CI members use `linux_x86_64.AppImage` / `linux_amd64.deb`.
-The corrected exact allowlist preserves workflow-specific manifest membership,
-source/run/archive provenance, extraction guards and installer checksum checks.
-The preparation audit found no other stale member consumer or attempt-lineage defect.
+Sol admitted the three new fixture files independently. The field file is
+5,320,654,848 bytes, SHA-256
+`43cbe38949bdcb3b419c1a745a8f36aee8d4ec62cb55a219babcf8922dd25ed2`:
+3,999,988 primary fixes + 12 legacy, 100 devices, 12 outings, two complete
+backfill checkpoints, exact one-to-one audit links, integrity/quick checks good,
+no sidecars. This is input preparation only. Retain both C08 failures: original
+v5 incomplete backfill, then ready-v6 first-page missing `data_origin` in the
+old package. Exact repaired-package paging remains pending.
 
-Both defects have red/green regressions. Final related Ubuntu tests passed 31/31,
-including the close-error-listener delta. Filename/manifest tests
-passed 37/37. `npm run lint` and `npm run build` passed; generated version metadata
-was restored. `npm run test:correctness -- --no-file-parallelism` passed all
-579 files: 5,972 tests passed and 26 platform-specific tests skipped. Ubuntu
-ran `qualification-marker-attachment-close`, `qualification-owned-process` and
-`qualification-owned-process-custody` unit files serially: 31/31 passed.
-Independent native Luna review found no blockers. Release timing was not run.
-Low-impact retained review boundary: output-pipe release may omit final buffered
-diagnostic lines; receipt/physical exit checks remain. The pure inventory helper
-is called only after strict provenance/version validation.
+Private-map diagnostics retain the original input rejection: metadata says zoom
+8–16, actual tiles 9–16; the product correctly rejects it. A separately hashed
+metadata-only disposable derivative is authorized for positive-path diagnostics,
+with unchanged tile bytes and explicit provenance; never certify the original.
+That derivative (`16e55b8e…ec8b233`) passed the full old-installer diagnostic:
+31,729 independent PNG decodes, exact registration/serve/render, 15/15 required
+local tiles and Field ready, no external map requests, clean process/profile exit.
+Final admission must explicitly bind the derivative in a new immutable campaign
+with owner-private lineage; C29 acceptance remains separate.
 
-The final repair SHA and exact-head CI outcome are maintained in DON-254 comment
-`7461fc0a-2f8c-40ec-840c-647f7690c3c8`; refresh that live closeout before candidate
-admission. Recording CI status there avoids rebuilding unchanged source solely
-to add the completed run's identity to these documents.
+## Verification and next actions
 
-## Next actions and retained limits
+Full serial correctness passed 580 files / 6,013 tests, with 26 documented skips;
+lint, type check, production build/bundle budgets and browser coverage 7/7 passed.
+The first full run found one positional SQL fixture insert incompatible with the
+updated test schema; reproduced, repaired with named columns, then full rerun green.
+Ready-fixture/C08/private-map focused checks and independent reviews passed.
+Final committed-head review and PR CI remain pending. Current changes add no
+operator controls or workflow; the manual remains applicable.
 
-1. Stable source verification, Linux delta and independent review are complete.
-   Integrate this contained repair with explicit refspec; use the live DON-254
-   closeout above for its pushed identity and CI outcome.
-2. Follow fresh exact-head CI to completion. Old-installer/new-harness diagnostics
-   and failed-run installers cannot satisfy final candidate admission.
-3. Bind successful exact installers, runtime inputs, fixture hashes and human
-   authorities; compile a new immutable campaign and execute the existing gates.
-4. Independent human/original-machine acceptance and publication remain separate.
+Finish the exact-head review, open the reviewed PR, and wait for exact-head CI. After
+authorized merge, bind the final successful installers and all inputs to one
+immutable campaign; execute all mandatory rows and retain failures.
 
-Sol also passed C28 routine (nine phases) and C26 duplicate-launch diagnostics
-with the retained installer. Genuine installed-deb proof remains outstanding:
-installed version is beta12.11 and noninteractive sudo is unavailable. Continue
-other work; use supported administrator access, never alter authentication.
-Historical schema-9 paging fixtures were rejected. Sol subsequently verified fresh
-schema-13 960k/2m hashes, quick_check and 100-device/12-outing counts; final oracle
-and campaign binding remain outstanding. Recheck the separate 32 MiB
-`/mnt/sartracker-beta13-enospc` volume and preserve the earlier NVIDIA apt failure.
+Prepared inputs now include private offline map, schema-12 storage baseline,
+private live config/selector and verified public beta12.11 rollback installers.
+Do not request these files again. Donal explicitly confirmed C05 reuse of the
+existing configured Traccar account and selected tracker on 2026-09-25, strictly
+GET-only and executed by Sol after preflight/candidate binding (DON-254 comment
+`af5f3aa6-5cd3-40c0-8947-4c327d3a5a3e`). No writes or expanded targets; keep
+credentials/target values private. Consent is cleared; live proof remains pending.
+C29 named original-machine/human acceptance remains required.
+Genuine beta13 installed-deb execution needs a supported authenticated administrator
+session; currently installed beta12.11 is not substitute proof. Recheck the separate
+32 MiB ENOSPC volume before use; never alter authentication.
 
-Live mission-store process isolation remains explicitly post-Beta13;
-`app.whenReady()` is outside the startup watchdog. Historical C19 261.161-ms,
-original-machine, live/provider/private-map, soak/custody and remaining campaign
-obligations are not cleared. DON-179 remote upload/private retention remains
-In Progress. Operator behavior is unchanged; no repair-specific manual change.
+Campaign definitions/runtime paths/raw logs stay in controlled private custody.
+Only closed sanitized map component evidence and its candidate-binding summary
+are shareable; no map bytes, locations or screenshots enter repository evidence.
+Full C00–C29 runtime/scale/soak/custody obligations remain. Live mission-store
+process isolation is post-Beta13; `app.whenReady()` remains outside the startup
+watchdog. DON-179 private retention/upload work is still open.
 
-Historical detail: [pre-repair handoff](archive/2026-09-25-pre-c12-repair.md),
-[Ubuntu diagnostic report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
+Evidence and history: [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
 [active workplan](../docs/two-track-execution-workplan.md),
-[testing readiness](../docs/assurance/beta13-testing-readiness.md).
+[testing readiness](../docs/assurance/beta13-testing-readiness.md),
+[pre-repair history](archive/2026-09-25-pre-c12-repair.md).

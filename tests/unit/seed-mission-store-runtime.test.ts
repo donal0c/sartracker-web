@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readdirSync } from 'node:fs'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -33,6 +34,9 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
   }
 }
 const Database = require('better-sqlite3')
+const { readCoverageManifestSnapshot } = require('../../electron/coverage-query.cjs') as {
+  readCoverageManifestSnapshot: (database: unknown, input: { missionId: string }) => { backfillIncomplete: boolean }
+}
 
 const tempPaths: string[] = []
 
@@ -42,6 +46,80 @@ afterEach(async () => {
 })
 
 describe('generateMissionStoreFixture [DON-242]', () => {
+  it.each([
+    ['bcp-960k', 1], ['bcp-2m', 1],
+    ['bcp-960k-paging', 0], ['bcp-2m-paging', 0], ['bcp-field-37gb', 0],
+  ])('keeps the declared backfill readiness of %s explicit [DON-254]', async (preset, incomplete) => {
+    const tempRoot = await makeTempRoot()
+    const directory = path.join(tempRoot, 'cache')
+    let checkpoints: { total: number; incomplete: number; inconsistent: number } | undefined
+    let coverageIncomplete: boolean | undefined
+    await expect(generateMissionStoreFixture({
+      preset, outputPath: path.join(directory, 'source.sqlite'), force: true,
+      progress: () => {
+        const owned = readdirSync(directory).find((name) => name.startsWith('.seed-mission-store-'))
+        if (owned === undefined) throw new Error('Owned generator database is missing.')
+        const db = new Database(path.join(directory, owned, 'mission-store.sqlite'), { readonly: true })
+        try {
+          checkpoints = db.prepare(`SELECT COUNT(*) AS total,
+            SUM(completed = 0) AS incomplete,
+            SUM(completed = 1 AND reconciled_until IS NOT window_to) AS inconsistent
+            FROM participant_backfill_checkpoints`).get()
+          const missionId = db.prepare('SELECT mission_id FROM positions LIMIT 1').pluck().get()
+          coverageIncomplete = readCoverageManifestSnapshot(db, { missionId }).backfillIncomplete
+          expect(db.prepare('SELECT COUNT(*) FROM positions').pluck().get()).toBe(10_000)
+          expect(db.prepare('SELECT COUNT(DISTINCT device_id) FROM positions').pluck().get()).toBe(100)
+          expect(db.prepare('SELECT COUNT(*) FROM outings').pluck().get()).toBe(12)
+        } finally { db.close() }
+      },
+      faultInjection: { afterPollBatches: 1 },
+    })).rejects.toThrow(/Injected fixture generation interruption after poll batch/u)
+    expect(checkpoints).toEqual({ total: 2, incomplete, inconsistent: 0 })
+    expect(coverageIncomplete).toBe(incomplete === 1)
+  }, 30_000)
+  it('rejects an undersized cached field file even when its hash and preset identity match [DON-254]', async () => {
+    const tempRoot = await makeTempRoot()
+    const outputPath = path.join(tempRoot, 'small.sqlite')
+    const generated = await generateMissionStoreFixture({ preset: 'small', outputPath, force: true })
+    await writeFile(`${outputPath}.manifest.json`, JSON.stringify({
+      ...generated.manifest, preset: 'bcp-field-37gb', generatorVersion: 6,
+    }))
+    await expect(generateMissionStoreFixture({ preset: 'bcp-field-37gb', outputPath }))
+      .rejects.toThrow(/minimum.*3700000000/iu)
+    await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
+  }, 30_000)
+  it('links synthetic historical position audit records to BCP fixes before a bounded interruption [DON-254]', async () => {
+    const tempRoot = await makeTempRoot()
+    const directory = path.join(tempRoot, 'cache')
+    let observed: { positions: number; events: number; linkedPositions: number; unmatched: number; devices: number; outings: number } | undefined
+    await expect(generateMissionStoreFixture({
+      preset: 'bcp-field-37gb', outputPath: path.join(directory, 'field.sqlite'), force: true,
+      progress: () => {
+        const owned = readdirSync(directory).find((name) => name.startsWith('.seed-mission-store-'))
+        if (owned === undefined) throw new Error('Owned generator database is missing.')
+        const db = new Database(path.join(directory, owned, 'mission-store.sqlite'), { readonly: true })
+        try {
+          observed = {
+            positions: db.prepare('SELECT COUNT(*) FROM positions').pluck().get(),
+            events: db.prepare("SELECT COUNT(*) FROM mission_events WHERE event_type = 'position_recorded'").pluck().get(),
+            linkedPositions: db.prepare("SELECT COUNT(DISTINCT json_extract(details_json, '$.position_id')) FROM mission_events WHERE event_type = 'position_recorded'").pluck().get(),
+            unmatched: db.prepare(`SELECT COUNT(*) FROM mission_events e LEFT JOIN positions p
+              ON p.id = json_extract(e.details_json, '$.position_id')
+              AND p.mission_id = e.mission_id AND p.device_id = json_extract(e.details_json, '$.device_id')
+              AND p.timestamp = e.timestamp AND p.timestamp = json_extract(e.details_json, '$.timestamp')
+              WHERE e.event_type = 'position_recorded' AND (p.id IS NULL
+                OR json_extract(e.details_json, '$.synthetic_fixture') IS NOT 1
+                OR json_extract(e.details_json, '$.source') IS NOT p.source
+                OR json_extract(e.details_json, '$.data_origin') IS NOT p.data_origin)`).pluck().get(),
+            devices: db.prepare('SELECT COUNT(DISTINCT device_id) FROM positions').pluck().get(),
+            outings: db.prepare('SELECT COUNT(*) FROM outings').pluck().get(),
+          }
+        } finally { db.close() }
+      },
+      faultInjection: { afterPollBatches: 1 },
+    })).rejects.toThrow(/Injected fixture generation interruption after poll batch/u)
+    expect(observed).toEqual({ positions: 10_000, events: 10_000, linkedPositions: 10_000, unmatched: 0, devices: 100, outings: 12 })
+  }, 30_000)
   it('atomically generates a reusable synthetic store that opens through the real adapter', async () => {
     const tempRoot = await makeTempRoot()
     const outputPath = path.join(tempRoot, 'cache', 'mission-store.sqlite')
