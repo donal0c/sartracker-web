@@ -12,12 +12,10 @@ canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
 packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47
-remains open as a draft. Its current branch has the 10-second, post-readiness
-startup watchdog and isolated evidence writer. The fatal-error path handles
-rejected or stalled evidence writes without suppressing the operator dialog.
-Exact-head Linux CI and fresh review must clear on the final pushed commit
-before changing draft readiness. No C01 qualification is claimed. Do not treat
-master CI or packaged receipts as candidate qualification.
+is open at `0e6db8a26b62327055d76f1b61782e6d600caa96`; exact-head Linux run
+`36116343282` passed and independent exact-head review found no actionable
+findings; PR #47 is ready for review. No C01 qualification is claimed. Do not
+treat master CI or packaged receipts as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -164,8 +162,9 @@ both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
 timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
 CI and fresh review remain pending; keep PR #47 draft.
 
-**C01 current PR follow-up — 2026-09-25:** PR #47 remains draft. Exact-head
-Linux run `36098634511` failed because the dismissed fault window was followed
+**C01 current PR follow-up — 2026-09-25:** PR #47 is open at
+`0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-head Linux run
+`36098634511` failed because the dismissed fault window was followed
 by harness cleanup rather than product exit. The repair routes runtime/crash
 log I/O through an Electron utility process, wires sender-checked IPC for
 fault-window dismissal, and attempts to reap a stuck writer before exit. Startup
@@ -193,11 +192,23 @@ open. The regressions reproduced these missing-dialog and unsafe-exit paths.
 The full strict suite passes with two workers (5,944 passed, 19 skipped), along
 with lint, syntax, and diff checks. A four-worker run hit two existing 200 ms
 responsiveness guards; both checks passed in isolation and again in the
-two-worker full run. No thresholds changed. Linux run `36114434278` is on the
-immediately preceding commit `52457b07` and cannot verify this follow-up.
-Exact-head Linux CI and fresh review remain required.
-`app.whenReady()` and synchronous SQLite open/migration remain outside the
-watchdog; DON-179 remains In Progress; no C01 qualification is claimed.
+two-worker full run. No thresholds changed. Linux run `36114434278` was on the
+immediately preceding commit `52457b07` and did not verify this follow-up.
+Exact-head Linux run `36116343282` subsequently passed, and independent review
+of the exact head found no actionable findings. Its held diagnostics, held
+crash-log `fsync`, SQLite lock, and non-regular crash evidence probes all
+recorded product exit code 1 without a signal or harness kill and preserved
+the original mission/settings data. The held-gate mechanics receipts explicitly
+record `qualificationExecuted=false`; no C01 qualification is claimed.
+
+The 10-second watchdog starts after Electron readiness and covers the awaited
+asynchronous startup path, but `app.whenReady()` and synchronous native SQLite
+open/migration remain outside it. Donal decided on 2026-09-25 to defer live
+mission-store process isolation until after Beta 13, without treating it as
+fixed or qualified. Keep the follow-on visible in
+[post-Beta 13 mission-store isolation](post-beta13-mission-store-isolation.md).
+DON-179 remains In Progress because opt-in upload and private retention remain
+outside this repair. Beta 13 remains HOLD.
 
 The preceding full strict suite passed `npm test -- --maxWorkers=4` (5,937
 passed, 19 skipped); its earlier attempt measured 216 ms in the existing 200 ms
