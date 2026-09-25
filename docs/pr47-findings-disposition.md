@@ -90,6 +90,43 @@ qualification and release approval remain separate.
 | F08 | Pending/failed renderer evidence fence allows unsafe fatal relaunch | Fence bounded; failed/stuck fence prevents automatic relaunch |
 | F09 | Missing crash error because receipt read the wrong log shape | Fixed in the held-gate receipt path: the probe separately emits structured `startupFailures` and text `startupFailureSummaries` from their respective runtime/crash sources (`startup-probe.mjs:924-927, 970-1023`); policy and receipt validation consume those fields (`producer-development-policy.mjs:32-54`, `startup-receipts.mjs:501-527`). Regression fixtures are in `tests/unit/qualification-startup-receipts.test.ts:203-230`. Run `36116343282`'s held-crash receipt contains `crashKinds: ["startupFailure"]` and the newer-schema failure summary; it also records product exit code 1, null signal, and no harness kill. |
 
+## Multi-agent review of `7fda435` (2026-09-25)
+
+A five-area review (main startup/fatal flow, evidence writer, fault window,
+qualification harness, tests) of documentation head `7fda435` found the
+defects below. Each was confirmed in source and reproduced by a failing
+regression before its fix. IDs are `V`.
+
+| ID | Finding | Disposition |
+| --- | --- | --- |
+| V01 | A second fatal fault after an unreaped writer relaunched anyway: the terminating helper failed writes instantly, which read as "writes completed" | Fixed: `electron/terminal-fault-state.cjs` lets one response own exit; later faults record best-effort evidence only and never relaunch or release a held lock |
+| V02 | Concurrent fatal faults ran overlapping responses (duplicate dialogs, conflicting relaunch/hold) | Fixed by V01's single-owner state |
+| V03 | Quitting after a withheld relaunch wrote the clean-exit marker for a crashed session | Fixed: no clean-exit marker once any terminal fault was handled; next launch runs unclean-shutdown checks |
+| V04 | A dead evidence helper made every quit fail as "unsafe teardown" and `crashLog.record` rejected, breaking renderer-crash handling and macOS window restore | Fixed: service `record` is best effort again (matching the in-process contract); a failed clean-exit marker fails safe (session stays unclean) and quit completes |
+| V05 | Evidence helper stop failure at quit left a closed store in an open process | Fixed: held open under the lock with an operator notice |
+| V06 | Reap failure left pending requests and readiness unsettled | Fixed: waiters are rejected when reaping fails; real SIGKILL/unreapable path now tested |
+| V07 | Fault-page load failure suppressed the native fallback dialog (`destroy()` emits `closed` synchronously) | Fixed: settle before destroy on both failure paths |
+| V08 | Fault window accepted navigation (e.g. file drop) and new windows | Fixed: navigation and window-open denied |
+| V09 | Cmd+Q during a startup fault skipped the evidence wait | Fixed: quit request is routed through the window's dismissal path |
+| V10 | A held process ignored second launches silently | Fixed: second launch repeats the hold notice |
+| V11 | Runtime-log stall alone made saved crash evidence read as unconfirmed | Fixed: crash-write outcome observed independently |
+| V12 | Newly created `crashes/` directory entry was not synced | Fixed: parent directory synced on first creation |
+| V13 | Held-gate policy graded product failures as `INVALID_EVIDENCE` (exit before dismissal; late dialog with own exit; diagnostics negative lacking fault-shell time; crash-write product hang) | Fixed: these grade as product `FAIL`; harness failures still `INVALID_EVIDENCE` |
+| V14 | Probe hold release could throw (missing `crashes/`) and skip killing the owned process | Fixed: release creates the directory, and cleanup release cannot skip termination |
+| V15 | Timeout wording was ungrammatical | Fixed; step name retained for support |
+| V16 | Evidence worker had no unit test | Fixed: worker lifecycle, durable-write error propagation and drain-before-shutdown tested |
+
+Reviewed and not changed: the `c01-observer-isolation.yml` gate list omits
+`crash-write`, but that workflow is a stale one-off diagnostic pinned to a
+retained `49918966` package; ordinary PR CI runs `crash-write` through
+`producer-development-plan.mjs`. Deliberately deferred (low, recorded): no
+respawn of an evidence helper that dies mid-session (now fails safe); a hidden
+loaded renderer is not destroyed after a window-stage timeout; a fatal fault
+before startup completes can still relaunch (pre-existing); `lstat`/`readFile`
+race in the regular-file guard; catch-all startup copy for non-data errors;
+fixture 25-second self-release, un-timed `xdotool` calls and `getenv` from
+worker threads in the C fixture.
+
 ## Outstanding queue: when each item comes back
 
 1. **After Beta 13: live mission-store isolation.** Donal explicitly deferred

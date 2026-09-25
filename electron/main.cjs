@@ -51,7 +51,11 @@ const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
 const { createStartupEvidenceService } = require('./startup-evidence-service.cjs')
-const { showStartupFailureWindow } = require('./startup-failure-window.cjs')
+const {
+  closeStartupFailureWindows,
+  showStartupFailureWindow,
+} = require('./startup-failure-window.cjs')
+const { createTerminalFaultState } = require('./terminal-fault-state.cjs')
 const {
   STARTUP_RESPONSE_TIMEOUT_MS,
   createStartupWatchdog,
@@ -245,6 +249,24 @@ const electronRuntimeContext = {
   stopEventLoopDiagnostics: null,
   rendererTeardownCoordinator: null,
 }
+const terminalFaultState = createTerminalFaultState()
+
+const FATAL_RESTART_BLOCKED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not restart safely',
+  message: 'Pending tracking evidence could not be marked safely after the fatal runtime fault. SAR Tracker has kept the current process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
+})
+const FATAL_WRITER_UNREAPED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not restart safely',
+  message: 'The diagnostic writer could not be stopped after the fatal runtime fault. SAR Tracker has kept this process open and will not relaunch automatically. Do not launch another copy. Preserve the profile and contact support before forcing it closed.',
+})
+const STARTUP_WRITER_UNREAPED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not close safely',
+  message: 'The diagnostic writer could not be confirmed stopped after startup failed. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
+})
+const QUIT_WRITER_UNREAPED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not close safely',
+  message: 'The diagnostic writer could not be confirmed stopped while SAR Tracker was closing. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
+})
 
 configureLinuxSecretStorage()
 
@@ -253,6 +275,11 @@ if (!ownsSingleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
+    // A held process has no usable window to focus; repeat why it is open.
+    if (terminalFaultState.notice !== null) {
+      showTerminalFaultNotice()
+      return
+    }
     focusExistingWindow()
   })
 }
@@ -527,6 +554,7 @@ function reportUnsafeRendererRestore(error, runtimeLog) {
 
 /** Keeps a fatally damaged runtime open when mission evidence cannot be fenced. */
 function reportUnsafeFatalRestart(error, runtimeLog) {
+  terminalFaultState.withholdRelaunch(FATAL_RESTART_BLOCKED_NOTICE)
   void runtimeLog?.append({
     level: 'error',
     event: 'fatal_restart_blocked',
@@ -536,37 +564,40 @@ function reportUnsafeFatalRestart(error, runtimeLog) {
         : 'unknown_fatal_restart_failure',
     },
   })
-  try {
-    dialog.showErrorBox(
-      'SAR Tracker could not restart safely',
-      'Pending tracking evidence could not be marked safely after the fatal runtime fault. SAR Tracker has kept the current process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
-    )
-  } catch {
-    // The runtime log above retains the blocking failure in headless contexts.
-  }
+  showTerminalFaultNotice()
 }
 
 /** Keeps the current process open when the isolated diagnostic writer is still live. */
 function reportFatalEvidenceWriterStopFailure() {
-  try {
-    dialog.showErrorBox(
-      'SAR Tracker could not restart safely',
-      'The diagnostic writer could not be stopped after the fatal runtime fault. SAR Tracker has kept this process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
-    )
-  } catch {
-    // Keep the current process open when a native dialog is unavailable.
-  }
+  terminalFaultState.holdForUnreapedWriter(FATAL_WRITER_UNREAPED_NOTICE)
+  showTerminalFaultNotice()
 }
 
 /** Keeps the single-instance lock when a startup evidence writer cannot be reaped. */
 function reportStartupEvidenceWriterStopFailure() {
+  terminalFaultState.holdForUnreapedWriter(STARTUP_WRITER_UNREAPED_NOTICE)
+  showTerminalFaultNotice()
+}
+
+/** Keeps the single-instance lock when the evidence writer cannot be stopped at quit. */
+function reportQuitEvidenceWriterStopFailure(runtimeLog) {
+  terminalFaultState.holdForUnreapedWriter(QUIT_WRITER_UNREAPED_NOTICE)
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'evidence_writer_stop_blocked',
+    fields: { phase: 'app_quit' },
+  })
+  showTerminalFaultNotice()
+}
+
+/** Shows the current terminal-fault hold notice to the operator, if any. */
+function showTerminalFaultNotice() {
+  const notice = terminalFaultState.notice
+  if (notice === null) return
   try {
-    dialog.showErrorBox(
-      'SAR Tracker could not close safely',
-      'The diagnostic writer could not be confirmed stopped after startup failed. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
-    )
+    dialog.showErrorBox(notice.title, notice.message)
   } catch {
-    // Keep the current process open when a native dialog is unavailable.
+    // The process stays open even when a native dialog is unavailable.
   }
 }
 
@@ -663,15 +694,30 @@ async function handleFatalMainProcessError(input) {
       : input.kind === 'unhandledRejection'
         ? `Unhandled rejection: ${String(input.error)}`
         : 'Uncaught exception'
-  const evidenceWrites = Promise.allSettled([
-    Promise.resolve().then(() => (input.crashLog.recordDurably ?? input.crashLog.record)({
+  const detail = input.error instanceof Error && typeof input.error.stack === 'string'
+    ? input.error.stack
+    : undefined
+  if (!terminalFaultState.beginFatalResponse()) {
+    // An earlier fault response already owns exit, relaunch, or the lock hold.
+    // Keep best-effort evidence of this fault without making a second decision.
+    recordFollowOnFatal(input, summary, detail)
+    return
+  }
+  const crashWrite = Promise.resolve().then(() =>
+    (input.crashLog.recordDurably ?? input.crashLog.record)({
       kind: input.kind,
       summary,
-      detail:
-        input.error instanceof Error && typeof input.error.stack === 'string'
-          ? input.error.stack
-          : undefined,
-    })),
+      detail,
+    }))
+  // Observed separately so a stalled runtime-log append cannot hide a crash
+  // record that did become durable.
+  let crashWriteStatus = 'pending'
+  void crashWrite.then(
+    () => { crashWriteStatus = 'fulfilled' },
+    () => { crashWriteStatus = 'rejected' },
+  )
+  const evidenceWrites = Promise.allSettled([
+    crashWrite,
     Promise.resolve().then(() => input.runtimeLog.append({
       level: 'error',
       event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
@@ -700,10 +746,7 @@ async function handleFatalMainProcessError(input) {
       }
     }
   }
-  const crashEvidence = evidenceWriteResult.completed
-    ? evidenceWriteResult.value[0]
-    : undefined
-  const evidenceWasSaved = crashEvidence?.status === 'fulfilled'
+  const evidenceWasSaved = crashWriteStatus === 'fulfilled'
 
   if (!evidenceWriterStopped) {
     reportFatalEvidenceWriterStopFailure()
@@ -733,6 +776,7 @@ async function handleFatalMainProcessError(input) {
     // showErrorBox is unavailable in some headless/test contexts.
   }
 
+  terminalFaultState.markRelaunching()
   if (typeof app.relaunch === 'function') {
     app.relaunch()
   }
@@ -741,6 +785,23 @@ async function handleFatalMainProcessError(input) {
     return
   }
   app.quit()
+}
+
+/** Records a fault raised while another terminal fault response owns the process. */
+function recordFollowOnFatal(input, summary, detail) {
+  void Promise.resolve()
+    .then(() => input.crashLog.record({ kind: input.kind, summary, detail }))
+    .catch(() => undefined)
+  void Promise.resolve()
+    .then(() => input.runtimeLog.append({
+      level: 'error',
+      event: 'fatal_during_fault_response',
+      fields: {
+        name: input.error instanceof Error ? input.error.name : 'Error',
+        phase: terminalFaultState.phase,
+      },
+    }))
+    .catch(() => undefined)
 }
 
 /**
@@ -1278,6 +1339,7 @@ if (ownsSingleInstanceLock) {
  * without relaunching into the same persistent fault.
  */
 async function handleStartupFailure(error) {
+  terminalFaultState.beginStartupFailure()
   const summary =
     error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown startup failure'
   let crashEvidenceWrite = Promise.resolve()
@@ -1314,6 +1376,19 @@ async function handleStartupFailure(error) {
   }
 
   const content = startupFailureOperatorMessage(error)
+  if (appIsReady) {
+    // An app quit request (for example Cmd+Q) must not bypass the evidence
+    // wait: treat it as dismissal of the fault window, or repeat the hold
+    // notice once the process is held open.
+    app.on('before-quit', (event) => {
+      event.preventDefault()
+      if (terminalFaultState.notice !== null) {
+        showTerminalFaultNotice()
+        return
+      }
+      closeStartupFailureWindows()
+    })
+  }
   try {
     if (appIsReady) {
       await showStartupFailureWindow({
@@ -1424,7 +1499,7 @@ function startupFailureLogFields(error) {
  */
 function startupFailureOperatorMessage(error) {
   if (error instanceof StartupTimeoutError) {
-    return `Startup could not complete because ${error.stage} was still pending when the ${Math.ceil(error.timeoutMs / 1_000)} seconds after Electron was ready elapsed. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
+    return `SAR Tracker could not finish starting: the step "${error.stage}" was still in progress after ${Math.ceil(error.timeoutMs / 1_000)} seconds. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
   }
   if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
     return 'SAR Tracker could not read a startup evidence file safely. No mission-data corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.'
@@ -1662,6 +1737,12 @@ async function startElectronApp(startupWatchdog) {
     // Record an intentional shutdown so the next launch does not show a false
     // crash-recovery notice.
     event.preventDefault()
+    if (terminalFaultState.blocksQuit()) {
+      // A fault response owns exit, or the process holds the lock while a
+      // diagnostic writer may still be live.
+      showTerminalFaultNotice()
+      return
+    }
     void markCleanExitAndQuit(
       crashLog,
       officialMapProxy,
@@ -1698,6 +1779,30 @@ function startEventLoopDiagnostics(storageDiagnostics) {
   }
 }
 
+/**
+ * Writes the clean-exit marker, treating failure as an unclean session.
+ *
+ * The marker only suppresses the next launch's unclean-shutdown checks, so a
+ * missing marker fails safe: mission data is already drained and fenced, and
+ * the next launch re-checks every unfinalized mission.
+ */
+async function markCleanExitFailSafe(crashLog, runtimeLog) {
+  try {
+    await crashLog.markCleanExit()
+  } catch (error) {
+    void Promise.resolve()
+      .then(() => runtimeLog?.append({
+        level: 'error',
+        event: 'clean_exit_marker_unavailable',
+        fields: {
+          name: error instanceof Error ? error.name : 'Error',
+          ...(typeof error?.code === 'string' ? { code: error.code.slice(0, 100) } : {}),
+        },
+      }))
+      .catch(() => undefined)
+  }
+}
+
 let cleanExitInProgress = false
 async function markCleanExitAndQuit(
   crashLog,
@@ -1722,10 +1827,19 @@ async function markCleanExitAndQuit(
     // session and staging inputs; otherwise shutdown can delete a live worker's
     // source bytes mid-read.
     await archiveReviewSessionManager.prepareClose()
-    await crashLog.markCleanExit()
+    // A fatal response that withheld relaunch left this session unclean; the
+    // next launch must still run its unclean-shutdown mission checks.
+    if (terminalFaultState.allowsCleanExitMarker()) {
+      await markCleanExitFailSafe(crashLog, runtimeLog)
+    }
     officialMapProxy.close?.()
     missionStore.close()
-    await startupEvidenceService?.close()
+    try {
+      await startupEvidenceService?.close()
+    } catch {
+      reportQuitEvidenceWriterStopFailure(runtimeLog)
+      return
+    }
     app.exit(0)
   } catch (error) {
     cleanExitInProgress = false

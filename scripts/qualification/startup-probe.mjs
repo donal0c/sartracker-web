@@ -825,6 +825,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   let dialogWindowId = null
   let dialogObservedAtMs = null
   let dialogDismissed = false
+  let exitedBeforeDismissal = false
   let productExit = null
   let observationFailure = setupFailure
   if (setupFailure === null) {
@@ -871,7 +872,10 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
         observationFailure = 'The packaged process showed the startup fault window without entering the crash-log fsync hold.'
       }
     }
-    if (dialogWindowId !== null) {
+    if (dialogWindowId !== null && (appProcess.exitCode !== null || appProcess.signalCode !== null)) {
+      // The product closed its own fault window before the operator could.
+      exitedBeforeDismissal = true
+    } else if (dialogWindowId !== null) {
       try {
         productExit = await waitForOwnedProcessExitAfterDialog(
           appProcess,
@@ -901,7 +905,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       }
     }
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
-      if (crashWriteHold !== null) await releaseCrashLogWriteHold(crashWriteHold)
+      if (crashWriteHold !== null) await releaseCrashLogWriteHoldForCleanup(crashWriteHold)
       appProcess.kill('SIGTERM')
       await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
     }
@@ -911,7 +915,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     }
   }
   if (appProcess !== null && appProcess.exitCode === null && appProcess.signalCode === null) {
-    if (crashWriteHold !== null) await releaseCrashLogWriteHold(crashWriteHold)
+    if (crashWriteHold !== null) await releaseCrashLogWriteHoldForCleanup(crashWriteHold)
     await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
   }
 
@@ -939,6 +943,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   const lateDialogAfterTimeout = earlyExit?.timedOut === true && dialogWindowId !== null
   const productExitFailed = actionable && dialogDismissed
     && (productExit === null || productExit.code !== 1 || productExit.signal !== null)
+  const productExitedBeforeDismissal = actionable && exitedBeforeDismissal
   const processObservation = {
     pid: appProcess?.pid ?? process.pid,
     closed: appProcess === null || appProcess.exitCode !== null || appProcess.signalCode !== null,
@@ -951,6 +956,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     dialogObserved: dialogWindowId !== null,
     dialogObservedAtMs,
     dialogDismissed,
+    exitedBeforeDismissal,
     productExitCode: productExit?.code ?? null,
     productExitSignal: productExit?.signal ?? null,
     exitAfterDialogMs: productExit?.elapsedMs ?? null,
@@ -1028,7 +1034,9 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     cleanup,
     ...(observationFailure === null ? {} : { observationFailure }),
     ...(observationFailureDetails === null ? {} : { observationFailureDetails }),
-    ...(productExitFailed
+    ...(productExitedBeforeDismissal
+      ? { productGap: `C01 ${gateKind} startup showed an in-bound fault dialog but the process exited before operator dismissal.` }
+      : productExitFailed
       ? { productGap: `C01 ${gateKind} startup showed an in-bound fault dialog but did not produce the required exit code 1 without a signal within ${C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS}ms after dismissal.` }
       : timedOutWithoutAction
         ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${C01_HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
@@ -1124,9 +1132,24 @@ async function waitForPath(filePath, timeoutMs) {
 }
 
 /** Release an injected crash-log hold before terminating an owned app process. */
-async function releaseCrashLogWriteHold(hold) {
+export async function releaseCrashLogWriteHold(hold) {
   if (await access(hold.releasePath).then(() => true).catch(() => false)) return
+  // The product may never have created crashes/; the release must not depend on it.
+  await mkdir(path.dirname(hold.releasePath), { recursive: true, mode: 0o700 })
   await writeFile(hold.releasePath, 'controller cleanup release\n', { flag: 'wx', mode: 0o600 })
+}
+
+/**
+ * Releases the held fsync during controller cleanup without letting a release
+ * failure skip termination of the owned product process.
+ */
+export async function releaseCrashLogWriteHoldForCleanup(hold, release = releaseCrashLogWriteHold) {
+  try {
+    await release(hold)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Wait for a child process marker without allowing an unbounded startup hold. */

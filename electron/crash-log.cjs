@@ -3,7 +3,7 @@ const path = require('node:path')
 const { assertRegularFileOrAbsent } = require('./regular-file-guard.cjs')
 
 const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
-const { removeFileDurably, writeFileDurably } = require('./durable-file.cjs')
+const { removeFileDurably, syncDirectoryDurably, writeFileDurably } = require('./durable-file.cjs')
 
 const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
@@ -88,8 +88,20 @@ function createCrashLog(options) {
     entries.push(entry)
     const trimmed = entries.slice(Math.max(0, entries.length - maxEntries))
 
-    await fileSystem.mkdir(crashDir, { recursive: true })
+    await ensureCrashDirectory()
     await writeJsonAtomically(crashLogPath, trimmed)
+  }
+
+  /**
+   * Creates crashes/ when needed and makes a new directory entry durable, so a
+   * first-ever crash record cannot vanish with its parent entry on power loss.
+   */
+  async function ensureCrashDirectory() {
+    // mkdir returns the first directory it created, or undefined if none.
+    const created = await fileSystem.mkdir(crashDir, { recursive: true })
+    if (created === undefined) return
+    await syncDirectoryDurably(path.dirname(crashDir))
+    if (created !== crashDir) await syncDirectoryDurably(path.dirname(created))
   }
 
   async function readRecent(limit) {
@@ -101,13 +113,13 @@ function createCrashLog(options) {
   }
 
   async function markCleanExit() {
-    await fileSystem.mkdir(crashDir, { recursive: true })
+    await ensureCrashDirectory()
     await writeFileDurably(cleanExitPath, now())
     await removeFileDurably(activeSessionPath)
   }
 
   async function markSessionStart() {
-    await fileSystem.mkdir(crashDir, { recursive: true })
+    await ensureCrashDirectory()
     await writeFileDurably(activeSessionPath, now())
   }
 

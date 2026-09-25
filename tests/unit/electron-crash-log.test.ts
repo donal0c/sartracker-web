@@ -91,6 +91,22 @@ describe('electron crash log', () => {
     ])
   })
 
+  it('syncs the profile directory when it first creates crashes/', async () => {
+    const log = await createLog()
+    const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+    const open = vi.spyOn(fsPromises, 'open')
+
+    try {
+      await log.recordDurably({ kind: 'uncaughtException', summary: 'first crash' })
+      expect(open).toHaveBeenCalledWith(userDataPath, 'r')
+      open.mockClear()
+      await log.recordDurably({ kind: 'uncaughtException', summary: 'second crash' })
+      expect(open).not.toHaveBeenCalledWith(userDataPath, 'r')
+    } finally {
+      open.mockRestore()
+    }
+  })
+
   it('caps stored crash entries to the most recent N', async () => {
     const log = await createLog({ maxEntries: 3 })
     for (let index = 0; index < 10; index += 1) {

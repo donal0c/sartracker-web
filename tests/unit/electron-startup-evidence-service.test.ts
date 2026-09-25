@@ -140,7 +140,8 @@ describe('Electron startup evidence service', () => {
     await expect(service.ready).rejects.toMatchObject({
       code: 'ERR_SARTRACKER_EVIDENCE_WORKER',
     })
-    await expect(service.crashLog.record({ kind: 'startupFailure' })).rejects.toMatchObject({
+    await expect(service.crashLog.record({ kind: 'startupFailure' })).resolves.toBeUndefined()
+    await expect(service.crashLog.recordDurably({ kind: 'startupFailure' })).rejects.toMatchObject({
       code: 'ERR_SARTRACKER_EVIDENCE_WORKER',
     })
     await expect(service.runtimeLog.append({ event: 'startup_failure' })).resolves.toBeUndefined()
@@ -185,12 +186,99 @@ describe('Electron startup evidence service', () => {
     })
     await service.terminate()
   })
+
+  it('keeps best-effort crash records non-throwing after the helper exits unexpectedly', async () => {
+    const utility = createUtilityProcess()
+    const service = createStartupEvidenceService({
+      enabled: true,
+      userDataPath: '/profile',
+      utilityProcess: { fork: vi.fn(() => utility.child) },
+      workerPath: '/app/electron/startup-evidence-worker.cjs',
+    }) as StartupEvidenceService
+
+    await service.ready
+    utility.child.emit('exit', 1)
+
+    // Matches the in-process crash-log contract: record is best effort, while
+    // the durable variant still reports that nothing was saved.
+    await expect(service.crashLog.record({ kind: 'render-process-gone', summary: 'oom' }))
+      .resolves.toBeUndefined()
+    await expect(service.crashLog.recordDurably({ kind: 'uncaughtException', summary: 'fault' }))
+      .rejects.toMatchObject({ code: 'ERR_SARTRACKER_EVIDENCE_WORKER' })
+  })
+
+  it('escalates to SIGKILL and settles pending writes when the helper cannot be reaped', async () => {
+    vi.useFakeTimers()
+    try {
+      const utility = createUtilityProcess({ holdType: 'crash.recordDurable', ignoresKill: true })
+      const killProcess = vi.fn()
+      const service = createStartupEvidenceService({
+        enabled: true,
+        userDataPath: '/profile',
+        utilityProcess: { fork: vi.fn(() => utility.child) },
+        workerPath: '/app/electron/startup-evidence-worker.cjs',
+        killProcess,
+      }) as StartupEvidenceService
+
+      await vi.advanceTimersByTimeAsync(0)
+      await service.ready
+      const pendingWrite = service.crashLog.recordDurably({ kind: 'uncaughtException', summary: 'x' })
+      const pendingOutcome = pendingWrite.then(() => 'resolved', (error) => error)
+      await vi.advanceTimersByTimeAsync(0)
+      const termination = service.terminate().then(() => 'reaped', (error) => error)
+
+      await vi.advanceTimersByTimeAsync(1_500)
+
+      expect(utility.child.kill).toHaveBeenCalledOnce()
+      expect(killProcess).toHaveBeenCalledWith(2718, 'SIGKILL')
+      await expect(termination).resolves.toMatchObject({
+        message: 'Startup evidence utility process could not be reaped.',
+      })
+      await expect(pendingOutcome).resolves.toMatchObject({ code: 'ERR_SARTRACKER_EVIDENCE_WORKER' })
+      expect(utility.exited).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('falls back to termination when close cannot drain a held write', async () => {
+    vi.useFakeTimers()
+    try {
+      const utility = createUtilityProcess({ holdType: 'runtime.appendDurable', holdShutdown: true })
+      const service = createStartupEvidenceService({
+        enabled: true,
+        userDataPath: '/profile',
+        utilityProcess: { fork: vi.fn(() => utility.child) },
+        workerPath: '/app/electron/startup-evidence-worker.cjs',
+        killProcess: vi.fn(),
+      }) as StartupEvidenceService
+
+      await vi.advanceTimersByTimeAsync(0)
+      await service.ready
+      const pendingOutcome = service.runtimeLog.appendDurable({ event: 'blocked' })
+        .then(() => 'resolved', () => 'rejected')
+      const closing = service.close({ timeoutMs: 100 })
+
+      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await closing
+
+      expect(utility.messages).toContainEqual({ id: 2, type: 'shutdown' })
+      expect(utility.child.kill).toHaveBeenCalledOnce()
+      expect(utility.exited).toBe(true)
+      await expect(pendingOutcome).resolves.toBe('rejected')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 function createUtilityProcess(options: {
   readonly holdType?: string
   readonly initializationError?: string
   readonly holdReady?: boolean
+  readonly holdShutdown?: boolean
+  readonly ignoresKill?: boolean
 } = {}) {
   const child = new EventEmitter() as EventEmitter & {
     readonly pid: number
@@ -201,6 +289,7 @@ function createUtilityProcess(options: {
   let exited = false
   child.pid = 2718
   child.kill = vi.fn(() => {
+    if (options.ignoresKill === true) return true
     setImmediate(() => {
       exited = true
       child.emit('exit', 143)
@@ -227,6 +316,7 @@ function createUtilityProcess(options: {
     }
     if (message.type === options.holdType) return
     if (message.type === 'shutdown') {
+      if (options.holdShutdown === true) return
       setImmediate(() => {
         child.emit('message', { id: message.id, ok: true, value: true })
         setImmediate(() => {

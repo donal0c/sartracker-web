@@ -148,6 +148,88 @@ describe('development fault mechanics are distinct from qualification', () => {
     })
   })
 
+  it('classifies product exits that bypass or outlast the operator dialog as product failures', () => {
+    const file = { bytes: 100, sha256: 'a'.repeat(64) }
+    const base = {
+      schema: 'sartracker-c01-startup-held-gate-development-v1', gateKind: 'diagnostics',
+      proofMode: 'development-electron-held-gate-calibration', qualification: { eligible: false },
+    }
+    const scenarioBase = {
+      profileKind: 'held-diagnostics-gate',
+      startupLogs: { startupFailureSummaries: ['StartupTimeoutError: The 10000 ms startup deadline expired while "storage diagnostics initialization" was pending.'] },
+      cleanup: { heldPathRemoved: true },
+      originalFiles: { before: { 'mission-store.sqlite': file, 'settings.json': file },
+        after: { 'mission-store.sqlite': file, 'settings.json': file } },
+    }
+    const gate = { kind: 'diagnostics', mode: 'post-readiness-watchdog-timeout', held: true, bounded: true,
+      synthetic: false, timeoutMs: 20000, startupTimeoutMs: 10000 }
+
+    // The fault window appeared in bound but the product exited before the
+    // operator could dismiss it: the product defect, not harness infrastructure.
+    const exitedBeforeDismissal = { ...base, scenario: { ...scenarioBase,
+      observed: 'actionable-fault',
+      gate: { ...gate, action: 'preserve-profile-and-contact-support', response: 'startup-fault-window',
+        dialogObserved: true },
+      process: { pid: 123, closed: true, exitCode: 1, signal: null, forcedKill: false, timedOut: false,
+        dialogObserved: true, dialogObservedAtMs: 10_100, dialogDismissed: false, exitedBeforeDismissal: true,
+        productExitCode: 1, productExitSignal: null, exitAfterDialogMs: null, faultShellAtMs: 10_100 },
+      productGap: 'Application closed its fault dialog before operator dismissal.',
+    } }
+    expect(inspectHeldGateDevelopment(exitedBeforeDismissal, 'diagnostics')).toMatchObject({
+      infrastructurePassed: true, observedPredicateStatus: 'FAIL', producerCheckPassed: false,
+      productGap: exitedBeforeDismissal.scenario.productGap,
+    })
+
+    // A dialog only after the bound, followed by the product's own clean exit,
+    // is still the bounded-timeout product negative.
+    const lateDialogOwnExit = { ...base, scenario: { ...scenarioBase,
+      observed: 'bounded-timeout-no-action',
+      gate: { ...gate, action: '' },
+      process: { pid: 123, closed: true, exitCode: 1, signal: null, forcedKill: false, timedOut: true,
+        dialogObserved: true, dialogDismissed: true, productExitCode: 1, productExitSignal: null,
+        exitAfterDialogMs: 40, faultShellAtMs: null },
+      productGap: 'Dependency hold reached the bound; a native dialog was observed only after the bound.',
+    } }
+    expect(inspectHeldGateDevelopment(lateDialogOwnExit, 'diagnostics')).toMatchObject({
+      infrastructurePassed: true, observedPredicateStatus: 'FAIL', producerCheckPassed: false,
+      productGap: lateDialogOwnExit.scenario.productGap,
+    })
+
+    // The real probe records neither a fault-shell time nor a timeout summary
+    // when the product never responded; that is still a product negative.
+    const silentTimeout = { ...base, scenario: { ...scenarioBase,
+      observed: 'bounded-timeout-no-action',
+      startupLogs: { startupFailureSummaries: [] },
+      gate: { ...gate, action: '' },
+      process: { pid: 123, closed: true, exitCode: null, signal: 'SIGKILL', forcedKill: true, timedOut: true,
+        dialogObserved: false, dialogDismissed: false, productExitCode: null, productExitSignal: null,
+        exitAfterDialogMs: null, faultShellAtMs: null },
+      productGap: 'Dependency hold reached the bound without an actionable operator response.',
+    } }
+    expect(inspectHeldGateDevelopment(silentTimeout, 'diagnostics')).toMatchObject({
+      infrastructurePassed: true, observedPredicateStatus: 'FAIL',
+    })
+
+    // A held crash-log write whose product never exits after dismissal cannot
+    // prove durable completion; that is the product failure it looks like.
+    const crashWriteNoExit = { ...base, gateKind: 'crash-write', scenario: { ...scenarioBase,
+      profileKind: 'held-crash-gate',
+      observed: 'actionable-fault',
+      gate: { kind: 'crash', mode: 'crash-log-write-hold', held: true, bounded: true, synthetic: false,
+        timeoutMs: 20000, action: 'preserve-profile-and-contact-support', response: 'startup-fault-window',
+        dialogObserved: true,
+        hold: { markerObserved: true, releasedAfterDialogDismissal: true, writeCompleted: false, temporaryFilesRemaining: true } },
+      process: { pid: 123, closed: true, exitCode: null, signal: 'SIGTERM', forcedKill: false, timedOut: false,
+        dialogObserved: true, dialogObservedAtMs: 1_900, dialogDismissed: true, productExitCode: null,
+        productExitSignal: null, exitAfterDialogMs: null, faultShellAtMs: 1_900 },
+      cleanup: { holdReleased: true, temporaryFilesRemoved: false },
+      productGap: 'Application showed the fault dialog but did not exit after dismissal.',
+    } }
+    expect(inspectHeldGateDevelopment(crashWriteNoExit, 'crash-write')).toMatchObject({
+      observedPredicateStatus: 'FAIL', productGap: crashWriteNoExit.scenario.productGap,
+    })
+  })
+
   it('keeps an observed product timeout separate from producer infrastructure', () => {
     const negative = {
       infrastructurePassed: true,

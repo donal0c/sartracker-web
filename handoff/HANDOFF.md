@@ -9,13 +9,12 @@ assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47's behavior-bearing source is at
-`0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-source Linux run
-`36116343282` passed, and an independent review of that source found no
-actionable findings. PR #47 is open and out of draft; its latest exact-head
-Linux workflow has not completed, so merge remains blocked. Later PR commits
-are documentation-only; verify the latest push-triggered workflow before
-merging. The [PR47 findings register](../docs/pr47-findings-disposition.md)
+PR #47's behavior-bearing source changed after a 2026-09-25 multi-agent review
+of `7fda435` found fatal/quit state, evidence-writer, fault-window and
+held-gate classification defects (register IDs V01-V16). The review-fix commit
+supersedes the earlier `0e6db8a` source evidence (Linux run `36116343282`);
+merge needs the new exact-head Linux workflow to pass. PR #47 is open and out
+of draft. The [PR47 findings register](../docs/pr47-findings-disposition.md)
 records the source-review outcome. The only archived review report is the
 historical review of `5b4f0b25`, which found seven issues; it is not the clean
 review of the repair source. Do not merge, tag, publish, or release from this
@@ -42,4 +41,6 @@ opt-in remote upload and private retention are outside this repair.
 
 ## Next actions
 
-1. Keep Beta 13 on HOLD pending its separate candidate and release gates.
+1. Confirm the exact-head Linux workflow for the PR #47 review-fix commit
+   (held-gate `crash-write`, `diagnostics`, `crash`, `store` run there).
+2. Keep Beta 13 on HOLD pending its separate candidate and release gates.

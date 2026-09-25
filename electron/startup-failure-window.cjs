@@ -104,6 +104,9 @@ function showStartupFailureWindow(options) {
     try {
       window = new options.BrowserWindow(WINDOW_OPTIONS)
       activeStartupFailureWindows.add(window)
+      // The fault page is the operator's only message; nothing may replace it.
+      window.webContents.on('will-navigate', (event) => event.preventDefault())
+      window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       options.ipcMain.on(STARTUP_FAILURE_CLOSE_CHANNEL, closeActionListener)
       closeActionRegistered = true
       window.once('closed', () => settle(resolve))
@@ -113,25 +116,42 @@ function showStartupFailureWindow(options) {
         },
         (error) => {
           if (settled) return
+          // Settle first: Electron's destroy() emits 'closed' synchronously,
+          // which would otherwise report this load failure as an operator close
+          // and suppress the caller's native-dialog fallback.
+          settle(reject, error)
           try {
             window.destroy()
           } catch {
-            // Preserve the original page-load failure for the caller's fallback path.
+            // The load failure is already reported to the caller.
           }
-          settle(reject, error)
         },
       )
     } catch (error) {
+      settle(reject, error)
       if (window !== undefined) {
         try {
           window.destroy()
         } catch {
-          // Preserve the original window-creation failure for the caller's fallback path.
+          // The window-creation failure is already reported to the caller.
         }
       }
-      settle(reject, error)
     }
   })
+}
+
+/**
+ * Closes every open startup fault window through its normal close path, so an
+ * app-level quit request is handled exactly like the operator's dismissal.
+ */
+function closeStartupFailureWindows() {
+  for (const window of [...activeStartupFailureWindows]) {
+    try {
+      window.close()
+    } catch {
+      // A window that cannot close keeps waiting for the operator's action.
+    }
+  }
 }
 
 /** Escapes HTML metacharacters in the safe operator message. */
@@ -146,6 +166,7 @@ function escapeHtml(value) {
 }
 
 module.exports = {
+  closeStartupFailureWindows,
   createStartupFailureDataUrl,
   showStartupFailureWindow,
 }

@@ -1425,6 +1425,278 @@ describe('Electron main startup', () => {
     expect(electronMock.app.exit).not.toHaveBeenCalled()
   })
 
+  it('keeps a withheld fatal relaunch and the held lock when a later fault arrives', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(process.versions, 'electron', { configurable: true, value: '42.0.0' })
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      markCleanExit: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+      recordDurably: vi.fn(() => new Promise<void>(() => {})),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined), readRecent: vi.fn(async () => []) }
+    const startupEvidenceService = {
+      crashLog,
+      runtimeLog,
+      ready: Promise.resolve(),
+      close: vi.fn(async () => undefined),
+      terminate: vi.fn().mockRejectedValue(new Error('evidence writer could not be reaped')),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-evidence-service.cjs') {
+        return { createStartupEvidenceService: () => startupEvidenceService }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => rendererTeardownCoordinatorStub() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    const fatalHandler = await findFatalHandler(processOn, 'unhandledRejection')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+
+    fatalHandler(new Error('first fatal fault'))
+    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not restart safely',
+      expect.stringContaining('diagnostic writer could not be stopped'),
+    ))
+
+    // The helper is now mid-terminate: every later write fails immediately.
+    crashLog.recordDurably.mockRejectedValue(new Error('Startup evidence utility process is not available.'))
+    fatalHandler(new Error('second fatal fault'))
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(startupEvidenceService.terminate).toHaveBeenCalledOnce()
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+
+    // Neither an ordinary quit nor a second launch may release the held lock.
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+    const quitEvent = { preventDefault: vi.fn() }
+    beforeQuitHandler(quitEvent)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(quitEvent.preventDefault).toHaveBeenCalledOnce()
+    expect(crashLog.markCleanExit).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    const secondInstanceHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'second-instance',
+    )?.[1]
+    electronMock.dialog.showErrorBox.mockClear()
+    secondInstanceHandler()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not restart safely',
+      expect.stringContaining('diagnostic writer could not be stopped'),
+    )
+  })
+
+  it('handles concurrent fatal faults with one response and one relaunch', async () => {
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => rendererTeardownCoordinatorStub() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    const fatalHandler = await findFatalHandler(processOn, 'unhandledRejection')
+
+    fatalHandler(new Error('first fatal fault'))
+    fatalHandler(new Error('second fatal fault'))
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(electronMock.app.relaunch).toHaveBeenCalledOnce()
+    expect(electronMock.app.exit).toHaveBeenCalledOnce()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledOnce()
+    expect(readFileSync(path.join(testUserDataPath, 'crashes', 'crash-log.json'), 'utf8'))
+      .toContain('second fatal fault')
+  })
+
+  it('does not mark a session clean when quitting after a withheld fatal relaunch', async () => {
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const coordinator = rendererTeardownCoordinatorStub()
+    coordinator.markRendererUnavailable.mockRejectedValue(new Error('mission store unavailable'))
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => coordinator }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    const fatalHandler = await findFatalHandler(processOn, 'uncaughtException')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+    fatalHandler(new Error('fatal persistence fault'))
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not restart safely',
+      expect.stringContaining('kept the current process open'),
+    ))
+
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+    beforeQuitHandler({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    expect(() => readFileSync(path.join(testUserDataPath, 'crashes', 'last-clean-exit'), 'utf8'))
+      .toThrow(/ENOENT/u)
+    expect(readFileSync(path.join(testUserDataPath, 'crashes', 'active-session'), 'utf8'))
+      .toMatch(/^\d{4}-\d{2}-\d{2}T/u)
+  })
+
+  it('still exits when the clean-exit marker cannot be written, leaving the session unclean', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const { crashLog, runtimeLog } = createInMemoryStartupLogs()
+    crashLog.markCleanExit.mockRejectedValue(
+      Object.assign(new Error('Startup evidence utility process is not available.'), {
+        code: 'ERR_SARTRACKER_EVIDENCE_WORKER',
+      }),
+    )
+    const startupEvidenceService = {
+      crashLog,
+      runtimeLog,
+      ready: Promise.resolve(),
+      close: vi.fn(async () => undefined),
+      terminate: vi.fn(async () => undefined),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-evidence-service.cjs') {
+        return { createStartupEvidenceService: () => startupEvidenceService }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => rendererTeardownCoordinatorStub() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+    beforeQuitHandler({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
+    expect(crashLog.markCleanExit).toHaveBeenCalledOnce()
+    expect(runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'clean_exit_marker_unavailable',
+    }))
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
+  it('keeps the process and lock when the evidence writer cannot be stopped at quit', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const { crashLog, runtimeLog } = createInMemoryStartupLogs()
+    const startupEvidenceService = {
+      crashLog,
+      runtimeLog,
+      ready: Promise.resolve(),
+      close: vi.fn().mockRejectedValue(new Error('Startup evidence utility process could not be reaped.')),
+      terminate: vi.fn(async () => undefined),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-evidence-service.cjs') {
+        return { createStartupEvidenceService: () => startupEvidenceService }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => rendererTeardownCoordinatorStub() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+    beforeQuitHandler({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not close safely',
+      expect.stringContaining('diagnostic writer could not be confirmed stopped'),
+    ))
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    beforeQuitHandler({ preventDefault: vi.fn() })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(startupEvidenceService.close).toHaveBeenCalledOnce()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+  })
+
+  it('reports saved crash evidence when only the runtime log write stays pending', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(process.versions, 'electron', { configurable: true, value: '42.0.0' })
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const startupRuntimeLog = { append: vi.fn(async () => undefined), readRecent: vi.fn(async () => []) }
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+      recordDurably: vi.fn(async () => undefined),
+    }
+    const startupEvidenceService = {
+      crashLog,
+      runtimeLog: startupRuntimeLog,
+      ready: Promise.resolve(),
+      close: vi.fn(async () => undefined),
+      terminate: vi.fn(async () => undefined),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-evidence-service.cjs') {
+        return { createStartupEvidenceService: () => startupEvidenceService }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return { createRendererTeardownCoordinator: () => rendererTeardownCoordinatorStub() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    const fatalHandler = await findFatalHandler(processOn, 'unhandledRejection')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+    startupRuntimeLog.append.mockImplementation(() => new Promise<undefined>(() => {}))
+
+    fatalHandler(new Error('fatal runtime fault'))
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker runtime fault',
+      expect.stringContaining('Crash evidence was saved'),
+    ))
+    expect(startupEvidenceService.terminate).toHaveBeenCalledOnce()
+    expect(electronMock.app.relaunch).toHaveBeenCalledOnce()
+  })
+
   it('fences every unfinalized mission before opening after an unclean shutdown', async () => {
     mkdirSync(path.join(testUserDataPath, 'crashes'), { recursive: true })
     writeFileSync(
@@ -1664,6 +1936,46 @@ describe('Electron main startup', () => {
     expect(startupProcessExit).toHaveBeenCalledWith(1)
   })
 
+  it('routes an app quit request during a startup fault through the dismissal path', async () => {
+    vi.useFakeTimers()
+    const held = new Promise<never>(() => {})
+    const electronMock = createElectronMock(vi.fn(), undefined, true, [], undefined, undefined, false)
+    const crashLog = { hadUncleanShutdown: vi.fn(async () => false), record: vi.fn(async () => undefined) }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: () => held }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expectStartupFailureWindow(electronMock, expect.stringMatching(/10 seconds/iu))
+
+    const beforeQuitHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'before-quit',
+    )?.[1]
+    expect(beforeQuitHandler).toEqual(expect.any(Function))
+    const quitEvent = { preventDefault: vi.fn() }
+    beforeQuitHandler(quitEvent)
+
+    // Cmd+Q must not skip the evidence wait: it closes the fault window, and
+    // the ordinary dismissal path then settles evidence and exits.
+    expect(quitEvent.preventDefault).toHaveBeenCalledOnce()
+    const failureWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    expect(failureWindow.close).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(startupProcessExit).toHaveBeenCalledWith(1))
+    expect(runtimeLog.append).toHaveBeenCalledWith({
+      level: 'error',
+      event: 'startup_failure_dialog_closed',
+      fields: {},
+    })
+  })
+
   it('bounds stuck evidence writes after the operator closes the startup fault window', async () => {
     vi.useFakeTimers()
     const held = new Promise<never>(() => {})
@@ -1752,6 +2064,17 @@ describe('Electron main startup', () => {
     expect(startupProcessExit).not.toHaveBeenCalled()
     expect(electronMock.app.exit).not.toHaveBeenCalled()
     expect(electronMock.app.quit).not.toHaveBeenCalled()
+
+    // A second launch routed here must see why nothing opens, not a silent no-op.
+    electronMock.dialog.showErrorBox.mockClear()
+    const secondInstanceHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'second-instance',
+    )?.[1]
+    secondInstanceHandler()
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not close safely',
+      expect.stringContaining('Do not launch another copy'),
+    )
   })
 
   it('bounds a crash-record write only after it remains pending for the evidence deadline', async () => {
@@ -2742,6 +3065,24 @@ function archiveReviewSessionManagerStub() {
 }
 
 /** Provides an immediately acknowledged renderer-teardown coordinator. */
+/** Returns the main-process fatal handler registered for one process event. */
+async function findFatalHandler(
+  processOn: ReturnType<typeof vi.spyOn>,
+  eventName: 'uncaughtException' | 'unhandledRejection',
+): Promise<(error: unknown) => void> {
+  let handler: ((error: unknown) => void) | undefined
+  await vi.waitFor(() => {
+    handler = processOn.mock.calls
+      .filter(([name]: unknown[]) => name === eventName)
+      .map(([, listener]: unknown[]) => listener)
+      .find((listener: unknown) => String(listener).includes('handleFatalMainProcessError')) as
+      | ((error: unknown) => void)
+      | undefined
+    expect(handler).toBeDefined()
+  })
+  return handler as (error: unknown) => void
+}
+
 function rendererTeardownCoordinatorStub() {
   return {
     prepare: vi.fn(async () => undefined),

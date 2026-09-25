@@ -18,7 +18,10 @@ type StartupFailureWindowStub = {
   loadURL: ReturnType<typeof vi.fn>
   once: ReturnType<typeof vi.fn>
   show: ReturnType<typeof vi.fn>
-  webContents: Record<string, unknown>
+  webContents: {
+    on: ReturnType<typeof vi.fn>
+    setWindowOpenHandler: ReturnType<typeof vi.fn>
+  }
 }
 
 describe('startup failure window', () => {
@@ -107,6 +110,50 @@ describe('startup failure window', () => {
     })).rejects.toBe(loadError)
     expect(window.destroy).toHaveBeenCalledOnce()
   })
+
+  it('still rejects a page-load failure when destroy emits closed synchronously', async () => {
+    // Electron's BrowserWindow.destroy() emits 'closed' before it returns.
+    const { BrowserWindow, window } = createWindowHarness()
+    const loadError = new Error('local fault page failed')
+    let closeHandler: (() => void) | undefined
+    window.once.mockImplementation((event: string, handler: () => void) => {
+      if (event === 'closed') closeHandler = handler
+    })
+    window.destroy.mockImplementation(() => closeHandler?.())
+    window.loadURL.mockRejectedValue(loadError)
+
+    await expect(startupFailureWindow.showStartupFailureWindow({
+      BrowserWindow,
+      ipcMain: { on: vi.fn(), removeListener: vi.fn() },
+      message: 'Preserve the profile and contact support.',
+    })).rejects.toBe(loadError)
+  })
+
+  it('keeps the operator fault page from navigating or opening new windows', async () => {
+    const { BrowserWindow, window } = createWindowHarness()
+    let closeHandler: (() => void) | undefined
+    window.once.mockImplementation((event: string, handler: () => void) => {
+      if (event === 'closed') closeHandler = handler
+    })
+
+    const closed = startupFailureWindow.showStartupFailureWindow({
+      BrowserWindow,
+      ipcMain: { on: vi.fn(), removeListener: vi.fn() },
+      message: 'Preserve the profile and contact support.',
+    })
+    await vi.waitFor(() => expect(window.show).toHaveBeenCalledOnce())
+
+    const willNavigate = window.webContents.on.mock.calls
+      .find(([event]) => event === 'will-navigate')?.[1] as ((event: { preventDefault: () => void }) => void)
+    const navigationEvent = { preventDefault: vi.fn() }
+    willNavigate(navigationEvent)
+    expect(navigationEvent.preventDefault).toHaveBeenCalledOnce()
+    const openHandler = window.webContents.setWindowOpenHandler.mock.calls[0]?.[0] as () => unknown
+    expect(openHandler()).toEqual({ action: 'deny' })
+
+    closeHandler?.()
+    await closed
+  })
 })
 
 /** Creates a constructable BrowserWindow mock and its one window instance. */
@@ -117,7 +164,7 @@ function createWindowHarness() {
     loadURL: vi.fn(async () => undefined),
     once: vi.fn(),
     show: vi.fn(),
-    webContents: {},
+    webContents: { on: vi.fn(), setWindowOpenHandler: vi.fn() },
   }
   const BrowserWindow = vi.fn(function MockBrowserWindow() { return window }) as unknown as new (
     options: Record<string, unknown>,

@@ -2246,7 +2246,8 @@ sh "$COLLECTOR" --screenshot</code></pre>
             window stays hidden until the renderer loads and its startup evidence-loss fence completes. If a
             bounded asynchronous check exceeds its deadline or the mission store cannot be opened safely,
             SAR Tracker opens a separate startup fault window with the failed step or safe recovery guidance,
-            then exits when you close it. It allows up to 10 seconds for failure evidence to finish saving
+            then exits when you close it. Quitting the app (for example with Cmd+Q) while this window is open
+            is handled the same as pressing <strong>Close and exit</strong>. It allows up to 10 seconds for failure evidence to finish saving
             after the window closes; if a write remains stuck, the app attempts to stop that isolated writer before exit.
             The operational mission console remains closed.
             Preserve the profile and contact support before retrying; do not overwrite or edit the profile.
@@ -2258,9 +2259,18 @@ sh "$COLLECTOR" --screenshot</code></pre>
             recording the fault. If the same fault returns, do not treat the app as ready for operational use.
           </p>
           <p>
-            If a startup or fatal runtime fault occurs and SAR Tracker cannot confirm that its diagnostic
-            writer has stopped, it keeps the current process open to protect the profile. Do not launch
-            another copy. Preserve the profile and contact support before forcing this process closed.
+            If a startup or fatal runtime fault occurs, or SAR Tracker is closing, and it cannot confirm that
+            its diagnostic writer has stopped, it keeps the current process open to protect the profile. An
+            ordinary quit does not close that process, and launching SAR Tracker again shows the same message
+            instead of opening a second copy. Do not launch another copy. Preserve the profile and contact
+            support before forcing this process closed.
+          </p>
+          <p>
+            If SAR Tracker hits a fatal runtime fault and reports that it <strong>could not restart
+            safely</strong>, it will not relaunch automatically, even if a further fault follows. You may
+            still quit it; the session is then treated as unclean, so the next launch re-checks every
+            unfinished mission. The same applies if SAR Tracker cannot record a clean exit while closing: it
+            still closes, and the next launch runs its unclean-shutdown checks.
           </p>
           <p>
             The 10-second startup deadline is a hard total budget after Electron reports that it is ready,

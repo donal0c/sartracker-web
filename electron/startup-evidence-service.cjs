@@ -105,7 +105,10 @@ function createStartupEvidenceService(options) {
       logFilePath: path.join(options.userDataPath, 'logs', 'runtime.log'),
     }),
     crashLog: Object.freeze({
-      record: (input) => call('crash.record', input),
+      // Best effort, matching the in-process crash-log contract: an unavailable
+      // helper must not turn a renderer-loss record into a teardown failure.
+      // Callers that must know the outcome use recordDurably.
+      record: (input) => call('crash.record', input).catch(() => undefined),
       recordDurably: (input) => call('crash.recordDurable', input),
       readRecent: (limit) => call('crash.readRecent', { limit }),
       markSessionStart: () => call('crash.markSessionStart'),
@@ -228,7 +231,13 @@ function createStartupEvidenceService(options) {
       }
     }
     if (!(await waitForExit(DEFAULT_FORCE_EXIT_GRACE_MS))) {
-      throw createServiceError('Startup evidence utility process could not be reaped.')
+      // No exit event will settle these; release every waiter explicitly so a
+      // failed reap cannot also leave callers pending forever.
+      const error = createServiceError('Startup evidence utility process could not be reaped.')
+      if (!readyDeferred.settled) readyDeferred.reject(error)
+      for (const request of pending.values()) request.reject(error)
+      pending.clear()
+      throw error
     }
   }
 
@@ -307,7 +316,7 @@ function createUnavailableService(userDataPath) {
       logFilePath: path.join(userDataPath, 'logs', 'runtime.log'),
     }),
     crashLog: Object.freeze({
-      record: reject,
+      record: async () => undefined,
       recordDurably: reject,
       readRecent: reject,
       markSessionStart: reject,

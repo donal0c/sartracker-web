@@ -1,4 +1,7 @@
 import { EventEmitter } from 'node:events'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +16,8 @@ import {
   isNoVisibleX11WindowSearchResult,
   isSarTrackerStartupWindowClass,
   isStartupDialogWindowName,
+  releaseCrashLogWriteHold,
+  releaseCrashLogWriteHoldForCleanup,
   startupDialogWindowSearchArguments,
   x11StartupFailureCloseButtonCenter,
   waitForDialogDismissal,
@@ -28,6 +33,27 @@ describe('C01 held-gate product exit observation', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+  })
+
+  it('releases a held crash-log write even when the product never created crashes/', async () => {
+    const profile = mkdtempSync(path.join(os.tmpdir(), 'c01-hold-release-'))
+    try {
+      const releasePath = path.join(profile, 'crashes', '.c01-crash-write-release')
+      await releaseCrashLogWriteHold({ releasePath })
+      expect(existsSync(releasePath)).toBe(true)
+      await expect(releaseCrashLogWriteHold({ releasePath })).resolves.toBeUndefined()
+    } finally {
+      rmSync(profile, { force: true, recursive: true })
+    }
+  })
+
+  it('never lets a failed hold release skip owned-process cleanup', async () => {
+    const release = vi.fn(async () => {
+      throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+    })
+    await expect(releaseCrashLogWriteHoldForCleanup({ releasePath: '/x' }, release)).resolves.toBe(false)
+    await expect(releaseCrashLogWriteHoldForCleanup({ releasePath: '/x' }, async () => undefined))
+      .resolves.toBe(true)
   })
 
   it('keeps lock-holder readiness and product-exit observation budgets independent', () => {

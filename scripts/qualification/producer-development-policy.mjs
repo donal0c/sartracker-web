@@ -27,9 +27,12 @@ export function inspectHeldGateDevelopment(report, gateKind) {
   if (scenario?.gate?.kind !== scenarioGateKind || scenario.gate.mode !== mode || scenario.gate.held !== held
       || scenario.gate.synthetic !== false || scenario.gate.bounded !== true
       || scenario.gate.timeoutMs !== C01_HELD_GATE_TIMEOUT_MS) failures.push('Declared bounded startup-fault mode was not observed.')
-  if (gateKind === 'diagnostics'
-      && (scenario?.gate?.startupTimeoutMs !== C01_STARTUP_RESPONSE_TIMEOUT_MS
-        || !Number.isSafeInteger(scenario?.process?.faultShellAtMs)
+  // The probe records the fault-shell time and crash summary only for an
+  // actionable observation; a bounded timeout negative carries neither.
+  if (gateKind === 'diagnostics' && scenario?.gate?.startupTimeoutMs !== C01_STARTUP_RESPONSE_TIMEOUT_MS) {
+    failures.push('Post-readiness diagnostics watchdog timeout was not identified in crash evidence.')
+  } else if (gateKind === 'diagnostics' && scenario?.observed === 'actionable-fault'
+      && (!Number.isSafeInteger(scenario?.process?.faultShellAtMs)
         || scenario.process.faultShellAtMs < C01_STARTUP_RESPONSE_TIMEOUT_MS
         || !scenario?.startupLogs?.startupFailureSummaries?.some((summary) =>
           typeof summary === 'string'
@@ -42,7 +45,10 @@ export function inspectHeldGateDevelopment(report, gateKind) {
         entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE')) {
     failures.push('Non-regular crash evidence rejection code was not recorded.')
   }
-  if (gateKind === 'crash-write') {
+  // The durable-completion proof applies once the product has exited after
+  // dismissal; a product that never reached that point is already a FAIL.
+  if (gateKind === 'crash-write' && scenario?.process?.dialogDismissed === true
+      && Number.isSafeInteger(scenario.process.productExitCode)) {
     const hold = scenario?.gate?.hold
     if (hold?.markerObserved !== true || hold?.releasedAfterDialogDismissal !== true
         || hold?.writeCompleted !== true || hold?.temporaryFilesRemaining !== false
@@ -53,14 +59,20 @@ export function inspectHeldGateDevelopment(report, gateKind) {
   }
   if (!Number.isSafeInteger(scenario?.process?.pid) || scenario.process.pid <= 0
       || scenario.process.closed !== true) failures.push('Owned startup process was not observed closed.')
+  // A product that closes its own fault window before the controller can
+  // dismiss it is a product observation, not a failed X11 dismissal.
+  const exitedBeforeDismissal = scenario?.process?.exitedBeforeDismissal === true
   if (scenario?.observationFailure !== undefined
-      || (scenario?.process?.dialogObserved === true && scenario.process.dialogDismissed !== true)) {
+      || (scenario?.process?.dialogObserved === true && scenario.process.dialogDismissed !== true
+        && !exitedBeforeDismissal)) {
     failures.push('Held-gate dialog dismissal or post-dialog observation failed.')
   }
   const cleanupObserved = gateKind === 'store'
     ? scenario?.gate?.lockHolder?.closed === true && scenario?.cleanup?.lockHolderClosed === true
     : gateKind === 'crash-write'
-      ? scenario?.cleanup?.holdReleased === true && scenario?.cleanup?.temporaryFilesRemoved === true
+      // Leftover temporary files are product evidence, checked by the hold
+      // proof above; controller cleanup is releasing the hold.
+      ? scenario?.cleanup?.holdReleased === true
       : scenario?.cleanup?.heldPathRemoved === true
   if (!cleanupObserved) failures.push('Held dependency cleanup was not observed.')
   const before = scenario?.originalFiles?.before
@@ -121,15 +133,30 @@ export function inspectHeldGateDevelopment(report, gateKind) {
     && typeof scenario.productGap === 'string'
     && productExitMismatch
     && (productOwnExitFailed || harnessCleanupAfterExitWait)
+  const productExitedBeforeDismissal = scenario?.observed === 'actionable-fault'
+    && scenario.gate?.response === 'startup-fault-window'
+    && scenario.gate.dialogObserved === true
+    && scenario.process?.dialogObserved === true
+    && exitedBeforeDismissal
+    && scenario.process.dialogDismissed === false
+    && scenario.process.forcedKill === false
+    && scenario.process.closed === true
+    && typeof scenario.productGap === 'string' && scenario.productGap.length > 0
+  // The timeout itself is the product negative. The process may then be
+  // stopped by the controller or exit on its own after a late dialog; either
+  // way it must be observed closed.
   const negative = scenario?.observed === 'bounded-timeout-no-action'
     && typeof scenario.productGap === 'string' && scenario.productGap.length > 0
-    && ['SIGTERM', 'SIGKILL'].includes(scenario.process?.signal)
-  if (!actionable && !negative && !productFailedToExit) failures.push('Neither bounded actionable response nor explicit timeout negative was observed.')
+    && scenario.process?.closed === true
+    && (['SIGTERM', 'SIGKILL'].includes(scenario.process.signal)
+      || (Number.isSafeInteger(scenario.process.exitCode) && scenario.process.signal === null
+        && scenario.process.forcedKill === false))
+  if (!actionable && !negative && !productFailedToExit && !productExitedBeforeDismissal) failures.push('Neither bounded actionable response nor explicit timeout negative was observed.')
   return Object.freeze({ infrastructurePassed: failures.length === 0,
     observedPredicateStatus: failures.length ? 'INVALID_EVIDENCE' : actionable ? 'PASS' : 'FAIL',
     producerCheckPassed: failures.length === 0 && actionable,
     qualificationExecuted: false, releaseEligible: false, failures: Object.freeze(failures),
-    productGap: negative || productFailedToExit ? scenario.productGap : null,
+    productGap: negative || productFailedToExit || productExitedBeforeDismissal ? scenario.productGap : null,
   })
 }
 
