@@ -106,6 +106,7 @@ function createStartupEvidenceService(options) {
     }),
     crashLog: Object.freeze({
       record: (input) => call('crash.record', input),
+      recordDurably: (input) => call('crash.recordDurable', input),
       readRecent: (limit) => call('crash.readRecent', { limit }),
       markSessionStart: () => call('crash.markSessionStart'),
       markCleanExit: () => call('crash.markCleanExit'),
@@ -307,6 +308,7 @@ function createUnavailableService(userDataPath) {
     }),
     crashLog: Object.freeze({
       record: reject,
+      recordDurably: reject,
       readRecent: reject,
       markSessionStart: reject,
       markCleanExit: reject,

@@ -62,6 +62,9 @@ async function dispatch(message) {
       case 'crash.record':
         value = await crashLog.record(message.input)
         break
+      case 'crash.recordDurable':
+        value = await crashLog.recordDurably(message.input)
+        break
       case 'crash.readRecent':
         value = await crashLog.readRecent(message.input?.limit)
         break

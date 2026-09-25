@@ -16,6 +16,7 @@ type StartupEvidenceService = {
   }
   readonly crashLog: {
     readonly record: (input: Record<string, unknown>) => Promise<void>
+    readonly recordDurably: (input: Record<string, unknown>) => Promise<void>
     readonly hadUncleanShutdown: () => Promise<boolean>
     readonly readRecent: (limit?: number) => Promise<readonly unknown[]>
     readonly markSessionStart: () => Promise<void>
@@ -40,13 +41,15 @@ describe('Electron startup evidence service', () => {
     await service.ready
     await service.runtimeLog.appendDurable({ event: 'startup_failure', fields: { stage: 'boot' } })
     await service.crashLog.record({ kind: 'startupFailure', summary: 'startup fault' })
+    await service.crashLog.recordDurably({ kind: 'uncaughtException', summary: 'fatal fault' })
     await service.close({ timeoutMs: 100 })
 
     expect(utility.messages).toEqual([
       { id: 0, type: 'initialize', userDataPath: '/profile' },
       { id: 1, type: 'runtime.appendDurable', input: { event: 'startup_failure', fields: { stage: 'boot' } } },
       { id: 2, type: 'crash.record', input: { kind: 'startupFailure', summary: 'startup fault' } },
-      { id: 3, type: 'shutdown' },
+      { id: 3, type: 'crash.recordDurable', input: { kind: 'uncaughtException', summary: 'fatal fault' } },
+      { id: 4, type: 'shutdown' },
     ])
     expect(utility.child.kill).not.toHaveBeenCalled()
     expect(utility.exited).toBe(true)

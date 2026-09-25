@@ -56,6 +56,7 @@ function createCrashLog(options) {
 
   return {
     record,
+    recordDurably,
     readRecent,
     markSessionStart,
     markCleanExit,
@@ -64,8 +65,13 @@ function createCrashLog(options) {
   }
 
   function record(input) {
-    writeChain = writeChain.then(() => recordInternal(input)).catch(() => {})
-    return writeChain
+    return recordDurably(input).catch(() => undefined)
+  }
+
+  function recordDurably(input) {
+    const operation = writeChain.then(() => recordInternal(input))
+    writeChain = operation.catch(() => undefined)
+    return operation
   }
 
   async function recordInternal(input) {

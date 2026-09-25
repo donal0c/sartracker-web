@@ -1155,7 +1155,10 @@ describe('Electron main startup', () => {
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
       markSessionStart: vi.fn(async () => undefined),
-      record: vi.fn().mockRejectedValue(new Error('startup evidence utility process exited')),
+      record: vi.fn(async () => undefined),
+      recordDurably: vi.fn().mockRejectedValue(
+        new Error('startup evidence utility process exited'),
+      ),
     }
     const runtimeLog = {
       append: vi.fn(async () => undefined),
@@ -1197,13 +1200,25 @@ describe('Electron main startup', () => {
       'SAR Tracker runtime fault',
       expect.stringContaining('fault details may not have been saved'),
     ))
-    expect(crashLog.record).toHaveBeenCalledOnce()
+    expect(crashLog.recordDurably).toHaveBeenCalledOnce()
+    expect(crashLog.record).not.toHaveBeenCalled()
     expect(markRendererUnavailable).toHaveBeenCalledOnce()
     expect(electronMock.app.relaunch).toHaveBeenCalledOnce()
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
   })
 
-  it('bounds a stalled fatal evidence write before showing the operator dialog', async () => {
+  it.each([
+    { terminationError: null, expectedTitle: 'SAR Tracker runtime fault', relaunches: true },
+    {
+      terminationError: new Error('evidence writer could not be reaped'),
+      expectedTitle: 'SAR Tracker could not restart safely',
+      relaunches: false,
+    },
+  ])('bounds a stalled fatal evidence write and respects writer exit: $expectedTitle', async ({
+    terminationError,
+    expectedTitle,
+    relaunches,
+  }) => {
     vi.useFakeTimers()
     Object.defineProperty(process.versions, 'electron', {
       configurable: true,
@@ -1214,7 +1229,8 @@ describe('Electron main startup', () => {
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
       markSessionStart: vi.fn(async () => undefined),
-      record: vi.fn(() => new Promise<void>(() => {})),
+      record: vi.fn(async () => undefined),
+      recordDurably: vi.fn(() => new Promise<void>(() => {})),
     }
     const runtimeLog = {
       append: vi.fn(async () => undefined),
@@ -1226,7 +1242,9 @@ describe('Electron main startup', () => {
       runtimeLog,
       ready: Promise.resolve(),
       close: vi.fn(async () => undefined),
-      terminate: vi.fn(async () => undefined),
+      terminate: vi.fn(async () => {
+        if (terminationError !== null) throw terminationError
+      }),
     }
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') return electronMock
@@ -1267,13 +1285,20 @@ describe('Electron main startup', () => {
     await vi.advanceTimersByTimeAsync(1)
 
     await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
-      'SAR Tracker runtime fault',
-      expect.stringContaining('fault details may not have been saved'),
+      expectedTitle,
+      relaunches
+        ? expect.stringContaining('fault details may not have been saved')
+        : expect.stringContaining('diagnostic writer could not be stopped'),
     ))
     expect(startupEvidenceService.terminate).toHaveBeenCalledOnce()
     expect(markRendererUnavailable).toHaveBeenCalledOnce()
-    expect(electronMock.app.relaunch).toHaveBeenCalledOnce()
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    if (relaunches) {
+      expect(electronMock.app.relaunch).toHaveBeenCalledOnce()
+      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    } else {
+      expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+      expect(electronMock.app.exit).not.toHaveBeenCalled()
+    }
   })
 
   it('does not relaunch a fatal runtime when the durable evidence fence fails', async () => {

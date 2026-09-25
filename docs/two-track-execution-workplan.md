@@ -183,13 +183,15 @@ not C01 qualification. Fresh review first found that a rejected crash-log write
 could leave fatal handling unhandled before the operator dialog. The handler
 now contains write rejections. Review then found that a write which never
 settles could still hold that dialog indefinitely. The handler now bounds both
-evidence writes with the existing 10-second evidence deadline, terminates the
-isolated writer after a timeout, and tells the operator when crash evidence
-could not be confirmed. The red regressions reproduced both missing-dialog
-paths; the complete startup test file passes (61/61), along with lint, syntax,
-and diff checks. Linux run `36112169249` was running on the immediately
-preceding commit when the hung-writer edge was found and cannot verify this
-final follow-up. Exact-head Linux CI and fresh review remain required.
+evidence writes with the existing 10-second evidence deadline, uses a crash-log
+operation that reports disk errors, and attempts to stop the isolated writer
+after timeout. It relaunches only after the helper's exit is confirmed; if exit
+cannot be confirmed, it tells the operator and keeps the current process open.
+The red regressions reproduced these missing-dialog and unsafe-relaunch paths.
+The full strict suite passes (5,942 passed, 19 skipped), along with lint, syntax,
+and diff checks. Linux run `36112990039` is on the immediately preceding commit
+`3454bc73` and cannot verify this follow-up. Exact-head Linux CI and fresh review
+remain required.
 `app.whenReady()` and synchronous SQLite open/migration remain outside the
 watchdog; DON-179 remains In Review; no C01 qualification is claimed.
 

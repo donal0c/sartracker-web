@@ -35,6 +35,11 @@ type CrashLog = {
     readonly summary: string
     readonly detail?: string
   }) => Promise<void>
+  readonly recordDurably: (input: {
+    readonly kind: string
+    readonly summary: string
+    readonly detail?: string
+  }) => Promise<void>
   readonly readRecent: (limit?: number) => Promise<readonly CrashEntry[]>
   readonly markSessionStart: () => Promise<void>
   readonly markCleanExit: () => Promise<void>
@@ -61,6 +66,29 @@ describe('electron crash log', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0]).toMatchObject({ kind: 'uncaughtException', summary: 'TypeError: boom' })
     expect(entries[1]).toMatchObject({ kind: 'render-process-gone' })
+  })
+
+  it('lets fatal callers observe a failed durable crash-log write', async () => {
+    const log = await createLog()
+    const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+    const open = vi.spyOn(fsPromises, 'open').mockRejectedValue(new Error('disk is full'))
+
+    try {
+      await expect(log.recordDurably({
+        kind: 'uncaughtException',
+        summary: 'disk failure',
+      })).rejects.toThrow('disk is full')
+    } finally {
+      open.mockRestore()
+    }
+
+    await expect(log.record({
+      kind: 'uncaughtException',
+      summary: 'subsequent write',
+    })).resolves.toBeUndefined()
+    await expect(log.readRecent()).resolves.toMatchObject([
+      { summary: 'subsequent write' },
+    ])
   })
 
   it('caps stored crash entries to the most recent N', async () => {

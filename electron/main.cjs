@@ -546,6 +546,18 @@ function reportUnsafeFatalRestart(error, runtimeLog) {
   }
 }
 
+/** Keeps the current process open when the isolated diagnostic writer is still live. */
+function reportFatalEvidenceWriterStopFailure() {
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not restart safely',
+      'The diagnostic writer could not be stopped after the fatal runtime fault. SAR Tracker has kept this process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
+    )
+  } catch {
+    // Keep the current process open when a native dialog is unavailable.
+  }
+}
+
 function isAllowedRendererNavigation(targetUrl, currentUrl) {
   try {
     const target = new URL(targetUrl)
@@ -640,7 +652,7 @@ async function handleFatalMainProcessError(input) {
         ? `Unhandled rejection: ${String(input.error)}`
         : 'Uncaught exception'
   const evidenceWrites = Promise.allSettled([
-    Promise.resolve().then(() => input.crashLog.record({
+    Promise.resolve().then(() => (input.crashLog.recordDurably ?? input.crashLog.record)({
       kind: input.kind,
       summary,
       detail:
@@ -655,11 +667,15 @@ async function handleFatalMainProcessError(input) {
     })),
   ])
   const evidenceWriteResult = await waitForEvidenceWrites(evidenceWrites)
+  let evidenceWriterStopped = true
   if (!evidenceWriteResult.completed) {
-    try {
-      await electronRuntimeContext.startupEvidenceService?.terminate()
-    } catch {
-      // Continue to the operator response even if the isolated writer cannot be reaped.
+    if (electronRuntimeContext.startupEvidenceService !== null
+      && electronRuntimeContext.startupEvidenceService !== undefined) {
+      try {
+        await electronRuntimeContext.startupEvidenceService.terminate()
+      } catch {
+        evidenceWriterStopped = false
+      }
     }
   }
   const crashEvidence = evidenceWriteResult.completed
@@ -676,6 +692,11 @@ async function handleFatalMainProcessError(input) {
       reportUnsafeFatalRestart(error, input.runtimeLog)
       return
     }
+  }
+
+  if (!evidenceWriterStopped) {
+    reportFatalEvidenceWriterStopFailure()
+    return
   }
 
   try {

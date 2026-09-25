@@ -13,15 +13,17 @@ PR #47 is open as a draft. The earlier Linux run `36098634511` failed the C01
 candidate producer check because Electron stayed alive after the operator
 dismissed the fault window. Follow-ups fixed the product-exit path and the
 fatal-handler rejection loop. A fresh review then found that a stuck evidence
-write could still delay the fatal dialog; the current patch bounds that wait
-and terminates the isolated writer after timeout. Linux run `36112169249` is on
-the preceding commit `33ec6ef` and cannot verify this final patch.
+write could still delay the fatal dialog; the current patch bounds that wait,
+confirms whether the isolated writer exited, and withholds relaunch if it did
+not. Linux run `36112990039` is on the preceding commit `3454bc73` and cannot
+verify this final patch.
 
 ## Active work
 
 The local repair isolates runtime/crash log I/O in a utility process, starts the
-10-second watchdog after Electron readiness, and reaps a stuck writer before
-`app.exit(1)`. Helper readiness gets the same ten-second allowance. Helper
+10-second watchdog after Electron readiness, and attempts to reap a stuck writer
+before exit. Automatic relaunch proceeds only when the helper's exit is
+confirmed. Helper readiness gets the same ten-second allowance. Helper
 bootstrap errors use the visible failure path; a failed helper never triggers
 crash-log writes on Electron main. Final-source Linux packaged development
 probes passed: held diagnostics exited code 1/no signal/no harness kill
@@ -29,17 +31,17 @@ probes passed: held diagnostics exited code 1/no signal/no harness kill
 left no temp file, and exited code 1 (886 ms). Both are development mechanics
 checks, not exact-head CI or C01 qualification.
 
-Fatal handling now contains rejected log writes and bounds writes which never
-settle, then tells the operator when crash evidence could not be confirmed. Red
-regressions reproduced both missing-dialog paths; the complete startup test
-file now passes (61/61), as do lint, syntax, and diff checks. Previous helper,
-packaging, and probe evidence is recorded in the workplan; this final patch
-still needs exact-head Linux CI and fresh review.
+Fatal handling now contains rejected log writes, uses an error-reporting crash
+record operation, and bounds writes which never settle. If a timed-out writer
+cannot be reaped, it tells the operator and withholds relaunch. Red regressions
+reproduced these failure paths. The full strict suite passes (5,942 passed,
+19 skipped), as do lint, syntax, and diff checks. Previous helper, packaging,
+and probe evidence is recorded in the workplan; this final patch still needs
+exact-head Linux CI and fresh review.
 
-The preceding full strict suite passed (`--maxWorkers=4`: 5,937 passed / 19
-skipped); its earlier attempt recorded 216 ms in the existing 200 ms
-mission-evidence responsiveness guard, while the isolated test and the
-subsequent full run passed. No responsiveness threshold changed.
+The earlier full strict suite had one 216 ms observation against the existing
+200 ms mission-evidence responsiveness guard; the isolated test and subsequent
+full runs passed. No responsiveness threshold changed.
 
 `app.whenReady()` and synchronous SQLite open/migration remain outside the
 interruptible watchdog. The separate Linux C19 261.161 ms outlier remains
