@@ -1,9 +1,16 @@
+import { createRequire } from 'node:module'
+
+const runtimeRequire = createRequire(import.meta.url)
+const { STARTUP_RESPONSE_TIMEOUT_MS } = runtimeRequire('../../electron/startup-watchdog.cjs')
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u
 
 /** The bounded packaged C01 startup-admission proof tier. */
 export const C01_STARTUP_PROOF_MODE = 'packaged-electron-startup-admission'
+
+/** Post-readiness deadline shared with Electron's startup watchdog. */
+export const C01_STARTUP_RESPONSE_TIMEOUT_MS = STARTUP_RESPONSE_TIMEOUT_MS
 
 /** Fixed observation bound for deliberately held startup dependencies. */
 export const C01_HELD_GATE_TIMEOUT_MS = 20_000
@@ -23,7 +30,7 @@ export const C01_STARTUP_PROFILE_KINDS = Object.freeze([
   'permission-fault',
   'disk-full',
   'held-diagnostics-gate',
-  'held-crash-gate',
+  'non-regular-crash-evidence',
   'held-store-gate',
   'active-recoverable',
 ])
@@ -41,7 +48,7 @@ const BAD_SECRET_WARNING =
 export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
   contractId: 'C01',
   proofMode: C01_STARTUP_PROOF_MODE,
-  schema: 'sartracker-c01-startup-admission-v3',
+  schema: 'sartracker-c01-startup-admission-v4',
   producer: 'scripts/qualification/startup-probe.mjs',
   reportPath: 'receipt.json',
   profileKinds: C01_STARTUP_PROFILE_KINDS,
@@ -62,12 +69,15 @@ export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
     'packaged corrupt-schema profile reaches the startup fault window without renderer work',
     'packaged newer-schema profile shows the startup fault window, exits once, starts no renderer and preserves profile bytes',
     'packaged oversized profile generates, hashes and launches the fixed 8 MiB and 3.7 GB stores through separate disposable package profiles; other fault paths retain explicit observations or failed attempts',
+    'packaged diagnostics startup holds an in-flight runtime-log write until the named 10-second watchdog fault, then dismisses the operator window and exits with code 1',
+    'packaged crash-log FIFO rejection is classified as non-regular evidence and exits with code 1 without claiming an operational-data fault',
+    'packaged SQLite lock-contention profile retains an owned lock holder and verifies the bounded startup fault response',
     'packaged active-recoverable profile exposes the existing mission without data loss',
     'source HEAD/tree, supplied executable, packaged ASAR and Electron runtime identity are retained',
   ]),
   uncoveredAxes: Object.freeze([
     'physical field-host and provider acceptance beyond the disposable packaged 3.7 GB launch; the field process path is implemented but not executed in development tests',
-    'development or candidate execution of the physical bounded-volume ENOSPC and FIFO/SQLite held-gate probes; any timeout without an actionable product response remains an explicit gap',
+    'development or candidate execution of the physical bounded-volume ENOSPC probe; any timeout without an actionable product response remains an explicit gap',
     'field-scale Ubuntu admission with genuinely allocated 3.7 GB operational data',
     'real provider/current polling request continuity and AppImage/deb installation parity',
     'browser-only boot states and WAR-13B/publication or field acceptance evidence',
@@ -93,7 +103,7 @@ export function validateStartupContractEvidence(contractId, report, expected) {
     permissionFault: false,
     diskFullFault: false,
     heldDiagnosticsGate: false,
-    heldCrashGate: false,
+    nonRegularCrashEvidence: false,
     heldStoreGate: false,
     activeRecoverableMission: false,
     custody: false,
@@ -161,17 +171,17 @@ export function validateStartupContractEvidence(contractId, report, expected) {
   predicates.diskFullFault = diskFullScenario?.observed === 'synthetic-filesystem-fault'
     ? validateSyntheticDiskFull(diskFullScenario, failures)
     : validateNativeRefusal(diskFullScenario, 'disk-full', 'disk-full', failures)
-  predicates.heldDiagnosticsGate = validateHeldGate(
+  predicates.heldDiagnosticsGate = validateStartupFaultScenario(
     scenarioFor(report, 'held-diagnostics-gate'),
     'diagnostics',
     failures,
   )
-  predicates.heldCrashGate = validateHeldGate(
-    scenarioFor(report, 'held-crash-gate'),
+  predicates.nonRegularCrashEvidence = validateStartupFaultScenario(
+    scenarioFor(report, 'non-regular-crash-evidence'),
     'crash',
     failures,
   )
-  predicates.heldStoreGate = validateHeldGate(
+  predicates.heldStoreGate = validateStartupFaultScenario(
     scenarioFor(report, 'held-store-gate'),
     'store',
     failures,
@@ -452,20 +462,48 @@ function validateOversizedStore(scenario, failures) {
   return passed
 }
 
-/** Recompute one deliberately held startup gate and its actionable recovery state. */
-function validateHeldGate(scenario, gateKind, failures) {
-  const label = 'held-' + gateKind + '-gate'
+/** Recompute one held dependency response or an explicit non-regular-file rejection. */
+function validateStartupFaultScenario(scenario, gateKind, failures) {
+  const label = gateKind === 'crash' ? 'non-regular-crash-evidence' : 'held-' + gateKind + '-gate'
+  const expectedMode = {
+    diagnostics: 'post-readiness-watchdog-timeout',
+    crash: 'non-regular-evidence-rejection',
+    store: 'sqlite-lock-contention',
+  }[gateKind]
+  const expectedHeld = gateKind !== 'crash'
   if (!isRecord(scenario) || scenario.profileKind !== label) {
     failures.push('C01 ' + label + ' profile is missing.')
     return false
   }
   let passed = scenario.observed === 'actionable-fault'
     && scenario.gate?.kind === gateKind
-    && scenario.gate?.held === true
+    && scenario.gate?.mode === expectedMode
+    && scenario.gate?.held === expectedHeld
     && scenario.gate?.bounded === true
     && nonEmptyString(scenario.gate?.action)
     && scenario.gate?.synthetic !== true
-  if (!passed) failures.push('C01 ' + label + ' did not expose a bounded actionable gate.')
+  if (!passed) failures.push('C01 ' + label + ' did not expose its declared bounded startup-fault mode.')
+  if (gateKind === 'diagnostics') {
+    const hasNamedWatchdogTimeout = scenario.gate?.startupTimeoutMs === C01_STARTUP_RESPONSE_TIMEOUT_MS
+      && Number.isSafeInteger(scenario.process?.faultShellAtMs)
+      && scenario.process.faultShellAtMs >= C01_STARTUP_RESPONSE_TIMEOUT_MS
+      && scenario.startupLogs?.startupFailureSummaries?.some((summary) =>
+        typeof summary === 'string'
+        && summary.includes(`StartupTimeoutError: The ${C01_STARTUP_RESPONSE_TIMEOUT_MS} ms startup deadline`)
+        && summary.includes('storage diagnostics initialization')) === true
+    if (!hasNamedWatchdogTimeout) {
+      failures.push('C01 held-diagnostics-gate did not prove the named post-readiness watchdog timeout.')
+      passed = false
+    }
+  }
+  if (gateKind === 'crash') {
+    const hasExplicitRejection = scenario.startupLogs?.startupFailures?.some((entry) =>
+      entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') === true
+    if (!hasExplicitRejection) {
+      failures.push('C01 non-regular crash evidence rejection code was not retained in the runtime log.')
+      passed = false
+    }
+  }
   const cleanupPassed = gateKind === 'store'
     ? scenario.cleanup?.lockHolderClosed === true
       && scenario.gate?.lockHolder?.closed === true
@@ -505,7 +543,7 @@ function validateHeldGateResponse(scenario, label, failures) {
     && observedAtMs <= C01_HELD_GATE_TIMEOUT_MS
     && scenario.process?.faultShellAtMs === observedAtMs
   if (!passed) {
-    failures.push('C01 ' + label + ' dialog response did not satisfy the fixed 20000 ms observation bound.')
+    failures.push('C01 ' + label + ' dialog response did not satisfy the fixed startup-fault observation bound.')
   }
   return passed
 }

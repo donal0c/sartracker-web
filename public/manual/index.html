@@ -2248,6 +2248,8 @@ sh "$COLLECTOR" --screenshot</code></pre>
             SAR Tracker opens a separate startup fault window with the failed step or safe recovery guidance,
             then exits when you close it. The operational mission console remains closed.
             Preserve the profile and contact support before retrying; do not overwrite or edit the profile.
+            If a startup evidence file is a directory, link or other special file, the fault window names
+            it as an evidence-file problem and says that mission-data corruption was not confirmed.
             If the renderer starts but a runtime service then fails, SAR Tracker shows a startup fault panel
             instead of a partially disabled mission console. That panel can export a startup-fault support
             bundle before the normal Diagnostics workspace is available. Use Reload once after exporting or

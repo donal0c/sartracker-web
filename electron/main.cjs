@@ -13,8 +13,6 @@ const path = require('node:path')
 const { monitorEventLoopDelay } = require('node:perf_hooks')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 
-const C01_STARTUP_RESPONSE_TIMEOUT_MS = 10_000
-const STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
 let startupWindowReady = false
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
@@ -54,7 +52,13 @@ const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
 const { showStartupFailureWindow } = require('./startup-failure-window.cjs')
-const { createStartupWatchdog, StartupTimeoutError } = require('./startup-watchdog.cjs')
+const {
+  STARTUP_RESPONSE_TIMEOUT_MS,
+  createStartupWatchdog,
+  StartupTimeoutError,
+} = require('./startup-watchdog.cjs')
+const C01_STARTUP_RESPONSE_TIMEOUT_MS = STARTUP_RESPONSE_TIMEOUT_MS
+const STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
 const {
@@ -1308,6 +1312,9 @@ function startupFailureLogFields(error) {
     fields.timeoutMs = error.timeoutMs
     fields.elapsedMs = error.elapsedMs
   }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
+    fields.code = error.code
+  }
   return fields
 }
 
@@ -1318,6 +1325,9 @@ function startupFailureLogFields(error) {
 function startupFailureOperatorMessage(error) {
   if (error instanceof StartupTimeoutError) {
     return `Startup could not complete because ${error.stage} was still pending when the ${Math.ceil(error.timeoutMs / 1_000)} seconds after Electron was ready elapsed. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
+  }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
+    return 'SAR Tracker could not read a startup evidence file safely. No mission-data corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.'
   }
   const message = error instanceof Error ? error.message : ''
   if (

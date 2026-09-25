@@ -1,20 +1,45 @@
 import {
   C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
   C01_HELD_GATE_TIMEOUT_MS,
+  C01_STARTUP_RESPONSE_TIMEOUT_MS,
 } from './startup-receipts.mjs'
 
 /** Check bounded fault mechanics while explicitly preserving a negative product observation. */
 export function inspectHeldGateDevelopment(report, gateKind) {
   const scenario = report?.scenario
   const failures = []
+  const profileKind = gateKind === 'crash'
+    ? 'non-regular-crash-evidence'
+    : `held-${gateKind}-gate`
+  const mode = {
+    diagnostics: 'post-readiness-watchdog-timeout',
+    crash: 'non-regular-evidence-rejection',
+    store: 'sqlite-lock-contention',
+  }[gateKind]
+  const held = gateKind !== 'crash'
   if (!['diagnostics', 'crash', 'store'].includes(gateKind)
       || report?.schema !== 'sartracker-c01-startup-held-gate-development-v1'
       || report.proofMode !== 'development-electron-held-gate-calibration'
       || report.gateKind !== gateKind || report.qualification?.eligible !== false
-      || scenario?.profileKind !== `held-${gateKind}-gate`) failures.push('Development held-gate identity differs.')
-  if (scenario?.gate?.kind !== gateKind || scenario.gate.held !== true
+      || scenario?.profileKind !== profileKind) failures.push('Development startup-fault identity differs.')
+  if (scenario?.gate?.kind !== gateKind || scenario.gate.mode !== mode || scenario.gate.held !== held
       || scenario.gate.synthetic !== false || scenario.gate.bounded !== true
-      || scenario.gate.timeoutMs !== C01_HELD_GATE_TIMEOUT_MS) failures.push('Real bounded startup dependency hold was not observed.')
+      || scenario.gate.timeoutMs !== C01_HELD_GATE_TIMEOUT_MS) failures.push('Declared bounded startup-fault mode was not observed.')
+  if (gateKind === 'diagnostics'
+      && (scenario?.gate?.startupTimeoutMs !== C01_STARTUP_RESPONSE_TIMEOUT_MS
+        || !Number.isSafeInteger(scenario?.process?.faultShellAtMs)
+        || scenario.process.faultShellAtMs < C01_STARTUP_RESPONSE_TIMEOUT_MS
+        || !scenario?.startupLogs?.startupFailureSummaries?.some((summary) =>
+          typeof summary === 'string'
+          && summary.includes(`StartupTimeoutError: The ${C01_STARTUP_RESPONSE_TIMEOUT_MS} ms startup deadline`)
+          && summary.includes('storage diagnostics initialization')))) {
+    failures.push('Post-readiness diagnostics watchdog timeout was not identified in crash evidence.')
+  }
+  if (gateKind === 'crash'
+      && !scenario?.startupLogs?.startupFailures?.some((entry) =>
+        entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE')) {
+    failures.push('Non-regular crash evidence rejection code was not recorded.')
+  }
   if (!Number.isSafeInteger(scenario?.process?.pid) || scenario.process.pid <= 0
       || scenario.process.closed !== true) failures.push('Owned startup process was not observed closed.')
   if (scenario?.observationFailure !== undefined

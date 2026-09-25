@@ -2039,6 +2039,39 @@ describe('Electron main startup', () => {
     expect(electronMock.app.exit).not.toHaveBeenCalled()
   })
 
+  it('identifies non-regular startup evidence without claiming mission data is corrupt', async () => {
+    const startupError = Object.assign(
+      new Error('Startup storage evidence path is not a regular file.'),
+      { code: 'ERR_SARTRACKER_NON_REGULAR_FILE' },
+    )
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: vi.fn(() => { throw startupError }) }
+      }
+      if (request === './runtime-log.cjs') {
+        return { ...originalLoad(request, parent, isMain), createRuntimeLog: () => runtimeLog }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => {
+      expectStartupFailureWindow(
+        electronMock,
+        expect.stringMatching(/startup evidence file safely.*No mission-data corruption was confirmed/iu),
+      )
+      expect(runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'startup_failure',
+        fields: expect.objectContaining({ code: 'ERR_SARTRACKER_NON_REGULAR_FILE' }),
+      }))
+      expect(startupProcessExit).toHaveBeenCalledWith(1)
+    })
+  })
+
   it('keeps arbitrary startup-failure detail out of the operator dialog [DON-260]', async () => {
     const startupError = new Error(
       'Could not open /home/fieldoperator/mission-store.sqlite token=private-startup-token',

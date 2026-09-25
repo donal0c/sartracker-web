@@ -1,5 +1,7 @@
 const { performance } = require('node:perf_hooks')
 
+const STARTUP_RESPONSE_TIMEOUT_MS = 10_000
+
 /** A pre-window startup step exceeded the shared response deadline. */
 class StartupTimeoutError extends Error {
   /** Creates a timeout with the pending startup stage and its measured budget. */
@@ -100,6 +102,7 @@ function createStartupWatchdog(options) {
 }
 
 module.exports = {
+  STARTUP_RESPONSE_TIMEOUT_MS,
   StartupTimeoutError,
   createStartupWatchdog,
 }

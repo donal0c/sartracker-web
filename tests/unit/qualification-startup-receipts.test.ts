@@ -196,7 +196,7 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-store-gate': {
         profileKind: 'held-store-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
+        gate: { kind: 'store', mode: 'sqlite-lock-contention', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
         cleanup: { lockHolderClosed: true, heldPathRemoved: false },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 106, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
@@ -204,16 +204,18 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-diagnostics-gate': {
         profileKind: 'held-diagnostics-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
+        gate: { kind: 'diagnostics', mode: 'post-readiness-watchdog-timeout', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, startupTimeoutMs: 10_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
+        startupLogs: { startupFailureSummaries: ['StartupTimeoutError: The 10000 ms startup deadline after Electron readiness expired while "storage diagnostics initialization" was pending.'] },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 108, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
+        process: { pid: 108, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 10_100, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 10_100, lateDialogAfterTimeout: false, faultShellAtMs: 10_100 },
       },
-      'held-crash-gate': {
-        profileKind: 'held-crash-gate',
+      'non-regular-crash-evidence': {
+        profileKind: 'non-regular-crash-evidence',
         observed: 'actionable-fault',
-        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
+        gate: { kind: 'crash', mode: 'non-regular-evidence-rejection', held: false, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
+        startupLogs: { startupFailures: [{ code: 'ERR_SARTRACKER_NON_REGULAR_FILE' }] },
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 109, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
@@ -240,8 +242,8 @@ function report(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification C01 startup receipt validator', () => {
-  it('versions the stronger held-gate and uncovered-axis observations as C01 v3', () => {
-    expect(STARTUP_PROBE_DESCRIPTOR.schema).toBe('sartracker-c01-startup-admission-v3')
+  it('versions the startup-fault modes and watchdog evidence as C01 v4', () => {
+    expect(STARTUP_PROBE_DESCRIPTOR.schema).toBe('sartracker-c01-startup-admission-v4')
     const previousVersion = report({ schema: 'sartracker-c01-startup-admission-v2' })
 
     const result = validateStartupContractEvidence('C01', previousVersion, expected)
@@ -259,7 +261,7 @@ describe('qualification C01 startup receipt validator', () => {
     const result = validateStartupContractEvidence('C01', late, expected)
 
     expect(result.passed).toBe(false)
-    expect(result.failureReasons.join('\n')).toMatch(/held-store-gate.*20.?000|20.?000.*held-store-gate/iu)
+    expect(result.failureReasons.join('\n')).toMatch(/held-store-gate.*observation bound/iu)
   })
 
   it.each([
@@ -397,7 +399,7 @@ describe('qualification C01 startup receipt validator', () => {
       permissionFault: true,
       diskFullFault: true,
       heldDiagnosticsGate: true,
-      heldCrashGate: true,
+      nonRegularCrashEvidence: true,
       heldStoreGate: true,
       activeRecoverableMission: true,
       custody: true,
@@ -409,6 +411,23 @@ describe('qualification C01 startup receipt validator', () => {
     expect(result.nonQualificationReason).toMatch(/synchronous mission-store.*migration.*main thread/iu)
     expect(result.uncoveredAxes.join('\n')).toMatch(/synchronous mission-store.*migration.*main thread/iu)
     expect(result.uncoveredAxes).toEqual([...STARTUP_PROBE_DESCRIPTOR.uncoveredAxes])
+  })
+
+  it('does not count a fail-fast non-regular path as a watchdog-held diagnostics gate', () => {
+    const fastFailure = report()
+    const diagnostics = (fastFailure.scenarios as Record<string, Record<string, unknown>>)[
+      'held-diagnostics-gate'
+    ]!
+    diagnostics.gate = {
+      ...(diagnostics.gate as Record<string, unknown>),
+      mode: 'non-regular-evidence-rejection',
+    }
+
+    const result = validateStartupContractEvidence('C01', fastFailure, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.recomputedPredicates.heldDiagnosticsGate).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/declared bounded startup-fault mode/iu)
   })
 
   it('rejects forged pass when the newer-schema profile changes a retained byte', () => {
@@ -500,18 +519,20 @@ describe('qualification C01 startup receipt validator', () => {
     }
   })
 
-  it.each([['diagnostics', 'heldPathRemoved'], ['crash', 'heldPathRemoved'], ['store', 'lockHolderClosed']])(
-    'rejects a held %s gate without %s cleanup', (kind, field) => {
-      for (const value of [false, undefined]) {
-        const forged = report()
-        const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)[`held-${kind}-gate`]
-        scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: value }
-        const result = validateStartupContractEvidence('C01', forged, expected)
-        expect(result.passed).toBe(false)
-        expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
-      }
-    },
-  )
+  it.each([
+    ['diagnostics', 'held-diagnostics-gate', 'heldPathRemoved'],
+    ['crash', 'non-regular-crash-evidence', 'heldPathRemoved'],
+    ['store', 'held-store-gate', 'lockHolderClosed'],
+  ])('rejects a %s startup-fault scenario without %s cleanup', (_kind, profileKind, field) => {
+    for (const value of [false, undefined]) {
+      const forged = report()
+      const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)[profileKind]
+      scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: value }
+      const result = validateStartupContractEvidence('C01', forged, expected)
+      expect(result.passed).toBe(false)
+      expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
+    }
+  })
 
   it('rejects contradictory or missing store lock-holder closure evidence', () => {
     for (const lockHolder of [undefined, { pid: 110, closed: false }, { pid: null, closed: true }]) {

@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-25. Detailed PR history and retained receipts are in the
+Updated 2026-09-25. Detailed history and retained receipts are in the
 [two-track execution workplan](../docs/two-track-execution-workplan.md) and
 assurance records.
 
@@ -9,35 +9,36 @@ assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 is open and draft at `719c371d`. Exact-head Linux run `36085152426`
-failed the C01 producer step; later packaged checks were skipped. Diagnostics
-and crash cases had been dismissed but did not exit with code 1; the store case
-exited. Keep that receipt as history; harness cleanup is not product exit.
+PR #47 is open as a draft at `d8cc1ae8`. Exact-head Linux run `36095861866` is
+in progress. Independent review found a P2 in the packaged C01 proof: the
+diagnostics and crash FIFO cases fail fast on the regular-file guard, so they
+do not prove watchdog exit while startup I/O is still pending. Keep the earlier
+`36085152426` failure as historical evidence; harness cleanup is not product
+exit.
 
 ## Active work
 
-Uncommitted C01 repair adds a retained, closeable post-readiness failure window,
-rejects non-regular crash/diagnostics paths before reading, and hardens Linux
-window observation against the verified X11 dismissal race. The 10-second
-watchdog starts after Electron readiness and ends when the operational window
-is shown. Focused tests (134, then 22 for the final observer change), serial
-correctness (5,892 passed, 25 skipped), lint and production build pass. Local
-Linux packaged development calibrations pass for diagnostics, crash and store;
-they are not qualification evidence. Exact-head CI and review have not run for
-these edits. DON-179 remains **In Review** because opt-in upload and private
-retention are outside this repair.
+An uncommitted follow-up makes the diagnostics probe block `logs/runtime.log`
+while startup awaits its durable interrupted-operation record. The v4 receipt
+requires a named 10-second diagnostics timeout and product exit code 1. Crash
+log FIFO rejection is separately classified and records its error code; it is
+not called a held gate. The manual describes the new evidence-file error.
 
-The 10-second watchdog starts after Electron readiness and ends when the
-operational window is shown. `app.whenReady()` and synchronous SQLite open or
-migration on Electron main remain outside its interruptible boundary. Keep this
-as an explicit C01 coverage gap; utility-process ownership of the live store is
-separate work. The historical Linux C19 261.161 ms result also remains
-unresolved. DON-179 remains **In Review** because opt-in remote upload and
-private retention are outside this repair.
+Local verification passes: correctness (574 files; 5,894 passed; 25 skipped),
+lint, production build, focused startup/receipt tests, `node --check`, and
+`git diff --check`. The older Linux run is for `d8cc1ae8`, not this local
+follow-up. Packaged Linux proof and review of the updated head remain pending.
+`app.whenReady()` and synchronous SQLite open/migration remain outside the
+interruptible watchdog. This work does not qualify C01 or clear the separate
+Linux C19 261.161 ms outlier.
+
+DON-179 remains **In Review** because opt-in upload and private retention are
+outside this repair.
 
 ## Next actions
 
-1. Commit and push the verified repair with DON-179 in the message.
-2. Run exact-head Linux CI and inspect every skipped downstream package check.
-3. Obtain fresh review on the resulting exact head. Keep PR #47 draft until CI
-   and review clear. Do not merge, tag, publish, or release.
+1. Commit and push the verified follow-up with DON-179 in the message.
+2. Require exact-head Linux CI, including the C01 timeout receipt, and inspect
+   downstream packaged steps.
+3. Obtain fresh review on that exact head. Keep PR #47 draft until both clear;
+   do not merge, tag, publish, or release.

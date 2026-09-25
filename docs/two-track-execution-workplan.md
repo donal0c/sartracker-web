@@ -11,13 +11,14 @@ Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
 canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
-packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
-separate C01 repair remains draft: exact-head Linux run `36079044261` confirmed
-dialog dismissal, but diagnostics and crash-held cases failed to exit with code
-1 within 12 seconds; the SQLite-held case passed. The harness killed the first
-two processes, and later packaged checks were skipped. A local direct-exit fix
-and startup-event guards now pass serial source verification; exact-head Linux
-CI and review remain pending.
+packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47
+is open as a draft at `d8cc1ae8`. Exact-head Linux run `36095861866` is still
+running. Independent review of `d8cc1ae8` found one P2: the diagnostics/crash
+FIFO cases were reported as held gates although the regular-file guard made
+them fail fast, so they did not prove timeout exit with in-flight I/O. A local
+follow-up corrects the probe and v4 receipt semantics; focused tests, full
+correctness, lint and build pass. It is not yet on the PR. The next exact-head
+Linux run and review must clear before changing draft readiness.
 Do not treat master CI or packaged receipts as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
@@ -165,17 +166,21 @@ both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
 timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
 CI and fresh review remain pending; keep PR #47 draft.
 
-**C01 local packaged follow-up — 2026-09-25:** latest remote head remains
-`719c371d5a12b01affcac39e205e3270301222ca`; run `36085152426` failed the
-candidate producer check and skipped downstream packaged checks. The uncommitted
-repair now keeps the operator fault window alive through dismissal, guards
-FIFO-backed evidence paths before reads, and treats the reproduced X11
-`BadWindow` during post-click observation as a closed window. Serial
-correctness passes (574 files, 5,892 passed, 25 skipped), lint and production
-build pass. The locally patched Linux package passes the diagnostics, crash and
-store development held-gate calibrations, with code 1 after dismissal and no
-harness kill. These calibrations are not qualification; commit/push, exact-head
-Linux CI and fresh review remain pending.
+**C01 current PR follow-up — 2026-09-25:** PR #47 head `d8cc1ae8` includes the
+closeable startup-fault window, non-regular evidence guard, direct `process.exit(1)`
+after a bounded evidence-write wait, and Linux dismissal observer fix. Its exact
+Linux run `36095861866` is still in progress; the fresh review artifact
+`/tmp/pr47-c01-exact-head-review.md` found that the packaged diagnostics/crash
+FIFO cases do not exercise the watchdog because they now reject the paths
+immediately. The uncommitted v4 follow-up holds `logs/runtime.log` open while
+interrupted storage diagnostics await its durable startup write, then requires
+the crash record to name the post-readiness diagnostics timeout and the product
+to exit with code 1. It labels crash-log FIFO as non-regular evidence rejection
+and records the error code separately. Local verification: correctness (574
+files; 5,894 passed; 25 skipped), lint, production build and `git diff --check`.
+The packaged Linux timeout observation and new exact-head review remain pending;
+do not count the d8 run as verification of this local follow-up. No C01
+qualification is claimed.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it
@@ -208,26 +213,19 @@ the store callers, attachment-ingest custody, coverage notifications, and
 orderly close/drain bridged explicitly. This does not absorb DON-250's
 oversized-store assessment/recovery or introduce data-compaction behavior.
 
-**Review finding disposition:** #1 and #2 are fixed for the selected post-ready
-asynchronous startup contract; the explicit pre-readiness and synchronous
-SQLite limits above remain open follow-on work. The hard 10-second cutoff can
-also close a healthy launch that is slower than budget; that trade-off is now
-explicit in the manual and planning record. #3–#7 and #9–#10 are fixed in local
-code. C01 matrix-valid v3 receipts now remain explicitly coverage-incomplete
-and qualification-ineligible while these axes are open. The exact fake-timer
-cases in #8 use mocked log adapters. A related teardown race did reproduce in
-the real-timer renderer-crash tests under the full suite: real crash/runtime
-log writes could outlive profile cleanup, and the failed teardown then caused a
-module-cache cascade. Those tests now use in-memory log adapters; the latest
-full correctness run passes (5,880 passed, 25 skipped). #11 is
-disproved: the `app.isReady()` false branch handles a rejected Electron
-readiness promise before logs/profile access exists. #12 is a cleanup suggestion
-with distinct semantics for pending evidence writes and stage deadlines. #13's
-self-asserting readiness expectation was removed. #14's commits all reference
-DON-179; its current exact-head CI and observer status is now recorded there.
-#15's handoff has been compressed to the required operational snapshot. The
-exact-head PR record must be refreshed after push with these dispositions and
-the resulting CI/review evidence.
+**Review finding disposition:** the 10-second post-readiness watchdog covers
+awaited asynchronous startup through the renderer safety fence. Electron
+readiness and synchronous SQLite open/migration remain explicit, non-interruptible
+gaps; the manual says so. The latest exact-head review cleared the earlier
+startup path findings but found the held-gate proof gap described above. The v4
+receipt follow-up must add a real in-flight log-write timeout case and must not
+call fail-fast crash-file rejection a hold. The 10-second budget can close a
+healthy but slow launch; this is documented. Prior fake-timer isolation,
+runtime-log teardown, failure-message, helper and process-report findings have
+their fixes in the PR branch. Historical v2/v3 receipts remain unchanged. The
+current receipt continues to report its uncovered C01 axes and is never
+qualification evidence. Keep DON-179 In Review: opt-in upload and private
+retention remain outside this repair.
 
 The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
 one post-settlement mutation/close interval against the 200 ms limit. The same

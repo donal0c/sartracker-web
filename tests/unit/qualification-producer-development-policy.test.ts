@@ -13,10 +13,10 @@ describe('development fault mechanics are distinct from qualification', () => {
       proofMode: 'development-electron-held-gate-calibration',
       qualification: { eligible: false },
       scenario: {
-        profileKind: 'held-crash-gate',
+        profileKind: 'non-regular-crash-evidence',
         observed: 'not-observed',
         gate: {
-          kind: 'crash', held: true, bounded: true, synthetic: false, timeoutMs: 20000,
+          kind: 'crash', mode: 'non-regular-evidence-rejection', held: false, bounded: true, synthetic: false, timeoutMs: 20000,
           response: 'startup-fault-window', dialogObserved: true, dialogDismissed: false,
         },
         process: {
@@ -25,6 +25,7 @@ describe('development fault mechanics are distinct from qualification', () => {
           productExitCode: null, productExitSignal: null, exitAfterDialogMs: null,
         },
         cleanup: { heldPathRemoved: true },
+        startupLogs: { startupFailures: [{ code: 'ERR_SARTRACKER_NON_REGULAR_FILE' }] },
         originalFiles: {
           before: { 'mission-store.sqlite': file, 'settings.json': file },
           after: { 'mission-store.sqlite': file, 'settings.json': file },
@@ -50,8 +51,9 @@ describe('development fault mechanics are distinct from qualification', () => {
       schema: 'sartracker-c01-startup-held-gate-development-v1', gateKind: 'diagnostics',
       proofMode: 'development-electron-held-gate-calibration', qualification: { eligible: false },
       scenario: { profileKind: 'held-diagnostics-gate', observed: 'bounded-timeout-no-action',
-        gate: { kind: 'diagnostics', held: true, bounded: true, synthetic: false, timeoutMs: 20000, action: '' },
-        process: { pid: 123, closed: true, signal: 'SIGKILL' },
+        gate: { kind: 'diagnostics', mode: 'post-readiness-watchdog-timeout', held: true, bounded: true, synthetic: false, timeoutMs: 20000, startupTimeoutMs: 10000, action: '' },
+        process: { pid: 123, closed: true, signal: 'SIGKILL', faultShellAtMs: 10100 },
+        startupLogs: { startupFailureSummaries: ['StartupTimeoutError: The 10000 ms startup deadline expired while "storage diagnostics initialization" was pending.'] },
         cleanup: { heldPathRemoved: true },
         originalFiles: { before: { 'mission-store.sqlite': file, 'settings.json': file },
           after: { 'mission-store.sqlite': file, 'settings.json': file } },
@@ -69,8 +71,8 @@ describe('development fault mechanics are distinct from qualification', () => {
       gate: { ...report.scenario.gate, action: 'preserve-profile-and-contact-support',
         response: 'startup-fault-window', dialogObserved: true },
       process: { ...report.scenario.process, exitCode: 1, signal: null, forcedKill: false,
-        dialogObserved: true, dialogDismissed: true, timedOut: false, dialogObservedAtMs: 904,
-        productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, faultShellAtMs: 904 },
+        dialogObserved: true, dialogDismissed: true, timedOut: false, dialogObservedAtMs: 10_100,
+        productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, faultShellAtMs: 10_100 },
     } }
     expect(inspectHeldGateDevelopment(actionable, 'diagnostics')).toMatchObject({
       infrastructurePassed: true, observedPredicateStatus: 'PASS', producerCheckPassed: true,

@@ -37,6 +37,7 @@ import { countDescendantElectronRenderers } from '../../build/release-smoke-lib.
 import { generateMissionStoreFixture } from '../../build/seed-mission-store-runtime.js'
 import {
   C01_STARTUP_PROOF_MODE,
+  C01_STARTUP_RESPONSE_TIMEOUT_MS,
   C01_HELD_GATE_TIMEOUT_MS,
   C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
   C01_OVERSIZED_STORE_BYTES,
@@ -182,7 +183,7 @@ export async function runStartupAdmissionProbe(options) {
       'permission-fault': () => runPermissionFaultScenario(options, path.join(disposableRoot, 'permission-fault'), report),
       'disk-full': () => runDiskFullScenario(options, path.join(disposableRoot, 'disk-full'), report),
       'held-diagnostics-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-diagnostics-gate'), report, 'diagnostics'),
-      'held-crash-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-crash-gate'), report, 'crash'),
+      'non-regular-crash-evidence': () => runHeldGateScenario(options, path.join(disposableRoot, 'non-regular-crash-evidence'), report, 'crash'),
       'held-store-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-store-gate'), report, 'store'),
       'active-recoverable': () => runActiveRecoverableScenario(options, path.join(disposableRoot, 'active-recoverable'), evidenceDir, report),
     }
@@ -241,7 +242,10 @@ export async function runStartupHeldGateDevelopmentProbe(options) {
       scenario,
       qualification: { eligible: false, reason: 'Development calibration is not packaged C01 evidence.' },
     }
-    await writeJson(path.join(evidenceDir, `held-${options.gateKind}.json`), report)
+    const evidenceName = options.gateKind === 'crash'
+      ? 'non-regular-crash-evidence.json'
+      : `held-${options.gateKind}.json`
+    await writeJson(path.join(evidenceDir, evidenceName), report)
     return Object.freeze(report)
   } finally {
     await rm(disposableRoot, { recursive: true, force: true })
@@ -764,13 +768,13 @@ export function isActionableHeldGateObservation({ earlyExit, dialogWindowId, dia
     && dialogObservedAtMs <= timeoutMs
 }
 
-/** Hold one real startup dependency, then retain the bounded runtime response. */
+/** Observe one held startup dependency or one non-regular evidence rejection. */
 async function runHeldGateScenario(options, profile, _report, gateKind) {
   await seedOperationalProfile(profile)
   await writeJson(path.join(profile, 'settings.json'), syntheticSettings(false))
   const before = await snapshotProfileFiles(profile)
   const heldPath = gateKind === 'diagnostics'
-    ? path.join(profile, 'storage-diagnostics.json')
+    ? path.join(profile, 'logs', 'runtime.log')
     : gateKind === 'crash'
       ? path.join(profile, 'crashes', 'crash-log.json')
       : null
@@ -785,6 +789,21 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   try {
     if (heldPath !== null) {
       await mkdir(path.dirname(heldPath), { recursive: true })
+      if (gateKind === 'diagnostics') {
+        await writeJson(path.join(profile, 'storage-diagnostics.json'), {
+          version: 1,
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          activeOperation: {
+            id: 'c01-held-diagnostics-startup',
+            type: 'backup',
+            stage: 'started',
+            startedAt: '2026-09-25T00:00:00.000Z',
+            startedAtMs: 1,
+            requestedAtMs: 1,
+            lastPhaseAtMs: 1,
+          },
+        })
+      }
       await rm(heldPath, { force: true })
       await execFileAsync('mkfifo', [heldPath])
     } else {
@@ -867,9 +886,11 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   }
 
   const after = await snapshotProfileFiles(profile, false).catch(() => ({}))
-  const runtimeLog = await readFile(path.join(profile, 'logs', 'runtime.log'), 'utf8').catch(() => '')
-  // Never read the held crash FIFO from the observer; that would create an
-  // unbounded reader and turn the calibration itself into the fault.
+  // Never read either FIFO from the observer; opening it could block the
+  // controller and turn the observation itself into the fault.
+  const runtimeLog = heldPath === path.join(profile, 'logs', 'runtime.log')
+    ? ''
+    : await readFile(path.join(profile, 'logs', 'runtime.log'), 'utf8').catch(() => '')
   const crashLog = gateKind === 'crash'
     ? ''
     : await readFile(path.join(profile, 'crashes', 'crash-log.json'), 'utf8').catch(() => '')
@@ -904,16 +925,38 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   }
   if (heldPath !== null) cleanup.heldPathRemoved = await rm(heldPath, { force: true }).then(() => true).catch(() => false)
   const timedOutWithoutAction = isBoundedHeldGateTimeoutWithoutAction({ earlyExit, dialogWindowId, forcedKill })
+  const profileKind = gateKind === 'crash'
+    ? 'non-regular-crash-evidence'
+    : `held-${gateKind}-gate`
+  const failureEntries = parseJsonLines(runtimeLog)
+    .filter((entry) => entry?.event === 'startup_failure')
+    .map((entry) => ({
+      ...(typeof entry?.fields?.code === 'string' ? { code: entry.fields.code } : {}),
+      ...(typeof entry?.fields?.stage === 'string' ? { stage: entry.fields.stage } : {}),
+      ...(Number.isSafeInteger(entry?.fields?.timeoutMs) ? { timeoutMs: entry.fields.timeoutMs } : {}),
+    }))
+  const startupFailureSummaries = readJsonArrayFromString(crashLog)
+    .filter((entry) => entry?.kind === 'startupFailure' && typeof entry?.summary === 'string')
+    .map((entry) => sanitizeError(entry.summary, profile))
+  const gateMode = gateKind === 'diagnostics'
+    ? 'post-readiness-watchdog-timeout'
+    : gateKind === 'crash'
+      ? 'non-regular-evidence-rejection'
+      : 'sqlite-lock-contention'
   return {
-    profileKind: `held-${gateKind}-gate`,
+    profileKind,
     observed: actionable ? 'actionable-fault' : timedOutWithoutAction ? 'bounded-timeout-no-action' : 'not-observed',
     gate: {
       kind: gateKind,
-      held: setupFailure === null,
+      mode: gateMode,
+      held: setupFailure === null && gateKind !== 'crash',
       bounded: setupFailure === null,
       action: actionable ? 'preserve-profile-and-contact-support' : '',
       synthetic: false,
       timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
+      ...(gateKind === 'diagnostics'
+        ? { startupTimeoutMs: C01_STARTUP_RESPONSE_TIMEOUT_MS }
+        : {}),
       response: actionable
         ? 'startup-fault-window'
         : lateDialogAfterTimeout
@@ -929,6 +972,8 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     startupLogs: {
       runtimeEvents: parseJsonLines(runtimeLog).map((entry) => entry?.event).filter((event) => typeof event === 'string'),
       crashKinds: readJsonArrayFromString(crashLog).map((entry) => entry?.kind).filter((kind) => typeof kind === 'string'),
+      startupFailures: failureEntries,
+      startupFailureSummaries,
       stdoutTail: sanitizeProcessOutput(appStdout?.text),
       stderrTail: sanitizeProcessOutput(appStderr?.text),
     },
