@@ -58,7 +58,7 @@ const {
   StartupTimeoutError,
 } = require('./startup-watchdog.cjs')
 const C01_STARTUP_RESPONSE_TIMEOUT_MS = STARTUP_RESPONSE_TIMEOUT_MS
-const STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
+const EVIDENCE_WRITE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
 const {
@@ -639,7 +639,7 @@ async function handleFatalMainProcessError(input) {
       : input.kind === 'unhandledRejection'
         ? `Unhandled rejection: ${String(input.error)}`
         : 'Uncaught exception'
-  const [crashEvidence, runtimeEvidence] = await Promise.allSettled([
+  const evidenceWrites = Promise.allSettled([
     Promise.resolve().then(() => input.crashLog.record({
       kind: input.kind,
       summary,
@@ -654,8 +654,18 @@ async function handleFatalMainProcessError(input) {
       fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
     })),
   ])
-  const evidenceWasSaved =
-    crashEvidence.status === 'fulfilled' && runtimeEvidence.status === 'fulfilled'
+  const evidenceWriteResult = await waitForEvidenceWrites(evidenceWrites)
+  if (!evidenceWriteResult.completed) {
+    try {
+      await electronRuntimeContext.startupEvidenceService?.terminate()
+    } catch {
+      // Continue to the operator response even if the isolated writer cannot be reaped.
+    }
+  }
+  const crashEvidence = evidenceWriteResult.completed
+    ? evidenceWriteResult.value[0]
+    : undefined
+  const evidenceWasSaved = crashEvidence?.status === 'fulfilled'
 
   const rendererTeardownCoordinator =
     electronRuntimeContext.rendererTeardownCoordinator
@@ -672,8 +682,8 @@ async function handleFatalMainProcessError(input) {
     dialog.showErrorBox(
       'SAR Tracker runtime fault',
       evidenceWasSaved
-        ? 'SAR Tracker hit a fatal runtime fault. Diagnostic evidence was saved and the app will relaunch so operators get a clean runtime.'
-        : 'SAR Tracker hit a fatal runtime fault. Diagnostic evidence could not be confirmed, so the fault details may not have been saved. The app will relaunch so operators get a clean runtime.',
+        ? 'SAR Tracker hit a fatal runtime fault. Crash evidence was saved and the app will relaunch so operators get a clean runtime.'
+        : 'SAR Tracker hit a fatal runtime fault. Crash evidence could not be confirmed, so the fault details may not have been saved. The app will relaunch so operators get a clean runtime.',
     )
   } catch {
     // showErrorBox is unavailable in some headless/test contexts.
@@ -1291,7 +1301,7 @@ async function handleStartupFailure(error) {
       fields: {},
     })))
   }
-  const evidenceWriteResult = await waitForStartupEvidenceWrites(Promise.allSettled([
+  const evidenceWriteResult = await waitForEvidenceWrites(Promise.allSettled([
     crashEvidenceWrite,
     ...runtimeEvidenceWrites,
   ]))
@@ -1323,12 +1333,12 @@ function startBestEffortStartupWrite(write) {
 }
 
 /** Waits for ordinary evidence writes to finish and bounds only writes that remain pending. */
-function waitForStartupEvidenceWrites(evidenceWrites) {
+function waitForEvidenceWrites(evidenceWrites) {
   let timeout
   return Promise.race([
-    Promise.resolve(evidenceWrites).then(() => ({ completed: true })),
+    Promise.resolve(evidenceWrites).then((value) => ({ completed: true, value })),
     new Promise((resolve) => {
-      timeout = setTimeout(() => resolve({ completed: false }), STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS)
+      timeout = setTimeout(() => resolve({ completed: false }), EVIDENCE_WRITE_TIMEOUT_MS)
     }),
   ]).finally(() => clearTimeout(timeout))
 }

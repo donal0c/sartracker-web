@@ -11,9 +11,11 @@ publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
 PR #47 is open as a draft. The earlier Linux run `36098634511` failed the C01
 candidate producer check because Electron stayed alive after the operator
-dismissed the fault window. The follow-up on `ace6dc0` fixed that exit path;
-Linux run `36110808782` was still running on that commit when the fatal-log
-rejection edge was found, so it does not verify the current follow-up.
+dismissed the fault window. Follow-ups fixed the product-exit path and the
+fatal-handler rejection loop. A fresh review then found that a stuck evidence
+write could still delay the fatal dialog; the current patch bounds that wait
+and terminates the isolated writer after timeout. Linux run `36112169249` is on
+the preceding commit `33ec6ef` and cannot verify this final patch.
 
 ## Active work
 
@@ -27,12 +29,11 @@ probes passed: held diagnostics exited code 1/no signal/no harness kill
 left no temp file, and exited code 1 (886 ms). Both are development mechanics
 checks, not exact-head CI or C01 qualification.
 
-Fresh review found that a rejected crash-log write could leave fatal handling
-unhandled before the operator dialog. The handler now treats both evidence
-writes as best effort and says when saving could not be confirmed. The new
-regression first failed with the missing dialog and unhandled rejection; the
-complete startup test file now passes (60/60), as does lint. Previous helper,
-packaging, and probe evidence is recorded in the workplan; the new follow-up
+Fatal handling now contains rejected log writes and bounds writes which never
+settle, then tells the operator when crash evidence could not be confirmed. Red
+regressions reproduced both missing-dialog paths; the complete startup test
+file now passes (61/61), as do lint, syntax, and diff checks. Previous helper,
+packaging, and probe evidence is recorded in the workplan; this final patch
 still needs exact-head Linux CI and fresh review.
 
 The preceding full strict suite passed (`--maxWorkers=4`: 5,937 passed / 19

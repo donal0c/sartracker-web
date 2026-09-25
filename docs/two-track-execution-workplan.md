@@ -12,14 +12,12 @@ canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
 packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47
-is open as a draft at `d8cc1ae8`. Exact-head Linux run `36095861866` is still
-running. Independent review of `d8cc1ae8` found one P2: the diagnostics/crash
-FIFO cases were reported as held gates although the regular-file guard made
-them fail fast, so they did not prove timeout exit with in-flight I/O. A local
-follow-up corrects the probe and v4 receipt semantics; focused tests, full
-correctness, lint and build pass. It is not yet on the PR. The next exact-head
-Linux run and review must clear before changing draft readiness.
-Do not treat master CI or packaged receipts as candidate qualification.
+remains open as a draft. Its current branch has the 10-second, post-readiness
+startup watchdog and isolated evidence writer. The fatal-error path handles
+rejected or stalled evidence writes without suppressing the operator dialog.
+Exact-head Linux CI and fresh review must clear on the final pushed commit
+before changing draft readiness. No C01 qualification is claimed. Do not treat
+master CI or packaged receipts as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -45,7 +43,7 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**PR #47 status:** the branch is based on current `master` (`30cb7d45`). Exact-head
+**PR #47 historical evidence:** the branch is based on current `master` (`30cb7d45`). Exact-head
 Linux run `36047200408` failed in three C01 held-gate product-exit checks, but
 its observer only sent a click and did not confirm that any X11 window closed.
 The follow-up run `36053525791` failed earlier in dismissal observation: its
@@ -181,16 +179,19 @@ Linux packaged development probes passed on that repair: held diagnostics
 exited code 1 with no signal or harness kill (10,078 ms after dismissal); held
 crash-log `fsync` resumed after dismissal, wrote the failure record, left no
 temp file, and exited code 1 (886 ms). These are development mechanics checks,
-not C01 qualification. Fresh review then found that a rejected crash-log write
-could leave fatal handling unhandled before the operator dialog. The follow-up
-now settles crash/runtime evidence writes independently and tells the operator
-when evidence could not be confirmed. Its regression failed before the change
-with no dialog and an unhandled rejection; the complete startup test file now
-passes (60/60), as does lint. Linux run `36110808782` was still in progress on
-preceding commit `ace6dc0` when this edge was found; it cannot verify the final
-follow-up. Exact-head Linux CI and fresh review remain required. `app.whenReady()`
-and synchronous SQLite open/migration remain outside the watchdog; DON-179
-remains In Review; no C01 qualification is claimed.
+not C01 qualification. Fresh review first found that a rejected crash-log write
+could leave fatal handling unhandled before the operator dialog. The handler
+now contains write rejections. Review then found that a write which never
+settles could still hold that dialog indefinitely. The handler now bounds both
+evidence writes with the existing 10-second evidence deadline, terminates the
+isolated writer after a timeout, and tells the operator when crash evidence
+could not be confirmed. The red regressions reproduced both missing-dialog
+paths; the complete startup test file passes (61/61), along with lint, syntax,
+and diff checks. Linux run `36112169249` was running on the immediately
+preceding commit when the hung-writer edge was found and cannot verify this
+final follow-up. Exact-head Linux CI and fresh review remain required.
+`app.whenReady()` and synchronous SQLite open/migration remain outside the
+watchdog; DON-179 remains In Review; no C01 qualification is claimed.
 
 The preceding full strict suite passed `npm test -- --maxWorkers=4` (5,937
 passed, 19 skipped); its earlier attempt measured 216 ms in the existing 200 ms
