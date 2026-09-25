@@ -13,7 +13,7 @@ PR #47's behavior-bearing source is at
 `0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-source Linux run
 `36116343282` passed, and an independent review of that source found no
 actionable findings. PR #47 is open and out of draft; its latest exact-head
-Linux workflow is still running, so merge remains blocked. Later PR commits
+Linux workflow has not completed, so merge remains blocked. Later PR commits
 are documentation-only; verify the latest push-triggered workflow before
 merging. The [PR47 findings register](../docs/pr47-findings-disposition.md)
 records the source-review outcome. The only archived review report is the

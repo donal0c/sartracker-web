@@ -27,8 +27,11 @@ documentation only; no production or test files changed. A review of the
 `df17e242` documentation delta identified an ambiguous handoff reference to
 the archived report; that wording is corrected in this update. Refresh the
 live branch tip and checks before a merge decision; do not transfer
-source-head evidence to a different source tree. Merge, development probe
-success, candidate qualification and release approval remain separate.
+source-head evidence to a different source tree. An exact-head review of
+`31de77fd` confirmed that correction and found older workplan status paragraphs
+that still needed historical labels; this follow-up labels them and keeps the
+live state in the opening summary. Merge, development probe success, candidate
+qualification and release approval remain separate.
 
 ## Original review disposition (as recorded by the implementing task)
 

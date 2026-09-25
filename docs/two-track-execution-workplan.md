@@ -15,7 +15,7 @@ packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
 behavior-bearing source is `0e6db8a26b62327055d76f1b61782e6d600caa96`;
 exact-source Linux run `36116343282` passed and independent review found no
 actionable findings. PR #47 is open and out of draft, but its latest exact-head
-Linux workflow is still running, so merge remains blocked. Later PR commits
+Linux workflow has not completed, so merge remains blocked. Later PR commits
 are documentation-only; verify the latest push-triggered workflow before
 merging. The full finding inventory is in the [PR47 findings register](pr47-findings-disposition.md),
 and the historical `5b4f0b25` review is retained at
@@ -96,8 +96,10 @@ a new exact-head Linux run. The current status is recorded above.
 Previous run `36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be
-claimed from the prior run. Keep the PR draft until exact-head CI and review
-complete. Do not merge, tag, publish, or promote from this work.
+claimed from the prior run. At that historical checkpoint, PR #47 was to
+remain draft until exact-head CI and review completed; they passed later on the
+behavior-bearing source. The current docs-head check is recorded above. Do not
+merge, tag, publish, or promote from this work.
 
 Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
 261.161 ms against 200 ms; same-Linux master run `36001695717` measured
@@ -136,8 +138,10 @@ legacy-recovery smoke passed with 60.11 ms first-main and 55.90 ms restart
 main-loop maxima and 1.59/0.14/1.40 ms phase gaps. It ran from a dirty tree and
 macOS scheduler counters were unavailable, so it is diagnostic only. Linux run
 `36025809540` passed only on an older head and skipped strict responsiveness.
-Fresh exact-head review and Linux checks remain required. DON-179 remains In
-Review; opt-in diagnostic upload is outside this repair.
+At this historical checkpoint, fresh exact-head review and Linux checks were
+still required. DON-179 was In Review; opt-in diagnostic upload remains
+outside this repair. The later source verification and current issue state are
+recorded above.
 
 **C01 exit follow-up — 2026-09-25:** run `36074972856` moved the evidence past
 the earlier observer ambiguity. The diagnostics and crash probes hold reads on
@@ -172,8 +176,9 @@ timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
 CI and fresh review were pending at this historical checkpoint. The current
 status is recorded above.
 
-**C01 current PR follow-up — 2026-09-25:** PR #47 is open at
-`0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-head Linux run
+**C01 behavior-bearing source follow-up — 2026-09-25:** PR #47's
+behavior-bearing source is
+`0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-source Linux run
 `36098634511` failed because the dismissed fault window was followed
 by harness cleanup rather than product exit. The repair routes runtime/crash
 log I/O through an Electron utility process, wires sender-checked IPC for
@@ -258,19 +263,20 @@ the store callers, attachment-ingest custody, coverage notifications, and
 orderly close/drain bridged explicitly. This does not absorb DON-250's
 oversized-store assessment/recovery or introduce data-compaction behavior.
 
-**Review finding disposition:** the 10-second post-readiness watchdog covers
+**Review finding disposition — historical review checkpoint:** the 10-second post-readiness watchdog covers
 awaited asynchronous startup through the renderer safety fence; the manual says
 Electron readiness and synchronous SQLite open/migration remain outside this
 bound. Local receipts retain the uncovered C01 axes. The utility-process
 boundary keeps pending log writes from holding Electron main open, and helper
 fork/initialization errors use the visible startup-fault path without a
 main-process file-I/O fallback. A held crash `fsync` is exercised separately
-from the diagnostics FIFO case. The latest independent read of the helper
-bootstrap repair found no actionable issue. Exact review and Linux CI for the
-new commit are pending; remote f35 still has the earlier producer failure.
-Historical receipts remain unchanged and no C01 qualification is claimed.
-Keep DON-179 In Review: opt-in upload and private retention remain outside this
-repair.
+from the diagnostics FIFO case. At this earlier checkpoint, the independent
+read found no actionable issue, exact review and Linux CI for the next commit
+were pending, and remote `f35` retained the earlier producer failure. Those
+pending gates were superseded by the exact-source verification recorded above;
+historical receipts remain unchanged and no C01 qualification is claimed.
+DON-179 was then In Review and is now In Progress. Opt-in upload and private
+retention remain outside this repair.
 
 The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
 one post-settlement mutation/close interval against the 200 ms limit. The same
