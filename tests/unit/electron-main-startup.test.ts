@@ -1347,6 +1347,84 @@ describe('Electron main startup', () => {
     expect(electronMock.app.exit).not.toHaveBeenCalled()
   })
 
+  it('bounds a stalled fatal renderer evidence fence and keeps the process open', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(process.versions, 'electron', {
+      configurable: true,
+      value: '42.0.0',
+    })
+    const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const heldFence = new Promise<void>(() => {})
+    const markRendererUnavailable = vi.fn(() => heldFence)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(async () => undefined),
+      recordDurably: vi.fn(async () => undefined),
+    }
+    const runtimeLog = {
+      append: vi.fn(async () => undefined),
+      appendDurable: vi.fn(async () => undefined),
+      readRecent: vi.fn(async () => []),
+    }
+    const startupEvidenceService = {
+      crashLog,
+      runtimeLog,
+      ready: Promise.resolve(),
+      close: vi.fn(async () => undefined),
+      terminate: vi.fn(async () => undefined),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-evidence-service.cjs') {
+        return { createStartupEvidenceService: () => startupEvidenceService }
+      }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: vi.fn(async () => undefined) }) }
+      }
+      if (request === './renderer-teardown-coordinator.cjs') {
+        return {
+          createRendererTeardownCoordinator: () => ({
+            prepare: vi.fn(),
+            markRendererUnavailable,
+            markRendererAvailable: vi.fn(async () => undefined),
+            dispose: vi.fn(),
+          }),
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    let uncaughtHandler: ((error: Error) => void) | undefined
+    await vi.waitFor(() => {
+      uncaughtHandler = processOn.mock.calls
+        .filter(([eventName]) => eventName === 'uncaughtException')
+        .map(([, listener]) => listener)
+        .find((listener) => String(listener).includes('handleFatalMainProcessError')) as
+        | ((error: Error) => void)
+        | undefined
+      expect(uncaughtHandler).toBeDefined()
+    })
+
+    uncaughtHandler?.(new Error('fatal runtime fault'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(markRendererUnavailable).toHaveBeenCalledOnce()
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not restart safely',
+      expect.stringContaining('could not be marked safely'),
+    ))
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+  })
+
   it('fences every unfinalized mission before opening after an unclean shutdown', async () => {
     mkdirSync(path.join(testUserDataPath, 'crashes'), { recursive: true })
     writeFileSync(
@@ -1622,6 +1700,58 @@ describe('Electron main startup', () => {
       'sartracker:startup-failure-close',
       closeListener,
     )
+  })
+
+  it('keeps the single-instance process open when a startup writer cannot be reaped', async () => {
+    vi.useFakeTimers()
+    const held = new Promise<never>(() => {})
+    const electronMock = createElectronMock(vi.fn(), undefined, true, [], undefined, undefined, false)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      record: vi.fn(() => held),
+    }
+    const runtimeLog = { append: vi.fn(() => held) }
+    const startupEvidenceService = {
+      crashLog,
+      runtimeLog,
+      ready: Promise.resolve(),
+      close: vi.fn(async () => undefined),
+      terminate: vi.fn().mockRejectedValue(new Error('writer exit was not confirmed')),
+    }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './startup-evidence-service.cjs') {
+        return { createStartupEvidenceService: () => startupEvidenceService }
+      }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: () => held }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expectStartupFailureWindow(electronMock, expect.stringMatching(/10 seconds/iu))
+    expect(startupProcessExit).not.toHaveBeenCalled()
+
+    const failureWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const closeListener = electronMock.ipcMain.on.mock.calls.find(
+      ([channel]) => channel === 'sartracker:startup-failure-close',
+    )?.[1]
+    closeListener?.({ sender: failureWindow.webContents })
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(startupEvidenceService.terminate).not.toHaveBeenCalled()
+    expect(startupProcessExit).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+
+    await vi.waitFor(() => expect(startupEvidenceService.terminate).toHaveBeenCalledOnce())
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not close safely',
+      expect.stringContaining('diagnostic writer could not be confirmed stopped'),
+    )
+    expect(startupProcessExit).not.toHaveBeenCalled()
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    expect(electronMock.app.quit).not.toHaveBeenCalled()
   })
 
   it('bounds a crash-record write only after it remains pending for the evidence deadline', async () => {

@@ -2258,9 +2258,9 @@ sh "$COLLECTOR" --screenshot</code></pre>
             recording the fault. If the same fault returns, do not treat the app as ready for operational use.
           </p>
           <p>
-            If a fatal runtime fault occurs and SAR Tracker cannot confirm that its diagnostic writer has
-            stopped, it keeps the current process open and does not relaunch automatically. Preserve the
-            profile and contact support before forcing the app closed.
+            If a startup or fatal runtime fault occurs and SAR Tracker cannot confirm that its diagnostic
+            writer has stopped, it keeps the current process open to protect the profile. Do not launch
+            another copy. Preserve the profile and contact support before forcing this process closed.
           </p>
           <p>
             The 10-second startup deadline is a hard total budget after Electron reports that it is ready,

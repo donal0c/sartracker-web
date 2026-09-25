@@ -558,6 +558,18 @@ function reportFatalEvidenceWriterStopFailure() {
   }
 }
 
+/** Keeps the single-instance lock when a startup evidence writer cannot be reaped. */
+function reportStartupEvidenceWriterStopFailure() {
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker could not close safely',
+      'The diagnostic writer could not be confirmed stopped after startup failed. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
+    )
+  } catch {
+    // Keep the current process open when a native dialog is unavailable.
+  }
+}
+
 function isAllowedRendererNavigation(targetUrl, currentUrl) {
   try {
     const target = new URL(targetUrl)
@@ -666,7 +678,17 @@ async function handleFatalMainProcessError(input) {
       fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
     })),
   ])
-  const evidenceWriteResult = await waitForEvidenceWrites(evidenceWrites)
+  const rendererTeardownCoordinator =
+    electronRuntimeContext.rendererTeardownCoordinator
+  const rendererFenceWait = rendererTeardownCoordinator === null
+    ? Promise.resolve({ completed: true, value: [] })
+    : waitForEvidenceWrites(Promise.allSettled([
+      Promise.resolve().then(() => rendererTeardownCoordinator.markRendererUnavailable()),
+    ]))
+  const [evidenceWriteResult, rendererFenceResult] = await Promise.all([
+    waitForEvidenceWrites(evidenceWrites),
+    rendererFenceWait,
+  ])
   let evidenceWriterStopped = true
   if (!evidenceWriteResult.completed) {
     if (electronRuntimeContext.startupEvidenceService !== null
@@ -683,19 +705,20 @@ async function handleFatalMainProcessError(input) {
     : undefined
   const evidenceWasSaved = crashEvidence?.status === 'fulfilled'
 
-  const rendererTeardownCoordinator =
-    electronRuntimeContext.rendererTeardownCoordinator
-  if (rendererTeardownCoordinator !== null) {
-    try {
-      await rendererTeardownCoordinator.markRendererUnavailable()
-    } catch (error) {
-      reportUnsafeFatalRestart(error, input.runtimeLog)
-      return
-    }
-  }
-
   if (!evidenceWriterStopped) {
     reportFatalEvidenceWriterStopFailure()
+    return
+  }
+  if (!rendererFenceResult.completed) {
+    reportUnsafeFatalRestart(
+      new Error('Renderer evidence fence did not complete within the fatal response deadline.'),
+      input.runtimeLog,
+    )
+    return
+  }
+  const [rendererFence] = rendererFenceResult.value
+  if (rendererFence?.status === 'rejected') {
+    reportUnsafeFatalRestart(rendererFence.reason, input.runtimeLog)
     return
   }
 
@@ -1327,6 +1350,7 @@ async function handleStartupFailure(error) {
     ...runtimeEvidenceWrites,
   ]))
   const startupEvidenceService = electronRuntimeContext.startupEvidenceService
+  let evidenceWriterStopped = true
   if (startupEvidenceService !== null && startupEvidenceService !== undefined) {
     try {
       if (evidenceWriteResult.completed) {
@@ -1335,8 +1359,12 @@ async function handleStartupFailure(error) {
         await startupEvidenceService.terminate()
       }
     } catch {
-      // The fault window has already told the operator to preserve the profile.
+      evidenceWriterStopped = false
     }
+  }
+  if (!evidenceWriterStopped) {
+    reportStartupEvidenceWriterStopFailure()
+    return
   }
   // Give both crash evidence and best-effort runtime logging time to settle.
   // If a write remains stuck, stop its isolated worker before the supported

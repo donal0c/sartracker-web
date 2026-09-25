@@ -168,7 +168,8 @@ CI and fresh review remain pending; keep PR #47 draft.
 Linux run `36098634511` failed because the dismissed fault window was followed
 by harness cleanup rather than product exit. The repair routes runtime/crash
 log I/O through an Electron utility process, wires sender-checked IPC for
-fault-window dismissal, and reaps a stuck writer before `app.exit(1)`. The
+fault-window dismissal, and attempts to reap a stuck writer before exit. Startup
+exit is withheld if the helper cannot be confirmed stopped. The
 10-second startup watchdog starts after Electron readiness; failure evidence
 gets up to 10 seconds after dismissal. Utility-process readiness gets the same
 ten-second allowance. If fork or initialization fails, a named watchdog stage
@@ -185,15 +186,18 @@ now contains write rejections. Review then found that a write which never
 settles could still hold that dialog indefinitely. The handler now bounds both
 evidence writes with the existing 10-second evidence deadline, uses a crash-log
 operation that reports disk errors, and attempts to stop the isolated writer
-after timeout. It relaunches only after the helper's exit is confirmed; if exit
-cannot be confirmed, it tells the operator and keeps the current process open.
-The red regressions reproduced these missing-dialog and unsafe-relaunch paths.
-The full strict suite passes (5,942 passed, 19 skipped), along with lint, syntax,
-and diff checks. Linux run `36112990039` is on the immediately preceding commit
-`3454bc73` and cannot verify this follow-up. Exact-head Linux CI and fresh review
-remain required.
+after timeout. Startup exits and fatal relaunches are withheld unless the
+helper's exit is confirmed. Fatal handling bounds its renderer safety fence
+under the same deadline; a failed or stuck fence keeps the current process
+open. The regressions reproduced these missing-dialog and unsafe-exit paths.
+The full strict suite passes with two workers (5,944 passed, 19 skipped), along
+with lint, syntax, and diff checks. A four-worker run hit two existing 200 ms
+responsiveness guards; both checks passed in isolation and again in the
+two-worker full run. No thresholds changed. Linux run `36114434278` is on the
+immediately preceding commit `52457b07` and cannot verify this follow-up.
+Exact-head Linux CI and fresh review remain required.
 `app.whenReady()` and synchronous SQLite open/migration remain outside the
-watchdog; DON-179 remains In Review; no C01 qualification is claimed.
+watchdog; DON-179 remains In Progress; no C01 qualification is claimed.
 
 The preceding full strict suite passed `npm test -- --maxWorkers=4` (5,937
 passed, 19 skipped); its earlier attempt measured 216 ms in the existing 200 ms
