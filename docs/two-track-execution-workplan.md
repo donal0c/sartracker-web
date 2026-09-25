@@ -4,11 +4,25 @@
 
 ## Current Beta 13 decision — 2026-09-25
 
-**Current post-PR50 queue:** PR50 merged at `c6097f36`. Postmerge build and
-packaged checks passed; one fatal-writer startup unit test failed. The authorized
-bounded test-readiness repair precedes exact-artifact binding and the existing
-`bcp17-final` qualification campaign. No feature/WAR work is added. Release HOLD
-continues; detailed evidence and next action are in `handoff/HANDOFF.md`.
+**Current release-first queue:** PR50 and PR51 are merged; refreshed base master
+is `3b27b1c586d02dfa2c3d0b019d8a73d878e5f918`. Run `36174038700` passed
+correctness/package production but failed C12 infrastructure timeout. Ubuntu
+confirmed successful Electron exit with external attachment-viewer pipes holding
+Playwright close open. A narrow external-harness repair passed with the retained
+installer and unchanged supervisor; this is diagnostic proof, not qualification.
+Consolidate it with the independently confirmed exact installer-name admission
+fix (`x86_64.AppImage` / `amd64.deb`), finish stable source verification and
+independent review, push, then require successful exact-head CI before binding.
+
+Donal's 2026-09-25 authority permits small contained verified fixes directly on
+master; larger/safety-sensitive combined changes still require PR and independent
+review. Astra alone integrates source/test/CI and handoff/workplan; Sol alone owns
+Ubuntu execution/installation/performance; Luna audits artifact/fixture/campaign
+prerequisites; CoS coordinates. No Claude/Fable, new functionality, full mapping,
+broad WAR or database redesign. Keep all C00–C29 and human/original-machine gates;
+no weakened timing/cleanup gate or automatic publication. Final approval remains
+Donal's. Exact lane IDs, retained failed evidence and next actions are in
+`handoff/HANDOFF.md`. The older preparation/PR snapshots below are historical.
 
 **Post-PR47 preparation update:** PR47 is merged at master
 `a703338a919159dd3a386671dba8aca969463255`; the older open-PR and master

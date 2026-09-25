@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { validateMarkerAttachmentReceipt } from './marker-attachment-receipts.mjs'
+import { closeMarkerAttachmentApplication } from './marker-attachment-close.mjs'
 
 const require = createRequire(import.meta.url)
 const { readArchiveContainer, readArchivePreamble } = require('../../electron/archive-container.cjs')
@@ -371,7 +372,7 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
   return report
   } finally {
   try {
-    if (app) await app.close()
+    if (app) await closeMarkerAttachmentApplication(app)
   } finally {
     await rm(profile, { recursive: true, force: true })
   }

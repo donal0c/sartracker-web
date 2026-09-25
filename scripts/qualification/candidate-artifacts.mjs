@@ -120,29 +120,39 @@ export async function inspectCiCandidateArchive({ archivePath, outputDirectory, 
     throw new Error('Downloaded CI ZIP bytes differ from GitHub artifact metadata.')
   }
   const members = (await readCommand('unzip', ['-Z1', archive.path])).trim().split('\n')
-  const appImage = `sartracker-electron-validation_${version}_linux_x64.AppImage`
-  const deb = `sartracker-electron-validation_${version}_linux_x64.deb`
-  const names = provenance.workflow === RELEASE_WORKFLOW ? [appImage, deb] : [appImage, deb, 'SHA256SUMS']
-  if (members.length !== names.length || new Set(members).size !== members.length
-      || names.some((name) => !members.includes(name))) throw new Error('CI archive must contain exactly the expected installers and checksum manifest.')
+  const { appImage, deb, names } = validateCiInstallerMembers(members, version, provenance.workflow)
   await mkdir(outputDirectory, { recursive: false, mode: 0o700 })
   for (const name of names) await copyArchiveMember(archive.path, name, path.join(outputDirectory, name))
   const installers = await Promise.all([appImage, deb].map((name) => hashCandidateFile(path.join(outputDirectory, name))))
   // Release workflow creates SHA256SUMS in its later draft job. That manifest
   // must be independently fetched/checked by C27; it is not invented here.
   if (names.includes('SHA256SUMS')) {
-  const checksums = (await readFile(path.join(outputDirectory, 'SHA256SUMS'), 'utf8')).trim().split('\n')
-  const parsed = checksums.map((line) => line.match(/^([a-f0-9]{64}) [ *](?:tmp\/electron-dist\/)?([^/]+)$/u))
-  if (parsed.length !== 2 || parsed.some((match) => match === null)
-      || new Set(parsed.map((match) => match[2])).size !== 2
-      || installers.some((installer) => !parsed.some((match) => match[2] === path.basename(installer.path) && match[1] === installer.sha256))) {
-    throw new Error('CI installer bytes do not match the exact checksum manifest.')
-  }
+    validateCiInstallerChecksums(await readFile(path.join(outputDirectory, 'SHA256SUMS'), 'utf8'), installers)
   }
   const archiveAfter = await hashCandidateFile(archive.path)
   if (archiveAfter.sha256 !== archive.sha256) throw new Error('CI archive changed during extraction.')
   return { schema: 'sartracker-candidate-ci-artifacts-v1', provenance, archive, ciMetadata: { run, artifact, jobs },
     version, installers: installers.map((entry, index) => ({ ...entry, role: index === 0 ? 'ci-appimage' : 'ci-deb' })) }
+}
+
+/** Require the exact producer filenames and manifest inventory before extraction. */
+export function validateCiInstallerMembers(members, version, workflow) {
+  const appImage = `sartracker-electron-validation_${version}_linux_x86_64.AppImage`
+  const deb = `sartracker-electron-validation_${version}_linux_amd64.deb`
+  const names = workflow === RELEASE_WORKFLOW ? [appImage, deb] : [appImage, deb, 'SHA256SUMS']
+  if (members.length !== names.length || new Set(members).size !== members.length
+      || names.some((name) => !members.includes(name))) throw new Error('CI archive must contain exactly the expected installers and checksum manifest.')
+  return { appImage, deb, names }
+}
+
+/** Compare both observed installer hashes with their exact checksum manifest entries. */
+export function validateCiInstallerChecksums(checksums, installers) {
+  const parsed = checksums.trim().split('\n').map((line) => line.match(/^([a-f0-9]{64}) [ *](?:tmp\/electron-dist\/)?([^/]+)$/u))
+  if (parsed.length !== 2 || parsed.some((match) => match === null)
+      || new Set(parsed.map((match) => match[2])).size !== 2
+      || installers.some((installer) => !parsed.some((match) => match[2] === path.basename(installer.path) && match[1] === installer.sha256))) {
+    throw new Error('CI installer bytes do not match the exact checksum manifest.')
+  }
 }
 
 /** Validate actual dpkg admission plus every expected installed payload byte/link. */

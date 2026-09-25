@@ -1,146 +1,101 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-25. Detailed history and retained receipts are in the
-[two-track execution workplan](../docs/two-track-execution-workplan.md) and
-assurance records.
+Updated 2026-09-25. Release remains **HOLD**. PR50 and PR51 are merged;
+refreshed base master is `3b27b1c586d02dfa2c3d0b019d8a73d878e5f918`.
+Earlier pending-PR/Fable requirements are superseded by current authority.
+No candidate is frozen or qualified; no tag/publication/distribution is authorized.
 
-## Current state
+## Authority and active lanes
 
-### Post-PR50 release unblock — 2026-09-25
+Donal authorized release-first stabilization and the existing `bcp17-final`
+C00–C29 campaign. Small contained, verified fixes may go directly to master;
+larger/safety-sensitive combined changes require a PR and independent review.
+No new features, full mapping, broad WAR, database redesign or Claude/Fable.
+Donal retains final release approval.
 
-PR50 merged as `c6097f36`. Its PR CI `36155469082` passed. Postmerge run
-`36162564135` built the package and passed packaged Linux checks, but failed one
-fatal-writer unit-test assertion (5,974 passed). Release remains HOLD.
-The bounded repair only changes the two parameterized fatal-writer tests: wait
-for completed startup on real timers, then inject the runtime fault and advance
-the simulated 10-second evidence deadline. A deliberately held window-load gate
-proves capture-handler registration is not operational readiness. All original
-deadline, writer-termination, fencing, relaunch and exit assertions remain.
-No application code, release timing budget or qualification gate changes.
+- Source/test/CI and canonical handoff/workplan: Astra task
+  `01a0d9f5-7727-7060-ab59-4549f3a513c8`, isolated worktree `1608`.
+- Sole Ubuntu installation/runtime/performance owner: Sol task
+  `01a0d9f5-771a-7993-9e10-4ae1cbb1e3bb`; serialize host workloads.
+- Artifact/fixture/campaign preparation: Luna task
+  `01a0d9f5-774b-7f42-bfc5-dc94f4523e6c`; report findings to the integrator.
+- Coordination: `01a023b0-f891-75f2-b0f3-7cb8b6b17abe`.
 
-Verification: 94 startup/watchdog/evidence/terminal-state tests passed; ten preset
-targeted repeats (20 case executions), lint and TypeScript passed. Initial
-local diagnostic failures also involved missing SQLite bindings (not a reproduction
-of the CI cause); `npm rebuild better-sqlite3` corrected that setup. Keep the CI
-failure as evidence. Next: review/merge this test-only repair, successful postmerge
-CI, bind exact installers, then the existing release qualification campaign.
-No new functionality, broader WAR or database redesign.
+Do not alter the dirty original checkout or coordinator's release-prep checkout.
+DON-254's historical Done state is not whole-candidate qualification; DON-255
+remains downstream. Authority: DON-254 comment
+`00ce69cd-ff6f-47f7-b6e9-fd3360fe509f`.
 
-### PR50 CI repair — 2026-09-25
+## Current repair and verification
 
-PR50 initial CI `36145799283` at `c13efa63` failed after 36m47s, not during
-packaging: 5,964 correctness tests passed, then C10 known-at-time replay observed
-a renderer frame gap of exactly 200ms against `<200`. Other 18 producer cases
-passed. Original receipts retained; this is not the earlier SQLite main-thread
-failure and is not explained away as runner noise.
+Run `36174038700` passed correctness/package production, but C12 exceeded the
+unchanged 300000-ms infrastructure deadline despite exit 0 and a written receipt.
+Artifact `10880449533` is diagnostic input, not an admitted candidate.
+Failed receipts remain in the coordinator's
+`tmp/pr51-postmerge-failure/tmp/electron-validation-evidence/` directory.
 
-Donal authorized separating PR correctness from strict release timing and splitting
-CI reruns. Current bounded repair splits correctness/browser, package build and
-packaged checks with a fail-closed aggregate under the existing required check
-name. Package transfer is source-bound and SHA256-checked. Development replay
-keeps all live/archive geometry oracles and records timing; strict candidate
-validator rejects development-only receipts and still rejects gaps >=200ms.
-No change to application code or release budgets. Exact-head CI remains required
-before merge; no candidate qualification or release claimed.
+Ubuntu confirmed Electron exited 0 while xdg-open/GNOME Text Editor retained
+its stdout/stderr pipes, leaving Playwright `app.close()` pending. The bounded
+C12 harness repair releases its output read ends only after physical Electron
+exit, still awaits Playwright close, and rejects nonzero/signal/unobserved exit.
+Application handoff, supervisor cleanup and timeout gates are unchanged.
+Updated harness plus the same installer passed: exit 0, no timeout/error,
+positive cleanup proof and zero descendants. This is diagnostic evidence only.
+Raw Ubuntu evidence is under
+`/home/donal/sartracker-beta13-diagnostic-3b27b1c5/tmp/`:
+`ubuntu-c12-lifetime-console.log`, `ubuntu-c12-lifetime-evidence/`,
+`ubuntu-c12-patched-execution.json` and `ubuntu-c12-patched-evidence/`.
 
-Repair verification: 73 focused tests passed; lint, TypeScript and actionlint
-passed. Independent Luna review cleared the final rerun/provenance changes.
-Ubuntu replay using the retained c13 CI AppImage and revised external harness
-passed live/archive correctness (115 frames, 33.3ms maximum gap); strict candidate
-validation correctly rejected that development-only receipt. This is diagnostic
-proof, not final-head CI or qualification. The original 200ms failure remains
-retained. The repair was pushed as `787afdec`.
+Candidate admission also expected nonexistent `linux_x64` installer names.
+Actual CI members use `linux_x86_64.AppImage` / `linux_amd64.deb`.
+The corrected exact allowlist preserves workflow-specific manifest membership,
+source/run/archive provenance, extraction guards and installer checksum checks.
+The preparation audit found no other stale member consumer or attempt-lineage defect.
 
-Follow-up review reproduced the failed-job-only candidate provenance bug. The
-fix distinguishes package-producing attempt from successful run attempt, requires
-live/retained successful producer and consumer job lineage for reused packages,
-and rejects older installers after a newer package build. Exact archive ID and
-digest checks remain. A retained C00 identity regression covers the same path.
-Run `36152725061` passed correctness/browser in 16m27s but C09 failed because the
-new packaged lane lacked `dist` for packaged-source comparison. Transfer now
-includes the producer's original `dist` under the same SHA256, not a rebuild.
-Both failures have red/green regressions. Fresh exact-head CI is still required;
-PR50 remains draft and release remains HOLD.
+Both defects have red/green regressions. Final related Ubuntu tests passed 31/31,
+including the close-error-listener delta. Filename/manifest tests
+passed 37/37. `npm run lint` and `npm run build` passed; generated version metadata
+was restored. `npm run test:correctness -- --no-file-parallelism` passed all
+579 files: 5,972 tests passed and 26 platform-specific tests skipped. Ubuntu
+ran `qualification-marker-attachment-close`, `qualification-owned-process` and
+`qualification-owned-process-custody` unit files serially: 31/31 passed.
+Independent native Luna review found no blockers. Release timing was not run.
+Low-impact retained review boundary: output-pipe release may omit final buffered
+diagnostic lines; receipt/physical exit checks remain. The pure inventory helper
+is called only after strict provenance/version validation.
 
-### Release preparation update — 2026-09-25 after PR47 merge
+The final repair SHA and exact-head CI outcome are maintained in DON-254 comment
+`7461fc0a-2f8c-40ec-840c-647f7690c3c8`; refresh that live closeout before candidate
+admission. Recording CI status there avoids rebuilding unchanged source solely
+to add the completed run's identity to these documents.
 
-PR47 is merged. Clean preparation checkout:
-`/Users/donalocallaghan/workspace/vibes/sartracker-release-prep`, source
-`a703338a919159dd3a386671dba8aca969463255`. The older open-PR47 status below
-is superseded. Master CI `36141017519` was still running during preparation.
-No candidate is frozen, tagged, qualified or published. Next action is the
-bounded preparation checklist in `docs/assurance/beta13-testing-readiness.md`,
-then the existing `bcp17-final` campaign, not another feature/WAR programme.
+## Next actions and retained limits
 
-Campaign compile passed on the clean merged source. Candidate preflight aborted
-with `blockers contains duplicates.` before producing a valid JSON verdict;
-do not claim preflight PASS. Ubuntu SSH at the documented address timed out
-twice. Final version/CI artifacts/runtime manifests and human acceptance inputs
-remain unbound. Dependencies were installed with scripts disabled for static
-inventory compilation only; this is not a runtime/native-addon setup.
-Full mapping and synchronous mission-store process isolation remain deferred.
-Local preparation changes are not committed/pushed or candidate evidence.
+1. Stable source verification, Linux delta and independent review are complete.
+   Integrate this contained repair with explicit refspec; use the live DON-254
+   closeout above for its pushed identity and CI outcome.
+2. Follow fresh exact-head CI to completion. Old-installer/new-harness diagnostics
+   and failed-run installers cannot satisfy final candidate admission.
+3. Bind successful exact installers, runtime inputs, fixture hashes and human
+   authorities; compile a new immutable campaign and execute the existing gates.
+4. Independent human/original-machine acceptance and publication remain separate.
 
-Follow-up: the duplicate-blocker preflight reporting defect is fixed locally
-with a red/green regression. Two controller test files report 51 passed and one
-pre-existing skip. CLI now emits honest ENVIRONMENT_BLOCKED JSON (96 unique
-prerequisite/identity blockers); no gate was weakened. Package/lockfile beta.13
-metadata and a HOLD release-note draft are prepared locally for review before
-candidate freeze. The initial immutable definition is superseded by these edits.
+Sol also passed C28 routine (nine phases) and C26 duplicate-launch diagnostics
+with the retained installer. Genuine installed-deb proof remains outstanding:
+installed version is beta12.11 and noninteractive sudo is unavailable. Continue
+other work; use supported administrator access, never alter authentication.
+Historical schema-9 paging fixtures were rejected. Sol subsequently verified fresh
+schema-13 960k/2m hashes, quick_check and 100-device/12-outing counts; final oracle
+and campaign binding remain outstanding. Recheck the separate 32 MiB
+`/mnt/sartracker-beta13-enospc` volume and preserve the earlier NVIDIA apt failure.
 
-Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
-publication, or distribution has occurred. PR47 is merged at `a703338a`.
+Live mission-store process isolation remains explicitly post-Beta13;
+`app.whenReady()` is outside the startup watchdog. Historical C19 261.161-ms,
+original-machine, live/provider/private-map, soak/custody and remaining campaign
+obligations are not cleared. DON-179 remote upload/private retention remains
+In Progress. Operator behavior is unchanged; no repair-specific manual change.
 
-PR #47's behavior-bearing source changed after a 2026-09-25 multi-agent review
-of `7fda435` found fatal/quit state, evidence-writer, fault-window and
-held-gate classification defects (register IDs V01-V16). Review-fix source
-`1dd316f2` supersedes the earlier `0e6db8a` evidence; its exact-source Linux
-run `36136413925` passed. Donal subsequently merged PR47.
-The [PR47 findings register](../docs/pr47-findings-disposition.md) records the
-review outcome. Merging does not lift Beta 13 HOLD: do not tag, publish, or
-release from this repair.
-
-## Active work
-
-The repair starts one 10-second startup watchdog after Electron readiness and
-covers awaited asynchronous startup through the renderer safety fence. Runtime
-and crash-log I/O use an isolated utility process. Startup exits and fatal
-relaunches are withheld unless a timed-out writer is confirmed stopped. The
-held diagnostics, held crash-log `fsync`, SQLite lock, and non-regular crash
-evidence Linux probes all passed their bounded product-exit and
-profile-preservation checks. These are development mechanics receipts, not
-C01 qualification.
-
-The recorded scope decision defers live mission-store process isolation until
-after Beta 13; it is an unresolved known limitation, not a passed check. Track
-it in [post-Beta 13 mission-store isolation](../docs/post-beta13-mission-store-isolation.md).
-`app.whenReady()` also remains outside this watchdog. Keep both boundaries
-visible and do not claim complete C01 coverage. The historical Linux C19
-261.161 ms event remains unresolved. DON-179 remains **In Progress** because
-opt-in remote upload and private retention are outside this repair.
-
-## Next actions
-
-1. Review/merge the bounded Beta13 testing-preparation change; Donal owns merge.
-2. Freeze the resulting clean source and exact CI artifacts, then execute the
-   existing bcp17-final campaign. Never reuse the preliminary unbound definition.
-3. Complete independent human acceptance and the separate publication decision.
-
-Ubuntu access is restored: Linux x86_64, Node 22.22.2, approximately 124 GiB
-available, installed beta12.11, no competing SAR process observed. Desktop is
-Wayland with Xwayland sockets; SSH display probes currently lack authorization.
-Xwayland display :0 was subsequently verified through the user's existing
-Xauthority file, without changing access control. Xvfb is absent and
-noninteractive sudo requires a password. Candidate .deb installation and bounded
-disk-full-volume setup require administrator assistance; user-namespace mount
-probe was denied. Master CI `36141017519` passed. Preparation validation:
-65 tests passed, one Linux-only skip; full lint and production build/bundle checks
-passed. Build-generated version metadata was restored, not committed as identity.
-
-Host setup subsequently completed with Donal's explicit administrator authority:
-xvfb/xauth/xdotool report installed, Xvfb display probe passes, and separate
-32 MiB tmpfs `/mnt/sartracker-beta13-enospc` is mounted for bounded ENOSPC tests.
-The apt command returned 100 for unrelated NVIDIA driver/kernel configuration
-errors; requested tool status was independently verified. Preserve that host
-warning and verify actual candidate .deb installation separately. No driver
-repair/reboot, candidate installation, qualification or publication occurred.
+Historical detail: [pre-repair handoff](archive/2026-09-25-pre-c12-repair.md),
+[Ubuntu diagnostic report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
+[active workplan](../docs/two-track-execution-workplan.md),
+[testing readiness](../docs/assurance/beta13-testing-readiness.md).

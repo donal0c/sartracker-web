@@ -3,6 +3,8 @@ import {
   CANONICAL_INSTALLED_EXECUTABLE_PATH,
   validateCanonicalInstalledExecutable,
   validateCiArtifactProvenance,
+  validateCiInstallerMembers,
+  validateCiInstallerChecksums,
   validateInstalledPayload,
 } from '../../scripts/qualification/candidate-artifacts.mjs'
 
@@ -16,6 +18,41 @@ const artifact = { id: 456, name: `electron-linux-artifacts-${sha}`, expired: fa
   digest: `sha256:${digest}`, workflow_run: { id: 123, head_sha: sha }, size_in_bytes: 50 }
 
 describe('exact candidate CI and installed package boundaries', () => {
+  // Exact members observed in CI artifact 10880449533, run 36174038700.
+  const actualAppImage = 'sartracker-electron-validation_0.1.0-beta.13_linux_x86_64.AppImage'
+  const actualDeb = 'sartracker-electron-validation_0.1.0-beta.13_linux_amd64.deb'
+  it('admits the builder output architecture names with the validation checksum manifest', () => {
+    const members = [actualAppImage, actualDeb, 'SHA256SUMS']
+    expect(validateCiInstallerMembers(members, '0.1.0-beta.13', run.path)).toEqual({
+      appImage: actualAppImage, deb: actualDeb, names: members,
+    })
+  })
+  it('keeps the release workflow inventory separate because its checksums are produced later', () => {
+    const members = [actualAppImage, actualDeb]
+    expect(validateCiInstallerMembers(members, '0.1.0-beta.13', '.github/workflows/electron-release.yml').names).toEqual(members)
+    expect(() => validateCiInstallerMembers([...members, 'SHA256SUMS'], '0.1.0-beta.13', '.github/workflows/electron-release.yml')).toThrow()
+    expect(() => validateCiInstallerMembers(members, '0.1.0-beta.13', run.path)).toThrow()
+  })
+  it('checks both builder filenames and observed hashes against the manifest', () => {
+    const installers = [{ path: `/owned/${actualAppImage}`, sha256: digest }, { path: `/owned/${actualDeb}`, sha256: 'c'.repeat(64) }]
+    const checksums = `${digest}  tmp/electron-dist/${actualAppImage}\n${'c'.repeat(64)}  tmp/electron-dist/${actualDeb}\n`
+    expect(() => validateCiInstallerChecksums(checksums, installers)).not.toThrow()
+    for (const changed of [checksums.replace(digest, 'd'.repeat(64)), checksums.replace('amd64', 'x64'),
+      checksums.replace(actualDeb, actualAppImage), `${checksums}${digest}  extra.txt\n`]) {
+      expect(() => validateCiInstallerChecksums(changed, installers)).toThrow()
+    }
+  })
+  it.each([
+    [actualAppImage.replace('x86_64', 'x64'), actualDeb, 'SHA256SUMS'],
+    [actualAppImage, actualDeb.replace('amd64', 'x64'), 'SHA256SUMS'],
+    [actualAppImage, actualDeb.replace('amd64', 'arm64'), 'SHA256SUMS'],
+    [actualAppImage.replace('beta.13', 'beta.12'), actualDeb, 'SHA256SUMS'],
+    [actualAppImage, actualDeb, 'SHA256SUMS', 'unexpected.txt'],
+    [actualAppImage, actualAppImage, 'SHA256SUMS'],
+    [`../${actualAppImage}`, actualDeb, 'SHA256SUMS'],
+  ])('rejects a substituted, duplicate or extra installer member %j', (members) => {
+    expect(() => validateCiInstallerMembers(members, '0.1.0-beta.13', run.path)).toThrow()
+  })
   const job = (name: string, attempt: number, conclusion = 'success') => ({ name, run_attempt: attempt,
     run_id: 123, head_sha: sha, status: 'completed', conclusion })
   const packageJob = job('Build exact Linux package', 1)
