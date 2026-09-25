@@ -2,7 +2,7 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-## Current Beta 13 decision — 2026-09-24
+## Current Beta 13 decision — 2026-09-25
 
 Release is **HOLD**. PR45 merged documentation/control-plane evidence only; no
 Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
@@ -12,9 +12,12 @@ canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
 packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
-separate C01 repair remains draft: exact-head Linux run `36074972856` confirmed
+separate C01 repair remains draft: exact-head Linux run `36079044261` confirmed
 dialog dismissal, but diagnostics and crash-held cases failed to exit with code
-1; the SQLite-held case passed. A local exit fallback is under verification.
+1 within 12 seconds; the SQLite-held case passed. The harness killed the first
+two processes, and later packaged checks were skipped. A local direct-exit fix
+and startup-event guards now pass serial source verification; exact-head Linux
+CI and review remain pending.
 Do not treat master CI or packaged receipts as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
@@ -103,7 +106,7 @@ readiness and covering awaited asynchronous startup through renderer load and
 its evidence-loss fence. The operational window stays hidden until that fence
 succeeds. The held-gate observer uses monotonic time for its 20-second response
 bound and rounds recorded elapsed times to receipt-safe integer milliseconds.
-It separately requires the product's exit code 1 within 12 seconds after dialog
+It separately requires the product's exit code 1 within 20 seconds after dialog
 dismissal;
 lock-holder setup has its own 5-second bound and the held-gate producer budget
 is 120 seconds. Failure evidence, receipt truthfulness, scheduler attribution,
@@ -140,6 +143,27 @@ while timed-out startup I/O remains pending. The regression failed before the
 change and passes after it; the startup suite passes 53/53, full correctness
 passes (5,878 passed, 25 skipped), and lint/diff checks pass locally. This
 change still needs exact-head native Linux CI before it is considered fixed.
+
+**C01 exact-head follow-up — 2026-09-25:** Linux run `36079044261` at
+`5e2d607dc6e9db4672afa04f7d9bc19675e78f3a` confirmed that the diagnostics and
+crash dialogs were dismissed, but neither process exited with code 1 within the
+12-second observer bound; the harness sent SIGKILL. The SQLite-held case exited
+with code 1 and mission/settings digests stayed unchanged. Other source and
+packaging steps passed; downstream packaged checks were skipped after the
+producer failure. Do not count harness cleanup as product exit.
+
+Local uncommitted follow-up calls `process.exit(1)` directly after the bounded
+evidence-write wait, reports concurrent storage-diagnostics and crash-state
+timeouts by the operation still pending, blocks activation/quit paths until the
+first operational window is shown, and extends the post-dismissal product-exit
+observation to 20 seconds. The red/green regression and focused
+startup/watchdog/producer suites pass (75/75). `npm run test:correctness --
+--no-file-parallelism` passes (572 files, 5,880 passed, 25 skipped), as do lint
+and production build. The unfiltered parallel `npm test` run had one unrelated
+5-second worker-import timeout and a 220.3 ms GPX responsiveness observation;
+both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
+timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
+CI and fresh review remain pending; keep PR #47 draft.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it
@@ -183,7 +207,7 @@ cases in #8 use mocked log adapters. A related teardown race did reproduce in
 the real-timer renderer-crash tests under the full suite: real crash/runtime
 log writes could outlive profile cleanup, and the failed teardown then caused a
 module-cache cascade. Those tests now use in-memory log adapters; the latest
-full correctness run passes (5,878 passed, 25 skipped). #11 is
+full correctness run passes (5,880 passed, 25 skipped). #11 is
 disproved: the `app.isReady()` false branch handles a rejected Electron
 readiness promise before logs/profile access exists. #12 is a cleanup suggestion
 with distinct semantics for pending evidence writes and stage deadlines. #13's

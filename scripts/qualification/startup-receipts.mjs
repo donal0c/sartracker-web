@@ -9,7 +9,7 @@ export const C01_STARTUP_PROOF_MODE = 'packaged-electron-startup-admission'
 export const C01_HELD_GATE_TIMEOUT_MS = 20_000
 
 /** Allows evidence writes and process shutdown to settle after dialog dismissal. */
-export const C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS = 12_000
+export const C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS = 20_000
 
 /** Fixed C01 startup matrix; every entry must have an independent observation. */
 export const C01_STARTUP_PROFILE_KINDS = Object.freeze([

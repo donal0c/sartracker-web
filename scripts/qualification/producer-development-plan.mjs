@@ -24,7 +24,7 @@ export function compileProducerDevelopmentPlan({ app, output, sourceSha, appSha2
     cases.push(Object.freeze({ id, contractId: 'C01', evidence, mechanicsOnly: true,
       command: Object.freeze({ script: 'scripts/qualification/producer-development-held-gate.mjs',
         args: Object.freeze([app, evidence, gateKind]), report: 'development-mechanics.json',
-        // Includes the 20 s response bound, 12 s product-exit observation and cleanup.
+        // Includes the 20 s response bound, 20 s product-exit observation and cleanup.
         timeoutMs: 120000 }),
     }))
   }

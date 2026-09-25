@@ -1346,7 +1346,7 @@ describe('Electron main startup', () => {
         'SAR Tracker could not start',
         expect.stringContaining(startupError.message),
       )
-      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+      expect(startupProcessExit).toHaveBeenCalledWith(1)
     })
 
     expect(electronMock.app.relaunch).not.toHaveBeenCalled()
@@ -1385,9 +1385,8 @@ describe('Electron main startup', () => {
 
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
-      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds.*does not mean the mission data is damaged/iu),
+      expect.stringMatching(/storage diagnostics initialization.*10 seconds.*does not mean the mission data is damaged/iu),
     )
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
     expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     expect(createCrashLog).toHaveBeenCalledTimes(1)
@@ -1406,7 +1405,7 @@ describe('Electron main startup', () => {
     }) as typeof Module._load
 
     require('../../electron/main.cjs')
-    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+    await vi.waitFor(() => expect(startupProcessExit).toHaveBeenCalledWith(1))
 
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
@@ -1505,11 +1504,63 @@ describe('Electron main startup', () => {
 
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
-      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds/iu),
+      expect.stringMatching(/storage diagnostics initialization.*10 seconds/iu),
     )
+    expect(runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'startup_failure',
+      fields: expect.objectContaining({
+        stage: 'storage diagnostics initialization',
+        timeoutMs: 10_000,
+      }),
+    }))
     await Promise.resolve()
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+  })
+
+  it('keeps activation and window-close events from bypassing the startup fault response', async () => {
+    vi.useFakeTimers()
+    const held = new Promise<never>(() => {})
+    const initializeDiagnostics = vi.fn(() => held)
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      record: vi.fn(async () => undefined),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: initializeDiagnostics }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(initializeDiagnostics).toHaveBeenCalledOnce())
+    const activateHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'activate',
+    )?.[1]
+    const allWindowsClosedHandler = electronMock.app.on.mock.calls.find(
+      ([eventName]) => eventName === 'window-all-closed',
+    )?.[1]
+
+    await activateHandler()
+    allWindowsClosedHandler()
+
+    expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
+    expect(electronMock.app.quit).not.toHaveBeenCalled()
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker could not start',
+      expect.stringMatching(/storage diagnostics initialization.*10 seconds/iu),
+    )
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
   })
 
   it('does not start the pre-window watchdog until Electron is ready', async () => {
@@ -1565,7 +1616,7 @@ describe('Electron main startup', () => {
       expect.stringMatching(/could not open its operational data safely/iu),
     )
     expect(initializeDiagnostics).toHaveBeenCalledOnce()
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
@@ -1652,7 +1703,7 @@ describe('Electron main startup', () => {
       'SAR Tracker could not start',
       expect.stringMatching(/mission store open and migration.*10 seconds/iu),
     )
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
@@ -1698,7 +1749,7 @@ describe('Electron main startup', () => {
       expect.stringMatching(/active mission lookup.*10 seconds/iu),
     )
     await Promise.resolve()
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     expect(createCrashLog).toHaveBeenCalledTimes(1)
     expect(createRuntimeLog).toHaveBeenCalledTimes(1)
@@ -1819,7 +1870,7 @@ describe('Electron main startup', () => {
       'SAR Tracker could not start',
       expect.stringMatching(new RegExp(`${heldStage}.*10 seconds`, 'iu')),
     )
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow.mock.results[0]?.value.show).not.toHaveBeenCalled()
   })
 
@@ -1865,9 +1916,16 @@ describe('Electron main startup', () => {
 
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
-      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds/iu),
+      expect.stringMatching(/previous crash-state inspection.*10 seconds/iu),
     )
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'startup_failure',
+      fields: expect.objectContaining({
+        stage: 'previous crash-state inspection',
+        timeoutMs: 10_000,
+      }),
+    }))
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
   })
 
@@ -1902,13 +1960,13 @@ describe('Electron main startup', () => {
     expect(runtimeLog.append).toHaveBeenCalled()
     expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
       'SAR Tracker could not start',
-      expect.stringMatching(/startup storage and crash-state inspection.*10 seconds/iu),
+      expect.stringMatching(/previous crash-state inspection.*10 seconds/iu),
     )
     await vi.advanceTimersByTimeAsync(300)
-    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    expect(startupProcessExit).not.toHaveBeenCalled()
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     releaseHeld?.()
-    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+    await vi.waitFor(() => expect(startupProcessExit).toHaveBeenCalledWith(1))
   })
 
   it('exits after the bounded wait when startup failure evidence writes stay held', async () => {
@@ -1950,7 +2008,8 @@ describe('Electron main startup', () => {
     expect(electronMock.app.exit).not.toHaveBeenCalled()
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
-    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
   })
 
   it('keeps arbitrary startup-failure detail out of the operator dialog [DON-260]', async () => {
@@ -1979,7 +2038,7 @@ describe('Electron main startup', () => {
         'SAR Tracker could not start',
         'SAR Tracker could not open its operational data safely. Preserve the profile and contact support before retrying. The application will now close.',
       )
-      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+      expect(startupProcessExit).toHaveBeenCalledWith(1)
     })
 
     expect(electronMock.app.relaunch).not.toHaveBeenCalled()

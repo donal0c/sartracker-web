@@ -9,40 +9,40 @@ assurance records.
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
 publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #47 remains draft at head `9c193155` on current master. Run `36074972856`
-confirmed the C01 observer dismissed all three startup dialogs. The diagnostics
-and crash-held cases then failed to exit with code 1 within 12 seconds; the
-SQLite-held case exited with code 1. The harness killed the first two after
-the observation bound, so those signals are not product exits. Original
-mission/settings digests were unchanged. Full correctness, rendered regressions
-and Linux packaging passed; later package checks were skipped after the C01
-producer failure.
+PR #47 is open and draft. The last exact-head Linux receipt is for remote head
+`5e2d607`; run `36079044261` failed the C01 producer check: diagnostics and
+crash-held dialogs were dismissed, but the app did not exit with code 1 within
+12 seconds; the harness sent SIGKILL. The SQLite-held case exited with code 1.
+Profile digests were unchanged. Packaged checks after the failed producer step
+were skipped. Keep this receipt as history; harness cleanup is not product exit.
+The repair is committed locally; exact-head CI and review have not yet run for
+the new commit.
 
 ## Active work
 
-The local fix adds `process.exit(1)` in a `finally` after the bounded startup
-evidence wait and `app.exit(1)`, covering timed-out startup I/O that remains
-pending. Its regression failed before the change. The startup suite passes
-53/53, full correctness passes (5,878 passed, 25 skipped), and lint plus
-`git diff --check` pass. The fix is not yet validated on packaged Linux.
+Uncommitted local repair: after the bounded evidence-write wait, call
+`process.exit(1)` directly; track concurrent diagnostics/crash-state reads as
+distinct watchdog stages; ignore activate/window-close events until the first
+operational window is shown; extend the product-exit observer to 20 seconds.
+Focused startup/watchdog/producer tests pass (75/75), serial correctness passes
+(5,880 passed, 25 skipped), lint and production build pass. Strict `npm test`
+had an under-load 220.3 ms GPX responsiveness result and a 5-second unrelated
+worker-import timeout; both affected tests passed alone. The isolated timing
+result is diagnostic, not qualification.
 
-The 10-second watchdog begins after Electron readiness and covers awaited
-startup through the hidden-window renderer safety fence. `app.whenReady()` is
-outside that deadline; synchronous SQLite open/migration still blocks Electron
-main and cannot be interrupted. Do not claim complete C01 coverage. A utility
-process owning the live store remains a separate follow-on.
-
-DON-179 remains **In Review** because opt-in diagnostic upload/private
-retention is outside this repair. The historical Linux C19 261.161 ms failure
-against the 200 ms gate also remains unresolved; current-master evidence does
-not explain or clear it. Beta 13 stays on HOLD.
+The 10-second watchdog starts after Electron readiness and ends when the
+operational window is shown. `app.whenReady()` and synchronous SQLite open or
+migration on Electron main remain outside its interruptible boundary. Keep this
+as an explicit C01 coverage gap; utility-process ownership of the live store is
+separate work. The historical Linux C19 261.161 ms result also remains
+unresolved. DON-179 remains **In Review** because opt-in remote upload and
+private retention are outside this repair.
 
 ## Next actions
 
-1. Record the local fix and evidence on DON-179, then commit and push with the
-   issue ID.
-2. Run exact-head native Linux CI. Require all C01 held-gate cases to dismiss
-   and exit with code 1 without harness signals; preserve run `36074972856` and
-   its receipts as history.
-3. Obtain fresh review on the resulting exact head. Keep PR #47 draft until
-   checks and review clear. Do not merge, tag, publish, or release.
+1. Commit and push the verified repair with DON-179 in the message.
+2. Run exact-head Linux CI. Require all three held-gate cases to dismiss and
+   exit with code 1 without harness signals; inspect every skipped downstream
+   package check.
+3. Obtain fresh review on the resulting exact head. Keep PR #47 draft until CI
+   and review clear. Do not merge, tag, publish, or release.

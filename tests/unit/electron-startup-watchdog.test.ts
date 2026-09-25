@@ -9,6 +9,14 @@ const { createStartupWatchdog } = require('../../electron/startup-watchdog.cjs')
     readonly now: () => number
   }) => {
     readonly run: <T>(stage: string, operation: () => T | Promise<T>) => Promise<Awaited<T>>
+    readonly runParallel: <T extends readonly {
+      readonly stage: string
+      readonly operation: () => unknown | Promise<unknown>
+    }[]>(stages: T) => Promise<{
+      readonly [K in keyof T]: T[K] extends { readonly operation: () => infer R }
+        ? Awaited<R>
+        : never
+    }>
     readonly dispose: () => void
   }
 }
@@ -62,6 +70,29 @@ describe('electron startup watchdog', () => {
       stage: 'synchronous store open',
       elapsedMs: 10_001,
     })
+    watchdog.dispose()
+  })
+
+  it('reports the unresolved operation when independent startup reads run in parallel', async () => {
+    vi.useFakeTimers()
+    let monotonicNow = 0
+    const watchdog = createStartupWatchdog({ timeoutMs: 10_000, now: () => monotonicNow })
+    const pendingReads = watchdog.runParallel([
+      { stage: 'storage diagnostics initialization', operation: async () => undefined },
+      { stage: 'previous crash-state inspection', operation: () => new Promise<never>(() => {}) },
+    ] as const)
+    const timedOut = expect(pendingReads).rejects.toMatchObject({
+      name: 'StartupTimeoutError',
+      stage: 'previous crash-state inspection',
+      timeoutMs: 10_000,
+      elapsedMs: 10_000,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    monotonicNow = 10_000
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    await timedOut
     watchdog.dispose()
   })
 })

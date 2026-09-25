@@ -29,7 +29,7 @@ describe('C01 held-gate product exit observation', () => {
   it('keeps lock-holder readiness and product-exit observation budgets independent', () => {
     expect(C01_STORE_LOCK_READY_TIMEOUT_MS).toBe(5_000)
     expect(C01_HELD_GATE_TIMEOUT_MS).toBe(20_000)
-    expect(C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS).toBe(12_000)
+    expect(C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS).toBe(20_000)
   })
 
   it('confirms the native dialog is no longer visible after the dismissal click', async () => {

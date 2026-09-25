@@ -19,12 +19,12 @@ function createStartupWatchdog(options) {
   }
   const now = typeof options.now === 'function' ? options.now : () => performance.now()
   const startedAt = now()
-  let activeStage = 'startup initialization'
+  const activeStages = new Set()
   let timeoutHandle
   let disposed = false
   const timeoutPromise = new Promise((_, reject) => {
     timeoutHandle = setTimeout(() => {
-      reject(createTimeoutError(activeStage))
+      reject(createTimeoutError())
     }, options.timeoutMs)
   })
   // Each active stage attaches the deadline to a race. This handler also keeps
@@ -33,35 +33,52 @@ function createStartupWatchdog(options) {
 
   return Object.freeze({
     run,
+    runParallel,
     dispose,
   })
 
   /** Runs one stage against the shared deadline without resetting its clock. */
   function run(stage, operation) {
+    return runParallel([{ stage, operation }]).then(([value]) => value)
+  }
+
+  /** Runs independent startup stages together and reports every stage still pending at expiry. */
+  function runParallel(stages) {
     if (disposed) return Promise.reject(new Error('Startup watchdog is already complete.'))
-    if (typeof stage !== 'string' || stage.trim() === '' || typeof operation !== 'function') {
+    if (
+      !Array.isArray(stages)
+      || stages.length === 0
+      || stages.some((entry) =>
+        typeof entry !== 'object'
+        || entry === null
+        || typeof entry.stage !== 'string'
+        || entry.stage.trim() === ''
+        || typeof entry.operation !== 'function')
+    ) {
       return Promise.reject(new Error('Startup watchdog requires a named stage and operation.'))
     }
-    activeStage = stage
     const elapsedMs = Math.max(0, now() - startedAt)
     if (elapsedMs >= options.timeoutMs) {
-      return Promise.reject(createTimeoutError(stage))
+      return Promise.reject(createTimeoutError(stages.map(({ stage }) => stage)))
     }
-    const task = Promise.resolve().then(operation).then(
-      (value) => {
-        if (Math.max(0, now() - startedAt) >= options.timeoutMs) {
-          throw createTimeoutError(stage)
-        }
-        return value
-      },
-      (error) => {
-        if (Math.max(0, now() - startedAt) >= options.timeoutMs) {
-          throw createTimeoutError(stage)
-        }
-        throw error
-      },
-    )
-    return Promise.race([task, timeoutPromise])
+    const tasks = stages.map(({ stage, operation }) => {
+      activeStages.add(stage)
+      return Promise.resolve().then(operation).then(
+        (value) => {
+          if (Math.max(0, now() - startedAt) >= options.timeoutMs) {
+            throw createTimeoutError(stage)
+          }
+          return value
+        },
+        (error) => {
+          if (Math.max(0, now() - startedAt) >= options.timeoutMs) {
+            throw createTimeoutError(stage)
+          }
+          throw error
+        },
+      ).finally(() => activeStages.delete(stage))
+    })
+    return Promise.race([Promise.all(tasks), timeoutPromise])
   }
 
   /** Releases the one pending timer after the shell is available or startup fails. */
@@ -71,8 +88,12 @@ function createStartupWatchdog(options) {
     if (timeoutHandle !== undefined) clearTimeout(timeoutHandle)
   }
 
-  /** Creates a timeout carrying the current named stage and monotonic elapsed time. */
-  function createTimeoutError(stage) {
+  /** Creates a timeout carrying pending stage names and monotonic elapsed time. */
+  function createTimeoutError(stageOverride) {
+    const pendingStages = stageOverride ?? Array.from(activeStages)
+    const stage = Array.isArray(pendingStages)
+      ? pendingStages.join(' and ') || 'startup initialization'
+      : pendingStages
     const elapsedMs = Math.max(0, Math.round(now() - startedAt))
     return new StartupTimeoutError(stage, options.timeoutMs, elapsedMs)
   }

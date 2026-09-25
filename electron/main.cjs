@@ -15,6 +15,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 
 const C01_STARTUP_RESPONSE_TIMEOUT_MS = 10_000
 const STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
+let startupWindowReady = false
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
@@ -375,6 +376,7 @@ async function createWindow(
     // turn a visible, ready shell into a fatal startup timeout.
     startupWatchdog.dispose()
     window.show()
+    startupWindowReady = true
   }
 }
 
@@ -1246,14 +1248,9 @@ async function handleStartupFailure(error) {
     // non-zero exit even when only best-effort logging is possible.
   }
   await waitForStartupEvidenceWrites(evidenceWrites)
-  try {
-    app.exit(1)
-  } finally {
-    // A deadline may leave the operation that lost the watchdog race in-flight.
-    // Electron's immediate exit normally ends the process; force Node termination
-    // if that native call returns while the abandoned startup I/O is still held.
-    process.exit(1)
-  }
+  // Exit Node directly: packaged held-gate runs showed app.exit() can leave the
+  // main process alive when the startup operation it abandoned still owns I/O.
+  process.exit(1)
 }
 
 /** Starts one startup failure write without allowing a synchronous adapter throw to hide the fault. */
@@ -1321,16 +1318,16 @@ async function startElectronApp(startupWatchdog) {
     runtimeLog,
     validationMode: validationUserDataPath !== undefined,
   })
-  const previousSessionEndedUncleanly = await startupWatchdog.run(
-    'startup storage and crash-state inspection',
-    async () => {
-      const [, previousSessionEndedUncleanly] = await Promise.all([
-        storageDiagnostics.initialize(),
-        crashLog.hadUncleanShutdown(),
-      ])
-      return previousSessionEndedUncleanly
+  const [, previousSessionEndedUncleanly] = await startupWatchdog.runParallel([
+    {
+      stage: 'storage diagnostics initialization',
+      operation: () => storageDiagnostics.initialize(),
     },
-  )
+    {
+      stage: 'previous crash-state inspection',
+      operation: () => crashLog.hadUncleanShutdown(),
+    },
+  ])
   await startupWatchdog.run(
     'session start marker persistence',
     () => crashLog.markSessionStart(),
@@ -1584,12 +1581,14 @@ async function markCleanExitAndQuit(
 }
 
 app.on('window-all-closed', () => {
+  if (!startupWindowReady) return
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
 app.on('activate', async () => {
+  if (!startupWindowReady) return
   if (BrowserWindow.getAllWindows().length === 0) {
     try {
       await awaitArchiveReviewRendererLossFence()
