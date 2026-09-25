@@ -1,56 +1,45 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-24. Use this file as the current baton; detailed release and
-qualification history remains in the workplan and assurance records.
+Updated 2026-09-25. Detailed history and retained receipts are in the
+[two-track execution workplan](../docs/two-track-execution-workplan.md) and
+assurance records.
 
 ## Current state
 
-Release remains **HOLD**. No Beta 13 candidate is frozen, no qualification run
-or tag has been started, and no publication or team distribution has occurred.
-PR #48 is merged; current `master` is
-`a81dd4a388196d241a48205ad45e961c1ab26c9b`, including the post-merge C17
-change that records any fixed-canary leak as an observed privacy failure.
+Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
+publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
 
-PR #49 is open for DON-264 on `codex/don-264-overlay-warning`, rebased onto
-current master. Failure streaks persist by map and stable
-overlay registration ID across hook re-registration. Diagnostic events retain
-only the allow-listed error class, never raw exception text. Concurrent overlay
-warnings are presented in a bounded keyboard- and wheel-scrollable region, so
-the map remains usable while each active warning remains reachable.
+PR #47's behavior-bearing source changed after a 2026-09-25 multi-agent review
+of `7fda435` found fatal/quit state, evidence-writer, fault-window and
+held-gate classification defects (register IDs V01-V16). Review-fix source
+`1dd316f2` supersedes the earlier `0e6db8a` evidence; its exact-source Linux
+run `36136413925` passed. PR #47 is open, out of draft and mergeable. GitHub
+shows `BLOCKED` because the "Protect master - Donal only" ruleset's `update`
+rule admits only Donal's bypass; merging is Donal's decision via that bypass.
+The [PR47 findings register](../docs/pr47-findings-disposition.md) records the
+review outcome. Merging does not lift Beta 13 HOLD: do not tag, publish, or
+release from this repair.
 
-## Active work and evidence
+## Active work
 
-- The quick re-registration regression was red on the rebased pre-fix
-  `a0e17d9f` and green after the fix. Full correctness passed after the
-  warning-region fix: 570 files, 5,832 passed, 25 skipped. The subsequent
-  accessibility-label wording fix passed its focused unit regression; lint
-  passed on the final source.
-- DON-264 Chromium warning/recovery and ten-warning scrolling checks passed.
-  The visual runtime warning/recovery check passed and its screenshot was
-  inspected locally. Browser and visual harness results are not field
-  acceptance.
-- `npm run electron:pack` passed, including production build and macOS arm64
-  packaging. Packaged local C14 passed marker warning, recovery, clearance and
-  cleanup; receipt `/tmp/don264-c14-closeout.klCU9Z/map-surface-report.json`
-  reports `releaseEligible: false`. This is package evidence, not candidate
-  qualification.
-- The fresh independent review at final head `02758843` confirmed the clipping
-  fix and accessibility/documentation cleanup, with no actionable P1-P3
-  findings. GitHub reports no unresolved inline threads and the PR is
-  mergeable.
-- At last check GitHub reported no unresolved inline threads and the PR
-  mergeable. Read the live PR to verify its current head, CI, review, and draft
-  state before changing readiness. Superseded CI runs and the canceled manual
-  workflow dispatch are not final-head green evidence.
+The repair starts one 10-second startup watchdog after Electron readiness and
+covers awaited asynchronous startup through the renderer safety fence. Runtime
+and crash-log I/O use an isolated utility process. Startup exits and fatal
+relaunches are withheld unless a timed-out writer is confirmed stopped. The
+held diagnostics, held crash-log `fsync`, SQLite lock, and non-regular crash
+evidence Linux probes all passed their bounded product-exit and
+profile-preservation checks. These are development mechanics receipts, not
+C01 qualification.
+
+The recorded scope decision defers live mission-store process isolation until
+after Beta 13; it is an unresolved known limitation, not a passed check. Track
+it in [post-Beta 13 mission-store isolation](../docs/post-beta13-mission-store-isolation.md).
+`app.whenReady()` also remains outside this watchdog. Keep both boundaries
+visible and do not claim complete C01 coverage. The historical Linux C19
+261.161 ms event remains unresolved. DON-179 remains **In Progress** because
+opt-in remote upload and private retention are outside this repair.
 
 ## Next actions
 
-1. Confirm normal PR checks pass on the current pushed head; verify the fresh
-   independent review, no unresolved review threads, and mergeability still
-   apply. Change draft readiness only after live exact-head verification.
-2. Keep DON-264 separate from C17 residuals and all BCP-17 gates. Do not merge,
-   qualify a candidate, tag, publish, promote, or claim field readiness.
-
-The release HOLD and C17 scope remain governed by the
-[two-track execution workplan](../docs/two-track-execution-workplan.md) and
-[assurance records](../docs/assurance/).
+1. Donal decides whether to merge PR #47 (ruleset bypass required).
+2. Keep Beta 13 on HOLD pending its separate candidate and release gates.

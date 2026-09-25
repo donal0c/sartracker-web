@@ -9,6 +9,7 @@ import {
 import {
   isActionableHeldGateObservation,
   isBoundedHeldGateTimeoutWithoutAction,
+  parseStartupFailureEvents,
   parseStartupProbeArgs,
   waitForOwnedProcessOrTimeout,
 } from '../../scripts/qualification/startup-probe.mjs'
@@ -63,7 +64,7 @@ function nativeFaultScenario(profileKind: string, faultKind: string, overrides: 
     faultKind,
     dialog: {
       observed: true,
-      windowName: 'Error',
+      windowName: 'SAR Tracker could not start',
       operatorTitle: 'SAR Tracker could not start',
     },
     process: { pid: 110, exitCode: 1, signal: null, dialogAtMs: 1000, exitAfterDialogMs: 220 },
@@ -145,7 +146,7 @@ function report(overrides: Record<string, unknown> = {}) {
         supportedSchemaVersion: 13,
         dialog: {
           observed: true,
-          windowName: 'Error',
+          windowName: 'SAR Tracker could not start',
           operatorTitle: 'SAR Tracker could not start',
         },
         process: { exitCode: 1, signal: null, dialogAtMs: 900, exitAfterDialogMs: 220 },
@@ -196,26 +197,37 @@ function report(overrides: Record<string, unknown> = {}) {
       'held-store-gate': {
         profileKind: 'held-store-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'store', held: true, bounded: true, action: 'reload-or-contact-support', lockHolder: { pid: 110, closed: true } },
+        gate: { kind: 'store', mode: 'sqlite-lock-contention', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, lockHolder: { pid: 110, closed: true } },
         cleanup: { lockHolderClosed: true, heldPathRemoved: false },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 106, closed: true, faultShellAtMs: 1800 },
+        process: { pid: 106, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'held-diagnostics-gate': {
         profileKind: 'held-diagnostics-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'diagnostics', held: true, bounded: true, action: 'reload-or-contact-support' },
+        gate: { kind: 'diagnostics', mode: 'post-readiness-watchdog-timeout', held: true, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, startupTimeoutMs: 10_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
         cleanup: { heldPathRemoved: true, lockHolderClosed: false },
+        startupLogs: { startupFailureSummaries: ['StartupTimeoutError: The 10000 ms startup deadline after Electron readiness expired while "storage diagnostics initialization" was pending.'] },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 108, closed: true, faultShellAtMs: 1800 },
+        process: { pid: 108, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 10_100, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 10_100, lateDialogAfterTimeout: false, faultShellAtMs: 10_100 },
       },
       'held-crash-gate': {
         profileKind: 'held-crash-gate',
         observed: 'actionable-fault',
-        gate: { kind: 'crash', held: true, bounded: true, action: 'reload-or-contact-support' },
-        cleanup: { heldPathRemoved: true, lockHolderClosed: false },
+        gate: { kind: 'crash', mode: 'crash-log-write-hold', held: true, bounded: true, action: 'preserve-profile-and-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, hold: { markerObserved: true, releasedAfterDialogDismissal: true, writeCompleted: true, temporaryFilesRemaining: false } },
+        cleanup: { holdReleased: true, temporaryFilesRemoved: true, lockHolderClosed: false },
+        startupLogs: { startupFailureSummaries: ['Error: Cannot open mission store created by newer mission store schema 14; this build supports schema 13.'] },
         originalFiles: { before: snapshots(), after: snapshots() },
-        process: { pid: 109, closed: true, faultShellAtMs: 1800 },
+        process: { pid: 112, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1900, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1900, lateDialogAfterTimeout: false, faultShellAtMs: 1900 },
+      },
+      'non-regular-crash-evidence': {
+        profileKind: 'non-regular-crash-evidence',
+        observed: 'actionable-fault',
+        gate: { kind: 'crash', mode: 'non-regular-evidence-rejection', held: false, bounded: true, action: 'reload-or-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false },
+        cleanup: { heldPathRemoved: true, lockHolderClosed: false },
+        startupLogs: { startupFailures: [{ code: 'ERR_SARTRACKER_NON_REGULAR_FILE' }] },
+        originalFiles: { before: snapshots(), after: snapshots() },
+        process: { pid: 109, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1800, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1800, lateDialogAfterTimeout: false, faultShellAtMs: 1800 },
       },
       'active-recoverable': {
         profileKind: 'active-recoverable',
@@ -240,6 +252,44 @@ function report(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification C01 startup receipt validator', () => {
+  it('versions the startup-fault modes and watchdog evidence as C01 v4', () => {
+    expect(STARTUP_PROBE_DESCRIPTOR.schema).toBe('sartracker-c01-startup-admission-v5')
+    const previousVersion = report({ schema: 'sartracker-c01-startup-admission-v2' })
+
+    const result = validateStartupContractEvidence('C01', previousVersion, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/schema or contract identity is invalid/iu)
+  })
+
+  it('rejects held-gate dialogs first observed after the fixed response deadline', () => {
+    const late = report()
+    const scenario = (late.scenarios as Record<string, Record<string, Record<string, unknown>>>)['held-store-gate']!
+    scenario.process!.dialogObservedAtMs = 20_001
+    scenario.process!.faultShellAtMs = 20_001
+
+    const result = validateStartupContractEvidence('C01', late, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-store-gate.*observation bound/iu)
+  })
+
+  it.each([
+    ['harness signal termination', { exitCode: null, signal: 'SIGTERM', forcedKill: false }],
+    ['a forced kill', { exitCode: 1, signal: null, forcedKill: true }],
+    ['a non-failure application exit', { exitCode: 0, signal: null, forcedKill: false }],
+    ['a missing post-dismissal exit time', { exitCode: 1, signal: null, forcedKill: false, exitAfterDialogMs: null }],
+  ])('rejects held-gate evidence without the product-owned exit (%s)', (_label, overrides) => {
+    const held = report()
+    const scenario = (held.scenarios as Record<string, Record<string, Record<string, unknown>>>)['held-store-gate']!
+    scenario.process = { ...scenario.process, ...overrides }
+
+    const result = validateStartupContractEvidence('C01', held, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-store-gate|exit/iu)
+  })
+
   it('requires the observed timeout and preserves late-dialog timeout negatives', () => {
     expect(isBoundedHeldGateTimeoutWithoutAction({
       earlyExit: { timedOut: false }, dialogWindowId: null, forcedKill: true,
@@ -258,7 +308,7 @@ describe('qualification C01 startup receipt validator', () => {
     })).toBe(false)
   })
 
-  it('accepts only a dialog observed within the five-second polling bound', () => {
+  it('accepts only a dialog observed within the supplied polling bound', () => {
     const observed = { earlyExit: { timedOut: false }, dialogWindowId: '123', timeoutMs: 5_000 }
     expect(isActionableHeldGateObservation({ ...observed, dialogObservedAtMs: 4_999 })).toBe(true)
     expect(isActionableHeldGateObservation({ ...observed, dialogObservedAtMs: 5_001 })).toBe(false)
@@ -327,6 +377,25 @@ describe('qualification C01 startup receipt validator', () => {
     ])).toThrow(/unknown|arbitrary/iu)
   })
 
+  it('reads startup failure fields from the runtime log record shape', () => {
+    const result = parseStartupFailureEvents(JSON.stringify({
+      ts: '2026-09-25T00:00:00.000Z',
+      level: 'error',
+      event: 'startup_failure',
+      name: 'StartupTimeoutError',
+      code: 'ERR_SARTRACKER_NON_REGULAR_FILE',
+      stage: 'storage diagnostics initialization',
+      timeoutMs: 10_000,
+    }))
+
+    expect(result).toEqual([{
+      code: 'ERR_SARTRACKER_NON_REGULAR_FILE',
+      name: 'StartupTimeoutError',
+      stage: 'storage diagnostics initialization',
+      timeoutMs: 10_000,
+    }])
+  })
+
   it('describes the actual packaged producer and explicit uncovered axes', () => {
     expect(STARTUP_PROBE_DESCRIPTOR.contractId).toBe('C01')
     expect(STARTUP_PROBE_DESCRIPTOR.cli.required).toEqual([
@@ -339,10 +408,13 @@ describe('qualification C01 startup receipt validator', () => {
     expect(STARTUP_PROBE_DESCRIPTOR.coverage.join('\n')).toMatch(/newer.*schema|corrupt.*settings|bad.*secret/iu)
     expect(STARTUP_PROBE_DESCRIPTOR.profileKinds).toEqual([...C01_STARTUP_PROFILE_KINDS])
     expect(STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.join('\n')).toMatch(/field|AppImage|provider/iu)
+    expect(STARTUP_PROBE_DESCRIPTOR.uncoveredAxes.join('\n'))
+      .toMatch(/Electron bootstrap.*never reaches app readiness.*20-second.*does not prove bounded recovery.*C01 contract forbids indefinite blank.*system-level bootstrap/iu)
   })
 
   it('recomputes each packaged profile from observations and ignores forged result', () => {
     const result = validateStartupContractEvidence('C01', report(), expected)
+    expect(result.failureReasons).toEqual([])
     expect(result.passed).toBe(true)
     expect(result.recomputedPredicates).toEqual({
       absentSchemaAdmission: true,
@@ -357,14 +429,55 @@ describe('qualification C01 startup receipt validator', () => {
       diskFullFault: true,
       heldDiagnosticsGate: true,
       heldCrashGate: true,
+      nonRegularCrashEvidence: true,
       heldStoreGate: true,
       activeRecoverableMission: true,
       custody: true,
     })
-    expect(result.coverageComplete).toBe(true)
-    expect(result.qualificationEligible).toBe(true)
+    expect(result.coverageComplete).toBe(false)
+    expect(result.qualificationEligible).toBe(false)
     expect(result.releaseEligible).toBe(false)
-    expect(result.uncoveredAxes).toEqual([])
+    expect(result.nonQualificationReason).toMatch(/never reaches app readiness/iu)
+    expect(result.nonQualificationReason).toMatch(/synchronous mission-store.*migration.*main thread/iu)
+    expect(result.uncoveredAxes.join('\n')).toMatch(/synchronous mission-store.*migration.*main thread/iu)
+    expect(result.uncoveredAxes).toEqual([...STARTUP_PROBE_DESCRIPTOR.uncoveredAxes])
+  })
+
+  it('does not count a fail-fast non-regular path as a watchdog-held diagnostics gate', () => {
+    const fastFailure = report()
+    const diagnostics = (fastFailure.scenarios as Record<string, Record<string, unknown>>)[
+      'held-diagnostics-gate'
+    ]!
+    diagnostics.gate = {
+      ...(diagnostics.gate as Record<string, unknown>),
+      mode: 'non-regular-evidence-rejection',
+    }
+
+    const result = validateStartupContractEvidence('C01', fastFailure, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.recomputedPredicates.heldDiagnosticsGate).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/declared bounded startup-fault mode/iu)
+  })
+
+  it.each([
+    ['no intercepted crash-log fsync', { markerObserved: false }],
+    ['release before dialog dismissal', { releasedAfterDialogDismissal: false }],
+    ['incomplete durable write', { writeCompleted: false }],
+    ['stray temporary file', { temporaryFilesRemaining: true }],
+  ])('does not pass the held crash-log gate with %s', (_label, holdOverride) => {
+    const forged = report()
+    const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)['held-crash-gate']
+    scenario.gate = {
+      ...(scenario.gate as Record<string, unknown>),
+      hold: { ...((scenario.gate as Record<string, unknown>).hold as Record<string, unknown>), ...holdOverride },
+    }
+
+    const result = validateStartupContractEvidence('C01', forged, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.recomputedPredicates.heldCrashGate).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-crash-gate|crash-log write hold/iu)
   })
 
   it('rejects forged pass when the newer-schema profile changes a retained byte', () => {
@@ -456,18 +569,32 @@ describe('qualification C01 startup receipt validator', () => {
     }
   })
 
-  it.each([['diagnostics', 'heldPathRemoved'], ['crash', 'heldPathRemoved'], ['store', 'lockHolderClosed']])(
-    'rejects a held %s gate without %s cleanup', (kind, field) => {
-      for (const value of [false, undefined]) {
-        const forged = report()
-        const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)[`held-${kind}-gate`]
-        scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: value }
-        const result = validateStartupContractEvidence('C01', forged, expected)
-        expect(result.passed).toBe(false)
-        expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
-      }
-    },
-  )
+  it.each([
+    ['diagnostics', 'held-diagnostics-gate', 'heldPathRemoved'],
+    ['crash', 'non-regular-crash-evidence', 'heldPathRemoved'],
+    ['store', 'held-store-gate', 'lockHolderClosed'],
+  ])('rejects a %s startup-fault scenario without %s cleanup', (_kind, profileKind, field) => {
+    for (const value of [false, undefined]) {
+      const forged = report()
+      const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)[profileKind]
+      scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: value }
+      const result = validateStartupContractEvidence('C01', forged, expected)
+      expect(result.passed).toBe(false)
+      expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
+    }
+  })
+
+  it.each(['holdReleased', 'temporaryFilesRemoved'])('rejects held crash-log evidence without %s cleanup', (field) => {
+    const forged = report()
+    const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)['held-crash-gate']
+    scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: false }
+
+    const result = validateStartupContractEvidence('C01', forged, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.recomputedPredicates.heldCrashGate).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-crash-gate.*cleanup/iu)
+  })
 
   it('rejects contradictory or missing store lock-holder closure evidence', () => {
     for (const lockHolder of [undefined, { pid: 110, closed: false }, { pid: null, closed: true }]) {
@@ -549,6 +676,7 @@ describe('qualification C01 startup receipt validator', () => {
 
   it('applies C19 legacy startup boundaries to the shared C01 observations', () => {
     const valid = validateLegacyStartupReceipt(report(), expected)
+    expect(valid.failureReasons).toEqual([])
     expect(valid.passed).toBe(true)
 
     const missingPermission = report()

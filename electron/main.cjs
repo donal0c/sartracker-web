@@ -13,6 +13,8 @@ const path = require('node:path')
 const { monitorEventLoopDelay } = require('node:perf_hooks')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 
+let startupWindowReady = false
+
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
@@ -47,8 +49,20 @@ const {
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
-const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
+const { createStartupEvidenceService } = require('./startup-evidence-service.cjs')
+const {
+  closeStartupFailureWindows,
+  showStartupFailureWindow,
+} = require('./startup-failure-window.cjs')
+const { createTerminalFaultState } = require('./terminal-fault-state.cjs')
+const {
+  STARTUP_RESPONSE_TIMEOUT_MS,
+  createStartupWatchdog,
+  StartupTimeoutError,
+} = require('./startup-watchdog.cjs')
+const C01_STARTUP_RESPONSE_TIMEOUT_MS = STARTUP_RESPONSE_TIMEOUT_MS
+const EVIDENCE_WRITE_TIMEOUT_MS = C01_STARTUP_RESPONSE_TIMEOUT_MS
 const { createStorageDiagnostics } = require('./storage-diagnostics.cjs')
 const { applyTrackingSoakRuntimeOverride } = require('./tracking-soak-validation.cjs')
 const {
@@ -84,7 +98,6 @@ const MAX_TRACCAR_PROXY_RESPONSE_BYTES = 5 * 1024 * 1024
 const MAX_MISSION_NAME_BYTES = 1_024
 const MAX_MISSION_START_TIME_BYTES = 64
 const MAX_MISSION_NOTES_BYTES = 2_000
-
 const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
   open: 'sartracker:archive-review:open',
   close: 'sartracker:archive-review:close',
@@ -228,6 +241,7 @@ if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== ''
 const electronRuntimeContext = {
   crashLog: null,
   runtimeLog: null,
+  startupEvidenceService: null,
   officialMapProxy: null,
   archiveReviewSessionManager: null,
   archiveReviewRendererLossFence: null,
@@ -235,6 +249,24 @@ const electronRuntimeContext = {
   stopEventLoopDiagnostics: null,
   rendererTeardownCoordinator: null,
 }
+const terminalFaultState = createTerminalFaultState()
+
+const FATAL_RESTART_BLOCKED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not restart safely',
+  message: 'Pending tracking evidence could not be marked safely after the fatal runtime fault. SAR Tracker has kept the current process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
+})
+const FATAL_WRITER_UNREAPED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not restart safely',
+  message: 'The diagnostic writer could not be stopped after the fatal runtime fault. SAR Tracker has kept this process open and will not relaunch automatically. Do not launch another copy. Preserve the profile and contact support before forcing it closed.',
+})
+const STARTUP_WRITER_UNREAPED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not close safely',
+  message: 'The diagnostic writer could not be confirmed stopped after startup failed. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
+})
+const QUIT_WRITER_UNREAPED_NOTICE = Object.freeze({
+  title: 'SAR Tracker could not close safely',
+  message: 'The diagnostic writer could not be confirmed stopped while SAR Tracker was closing. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
+})
 
 configureLinuxSecretStorage()
 
@@ -243,6 +275,11 @@ if (!ownsSingleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
+    // A held process has no usable window to focus; repeat why it is open.
+    if (terminalFaultState.notice !== null) {
+      showTerminalFaultNotice()
+      return
+    }
     focusExistingWindow()
   })
 }
@@ -274,6 +311,7 @@ async function createWindow(
   runtimeLog,
   rendererTeardownCoordinator,
   archiveReviewSessionManager,
+  startupWatchdog,
 ) {
   const window = new BrowserWindow({
     width: 1440,
@@ -282,6 +320,9 @@ async function createWindow(
     minHeight: 760,
     backgroundColor: '#050505',
     title: 'SAR Tracker Electron Validation',
+    // Keep the startup window hidden until renderer availability and its
+    // evidence-loss safety fence have both completed.
+    show: startupWatchdog === undefined,
     webPreferences: {
       backgroundThrottling: false,
       contextIsolation: true,
@@ -344,15 +385,32 @@ async function createWindow(
     })
   }
 
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL
-  if (rendererUrl !== undefined && rendererUrl.trim() !== '') {
-    await window.loadURL(withOptionalValidationQuery(rendererUrl))
+  let rendererUrl
+  const configuredRendererUrl = process.env.ELECTRON_RENDERER_URL
+  if (configuredRendererUrl !== undefined && configuredRendererUrl.trim() !== '') {
+    rendererUrl = withOptionalValidationQuery(configuredRendererUrl)
   } else {
     const indexUrl = pathToFileURL(path.join(__dirname, '..', 'dist', 'index.html'))
     addValidationQueryIfRequested(indexUrl)
-    await window.loadURL(indexUrl.toString())
+    rendererUrl = indexUrl.toString()
   }
-  await rendererTeardownCoordinator.markRendererAvailable()
+  const loadRenderer = () => window.loadURL(rendererUrl)
+  if (startupWatchdog === undefined) await loadRenderer()
+  else await startupWatchdog.run('operational window content load', loadRenderer)
+  if (startupWatchdog === undefined) {
+    await rendererTeardownCoordinator.markRendererAvailable()
+  } else {
+    await startupWatchdog.run(
+      'operational renderer availability fence',
+      () => rendererTeardownCoordinator.markRendererAvailable(),
+    )
+    // The shell is usable only after the renderer safety fence succeeds. Stop
+    // the startup budget immediately before revealing it so later work cannot
+    // turn a visible, ready shell into a fatal startup timeout.
+    startupWatchdog.dispose()
+    window.show()
+    startupWindowReady = true
+  }
 }
 
 /**
@@ -496,6 +554,7 @@ function reportUnsafeRendererRestore(error, runtimeLog) {
 
 /** Keeps a fatally damaged runtime open when mission evidence cannot be fenced. */
 function reportUnsafeFatalRestart(error, runtimeLog) {
+  terminalFaultState.withholdRelaunch(FATAL_RESTART_BLOCKED_NOTICE)
   void runtimeLog?.append({
     level: 'error',
     event: 'fatal_restart_blocked',
@@ -505,13 +564,40 @@ function reportUnsafeFatalRestart(error, runtimeLog) {
         : 'unknown_fatal_restart_failure',
     },
   })
+  showTerminalFaultNotice()
+}
+
+/** Keeps the current process open when the isolated diagnostic writer is still live. */
+function reportFatalEvidenceWriterStopFailure() {
+  terminalFaultState.holdForUnreapedWriter(FATAL_WRITER_UNREAPED_NOTICE)
+  showTerminalFaultNotice()
+}
+
+/** Keeps the single-instance lock when a startup evidence writer cannot be reaped. */
+function reportStartupEvidenceWriterStopFailure() {
+  terminalFaultState.holdForUnreapedWriter(STARTUP_WRITER_UNREAPED_NOTICE)
+  showTerminalFaultNotice()
+}
+
+/** Keeps the single-instance lock when the evidence writer cannot be stopped at quit. */
+function reportQuitEvidenceWriterStopFailure(runtimeLog) {
+  terminalFaultState.holdForUnreapedWriter(QUIT_WRITER_UNREAPED_NOTICE)
+  void runtimeLog?.append({
+    level: 'error',
+    event: 'evidence_writer_stop_blocked',
+    fields: { phase: 'app_quit' },
+  })
+  showTerminalFaultNotice()
+}
+
+/** Shows the current terminal-fault hold notice to the operator, if any. */
+function showTerminalFaultNotice() {
+  const notice = terminalFaultState.notice
+  if (notice === null) return
   try {
-    dialog.showErrorBox(
-      'SAR Tracker could not restart safely',
-      'Pending tracking evidence could not be marked safely after the fatal runtime fault. SAR Tracker has kept the current process open and will not relaunch automatically. Preserve the profile and contact support before forcing it closed.',
-    )
+    dialog.showErrorBox(notice.title, notice.message)
   } catch {
-    // The runtime log above retains the blocking failure in headless contexts.
+    // The process stays open even when a native dialog is unavailable.
   }
 }
 
@@ -608,40 +694,89 @@ async function handleFatalMainProcessError(input) {
       : input.kind === 'unhandledRejection'
         ? `Unhandled rejection: ${String(input.error)}`
         : 'Uncaught exception'
-  await input.crashLog.record({
-    kind: input.kind,
-    summary,
-    detail:
-      input.error instanceof Error && typeof input.error.stack === 'string'
-        ? input.error.stack
-        : undefined,
-  })
-  await input.runtimeLog.append({
-    level: 'error',
-    event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
-    fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
-  })
-
+  const detail = input.error instanceof Error && typeof input.error.stack === 'string'
+    ? input.error.stack
+    : undefined
+  if (!terminalFaultState.beginFatalResponse()) {
+    // An earlier fault response already owns exit, relaunch, or the lock hold.
+    // Keep best-effort evidence of this fault without making a second decision.
+    recordFollowOnFatal(input, summary, detail)
+    return
+  }
+  const crashWrite = Promise.resolve().then(() =>
+    (input.crashLog.recordDurably ?? input.crashLog.record)({
+      kind: input.kind,
+      summary,
+      detail,
+    }))
+  // Observed separately so a stalled runtime-log append cannot hide a crash
+  // record that did become durable.
+  let crashWriteStatus = 'pending'
+  void crashWrite.then(
+    () => { crashWriteStatus = 'fulfilled' },
+    () => { crashWriteStatus = 'rejected' },
+  )
+  const evidenceWrites = Promise.allSettled([
+    crashWrite,
+    Promise.resolve().then(() => input.runtimeLog.append({
+      level: 'error',
+      event: input.kind === 'uncaughtException' ? 'uncaught_exception' : 'unhandled_rejection',
+      fields: { name: input.error instanceof Error ? input.error.name : 'Error' },
+    })),
+  ])
   const rendererTeardownCoordinator =
     electronRuntimeContext.rendererTeardownCoordinator
-  if (rendererTeardownCoordinator !== null) {
-    try {
-      await rendererTeardownCoordinator.markRendererUnavailable()
-    } catch (error) {
-      reportUnsafeFatalRestart(error, input.runtimeLog)
-      return
+  const rendererFenceWait = rendererTeardownCoordinator === null
+    ? Promise.resolve({ completed: true, value: [] })
+    : waitForEvidenceWrites(Promise.allSettled([
+      Promise.resolve().then(() => rendererTeardownCoordinator.markRendererUnavailable()),
+    ]))
+  const [evidenceWriteResult, rendererFenceResult] = await Promise.all([
+    waitForEvidenceWrites(evidenceWrites),
+    rendererFenceWait,
+  ])
+  let evidenceWriterStopped = true
+  if (!evidenceWriteResult.completed) {
+    if (electronRuntimeContext.startupEvidenceService !== null
+      && electronRuntimeContext.startupEvidenceService !== undefined) {
+      try {
+        await electronRuntimeContext.startupEvidenceService.terminate()
+      } catch {
+        evidenceWriterStopped = false
+      }
     }
+  }
+  const evidenceWasSaved = crashWriteStatus === 'fulfilled'
+
+  if (!evidenceWriterStopped) {
+    reportFatalEvidenceWriterStopFailure()
+    return
+  }
+  if (!rendererFenceResult.completed) {
+    reportUnsafeFatalRestart(
+      new Error('Renderer evidence fence did not complete within the fatal response deadline.'),
+      input.runtimeLog,
+    )
+    return
+  }
+  const [rendererFence] = rendererFenceResult.value
+  if (rendererFence?.status === 'rejected') {
+    reportUnsafeFatalRestart(rendererFence.reason, input.runtimeLog)
+    return
   }
 
   try {
     dialog.showErrorBox(
       'SAR Tracker runtime fault',
-      'SAR Tracker hit a fatal runtime fault. The fault has been logged and the app will relaunch so operators get a clean runtime.',
+      evidenceWasSaved
+        ? 'SAR Tracker hit a fatal runtime fault. Crash evidence was saved and the app will relaunch so operators get a clean runtime.'
+        : 'SAR Tracker hit a fatal runtime fault. Crash evidence could not be confirmed, so the fault details may not have been saved. The app will relaunch so operators get a clean runtime.',
     )
   } catch {
     // showErrorBox is unavailable in some headless/test contexts.
   }
 
+  terminalFaultState.markRelaunching()
   if (typeof app.relaunch === 'function') {
     app.relaunch()
   }
@@ -650,6 +785,23 @@ async function handleFatalMainProcessError(input) {
     return
   }
   app.quit()
+}
+
+/** Records a fault raised while another terminal fault response owns the process. */
+function recordFollowOnFatal(input, summary, detail) {
+  void Promise.resolve()
+    .then(() => input.crashLog.record({ kind: input.kind, summary, detail }))
+    .catch(() => undefined)
+  void Promise.resolve()
+    .then(() => input.runtimeLog.append({
+      level: 'error',
+      event: 'fatal_during_fault_response',
+      fields: {
+        name: input.error instanceof Error ? input.error.name : 'Error',
+        phase: terminalFaultState.phase,
+      },
+    }))
+    .catch(() => undefined)
 }
 
 /**
@@ -1171,7 +1323,15 @@ function normalizeTimeout(value) {
 }
 
 if (ownsSingleInstanceLock) {
-  app.whenReady().then(startElectronApp).catch(handleStartupFailure)
+  app.whenReady()
+    .then(() => {
+      const startupWatchdog = createStartupWatchdog({
+        timeoutMs: C01_STARTUP_RESPONSE_TIMEOUT_MS,
+      })
+      return startElectronApp(startupWatchdog)
+        .finally(() => startupWatchdog.dispose())
+    })
+    .catch(handleStartupFailure)
 }
 
 /**
@@ -1179,46 +1339,174 @@ if (ownsSingleInstanceLock) {
  * without relaunching into the same persistent fault.
  */
 async function handleStartupFailure(error) {
-  const userDataPath = app.getPath('userData')
-  const crashLog =
-    electronRuntimeContext.crashLog ?? createCrashLog({ userDataPath })
-  const runtimeLog =
-    electronRuntimeContext.runtimeLog ?? createRuntimeLog({ userDataPath })
+  terminalFaultState.beginStartupFailure()
   const summary =
     error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown startup failure'
-  await Promise.all([
-    crashLog.record({
-      kind: 'startupFailure',
-      summary,
-      detail:
-        error instanceof Error && typeof error.stack === 'string'
-          ? error.stack
-          : undefined,
-    }),
-    runtimeLog.append({
-      level: 'error',
-      event: 'startup_failure',
-      fields: { name: error instanceof Error ? error.name : 'Error' },
-    }),
-  ])
-
-  try {
-    dialog.showErrorBox(
-      'SAR Tracker could not start',
-      startupFailureOperatorMessage(error),
-    )
-  } catch {
-    // A native dialog may be unavailable in headless validation. The durable
-    // logs above and non-zero exit still preserve a fail-closed result.
+  let crashEvidenceWrite = Promise.resolve()
+  let runtimeEvidenceWrites = []
+  let failureRuntimeLog
+  const appIsReady = app.isReady()
+  if (appIsReady) {
+    const userDataPath = app.getPath('userData')
+    const startupEvidenceService = electronRuntimeContext.startupEvidenceService
+    const crashLog = startupEvidenceService?.crashLog ??
+      electronRuntimeContext.crashLog ?? (
+        typeof process.versions.electron === 'string'
+          ? undefined
+          : createCrashLog({ userDataPath })
+      )
+    failureRuntimeLog = startupEvidenceService?.runtimeLog ?? electronRuntimeContext.runtimeLog
+    if (crashLog !== undefined) {
+      crashEvidenceWrite = startBestEffortStartupWrite(() => crashLog.record({
+        kind: 'startupFailure',
+        summary,
+        detail:
+          error instanceof Error && typeof error.stack === 'string'
+            ? error.stack
+            : undefined,
+      }))
+    }
+    if (failureRuntimeLog !== null && failureRuntimeLog !== undefined) {
+      runtimeEvidenceWrites = [startBestEffortStartupWrite(() => failureRuntimeLog.append({
+        level: 'error',
+        event: 'startup_failure',
+        fields: startupFailureLogFields(error),
+      }))]
+    }
   }
-  app.exit(1)
+
+  const content = startupFailureOperatorMessage(error)
+  if (appIsReady) {
+    // An app quit request (for example Cmd+Q) must not bypass the evidence
+    // wait: treat it as dismissal of the fault window, or repeat the hold
+    // notice once the process is held open.
+    app.on('before-quit', (event) => {
+      event.preventDefault()
+      if (terminalFaultState.notice !== null) {
+        showTerminalFaultNotice()
+        return
+      }
+      closeStartupFailureWindows()
+    })
+  }
+  try {
+    if (appIsReady) {
+      await showStartupFailureWindow({
+        BrowserWindow,
+        ipcMain,
+        message: content,
+      })
+    } else {
+      dialog.showErrorBox('SAR Tracker could not start', content)
+    }
+  } catch (dialogError) {
+    if (appIsReady) {
+      startBestEffortStartupWrite(() => failureRuntimeLog.append({
+        level: 'error',
+        event: 'startup_failure_window_failed',
+        fields: { name: dialogError instanceof Error ? dialogError.name : 'Error' },
+      }))
+      try {
+        dialog.showErrorBox('SAR Tracker could not start', content)
+      } catch {
+        // Keep the non-zero exit even when both operator surfaces are unavailable.
+      }
+    }
+  }
+  if (appIsReady && failureRuntimeLog !== undefined) {
+    runtimeEvidenceWrites.push(startBestEffortStartupWrite(() => failureRuntimeLog.append({
+      level: 'error',
+      event: 'startup_failure_dialog_closed',
+      fields: {},
+    })))
+  }
+  const evidenceWriteResult = await waitForEvidenceWrites(Promise.allSettled([
+    crashEvidenceWrite,
+    ...runtimeEvidenceWrites,
+  ]))
+  const startupEvidenceService = electronRuntimeContext.startupEvidenceService
+  let evidenceWriterStopped = true
+  if (startupEvidenceService !== null && startupEvidenceService !== undefined) {
+    try {
+      if (evidenceWriteResult.completed) {
+        await startupEvidenceService.close()
+      } else {
+        await startupEvidenceService.terminate()
+      }
+    } catch {
+      evidenceWriterStopped = false
+    }
+  }
+  if (!evidenceWriterStopped) {
+    reportStartupEvidenceWriterStopFailure()
+    return
+  }
+  // Give both crash evidence and best-effort runtime logging time to settle.
+  // If a write remains stuck, stop its isolated worker before the supported
+  // Electron exit path so the abandoned filesystem request cannot keep the app alive.
+  exitAfterStartupFailure(1)
+}
+
+/** Starts one startup failure write without allowing a synchronous adapter throw to hide the fault. */
+function startBestEffortStartupWrite(write) {
+  try {
+    return Promise.resolve(write())
+  } catch {
+    return Promise.resolve()
+  }
+}
+
+/** Waits for ordinary evidence writes to finish and bounds only writes that remain pending. */
+function waitForEvidenceWrites(evidenceWrites) {
+  let timeout
+  return Promise.race([
+    Promise.resolve(evidenceWrites).then((value) => ({ completed: true, value })),
+    new Promise((resolve) => {
+      timeout = setTimeout(() => resolve({ completed: false }), EVIDENCE_WRITE_TIMEOUT_MS)
+    }),
+  ]).finally(() => clearTimeout(timeout))
+}
+
+/** Uses Electron's supported app exit in production and remains observable in Node tests. */
+function exitAfterStartupFailure(exitCode) {
+  if (typeof process.versions.electron === 'string') {
+    app.exit(exitCode)
+  } else {
+    process.exit(exitCode)
+  }
+}
+
+/** Adds bounded timeout details to the startup event without exposing arbitrary error text. */
+function startupFailureLogFields(error) {
+  const fields = { name: error instanceof Error ? error.name : 'Error' }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_EVIDENCE_WORKER') {
+    fields.code = error.code
+  }
+  if (error instanceof StartupTimeoutError) {
+    fields.stage = error.stage
+    fields.timeoutMs = error.timeoutMs
+    fields.elapsedMs = error.elapsedMs
+  }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
+    fields.code = error.code
+  }
+  return fields
 }
 
 /**
- * Exposes only a known-safe actionable schema refusal; arbitrary startup
- * errors remain in the sanitized crash log rather than the native dialog.
+ * Exposes only a known-safe schema refusal or recovery action, without
+ * assuming that startup diagnostics or crash records were writable.
  */
 function startupFailureOperatorMessage(error) {
+  if (error instanceof StartupTimeoutError) {
+    return `SAR Tracker could not finish starting: the step "${error.stage}" was still in progress after ${Math.ceil(error.timeoutMs / 1_000)} seconds. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
+  }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
+    return 'SAR Tracker could not read a startup evidence file safely. No mission-data corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.'
+  }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_EVIDENCE_WORKER') {
+    return 'SAR Tracker could not safely initialize its isolated startup evidence writer. No mission-data corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.'
+  }
   const message = error instanceof Error ? error.message : ''
   if (
     /^Cannot open mission store created by newer mission store schema \d+; this build supports schema \d+\.$/u.test(
@@ -1227,27 +1515,48 @@ function startupFailureOperatorMessage(error) {
   ) {
     return `${message}\n\nThe mission database was left unchanged. Install a newer SAR Tracker build or use a compatible preserved profile. Do not overwrite or edit this profile.`
   }
-  return 'SAR Tracker could not open its operational data safely. The fault was recorded and the application will now close. Preserve the profile and contact support before retrying.'
+  return 'SAR Tracker could not open its operational data safely. Preserve the profile and contact support before retrying. The application will now close.'
 }
 
 /**
  * Starts the SAR Tracker runtime once this process owns the single-instance lock.
  */
-async function startElectronApp() {
+async function startElectronApp(startupWatchdog) {
   installValidationNetworkBlock()
   const userDataPath = app.getPath('userData')
-  const runtimeLog = createRuntimeLog({ userDataPath })
+  const startupEvidenceService = createStartupEvidenceService({
+    userDataPath,
+    utilityProcess,
+    enabled: typeof process.versions.electron === 'string',
+  })
+  const runtimeLog = startupEvidenceService.runtimeLog
+  const crashLog = startupEvidenceService.crashLog
+  electronRuntimeContext.startupEvidenceService = startupEvidenceService
+  electronRuntimeContext.runtimeLog = runtimeLog
+  electronRuntimeContext.crashLog = crashLog
+  await startupWatchdog.run(
+    'startup evidence writer initialization',
+    () => startupEvidenceService.ready,
+  )
   const storageDiagnostics = createStorageDiagnostics({
     userDataPath,
     runtimeLog,
     validationMode: validationUserDataPath !== undefined,
   })
-  await storageDiagnostics.initialize()
-  const crashLog = createCrashLog({ userDataPath })
-  const previousSessionEndedUncleanly = await crashLog.hadUncleanShutdown()
-  await crashLog.markSessionStart()
-  electronRuntimeContext.crashLog = crashLog
-  electronRuntimeContext.runtimeLog = runtimeLog
+  const [, previousSessionEndedUncleanly] = await startupWatchdog.runParallel([
+    {
+      stage: 'storage diagnostics initialization',
+      operation: () => storageDiagnostics.initialize(),
+    },
+    {
+      stage: 'previous crash-state inspection',
+      operation: () => crashLog.hadUncleanShutdown(),
+    },
+  ])
+  await startupWatchdog.run(
+    'session start marker persistence',
+    () => crashLog.markSessionStart(),
+  )
   installCrashCapture(crashLog, runtimeLog)
   void runtimeLog.append({
     level: 'info',
@@ -1291,36 +1600,42 @@ async function startElectronApp() {
     readRecentLog: () => runtimeLog.readRecent(1000),
     readStorageDiagnostics: () => storageDiagnostics.readSupportSnapshot(),
   })
-  const missionStore = createElectronMissionStore({
-    userDataPath: app.getPath('userData'),
-    createArchiveCorrectionUtilityProcess,
-    storageDiagnostics,
-    readAdminRoster: async () => {
-      const settings = await settingsStore.loadAppSettings()
-      return settings.missionDefaults.adminRoster
-    },
-    onCoverageChanged: (missionId, changeSeq) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.webContents.isDestroyed()) {
-          window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+  const missionStore = await startupWatchdog.run(
+    'mission store open and migration',
+    () => createElectronMissionStore({
+      userDataPath: app.getPath('userData'),
+      createArchiveCorrectionUtilityProcess,
+      storageDiagnostics,
+      readAdminRoster: async () => {
+        const settings = await settingsStore.loadAppSettings()
+        return settings.missionDefaults.adminRoster
+      },
+      onCoverageChanged: (missionId, changeSeq) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.webContents.isDestroyed()) {
+            window.webContents.send(COVERAGE_CHANGED_CHANNEL, { missionId, changeSeq })
+          }
         }
-      }
-    },
-    onCoverageRendererFailed: () => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.webContents.isDestroyed()) {
-          window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+      },
+      onCoverageRendererFailed: () => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.webContents.isDestroyed()) {
+            window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+          }
         }
-      }
-    },
-  })
+      },
+    }),
+  )
   const rendererTeardownCoordinator = createRendererTeardownCoordinator({
     ipcMain,
     missionStore,
   })
   electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
   if (previousSessionEndedUncleanly) {
-    await rendererTeardownCoordinator.markRendererUnavailable()
+    await startupWatchdog.run(
+      'previous-session renderer fence',
+      () => rendererTeardownCoordinator.markRendererUnavailable(),
+    )
   }
   void missionStore
     .info()
@@ -1330,9 +1645,15 @@ async function startElectronApp() {
       }),
     )
     .catch(() => undefined)
-  const activeMission = await missionStore.getActiveMission()
+  const activeMission = await startupWatchdog.run(
+    'active mission lookup',
+    () => missionStore.getActiveMission(),
+  )
   if (activeMission !== null) {
-    await storageDiagnostics.recordRestart({ startedAt: activeMission.start_time })
+    await startupWatchdog.run(
+      'mission restart diagnostic persistence',
+      () => storageDiagnostics.recordRestart({ startedAt: activeMission.start_time }),
+    )
   }
   const fileSystem = createElectronFileSystem({
     userDataPath: app.getPath('userData'),
@@ -1360,16 +1681,22 @@ async function startElectronApp() {
     }),
   })
   electronRuntimeContext.archiveReviewSessionManager = archiveReviewSessionManager
-  await archiveReviewSessionManager.sweepStartup()
-  const archiveCleanupStartupRecovery = await startInterruptedMissionCleanupRecovery({
-    missionStore,
-    sessionManager: archiveReviewSessionManager,
-    onFailure: ({ code }) => runtimeLog.append({
-      level: 'error',
-      event: 'archive_cleanup_restart_failed',
-      fields: { code },
+  await startupWatchdog.run(
+    'archive review startup sweep',
+    () => archiveReviewSessionManager.sweepStartup(),
+  )
+  const archiveCleanupStartupRecovery = await startupWatchdog.run(
+    'interrupted archive cleanup recovery setup',
+    () => startInterruptedMissionCleanupRecovery({
+      missionStore,
+      sessionManager: archiveReviewSessionManager,
+      onFailure: ({ code }) => runtimeLog.append({
+        level: 'error',
+        event: 'archive_cleanup_restart_failed',
+        fields: { code },
+      }),
     }),
-  })
+  )
   electronRuntimeContext.archiveCleanupStartupRecovery = archiveCleanupStartupRecovery
   void archiveCleanupStartupRecovery.completion.catch(() => runtimeLog.append({
     level: 'error',
@@ -1402,6 +1729,7 @@ async function startElectronApp() {
     runtimeLog,
     rendererTeardownCoordinator,
     archiveReviewSessionManager,
+    startupWatchdog,
   )
   electronRuntimeContext.stopEventLoopDiagnostics = startEventLoopDiagnostics(storageDiagnostics)
 
@@ -1409,6 +1737,12 @@ async function startElectronApp() {
     // Record an intentional shutdown so the next launch does not show a false
     // crash-recovery notice.
     event.preventDefault()
+    if (terminalFaultState.blocksQuit()) {
+      // A fault response owns exit, or the process holds the lock while a
+      // diagnostic writer may still be live.
+      showTerminalFaultNotice()
+      return
+    }
     void markCleanExitAndQuit(
       crashLog,
       officialMapProxy,
@@ -1416,6 +1750,7 @@ async function startElectronApp() {
       runtimeLog,
       missionStore,
       archiveReviewSessionManager,
+      startupEvidenceService,
     )
   })
 }
@@ -1444,6 +1779,30 @@ function startEventLoopDiagnostics(storageDiagnostics) {
   }
 }
 
+/**
+ * Writes the clean-exit marker, treating failure as an unclean session.
+ *
+ * The marker only suppresses the next launch's unclean-shutdown checks, so a
+ * missing marker fails safe: mission data is already drained and fenced, and
+ * the next launch re-checks every unfinalized mission.
+ */
+async function markCleanExitFailSafe(crashLog, runtimeLog) {
+  try {
+    await crashLog.markCleanExit()
+  } catch (error) {
+    void Promise.resolve()
+      .then(() => runtimeLog?.append({
+        level: 'error',
+        event: 'clean_exit_marker_unavailable',
+        fields: {
+          name: error instanceof Error ? error.name : 'Error',
+          ...(typeof error?.code === 'string' ? { code: error.code.slice(0, 100) } : {}),
+        },
+      }))
+      .catch(() => undefined)
+  }
+}
+
 let cleanExitInProgress = false
 async function markCleanExitAndQuit(
   crashLog,
@@ -1452,6 +1811,7 @@ async function markCleanExitAndQuit(
   runtimeLog,
   missionStore,
   archiveReviewSessionManager,
+  startupEvidenceService,
 ) {
   if (cleanExitInProgress) {
     return
@@ -1467,9 +1827,19 @@ async function markCleanExitAndQuit(
     // session and staging inputs; otherwise shutdown can delete a live worker's
     // source bytes mid-read.
     await archiveReviewSessionManager.prepareClose()
-    await crashLog.markCleanExit()
+    // A fatal response that withheld relaunch left this session unclean; the
+    // next launch must still run its unclean-shutdown mission checks.
+    if (terminalFaultState.allowsCleanExitMarker()) {
+      await markCleanExitFailSafe(crashLog, runtimeLog)
+    }
     officialMapProxy.close?.()
     missionStore.close()
+    try {
+      await startupEvidenceService?.close()
+    } catch {
+      reportQuitEvidenceWriterStopFailure(runtimeLog)
+      return
+    }
     app.exit(0)
   } catch (error) {
     cleanExitInProgress = false
@@ -1478,12 +1848,14 @@ async function markCleanExitAndQuit(
 }
 
 app.on('window-all-closed', () => {
+  if (!startupWindowReady) return
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
 app.on('activate', async () => {
+  if (!startupWindowReady) return
   if (BrowserWindow.getAllWindows().length === 0) {
     try {
       await awaitArchiveReviewRendererLossFence()

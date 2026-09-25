@@ -28,6 +28,7 @@ import { createReadStream } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { performance } from 'node:perf_hooks'
 import { promisify } from 'node:util'
 
 import { _electron as electron } from 'playwright'
@@ -36,6 +37,9 @@ import { countDescendantElectronRenderers } from '../../build/release-smoke-lib.
 import { generateMissionStoreFixture } from '../../build/seed-mission-store-runtime.js'
 import {
   C01_STARTUP_PROOF_MODE,
+  C01_STARTUP_RESPONSE_TIMEOUT_MS,
+  C01_HELD_GATE_TIMEOUT_MS,
+  C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
   C01_OVERSIZED_STORE_BYTES,
   C01_STARTUP_PROFILE_KINDS,
   STARTUP_PROBE_DESCRIPTOR,
@@ -49,13 +53,23 @@ const { createElectronMissionStore, CURRENT_SCHEMA_VERSION } = require('../../el
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
+
+/** Bounds only the disposable SQLite lock-holder setup, not the app response. */
+export const C01_STORE_LOCK_READY_TIMEOUT_MS = 5_000
 const APP_CLOSE_TIMEOUT_MS = 20_000
 const DIALOG_TIMEOUT_MS = 20_000
+const DIALOG_DISMISSAL_TIMEOUT_MS = 2_000
+const X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX = 17
 const BAD_SECRET_WARNING =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
 const SYNTHETIC_BASE_URL = 'https://c01.synthetic.invalid.example'
 const LEGACY_SECRET_CANARY = 'C01_SYNTHETIC_LEGACY_CIPHERTEXT_DO_NOT_EXPORT'
 const REENTRY_SECRET_CANARY = 'C01_SYNTHETIC_REENTRY_SECRET_DO_NOT_EXPORT'
+
+/** Builds a valid xdotool search for the two supported startup-fault titles. */
+export function startupDialogWindowSearchArguments() {
+  return ['search', '--onlyvisible', '--name', '^(Error|SAR Tracker could not start)$']
+}
 
 /** Parse the exact packaged C01 invocation; arbitrary app flags are rejected. */
 export function parseStartupProbeArgs(argv) {
@@ -169,7 +183,8 @@ export async function runStartupAdmissionProbe(options) {
       'permission-fault': () => runPermissionFaultScenario(options, path.join(disposableRoot, 'permission-fault'), report),
       'disk-full': () => runDiskFullScenario(options, path.join(disposableRoot, 'disk-full'), report),
       'held-diagnostics-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-diagnostics-gate'), report, 'diagnostics'),
-      'held-crash-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-crash-gate'), report, 'crash'),
+      'held-crash-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-crash-gate'), report, 'crash-write'),
+      'non-regular-crash-evidence': () => runHeldGateScenario(options, path.join(disposableRoot, 'non-regular-crash-evidence'), report, 'crash'),
       'held-store-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-store-gate'), report, 'store'),
       'active-recoverable': () => runActiveRecoverableScenario(options, path.join(disposableRoot, 'active-recoverable'), evidenceDir, report),
     }
@@ -204,7 +219,7 @@ export async function runStartupAdmissionProbe(options) {
  * packaged identity or C01 qualification.
  */
 export async function runStartupHeldGateDevelopmentProbe(options) {
-  const gateKinds = new Set(['diagnostics', 'crash', 'store'])
+  const gateKinds = new Set(['diagnostics', 'crash', 'crash-write', 'store'])
   if (!isAbsolutePath(options?.appPath) || !isAbsolutePath(options?.evidenceDir)
       || !gateKinds.has(options?.gateKind)) {
     throw new Error('C01 development held-gate probe requires absolute app/evidence paths and a fixed gate kind.')
@@ -217,6 +232,7 @@ export async function runStartupHeldGateDevelopmentProbe(options) {
       appPath: options.appPath,
       evidenceDir,
       developmentTestHarness: options.launchPackagedTarget !== true,
+      captureX11Diagnostics: process.env.SARTRACKER_C01_CAPTURE_X11_DIAGNOSTICS === '1',
     }, path.join(disposableRoot, options.gateKind), {}, options.gateKind)
     const report = {
       schema: 'sartracker-c01-startup-held-gate-development-v1',
@@ -227,7 +243,12 @@ export async function runStartupHeldGateDevelopmentProbe(options) {
       scenario,
       qualification: { eligible: false, reason: 'Development calibration is not packaged C01 evidence.' },
     }
-    await writeJson(path.join(evidenceDir, `held-${options.gateKind}.json`), report)
+    const evidenceName = options.gateKind === 'crash'
+      ? 'non-regular-crash-evidence.json'
+      : options.gateKind === 'crash-write'
+        ? 'held-crash.json'
+        : `held-${options.gateKind}.json`
+    await writeJson(path.join(evidenceDir, evidenceName), report)
     return Object.freeze(report)
   } finally {
     await rm(disposableRoot, { recursive: true, force: true })
@@ -736,8 +757,6 @@ async function fillBoundedEnospcVolume(profile) {
   }
 }
 
-const HELD_GATE_TIMEOUT_MS = 5_000
-
 /** Classify a held gate that reached the fixed observation bound without an in-bound response. */
 export function isBoundedHeldGateTimeoutWithoutAction({ earlyExit }) {
   return earlyExit?.timedOut === true
@@ -752,16 +771,20 @@ export function isActionableHeldGateObservation({ earlyExit, dialogWindowId, dia
     && dialogObservedAtMs <= timeoutMs
 }
 
-/** Hold one real startup dependency, then retain the bounded runtime response. */
+/** Observe held diagnostics, crash-log, or SQLite startup work and unsafe evidence rejection. */
 async function runHeldGateScenario(options, profile, _report, gateKind) {
   await seedOperationalProfile(profile)
+  if (gateKind === 'crash-write') await setNewerSchemaVersion(profile, CURRENT_SCHEMA_VERSION + 1)
   await writeJson(path.join(profile, 'settings.json'), syntheticSettings(false))
   const before = await snapshotProfileFiles(profile)
   const heldPath = gateKind === 'diagnostics'
-    ? path.join(profile, 'storage-diagnostics.json')
+    ? path.join(profile, 'logs', 'runtime.log')
     : gateKind === 'crash'
       ? path.join(profile, 'crashes', 'crash-log.json')
       : null
+  const crashWriteHold = gateKind === 'crash-write'
+    ? await createCrashLogWriteHold(profile)
+    : null
   let holder = null
   let appProcess = null
   let cleanup = { heldPathRemoved: false, lockHolderClosed: false }
@@ -769,28 +792,55 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   let forcedKill = false
   let appStdout = null
   let appStderr = null
+  let observationFailureDetails = null
   try {
     if (heldPath !== null) {
       await mkdir(path.dirname(heldPath), { recursive: true })
+      if (gateKind === 'diagnostics') {
+        await writeJson(path.join(profile, 'storage-diagnostics.json'), {
+          version: 1,
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          activeOperation: {
+            id: 'c01-held-diagnostics-startup',
+            type: 'backup',
+            stage: 'started',
+            startedAt: '2026-09-25T00:00:00.000Z',
+            startedAtMs: 1,
+            requestedAtMs: 1,
+            lastPhaseAtMs: 1,
+          },
+        })
+      }
       await rm(heldPath, { force: true })
       await execFileAsync('mkfifo', [heldPath])
-    } else {
+    } else if (gateKind === 'store') {
       holder = await startStoreLockHolder(path.join(profile, 'mission-store.sqlite'))
     }
   } catch (error) {
     setupFailure = sanitizeError(error, profile)
   }
 
-  const launchStartedAt = Date.now()
+  const launchStartedAt = performance.now()
   let earlyExit = null
   let dialogWindowId = null
   let dialogObservedAtMs = null
+  let dialogDismissed = false
+  let exitedBeforeDismissal = false
+  let productExit = null
   let observationFailure = setupFailure
   if (setupFailure === null) {
     const appEnvironment = {
       ...process.env,
       SARTRACKER_ELECTRON_BLOCK_NETWORK: '1',
       SARTRACKER_ELECTRON_USER_DATA_PATH: profile,
+    }
+    if (crashWriteHold !== null) {
+      appEnvironment.LD_PRELOAD = [crashWriteHold.libraryPath, process.env.LD_PRELOAD]
+        .filter((entry) => typeof entry === 'string' && entry.length > 0)
+        .join(':')
+      appEnvironment.SARTRACKER_C01_HOLD_CRASH_LOG_PREFIX = crashWriteHold.crashLogPath + '.'
+      appEnvironment.SARTRACKER_C01_HOLD_CRASH_LOG_MARKER = crashWriteHold.markerPath
+      appEnvironment.SARTRACKER_C01_HOLD_CRASH_LOG_RELEASE = crashWriteHold.releasePath
     }
     delete appEnvironment.ELECTRON_RUN_AS_NODE
     delete appEnvironment.ELECTRON_RENDERER_URL
@@ -807,17 +857,55 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     })
     appStdout = collectChildOutput(appProcess.stdout, appProcess)
     appStderr = collectChildOutput(appProcess.stderr, appProcess)
-    earlyExit = await waitForOwnedProcessOrTimeout(appProcess, HELD_GATE_TIMEOUT_MS, launchStartedAt)
+    earlyExit = await waitForOwnedProcessOrTimeout(appProcess, C01_HELD_GATE_TIMEOUT_MS, launchStartedAt)
     dialogWindowId = earlyExit.dialogWindowId
     dialogObservedAtMs = earlyExit.dialogObservedAtMs
     if (earlyExit.timedOut === true && dialogWindowId === null) {
       dialogWindowId = await findSarTrackerErrorDialog(appProcess.pid, 500)
-      if (dialogWindowId !== null) dialogObservedAtMs = Date.now() - launchStartedAt
+      if (dialogWindowId !== null) {
+        dialogObservedAtMs = Math.max(0, Math.round(performance.now() - launchStartedAt))
+      }
     }
-    if (dialogWindowId !== null) {
-      await dismissErrorDialog(dialogWindowId, appProcess.pid).catch(() => undefined)
+    if (dialogWindowId !== null && crashWriteHold !== null) {
+      crashWriteHold.markerObserved = await waitForPath(crashWriteHold.markerPath, 2_000)
+      if (!crashWriteHold.markerObserved) {
+        observationFailure = 'The packaged process showed the startup fault window without entering the crash-log fsync hold.'
+      }
+    }
+    if (dialogWindowId !== null && (appProcess.exitCode !== null || appProcess.signalCode !== null)) {
+      // The product closed its own fault window before the operator could.
+      exitedBeforeDismissal = true
+    } else if (dialogWindowId !== null) {
+      try {
+        productExit = await waitForOwnedProcessExitAfterDialog(
+          appProcess,
+          C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS,
+          async () => {
+            const confirmedDismissalAt = await dismissErrorDialog(
+              dialogWindowId,
+              appProcess.pid,
+              options.captureX11Diagnostics === true
+                ? { evidenceDir: options.evidenceDir, gateKind, privateRoot: profile }
+                : null,
+            )
+            dialogDismissed = true
+            if (crashWriteHold !== null) {
+              await writeFile(crashWriteHold.releasePath, 'released after operator dialog dismissal\n', {
+                flag: 'wx',
+                mode: 0o600,
+              })
+              crashWriteHold.releasedAfterDialogDismissal = true
+            }
+            return confirmedDismissalAt
+          },
+        )
+      } catch (error) {
+        observationFailure = sanitizeError(error, profile)
+        observationFailureDetails = serializeHeldGateObservationError(error, profile)
+      }
     }
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
+      if (crashWriteHold !== null) await releaseCrashLogWriteHoldForCleanup(crashWriteHold)
       appProcess.kill('SIGTERM')
       await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
     }
@@ -827,31 +915,51 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     }
   }
   if (appProcess !== null && appProcess.exitCode === null && appProcess.signalCode === null) {
+    if (crashWriteHold !== null) await releaseCrashLogWriteHoldForCleanup(crashWriteHold)
     await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
   }
 
   const after = await snapshotProfileFiles(profile, false).catch(() => ({}))
-  const runtimeLog = await readFile(path.join(profile, 'logs', 'runtime.log'), 'utf8').catch(() => '')
-  // Never read the held crash FIFO from the observer; that would create an
-  // unbounded reader and turn the calibration itself into the fault.
+  // Never read either FIFO from the observer; opening it could block the
+  // controller and turn the observation itself into the fault.
+  const runtimeLog = heldPath === path.join(profile, 'logs', 'runtime.log')
+    ? ''
+    : await readFile(path.join(profile, 'logs', 'runtime.log'), 'utf8').catch(() => '')
   const crashLog = gateKind === 'crash'
     ? ''
     : await readFile(path.join(profile, 'crashes', 'crash-log.json'), 'utf8').catch(() => '')
+  const parsedCrashEntries = readJsonArrayFromString(crashLog)
+  const crashLogTemporaryFiles = crashWriteHold === null
+    ? []
+    : await readdir(path.dirname(crashWriteHold.crashLogPath)).then((names) => names.filter((name) =>
+      name.startsWith(path.basename(crashWriteHold.crashLogPath) + '.') && name.endsWith('.tmp'))).catch(() => [])
+  const crashWriteCompleted = crashWriteHold !== null && parsedCrashEntries.some((entry) =>
+    entry?.kind === 'startupFailure' && typeof entry?.summary === 'string')
+  const crashWriteReleased = crashWriteHold !== null
+    && await access(crashWriteHold.releasePath).then(() => true).catch(() => false)
   const actionable = isActionableHeldGateObservation({
-    earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: HELD_GATE_TIMEOUT_MS,
+    earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
   })
   const lateDialogAfterTimeout = earlyExit?.timedOut === true && dialogWindowId !== null
+  const productExitFailed = actionable && dialogDismissed
+    && (productExit === null || productExit.code !== 1 || productExit.signal !== null)
+  const productExitedBeforeDismissal = actionable && exitedBeforeDismissal
   const processObservation = {
     pid: appProcess?.pid ?? process.pid,
     closed: appProcess === null || appProcess.exitCode !== null || appProcess.signalCode !== null,
     exitCode: appProcess?.exitCode ?? null,
     signal: appProcess?.signalCode ?? null,
-    timeoutMs: HELD_GATE_TIMEOUT_MS,
+    timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
     timedOut: earlyExit?.timedOut ?? null,
     observationElapsedMs: earlyExit?.elapsedMs ?? null,
     forcedKill,
     dialogObserved: dialogWindowId !== null,
     dialogObservedAtMs,
+    dialogDismissed,
+    exitedBeforeDismissal,
+    productExitCode: productExit?.code ?? null,
+    productExitSignal: productExit?.signal ?? null,
+    exitAfterDialogMs: productExit?.elapsedMs ?? null,
     lateDialogAfterTimeout,
     faultShellAtMs: actionable ? earlyExit?.elapsedMs ?? null : null,
   }
@@ -861,40 +969,78 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     cleanup.lockHolderClosed = holder.exitCode !== null || holder.signalCode !== null
   }
   if (heldPath !== null) cleanup.heldPathRemoved = await rm(heldPath, { force: true }).then(() => true).catch(() => false)
+  if (crashWriteHold !== null) {
+    cleanup.holdReleased = crashWriteReleased
+    cleanup.temporaryFilesRemoved = crashLogTemporaryFiles.length === 0
+  }
   const timedOutWithoutAction = isBoundedHeldGateTimeoutWithoutAction({ earlyExit, dialogWindowId, forcedKill })
+  const profileKind = gateKind === 'crash'
+    ? 'non-regular-crash-evidence'
+    : `held-${gateKind === 'crash-write' ? 'crash' : gateKind}-gate`
+  const failureEntries = parseStartupFailureEvents(runtimeLog)
+  const startupFailureSummaries = parsedCrashEntries
+    .filter((entry) => entry?.kind === 'startupFailure' && typeof entry?.summary === 'string')
+    .map((entry) => sanitizeError(entry.summary, profile))
+  const gateMode = gateKind === 'diagnostics'
+    ? 'post-readiness-watchdog-timeout'
+    : gateKind === 'crash'
+      ? 'non-regular-evidence-rejection'
+      : gateKind === 'crash-write'
+        ? 'crash-log-write-hold'
+        : 'sqlite-lock-contention'
   return {
-    profileKind: `held-${gateKind}-gate`,
+    profileKind,
     observed: actionable ? 'actionable-fault' : timedOutWithoutAction ? 'bounded-timeout-no-action' : 'not-observed',
     gate: {
-      kind: gateKind,
-      held: setupFailure === null,
+      kind: gateKind === 'crash-write' ? 'crash' : gateKind,
+      mode: gateMode,
+      held: setupFailure === null && gateKind !== 'crash',
       bounded: setupFailure === null,
       action: actionable ? 'preserve-profile-and-contact-support' : '',
       synthetic: false,
-      timeoutMs: HELD_GATE_TIMEOUT_MS,
+      timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
+      ...(gateKind === 'diagnostics'
+        ? { startupTimeoutMs: C01_STARTUP_RESPONSE_TIMEOUT_MS }
+        : {}),
       response: actionable
-        ? 'native-error-dialog'
+        ? 'startup-fault-window'
         : lateDialogAfterTimeout
-          ? 'native-error-dialog-after-bound'
+          ? 'startup-fault-window-after-bound'
           : 'no-native-dialog-no-shell',
       dialogObserved: dialogWindowId !== null,
+      dialogDismissed,
       lateDialogAfterTimeout,
       dependencyPath: heldPath,
       lockHolder: gateKind === 'store' ? { pid: holder?.pid ?? null, closed: cleanup.lockHolderClosed } : null,
+      ...(crashWriteHold === null ? {} : {
+        hold: {
+          markerObserved: crashWriteHold.markerObserved === true,
+          releasedAfterDialogDismissal: crashWriteHold.releasedAfterDialogDismissal === true,
+          writeCompleted: crashWriteCompleted,
+          temporaryFilesRemaining: crashLogTemporaryFiles.length > 0,
+        },
+      }),
     },
     process: processObservation,
     startupLogs: {
       runtimeEvents: parseJsonLines(runtimeLog).map((entry) => entry?.event).filter((event) => typeof event === 'string'),
       crashKinds: readJsonArrayFromString(crashLog).map((entry) => entry?.kind).filter((kind) => typeof kind === 'string'),
+      startupFailures: failureEntries,
+      startupFailureSummaries,
       stdoutTail: sanitizeProcessOutput(appStdout?.text),
       stderrTail: sanitizeProcessOutput(appStderr?.text),
     },
     originalFiles: { before, after },
     cleanup,
     ...(observationFailure === null ? {} : { observationFailure }),
-    ...(timedOutWithoutAction
-      ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
-      : {}),
+    ...(observationFailureDetails === null ? {} : { observationFailureDetails }),
+    ...(productExitedBeforeDismissal
+      ? { productGap: `C01 ${gateKind} startup showed an in-bound fault dialog but the process exited before operator dismissal.` }
+      : productExitFailed
+      ? { productGap: `C01 ${gateKind} startup showed an in-bound fault dialog but did not produce the required exit code 1 without a signal within ${C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS}ms after dismissal.` }
+      : timedOutWithoutAction
+        ? { productGap: `C01 ${gateKind} startup dependency hold reached the ${C01_HELD_GATE_TIMEOUT_MS}ms bound without an actionable operator response${lateDialogAfterTimeout ? '; a native dialog was observed only after the bound.' : '.'}` }
+        : {}),
   }
 }
 
@@ -930,13 +1076,80 @@ async function startStoreLockHolder(databasePath) {
   const stdout = collectChildOutput(child.stdout, child)
   collectChildOutput(child.stderr, child)
   try {
-    await waitForChildOutput(stdout, 'C01_STORE_LOCK_READY', HELD_GATE_TIMEOUT_MS)
+    await waitForChildOutput(stdout, 'C01_STORE_LOCK_READY', C01_STORE_LOCK_READY_TIMEOUT_MS)
   } catch (error) {
     child.kill('SIGTERM')
     await waitForChildClose(child, 2_000).catch(() => undefined)
     throw error
   }
   return child
+}
+
+/** Raise one disposable store's schema marker to trigger a safe startup refusal. */
+async function setNewerSchemaVersion(profile, schemaVersion) {
+  for (const fileName of ['mission-store.sqlite', 'mission-store.backup.sqlite']) {
+    const database = new Database(path.join(profile, fileName))
+    try {
+      const result = database.prepare("UPDATE metadata SET value = ? WHERE key = 'schema_version'").run(String(schemaVersion))
+      if (result.changes !== 1) throw new Error('C01 newer-schema hold fixture could not update exactly one schema marker.')
+    } finally {
+      database.close()
+    }
+  }
+}
+
+/** Compile a disposable Linux interposer that pauses only crash-log temporary-file fsync. */
+async function createCrashLogWriteHold(profile) {
+  if (process.platform !== 'linux') {
+    throw new Error('C01 held crash-log write proof requires Linux fsync interposition.')
+  }
+  const crashLogPath = path.join(profile, 'crashes', 'crash-log.json')
+  const markerPath = path.join(profile, 'crashes', '.c01-crash-write-held')
+  const releasePath = path.join(profile, 'crashes', '.c01-crash-write-release')
+  const libraryPath = path.join(profile, 'libc01-crash-log-hold.so')
+  const fixturePath = path.join(projectRoot, 'scripts', 'qualification', 'fixtures', 'c01-crash-log-hold.c')
+  await execFileAsync('cc', ['-shared', '-fPIC', '-O2', fixturePath, '-ldl', '-o', libraryPath], {
+    timeout: 10_000,
+  })
+  return {
+    crashLogPath,
+    markerPath,
+    releasePath,
+    libraryPath,
+    markerObserved: false,
+    releasedAfterDialogDismissal: false,
+  }
+}
+
+/** Wait for a controller marker using a monotonic, fixed observation bound. */
+async function waitForPath(filePath, timeoutMs) {
+  const deadline = performance.now() + timeoutMs
+  while (performance.now() < deadline) {
+    if (await access(filePath).then(() => true).catch(() => false)) return true
+    await delay(20)
+  }
+  return access(filePath).then(() => true).catch(() => false)
+}
+
+/** Release an injected crash-log hold before terminating an owned app process. */
+export async function releaseCrashLogWriteHold(hold) {
+  if (await access(hold.releasePath).then(() => true).catch(() => false)) return
+  // The product may never have created crashes/; the release must not depend on it.
+  await mkdir(path.dirname(hold.releasePath), { recursive: true, mode: 0o700 })
+  await writeFile(hold.releasePath, 'controller cleanup release\n', { flag: 'wx', mode: 0o600 })
+}
+
+/**
+ * Releases the held fsync during controller cleanup without letting a release
+ * failure skip termination of the owned product process.
+ */
+export async function releaseCrashLogWriteHoldForCleanup(hold, release = releaseCrashLogWriteHold) {
+  try {
+    await release(hold)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Wait for a child process marker without allowing an unbounded startup hold. */
@@ -963,27 +1176,222 @@ function collectChildOutput(stream, child) {
 }
 
 /** Wait for an owned process or an in-bound native dialog without exceeding the fixed observation bound. */
-export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt = Date.now(), dependencies = {}) {
-  const now = dependencies.now ?? Date.now
+export async function waitForOwnedProcessOrTimeout(child, timeoutMs, startedAt = performance.now(), dependencies = {}) {
+  const now = dependencies.now ?? (() => performance.now())
   const findDialog = dependencies.findDialog ?? findSarTrackerErrorDialog
   const wait = dependencies.wait ?? delay
   const deadline = startedAt + timeoutMs
   while (now() < deadline) {
     if (child.exitCode !== null || child.signalCode !== null) {
-      return { timedOut: false, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+      return {
+        timedOut: false,
+        elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+        dialogWindowId: null,
+        dialogObservedAtMs: null,
+      }
     }
     const dialogWindowId = await findDialog(child.pid, Math.min(250, Math.max(1, deadline - now())))
     const observedAtMs = now() - startedAt
     if (dialogWindowId !== null && observedAtMs <= timeoutMs) {
-      return { timedOut: false, elapsedMs: observedAtMs, dialogWindowId, dialogObservedAtMs: observedAtMs }
+      const roundedObservationMs = Math.max(0, Math.round(observedAtMs))
+      return {
+        timedOut: false,
+        elapsedMs: roundedObservationMs,
+        dialogWindowId,
+        dialogObservedAtMs: roundedObservationMs,
+      }
     }
     if (now() >= deadline) break
     if (child.exitCode !== null || child.signalCode !== null) {
-      return { timedOut: false, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+      return {
+        timedOut: false,
+        elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+        dialogWindowId: null,
+        dialogObservedAtMs: null,
+      }
     }
     await wait(Math.min(100, deadline - now()))
   }
-  return { timedOut: true, elapsedMs: now() - startedAt, dialogWindowId: null, dialogObservedAtMs: null }
+  return {
+    timedOut: true,
+    elapsedMs: Math.max(0, Math.round(now() - startedAt)),
+    dialogWindowId: null,
+    dialogObservedAtMs: null,
+  }
+}
+
+/** Confirm the native startup dialog is no longer visible after sending its dismissal click. */
+export async function waitForDialogDismissal(isDialogVisible, timeoutMs, dependencies = {}) {
+  const now = dependencies.now ?? (() => performance.now())
+  const wait = dependencies.wait ?? delay
+  const deadline = now() + timeoutMs
+  while (true) {
+    const remainingMs = deadline - now()
+    if (remainingMs <= 0) break
+    const visible = await isDialogVisible(remainingMs)
+    const confirmedAt = now()
+    if (!visible && confirmedAt <= deadline) return confirmedAt
+    const remainingAfterProbeMs = deadline - confirmedAt
+    if (remainingAfterProbeMs <= 0) break
+    await wait(Math.min(50, remainingAfterProbeMs))
+  }
+  throw new Error('C01 could not confirm the startup error dialog closed after the dismissal click.')
+}
+
+/** Identify xdotool's empty, exit-code-one result for a search with no matching windows. */
+export function isNoVisibleX11WindowSearchResult(error) {
+  const stderr = String(error?.stderr ?? '')
+  const noMatches = stderr.trim() === ''
+  const windowClosedDuringSearch = /BadWindow/u.test(stderr) && /X_QueryTree/u.test(stderr)
+  return error?.code === 1
+    && String(error.stdout ?? '').trim() === ''
+    && (noMatches || windowClosedDuringSearch)
+}
+
+/** Parse a successful xdotool search, rejecting empty or malformed window evidence. */
+export function isWindowInVisibleX11Search(stdout, windowId) {
+  const output = String(stdout ?? '').trim()
+  if (output === '') throw new Error('C01 X11 visible-window search returned no window IDs.')
+  const windowIds = output.split(/\s+/u)
+  if (windowIds.some((id) => !/^\d+$/u.test(id))) {
+    throw new Error('C01 X11 visible-window search returned malformed window IDs.')
+  }
+  return windowIds.includes(windowId)
+}
+
+/** Bound one X11 query to the smaller of its remaining budget and the full dismissal window. */
+export function boundedX11SearchTimeoutMs(remainingMs) {
+  const finiteRemainingMs = Number.isFinite(remainingMs) ? remainingMs : 0
+  return Math.max(1, Math.floor(Math.min(DIALOG_DISMISSAL_TIMEOUT_MS, finiteRemainingMs)))
+}
+
+/** Return the center of the bottom acknowledgement row in a native Linux error dialog. */
+export function x11ErrorDialogAcknowledgementPoint(width, height) {
+  if (!Number.isSafeInteger(width) || width < 2
+      || !Number.isSafeInteger(height) || height < X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX * 2) {
+    throw new Error('C01 refusal dialog geometry is too small.')
+  }
+  return {
+    x: Math.floor(width / 2),
+    y: height - X11_DIALOG_ACKNOWLEDGEMENT_CENTER_FROM_BOTTOM_PX,
+  }
+}
+
+/** Return the center of the dedicated startup fault window's close button. */
+export function x11StartupFailureCloseButtonCenter(width, height) {
+  if (!Number.isSafeInteger(width) || width < 2
+      || !Number.isSafeInteger(height) || height < 88) {
+    throw new Error('C01 startup fault window geometry is too small.')
+  }
+  return { x: Math.floor(width / 2), y: height - 44 }
+}
+
+/** Run one best-effort X11 diagnostic command with a strict child-process timeout. */
+export async function runBoundedX11DiagnosticCommand(
+  command,
+  args,
+  timeoutMs,
+  execute = execFileAsync,
+  privateRoot = '',
+) {
+  const boundedTimeoutMs = Math.max(1, Math.floor(Number.isFinite(timeoutMs) ? timeoutMs : 1))
+  const startedAt = performance.now()
+  try {
+    const { stdout = '', stderr = '' } = await execute(command, args, {
+      timeout: boundedTimeoutMs,
+      killSignal: 'SIGKILL',
+    })
+    return {
+      command,
+      args: args.map((value) => sanitizeError(value, privateRoot)),
+      timeoutMs: boundedTimeoutMs,
+      elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      code: 0,
+      signal: null,
+      killed: false,
+      stdout: sanitizeError(stdout, privateRoot),
+      stderr: sanitizeError(stderr, privateRoot),
+    }
+  } catch (error) {
+    const details = error !== null && typeof error === 'object' ? error : {}
+    const code = typeof details.code === 'number' || typeof details.code === 'string'
+      ? details.code
+      : null
+    return {
+      command,
+      args: args.map((value) => sanitizeError(value, privateRoot)),
+      timeoutMs: boundedTimeoutMs,
+      elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      code,
+      signal: typeof details.signal === 'string' ? details.signal : null,
+      killed: details.killed === true,
+      stdout: sanitizeError(details.stdout ?? '', privateRoot),
+      stderr: sanitizeError(details.stderr ?? '', privateRoot),
+    }
+  }
+}
+
+/** Preserve sanitized process details when a held-gate dismissal observation fails. */
+export function serializeHeldGateObservationError(error, privateRoot = '') {
+  const details = error !== null && typeof error === 'object' ? error : {}
+  const code = typeof details.code === 'number' || typeof details.code === 'string'
+    ? details.code
+    : null
+  return {
+    message: sanitizeError(error, privateRoot),
+    code,
+    signal: typeof details.signal === 'string' ? details.signal : null,
+    killed: details.killed === true,
+    stdout: sanitizeError(details.stdout ?? '', privateRoot),
+    stderr: sanitizeError(details.stderr ?? '', privateRoot),
+  }
+}
+
+/** Observe a product-owned exit after the held-gate dialog has been dismissed. */
+export async function waitForOwnedProcessExitAfterDialog(
+  child,
+  timeoutMs,
+  dismissDialog,
+  now = () => performance.now(),
+) {
+  if (child.exitCode !== null || child.signalCode !== null) return null
+  let dismissedAt
+  let observedExit
+  let timer
+  let resolveExit
+  const exitPromise = new Promise((resolve) => { resolveExit = resolve })
+  const handleExit = (code, signal) => {
+    observedExit = { code, signal, at: now() }
+    if (dismissedAt !== undefined) resolveExit(observedExit)
+  }
+  child.once('exit', handleExit)
+  try {
+    const confirmedDismissalAt = await dismissDialog()
+    dismissedAt = Number.isFinite(confirmedDismissalAt)
+      ? Math.min(now(), confirmedDismissalAt)
+      : now()
+    if (observedExit !== undefined) {
+      return {
+        code: observedExit.code,
+        signal: observedExit.signal,
+        elapsedMs: Math.max(0, Math.round(observedExit.at - dismissedAt)),
+      }
+    }
+    const timeoutPromise = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(null), timeoutMs)
+    })
+    const exit = await Promise.race([exitPromise, timeoutPromise])
+    return exit === null
+      ? null
+      : {
+        code: exit.code,
+        signal: exit.signal,
+        elapsedMs: Math.max(0, Math.round(exit.at - dismissedAt)),
+      }
+  } finally {
+    clearTimeout(timer)
+    child.removeListener('exit', handleExit)
+  }
 }
 
 /** Await a child close without extending the bounded observation window. */
@@ -1006,12 +1414,13 @@ async function findSarTrackerErrorDialog(pid, timeoutMs = 1_000) {
   try {
     const commandOptions = { timeout: boundedTimeoutMs, killSignal: 'SIGKILL' }
     const { stdout } = await execFileAsync(
-      'xdotool', ['search', '--all', '--onlyvisible', '--pid', String(pid), '--name', '^Error$'], commandOptions,
+      'xdotool', startupDialogWindowSearchArguments(), commandOptions,
     )
     for (const windowId of stdout.trim().split(/\s+/u)) {
       if (Date.now() >= deadline) break
       const remainingMs = Math.max(1, deadline - Date.now())
-      if (/^\d+$/u.test(windowId) && await isSarTrackerErrorDialog(windowId, remainingMs)) return windowId
+      if (/^\d+$/u.test(windowId)
+          && await isSarTrackerErrorDialog(windowId, remainingMs, pid)) return windowId
     }
   } catch {
     // Headless environments retain the absence as raw evidence.
@@ -1069,7 +1478,7 @@ async function observeNativeStartupFault(options, profile, report, profileKind, 
     faultKind,
     dialog: {
       observed: dialogWindowId !== null,
-      windowName: 'Error',
+      windowName: 'SAR Tracker could not start',
       operatorTitle: 'SAR Tracker could not start',
     },
     process: {
@@ -1276,7 +1685,7 @@ async function runNewerSchemaScenario(options, profile, report) {
     supportedSchemaVersion: CURRENT_SCHEMA_VERSION,
     dialog: {
       observed: dialogWindowId !== null,
-      windowName: 'Error',
+      windowName: 'SAR Tracker could not start',
       operatorTitle: 'SAR Tracker could not start',
     },
     process: {
@@ -1543,9 +1952,12 @@ async function waitForDialog(appProcess, timeoutMs) {
     }
     try {
       if (!Number.isSafeInteger(appProcess.pid) || appProcess.pid <= 0) throw new Error('Owned startup process PID is unavailable.')
-      const { stdout } = await execFileAsync('xdotool', ['search', '--all', '--onlyvisible', '--pid', String(appProcess.pid), '--name', '^Error$'])
+      const { stdout } = await execFileAsync(
+        'xdotool', startupDialogWindowSearchArguments(),
+      )
       for (const windowId of stdout.trim().split(/\s+/u)) {
-        if (/^\d+$/u.test(windowId) && await isSarTrackerErrorDialog(windowId)) return windowId
+        if (/^\d+$/u.test(windowId)
+            && await isSarTrackerErrorDialog(windowId, 1_000, appProcess.pid)) return windowId
       }
     } catch {
       // Retry until the bounded native-dialog deadline.
@@ -1576,34 +1988,127 @@ async function waitForProcessExit(appProcess, timeoutMs) {
   })
 }
 
-/** Reject unrelated desktop error windows by class and minimum geometry. */
-async function isSarTrackerErrorDialog(windowId, timeoutMs = 1_000) {
+/** Accept only the startup fault titles Electron exposes before and after readiness. */
+export function isStartupDialogWindowName(title) {
+  return title === 'Error' || title === 'SAR Tracker could not start'
+}
+
+/** Accepts the packaged Linux Electron window class regardless of its casing. */
+export function isSarTrackerStartupWindowClass(windowClass) {
+  return typeof windowClass === 'string'
+    && /"sartracker-web",\s*"sartracker-web"/iu.test(windowClass)
+}
+
+/** Reject unrelated desktop windows by title, class, and minimum geometry. */
+async function isSarTrackerErrorDialog(windowId, timeoutMs = 1_000, expectedPid) {
   try {
     const commandOptions = { timeout: timeoutMs, killSignal: 'SIGKILL' }
-    const [{ stdout: windowClass }, { stdout: geometry }] = await Promise.all([
+    const [{ stdout: title }, { stdout: windowClass }, { stdout: geometry }, { stdout: processId }] = await Promise.all([
+      execFileAsync('xdotool', ['getwindowname', windowId], commandOptions),
       execFileAsync('xprop', ['-id', windowId, 'WM_CLASS'], commandOptions),
       execFileAsync('xdotool', ['getwindowgeometry', '--shell', windowId], commandOptions),
+      execFileAsync('xdotool', ['getwindowpid', windowId], commandOptions),
     ])
     const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
     const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
-    return /"sartracker-web",\s*"Sartracker-web"/u.test(windowClass) && width >= 300 && height >= 100
+    return isStartupDialogWindowName(title.trim())
+      && isSarTrackerStartupWindowClass(windowClass)
+      && (expectedPid === undefined || processId.trim() === String(expectedPid))
+      && width >= 300
+      && height >= 100
   } catch {
     return false
   }
 }
 
 /** Dismiss the native dialog using verified window-relative geometry. */
-async function dismissErrorDialog(windowId, pid) {
+async function dismissErrorDialog(windowId, pid, diagnostics = null) {
   if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error('Refusal dialog requires the owned process PID.')
   const { stdout: observedPid } = await execFileAsync('xdotool', ['getwindowpid', windowId])
   if (observedPid.trim() !== String(pid)) throw new Error('Refusing to dismiss another process\'s dialog.')
   const { stdout: geometry } = await execFileAsync('xdotool', ['getwindowgeometry', '--shell', windowId])
+  const { stdout: windowTitle } = await execFileAsync('xdotool', ['getwindowname', windowId])
   const width = Number(/^WIDTH=(\d+)$/mu.exec(geometry)?.[1])
   const height = Number(/^HEIGHT=(\d+)$/mu.exec(geometry)?.[1])
   if (!Number.isInteger(width) || !Number.isInteger(height)) throw new Error('C01 could not read refusal dialog geometry.')
+  const acknowledgementPoint = windowTitle.trim() === 'SAR Tracker could not start'
+    ? x11StartupFailureCloseButtonCenter(width, height)
+    : x11ErrorDialogAcknowledgementPoint(width, height)
+  const diagnosticRecord = diagnostics === null ? null : {
+    schema: 'sartracker-c01-x11-dismissal-diagnostics-v1',
+    gateKind: diagnostics.gateKind,
+    pid,
+    windowId,
+    geometry: { width, height },
+    click: acknowledgementPoint,
+    beforeClickScreenshot: await captureX11RootScreenshot(
+      diagnostics.evidenceDir,
+      `x11-${diagnostics.gateKind}-before-click.png`,
+      diagnostics.privateRoot,
+    ),
+  }
   await execFileAsync('xdotool', [
-    'mousemove', '--window', windowId, String(width - 52), String(height - 42), 'click', '1',
+    'mousemove', '--sync', '--window', windowId,
+    String(acknowledgementPoint.x), String(acknowledgementPoint.y), 'click', '1',
   ])
+  try {
+    return await waitForDialogDismissal(
+      (remainingMs) => isErrorDialogVisible(windowId, pid, remainingMs),
+      DIALOG_DISMISSAL_TIMEOUT_MS,
+    )
+  } catch (error) {
+    if (diagnosticRecord !== null) {
+      diagnosticRecord.observationFailure = serializeHeldGateObservationError(error, diagnostics.privateRoot)
+      diagnosticRecord.afterClickScreenshot = await captureX11RootScreenshot(
+        diagnostics.evidenceDir,
+        `x11-${diagnostics.gateKind}-after-click.png`,
+        diagnostics.privateRoot,
+      )
+      diagnosticRecord.postFailureCommands = await Promise.all([
+        runBoundedX11DiagnosticCommand(
+          'xdotool', startupDialogWindowSearchArguments(), 350,
+          execFileAsync, diagnostics.privateRoot,
+        ),
+        runBoundedX11DiagnosticCommand(
+          'xdotool', ['getwindowgeometry', '--shell', windowId], 350, execFileAsync, diagnostics.privateRoot,
+        ),
+        runBoundedX11DiagnosticCommand(
+          'xprop', ['-id', windowId, 'WM_NAME', 'WM_CLASS', 'WM_STATE', '_NET_WM_PID'], 350,
+          execFileAsync, diagnostics.privateRoot,
+        ),
+        runBoundedX11DiagnosticCommand(
+          'xwininfo', ['-id', windowId], 350, execFileAsync, diagnostics.privateRoot,
+        ),
+      ])
+      await writeJson(
+        path.join(diagnostics.evidenceDir, 'x11-dismissal-diagnostics.json'), diagnosticRecord,
+      ).catch(() => undefined)
+    }
+    throw error
+  }
+}
+
+/** Capture the synthetic C01 display without allowing image inspection to block the probe. */
+async function captureX11RootScreenshot(evidenceDir, filename, privateRoot) {
+  return runBoundedX11DiagnosticCommand(
+    'import', ['-window', 'root', path.join(evidenceDir, filename)], 750, execFileAsync, privateRoot,
+  )
+}
+
+/** Search for the owned visible X11 error dialog so a successful click is not mistaken for dismissal. */
+async function isErrorDialogVisible(windowId, pid, remainingMs) {
+  try {
+    const { stdout } = await execFileAsync('xdotool', [
+      ...startupDialogWindowSearchArguments(),
+    ], {
+        timeout: boundedX11SearchTimeoutMs(remainingMs),
+        killSignal: 'SIGKILL',
+      })
+    return isWindowInVisibleX11Search(stdout, windowId)
+  } catch (error) {
+    if (isNoVisibleX11WindowSearchResult(error)) return false
+    throw error
+  }
 }
 
 /** Count renderer pages exposed by the live CDP endpoint. */
@@ -1640,6 +2145,22 @@ function parseJsonLines(contents) {
       return []
     }
   })
+}
+
+/** Extract only known startup failure fields from the flattened runtime-log format. */
+export function parseStartupFailureEvents(contents) {
+  return parseJsonLines(contents)
+    .filter((entry) => entry?.event === 'startup_failure')
+    .map((entry) => {
+      const fields = typeof entry?.fields === 'object' && entry.fields !== null ? entry.fields : entry
+      return {
+        ...(typeof fields.code === 'string' ? { code: fields.code } : {}),
+        ...(typeof fields.name === 'string' ? { name: fields.name } : {}),
+        ...(typeof fields.stage === 'string' ? { stage: fields.stage } : {}),
+        ...(Number.isSafeInteger(fields.timeoutMs) ? { timeoutMs: fields.timeoutMs } : {}),
+        ...(Number.isSafeInteger(fields.elapsedMs) ? { elapsedMs: fields.elapsedMs } : {}),
+      }
+    })
 }
 
 /** Allocate an isolated local CDP port. */

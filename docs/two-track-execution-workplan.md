@@ -2,21 +2,28 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-## Current Beta 13 decision — 2026-09-24
+## Current Beta 13 decision — 2026-09-25
 
 Release is **HOLD**. PR45 merged documentation/control-plane evidence only; no
 Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
 #48 is merged; current `master` is
-`a81dd4a388196d241a48205ad45e961c1ab26c9b`, including the post-merge C17
-canary-leak classification fix. The current change is the separately owned
-DON-264 operator-warning repair on `codex/don-264-overlay-warning`, rebased onto
-that master. The implementation retains failure streaks across quick hook
-re-registration and presents concurrent overlay warnings in a bounded,
-keyboard-scrollable map region. Post-rebase local correctness, lint, browser,
-visual and packaged map-surface checks passed. Fresh independent review of
-final head `02758843` found no actionable P1-P3 findings. Verify current
-exact-head PR checks live before deciding draft readiness. Local package
-evidence is not candidate qualification.
+`30cb7d45ed6011adc3da034d815bb7d8742bd6a3`, including the post-merge C17
+canary-leak classification fix and merged DON-264 overlay-warning repair. PR
+#49's current-master CI run `36001695717` passed full correctness, lint,
+production build, browser regressions, producer checks, packaged C17 and
+packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
+behavior-bearing source is `0e6db8a26b62327055d76f1b61782e6d600caa96`;
+exact-source Linux run `36116343282` passed and independent review found no
+actionable findings. PR #47 is open and out of draft, but its latest exact-head
+Linux workflow has not completed, so merge remains blocked. Later PR commits
+are documentation-only; verify the latest push-triggered workflow before
+merging. The full finding inventory is in the [PR47 findings register](pr47-findings-disposition.md),
+and the historical `5b4f0b25` review is retained at
+[assurance/findings/pr47-review-5b4f0b25.md](assurance/findings/pr47-review-5b4f0b25.md).
+That archived report found seven issues and is not the clean review of the
+repair source; the source-review outcome is recorded in the findings register.
+No C01 qualification is claimed. Do not treat master CI or packaged receipts
+as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -42,11 +49,252 @@ silent evidence loss, false `Complete`/100%, corrupted evidence, and unbounded
 mission-scale work on Electron main. Broad WAR scope is not a blanket
 pre-candidate prerequisite.
 
-**Next steps:** verify the current DON-264 PR head, normal CI, mergeability and
-review threads before changing draft readiness. The fresh independent review
-is clean at `02758843`. Live Linear confirms DON-264 remains `In Progress`; no
-issue completion is claimed. Do not contact SAR team members, run candidate
-qualification, tag, publish, or promote from this work.
+**PR #47 historical evidence:** the branch is based on current `master` (`30cb7d45`). Exact-head
+Linux run `36047200408` failed in three C01 held-gate product-exit checks, but
+its observer only sent a click and did not confirm that any X11 window closed.
+The follow-up run `36053525791` failed earlier in dismissal observation: its
+`xwininfo` query returned an unusable state in two cases and timed out while
+one dialog stayed visible. It supplied no product-exit measurement. Review of
+the corrected strict two-second deadline and monotonic exit anchor at
+`7e009798` found no actionable issue. Commit `8a6de198` replaced `xwininfo`
+with `xdotool`; review then found and fixed empty-success output being mistaken
+for dismissal at `4d76dcfa`. Its exact-head review found no issue. Linux run
+`36058990392` passed full correctness and rendered regressions but failed all
+three held-gate cases when `xdotool` visibility searches errored. Receipts
+record no confirmed dismissal or product exit, so they do not establish a
+product fault. Commit `49918966` uses the remaining two-second budget per
+query and retains sanitized error code/signal/output. Its 46 focused tests and
+lint passed; exact-head review found no issue. Linux run `36064148886` passed
+correctness, rendered regressions, and Linux packaging, then failed the C01
+held-gate observer. Receipts show query `SIGKILL`, `SIGPIPE`, or exit 0 with
+empty output; every case has no confirmed dismissal or product exit and ends
+with harness cleanup. They do not establish product behavior.
+
+Focused native Ubuntu run `36072072977` repeated the invalid observation with
+Openbox active, ruling out the missing window manager as the sole cause. Run
+`36072959447` retained before/after screenshots and bounded X11 probes. The
+previous `height - 42` click landed just above the bottom acknowledgement row;
+the post-failure probes still found the dialog mapped, while the first
+visibility search timed out. The local observer now targets the center of that
+row (`width / 2`, `height - 17`) and limits screenshot/X11 diagnostics to the
+development calibration. Geometry regression tests pass; require a fresh
+native Ubuntu run before changing the full CI observer or claiming product exit.
+
+Local Linux/Xvfb checks confirmed xdotool returns exit 1 with empty output for
+an absent window and exit 0 with an ID for a visible match. Stopping Xvfb
+produced the expected bounded-query error (`code:null`, `signal:SIGKILL`,
+`killed:true`). The exact retained x86_64 Electron package cannot run reliably
+in the local ARM64 Docker VM; it fails during GPU startup under emulation. That
+attempt is not product evidence. Run `36072959447` captured the corrected
+acknowledgement-row click on native Ubuntu. The subsequent exact-head run
+`36074972856` confirms dismissal in all three held-gate cases: diagnostics and
+crash did not exit with code 1 after dismissal and were eventually killed by
+the harness, while store exited with code 1. Original mission/settings
+digests remained unchanged. Do not count harness cleanup as product exit. At
+this historical checkpoint PR #47 remained draft pending the shutdown fix and
+a new exact-head Linux run. The current status is recorded above.
+Previous run `36025809540` passed the packaged C19
+200 ms gate on an older head, but skipped the separate strict responsiveness
+qualification. That qualification is not a PR merge check and must not be
+claimed from the prior run. At that historical checkpoint, PR #47 was to
+remain draft until exact-head CI and review completed; they passed later on the
+behavior-bearing source. The current docs-head check is recorded above. Do not
+merge, tag, publish, or promote from this work.
+
+Keep the historical C19 outlier unresolved: Linux run `35984100420` measured
+261.161 ms against 200 ms; same-Linux master run `36001695717` measured
+50.836 ms. The old failure has no scheduler-state evidence, so the comparison
+does not establish its cause or clear it. Current probes report scheduler data
+as explicitly unavailable when Linux kernel accounting is disabled; the
+independent 200 ms main-loop gate remains authoritative.
+
+**Current C01 review repair — 2026-09-24:** the PR #47 patch replaces
+the module-load deadline with one 10-second watchdog starting after Electron
+readiness and covering awaited asynchronous startup through renderer load and
+its evidence-loss fence. The operational window stays hidden until that fence
+succeeds. The held-gate observer uses monotonic time for its 20-second response
+bound and rounds recorded elapsed times to receipt-safe integer milliseconds.
+It separately requires the product's exit code 1 within 20 seconds after dialog
+dismissal;
+lock-holder setup has its own 5-second bound and the held-gate producer budget
+is 120 seconds. Failure evidence, receipt truthfulness, scheduler attribution,
+manual guidance, and producer-vs-infrastructure verdicts are repaired in this PR.
+The stronger held-gate exit fields and explicit uncovered axes advance the raw
+C01 observation schema to v3; retain historical v2 receipts unchanged.
+
+The selected 10-second budget is a hard post-readiness total: if a stage is
+still pending, startup exits even when the cause is a healthy but slow device;
+a late success is ignored. The operational window stays hidden until renderer
+load and the evidence-loss fence complete. `createElectronMissionStore()` is
+wrapped to attribute a late return to the store-open/migration stage, but a
+synchronous native call still blocks Electron main and cannot be preempted while
+it is running. `app.whenReady()` remains outside the deadline by selection.
+
+Before the monotonic held-gate follow-up, local verification passed seven
+focused files / 102 tests and full correctness (5,863 passed / 25 skipped);
+lint and `npm run electron:pack` passed. After that follow-up, the targeted
+probe/receipt suites passed (37 tests) and lint passed. The packaged macOS
+legacy-recovery smoke passed with 60.11 ms first-main and 55.90 ms restart
+main-loop maxima and 1.59/0.14/1.40 ms phase gaps. It ran from a dirty tree and
+macOS scheduler counters were unavailable, so it is diagnostic only. Linux run
+`36025809540` passed only on an older head and skipped strict responsiveness.
+At this historical checkpoint, fresh exact-head review and Linux checks were
+still required. DON-179 was In Review; opt-in diagnostic upload remains
+outside this repair. The later source verification and current issue state are
+recorded above.
+
+**C01 exit follow-up — 2026-09-25:** run `36074972856` moved the evidence past
+the earlier observer ambiguity. The diagnostics and crash probes hold reads on
+FIFO-backed startup files; their dialogs were dismissed, but the launched app
+did not exit within the 12-second post-dismissal bound. The SQLite lock probe
+exited normally with code 1. Startup failure now waits for bounded evidence
+writes, calls `app.exit(1)`, and forces `process.exit(1)` if Electron returns
+while timed-out startup I/O remains pending. The regression failed before the
+change and passes after it; the startup suite passes 53/53, full correctness
+passes (5,878 passed, 25 skipped), and lint/diff checks pass locally. This
+change still needs exact-head native Linux CI before it is considered fixed.
+
+**C01 exact-head follow-up — 2026-09-25:** Linux run `36079044261` at
+`5e2d607dc6e9db4672afa04f7d9bc19675e78f3a` confirmed that the diagnostics and
+crash dialogs were dismissed, but neither process exited with code 1 within the
+12-second observer bound; the harness sent SIGKILL. The SQLite-held case exited
+with code 1 and mission/settings digests stayed unchanged. Other source and
+packaging steps passed; downstream packaged checks were skipped after the
+producer failure. Do not count harness cleanup as product exit.
+
+Local uncommitted follow-up calls `process.exit(1)` directly after the bounded
+evidence-write wait, reports concurrent storage-diagnostics and crash-state
+timeouts by the operation still pending, blocks activation/quit paths until the
+first operational window is shown, and extends the post-dismissal product-exit
+observation to 20 seconds. The red/green regression and focused
+startup/watchdog/producer suites pass (75/75). `npm run test:correctness --
+--no-file-parallelism` passes (572 files, 5,880 passed, 25 skipped), as do lint
+and production build. The unfiltered parallel `npm test` run had one unrelated
+5-second worker-import timeout and a 220.3 ms GPX responsiveness observation;
+both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
+timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
+CI and fresh review were pending at this historical checkpoint. The current
+status is recorded above.
+
+**C01 behavior-bearing source follow-up — 2026-09-25:** PR #47's
+behavior-bearing source is
+`0e6db8a26b62327055d76f1b61782e6d600caa96`. Exact-source Linux run
+`36098634511` failed because the dismissed fault window was followed
+by harness cleanup rather than product exit. The repair routes runtime/crash
+log I/O through an Electron utility process, wires sender-checked IPC for
+fault-window dismissal, and attempts to reap a stuck writer before exit. Startup
+exit is withheld if the helper cannot be confirmed stopped. The
+10-second startup watchdog starts after Electron readiness; failure evidence
+gets up to 10 seconds after dismissal. Utility-process readiness gets the same
+ten-second allowance. If fork or initialization fails, a named watchdog stage
+surfaces the error and Electron main does not fall back to direct crash-log
+I/O.
+
+Linux packaged development probes passed on that repair: held diagnostics
+exited code 1 with no signal or harness kill (10,078 ms after dismissal); held
+crash-log `fsync` resumed after dismissal, wrote the failure record, left no
+temp file, and exited code 1 (886 ms). These are development mechanics checks,
+not C01 qualification. Fresh review first found that a rejected crash-log write
+could leave fatal handling unhandled before the operator dialog. The handler
+now contains write rejections. Review then found that a write which never
+settles could still hold that dialog indefinitely. The handler now bounds both
+evidence writes with the existing 10-second evidence deadline, uses a crash-log
+operation that reports disk errors, and attempts to stop the isolated writer
+after timeout. Startup exits and fatal relaunches are withheld unless the
+helper's exit is confirmed. Fatal handling bounds its renderer safety fence
+under the same deadline; a failed or stuck fence keeps the current process
+open. The regressions reproduced these missing-dialog and unsafe-exit paths.
+The full strict suite passes with two workers (5,944 passed, 19 skipped), along
+with lint, syntax, and diff checks. A four-worker run hit two existing 200 ms
+responsiveness guards; both checks passed in isolation and again in the
+two-worker full run. No thresholds changed. Linux run `36114434278` was on the
+immediately preceding commit `52457b07` and did not verify this follow-up.
+Exact-head Linux run `36116343282` subsequently passed, and independent review
+of the exact head found no actionable findings. Its held diagnostics, held
+crash-log `fsync`, SQLite lock, and non-regular crash evidence probes all
+recorded product exit code 1 without a signal or harness kill and preserved
+the original mission/settings data. The held-gate mechanics receipts explicitly
+record `qualificationExecuted=false`; no C01 qualification is claimed.
+
+The 10-second watchdog starts after Electron readiness and covers the awaited
+asynchronous startup path, but `app.whenReady()` and synchronous native SQLite
+open/migration remain outside it. Donal decided on 2026-09-25 to defer live
+mission-store process isolation until after Beta 13, without treating it as
+fixed or qualified. Keep the follow-on visible in
+[post-Beta 13 mission-store isolation](post-beta13-mission-store-isolation.md).
+DON-179 remains In Progress because opt-in upload and private retention remain
+outside this repair. Beta 13 remains HOLD.
+
+The preceding full strict suite passed `npm test -- --maxWorkers=4` (5,937
+passed, 19 skipped); its earlier attempt measured 216 ms in the existing 200 ms
+mission-evidence guard, while the isolated test and subsequent full run
+passed. No responsiveness threshold changed.
+
+**C01 design assessment:** an early standalone startup window with its own
+renderer timer can show which pre-window phase has exceeded ten seconds, but it
+cannot make Electron's blocked main process responsive or bound/cancel SQLite
+open and migration. A utility supervisor and direct message channel can also
+report a timeout independently; it still cannot safely terminate the in-flight
+native database operation. Neither option alone meets C01's ban on
+database-size-dependent startup work on Electron main. The bounded path is for
+a utility process to own the live store and database connection, with the main
+process retaining an asynchronous facade for the existing store callers.
+Preserve the caller API where practical, but explicitly bridge request IDs,
+serializable results/errors, query cancellation/session lifetime, coverage
+notifications, attachment-ingest custody, and orderly close/drain. This PR's
+dedicated utility process owns runtime/crash log filesystem I/O behind a narrow
+main-process service API. Moving the live mission store to a worker remains a
+separate architecture change. On deadline, fence the startup generation and
+ignore any late ready result; do not kill a database worker during migration
+until interruption and WAL recovery safety are demonstrated.
+
+The user-selected boundary for this repair leaves `app.whenReady()` outside the
+watchdog and synchronous `createElectronMissionStore()` open/migration
+non-preemptible. The UI/manual, receipt and PR must state that limit and must
+not claim complete C01 coverage. Keep the broader store-ownership gap as a
+separate follow-on rather than silently folding a persistence redesign into
+this PR. Its acceptance
+criterion is a packaged Linux probe that holds real SQLite open and migration
+while independently proving a visible, bounded fault response, a responsive
+main loop, late-success fencing, unchanged original-profile digests, and safe
+interruption/WAL recovery. The smallest architecture change is utility-process
+ownership of the live store behind an asynchronous main-process facade, with
+the store callers, attachment-ingest custody, coverage notifications, and
+orderly close/drain bridged explicitly. This does not absorb DON-250's
+oversized-store assessment/recovery or introduce data-compaction behavior.
+
+**Review finding disposition — historical review checkpoint:** the 10-second post-readiness watchdog covers
+awaited asynchronous startup through the renderer safety fence; the manual says
+Electron readiness and synchronous SQLite open/migration remain outside this
+bound. Local receipts retain the uncovered C01 axes. The utility-process
+boundary keeps pending log writes from holding Electron main open, and helper
+fork/initialization errors use the visible startup-fault path without a
+main-process file-I/O fallback. A held crash `fsync` is exercised separately
+from the diagnostics FIFO case. At this earlier checkpoint, the independent
+read found no actionable issue, exact review and Linux CI for the next commit
+were pending, and remote `f35` retained the earlier producer failure. Those
+pending gates were superseded by the exact-source verification recorded above;
+historical receipts remain unchanged and no C01 qualification is claimed.
+DON-179 was then In Review and is now In Progress. Opt-in upload and private
+retention remain outside this repair.
+
+The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
+one post-settlement mutation/close interval against the 200 ms limit. The same
+Linux observer passed on current master `30cb7d4` in run `36001695717` at
+50.836 ms; the seven implicated MissionStore files and Electron executable
+hash match, while the ASAR differs. The failed interval is not split into
+mutation, `prepareClose` and `close`, and no CPU/scheduler/storage telemetry
+proves its cause. New smoke instrumentation measures marker mutation,
+`prepareClose`, and `close` separately with wall, process CPU, main-loop, and
+Linux scheduler deltas while retaining the combined 200 ms gate. The packaged
+macOS smoke passed with phase gaps 1.59/0.14/1.40 ms; it cannot supply Linux
+scheduler evidence. Retain the old failure unresolved and require exact-head
+Linux CI. Same-host Darwin results (52.40, 54.41, 54.53, and this patch's
+55.90 ms) do not clear the Linux result. This patch's phases measured
+1.59/0.14/1.40 ms; macOS has no Linux scheduler counters. The current master
+push workflow skipped strict responsiveness
+qualification. This work does not qualify C01 or change the Beta 13 release
+hold.
 
 Everything below this dated decision is earlier planning and evidence retained
 for provenance. Older status and sequencing statements are superseded wherever

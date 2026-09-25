@@ -12,6 +12,15 @@ const { createStorageDiagnostics, formatStorageDiagnostics } = require(
   readonly createStorageDiagnostics: (options: StorageDiagnosticsOptions) => StorageDiagnostics
   readonly formatStorageDiagnostics: (snapshot: StorageDiagnosticsSnapshot) => string
 }
+const { readState } = require('../../electron/storage-diagnostics-state.cjs') as {
+  readonly readState: (
+    statePath: string,
+    fileSystem?: {
+      readonly lstat: (filePath: string) => Promise<{ readonly isFile: () => boolean }>
+      readonly readFile: (filePath: string, encoding: string) => Promise<string>
+    },
+  ) => Promise<Record<string, unknown>>
+}
 
 type RuntimeEntry = {
   readonly level: string
@@ -108,10 +117,25 @@ describe('Electron storage diagnostics [DON-244]', () => {
   let userDataPath: string | null = null
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (userDataPath !== null) {
       await rm(userDataPath, { recursive: true, force: true })
       userDataPath = null
     }
+  })
+
+  it('rejects a non-regular checkpoint before a read can wait on a FIFO', async () => {
+    const statePath = path.join(tmpdir(), 'sartracker-non-regular-state.json')
+    const fileSystem = {
+      lstat: vi.fn(async () => ({ isFile: () => false })),
+      readFile: vi.fn(async () => ''),
+    }
+
+    await expect(readState(statePath, fileSystem)).rejects.toMatchObject({
+      code: 'ERR_SARTRACKER_NON_REGULAR_FILE',
+    })
+    expect(fileSystem.lstat).toHaveBeenCalledWith(statePath)
+    expect(fileSystem.readFile).not.toHaveBeenCalled()
   })
 
   it('flushes a bounded backup lifecycle before blocking phases and records numeric timings', async () => {

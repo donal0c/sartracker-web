@@ -1,9 +1,22 @@
+import { createRequire } from 'node:module'
+
+const runtimeRequire = createRequire(import.meta.url)
+const { STARTUP_RESPONSE_TIMEOUT_MS } = runtimeRequire('../../electron/startup-watchdog.cjs')
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/])/u
 
 /** The bounded packaged C01 startup-admission proof tier. */
 export const C01_STARTUP_PROOF_MODE = 'packaged-electron-startup-admission'
+
+/** Post-readiness deadline shared with Electron's startup watchdog. */
+export const C01_STARTUP_RESPONSE_TIMEOUT_MS = STARTUP_RESPONSE_TIMEOUT_MS
+
+/** Fixed observation bound for deliberately held startup dependencies. */
+export const C01_HELD_GATE_TIMEOUT_MS = 20_000
+
+/** Allows evidence writes and process shutdown to settle after dialog dismissal. */
+export const C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS = 20_000
 
 /** Fixed C01 startup matrix; every entry must have an independent observation. */
 export const C01_STARTUP_PROFILE_KINDS = Object.freeze([
@@ -18,6 +31,7 @@ export const C01_STARTUP_PROFILE_KINDS = Object.freeze([
   'disk-full',
   'held-diagnostics-gate',
   'held-crash-gate',
+  'non-regular-crash-evidence',
   'held-store-gate',
   'active-recoverable',
 ])
@@ -35,7 +49,7 @@ const BAD_SECRET_WARNING =
 export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
   contractId: 'C01',
   proofMode: C01_STARTUP_PROOF_MODE,
-  schema: 'sartracker-c01-startup-admission-v2',
+  schema: 'sartracker-c01-startup-admission-v5',
   producer: 'scripts/qualification/startup-probe.mjs',
   reportPath: 'receipt.json',
   profileKinds: C01_STARTUP_PROFILE_KINDS,
@@ -53,18 +67,24 @@ export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
     'packaged absent-schema and valid-schema profiles reach the normal shell with the expected current schema',
     'packaged disposable profile with an undecryptable legacy credential reaches the normal shell',
     'packaged corrupt-settings profile reaches the runtime fault shell and exports a bounded support bundle',
-    'packaged corrupt-schema profile reaches the native startup refusal without renderer work',
-    'packaged newer-schema profile shows the native refusal, exits once, starts no renderer and preserves profile bytes',
+    'packaged corrupt-schema profile reaches the startup fault window without renderer work',
+    'packaged newer-schema profile shows the startup fault window, exits once, starts no renderer and preserves profile bytes',
     'packaged oversized profile generates, hashes and launches the fixed 8 MiB and 3.7 GB stores through separate disposable package profiles; other fault paths retain explicit observations or failed attempts',
+    'packaged diagnostics startup holds an in-flight runtime-log write until the named 10-second watchdog fault, then dismisses the operator window and exits with code 1',
+    'packaged newer-schema refusal holds the startup crash-log fsync until the operator window is dismissed, then releases and verifies the durable crash record and clean temporary-file state',
+    'packaged crash-log FIFO rejection is classified as non-regular evidence and exits with code 1 without claiming an operational-data fault',
+    'packaged SQLite lock-contention profile retains an owned lock holder and verifies the bounded startup fault response',
     'packaged active-recoverable profile exposes the existing mission without data loss',
     'source HEAD/tree, supplied executable, packaged ASAR and Electron runtime identity are retained',
   ]),
   uncoveredAxes: Object.freeze([
     'physical field-host and provider acceptance beyond the disposable packaged 3.7 GB launch; the field process path is implemented but not executed in development tests',
-    'development or candidate execution of the physical bounded-volume ENOSPC and FIFO/SQLite held-gate probes; any timeout without an actionable product response remains an explicit gap',
+    'development or candidate execution of the physical bounded-volume ENOSPC probe; any timeout without an actionable product response remains an explicit gap',
     'field-scale Ubuntu admission with genuinely allocated 3.7 GB operational data',
     'real provider/current polling request continuity and AppImage/deb installation parity',
     'browser-only boot states and WAR-13B/publication or field acceptance evidence',
+    'synchronous mission-store SQLite open, pragmas and migration run on Electron main thread; the held-store lock profile does not prove bounded open or migration',
+    'Electron bootstrap that never reaches app readiness; the 20-second held-dependency observation starts before process launch, but no profile holds Electron readiness, so C01 does not prove bounded recovery here. The C01 contract forbids indefinite blank startup; a Linux GUI failure before Electron readiness requires a system-level bootstrap outside Electron',
   ]),
 })
 
@@ -86,6 +106,7 @@ export function validateStartupContractEvidence(contractId, report, expected) {
     diskFullFault: false,
     heldDiagnosticsGate: false,
     heldCrashGate: false,
+    nonRegularCrashEvidence: false,
     heldStoreGate: false,
     activeRecoverableMission: false,
     custody: false,
@@ -153,17 +174,23 @@ export function validateStartupContractEvidence(contractId, report, expected) {
   predicates.diskFullFault = diskFullScenario?.observed === 'synthetic-filesystem-fault'
     ? validateSyntheticDiskFull(diskFullScenario, failures)
     : validateNativeRefusal(diskFullScenario, 'disk-full', 'disk-full', failures)
-  predicates.heldDiagnosticsGate = validateHeldGate(
+  predicates.heldDiagnosticsGate = validateStartupFaultScenario(
     scenarioFor(report, 'held-diagnostics-gate'),
     'diagnostics',
     failures,
   )
-  predicates.heldCrashGate = validateHeldGate(
+  predicates.heldCrashGate = validateStartupFaultScenario(
     scenarioFor(report, 'held-crash-gate'),
     'crash',
     failures,
   )
-  predicates.heldStoreGate = validateHeldGate(
+  predicates.nonRegularCrashEvidence = validateStartupFaultScenario(
+    scenarioFor(report, 'non-regular-crash-evidence'),
+    'crash',
+    failures,
+    'non-regular',
+  )
+  predicates.heldStoreGate = validateStartupFaultScenario(
     scenarioFor(report, 'held-store-gate'),
     'store',
     failures,
@@ -331,7 +358,7 @@ function validateNativeRefusal(scenario, label, faultKind, failures) {
   let passed = scenario.observed === 'native-startup-fault'
     && scenario.faultKind === faultKind
     && scenario.dialog?.observed === true
-    && scenario.dialog?.windowName === 'Error'
+    && scenario.dialog?.windowName === 'SAR Tracker could not start'
     && scenario.dialog?.operatorTitle === 'SAR Tracker could not start'
   if (!passed) failures.push('C01 ' + label + ' native fault observation is incomplete.')
   if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'dialogAtMs', true)) passed = false
@@ -444,32 +471,108 @@ function validateOversizedStore(scenario, failures) {
   return passed
 }
 
-/** Recompute one deliberately held startup gate and its actionable recovery state. */
-function validateHeldGate(scenario, gateKind, failures) {
-  const label = 'held-' + gateKind + '-gate'
+/** Recompute one held dependency response or an explicit non-regular-file rejection. */
+function validateStartupFaultScenario(scenario, gateKind, failures, variant = 'held') {
+  const label = gateKind === 'crash' && variant === 'non-regular'
+    ? 'non-regular-crash-evidence'
+    : `held-${gateKind}-gate`
+  const expectedMode = {
+    diagnostics: 'post-readiness-watchdog-timeout',
+    crash: variant === 'non-regular' ? 'non-regular-evidence-rejection' : 'crash-log-write-hold',
+    store: 'sqlite-lock-contention',
+  }[gateKind]
+  const expectedHeld = variant !== 'non-regular'
   if (!isRecord(scenario) || scenario.profileKind !== label) {
     failures.push('C01 ' + label + ' profile is missing.')
     return false
   }
   let passed = scenario.observed === 'actionable-fault'
     && scenario.gate?.kind === gateKind
-    && scenario.gate?.held === true
+    && scenario.gate?.mode === expectedMode
+    && scenario.gate?.held === expectedHeld
     && scenario.gate?.bounded === true
     && nonEmptyString(scenario.gate?.action)
     && scenario.gate?.synthetic !== true
-  if (!passed) failures.push('C01 ' + label + ' did not expose a bounded actionable gate.')
+  if (!passed) failures.push('C01 ' + label + ' did not expose its declared bounded startup-fault mode.')
+  if (gateKind === 'diagnostics') {
+    const hasNamedWatchdogTimeout = scenario.gate?.startupTimeoutMs === C01_STARTUP_RESPONSE_TIMEOUT_MS
+      && Number.isSafeInteger(scenario.process?.faultShellAtMs)
+      && scenario.process.faultShellAtMs >= C01_STARTUP_RESPONSE_TIMEOUT_MS
+      && scenario.startupLogs?.startupFailureSummaries?.some((summary) =>
+        typeof summary === 'string'
+        && summary.includes(`StartupTimeoutError: The ${C01_STARTUP_RESPONSE_TIMEOUT_MS} ms startup deadline`)
+        && summary.includes('storage diagnostics initialization')) === true
+    if (!hasNamedWatchdogTimeout) {
+      failures.push('C01 held-diagnostics-gate did not prove the named post-readiness watchdog timeout.')
+      passed = false
+    }
+  }
+  if (gateKind === 'crash') {
+    if (variant === 'non-regular') {
+      const hasExplicitRejection = scenario.startupLogs?.startupFailures?.some((entry) =>
+        entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') === true
+      if (!hasExplicitRejection) {
+        failures.push('C01 non-regular crash evidence rejection code was not retained in the runtime log.')
+        passed = false
+      }
+    } else {
+      const hold = scenario.gate?.hold
+      const hasHeldCrashWrite = hold?.markerObserved === true
+        && hold?.releasedAfterDialogDismissal === true
+        && hold?.writeCompleted === true
+        && hold?.temporaryFilesRemaining === false
+        && scenario.startupLogs?.startupFailureSummaries?.some((summary) =>
+          typeof summary === 'string' && summary.includes('newer mission store schema')) === true
+      if (!hasHeldCrashWrite) {
+        failures.push('C01 held-crash-gate did not prove a held crash-log write released after dialog dismissal and completed without a temporary file.')
+        passed = false
+      }
+    }
+  }
   const cleanupPassed = gateKind === 'store'
     ? scenario.cleanup?.lockHolderClosed === true
       && scenario.gate?.lockHolder?.closed === true
       && Number.isSafeInteger(scenario.gate?.lockHolder?.pid)
       && scenario.gate.lockHolder.pid > 0
-    : scenario.cleanup?.heldPathRemoved === true
+    : gateKind === 'crash' && variant !== 'non-regular'
+      ? scenario.cleanup?.holdReleased === true
+        && scenario.cleanup?.temporaryFilesRemoved === true
+      : scenario.cleanup?.heldPathRemoved === true
   if (!cleanupPassed) {
     failures.push('C01 ' + label + ' cleanup was not positively verified.')
     passed = false
   }
-  if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'faultShellAtMs')) passed = false
+  if (!validateHeldGateResponse(scenario, label, failures)) passed = false
+  if (!validateClosedProcess(scenario.process, label + ' profile', failures, 'faultShellAtMs', true)) passed = false
   if (!validateUnchangedFiles(scenario.originalFiles, 'C01 ' + label + ' profile', failures)) passed = false
+  return passed
+}
+
+/** Recompute that the held-gate dialog was observed inside the producer's fixed window. */
+function validateHeldGateResponse(scenario, label, failures) {
+  const observedAtMs = scenario.process?.dialogObservedAtMs
+  const passed = scenario.gate?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
+    && scenario.gate?.response === 'startup-fault-window'
+    && scenario.gate?.dialogObserved === true
+    && scenario.gate?.lateDialogAfterTimeout === false
+    && scenario.process?.timeoutMs === C01_HELD_GATE_TIMEOUT_MS
+    && scenario.process?.timedOut === false
+    && scenario.process?.dialogObserved === true
+    && scenario.process?.dialogDismissed === true
+    && scenario.process?.lateDialogAfterTimeout === false
+    && scenario.process?.forcedKill === false
+    && scenario.process?.productExitCode === 1
+    && scenario.process?.productExitSignal === null
+    && Number.isSafeInteger(scenario.process?.exitAfterDialogMs)
+    && scenario.process.exitAfterDialogMs >= 0
+    && scenario.process.exitAfterDialogMs <= C01_HELD_GATE_PRODUCT_EXIT_TIMEOUT_MS
+    && Number.isSafeInteger(observedAtMs)
+    && observedAtMs >= 0
+    && observedAtMs <= C01_HELD_GATE_TIMEOUT_MS
+    && scenario.process?.faultShellAtMs === observedAtMs
+  if (!passed) {
+    failures.push('C01 ' + label + ' dialog response did not satisfy the fixed startup-fault observation bound.')
+  }
   return passed
 }
 
@@ -625,10 +728,10 @@ function validateNewerSchema(scenario, expected, failures) {
   if (
     !isRecord(dialog) ||
     dialog.observed !== true ||
-    dialog.windowName !== 'Error' ||
+    dialog.windowName !== 'SAR Tracker could not start' ||
     dialog.operatorTitle !== 'SAR Tracker could not start'
   ) {
-    failures.push('C01 newer-schema native refusal dialog observation is incomplete.')
+    failures.push('C01 newer-schema startup fault window observation is incomplete.')
     passed = false
   }
   if (!isRecord(scenario.process) || scenario.process.exitCode !== 1 || scenario.process.signal !== null) {
@@ -741,14 +844,13 @@ function makeResult(predicates, failures, status = 'INVALID_EVIDENCE') {
     valid,
     passed: valid,
     recomputedPredicates: Object.freeze({ ...predicates }),
-    // These fields describe this fixed packaged startup matrix. Family and
-    // cross-tier admission are evaluated by the campaign controller; a valid
-    // receipt must not remain permanently incomplete because other tiers or
-    // external acceptance are still pending.
-    coverageComplete: valid,
-    qualificationEligible: valid,
+    // This matrix can be valid while full C01 coverage and qualification remain
+    // false; pre-readiness and synchronous store open/migration are not covered.
+    coverageComplete: false,
+    qualificationEligible: false,
     releaseEligible: false,
-    uncoveredAxes: valid ? Object.freeze([]) : STARTUP_PROBE_DESCRIPTOR.uncoveredAxes,
+    nonQualificationReason: 'The packaged startup matrix does not cover an Electron bootstrap that never reaches app readiness or synchronous mission-store SQLite open and migration on the main thread.',
+    uncoveredAxes: STARTUP_PROBE_DESCRIPTOR.uncoveredAxes,
     failureReasons: Object.freeze(uniqueFailures),
   })
 }

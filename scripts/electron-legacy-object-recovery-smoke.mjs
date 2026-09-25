@@ -22,6 +22,7 @@ import { extractFile } from '@electron/asar'
 import {
   installMainEventLoopProbe,
   validateMainEventLoopEvidence,
+  validateMainPhaseEvidence,
 } from '../build/main-event-loop-probe.js'
 import {
   assertPostSettlementMarkerCustody,
@@ -56,6 +57,7 @@ let observer
 const report = {
   proofTier: 'diagnostic-only second disposable mission store using packaged production store/runner via an injected factory; no default app wiring or operator-load qualification',
   issue: 'DON-254',
+  hostPlatform: process.platform,
   expectedBaselineRows: EXPECTED_BASELINE_ROWS,
   passed: false,
 }
@@ -221,16 +223,27 @@ async function main() {
   const mutation = await evaluatePackaged(async ({}, input) => {
     const state = globalThis.__DON254_LEGACY_RECOVERY__
     await new Promise((resolve) => setTimeout(resolve, 100))
-    const result = await state.store.upsertMarker({ mission_id: input.missionId, type: 'clue', name: 'After restart', description: 'Post-settlement mutation', lat: 52.1, lon: -9.5, irish_grid_e: 480000, irish_grid_n: 580000, display_order: 0, updated_by: 'DON-254 probe' })
-    await state.store.prepareClose()
-    state.store.close()
-    const timer = globalThis.__SARTRACKER_MAIN_EVENT_LOOP_PROBE__.stop()
+    const probe = globalThis.__SARTRACKER_MAIN_EVENT_LOOP_PROBE__
+    const markerMutation = await probe.measurePhase('marker-mutation', () =>
+      state.store.upsertMarker({ mission_id: input.missionId, type: 'clue', name: 'After restart', description: 'Post-settlement mutation', lat: 52.1, lon: -9.5, irish_grid_e: 480000, irish_grid_n: 580000, display_order: 0, updated_by: 'DON-254 probe' }))
+    const prepareClose = await probe.measurePhase('prepare-close', () => state.store.prepareClose())
+    const close = await probe.measurePhase('close', () => state.store.close())
+    const timer = probe.stop()
     delete globalThis.__DON254_LEGACY_RECOVERY__
-    return { markerId: result.id, timer }
+    return {
+      markerId: markerMutation.value.id,
+      phaseTimings: [markerMutation.evidence, prepareClose.evidence, close.evidence],
+      timer,
+    }
   }, { missionId: mission.id })
   report.restart.postSettlementMutation = mutation
+  const phaseFailures = validateMainPhaseEvidence(
+    mutation.phaseTimings,
+    ['marker-mutation', 'prepare-close', 'close'],
+    process.platform,
+  )
+  assert.deepEqual(phaseFailures, [], `Restart operation timing evidence was invalid: ${phaseFailures.join('; ')}`)
   assertTimer(mutation.timer, 'restart')
-  assert.ok(mutation.timer.maximumGapMs < 200, `Restart main timer reached ${mutation.timer.maximumGapMs}ms.`)
   report.restart.rowsAfterMutation = inspectRows(path.join(fixtureDir, 'mission-store.sqlite'), mission.id)
   assertRows(report.restart.rowsAfterMutation)
   assert.equal(report.restart.rowsAfterMutation.markerDigest, report.seededMarkerDigest)
@@ -249,7 +262,7 @@ async function main() {
   assert.deepEqual(cleanupFailures, [], 'Native proof cleanup failed.')
   report.passed = true
   await writeReport()
-  console.log(`electron-legacy-object-recovery-smoke: passed; first-main-max=${report.firstLaunch.mainTimer.maximumGapMs.toFixed(2)}ms restart-main-max=${mutation.timer.maximumGapMs.toFixed(2)}ms`)
+  console.log(`electron-legacy-object-recovery-smoke: passed; first-main-max=${report.firstLaunch.mainTimer.maximumGapMs.toFixed(2)}ms restart-main-max=${mutation.timer.maximumGapMs.toFixed(2)}ms phases=${mutation.phaseTimings.map(phase => `${phase.name}:${phase.mainLoop.maximumGapMs.toFixed(2)}ms/sched-wait:${phase.scheduler.threadRunQueueWaitMs ?? 'unavailable'}ms`).join(',')}`)
 }
 
 /** Records executable, ASAR, and checkout-matched production inputs. */

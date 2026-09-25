@@ -11,6 +11,7 @@ const { createCrashLog, isRendererFaultReason } = require('../../electron/crash-
     readonly userDataPath: string
     readonly maxEntries?: number
     readonly now?: () => string
+    readonly fileSystem?: CrashLogTestFileSystem
   }) => CrashLog
   readonly isRendererFaultReason: (reason: unknown) => boolean
 }
@@ -22,8 +23,19 @@ type CrashEntry = {
   readonly detail?: string
 }
 
+type CrashLogTestFileSystem = {
+  readonly access: (filePath: string) => Promise<void>
+  readonly lstat: (filePath: string) => Promise<{ readonly isFile: () => boolean }>
+  readonly readFile: (filePath: string, encoding: string) => Promise<string>
+}
+
 type CrashLog = {
   readonly record: (input: {
+    readonly kind: string
+    readonly summary: string
+    readonly detail?: string
+  }) => Promise<void>
+  readonly recordDurably: (input: {
     readonly kind: string
     readonly summary: string
     readonly detail?: string
@@ -38,6 +50,7 @@ describe('electron crash log', () => {
   let userDataPath: string | null = null
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (userDataPath !== null) {
       await rm(userDataPath, { recursive: true, force: true })
       userDataPath = null
@@ -53,6 +66,45 @@ describe('electron crash log', () => {
     expect(entries).toHaveLength(2)
     expect(entries[0]).toMatchObject({ kind: 'uncaughtException', summary: 'TypeError: boom' })
     expect(entries[1]).toMatchObject({ kind: 'render-process-gone' })
+  })
+
+  it('lets fatal callers observe a failed durable crash-log write', async () => {
+    const log = await createLog()
+    const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+    const open = vi.spyOn(fsPromises, 'open').mockRejectedValue(new Error('disk is full'))
+
+    try {
+      await expect(log.recordDurably({
+        kind: 'uncaughtException',
+        summary: 'disk failure',
+      })).rejects.toThrow('disk is full')
+    } finally {
+      open.mockRestore()
+    }
+
+    await expect(log.record({
+      kind: 'uncaughtException',
+      summary: 'subsequent write',
+    })).resolves.toBeUndefined()
+    await expect(log.readRecent()).resolves.toMatchObject([
+      { summary: 'subsequent write' },
+    ])
+  })
+
+  it('syncs the profile directory when it first creates crashes/', async () => {
+    const log = await createLog()
+    const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+    const open = vi.spyOn(fsPromises, 'open')
+
+    try {
+      await log.recordDurably({ kind: 'uncaughtException', summary: 'first crash' })
+      expect(open).toHaveBeenCalledWith(userDataPath, 'r')
+      open.mockClear()
+      await log.recordDurably({ kind: 'uncaughtException', summary: 'second crash' })
+      expect(open).not.toHaveBeenCalledWith(userDataPath, 'r')
+    } finally {
+      open.mockRestore()
+    }
   })
 
   it('caps stored crash entries to the most recent N', async () => {
@@ -153,6 +205,22 @@ describe('electron crash log', () => {
     }
   })
 
+  it('rejects a non-regular crash log before a read can wait on a FIFO', async () => {
+    const fileSystem: CrashLogTestFileSystem = {
+      access: async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }) },
+      lstat: vi.fn(async () => ({ isFile: () => false })),
+      readFile: vi.fn(async () => ''),
+    }
+    const log = await createLog({ fileSystem })
+    const crashLogPath = path.join(userDataPath!, 'crashes', 'crash-log.json')
+
+    await expect(log.hadUncleanShutdown()).rejects.toMatchObject({
+      code: 'ERR_SARTRACKER_NON_REGULAR_FILE',
+    })
+    expect(fileSystem.lstat).toHaveBeenCalledWith(crashLogPath)
+    expect(fileSystem.readFile).not.toHaveBeenCalled()
+  })
+
   it('treats only genuine fault reasons as renderer crashes', () => {
     // Normal teardown reasons must NOT be recorded as crashes.
     expect(isRendererFaultReason('clean-exit')).toBe(false)
@@ -167,13 +235,17 @@ describe('electron crash log', () => {
   })
 
   async function createLog(
-    overrides: { readonly maxEntries?: number } = {},
+    overrides: {
+      readonly maxEntries?: number
+      readonly fileSystem?: CrashLogTestFileSystem
+    } = {},
   ): Promise<CrashLog> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-crash-log-'))
     let counter = 0
     return createCrashLog({
       userDataPath,
       maxEntries: overrides.maxEntries,
+      fileSystem: overrides.fileSystem,
       now: () => {
         counter += 1
         return new Date(Date.UTC(2026, 0, 1, 0, 0, counter)).toISOString()

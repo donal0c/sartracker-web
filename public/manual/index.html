@@ -2242,17 +2242,59 @@ sh "$COLLECTOR" --screenshot</code></pre>
           </p>
           <h3>Startup Faults</h3>
           <p>
-            During startup, SAR Tracker shows a preparing screen until runtime services are ready. If the
-            runtime cannot start, the app shows a startup fault panel instead of a partially disabled
-            mission console. The panel can export a startup-fault support bundle before the normal
-            Diagnostics workspace is available. Use Reload once after exporting or recording the fault. If
-            the same fault returns, do not treat the app as ready for operational use.
+            Some local startup and recovery checks run before the operational window opens. The operational
+            window stays hidden until the renderer loads and its startup evidence-loss fence completes. If a
+            bounded asynchronous check exceeds its deadline or the mission store cannot be opened safely,
+            SAR Tracker opens a separate startup fault window with the failed step or safe recovery guidance,
+            then exits when you close it. Quitting the app (for example with Cmd+Q) while this window is open
+            is handled the same as pressing <strong>Close and exit</strong>. It allows up to 10 seconds for failure evidence to finish saving
+            after the window closes; if a write remains stuck, the app attempts to stop that isolated writer before exit.
+            The operational mission console remains closed.
+            Preserve the profile and contact support before retrying; do not overwrite or edit the profile.
+            If a startup evidence file is a directory, link or other special file, the fault window names
+            it as an evidence-file problem and says that mission-data corruption was not confirmed.
+            If the renderer starts but a runtime service then fails, SAR Tracker shows a startup fault panel
+            instead of a partially disabled mission console. That panel can export a startup-fault support
+            bundle before the normal Diagnostics workspace is available. Use Reload once after exporting or
+            recording the fault. If the same fault returns, do not treat the app as ready for operational use.
+          </p>
+          <p>
+            If a startup or fatal runtime fault occurs, or SAR Tracker is closing, and it cannot confirm that
+            its diagnostic writer has stopped, it keeps the current process open to protect the profile. An
+            ordinary quit does not close that process, and launching SAR Tracker again shows the same message
+            instead of opening a second copy. Do not launch another copy. Preserve the profile and contact
+            support before forcing this process closed.
+          </p>
+          <p>
+            If SAR Tracker hits a fatal runtime fault and reports that it <strong>could not restart
+            safely</strong>, it will not relaunch automatically, even if a further fault follows. You may
+            still quit it; the session is then treated as unclean, so the next launch re-checks every
+            unfinished mission. The same applies if SAR Tracker cannot record a clean exit while closing: it
+            still closes, and the next launch runs its unclean-shutdown checks.
+          </p>
+          <p>
+            The 10-second startup deadline is a hard total budget after Electron reports that it is ready,
+            covering awaited startup through the renderer's evidence-loss fence. A healthy but slower startup
+            can also reach this limit and close; a late successful result does not reopen the app. The deadline
+            cannot interrupt Electron's readiness wait or a synchronous native SQLite open or migration on
+            Electron's main thread. If that call returns after the deadline, SAR Tracker reports the store
+            stage; if it never returns, the blocked main thread cannot display the error. A timeout alone does
+            not establish that mission data is damaged. Preserve the profile and contact support before
+            retrying.
+          </p>
+          <p>
+            On Linux, Electron cannot show its startup error box graphically before it is ready. When
+            SAR Tracker's startup handler reports an error at that stage, Electron writes the message to
+            stderr; whether you can see it depends on how the app was launched. SAR Tracker's application
+            logs are not available until initialization completes, and the app does not write this message
+            to the system log. If no window appears, preserve the profile and contact support before
+            retrying.
           </p>
           <p>
             A database created by a newer SAR Tracker version is handled earlier, before the mission
-            console opens. SAR Tracker shows a native <strong>SAR Tracker could not start</strong> message
+            console opens. SAR Tracker shows a <strong>SAR Tracker could not start</strong> fault window
             naming the database schema and the schema supported by the installed build. Acknowledge the
-            message and leave the profile untouched; the app exits without changing the database or
+            window and leave the profile untouched; the app exits without changing the database or
             repeatedly relaunching. Install a compatible newer build or use a separately preserved
             compatible profile. Do not overwrite, downgrade in place, or manually edit the rejected
             profile.

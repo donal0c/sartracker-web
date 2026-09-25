@@ -1,8 +1,9 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { assertRegularFileOrAbsent } = require('./regular-file-guard.cjs')
 
 const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
-const { removeFileDurably, writeFileDurably } = require('./durable-file.cjs')
+const { removeFileDurably, syncDirectoryDurably, writeFileDurably } = require('./durable-file.cjs')
 
 const CRASH_DIR_NAME = 'crashes'
 const CRASH_LOG_FILE_NAME = 'crash-log.json'
@@ -39,6 +40,7 @@ function isRendererFaultReason(reason) {
  * Entries are sanitized before they touch disk (no secrets, no home-path usernames).
  */
 function createCrashLog(options) {
+  const fileSystem = options.fileSystem ?? fs
   const crashDir = path.join(options.userDataPath, CRASH_DIR_NAME)
   const crashLogPath = path.join(crashDir, CRASH_LOG_FILE_NAME)
   const cleanExitPath = path.join(crashDir, CLEAN_EXIT_FILE_NAME)
@@ -54,6 +56,7 @@ function createCrashLog(options) {
 
   return {
     record,
+    recordDurably,
     readRecent,
     markSessionStart,
     markCleanExit,
@@ -62,8 +65,13 @@ function createCrashLog(options) {
   }
 
   function record(input) {
-    writeChain = writeChain.then(() => recordInternal(input)).catch(() => {})
-    return writeChain
+    return recordDurably(input).catch(() => undefined)
+  }
+
+  function recordDurably(input) {
+    const operation = writeChain.then(() => recordInternal(input))
+    writeChain = operation.catch(() => undefined)
+    return operation
   }
 
   async function recordInternal(input) {
@@ -80,8 +88,20 @@ function createCrashLog(options) {
     entries.push(entry)
     const trimmed = entries.slice(Math.max(0, entries.length - maxEntries))
 
-    await fs.mkdir(crashDir, { recursive: true })
+    await ensureCrashDirectory()
     await writeJsonAtomically(crashLogPath, trimmed)
+  }
+
+  /**
+   * Creates crashes/ when needed and makes a new directory entry durable, so a
+   * first-ever crash record cannot vanish with its parent entry on power loss.
+   */
+  async function ensureCrashDirectory() {
+    // mkdir returns the first directory it created, or undefined if none.
+    const created = await fileSystem.mkdir(crashDir, { recursive: true })
+    if (created === undefined) return
+    await syncDirectoryDurably(path.dirname(crashDir))
+    if (created !== crashDir) await syncDirectoryDurably(path.dirname(created))
   }
 
   async function readRecent(limit) {
@@ -93,18 +113,18 @@ function createCrashLog(options) {
   }
 
   async function markCleanExit() {
-    await fs.mkdir(crashDir, { recursive: true })
+    await ensureCrashDirectory()
     await writeFileDurably(cleanExitPath, now())
     await removeFileDurably(activeSessionPath)
   }
 
   async function markSessionStart() {
-    await fs.mkdir(crashDir, { recursive: true })
+    await ensureCrashDirectory()
     await writeFileDurably(activeSessionPath, now())
   }
 
   async function hadUncleanShutdown() {
-    if (await fileExists(activeSessionPath)) {
+    if (await fileExists(activeSessionPath, fileSystem)) {
       return true
     }
     const entries = await readAll()
@@ -129,10 +149,12 @@ function createCrashLog(options) {
 
   async function readAll() {
     try {
-      const contents = await fs.readFile(crashLogPath, 'utf8')
+      if (!(await assertRegularFileOrAbsent(crashLogPath, fileSystem))) return []
+      const contents = await fileSystem.readFile(crashLogPath, 'utf8')
       const parsed = JSON.parse(contents)
       return Array.isArray(parsed) ? parsed : []
     } catch (error) {
+      if (error?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') throw error
       if (error?.code === 'ENOENT') {
         return []
       }
@@ -143,10 +165,12 @@ function createCrashLog(options) {
 
   async function readCleanExitTimestamp() {
     try {
-      const contents = await fs.readFile(cleanExitPath, 'utf8')
+      if (!(await assertRegularFileOrAbsent(cleanExitPath, fileSystem))) return null
+      const contents = await fileSystem.readFile(cleanExitPath, 'utf8')
       const trimmed = contents.trim()
       return trimmed === '' ? null : trimmed
     } catch (error) {
+      if (error?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') throw error
       if (error?.code === 'ENOENT') {
         return null
       }
@@ -155,9 +179,9 @@ function createCrashLog(options) {
   }
 }
 
-async function fileExists(filePath) {
+async function fileExists(filePath, fileSystem = fs) {
   try {
-    await fs.access(filePath)
+    await fileSystem.access(filePath)
     return true
   } catch (error) {
     if (error?.code === 'ENOENT') return false
