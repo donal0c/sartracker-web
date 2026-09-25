@@ -12,9 +12,10 @@ canary-leak classification fix and merged DON-264 overlay-warning repair. PR
 #49's current-master CI run `36001695717` passed full correctness, lint,
 production build, browser regressions, producer checks, packaged C17 and
 packaged C19 recovery. Its push trigger skipped strict responsiveness. PR #47's
-separate C01 repair remains draft after exact-head Linux run `36064148886`
-failed the held-gate observer. Do not treat master CI or packaged receipts as
-candidate qualification.
+separate C01 repair remains draft: exact-head Linux run `36074972856` confirmed
+dialog dismissal, but diagnostics and crash-held cases failed to exit with code
+1; the SQLite-held case passed. A local exit fallback is under verification.
+Do not treat master CI or packaged receipts as candidate qualification.
 
 The candidate claim is limited to controlled team testing using synthetic,
 replayed or disposable data with an independent primary source. Use the prepared
@@ -76,11 +77,13 @@ an absent window and exit 0 with an ID for a visible match. Stopping Xvfb
 produced the expected bounded-query error (`code:null`, `signal:SIGKILL`,
 `killed:true`). The exact retained x86_64 Electron package cannot run reliably
 in the local ARM64 Docker VM; it fails during GPU startup under emulation. That
-attempt is not product evidence. Regression tests pin query and cleanup
-classification plus the corrected click point. A focused native Ubuntu
-isolation against the retained artifact must verify the click before another
-full pipeline; do not increase timeouts or count harness cleanup as product
-exit. Keep PR #47 draft.
+attempt is not product evidence. Run `36072959447` captured the corrected
+acknowledgement-row click on native Ubuntu. The subsequent exact-head run
+`36074972856` confirms dismissal in all three held-gate cases: diagnostics and
+crash did not exit with code 1 after dismissal and were eventually killed by
+the harness, while store exited with code 1. Original mission/settings
+digests remained unchanged. Do not count harness cleanup as product exit. Keep
+PR #47 draft pending the shutdown fix and a new exact-head Linux run.
 Previous run `36025809540` passed the packaged C19
 200 ms gate on an older head, but skipped the separate strict responsiveness
 qualification. That qualification is not a PR merge check and must not be
@@ -126,6 +129,17 @@ macOS scheduler counters were unavailable, so it is diagnostic only. Linux run
 `36025809540` passed only on an older head and skipped strict responsiveness.
 Fresh exact-head review and Linux checks remain required. DON-179 remains In
 Review; opt-in diagnostic upload is outside this repair.
+
+**C01 exit follow-up — 2026-09-25:** run `36074972856` moved the evidence past
+the earlier observer ambiguity. The diagnostics and crash probes hold reads on
+FIFO-backed startup files; their dialogs were dismissed, but the launched app
+did not exit within the 12-second post-dismissal bound. The SQLite lock probe
+exited normally with code 1. Startup failure now waits for bounded evidence
+writes, calls `app.exit(1)`, and forces `process.exit(1)` if Electron returns
+while timed-out startup I/O remains pending. The regression failed before the
+change and passes after it; the startup suite passes 53/53, full correctness
+passes (5,878 passed, 25 skipped), and lint/diff checks pass locally. This
+change still needs exact-head native Linux CI before it is considered fixed.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it

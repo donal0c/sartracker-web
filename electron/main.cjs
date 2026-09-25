@@ -1246,7 +1246,14 @@ async function handleStartupFailure(error) {
     // non-zero exit even when only best-effort logging is possible.
   }
   await waitForStartupEvidenceWrites(evidenceWrites)
-  app.exit(1)
+  try {
+    app.exit(1)
+  } finally {
+    // A deadline may leave the operation that lost the watchdog race in-flight.
+    // Electron's immediate exit normally ends the process; force Node termination
+    // if that native call returns while the abandoned startup I/O is still held.
+    process.exit(1)
+  }
 }
 
 /** Starts one startup failure write without allowing a synchronous adapter throw to hide the fault. */

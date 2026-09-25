@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DEFAULT_APP_SETTINGS } from '../../src/features/settings/settings-types'
 
@@ -19,8 +19,13 @@ const originalProcessListeners = {
 }
 let testUserDataPathSequence = 0
 let testUserDataPath = createTestUserDataPath()
+let startupProcessExit: ReturnType<typeof vi.spyOn>
 
 describe('Electron main startup', () => {
+  beforeEach(() => {
+    startupProcessExit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+  })
+
   afterEach(() => {
     Module._load = originalLoad
     vi.useRealTimers()
@@ -1383,6 +1388,7 @@ describe('Electron main startup', () => {
       expect.stringMatching(/startup storage and crash-state inspection.*10 seconds.*does not mean the mission data is damaged/iu),
     )
     expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow).not.toHaveBeenCalled()
     expect(createCrashLog).toHaveBeenCalledTimes(1)
     expect(createRuntimeLog).toHaveBeenCalledTimes(1)
