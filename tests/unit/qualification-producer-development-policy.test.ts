@@ -5,6 +5,49 @@ import {
 } from '../../scripts/qualification/producer-development-policy.mjs'
 
 describe('development fault mechanics are distinct from qualification', () => {
+  it('requires the crash-log write to stay held through dismissal and then finish durably', () => {
+    const file = { bytes: 100, sha256: 'a'.repeat(64) }
+    const report = {
+      schema: 'sartracker-c01-startup-held-gate-development-v1',
+      gateKind: 'crash-write',
+      proofMode: 'development-electron-held-gate-calibration',
+      qualification: { eligible: false },
+      scenario: {
+        profileKind: 'held-crash-gate',
+        observed: 'actionable-fault',
+        gate: {
+          kind: 'crash', mode: 'crash-log-write-hold', held: true, bounded: true, synthetic: false,
+          timeoutMs: 20000, action: 'preserve-profile-and-contact-support', response: 'startup-fault-window',
+          dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false,
+          hold: { markerObserved: true, releasedAfterDialogDismissal: true, writeCompleted: true, temporaryFilesRemaining: false },
+        },
+        process: {
+          pid: 123, closed: true, exitCode: 1, signal: null, forcedKill: false, timedOut: false,
+          dialogObserved: true, dialogObservedAtMs: 1900, dialogDismissed: true, faultShellAtMs: 1900,
+          productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50,
+        },
+        cleanup: { holdReleased: true, temporaryFilesRemoved: true },
+        startupLogs: { startupFailureSummaries: ['Error: newer mission store schema 14'] },
+        originalFiles: {
+          before: { 'mission-store.sqlite': file, 'settings.json': file },
+          after: { 'mission-store.sqlite': file, 'settings.json': file },
+        },
+      },
+    }
+
+    expect(inspectHeldGateDevelopment(report, 'crash-write')).toMatchObject({
+      infrastructurePassed: true,
+      observedPredicateStatus: 'PASS',
+      producerCheckPassed: true,
+      qualificationExecuted: false,
+      releaseEligible: false,
+    })
+    expect(inspectHeldGateDevelopment({ ...report, scenario: {
+      ...report.scenario,
+      gate: { ...report.scenario.gate, hold: { ...report.scenario.gate.hold, releasedAfterDialogDismissal: false } },
+    } }, 'crash-write').infrastructurePassed).toBe(false)
+  })
+
   it('keeps failed X11 observation and harness cleanup as invalid evidence', () => {
     const file = { bytes: 100, sha256: 'a'.repeat(64) }
     const report = {

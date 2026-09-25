@@ -30,6 +30,7 @@ export const C01_STARTUP_PROFILE_KINDS = Object.freeze([
   'permission-fault',
   'disk-full',
   'held-diagnostics-gate',
+  'held-crash-gate',
   'non-regular-crash-evidence',
   'held-store-gate',
   'active-recoverable',
@@ -48,7 +49,7 @@ const BAD_SECRET_WARNING =
 export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
   contractId: 'C01',
   proofMode: C01_STARTUP_PROOF_MODE,
-  schema: 'sartracker-c01-startup-admission-v4',
+  schema: 'sartracker-c01-startup-admission-v5',
   producer: 'scripts/qualification/startup-probe.mjs',
   reportPath: 'receipt.json',
   profileKinds: C01_STARTUP_PROFILE_KINDS,
@@ -70,6 +71,7 @@ export const STARTUP_PROBE_DESCRIPTOR = Object.freeze({
     'packaged newer-schema profile shows the startup fault window, exits once, starts no renderer and preserves profile bytes',
     'packaged oversized profile generates, hashes and launches the fixed 8 MiB and 3.7 GB stores through separate disposable package profiles; other fault paths retain explicit observations or failed attempts',
     'packaged diagnostics startup holds an in-flight runtime-log write until the named 10-second watchdog fault, then dismisses the operator window and exits with code 1',
+    'packaged newer-schema refusal holds the startup crash-log fsync until the operator window is dismissed, then releases and verifies the durable crash record and clean temporary-file state',
     'packaged crash-log FIFO rejection is classified as non-regular evidence and exits with code 1 without claiming an operational-data fault',
     'packaged SQLite lock-contention profile retains an owned lock holder and verifies the bounded startup fault response',
     'packaged active-recoverable profile exposes the existing mission without data loss',
@@ -103,6 +105,7 @@ export function validateStartupContractEvidence(contractId, report, expected) {
     permissionFault: false,
     diskFullFault: false,
     heldDiagnosticsGate: false,
+    heldCrashGate: false,
     nonRegularCrashEvidence: false,
     heldStoreGate: false,
     activeRecoverableMission: false,
@@ -176,10 +179,16 @@ export function validateStartupContractEvidence(contractId, report, expected) {
     'diagnostics',
     failures,
   )
+  predicates.heldCrashGate = validateStartupFaultScenario(
+    scenarioFor(report, 'held-crash-gate'),
+    'crash',
+    failures,
+  )
   predicates.nonRegularCrashEvidence = validateStartupFaultScenario(
     scenarioFor(report, 'non-regular-crash-evidence'),
     'crash',
     failures,
+    'non-regular',
   )
   predicates.heldStoreGate = validateStartupFaultScenario(
     scenarioFor(report, 'held-store-gate'),
@@ -463,14 +472,16 @@ function validateOversizedStore(scenario, failures) {
 }
 
 /** Recompute one held dependency response or an explicit non-regular-file rejection. */
-function validateStartupFaultScenario(scenario, gateKind, failures) {
-  const label = gateKind === 'crash' ? 'non-regular-crash-evidence' : 'held-' + gateKind + '-gate'
+function validateStartupFaultScenario(scenario, gateKind, failures, variant = 'held') {
+  const label = gateKind === 'crash' && variant === 'non-regular'
+    ? 'non-regular-crash-evidence'
+    : `held-${gateKind}-gate`
   const expectedMode = {
     diagnostics: 'post-readiness-watchdog-timeout',
-    crash: 'non-regular-evidence-rejection',
+    crash: variant === 'non-regular' ? 'non-regular-evidence-rejection' : 'crash-log-write-hold',
     store: 'sqlite-lock-contention',
   }[gateKind]
-  const expectedHeld = gateKind !== 'crash'
+  const expectedHeld = variant !== 'non-regular'
   if (!isRecord(scenario) || scenario.profileKind !== label) {
     failures.push('C01 ' + label + ' profile is missing.')
     return false
@@ -497,11 +508,25 @@ function validateStartupFaultScenario(scenario, gateKind, failures) {
     }
   }
   if (gateKind === 'crash') {
-    const hasExplicitRejection = scenario.startupLogs?.startupFailures?.some((entry) =>
-      entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') === true
-    if (!hasExplicitRejection) {
-      failures.push('C01 non-regular crash evidence rejection code was not retained in the runtime log.')
-      passed = false
+    if (variant === 'non-regular') {
+      const hasExplicitRejection = scenario.startupLogs?.startupFailures?.some((entry) =>
+        entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') === true
+      if (!hasExplicitRejection) {
+        failures.push('C01 non-regular crash evidence rejection code was not retained in the runtime log.')
+        passed = false
+      }
+    } else {
+      const hold = scenario.gate?.hold
+      const hasHeldCrashWrite = hold?.markerObserved === true
+        && hold?.releasedAfterDialogDismissal === true
+        && hold?.writeCompleted === true
+        && hold?.temporaryFilesRemaining === false
+        && scenario.startupLogs?.startupFailureSummaries?.some((summary) =>
+          typeof summary === 'string' && summary.includes('newer mission store schema')) === true
+      if (!hasHeldCrashWrite) {
+        failures.push('C01 held-crash-gate did not prove a held crash-log write released after dialog dismissal and completed without a temporary file.')
+        passed = false
+      }
     }
   }
   const cleanupPassed = gateKind === 'store'
@@ -509,7 +534,10 @@ function validateStartupFaultScenario(scenario, gateKind, failures) {
       && scenario.gate?.lockHolder?.closed === true
       && Number.isSafeInteger(scenario.gate?.lockHolder?.pid)
       && scenario.gate.lockHolder.pid > 0
-    : scenario.cleanup?.heldPathRemoved === true
+    : gateKind === 'crash' && variant !== 'non-regular'
+      ? scenario.cleanup?.holdReleased === true
+        && scenario.cleanup?.temporaryFilesRemoved === true
+      : scenario.cleanup?.heldPathRemoved === true
   if (!cleanupPassed) {
     failures.push('C01 ' + label + ' cleanup was not positively verified.')
     passed = false

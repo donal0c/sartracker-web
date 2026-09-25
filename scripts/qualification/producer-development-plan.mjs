@@ -18,10 +18,12 @@ export function compileProducerDevelopmentPlan({ app, output, sourceSha, appSha2
       command: Object.freeze({ ...command, timeoutMs: Math.min(command.timeoutMs, 300000) }),
     })
   })
-  for (const gateKind of ['diagnostics', 'crash', 'store']) {
+  for (const gateKind of ['diagnostics', 'crash-write', 'crash', 'store']) {
     const id = gateKind === 'crash'
       ? 'C01-non-regular-crash-evidence'
-      : `C01-held-${gateKind}`
+      : gateKind === 'crash-write'
+        ? 'C01-held-crash'
+        : `C01-held-${gateKind}`
     const evidence = path.join(output, id)
     cases.push(Object.freeze({ id, contractId: 'C01', evidence, mechanicsOnly: true,
       command: Object.freeze({ script: 'scripts/qualification/producer-development-held-gate.mjs',

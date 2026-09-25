@@ -1,3 +1,6 @@
+const path = require('node:path')
+
+const STARTUP_FAILURE_CLOSE_CHANNEL = 'sartracker:startup-failure-close'
 const WINDOW_OPTIONS = Object.freeze({
   title: 'SAR Tracker could not start',
   width: 620,
@@ -15,6 +18,7 @@ const WINDOW_OPTIONS = Object.freeze({
   webPreferences: Object.freeze({
     contextIsolation: true,
     nodeIntegration: false,
+    preload: path.join(__dirname, 'startup-failure-preload.cjs'),
     sandbox: true,
     webSecurity: true,
     devTools: false,
@@ -54,9 +58,9 @@ function createStartupFailureDataUrl(message) {
     <footer><button id="close" type="button">Close and exit</button></footer>
   </main>
   <script>
-    document.getElementById('close').addEventListener('click', () => window.close())
+    document.getElementById('close').addEventListener('click', () => window.sarTrackerStartupFailure.close())
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') window.close()
+      if (event.key === 'Escape') window.sarTrackerStartupFailure.close()
     })
   </script>
 </body>
@@ -69,6 +73,9 @@ function showStartupFailureWindow(options) {
   if (typeof options?.BrowserWindow !== 'function') {
     return Promise.reject(new Error('Startup failure window requires Electron BrowserWindow.'))
   }
+  if (typeof options?.ipcMain?.on !== 'function' || typeof options.ipcMain.removeListener !== 'function') {
+    return Promise.reject(new Error('Startup failure window requires the Electron main-process IPC adapter.'))
+  }
   let pageUrl
   try {
     pageUrl = createStartupFailureDataUrl(options.message)
@@ -79,15 +86,26 @@ function showStartupFailureWindow(options) {
   return new Promise((resolve, reject) => {
     let window
     let settled = false
+    let closeActionRegistered = false
+    const closeActionListener = (event) => {
+      if (event?.sender !== window?.webContents) return
+      window.close()
+    }
     const settle = (action, value) => {
       if (settled) return
       settled = true
       if (window !== undefined) activeStartupFailureWindows.delete(window)
+      if (closeActionRegistered) {
+        options.ipcMain.removeListener(STARTUP_FAILURE_CLOSE_CHANNEL, closeActionListener)
+        closeActionRegistered = false
+      }
       action(value)
     }
     try {
       window = new options.BrowserWindow(WINDOW_OPTIONS)
       activeStartupFailureWindows.add(window)
+      options.ipcMain.on(STARTUP_FAILURE_CLOSE_CHANNEL, closeActionListener)
+      closeActionRegistered = true
       window.once('closed', () => settle(resolve))
       Promise.resolve(window.loadURL(pageUrl)).then(
         () => {

@@ -2246,7 +2246,9 @@ sh "$COLLECTOR" --screenshot</code></pre>
             window stays hidden until the renderer loads and its startup evidence-loss fence completes. If a
             bounded asynchronous check exceeds its deadline or the mission store cannot be opened safely,
             SAR Tracker opens a separate startup fault window with the failed step or safe recovery guidance,
-            then exits when you close it. The operational mission console remains closed.
+            then exits when you close it. It allows up to 10 seconds for failure evidence to finish saving
+            after the window closes; if a write remains stuck, the app stops that isolated writer before exit.
+            The operational mission console remains closed.
             Preserve the profile and contact support before retrying; do not overwrite or edit the profile.
             If a startup evidence file is a directory, link or other special file, the fault window names
             it as an evidence-file problem and says that mission-data corruption was not confirmed.

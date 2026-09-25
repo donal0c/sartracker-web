@@ -432,7 +432,7 @@ Every catalogue entry below is a contract family. Its compiled variants are indi
 - **Goal:** reach a usable normal shell or a calm actionable fault/recovery state without unbounded startup work or data loss.
 - **Authoritative oracle:** process/window timing, runtime boot phase, bounded SQLite metadata/schema, original database/WAL/backup digests, current-provider request log.
 - **Journey:** launch fresh, launch active/recoverable, launch corrupt/newer/oversized/permission-fault profiles; inspect warning/recovery/export; restart.
-- **Variants:** absent/valid/corrupt/newer schema; held diagnostics/crash/store gate; 8 MiB through 3.7 GB; permission/disk faults.
+- **Variants:** absent/valid/corrupt/newer schema; held diagnostics, crash-log fsync, and store gates; 8 MiB through 3.7 GB; permission/disk faults. The crash-log gate holds only its disposable crash-record fsync until the operator closes the refusal window, then requires the durable record and temporary-file cleanup.
 - **Forbidden outcomes:** indefinite blank/held window, automatic rename/delete/migration/vacuum, false normal state, lost original, current polling silently unavailable.
 - **Evidence:** launch video/screenshot, phase/heartbeat/process, bounded metadata, profile/file manifest, DOM/ARIA and warning actions.
 - **Judge rubric:** boot/fault state is visible, plain, actionable and does not imply data loss or readiness.

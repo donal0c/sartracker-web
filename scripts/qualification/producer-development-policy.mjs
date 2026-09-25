@@ -10,19 +10,21 @@ export function inspectHeldGateDevelopment(report, gateKind) {
   const failures = []
   const profileKind = gateKind === 'crash'
     ? 'non-regular-crash-evidence'
-    : `held-${gateKind}-gate`
+    : `held-${gateKind === 'crash-write' ? 'crash' : gateKind}-gate`
   const mode = {
     diagnostics: 'post-readiness-watchdog-timeout',
     crash: 'non-regular-evidence-rejection',
+    'crash-write': 'crash-log-write-hold',
     store: 'sqlite-lock-contention',
   }[gateKind]
   const held = gateKind !== 'crash'
-  if (!['diagnostics', 'crash', 'store'].includes(gateKind)
+  const scenarioGateKind = gateKind === 'crash-write' ? 'crash' : gateKind
+  if (!['diagnostics', 'crash', 'crash-write', 'store'].includes(gateKind)
       || report?.schema !== 'sartracker-c01-startup-held-gate-development-v1'
       || report.proofMode !== 'development-electron-held-gate-calibration'
       || report.gateKind !== gateKind || report.qualification?.eligible !== false
       || scenario?.profileKind !== profileKind) failures.push('Development startup-fault identity differs.')
-  if (scenario?.gate?.kind !== gateKind || scenario.gate.mode !== mode || scenario.gate.held !== held
+  if (scenario?.gate?.kind !== scenarioGateKind || scenario.gate.mode !== mode || scenario.gate.held !== held
       || scenario.gate.synthetic !== false || scenario.gate.bounded !== true
       || scenario.gate.timeoutMs !== C01_HELD_GATE_TIMEOUT_MS) failures.push('Declared bounded startup-fault mode was not observed.')
   if (gateKind === 'diagnostics'
@@ -40,15 +42,27 @@ export function inspectHeldGateDevelopment(report, gateKind) {
         entry?.code === 'ERR_SARTRACKER_NON_REGULAR_FILE')) {
     failures.push('Non-regular crash evidence rejection code was not recorded.')
   }
+  if (gateKind === 'crash-write') {
+    const hold = scenario?.gate?.hold
+    if (hold?.markerObserved !== true || hold?.releasedAfterDialogDismissal !== true
+        || hold?.writeCompleted !== true || hold?.temporaryFilesRemaining !== false
+        || !scenario?.startupLogs?.startupFailureSummaries?.some((summary) =>
+          typeof summary === 'string' && summary.includes('newer mission store schema'))) {
+      failures.push('Held crash-log fsync did not resume after dismissal and complete the startup failure record.')
+    }
+  }
   if (!Number.isSafeInteger(scenario?.process?.pid) || scenario.process.pid <= 0
       || scenario.process.closed !== true) failures.push('Owned startup process was not observed closed.')
   if (scenario?.observationFailure !== undefined
       || (scenario?.process?.dialogObserved === true && scenario.process.dialogDismissed !== true)) {
     failures.push('Held-gate dialog dismissal or post-dialog observation failed.')
   }
-  if (gateKind === 'store'
-    ? scenario?.gate?.lockHolder?.closed !== true || scenario?.cleanup?.lockHolderClosed !== true
-    : scenario?.cleanup?.heldPathRemoved !== true) failures.push('Held dependency cleanup was not observed.')
+  const cleanupObserved = gateKind === 'store'
+    ? scenario?.gate?.lockHolder?.closed === true && scenario?.cleanup?.lockHolderClosed === true
+    : gateKind === 'crash-write'
+      ? scenario?.cleanup?.holdReleased === true && scenario?.cleanup?.temporaryFilesRemoved === true
+      : scenario?.cleanup?.heldPathRemoved === true
+  if (!cleanupObserved) failures.push('Held dependency cleanup was not observed.')
   const before = scenario?.originalFiles?.before
   const after = scenario?.originalFiles?.after
   for (const name of new Set(['mission-store.sqlite', 'settings.json', ...Object.keys(before ?? {})])) {

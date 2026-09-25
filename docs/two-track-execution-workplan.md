@@ -166,21 +166,32 @@ both affected tests passed alone, with 33.8 ms for the GPX case. The isolated
 timing repeat is diagnostic only, not qualification. Exact-head Linux packaged
 CI and fresh review remain pending; keep PR #47 draft.
 
-**C01 current PR follow-up — 2026-09-25:** PR #47 head `d8cc1ae8` includes the
-closeable startup-fault window, non-regular evidence guard, direct `process.exit(1)`
-after a bounded evidence-write wait, and Linux dismissal observer fix. Its exact
-Linux run `36095861866` is still in progress; the fresh review artifact
-`/tmp/pr47-c01-exact-head-review.md` found that the packaged diagnostics/crash
-FIFO cases do not exercise the watchdog because they now reject the paths
-immediately. The uncommitted v4 follow-up holds `logs/runtime.log` open while
-interrupted storage diagnostics await its durable startup write, then requires
-the crash record to name the post-readiness diagnostics timeout and the product
-to exit with code 1. It labels crash-log FIFO as non-regular evidence rejection
-and records the error code separately. Local verification: correctness (574
-files; 5,894 passed; 25 skipped), lint, production build and `git diff --check`.
-The packaged Linux timeout observation and new exact-head review remain pending;
-do not count the d8 run as verification of this local follow-up. No C01
-qualification is claimed.
+**C01 current PR follow-up — 2026-09-25:** PR #47 remains draft at
+`f35cb23266e6ef4799503741e627d2408e776f3c`; exact-head Linux run `36098634511`
+failed the C01 candidate producer check because the dismissed fault window was
+followed by harness cleanup rather than product exit. The local repair routes
+runtime/crash log I/O through an Electron utility process, wires sender-checked
+IPC for fault-window dismissal, and reaps a stuck writer before `app.exit(1)`.
+The 10-second startup watchdog starts after Electron readiness; failure
+evidence gets up to 10 seconds after dismissal. Utility-process readiness gets
+the same ten-second allowance. If fork or initialization fails, a named
+watchdog stage surfaces the error and Electron main does not fall back to
+direct crash-log I/O.
+
+On the current local source, Linux packaged development probes pass: held
+diagnostics exits code 1 with no signal or harness kill (10,078 ms after
+dismissal); held crash-log `fsync` resumes after dismissal, writes the failure
+record, leaves no temp file, and exits code 1 (886 ms). These are development
+mechanics checks, not exact-head CI or C01 qualification. After the final
+helper-timeout adjustment, startup-focused tests pass (66/66), as do lint,
+Linux packaging and both focused Linux probes. The preceding full strict suite
+passed `npm test -- --maxWorkers=4` (5,937 passed, 19 skipped); its earlier
+attempt measured 216 ms in the existing 200 ms mission-evidence guard, while
+the isolated test and subsequent full run passed. macOS packaging passed
+before the timeout-only adjustment. `app.whenReady()` and synchronous SQLite
+open/migration remain outside the watchdog. Commit/push, exact-head Linux CI,
+and fresh review remain pending; keep PR #47 draft and DON-179 In Review. No
+C01 qualification is claimed.
 
 **C01 design assessment:** an early standalone startup window with its own
 renderer timer can show which pre-window phase has exceeded ten seconds, but it
@@ -193,10 +204,12 @@ a utility process to own the live store and database connection, with the main
 process retaining an asynchronous facade for the existing store callers.
 Preserve the caller API where practical, but explicitly bridge request IDs,
 serializable results/errors, query cancellation/session lifetime, coverage
-notifications, attachment-ingest custody, and orderly close/drain. Main remains
-the sole owner of runtime/crash logs. On deadline, fence the startup generation
-and ignore any late ready result; do not kill a worker or main process during
-migration until interruption and WAL recovery safety are demonstrated.
+notifications, attachment-ingest custody, and orderly close/drain. This PR's
+dedicated utility process owns runtime/crash log filesystem I/O behind a narrow
+main-process service API. Moving the live mission store to a worker remains a
+separate architecture change. On deadline, fence the startup generation and
+ignore any late ready result; do not kill a database worker during migration
+until interruption and WAL recovery safety are demonstrated.
 
 The user-selected boundary for this repair leaves `app.whenReady()` outside the
 watchdog and synchronous `createElectronMissionStore()` open/migration
@@ -214,18 +227,18 @@ orderly close/drain bridged explicitly. This does not absorb DON-250's
 oversized-store assessment/recovery or introduce data-compaction behavior.
 
 **Review finding disposition:** the 10-second post-readiness watchdog covers
-awaited asynchronous startup through the renderer safety fence. Electron
-readiness and synchronous SQLite open/migration remain explicit, non-interruptible
-gaps; the manual says so. The latest exact-head review cleared the earlier
-startup path findings but found the held-gate proof gap described above. The v4
-receipt follow-up must add a real in-flight log-write timeout case and must not
-call fail-fast crash-file rejection a hold. The 10-second budget can close a
-healthy but slow launch; this is documented. Prior fake-timer isolation,
-runtime-log teardown, failure-message, helper and process-report findings have
-their fixes in the PR branch. Historical v2/v3 receipts remain unchanged. The
-current receipt continues to report its uncovered C01 axes and is never
-qualification evidence. Keep DON-179 In Review: opt-in upload and private
-retention remain outside this repair.
+awaited asynchronous startup through the renderer safety fence; the manual says
+Electron readiness and synchronous SQLite open/migration remain outside this
+bound. Local receipts retain the uncovered C01 axes. The utility-process
+boundary keeps pending log writes from holding Electron main open, and helper
+fork/initialization errors use the visible startup-fault path without a
+main-process file-I/O fallback. A held crash `fsync` is exercised separately
+from the diagnostics FIFO case. The latest independent read of the helper
+bootstrap repair found no actionable issue. Exact review and Linux CI for the
+new commit are pending; remote f35 still has the earlier producer failure.
+Historical receipts remain unchanged and no C01 qualification is claimed.
+Keep DON-179 In Review: opt-in upload and private retention remain outside this
+repair.
 
 The old exact-head Linux C19 run `35984100420` recorded a 261.161 ms maximum in
 one post-settlement mutation/close interval against the 200 ms limit. The same

@@ -183,6 +183,7 @@ export async function runStartupAdmissionProbe(options) {
       'permission-fault': () => runPermissionFaultScenario(options, path.join(disposableRoot, 'permission-fault'), report),
       'disk-full': () => runDiskFullScenario(options, path.join(disposableRoot, 'disk-full'), report),
       'held-diagnostics-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-diagnostics-gate'), report, 'diagnostics'),
+      'held-crash-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-crash-gate'), report, 'crash-write'),
       'non-regular-crash-evidence': () => runHeldGateScenario(options, path.join(disposableRoot, 'non-regular-crash-evidence'), report, 'crash'),
       'held-store-gate': () => runHeldGateScenario(options, path.join(disposableRoot, 'held-store-gate'), report, 'store'),
       'active-recoverable': () => runActiveRecoverableScenario(options, path.join(disposableRoot, 'active-recoverable'), evidenceDir, report),
@@ -218,7 +219,7 @@ export async function runStartupAdmissionProbe(options) {
  * packaged identity or C01 qualification.
  */
 export async function runStartupHeldGateDevelopmentProbe(options) {
-  const gateKinds = new Set(['diagnostics', 'crash', 'store'])
+  const gateKinds = new Set(['diagnostics', 'crash', 'crash-write', 'store'])
   if (!isAbsolutePath(options?.appPath) || !isAbsolutePath(options?.evidenceDir)
       || !gateKinds.has(options?.gateKind)) {
     throw new Error('C01 development held-gate probe requires absolute app/evidence paths and a fixed gate kind.')
@@ -244,7 +245,9 @@ export async function runStartupHeldGateDevelopmentProbe(options) {
     }
     const evidenceName = options.gateKind === 'crash'
       ? 'non-regular-crash-evidence.json'
-      : `held-${options.gateKind}.json`
+      : options.gateKind === 'crash-write'
+        ? 'held-crash.json'
+        : `held-${options.gateKind}.json`
     await writeJson(path.join(evidenceDir, evidenceName), report)
     return Object.freeze(report)
   } finally {
@@ -768,9 +771,10 @@ export function isActionableHeldGateObservation({ earlyExit, dialogWindowId, dia
     && dialogObservedAtMs <= timeoutMs
 }
 
-/** Observe one held startup dependency or one non-regular evidence rejection. */
+/** Observe held diagnostics, crash-log, or SQLite startup work and unsafe evidence rejection. */
 async function runHeldGateScenario(options, profile, _report, gateKind) {
   await seedOperationalProfile(profile)
+  if (gateKind === 'crash-write') await setNewerSchemaVersion(profile, CURRENT_SCHEMA_VERSION + 1)
   await writeJson(path.join(profile, 'settings.json'), syntheticSettings(false))
   const before = await snapshotProfileFiles(profile)
   const heldPath = gateKind === 'diagnostics'
@@ -778,6 +782,9 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     : gateKind === 'crash'
       ? path.join(profile, 'crashes', 'crash-log.json')
       : null
+  const crashWriteHold = gateKind === 'crash-write'
+    ? await createCrashLogWriteHold(profile)
+    : null
   let holder = null
   let appProcess = null
   let cleanup = { heldPathRemoved: false, lockHolderClosed: false }
@@ -806,7 +813,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       }
       await rm(heldPath, { force: true })
       await execFileAsync('mkfifo', [heldPath])
-    } else {
+    } else if (gateKind === 'store') {
       holder = await startStoreLockHolder(path.join(profile, 'mission-store.sqlite'))
     }
   } catch (error) {
@@ -825,6 +832,14 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       ...process.env,
       SARTRACKER_ELECTRON_BLOCK_NETWORK: '1',
       SARTRACKER_ELECTRON_USER_DATA_PATH: profile,
+    }
+    if (crashWriteHold !== null) {
+      appEnvironment.LD_PRELOAD = [crashWriteHold.libraryPath, process.env.LD_PRELOAD]
+        .filter((entry) => typeof entry === 'string' && entry.length > 0)
+        .join(':')
+      appEnvironment.SARTRACKER_C01_HOLD_CRASH_LOG_PREFIX = crashWriteHold.crashLogPath + '.'
+      appEnvironment.SARTRACKER_C01_HOLD_CRASH_LOG_MARKER = crashWriteHold.markerPath
+      appEnvironment.SARTRACKER_C01_HOLD_CRASH_LOG_RELEASE = crashWriteHold.releasePath
     }
     delete appEnvironment.ELECTRON_RUN_AS_NODE
     delete appEnvironment.ELECTRON_RENDERER_URL
@@ -850,6 +865,12 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
         dialogObservedAtMs = Math.max(0, Math.round(performance.now() - launchStartedAt))
       }
     }
+    if (dialogWindowId !== null && crashWriteHold !== null) {
+      crashWriteHold.markerObserved = await waitForPath(crashWriteHold.markerPath, 2_000)
+      if (!crashWriteHold.markerObserved) {
+        observationFailure = 'The packaged process showed the startup fault window without entering the crash-log fsync hold.'
+      }
+    }
     if (dialogWindowId !== null) {
       try {
         productExit = await waitForOwnedProcessExitAfterDialog(
@@ -864,6 +885,13 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
                 : null,
             )
             dialogDismissed = true
+            if (crashWriteHold !== null) {
+              await writeFile(crashWriteHold.releasePath, 'released after operator dialog dismissal\n', {
+                flag: 'wx',
+                mode: 0o600,
+              })
+              crashWriteHold.releasedAfterDialogDismissal = true
+            }
             return confirmedDismissalAt
           },
         )
@@ -873,6 +901,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       }
     }
     if (appProcess.exitCode === null && appProcess.signalCode === null) {
+      if (crashWriteHold !== null) await releaseCrashLogWriteHold(crashWriteHold)
       appProcess.kill('SIGTERM')
       await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
     }
@@ -882,6 +911,7 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     }
   }
   if (appProcess !== null && appProcess.exitCode === null && appProcess.signalCode === null) {
+    if (crashWriteHold !== null) await releaseCrashLogWriteHold(crashWriteHold)
     await waitForProcessExit(appProcess, 2_000).catch(() => undefined)
   }
 
@@ -894,6 +924,15 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
   const crashLog = gateKind === 'crash'
     ? ''
     : await readFile(path.join(profile, 'crashes', 'crash-log.json'), 'utf8').catch(() => '')
+  const parsedCrashEntries = readJsonArrayFromString(crashLog)
+  const crashLogTemporaryFiles = crashWriteHold === null
+    ? []
+    : await readdir(path.dirname(crashWriteHold.crashLogPath)).then((names) => names.filter((name) =>
+      name.startsWith(path.basename(crashWriteHold.crashLogPath) + '.') && name.endsWith('.tmp'))).catch(() => [])
+  const crashWriteCompleted = crashWriteHold !== null && parsedCrashEntries.some((entry) =>
+    entry?.kind === 'startupFailure' && typeof entry?.summary === 'string')
+  const crashWriteReleased = crashWriteHold !== null
+    && await access(crashWriteHold.releasePath).then(() => true).catch(() => false)
   const actionable = isActionableHeldGateObservation({
     earlyExit, dialogWindowId, dialogObservedAtMs, timeoutMs: C01_HELD_GATE_TIMEOUT_MS,
   })
@@ -924,30 +963,30 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
     cleanup.lockHolderClosed = holder.exitCode !== null || holder.signalCode !== null
   }
   if (heldPath !== null) cleanup.heldPathRemoved = await rm(heldPath, { force: true }).then(() => true).catch(() => false)
+  if (crashWriteHold !== null) {
+    cleanup.holdReleased = crashWriteReleased
+    cleanup.temporaryFilesRemoved = crashLogTemporaryFiles.length === 0
+  }
   const timedOutWithoutAction = isBoundedHeldGateTimeoutWithoutAction({ earlyExit, dialogWindowId, forcedKill })
   const profileKind = gateKind === 'crash'
     ? 'non-regular-crash-evidence'
-    : `held-${gateKind}-gate`
-  const failureEntries = parseJsonLines(runtimeLog)
-    .filter((entry) => entry?.event === 'startup_failure')
-    .map((entry) => ({
-      ...(typeof entry?.fields?.code === 'string' ? { code: entry.fields.code } : {}),
-      ...(typeof entry?.fields?.stage === 'string' ? { stage: entry.fields.stage } : {}),
-      ...(Number.isSafeInteger(entry?.fields?.timeoutMs) ? { timeoutMs: entry.fields.timeoutMs } : {}),
-    }))
-  const startupFailureSummaries = readJsonArrayFromString(crashLog)
+    : `held-${gateKind === 'crash-write' ? 'crash' : gateKind}-gate`
+  const failureEntries = parseStartupFailureEvents(runtimeLog)
+  const startupFailureSummaries = parsedCrashEntries
     .filter((entry) => entry?.kind === 'startupFailure' && typeof entry?.summary === 'string')
     .map((entry) => sanitizeError(entry.summary, profile))
   const gateMode = gateKind === 'diagnostics'
     ? 'post-readiness-watchdog-timeout'
     : gateKind === 'crash'
       ? 'non-regular-evidence-rejection'
-      : 'sqlite-lock-contention'
+      : gateKind === 'crash-write'
+        ? 'crash-log-write-hold'
+        : 'sqlite-lock-contention'
   return {
     profileKind,
     observed: actionable ? 'actionable-fault' : timedOutWithoutAction ? 'bounded-timeout-no-action' : 'not-observed',
     gate: {
-      kind: gateKind,
+      kind: gateKind === 'crash-write' ? 'crash' : gateKind,
       mode: gateMode,
       held: setupFailure === null && gateKind !== 'crash',
       bounded: setupFailure === null,
@@ -967,6 +1006,14 @@ async function runHeldGateScenario(options, profile, _report, gateKind) {
       lateDialogAfterTimeout,
       dependencyPath: heldPath,
       lockHolder: gateKind === 'store' ? { pid: holder?.pid ?? null, closed: cleanup.lockHolderClosed } : null,
+      ...(crashWriteHold === null ? {} : {
+        hold: {
+          markerObserved: crashWriteHold.markerObserved === true,
+          releasedAfterDialogDismissal: crashWriteHold.releasedAfterDialogDismissal === true,
+          writeCompleted: crashWriteCompleted,
+          temporaryFilesRemaining: crashLogTemporaryFiles.length > 0,
+        },
+      }),
     },
     process: processObservation,
     startupLogs: {
@@ -1028,6 +1075,58 @@ async function startStoreLockHolder(databasePath) {
     throw error
   }
   return child
+}
+
+/** Raise one disposable store's schema marker to trigger a safe startup refusal. */
+async function setNewerSchemaVersion(profile, schemaVersion) {
+  for (const fileName of ['mission-store.sqlite', 'mission-store.backup.sqlite']) {
+    const database = new Database(path.join(profile, fileName))
+    try {
+      const result = database.prepare("UPDATE metadata SET value = ? WHERE key = 'schema_version'").run(String(schemaVersion))
+      if (result.changes !== 1) throw new Error('C01 newer-schema hold fixture could not update exactly one schema marker.')
+    } finally {
+      database.close()
+    }
+  }
+}
+
+/** Compile a disposable Linux interposer that pauses only crash-log temporary-file fsync. */
+async function createCrashLogWriteHold(profile) {
+  if (process.platform !== 'linux') {
+    throw new Error('C01 held crash-log write proof requires Linux fsync interposition.')
+  }
+  const crashLogPath = path.join(profile, 'crashes', 'crash-log.json')
+  const markerPath = path.join(profile, 'crashes', '.c01-crash-write-held')
+  const releasePath = path.join(profile, 'crashes', '.c01-crash-write-release')
+  const libraryPath = path.join(profile, 'libc01-crash-log-hold.so')
+  const fixturePath = path.join(projectRoot, 'scripts', 'qualification', 'fixtures', 'c01-crash-log-hold.c')
+  await execFileAsync('cc', ['-shared', '-fPIC', '-O2', fixturePath, '-ldl', '-o', libraryPath], {
+    timeout: 10_000,
+  })
+  return {
+    crashLogPath,
+    markerPath,
+    releasePath,
+    libraryPath,
+    markerObserved: false,
+    releasedAfterDialogDismissal: false,
+  }
+}
+
+/** Wait for a controller marker using a monotonic, fixed observation bound. */
+async function waitForPath(filePath, timeoutMs) {
+  const deadline = performance.now() + timeoutMs
+  while (performance.now() < deadline) {
+    if (await access(filePath).then(() => true).catch(() => false)) return true
+    await delay(20)
+  }
+  return access(filePath).then(() => true).catch(() => false)
+}
+
+/** Release an injected crash-log hold before terminating an owned app process. */
+async function releaseCrashLogWriteHold(hold) {
+  if (await access(hold.releasePath).then(() => true).catch(() => false)) return
+  await writeFile(hold.releasePath, 'controller cleanup release\n', { flag: 'wx', mode: 0o600 })
 }
 
 /** Wait for a child process marker without allowing an unbounded startup hold. */
@@ -2023,6 +2122,22 @@ function parseJsonLines(contents) {
       return []
     }
   })
+}
+
+/** Extract only known startup failure fields from the flattened runtime-log format. */
+export function parseStartupFailureEvents(contents) {
+  return parseJsonLines(contents)
+    .filter((entry) => entry?.event === 'startup_failure')
+    .map((entry) => {
+      const fields = typeof entry?.fields === 'object' && entry.fields !== null ? entry.fields : entry
+      return {
+        ...(typeof fields.code === 'string' ? { code: fields.code } : {}),
+        ...(typeof fields.name === 'string' ? { name: fields.name } : {}),
+        ...(typeof fields.stage === 'string' ? { stage: fields.stage } : {}),
+        ...(Number.isSafeInteger(fields.timeoutMs) ? { timeoutMs: fields.timeoutMs } : {}),
+        ...(Number.isSafeInteger(fields.elapsedMs) ? { elapsedMs: fields.elapsedMs } : {}),
+      }
+    })
 }
 
 /** Allocate an isolated local CDP port. */

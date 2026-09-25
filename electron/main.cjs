@@ -49,8 +49,8 @@ const {
 const { createElectronFileSystem } = require('./file-system.cjs')
 const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
-const { createRuntimeLog } = require('./runtime-log.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
+const { createStartupEvidenceService } = require('./startup-evidence-service.cjs')
 const { showStartupFailureWindow } = require('./startup-failure-window.cjs')
 const {
   STARTUP_RESPONSE_TIMEOUT_MS,
@@ -237,6 +237,7 @@ if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== ''
 const electronRuntimeContext = {
   crashLog: null,
   runtimeLog: null,
+  startupEvidenceService: null,
   officialMapProxy: null,
   archiveReviewSessionManager: null,
   archiveReviewRendererLossFence: null,
@@ -1219,31 +1220,37 @@ if (ownsSingleInstanceLock) {
 async function handleStartupFailure(error) {
   const summary =
     error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown startup failure'
-  let evidenceWrites = Promise.resolve()
+  let crashEvidenceWrite = Promise.resolve()
+  let runtimeEvidenceWrites = []
   let failureRuntimeLog
   const appIsReady = app.isReady()
   if (appIsReady) {
     const userDataPath = app.getPath('userData')
-    const crashLog =
-      electronRuntimeContext.crashLog ?? createCrashLog({ userDataPath })
-    const runtimeLog =
-      electronRuntimeContext.runtimeLog ?? createRuntimeLog({ userDataPath })
-    failureRuntimeLog = runtimeLog
-    evidenceWrites = Promise.allSettled([
-      startBestEffortStartupWrite(() => crashLog.record({
+    const startupEvidenceService = electronRuntimeContext.startupEvidenceService
+    const crashLog = startupEvidenceService?.crashLog ??
+      electronRuntimeContext.crashLog ?? (
+        typeof process.versions.electron === 'string'
+          ? undefined
+          : createCrashLog({ userDataPath })
+      )
+    failureRuntimeLog = startupEvidenceService?.runtimeLog ?? electronRuntimeContext.runtimeLog
+    if (crashLog !== undefined) {
+      crashEvidenceWrite = startBestEffortStartupWrite(() => crashLog.record({
         kind: 'startupFailure',
         summary,
         detail:
           error instanceof Error && typeof error.stack === 'string'
             ? error.stack
             : undefined,
-      })),
-      startBestEffortStartupWrite(() => runtimeLog.append({
+      }))
+    }
+    if (failureRuntimeLog !== null && failureRuntimeLog !== undefined) {
+      runtimeEvidenceWrites = [startBestEffortStartupWrite(() => failureRuntimeLog.append({
         level: 'error',
         event: 'startup_failure',
         fields: startupFailureLogFields(error),
-      })),
-    ])
+      }))]
+    }
   }
 
   const content = startupFailureOperatorMessage(error)
@@ -1251,6 +1258,7 @@ async function handleStartupFailure(error) {
     if (appIsReady) {
       await showStartupFailureWindow({
         BrowserWindow,
+        ipcMain,
         message: content,
       })
     } else {
@@ -1271,17 +1279,32 @@ async function handleStartupFailure(error) {
     }
   }
   if (appIsReady && failureRuntimeLog !== undefined) {
-    const dialogClosedWrite = startBestEffortStartupWrite(() => failureRuntimeLog.append({
+    runtimeEvidenceWrites.push(startBestEffortStartupWrite(() => failureRuntimeLog.append({
       level: 'error',
       event: 'startup_failure_dialog_closed',
       fields: {},
-    }))
-    evidenceWrites = Promise.allSettled([evidenceWrites, dialogClosedWrite])
+    })))
   }
-  await waitForStartupEvidenceWrites(evidenceWrites)
-  // Exit Node directly: packaged held-gate runs showed app.exit() can leave the
-  // main process alive when the startup operation it abandoned still owns I/O.
-  process.exit(1)
+  const evidenceWriteResult = await waitForStartupEvidenceWrites(Promise.allSettled([
+    crashEvidenceWrite,
+    ...runtimeEvidenceWrites,
+  ]))
+  const startupEvidenceService = electronRuntimeContext.startupEvidenceService
+  if (startupEvidenceService !== null && startupEvidenceService !== undefined) {
+    try {
+      if (evidenceWriteResult.completed) {
+        await startupEvidenceService.close()
+      } else {
+        await startupEvidenceService.terminate()
+      }
+    } catch {
+      // The fault window has already told the operator to preserve the profile.
+    }
+  }
+  // Give both crash evidence and best-effort runtime logging time to settle.
+  // If a write remains stuck, stop its isolated worker before the supported
+  // Electron exit path so the abandoned filesystem request cannot keep the app alive.
+  exitAfterStartupFailure(1)
 }
 
 /** Starts one startup failure write without allowing a synchronous adapter throw to hide the fault. */
@@ -1297,16 +1320,28 @@ function startBestEffortStartupWrite(write) {
 function waitForStartupEvidenceWrites(evidenceWrites) {
   let timeout
   return Promise.race([
-    evidenceWrites,
+    Promise.resolve(evidenceWrites).then(() => ({ completed: true })),
     new Promise((resolve) => {
-      timeout = setTimeout(resolve, STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS)
+      timeout = setTimeout(() => resolve({ completed: false }), STARTUP_FAILURE_EVIDENCE_TIMEOUT_MS)
     }),
   ]).finally(() => clearTimeout(timeout))
+}
+
+/** Uses Electron's supported app exit in production and remains observable in Node tests. */
+function exitAfterStartupFailure(exitCode) {
+  if (typeof process.versions.electron === 'string') {
+    app.exit(exitCode)
+  } else {
+    process.exit(exitCode)
+  }
 }
 
 /** Adds bounded timeout details to the startup event without exposing arbitrary error text. */
 function startupFailureLogFields(error) {
   const fields = { name: error instanceof Error ? error.name : 'Error' }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_EVIDENCE_WORKER') {
+    fields.code = error.code
+  }
   if (error instanceof StartupTimeoutError) {
     fields.stage = error.stage
     fields.timeoutMs = error.timeoutMs
@@ -1329,6 +1364,9 @@ function startupFailureOperatorMessage(error) {
   if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
     return 'SAR Tracker could not read a startup evidence file safely. No mission-data corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.'
   }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_EVIDENCE_WORKER') {
+    return 'SAR Tracker could not safely initialize its isolated startup evidence writer. No mission-data corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.'
+  }
   const message = error instanceof Error ? error.message : ''
   if (
     /^Cannot open mission store created by newer mission store schema \d+; this build supports schema \d+\.$/u.test(
@@ -1346,10 +1384,20 @@ function startupFailureOperatorMessage(error) {
 async function startElectronApp(startupWatchdog) {
   installValidationNetworkBlock()
   const userDataPath = app.getPath('userData')
-  const runtimeLog = createRuntimeLog({ userDataPath })
-  const crashLog = createCrashLog({ userDataPath })
+  const startupEvidenceService = createStartupEvidenceService({
+    userDataPath,
+    utilityProcess,
+    enabled: typeof process.versions.electron === 'string',
+  })
+  const runtimeLog = startupEvidenceService.runtimeLog
+  const crashLog = startupEvidenceService.crashLog
+  electronRuntimeContext.startupEvidenceService = startupEvidenceService
   electronRuntimeContext.runtimeLog = runtimeLog
   electronRuntimeContext.crashLog = crashLog
+  await startupWatchdog.run(
+    'startup evidence writer initialization',
+    () => startupEvidenceService.ready,
+  )
   const storageDiagnostics = createStorageDiagnostics({
     userDataPath,
     runtimeLog,
@@ -1556,6 +1604,7 @@ async function startElectronApp(startupWatchdog) {
       runtimeLog,
       missionStore,
       archiveReviewSessionManager,
+      startupEvidenceService,
     )
   })
 }
@@ -1592,6 +1641,7 @@ async function markCleanExitAndQuit(
   runtimeLog,
   missionStore,
   archiveReviewSessionManager,
+  startupEvidenceService,
 ) {
   if (cleanExitInProgress) {
     return
@@ -1610,6 +1660,7 @@ async function markCleanExitAndQuit(
     await crashLog.markCleanExit()
     officialMapProxy.close?.()
     missionStore.close()
+    await startupEvidenceService?.close()
     app.exit(0)
   } catch (error) {
     cleanExitInProgress = false

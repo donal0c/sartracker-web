@@ -6,7 +6,7 @@ import { inspectHeldGateDevelopment } from './producer-development-policy.mjs'
 
 const [appPath, evidenceDir, gateKind] = process.argv.slice(2)
 if (![appPath, evidenceDir].every(value => typeof value === 'string' && path.isAbsolute(value))
-    || !['diagnostics', 'crash', 'store'].includes(gateKind)) {
+    || !['diagnostics', 'crash', 'crash-write', 'store'].includes(gateKind)) {
   throw new Error('Held-gate development check requires absolute app/evidence paths and a fixed gate kind.')
 }
 const report = await runStartupHeldGateDevelopmentProbe({ appPath, evidenceDir, gateKind, launchPackagedTarget: true })

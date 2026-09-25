@@ -9,6 +9,7 @@ import {
 import {
   isActionableHeldGateObservation,
   isBoundedHeldGateTimeoutWithoutAction,
+  parseStartupFailureEvents,
   parseStartupProbeArgs,
   waitForOwnedProcessOrTimeout,
 } from '../../scripts/qualification/startup-probe.mjs'
@@ -210,6 +211,15 @@ function report(overrides: Record<string, unknown> = {}) {
         originalFiles: { before: snapshots(), after: snapshots() },
         process: { pid: 108, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 10_100, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 10_100, lateDialogAfterTimeout: false, faultShellAtMs: 10_100 },
       },
+      'held-crash-gate': {
+        profileKind: 'held-crash-gate',
+        observed: 'actionable-fault',
+        gate: { kind: 'crash', mode: 'crash-log-write-hold', held: true, bounded: true, action: 'preserve-profile-and-contact-support', timeoutMs: 20_000, response: 'startup-fault-window', dialogObserved: true, dialogDismissed: true, lateDialogAfterTimeout: false, hold: { markerObserved: true, releasedAfterDialogDismissal: true, writeCompleted: true, temporaryFilesRemaining: false } },
+        cleanup: { holdReleased: true, temporaryFilesRemoved: true, lockHolderClosed: false },
+        startupLogs: { startupFailureSummaries: ['Error: Cannot open mission store created by newer mission store schema 14; this build supports schema 13.'] },
+        originalFiles: { before: snapshots(), after: snapshots() },
+        process: { pid: 112, closed: true, exitCode: 1, signal: null, productExitCode: 1, productExitSignal: null, exitAfterDialogMs: 50, timeoutMs: 20_000, timedOut: false, observationElapsedMs: 1900, forcedKill: false, dialogObserved: true, dialogDismissed: true, dialogObservedAtMs: 1900, lateDialogAfterTimeout: false, faultShellAtMs: 1900 },
+      },
       'non-regular-crash-evidence': {
         profileKind: 'non-regular-crash-evidence',
         observed: 'actionable-fault',
@@ -243,7 +253,7 @@ function report(overrides: Record<string, unknown> = {}) {
 
 describe('qualification C01 startup receipt validator', () => {
   it('versions the startup-fault modes and watchdog evidence as C01 v4', () => {
-    expect(STARTUP_PROBE_DESCRIPTOR.schema).toBe('sartracker-c01-startup-admission-v4')
+    expect(STARTUP_PROBE_DESCRIPTOR.schema).toBe('sartracker-c01-startup-admission-v5')
     const previousVersion = report({ schema: 'sartracker-c01-startup-admission-v2' })
 
     const result = validateStartupContractEvidence('C01', previousVersion, expected)
@@ -367,6 +377,25 @@ describe('qualification C01 startup receipt validator', () => {
     ])).toThrow(/unknown|arbitrary/iu)
   })
 
+  it('reads startup failure fields from the runtime log record shape', () => {
+    const result = parseStartupFailureEvents(JSON.stringify({
+      ts: '2026-09-25T00:00:00.000Z',
+      level: 'error',
+      event: 'startup_failure',
+      name: 'StartupTimeoutError',
+      code: 'ERR_SARTRACKER_NON_REGULAR_FILE',
+      stage: 'storage diagnostics initialization',
+      timeoutMs: 10_000,
+    }))
+
+    expect(result).toEqual([{
+      code: 'ERR_SARTRACKER_NON_REGULAR_FILE',
+      name: 'StartupTimeoutError',
+      stage: 'storage diagnostics initialization',
+      timeoutMs: 10_000,
+    }])
+  })
+
   it('describes the actual packaged producer and explicit uncovered axes', () => {
     expect(STARTUP_PROBE_DESCRIPTOR.contractId).toBe('C01')
     expect(STARTUP_PROBE_DESCRIPTOR.cli.required).toEqual([
@@ -399,6 +428,7 @@ describe('qualification C01 startup receipt validator', () => {
       permissionFault: true,
       diskFullFault: true,
       heldDiagnosticsGate: true,
+      heldCrashGate: true,
       nonRegularCrashEvidence: true,
       heldStoreGate: true,
       activeRecoverableMission: true,
@@ -428,6 +458,26 @@ describe('qualification C01 startup receipt validator', () => {
     expect(result.passed).toBe(false)
     expect(result.recomputedPredicates.heldDiagnosticsGate).toBe(false)
     expect(result.failureReasons.join('\n')).toMatch(/declared bounded startup-fault mode/iu)
+  })
+
+  it.each([
+    ['no intercepted crash-log fsync', { markerObserved: false }],
+    ['release before dialog dismissal', { releasedAfterDialogDismissal: false }],
+    ['incomplete durable write', { writeCompleted: false }],
+    ['stray temporary file', { temporaryFilesRemaining: true }],
+  ])('does not pass the held crash-log gate with %s', (_label, holdOverride) => {
+    const forged = report()
+    const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)['held-crash-gate']
+    scenario.gate = {
+      ...(scenario.gate as Record<string, unknown>),
+      hold: { ...((scenario.gate as Record<string, unknown>).hold as Record<string, unknown>), ...holdOverride },
+    }
+
+    const result = validateStartupContractEvidence('C01', forged, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.recomputedPredicates.heldCrashGate).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-crash-gate|crash-log write hold/iu)
   })
 
   it('rejects forged pass when the newer-schema profile changes a retained byte', () => {
@@ -532,6 +582,18 @@ describe('qualification C01 startup receipt validator', () => {
       expect(result.passed).toBe(false)
       expect(result.failureReasons.join('\n')).toMatch(/cleanup/iu)
     }
+  })
+
+  it.each(['holdReleased', 'temporaryFilesRemoved'])('rejects held crash-log evidence without %s cleanup', (field) => {
+    const forged = report()
+    const scenario = (forged.scenarios as Record<string, Record<string, unknown>>)['held-crash-gate']
+    scenario.cleanup = { ...(scenario.cleanup as Record<string, unknown>), [field]: false }
+
+    const result = validateStartupContractEvidence('C01', forged, expected)
+
+    expect(result.passed).toBe(false)
+    expect(result.recomputedPredicates.heldCrashGate).toBe(false)
+    expect(result.failureReasons.join('\n')).toMatch(/held-crash-gate.*cleanup/iu)
   })
 
   it('rejects contradictory or missing store lock-holder closure evidence', () => {

@@ -20,14 +20,21 @@ const originalProcessListeners = {
 let testUserDataPathSequence = 0
 let testUserDataPath = createTestUserDataPath()
 let startupProcessExit: ReturnType<typeof vi.spyOn>
+let originalElectronVersion: PropertyDescriptor | undefined
 
 describe('Electron main startup', () => {
   beforeEach(() => {
+    originalElectronVersion = Object.getOwnPropertyDescriptor(process.versions, 'electron')
     startupProcessExit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
   })
 
   afterEach(() => {
     Module._load = originalLoad
+    if (originalElectronVersion === undefined) {
+      Reflect.deleteProperty(process.versions, 'electron')
+    } else {
+      Object.defineProperty(process.versions, 'electron', originalElectronVersion)
+    }
     vi.useRealTimers()
     Object.defineProperty(process, 'platform', {
       value: originalPlatform,
@@ -1427,6 +1434,81 @@ describe('Electron main startup', () => {
     expect(startupProcessExit).toHaveBeenCalledWith(1)
   })
 
+  it('bounds stuck evidence writes after the operator closes the startup fault window', async () => {
+    vi.useFakeTimers()
+    const held = new Promise<never>(() => {})
+    const electronMock = createElectronMock(vi.fn(), undefined, true, [], undefined, undefined, false)
+    const crashLog = { hadUncleanShutdown: vi.fn(async () => false), record: vi.fn(async () => undefined) }
+    const runtimeLog = { append: vi.fn(() => held) }
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: () => held }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(10_000)
+    expectStartupFailureWindow(electronMock, expect.stringMatching(/storage diagnostics initialization/iu))
+    expect(startupProcessExit).not.toHaveBeenCalled()
+
+    const faultWindow = electronMock.BrowserWindow.mock.results[0]?.value
+    const closeListener = electronMock.ipcMain.on.mock.calls.find(
+      ([channel]) => channel === 'sartracker:startup-failure-close',
+    )?.[1]
+    closeListener?.({ sender: faultWindow.webContents })
+    expect(faultWindow.close).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(startupProcessExit).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
+    expect(electronMock.ipcMain.removeListener).toHaveBeenCalledWith(
+      'sartracker:startup-failure-close',
+      closeListener,
+    )
+  })
+
+  it('bounds a crash-record write only after it remains pending for the evidence deadline', async () => {
+    vi.useFakeTimers()
+    const heldCrashWrite = new Promise<never>(() => {})
+    const startupError = new Error('mission store could not initialize')
+    const crashLog = {
+      hadUncleanShutdown: vi.fn(async () => false),
+      markSessionStart: vi.fn(async () => undefined),
+      record: vi.fn(() => heldCrashWrite),
+    }
+    const runtimeLog = { append: vi.fn(async () => undefined) }
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './storage-diagnostics.cjs') {
+        return { createStorageDiagnostics: () => ({ initialize: vi.fn(async () => undefined) }) }
+      }
+      if (request === './crash-log.cjs') return { createCrashLog: () => crashLog }
+      if (request === './runtime-log.cjs') return { createRuntimeLog: () => runtimeLog }
+      if (request === './mission-store.cjs') {
+        return { createElectronMissionStore: vi.fn(() => { throw startupError }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.advanceTimersByTimeAsync(0)
+    expectStartupFailureWindow(electronMock, expect.stringMatching(/contact support/iu))
+    expect(startupProcessExit).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(startupProcessExit).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(crashLog.record).toHaveBeenCalledOnce()
+    expect(startupProcessExit).toHaveBeenCalledWith(1)
+  })
+
   it('uses Electron error reporting for a readiness rejection before application logs exist', async () => {
     const readinessError = new Error(
       'Could not open /home/fieldoperator/profile token=private-startup-token',
@@ -2004,7 +2086,7 @@ describe('Electron main startup', () => {
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
       markSessionStart: vi.fn(async () => undefined),
-      record: vi.fn(() => held),
+      record: vi.fn(async () => undefined),
     }
     const runtimeLog = { append: vi.fn(() => held) }
     const electronMock = createElectronMock(vi.fn(), undefined, true)
@@ -2070,6 +2152,36 @@ describe('Electron main startup', () => {
       }))
       expect(startupProcessExit).toHaveBeenCalledWith(1)
     })
+  })
+
+  it('keeps utility-process bootstrap failure visible without main-process crash-log I/O', async () => {
+    Object.defineProperty(process.versions, 'electron', {
+      configurable: true,
+      value: '40.0.0',
+    })
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    electronMock.utilityProcess.fork.mockImplementation(() => {
+      throw new Error('could not start utility process')
+    })
+    const createCrashLog = vi.fn(() => { throw new Error('main-process crash log must not be opened') })
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './crash-log.cjs') {
+        return { createCrashLog, isRendererFaultReason: vi.fn() }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => {
+      expectStartupFailureWindow(
+        electronMock,
+        expect.stringMatching(/could not safely initialize its isolated startup evidence writer.*No mission-data corruption was confirmed/iu),
+      )
+      expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    })
+    expect(createCrashLog).not.toHaveBeenCalled()
   })
 
   it('keeps arbitrary startup-failure detail out of the operator dialog [DON-260]', async () => {
