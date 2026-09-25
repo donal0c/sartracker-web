@@ -1219,13 +1219,15 @@ describe('Electron main startup', () => {
     expectedTitle,
     relaunches,
   }) => {
-    vi.useFakeTimers()
     Object.defineProperty(process.versions, 'electron', {
       configurable: true,
       value: '42.0.0',
     })
     const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
-    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    let releaseWindowLoad!: () => void
+    const windowLoad = new Promise<void>((resolve) => { releaseWindowLoad = resolve })
+    const loadWindow = vi.fn(() => windowLoad)
+    const electronMock = createElectronMock(vi.fn(), undefined, true, [], loadWindow)
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
       markSessionStart: vi.fn(async () => undefined),
@@ -1276,6 +1278,19 @@ describe('Electron main startup', () => {
       expect(unhandledRejectionHandler).toBeDefined()
     })
 
+    // Crash capture is installed before asynchronous store/window startup finishes.
+    // Do not advance the startup watchdog while real filesystem work is pending.
+    await vi.waitFor(() => expect(loadWindow).toHaveBeenCalledOnce())
+    expect(electronMock.BrowserWindow.mock.results[0]?.value.show).not.toHaveBeenCalled()
+    expect(crashLog.recordDurably).not.toHaveBeenCalled()
+    releaseWindowLoad()
+    await vi.waitFor(() => {
+      expect(crashLog.record).not.toHaveBeenCalled()
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+      expect(electronMock.BrowserWindow.mock.results[0]?.value.show).toHaveBeenCalledOnce()
+    })
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+    vi.useFakeTimers()
     unhandledRejectionHandler?.(new Error('fatal runtime fault'))
     await vi.advanceTimersByTimeAsync(0)
     expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()

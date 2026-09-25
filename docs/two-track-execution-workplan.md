@@ -4,6 +4,12 @@
 
 ## Current Beta 13 decision — 2026-09-25
 
+**Current post-PR50 queue:** PR50 merged at `c6097f36`. Postmerge build and
+packaged checks passed; one fatal-writer startup unit test failed. The authorized
+bounded test-readiness repair precedes exact-artifact binding and the existing
+`bcp17-final` qualification campaign. No feature/WAR work is added. Release HOLD
+continues; detailed evidence and next action are in `handoff/HANDOFF.md`.
+
 **Post-PR47 preparation update:** PR47 is merged at master
 `a703338a919159dd3a386671dba8aca969463255`; the older open-PR and master
 identities below are historical. No open PRs remained at the preceding stocktake.
