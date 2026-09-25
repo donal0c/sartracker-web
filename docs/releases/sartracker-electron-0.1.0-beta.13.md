@@ -1,0 +1,61 @@
+# SAR Tracker Electron 0.1.0-beta.13 — preparation draft
+
+**HOLD — NOT APPROVED FOR PUBLICATION OR DISTRIBUTION.**
+
+This is incomplete release metadata, not a verification report. Complete every
+applicable section of `TEMPLATE.md` from exact-candidate evidence before guarded
+publication. No candidate SHA, installer hash or result is asserted here.
+
+- Version: `0.1.0-beta.13`
+- Intended tag: `electron-v0.1.0-beta.13` (not created)
+- Linear: DON-254 qualification; DON-255 publication decision
+- Release-use classification: `ENGINEERING/TRAINING — NON-COUNTED`
+- Candidate identity / qualified platform and profile / CI run: PENDING
+- Scope: controlled synthetic, replayed or disposable-data testing with an
+  independent primary operational process. Not sole-source operational software.
+- Distribution target: Linux x86-64 AppImage and actually installed Debian package;
+  both require independent exact-byte qualification. No Windows/macOS claim.
+
+## What changed — subject to final verification
+
+The merged breadcrumb and mission-history programme, team-request repairs and
+resilience repairs are included. Final notes must link their exact verification
+and operator manual rather than claim that merging established operational safety.
+
+## Regression provenance
+
+- Classification: Regression correction
+- Linear issue: DON-254; reconcile linked regression owners before publication
+- Affected release(s): PENDING per-regression artifact inventory
+- Last known good: PENDING; do not substitute rollback availability for proof
+- First known bad: PENDING per-regression inventory
+- Root cause: PENDING linked per-regression records, including PR47 disposition
+- Escape analysis: PENDING per-regression inventory
+- Before/after evidence: PENDING exact-candidate qualification
+- Regression gate: Existing bcp17-final contracts; results PENDING
+- Remaining uncertainty: Deferred synchronous mission-store startup isolation;
+  DON-249/250/251 NOT_CLAIMED; PKG-001 original-machine/package evidence remains
+  separately required. See workplan and post-beta13-mission-store-isolation.md.
+
+## Verification and acceptance — all pending
+
+Existing C00–C29 contracts, deterministic/source/browser checks, independent
+recorded-UI judging, exact CI package provenance, Ubuntu AppImage and installed
+`.deb`, scale and long-running/fault/recovery matrix, applicable live GET-only
+confirmation, private-map smoke, C29 human acceptance, beta:verify and release
+workflow proof must be recorded. Failed or absent evidence cannot become a pass.
+Complete install instructions, warnings, checksum table and the pre-share checklist
+from TEMPLATE.md after actual artifact names and tested profiles are known.
+
+## Deferred scope
+
+No full map administration or raw licensed-source distribution in this release.
+Use the prepared private MBTiles route. No synchronous database ownership redesign
+and no blanket completion claim for the broader WAR backlog.
+
+## Rollback and promotion
+
+Retain `electron-v0.1.0-beta.12.11` installer identities. Verify fallback/profile
+compatibility on disposable copies; do not open upgraded operational profiles with
+an older binary on assumption. C27 requires a separate human decision; C00 verifies
+fresh public bytes after publication. Until then, do not send this build to the team.

@@ -6,16 +6,40 @@ assurance records.
 
 ## Current state
 
+### Release preparation update — 2026-09-25 after PR47 merge
+
+PR47 is merged. Clean preparation checkout:
+`/Users/donalocallaghan/workspace/vibes/sartracker-release-prep`, source
+`a703338a919159dd3a386671dba8aca969463255`. The older open-PR47 status below
+is superseded. Master CI `36141017519` was still running during preparation.
+No candidate is frozen, tagged, qualified or published. Next action is the
+bounded preparation checklist in `docs/assurance/beta13-testing-readiness.md`,
+then the existing `bcp17-final` campaign, not another feature/WAR programme.
+
+Campaign compile passed on the clean merged source. Candidate preflight aborted
+with `blockers contains duplicates.` before producing a valid JSON verdict;
+do not claim preflight PASS. Ubuntu SSH at the documented address timed out
+twice. Final version/CI artifacts/runtime manifests and human acceptance inputs
+remain unbound. Dependencies were installed with scripts disabled for static
+inventory compilation only; this is not a runtime/native-addon setup.
+Full mapping and synchronous mission-store process isolation remain deferred.
+Local preparation changes are not committed/pushed or candidate evidence.
+
+Follow-up: the duplicate-blocker preflight reporting defect is fixed locally
+with a red/green regression. Two controller test files report 51 passed and one
+pre-existing skip. CLI now emits honest ENVIRONMENT_BLOCKED JSON (96 unique
+prerequisite/identity blockers); no gate was weakened. Package/lockfile beta.13
+metadata and a HOLD release-note draft are prepared locally for review before
+candidate freeze. The initial immutable definition is superseded by these edits.
+
 Beta 13 remains **HOLD**. No candidate is frozen or qualified; no tag,
-publication, or distribution has occurred. `master` is `30cb7d45` after PR #49.
+publication, or distribution has occurred. PR47 is merged at `a703338a`.
 
 PR #47's behavior-bearing source changed after a 2026-09-25 multi-agent review
 of `7fda435` found fatal/quit state, evidence-writer, fault-window and
 held-gate classification defects (register IDs V01-V16). Review-fix source
 `1dd316f2` supersedes the earlier `0e6db8a` evidence; its exact-source Linux
-run `36136413925` passed. PR #47 is open, out of draft and mergeable. GitHub
-shows `BLOCKED` because the "Protect master - Donal only" ruleset's `update`
-rule admits only Donal's bypass; merging is Donal's decision via that bypass.
+run `36136413925` passed. Donal subsequently merged PR47.
 The [PR47 findings register](../docs/pr47-findings-disposition.md) records the
 review outcome. Merging does not lift Beta 13 HOLD: do not tag, publish, or
 release from this repair.
@@ -41,5 +65,26 @@ opt-in remote upload and private retention are outside this repair.
 
 ## Next actions
 
-1. Donal decides whether to merge PR #47 (ruleset bypass required).
-2. Keep Beta 13 on HOLD pending its separate candidate and release gates.
+1. Review/merge the bounded Beta13 testing-preparation change; Donal owns merge.
+2. Freeze the resulting clean source and exact CI artifacts, then execute the
+   existing bcp17-final campaign. Never reuse the preliminary unbound definition.
+3. Complete independent human acceptance and the separate publication decision.
+
+Ubuntu access is restored: Linux x86_64, Node 22.22.2, approximately 124 GiB
+available, installed beta12.11, no competing SAR process observed. Desktop is
+Wayland with Xwayland sockets; SSH display probes currently lack authorization.
+Xwayland display :0 was subsequently verified through the user's existing
+Xauthority file, without changing access control. Xvfb is absent and
+noninteractive sudo requires a password. Candidate .deb installation and bounded
+disk-full-volume setup require administrator assistance; user-namespace mount
+probe was denied. Master CI `36141017519` passed. Preparation validation:
+65 tests passed, one Linux-only skip; full lint and production build/bundle checks
+passed. Build-generated version metadata was restored, not committed as identity.
+
+Host setup subsequently completed with Donal's explicit administrator authority:
+xvfb/xauth/xdotool report installed, Xvfb display probe passes, and separate
+32 MiB tmpfs `/mnt/sartracker-beta13-enospc` is mounted for bounded ENOSPC tests.
+The apt command returned 100 for unrelated NVIDIA driver/kernel configuration
+errors; requested tool status was independently verified. Preserve that host
+warning and verify actual candidate .deb installation separately. No driver
+repair/reboot, candidate installation, qualification or publication occurred.

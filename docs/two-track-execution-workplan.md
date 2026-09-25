@@ -4,6 +4,25 @@
 
 ## Current Beta 13 decision — 2026-09-25
 
+**Post-PR47 preparation update:** PR47 is merged at master
+`a703338a919159dd3a386671dba8aca969463255`; the older open-PR and master
+identities below are historical. No open PRs remained at the preceding stocktake.
+Follow [the testing readiness checklist](assurance/beta13-testing-readiness.md)
+for the bounded remaining preparation. The campaign compiler passed; candidate
+preflight initially aborted on duplicate blocker strings for the unbound template.
+The narrow fix below now returns an honest blocked verdict. Reference Ubuntu
+access is restored; display/tooling setup remains before package execution.
+Neither fact authorizes weakened gates, substitute platform proof, or new features.
+Database process isolation stays explicitly post-Beta13. Release remains HOLD.
+
+Preparation follow-up: narrow duplicate-blocker reporting fix, red/green test,
+beta.13 package metadata and HOLD release-note draft are prepared locally in
+the isolated checkout. Controller tests: 51 passed / one existing skip. CLI
+now returns ENVIRONMENT_BLOCKED rather than throwing. Review/merge these
+preparations and restore Ubuntu access before freezing or spending on qualification.
+
+### Historical pre-PR47-merge snapshot (superseded by the update above)
+
 Release is **HOLD**. PR45 merged documentation/control-plane evidence only; no
 Beta 13 candidate is frozen, qualified, tagged, published or distributed. PR
 #48 is merged; current `master` is
