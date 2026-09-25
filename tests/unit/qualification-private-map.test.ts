@@ -68,6 +68,16 @@ describe('private offline-map qualification [DON-254]', () => {
       expect(result.target.sha256).toMatch(/^[a-f0-9]{64}$/u)
     } finally { db.close() }
   })
+  it('targets the lowest available zoom when a detail-only map starts above the operational zoom', () => {
+    const db = fixture()
+    try {
+      db.exec('UPDATE tiles SET zoom_level = 13, tile_column = 3870, tile_row = 5487')
+      db.prepare('INSERT INTO tiles VALUES (14, 7740, 10974, ?)').run(createSyntheticRasterTilePng('b'))
+      const result = inspectPrivateMapTiles(db)
+      expect(result.facts).toEqual({ tileCount: 2, decodedTileCount: 2, minZoom: 13, maxZoom: 14 })
+      expect(result.target).toMatchObject({ z: 13, x: 3870, y: 2704 })
+    } finally { db.close() }
+  })
   it.each(['invalid-image', 'duplicate-coordinate', 'out-of-range'])('rejects %s source rows', (kind) => {
     const db = fixture()
     try {

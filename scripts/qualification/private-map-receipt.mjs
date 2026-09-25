@@ -48,7 +48,8 @@ export function inspectPrivateMapTiles(database) {
   if (decodedTileCount !== facts.tileCount) throw new Error('PRIVATE_MAP_DECODE_INCOMPLETE')
   // Use a real interior tile at a fixed bounded operational zoom, without
   // persisting its coordinates or bytes in the sanitized producer receipt.
-  const z = Math.min(12, facts.maxZoom)
+  // Clamp into the package's range so detail-only packages (minZoom > 12) qualify.
+  const z = Math.max(facts.minZoom, Math.min(12, facts.maxZoom))
   const extent = database.prepare(`SELECT MIN(tile_column) AS x0, MAX(tile_column) AS x1,
     MIN(tile_row) AS y0, MAX(tile_row) AS y1 FROM tiles WHERE zoom_level = ?`).get(z)
   const target = database.prepare(`SELECT tile_column AS x, tile_row AS tmsY, tile_data AS bytes
