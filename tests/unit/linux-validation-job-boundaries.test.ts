@@ -25,5 +25,9 @@ describe('Linux validation job boundaries', () => {
     }
     expect(workflow.jobs.build.steps.some(step => step.name === 'Full correctness unit gate')).toBe(false)
     expect(workflow.jobs.build.steps.find(step => step.name === 'Verify and restore exact package')?.run).toContain('sha256sum -c')
+    expect(workflow.jobs.package.steps.find(step => step.name === 'Preserve exact package for independent checks')?.run)
+      .toContain('tmp/electron-dist dist')
+    expect(workflow.jobs.build.steps.find(step => step.name === 'Verify and restore exact package')?.run)
+      .toContain('test -f dist/index.html')
   })
 })

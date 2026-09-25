@@ -391,7 +391,7 @@ jobs:
         id: package_transfer
         run: |
           set -euo pipefail
-          tar -czf tmp/validation-package.tar.gz -C tmp electron-dist
+          tar -czf tmp/validation-package.tar.gz tmp/electron-dist dist
           {
             echo "sha256=$(sha256sum tmp/validation-package.tar.gz | cut -d ' ' -f1)"
             echo "source=$EXPECTED_SOURCE_SHA"
@@ -535,7 +535,8 @@ jobs:
           test "$TRANSFER_SOURCE" = "$EXPECTED_SOURCE_SHA"
           test -n "$TRANSFER_SHA256"
           echo "$TRANSFER_SHA256  tmp/package-transfer/validation-package.tar.gz" | sha256sum -c -
-          tar -xzf tmp/package-transfer/validation-package.tar.gz -C tmp
+          tar -xzf tmp/package-transfer/validation-package.tar.gz
+          test -f dist/index.html
           sha256sum -c tmp/electron-dist/SHA256SUMS
           test -x tmp/electron-dist/linux-unpacked/sartracker-web
 

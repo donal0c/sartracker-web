@@ -190,7 +190,8 @@ function independentlyValidateReport(report, expected) {
   const run = report.ci?.ciMetadata?.run ?? report.ciMetadata?.run
   const artifact = report.ci?.ciMetadata?.artifact ?? report.ciMetadata?.artifact
   if (!run || !artifact) throw new Error('Retained report is missing raw CI run or artifact metadata.')
-  const provenance = validateCiArtifactProvenance(run, artifact, expected)
+  const jobs = report.ci?.ciMetadata?.jobs ?? report.ciMetadata?.jobs ?? []
+  const provenance = validateCiArtifactProvenance(run, artifact, expected, jobs)
   const ci = report.ci
   if (!ci || ci.schema !== 'sartracker-candidate-ci-artifacts-v1' || ci.version !== expected.version
       || !ci.provenance || ci.provenance.sourceSha !== expected.sourceSha || ci.provenance.runId !== expected.runId

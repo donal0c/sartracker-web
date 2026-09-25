@@ -16,6 +16,27 @@ const artifact = { id: 456, name: `electron-linux-artifacts-${sha}`, expired: fa
   digest: `sha256:${digest}`, workflow_run: { id: 123, head_sha: sha }, size_in_bytes: 50 }
 
 describe('exact candidate CI and installed package boundaries', () => {
+  const job = (name: string, attempt: number, conclusion = 'success') => ({ name, run_attempt: attempt,
+    run_id: 123, head_sha: sha, status: 'completed', conclusion })
+  const packageJob = job('Build exact Linux package', 1)
+  const failedChecks = job('Packaged Linux checks', 1, 'failure')
+  const passedChecks = job('Packaged Linux checks', 2)
+  const rerun = { ...run, run_attempt: 2 }
+  const rerunExpected = { ...expected, runAttempt: 2 }
+  const firstArtifact = { ...artifact, name: `${artifact.name}-attempt-1` }
+  it('accepts the unchanged package after only failed packaged checks are rerun', () => {
+    expect(validateCiArtifactProvenance(rerun, firstArtifact, rerunExpected,
+      [packageJob, failedChecks, passedChecks])).toMatchObject({ runAttempt: 2, packageAttempt: 1, archiveSha256: digest })
+  })
+  it.each([
+    [], [packageJob, failedChecks],
+    [packageJob, passedChecks, job('Build exact Linux package', 2)],
+    [packageJob, { ...passedChecks, head_sha: 'c'.repeat(40) }],
+    [packageJob, { ...passedChecks, run_id: 124 }],
+    [packageJob, { ...passedChecks, conclusion: 'skipped' }],
+  ])('rejects earlier packages without matching successful job lineage %j', (jobs) => {
+    expect(() => validateCiArtifactProvenance(rerun, firstArtifact, rerunExpected, jobs)).toThrow()
+  })
   it('binds attempt-specific validation artifacts without accepting another attempt', () => {
     expect(validateCiArtifactProvenance(run, { ...artifact, name: `${artifact.name}-attempt-1` }, expected).sourceSha).toBe(sha)
     expect(() => validateCiArtifactProvenance(run, { ...artifact, name: `${artifact.name}-attempt-2` }, expected)).toThrow()

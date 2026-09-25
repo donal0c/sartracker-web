@@ -141,8 +141,13 @@ SHA256 of the transferred package and checks installer hashes before execution.
 Failed packaged jobs can be rerun against the successful package in that run;
 new source requires a new package. Evidence/transfer/installer uploads are
 attempt-specific so failed receipts are retained. Final candidate provenance
-requires artifacts matching the declared successful run attempt; a failed-job-only
-rerun does not automatically turn earlier-attempt installers into that identity.
+distinguishes the successful run attempt from the package-producing attempt.
+Earlier installers require retained live GitHub job metadata proving the latest
+successful package job produced that attempt and the latest successful packaged
+checks consumed that producer's source-bound, checksum-verified transfer. A newer
+package job invalidates older installers. Exact artifact ID, run ID, source and
+downloaded archive digest remain mandatory. Transfer includes the original `dist`
+tree for packaged-versus-build byte comparisons; it is not rebuilt by the consumer.
 
 Only development C10 known-at-time replay uses `--development-correctness-only`.
 It retains timing and runs all live/archive geometry checks. Its receipt is

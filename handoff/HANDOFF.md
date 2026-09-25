@@ -29,7 +29,18 @@ Ubuntu replay using the retained c13 CI AppImage and revised external harness
 passed live/archive correctness (115 frames, 33.3ms maximum gap); strict candidate
 validation correctly rejected that development-only receipt. This is diagnostic
 proof, not final-head CI or qualification. The original 200ms failure remains
-retained. Next: push this repair on PR50 and verify fresh exact-head CI.
+retained. The repair was pushed as `787afdec`.
+
+Follow-up review reproduced the failed-job-only candidate provenance bug. The
+fix distinguishes package-producing attempt from successful run attempt, requires
+live/retained successful producer and consumer job lineage for reused packages,
+and rejects older installers after a newer package build. Exact archive ID and
+digest checks remain. A retained C00 identity regression covers the same path.
+Run `36152725061` passed correctness/browser in 16m27s but C09 failed because the
+new packaged lane lacked `dist` for packaged-source comparison. Transfer now
+includes the producer's original `dist` under the same SHA256, not a rebuild.
+Both failures have red/green regressions. Fresh exact-head CI is still required;
+PR50 remains draft and release remains HOLD.
 
 ### Release preparation update — 2026-09-25 after PR47 merge
 
