@@ -219,7 +219,15 @@ WAR-06 passes 3/3 (5.0s), WAR-11 6/6 (17.1s), Train C 6/6 (35.0s), and the full
 Chromium suite 225/225 (5.9m). All browser runs used one worker, zero retries
 and flaky-pass rejection. No owned browser-server listeners remained. Logs and
 the attached driver receipt are retained in `tmp/pr54-toolchain-verification/`
-with SHA-256 inventory. Exact-head Linux CI remains pending.
+with SHA-256 inventory. Linux run
+[36241851816](https://github.com/donal0c/sartracker-web/actions/runs/36241851816)
+passed all required lanes on exact head `69e9badc0010fe5ca263bbca523103459680338d`:
+correctness, driver contract, full Chromium 225/225 (12.8m), package and packaged
+Linux checks. This includes the changed `_electron` automation-driver surface.
+Subsequent documentation-only commits preserve executable inputs but are not the
+head tested by that run; their required CI status remains a separate observation.
+The merged-source dispatch must explicitly enable `run_repair_train_d_smoke=true`
+and its Train-D receipt must pass; aggregate green alone is insufficient.
 The synthetic driver defect is confirmed; attribution of the original SAR
 failure remains **suspected, not proven**. No diagnostics waive the original
 failed gate, exact-head Linux validation, merged-source qualification or

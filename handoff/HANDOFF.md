@@ -27,7 +27,10 @@ driver contract, 3/6/6 predecessor browser cases and full 225 Chromium tests
 with zero retries. Claude exact-head review accepted (L1 exact-pin check deferred).
 The pin also swaps the `_electron` driver for packaged smoke/soak/qualification
 harnesses; no local 1.63 `_electron` run is claimed, so exact-head Packaged Linux
-checks (run 36241851816) and the merged-source dispatch are that surface's evidence.
+checks and the merged-source dispatch are that surface's evidence. Run 36241851816
+passed every required lane on `69e9badc`, including driver, 225 Chromium cases
+and packaged checks. Later documentation commits have identical executable inputs;
+their own required CI status must still be observed, not attributed to that run.
 Exact-head Linux 225/225 plus the driver gate is required before merge
 recommendation, then a full merged-source Linux workflow_dispatch before tagging. The compact cause and
 verification ledger is `docs/releases/beta13-browser-gate-repair.md`.
@@ -121,6 +124,13 @@ GET-only and executed by Sol after preflight/candidate binding (DON-254 comment
 `af5f3aa6-5cd3-40c0-8947-4c327d3a5a3e`). No writes or expanded targets; keep
 credentials/target values private. Consent is cleared; live proof remains pending.
 C29 named original-machine/human acceptance remains required.
+Same-campaign C29 continuity requires the reviewed public authority, authorization
+and profile identities sealed before compilation; a keyless technical campaign
+cannot later add them while retaining its technical receipts. This prepares
+authority only: training, handover approval and the human signature still occur
+later. CoS is resolving the minimal prebinding inputs; do not freeze a tag or
+campaign until the reviewed-plan implications are settled. No lifecycle redesign
+or new acceptance prerequisite for technical execution is authorized.
 Donal authorized final Debian administrator installation; coordinator owns secure
 transient authentication. Ubuntu CLI/display probes passed, but GitHub OAuth was
 canceled unapproved. Public metadata works unauthenticated; artifact/draft access
