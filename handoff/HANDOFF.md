@@ -7,17 +7,26 @@ Chromium cases after correctness, strict responsiveness and build passed.
 No package/draft was produced. Both rejected tags remain immutable; Beta13's
 earlier AUD-03 contention failure is preserved in the Beta13.1 release note.
 The combined repair uses `codex/beta13-browser-release-repair`, **PR plus independent
-review**, not direct master. PR54 first head `a92266f9` passed local source/browser
-checks and native/Claude review, but Linux CI 36230930233 correctly rejected two
-flaky passes (223 passed; original five fixed). Bounded follow-through fixes an
-immediate dialog-focus race and a first-call roster fixture race, both reproduced
-deterministically red before correction. Native delta reviews accepted; 83 affected
-unit and 31 browser tests pass without retries; full local Chromium 225/225 passes
-with flaky-pass rejection and no retries. Final serial source passes 584 files /
-6,045 tests (26 existing skips); lint, types, build and bundle budgets pass.
+review**, not direct master. PR54 first head `a92266f9` repaired the original five
+browser failures; Linux CI then exposed two separately reproduced focus/fixture
+races, repaired in `9b034092`. That head passed local 6,045 source tests (26 existing
+skips), full 225 Chromium tests and native review; lint/types/build/budgets passed.
 Strict Debian mapping, 90-day retention and flaky-pass rejection remain intact.
-Exact-head Linux 225/225 is required before merge recommendation, then a full
-merged-source Linux workflow_dispatch before tagging. The compact cause and
+The next head `9b034092` was rejected by Linux CI 36233554495: 224 passes and
+one roster retry-pass, after the earlier repaired assertions passed. Its final
+async evaluation lost its protocol result; the original raw error is unavailable.
+Bounded diagnostics did not reproduce it. A corrected app-free GC probe confirms
+a Playwright 1.59.1/Chromium 147 driver defect with the same error wording;
+1.63.0/Chromium 153 contains the upstream fix and passes the same finite control.
+Original SAR causation remains suspected, not proven. The authorized bounded
+PR54 delta pins only that test toolchain and adds an isolated driver gate;
+runner-level red/green, 25 gate tests, lint and new-file type checks pass.
+Native toolchain-delta review accepted. New-toolchain local verification passes:
+6,046 source tests / 584 files (26 existing skips), lint/types/build/budgets,
+driver contract, 3/6/6 predecessor browser cases and full 225 Chromium tests
+with zero retries. Exact-head Linux CI and outstanding Claude review remain pending.
+Exact-head Linux 225/225 plus the driver gate is required before merge
+recommendation, then a full merged-source Linux workflow_dispatch before tagging. The compact cause and
 verification ledger is `docs/releases/beta13-browser-gate-repair.md`.
 No final candidate is frozen or qualified. Donal authorized candidate tag and
 unpublished draft after verified source; publication/distribution need final approval.

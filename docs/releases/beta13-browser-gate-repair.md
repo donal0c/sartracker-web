@@ -148,3 +148,73 @@ reviews and other overhead; this is neither a measured runtime nor a whole-campa
 upper bound. The route remains unapproved. Any acceptance must be bound only when
 exact artifacts, authentication, inputs and schedule are ready before compilation.
 No workload, duration or acceptance definition changes accompany this repair.
+
+## PR54 second-head rejection and browser-driver repair
+
+Linux run [36233554495](https://github.com/donal0c/sartracker-web/actions/runs/36233554495)
+on `9b0340921e6468f454bd8500803af41f5fbab3a6` rejected 224 passes plus one
+retry-pass. Earlier repair assertions passed. The roster test then failed at
+its final asynchronous `page.evaluate`, with the terminal-period message
+`Execution context was destroyed, most likely because of a navigation.`
+Its first-attempt DOM was retained; no first-attempt trace/raw protocol error
+exists. The successful retry cannot supply that missing causal evidence.
+
+One local and one Sol-owned Ubuntu focused diagnostic did not reproduce it.
+Three separately scoped Linux diagnostics also passed all 225 tests without
+retries: broad tracing (36236267303, 19.4m), target-only tracing (36237908638,
+13.0m), and raw protocol-error observation (36239522155, 11.6m). The last
+observer installed/restored cleanly and saw no later navigation/context loss
+or raw error; one external map-tile request remained pending at test end.
+These runs are diagnostics, never replacements for required source CI.
+Repeated unchanged-source full diagnostics have diminishing value and stopped.
+
+Installed Playwright 1.59.1 rewrites unclassified protocol errors to the same
+navigation wording. Independent Claude analysis proposed a V8 promise-GC
+mechanism. Its first synchronous synthetic probe passed all four cases;
+Claude corrected that design after source inspection showed its GC ran before
+the inspector attached the weak promise handle. The original receipt is retained.
+One corrected app-free probe, settling in a later task before a finite GC
+microtask chain, reproduced the exact wording at two hops. The raw error was
+`Runtime.callFunctionOn`, `-32000`, `Promise was collected`; the page body had
+completed with no navigation or context destruction. Other hop counts passed.
+
+The same six-case evaluated function passed once in an isolated Playwright
+1.63.0 / Chromium 153.0.8010.12 control. The candidate's bundled private driver
+prevented reuse of the old raw hook; completion and lifecycle observations
+were retained, without patching dependencies. Primary source provenance:
+[Playwright manifest](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/browsers.json),
+[Chromium DEPS](https://github.com/chromium/chromium/blob/153.0.8010.12/DEPS), and
+[V8 fix](https://github.com/v8/v8/commit/5177b10891e65108c1a19dfc56bff4e58d79d216).
+Chromium pins V8 `0b60d2b01800d7ba2c6eeb5e51ecd95f6dab44c7`; GitHub compare
+confirms that fix is its ancestor. Original-negative/corrected-positive/control
+receipt SHA-256 values are respectively
+`a0825b5ff6e9f2a76c6906a1da2da26a95da1268a16eda6f43435adf3cf99c7b`,
+`a8a953833f5e7ce2b05ad8551fb131f02da1afa88f85681254c0fb2d0a5f9ba7`, and
+`467655f74bd46f69e5498c07b6a3686c374ec00bfbb06c73c1a625792a72d366`.
+Detailed commands and receipts remain under `tmp/` and DON-254.
+
+The bounded repair pins only the Playwright test toolchain to 1.63.0 and adds
+an app-free browser-driver regression. Its dedicated process exposes GC,
+runs six finite cases with zero retries, asserts successful evaluations,
+execution counters and no navigation/context destruction, and retains JSON
+evidence. The ordinary application browser configuration and all 225 SAR
+tests are unchanged. Linux source CI, release preflight and local beta
+verification require the separate driver gate. The three Playwright lock
+entries change and their obsolete optional fsevents dependency is removed;
+no Electron/application dependency or application behavior changes.
+
+Runner-level red on 1.59.1 fails the predicted two-hop assertion; green on
+1.63.0 passes. Gate tests pass 25/25; lint and strict standalone type-checking
+of the new driver files pass. Full serial correctness passes 584 files / 6,046
+tests with 26 existing skips (580.28s); production types/build/bundle budgets
+pass. Independent native delta review accepted without blockers. New-toolchain
+WAR-06 passes 3/3 (5.0s), WAR-11 6/6 (17.1s), Train C 6/6 (35.0s), and the full
+Chromium suite 225/225 (5.9m). All browser runs used one worker, zero retries
+and flaky-pass rejection. No owned browser-server listeners remained. Logs and
+the attached driver receipt are retained in `tmp/pr54-toolchain-verification/`
+with SHA-256 inventory. Exact-head Linux CI remains pending.
+The synthetic driver defect is confirmed; attribution of the original SAR
+failure remains **suspected, not proven**. No diagnostics waive the original
+failed gate, exact-head Linux validation, merged-source qualification or
+Donal's merge/publication authority. No operator manual change is needed for
+this test-only toolchain delta.

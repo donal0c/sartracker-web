@@ -188,3 +188,40 @@ GitHub uses Ubuntu 22.04; its full-suite predecessors and hosted-runner contenti
 were not reproduced by this focused idle-host run. This evidence neither diagnoses
 the races nor qualifies a candidate. No app code, assertions, browser version,
 final fixture, operational profile, package installation or campaign binding changed.
+
+## PR54 instrumented roster navigation diagnostic — 2026-09-26
+
+One coordinator-approved run used isolated checkout
+`/home/donal/sartracker-pr54-nav-9b034092`, unchanged source
+`9b0340921e6468f454bd8500803af41f5fbab3a6`, tree
+`750444691da5f6dfa40175f5c678d1451e2554c4`. Astra's ignored diagnostic
+bundle preserved the exact original roster test and normal setup from
+`ui-feedback-batch.spec.ts`, including every assertion. Discovery listed one test;
+execution used `CI=1`, one Chromium worker, zero retries, a fresh owned Vite
+server and first-attempt trace/screenshot. The test passed, exit 0, reported
+3.8 seconds. Testing stopped after this single attempt.
+
+The retained CDP/browser attachment recorded one initial document request and
+main-frame navigation, with one execution-context clearing at that initial
+navigation. The Vite websocket recorded only `connected`; 343 script/document
+requests started and finished. There were no failed requests, page errors,
+subsequent navigation requests or outstanding requests at test end. Server
+stdout/stderr is retained with the complete execution log. The screenshot shows
+the active synthetic mission and available layer controls. This is a negative
+reproduction result; it neither establishes the CI cause nor falsifies a
+full-suite/server-lifecycle-dependent failure.
+
+All 12 raw file copies matched remote SHA-256/size identities. Trace SHA-256:
+`ed5e73beea3029253d12e4d3566ad8556e574321fb9531adfe0e7ce3eb25808e`;
+execution log SHA-256:
+`658de9e9ed8a00dc103125aa2d273914fa5024b15a1eb38781cc39f0bb2b7ac7`.
+The closed receipt and extracted navigation events are retained under worktree
+3226's `tmp/pr54-nav-diagnostic-ubuntu-20260926/evidence/`; raw originals remain
+in the isolated Ubuntu checkout and `/tmp/sar-pr54-navigation-diagnostic-ubuntu.log`.
+The source and bundle hashes stayed fixed, the source worktree remained clean,
+port 1420 was free, and no Node/Chromium/Electron workload survived completion.
+Environment matches the earlier diagnostic: Ubuntu 24.04.2, kernel 7.0.0-28,
+Node 22.22.2, npm 10.9.7, Playwright 1.59.1, Chromium 147.0.7727.15,
+20 logical CPUs and 33,303,224,320 bytes of physical RAM. GitHub Ubuntu 22.04
+and full-suite predecessor/load conditions remain unrepresented. No candidate
+qualification, source fix, package installation or campaign mutation occurred.

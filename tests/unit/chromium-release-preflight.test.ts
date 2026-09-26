@@ -10,6 +10,21 @@ function steps(file: string, job: string): Step[] {
 }
 
 describe('full Chromium release preflight', () => {
+  it('requires the isolated browser driver contract before application Chromium gates', () => {
+    for (const [file, job, appStep] of [
+      ['.github/workflows/electron-linux-validation.yml', 'correctness', 'Full Chromium release preflight'],
+      ['.github/workflows/electron-release.yml', 'gates', 'Standard Chromium E2E'],
+    ]) {
+      const gateSteps = steps(file, job)
+      const index = gateSteps.findIndex(step => step.name === 'Browser driver promise lifetime contract')
+      expect(index).toBeGreaterThanOrEqual(0)
+      expect(index).toBeLessThan(gateSteps.findIndex(step => step.name === appStep))
+      expect(gateSteps[index].run).toBe('npm run test:browser-driver')
+      expect(gateSteps[index].if).toBeUndefined()
+      expect(gateSteps[index]['continue-on-error']).toBeUndefined()
+    }
+  })
+
   it('runs the release Chromium command on Linux source CI without retaining a duplicate coverage-only run', () => {
     const source = steps('.github/workflows/electron-linux-validation.yml', 'correctness')
     const release = steps('.github/workflows/electron-release.yml', 'gates')

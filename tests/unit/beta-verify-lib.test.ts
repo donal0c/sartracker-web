@@ -26,6 +26,7 @@ describe('parseBetaStepsFlag', () => {
       'test',
       'responsiveness',
       'test-backend',
+      'browser-driver',
       'e2e-chromium',
       'package',
       'tracking-soak-ci',

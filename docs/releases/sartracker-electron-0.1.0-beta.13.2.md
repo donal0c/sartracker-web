@@ -35,6 +35,14 @@ arrive before dialog focus, and a background settings read could consume a test
 fixture's one-shot roster error. Dialog focus is now assigned during commit; the
 fixture models explicit unavailability until Retry. Original assertions are retained.
 
+The next PR run exposed a final roster evaluation failure whose original raw
+browser error was not captured. A separate controlled probe confirms a defect
+in the old Playwright/Chromium driver that produces the same misleading navigation
+message after the page function completes. The test toolchain is pinned to
+Playwright 1.63.0, whose Chromium contains the upstream fix; an isolated app-free
+driver regression passes and is now required alongside the unchanged SAR tests.
+This synthetic red/green evidence does not prove the original SAR failure's cause.
+
 ## Preserved rejected candidates
 
 - Beta13 remains at `2d4f436add40ed9c279488c9ac4e3cb267c5cee2`. Release
@@ -61,9 +69,10 @@ weakened. This candidate requires its own successful tag-driven workflow.
 - Escape analysis: selected source-CI browser gates omitted the affected spec files
 - Before/after evidence: ledger records unchanged-source red and repaired browser green;
   exact-candidate Ubuntu qualification PENDING
-- Regression gate: new adapter unit regressions and retained full Chromium assertions;
+- Regression gate: new adapter unit regressions, isolated browser-driver contract and retained full Chromium assertions;
   existing bcp17-final contracts still required
-- Remaining uncertainty: deferred synchronous mission-store startup isolation;
+- Remaining uncertainty: original PR54 roster protocol failure remains unconfirmed;
+  deferred synchronous mission-store startup isolation;
   DON-249/250/251 NOT_CLAIMED; PKG-001 original-machine/package proof remains required.
 
 ## Verification and acceptance — candidate pending
