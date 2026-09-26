@@ -502,16 +502,30 @@ export function createSmokeDiagnosticAllowlist(context = {}) {
   const shutdownCancellationWarning = boundedPattern(
     (entry) => isExpectedTrainDShutdownCancellation(entry, context), 1,
   )
-  const finishFenceError = boundedPattern((entry) => entry?.type === 'stderr'
-    && entry?.source === 'main-process-stderr'
-    && entry?.phase === 'aud08'
-    && entry?.message === "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.", 1)
+  let finishFenceErrorSequence = null
+  const finishFenceError = boundedPattern((entry) => {
+    const matches = entry?.type === 'stderr'
+      && entry?.source === 'main-process-stderr'
+      && entry?.phase === 'aud08'
+      && entry?.message === "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing."
+    if (matches && finishFenceErrorSequence === null && Number.isSafeInteger(entry?.sequence)) {
+      finishFenceErrorSequence = entry.sequence
+    }
+    return matches
+  }, 1)
+  // The canonical sanitizer redacts everything after a private /tmp/ segment, and CI
+  // packages under <workspace>/tmp/, so sanitized frames lose their file:line tail.
+  // Those frames are bound instead to following the admitted finish-fence error.
   const finishFenceStack = boundedPattern((entry) => entry?.type === 'stderr'
     && entry?.source === 'main-process-stderr'
     && entry?.phase === 'aud08'
+    && finishFenceErrorSequence !== null
+    && Number.isSafeInteger(entry?.sequence)
+    && entry.sequence > finishFenceErrorSequence
     && (/^\s+at .*\/electron\/mission-store\.cjs:\d+:\d+$/u.test(entry?.message ?? '')
       || /^\s+at sqliteTransaction \(.*\/better-sqlite3\/lib\/methods\/transaction\.js:\d+:\d+\)$/u.test(entry?.message ?? '')
-      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')), 4)
+      || /^\s+at finishMission \(.*\/electron\/mission-store\.cjs:\d+:\d+\)$/u.test(entry?.message ?? '')
+      || /^\s+at (?:(?:sqliteTransaction|finishMission) \()?\/\S*\/tmp\/\[redacted\]$/u.test(entry?.message ?? '')), 4)
   const linuxVulkanStartupStderr = boundedPattern((entry) => isExpectedLinuxVulkanStartupPair(
     context.processStderr,
     context,

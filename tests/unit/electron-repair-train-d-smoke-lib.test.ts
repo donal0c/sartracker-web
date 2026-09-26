@@ -3,6 +3,8 @@ import { createTrainDReceipt as completeReceipt } from '../fixtures/train-d-rece
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { sanitizePackagedDiagnosticText } from '../../build/packaged-page-diagnostics.js'
+
 import {
   appendBoundedDiagnostic,
   assertNoUnexpectedDiagnostics,
@@ -412,6 +414,61 @@ describe('Repair Train D packaged smoke gates', () => {
     }, { phase: 'close', type: 'stderr', source: 'main-process-stderr' })
 
     expect(() => assertNoUnexpectedDiagnostics(diagnostics, createSmokeDiagnosticAllowlist(context))).not.toThrow()
+  })
+
+  it('accepts the finish-fence stack after the canonical sanitizer redacts a CI workspace tmp path', () => {
+    // CI packages into <workspace>/tmp/electron-dist, so the sanitizer's private-path
+    // rule removes every frame's file:line tail (run 36249965817 rejected exactly this).
+    const appRoot = '/home/runner/work/sartracker-web/sartracker-web/tmp/electron-dist/linux-unpacked/resources/app.asar'
+    const rawStack = [
+      "Error occurred in handler for 'sartracker:mission-store:finish-mission': Error: Mission cannot be finished while 1 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.",
+      `    at ${appRoot}/electron/mission-store.cjs:5650:13`,
+      `    at sqliteTransaction (${appRoot}/node_modules/better-sqlite3/lib/methods/transaction.js:65:24)`,
+      `    at finishMission (${appRoot}/electron/mission-store.cjs:5667:3)`,
+      `    at ${appRoot}/electron/mission-store.cjs:3037:60`,
+    ]
+    const context = {
+      historyHoldEvidence: {
+        method: 'GET', path: '/api/positions', deviceId: '22',
+        from: '2026-09-13T03:00:00.000Z', to: '2026-09-13T05:00:00.000Z',
+        isHistory: true, status: 503,
+      },
+      providerOrigin: 'http://127.0.0.1:1234',
+    }
+    const appendStderr = (target: ReturnType<typeof createDiagnosticState>, line: string, phase = 'aud08') => {
+      appendBoundedDiagnostic(target, 'processStderr', {
+        message: sanitizePackagedDiagnosticText(line),
+      }, { phase, type: 'stderr', source: 'main-process-stderr' })
+    }
+
+    const sanitized = createDiagnosticState()
+    for (const line of rawStack) appendStderr(sanitized, line)
+    expect(sanitized.processStderr.at(-1)?.message).toBe(
+      '    at /home/[redacted]/work/sartracker-web/sartracker-web/tmp/[redacted]',
+    )
+    expect(() => assertNoUnexpectedDiagnostics(sanitized, createSmokeDiagnosticAllowlist(context))).not.toThrow()
+
+    const orphanFrames = createDiagnosticState()
+    for (const line of rawStack.slice(1)) appendStderr(orphanFrames, line)
+    expect(() => assertNoUnexpectedDiagnostics(orphanFrames, createSmokeDiagnosticAllowlist(context)))
+      .toThrow(/unexpected packaged diagnostics/i)
+
+    const extraFrame = createDiagnosticState()
+    for (const line of [...rawStack, rawStack[1]]) appendStderr(extraFrame, line)
+    expect(() => assertNoUnexpectedDiagnostics(extraFrame, createSmokeDiagnosticAllowlist(context)))
+      .toThrow(/unexpected packaged diagnostics/i)
+
+    const wrongPhase = createDiagnosticState()
+    appendStderr(wrongPhase, rawStack[0])
+    appendStderr(wrongPhase, rawStack[1], 'aud09')
+    expect(() => assertNoUnexpectedDiagnostics(wrongPhase, createSmokeDiagnosticAllowlist(context)))
+      .toThrow(/unexpected packaged diagnostics/i)
+
+    const unrelatedFrame = createDiagnosticState()
+    appendStderr(unrelatedFrame, rawStack[0])
+    appendStderr(unrelatedFrame, `    at startTracking (${appRoot}/electron/tracking.cjs:1:1)`)
+    expect(() => assertNoUnexpectedDiagnostics(unrelatedFrame, createSmokeDiagnosticAllowlist(context)))
+      .toThrow(/unexpected packaged diagnostics/i)
   })
 
   it('fails closed for control-device 503s, repeated hold warnings, and unpaired coverage errors', () => {
