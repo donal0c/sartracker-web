@@ -102,14 +102,22 @@ Retain full applicable C00–C29 variants, package tiers, fixed soaks and failed
 
 ## Next actions
 
-The essential exact testing slice is finished and runtime idle. C13 coordinates
-and four screenshots passed; C28 nine bridge/persistence/archive phases passed,
-but its screenshots do not prove active/restored UI. C10 and C02 failed as above.
-Donal decides controlled non-operational testing acceptance with these limits;
-no full qualification or operational handover claim. Nonblocking development is
-deferred; no new production edit/build follows this assessment. Preserve current
-CI evidence. The local controlled-testing ZIP and checksum sidecar are complete,
-verified and supplied to CoS for Donal's sharing decision; nothing was distributed.
+Donal corrected the scope: execute the full original extensive Ubuntu programme.
+Urgency defers nonblocking fixes, not tests. The earlier limited-slice handover-ready
+judgment is retracted; the prepared ZIP must not be distributed. The original
+205 bindings are mapped in the [coverage reconciliation](../docs/assurance/beta13-original-programme-reconciliation-20260926.md),
+with original commands/oracles retained in its JSON companion. This is not a
+compiled campaign; no frozen ledger was found in the runtime owner's bounded search.
+Retain C10/C02 and field failures; continue independent unrun variants using the
+existing adapters, deadlines and both genuine package tiers. No automatic fixes,
+blind retries, new PRs or rebuild loops. C13 and C28 diagnostic passes are separate
+from campaign admission; C28 active/restored rendered UI remains unproved.
+Runtime first restores the required 64GiB free-space floor through verified safe
+redundant-copy cleanup, then runs C23 and C26 and the remaining original queue.
+Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
+C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
+parked at their real prerequisites. Source/browser CI reuse needs exact suite and
+configuration reconciliation; ordinary push CI did not cover C24 strict timing.
 Detailed runtime/source impact: Ubuntu report.
 Use validation-workflow hashes, not installer names, to identify testing builds:
 release and validation currently share filenames. Release-workflow bytes require

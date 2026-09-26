@@ -21,9 +21,12 @@ Next: a testing build with the reviewed C10 failure-attribution diagnostic and
 field-selector repair. Donal authorized the grouped direct-master push to
 supersede uninstrumented merge run36271106551, preserving its terminal record.
 No settings/gate changes or repeated full suites for documentation-only conflicts.
-Sol alone runs exact-build C13 coordinates, the existing routine composite for
-synthetic tracking/persistence/restart/small archive-restore, then decisive C10
-960k attribution. No automatic2m expansion or new field-hour retry.
+The Ubuntu runtime owner alone executes the full original205-binding programme;
+Donal clarified that urgency deferred nonblocking fixes, not tests. The earlier
+C13/routine/C10-only slice and handover-ready judgment are superseded. Use the
+[original coverage reconciliation](assurance/beta13-original-programme-reconciliation-20260926.md).
+Distinct unrun2m/field/failure variants remain required on both package tiers.
+Preserve failures and continue independent tests; no blind retry or automatic fix.
 The corrected field selector passed preflight, but the fixed3.7GB workload then
 timed out after finish/backup; cause unknown, no archive/restore qualification.
 C02's reviewed native-close harness encountered a Playwright dialog race; its

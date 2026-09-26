@@ -831,3 +831,26 @@ approval follows. Retain failed C10/C02, the uncompleted large-field workload an
 its895ms observation, the C28 rendered lifecycle proof gap, original201ms failure,
 and prior ownership failures. The field workload can be excluded from the test
 commands, but no application-enforced large-field restriction is established.
+
+### Scope correction — full original programme remains required (2026-09-26)
+
+Donal clarified that urgency deferred nonblocking fixes, not tests. The preceding
+limited-slice handover-ready judgment is retracted. The prepared ZIP is not ready
+for handover and was not distributed. Execute the original205 mandatory bindings,
+including all applicable distinct field/2m/failure variants on genuine AppImage
+and installed Debian tiers. Preserve failed results and continue independent
+tests; no blind retries, automatic fixes, new PRs or rebuild loops.
+
+The [coverage map](beta13-original-programme-reconciliation-20260926.md) and JSON
+companion preserve exact original bindings/commands/oracles at dce4. They are not
+a compiled campaign or receipts. Runtime bounded lookup and coordinator response
+establish no known frozen campaign custody, not proof none ever existed. Existing
+diagnostic passes/failures and ordinary CI are separate from formal admission.
+C24 strict source timing was not run by ordinary push CI.
+
+Runtime execution waits for the unchanged64GiB disk floor: observed65,103,777,792
+bytes, deficit3,615,698,944. Only verified redundant successful copies/caches are
+cleanup candidates; failed profiles and raw evidence remain. Exact dce4 Debian
+installation is pending for75 installed rows. C23 then C26 are the first safe
+unrun rows after prerequisites. C00 public bytes, C27 release admission and C29
+original-machine human acceptance remain explicitly parked at actual prerequisites.
