@@ -320,7 +320,7 @@ describe('archive review projection worker runner [DON-252 / BCP-15]', () => {
       result: { entries: [], nextCursor: 'x'.repeat(2_049) },
     },
   ] as const)(
-    'enforces the method-specific result bound for $method',
+    'enforces the method-specific result bound for $method (case %#)',
     async ({ method, query, result }) => {
       const worker = new FakeWorker()
       const operation = runArchiveReviewProjectionInWorker({

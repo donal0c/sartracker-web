@@ -118,9 +118,9 @@ independent FAIL (exit127, restart audit, blocked network attempts), with positi
 cleanup. Raw readback is pending; retain failure and continue the original queue.
 Existing suite and soak adapter execution/revalidation contexts are supplied to
 the owner for all50 suite and24 soak bindings; no new campaign is invented.
-Suite discovery exposed repeated parameterized test IDs in C00/C10/C16/C26.
-Authorized harness-only repair adds safe case indices to three test titles;
-all61 focused assertions passed and15 case IDs are now distinct. Original INVALID
+Suite discovery exposed repeated parameterized test IDs in C00/C10/C16/C17/C22/C26.
+Authorized harness-only repair adds safe case indices to four test titles;
+all101 focused assertions passed and18 case IDs are now distinct. Original INVALID
 receipts stay retained. Assertion bodies, validators and dce4 app bytes are
 unchanged. Corrected harness identity must be recorded separately, with fresh
 discovery and one corrected execution per affected row; no app rebuild/full CI.
