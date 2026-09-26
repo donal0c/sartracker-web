@@ -24,6 +24,12 @@ five regressions passed. Bounded red/green follow-through corrects immediate dia
 focus and the admin-roster test's first-call failure race; both native delta reviews
 accepted, 83 affected unit and 31 browser tests passed. Stable full checks and new
 exact-head CI/review must finish; the prior head's acceptance does not cover this delta.
+Head `9b034092` was then rejected by Linux run 36233554495 (224 passes, one roster
+retry-pass after a lost final evaluation result; original cause suspected, not proven).
+Head `69e9badc` pins the Playwright test toolchain to 1.63.0 and adds a required
+isolated browser-driver gate in source CI, release CI and local `beta:verify`. The
+pin also changes the packaged-Electron `_electron` driver, so exact-head Packaged
+Linux checks and the merged-source dispatch must pass on it before any tag.
 After merge, a full `workflow_dispatch` Linux validation on that exact source must
 pass strict responsiveness, tracking soak, 960k, archive lifecycle and launch checks
 before any next tag. See `docs/releases/beta13-browser-gate-repair.md` for the

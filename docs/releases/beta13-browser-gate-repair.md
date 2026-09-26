@@ -202,6 +202,13 @@ tests are unchanged. Linux source CI, release preflight and local beta
 verification require the separate driver gate. The three Playwright lock
 entries change and their obsolete optional fsevents dependency is removed;
 no Electron/application dependency or application behavior changes.
+The same pin also replaces the Playwright `_electron` automation driver used by
+the packaged Electron smoke, soak and qualification harnesses (`scripts/electron-*.mjs`)
+and by local `beta:verify` steps `tracking-soak-ci` and `smoke`. Local toolchain
+evidence below covers browser configurations only; no 1.63 `_electron` harness run
+is claimed. Required evidence for that surface is exact-head Linux "Packaged Linux
+checks" on 1.63 (run 36241851816), then the full merged-source Linux
+workflow_dispatch before any tag.
 
 Runner-level red on 1.59.1 fails the predicted two-hop assertion; green on
 1.63.0 passes. Gate tests pass 25/25; lint and strict standalone type-checking

@@ -24,7 +24,10 @@ runner-level red/green, 25 gate tests, lint and new-file type checks pass.
 Native toolchain-delta review accepted. New-toolchain local verification passes:
 6,046 source tests / 584 files (26 existing skips), lint/types/build/budgets,
 driver contract, 3/6/6 predecessor browser cases and full 225 Chromium tests
-with zero retries. Exact-head Linux CI and outstanding Claude review remain pending.
+with zero retries. Claude exact-head review accepted (L1 exact-pin check deferred).
+The pin also swaps the `_electron` driver for packaged smoke/soak/qualification
+harnesses; no local 1.63 `_electron` run is claimed, so exact-head Packaged Linux
+checks (run 36241851816) and the merged-source dispatch are that surface's evidence.
 Exact-head Linux 225/225 plus the driver gate is required before merge
 recommendation, then a full merged-source Linux workflow_dispatch before tagging. The compact cause and
 verification ledger is `docs/releases/beta13-browser-gate-repair.md`.
