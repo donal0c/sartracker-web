@@ -8,6 +8,8 @@ import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { copyStandaloneSqliteFixture } from './sqlite-fixture.mjs'
 import { selectPagingSource } from './paging-source.mjs'
 import { createReplayScaleOracle } from './replay-scale-oracle.mjs'
+import { createReplayPagingDiagnosticCollector } from './replay-paging-diagnostic.mjs'
+import { waitForPackagedStderrDrain } from '../../build/packaged-page-diagnostics.js'
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [appPath,evidencePath,fixturePath,variantId] = process.argv.slice(2)
@@ -26,6 +28,8 @@ let app
 let database
 let output
 let sessionId
+let diagnosticStream
+const pagingDiagnostic = createReplayPagingDiagnosticCollector()
 const report = { schemaVersion: 1, contractId: 'C10', variantId, developmentTestHarness, fixture, lanes: [], cleanup: {}, failure: null }
 try {
   await copyStandaloneSqliteFixture(fixture, path.join(profile, 'mission-store.sqlite'))
@@ -45,10 +49,12 @@ try {
   const after = new Date(Date.parse(bounds.last) + 1).toISOString()
   report.times = { before, middle, after }
   output = await open(path.join(evidencePath, 'replay-pages.ndjson'), 'wx', 0o600)
-  const env = { ...process.env, SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' }
+  const env = { ...process.env, SARTRACKER_ELECTRON_USER_DATA_PATH: profile, SARTRACKER_ELECTRON_BLOCK_NETWORK: '1', SARTRACKER_REPLAY_PAGING_DIAGNOSTICS: '1' }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
   app = await electron.launch({ executablePath: appPath, args: [...(developmentTestHarness ? [path.resolve('electron/main.cjs')] : []),'--ozone-platform=x11','--no-sandbox','--use-gl=angle','--use-angle=swiftshader'], env })
+  diagnosticStream = app.process().stderr
+  diagnosticStream?.on('data', pagingDiagnostic.accept)
   const runtime = await app.evaluate(({app}) => ({executable:process.execPath,app:app.getAppPath(),profile:app.getPath('userData')}))
   if (runtime.profile !== profile || !developmentTestHarness && !runtime.app.endsWith('.asar')) throw new Error('Replay scale runtime identity differs.')
   report.runtime = {executableSha256:(await hashCandidateFile(runtime.executable)).sha256,asarSha256:developmentTestHarness ? null : (await hashCandidateFile(runtime.app)).sha256}
@@ -77,16 +83,23 @@ try {
     } finally { oracle.close() }
   }
   for (const [name,time] of Object.entries(report.times)) await traverse(`live-${name}`,time)
-  const concurrent = await page.evaluate(async ({missionId,after}) => {
-    const store = window.sartrackerElectron.missionStore
-    const query = {missionId,selectedTime:after,timezone:'Europe/Dublin',trackLimit:1000}
-    const first = await store.readMissionReplayTrackChunk(query,crypto.randomUUID())
-    if (!first.nextCursor) throw new Error('Replay concurrency probe requires continuation.')
-    await store.upsertDrawing({mission_id:missionId,type:'search_area',name:'Replay concurrent generation change',color:'#ff7700',display_order:1,geometry_json:JSON.stringify({type:'Polygon',coordinates:[[[-9.7,52],[-9.69,52],[-9.69,52.01],[-9.7,52]]]})})
-    let error = null
-    try { await store.readMissionReplayTrackChunk({...query,cursor:first.nextCursor},crypto.randomUUID()) } catch (failure) { error = String(failure) }
-    return {cursor:first.nextCursor,error}
-  }, {missionId,after})
+  // This intentional guard rejection is not evidence of an unexpected paging failure.
+  await app.evaluate(() => { process.env.SARTRACKER_REPLAY_PAGING_DIAGNOSTICS = '0' })
+  let concurrent
+  try {
+    concurrent = await page.evaluate(async ({missionId,after}) => {
+      const store = window.sartrackerElectron.missionStore
+      const query = {missionId,selectedTime:after,timezone:'Europe/Dublin',trackLimit:1000}
+      const first = await store.readMissionReplayTrackChunk(query,crypto.randomUUID())
+      if (!first.nextCursor) throw new Error('Replay concurrency probe requires continuation.')
+      await store.upsertDrawing({mission_id:missionId,type:'search_area',name:'Replay concurrent generation change',color:'#ff7700',display_order:1,geometry_json:JSON.stringify({type:'Polygon',coordinates:[[[-9.7,52],[-9.69,52],[-9.69,52.01],[-9.7,52]]]})})
+      let error = null
+      try { await store.readMissionReplayTrackChunk({...query,cursor:first.nextCursor},crypto.randomUUID()) } catch (failure) { error = String(failure) }
+      return {cursor:first.nextCursor,error}
+    }, {missionId,after})
+  } finally {
+    await app.evaluate(() => { process.env.SARTRACKER_REPLAY_PAGING_DIAGNOSTICS = '1' })
+  }
   report.concurrent = concurrent
   if (!concurrent.error?.includes('changed while paging')) throw new Error('Replay stale generation was not rejected after concurrent write.')
   await traverse('live-after-concurrent',after)
@@ -113,6 +126,12 @@ finally {
     if (output) { await output.close(); report.rows = await hashCandidateFile(path.join(evidencePath,'replay-pages.ndjson')) }
     if (app) { await app.close(); report.cleanup.applicationClosed = true }
   } finally {
+    // Only after a failed verdict: allow terminal stderr to arrive without retrying work.
+    const diagnosticDrained = report.failure?.includes('Mission replay evidence changed while paging.')
+      ? await waitForPackagedStderrDrain(diagnosticStream, 500) : false
+    diagnosticStream?.off('data', pagingDiagnostic.accept)
+    const diagnostic = diagnosticDrained ? pagingDiagnostic.forFailure(report.failure) : null
+    if (diagnostic !== null) report.pagingDiagnostic = diagnostic
     if (database) database.close()
     await rm(profile,{recursive:true,force:true})
     report.cleanup.profileRemoved = true

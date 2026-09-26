@@ -150,6 +150,23 @@ Full C00–C29 runtime/scale/soak/custody obligations remain. Live mission-store
 process isolation is post-Beta13; `app.whenReady()` remains outside the startup
 watchdog. DON-179 private retention/upload work is still open.
 
+## Contained diagnostic follow-up — 2026-09-26
+
+C10's ordinary replay continuation failure remains unexplained. Its bounded,
+default-off diagnostic now reports only the failed guard and expected/observed
+safe integers; public errors, paging, retries and thresholds are unchanged.
+Independent native source review accepted. Verification: 76 focused tests;
+full correctness 587 files / 6077 passed / 26 skipped; full lint and build pass.
+New packaged bytes and Sol's one bounded diagnostic are still needed.
+
+Sol's newer installed-Debian diagnostics and retained failures are in the Ubuntu
+report: C08 960k/2m, C13/C23/C16/C17 passed their independent diagnostic checks;
+C10 failed; field archive rejected its fixture before launch; C02's independently
+rejected app-quit recovery remains unexplained and did not exercise native window
+close. Keep these separate from PR55 process ownership and the original 201 ms
+failure. No campaign, timing qualification or release claim follows.
+DON-254 comment `9b0c7117-ef51-4c88-8c35-5abeb51d2976` records the source proof.
+
 Evidence and history: [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
 [active workplan](../docs/two-track-execution-workplan.md),
 [testing readiness](../docs/assurance/beta13-testing-readiness.md),

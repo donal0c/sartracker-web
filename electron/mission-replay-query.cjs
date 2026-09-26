@@ -1,5 +1,6 @@
 const { createHash } = require('node:crypto')
 const { isStrictTrackingTimestamp } = require('./tracking-timestamp.cjs')
+const { createReplayPagingChangedError } = require('./mission-replay-paging-diagnostic.cjs')
 const {
   assertLegacyEventProvenanceReady,
 } = require('./mission-event-provenance-backfill.cjs')
@@ -286,7 +287,7 @@ function readMissionReplayTrackChunkWithinSnapshot(database, input) {
   const baseInput = normalizeReplayInput(input)
   const currentGeneration = readMissionReplayGeneration(database, baseInput.missionId)
   if (cursor !== null && cursor.replayGeneration !== currentGeneration) {
-    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+    throw createReplayPagingChangedError('generation', cursor.replayGeneration, currentGeneration)
   }
   const normalized = {
     ...baseInput,
@@ -362,11 +363,11 @@ function readObjectRows(database, input, offset) {
 function readTrackRows(database, input, cursor) {
   const positionStats = readPositionReplayStats(database, input)
   if (cursor !== null && cursor.eligiblePositionCount !== positionStats.eligibleCount) {
-    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+    throw createReplayPagingChangedError('eligible-position-count', cursor.eligiblePositionCount, positionStats.eligibleCount)
   }
   const totalTrackCount = countReplayTrackRows(database, input, positionStats.eligibleCount)
   if (cursor !== null && cursor.eligibleTrackCount !== totalTrackCount) {
-    throw new Error('Mission replay evidence changed while paging. Re-seek the selected time.')
+    throw createReplayPagingChangedError('eligible-track-count', cursor.eligibleTrackCount, totalTrackCount)
   }
   if (cursor !== null && cursor.contextHash !== replayCursorContextHash(
     'track', input, totalTrackCount,

@@ -321,3 +321,188 @@ passed. Native read-only review found no remaining source blocker. Linux
 process-tree execution and Sol's
 subsequent exact-package AppImage diagnostic remain pending. No product behavior
 or operator manual change is involved.
+## Installed Debian coverage and replay scale diagnostics — 2026-09-26
+
+The next authorized serial slice used the same exact `09343ee9` source and
+installed validation executable/application archive identified above. Source,
+dpkg version and both payload hashes were rechecked before each run. Existing
+`compilePackageCommand`, producers and independent raw-file oracles were used
+unchanged, behind the existing Linux subreaper. Each run used an exclusive owned
+fixture copy and disposable, network-blocked profile; no campaign was compiled.
+
+Both C08 coverage paging diagnostics passed the independent full-stream oracle:
+
+| Fixture | Primary fix rows | Retained pages | Devices | Outings |
+|---|---:|---:|---:|---:|
+| 960k | 959,988 | 1,500 | 100 | 12 |
+| 2m | 1,999,988 | 1,900 | 100 | 12 |
+
+The twelve other generator rows belong to the separately inventoried legacy
+mission. Original fixtures remained unchanged: 960k SHA-256
+`dfe56dd10139ef0502773ab20e80c215556963fff309f871291099f03cc82b3a`,
+2m `c90bbb553b59595048cff46c778fb5b6b31c2a9b528e4f6ec079620d8822b317`.
+Producer exits were 0, both subreaper cleanup predicates passed, no descendants
+remained and disposable profiles were removed. Independent validation completed
+at 17:58:13.223Z and 18:09:43.214Z respectively. Screenshots were inspected:
+the recovery shell and 100-device participant surface rendered; the deliberately
+network-blocked basemap showed degraded tiles. This is exact IPC paging proof,
+not rendered coverage, live tracking, or a 200 ms continuity measurement.
+
+**C10 960k replay failed once; 2m replay was not attempted.** The empty
+`live-before` lane passed. Ordinary `live-middle` continuation failed with
+“Mission replay evidence changed while paging. Re-seek the selected time.”
+This occurred before the producer's deliberate concurrent drawing write.
+Actual runtime executable/application archive hashes matched the installed
+validation package. The report and 57,071,289 bytes of partial raw pages were
+retained; raw SHA-256
+`a1bd71a67a9bc869364169f769da4845e0ba9320f559c5faad307b4d6c9ec435`.
+Producer exit was 1, without timeout or supervisor error; application/profile
+cleanup passed, both positive subreaper predicates passed and a separate process
+check found no surviving workload. The original fixture remained unchanged.
+There was no retry, producer edit or workload substitution.
+
+Astra's read-only exact-source triage found three possible consistency guards
+sharing this error: generation, eligible-position count, or total-track count.
+Last successful middle-page metadata carried offset 182,000 to 183,000,
+generation 1 and both counts 480,000. Root cause remains unknown; a failure-only
+guard name and expected/observed integers would discriminate it. This failure
+is separate from the AppImage ownership defect and original CI 201 ms risk.
+
+All 12 first-scale and seven 2m retained evidence files were copied locally and
+independently matched remote hashes/sizes. Originals remain under
+`/home/donal/sartracker-archive-diagnostic-09343ee9/tmp/ubuntu-scale-diagnostic-20260926/`;
+copies and custody manifests are in worktree 3226's corresponding
+`tmp/ubuntu-scale-diagnostic-20260926/`. No qualification or release claim follows.
+
+## Field archive diagnostic fixture rejection — 2026-09-26
+
+After both coverage runs closed, the coordinator authorized one independent
+installed-Debian field archive/restore diagnostic. The unchanged existing
+`composite-large-archive-probe.mjs` was selected through reviewed C20 scenario
+`streamed-archive`, fixed producer variant `field-archive-37gb`, with its generated
+`field` fixture and unchanged 60-minute timeout. Source, package and payload
+identities remained those above. Preflight recorded 96,382,918,656 available
+bytes against the producer's conservative 68,719,476,736-byte minimum.
+
+An initial controller command preflight rejected my incorrect outer scenario
+name before producer launch. Its log was retained; correcting the outer name
+selected the same fixed reviewed producer. The single actual producer attempt
+ran from 18:11:22.991Z to 18:13:51.536Z, then failed before Electron launch:
+“Paging fixture primary mission is missing or ambiguous.” No archive, restore,
+all-table comparison or runtime timing was exercised. No retry or fixture
+substitution occurred.
+
+The retained generated fixture is 3,718,189,056 bytes, SHA-256
+`bbb7790172e377ef749013ab366f163a6268e3ca2e3fdacbf542a2b606c5e1f7`;
+its private oracle copy independently matches. Generator version 2, preset
+`field`, schema 13 reports 32 devices and 1,520,000 positions. An immutable,
+read-only query confirmed one active mission with start time
+`2026-01-01T00:00:00.000Z`; all 1,520,000 positions have `timestamp_source NULL`.
+The production probe's `selectPagingSource(C07)` accepts only `timestamp_source
+= 'fix'`, so its primary eligible count is zero. This confirms a generated
+fixture/selector incompatibility before application execution; it establishes
+neither an archive product defect nor the cause of the separate C10 failure.
+
+Producer exit 1, no timeout or supervisor error, positive supervisor cleanup
+and zero descendants were retained. The profile is absent, the failure receipt
+has no observed userData path or application launch, a separate process check
+found no workload, and the exact source tree remained clean. Both 3.7 GB source
+files remain remote. Seven small failure/invocation/process/manifest/query/log
+files were mirrored locally and independently hash/size verified under
+`tmp/ubuntu-field-archive-diagnostic-20260926/`, with their custody manifest.
+Remote originals are under the same named directory in the isolated Ubuntu
+checkout. Both affected replay and field archive paths are held for source-owner
+triage. Independent coordinate, IPC and synthetic settings diagnostics are the
+next useful bounded slices; none was started in this chunk.
+
+## Independent installed Debian safety diagnostics — 2026-09-26
+
+The coordinator subsequently authorized serial C13 coordinates, C23 IPC
+containment and C16 synthetic settings diagnostics. Each run rechecked exact
+`09343ee9` head/tree, clean source, installed package version and executable/
+application archive hashes above. Existing reviewed compiler variants and
+producers/oracles remained unchanged, with fixed 15-minute timeouts, no retries
+and task-owned network-blocked profiles. C13 retained its internal Linux launch
+flags; C23/C16 used their supported repeatable `--app-arg` interface for the same
+software-rendering launch flags. No provider or operational credentials were used.
+
+All three passed the existing independently recomputed validators:
+
+- **C13:** golden DD/Irish Grid/DMS conversions, visible rejection of NaN,
+  Infinity and out-of-range latitude, magnetic bearing label, persisted/rendered
+  geometry identity and independent map-measurement math. The retained line was
+  2,000.000000001 metres at 94.50000000000074 degrees. Validation completed at
+  18:18:53.132Z. All four screenshots were inspected: golden conversion,
+  rejection, magnetic bearing and rendered bearing/measurement overlay are
+  visible; the intentionally blocked basemap remains degraded.
+- **C23:** all eight source/app identity, secure web preferences, renderer
+  isolation, invalid sender, invalid payload, capability and no-operational-data
+  predicates passed. Validation completed at 18:19:14.100Z.
+- **C16:** all seven identity, undecryptable-secret startup recovery,
+  save/restart read-back, authoritative clear/restart, re-entry/restart,
+  embedded-URL-credential rejection and custody predicates passed. Validation
+  completed at 18:19:52.167Z. Three screenshots were inspected: the actionable
+  warning and URL rejection are visible; saved settings show auto-connect off.
+  Receipt/read-back evidence supplies the persisted/restart claims. No real
+  provider authentication, network availability or operator credentials were
+  exercised.
+
+Each producer exited 0 without timeout/error; positive subreaper cleanup and
+zero descendants passed, and separate process checks found no workload. C13
+and C23 removed their own profiles. C16 intentionally retains synthetic userData
+in its producer; after preserving successful sanitized receipts, the controller
+verified the exact task-owned directory and removed it without reading/copying
+credential values. A separate cleanup receipt confirms absence. No operational
+profile was touched.
+
+All 23 small raw receipts, invocations, process/cleanup results, independent
+validations, screenshots and logs were copied locally and independently matched
+remote SHA-256/size identities. Originals remain under the isolated Ubuntu
+checkout's `tmp/ubuntu-independent-safety-diagnostic-20260926/`, with copies and
+custody manifest in worktree 3226's matching directory. These are bounded
+installed-package diagnostics, not campaign, operational or release proof.
+The C10 continuation failure, field fixture incompatibility, AppImage ownership
+defect and original CI 201 ms failure remain separate unresolved work.
+
+## Independent lifecycle and export-privacy diagnostics — 2026-09-26
+
+The next authorized slice used unchanged reviewed C02 `graceful-close` and
+C17 `family-contract` producers on the same exact source/package, with fresh
+small synthetic profiles and fixed 15-minute limits. C02 does not use the
+AppImage wrapper, replay continuation or field selector. C17's scoped family
+returns after sanitized export, before the unrelated coverage/replay/archive
+journey. No source edits, retries or final campaign admission occurred.
+
+**C02 is a retained independent-validator rejection, despite producer PASS.**
+The graceful-window close was observed; PID 55339 exited 0 without a signal.
+Recovery PID 55466 matched both package hashes and the same disposable profile.
+The raw recovery state nevertheless reported `uncleanShutdown: true`,
+`lastCrash: null`, and a visible recovery notice; the mission changed from active
+to paused. Both recorded closes exited 0. The producer emitted `result: pass`,
+but the existing `validateC02LifecycleReceipt` rejected the observation with
+“C02 graceful close was classified as unclean.” Its expected value is false.
+This cannot be accepted as a passing diagnostic. Source/harness/policy cause
+remains unconfirmed. Reload was not attempted because the related lifecycle
+lane is held; no blind retry followed.
+
+**C17 passed its scoped independent privacy validator**, with no coverage gaps
+or failure reasons. The fixed source adversarial corpus passed three tests
+across renderer and Electron-main boundaries, covering ten corpus case IDs.
+The packaged export retained all thirteen positive canary controls, leaked
+canary IDs were empty, and the existing bounded scanner compared all 3,915
+export bytes against the retained copy. Output SHA-256 is
+`870f61e948ca51dee568ddee3e92d8f5388fe52ad3b7f5dd7712430dab98cf9e`.
+Independent validation completed at 19:01:30.227Z. This scoped sanitized-export
+result neither clears C02 recovery nor represents a full operational workflow.
+
+Both producers exited 0 without timeout/error; both positive supervisor cleanup
+predicates passed and independent process checks found no remaining workload.
+Profiles were removed, source remained clean, and no real provider or credentials
+were used. Twelve small raw reports, commands, process results, logs, oracle/
+source-corpus records and retained export/canary files were copied locally and
+independently hash/size verified. Their custody manifest is
+`tmp/ubuntu-independent-safety-diagnostic-20260926/lifecycle-privacy-closure-file-identities.json`.
+The exact retained 117,289,870-byte application archive remains remote with its
+already-bound SHA-256. Originals remain in the isolated Ubuntu checkout's
+matching directory. Runtime is available for reviewed process-ownership fix
+proof; no further heavy diagnostic was selected.

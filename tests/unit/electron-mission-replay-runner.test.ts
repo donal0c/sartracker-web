@@ -11,6 +11,49 @@ const { runMissionReplayInWorker } = require('../../electron/mission-replay-runn
 }
 
 describe('mission replay worker runner [DON-278]', () => {
+  it.each([true, false])('keeps paging failure unchanged with diagnostics enabled=%s', async enabled => {
+    vi.stubEnv('SARTRACKER_REPLAY_PAGING_DIAGNOSTICS', enabled ? '1' : '')
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+      worker.terminate = vi.fn(async () => {
+        if (enabled) expect(stderr).toHaveBeenCalledOnce()
+        return 0
+      })
+      const pending = runMissionReplayInWorker({
+        databasePath: '/tmp/unused.sqlite', kind: 'state',
+        query: { missionId: 'mission-1', selectedTime: '2026-08-27T08:00:00Z', trackLimit: 1 },
+        createWorker: () => worker,
+      })
+      worker.emit('message', {
+        type: 'error', message: 'Mission replay evidence changed while paging. Re-seek the selected time.',
+        replayPagingDiagnostic: { guard: 'generation', expected: 1, observed: 2 },
+      })
+      await expect(pending).rejects.toThrow('Mission replay worker failed: Mission replay evidence changed while paging. Re-seek the selected time.')
+      expect(worker.terminate).toHaveBeenCalledOnce()
+      if (enabled) expect(stderr).toHaveBeenCalledWith('sartracker-replay-paging-guard={"guard":"generation","expected":1,"observed":2}\n')
+      else expect(stderr).not.toHaveBeenCalled()
+    } finally { stderr.mockRestore(); vi.unstubAllEnvs() }
+  })
+
+  it.each([true, false])('drops unrelated worker diagnostics, including private fields=%s', async privateField => {
+    vi.stubEnv('SARTRACKER_REPLAY_PAGING_DIAGNOSTICS', '1')
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+      worker.terminate = vi.fn(async () => 0)
+      const pending = runMissionReplayInWorker({
+        databasePath: '/tmp/unused.sqlite', kind: 'state',
+        query: { missionId: 'mission-1', selectedTime: '2026-08-27T08:00:00Z', trackLimit: 1 },
+        createWorker: () => worker,
+      })
+      worker.emit('message', { type: 'error', message: 'unchanged failure',
+        replayPagingDiagnostic: { guard: 'generation', expected: 1, observed: 2, ...(privateField ? { missionId: 'private-canary' } : {}) } })
+      await expect(pending).rejects.toThrow('Mission replay worker failed: unchanged failure')
+      expect(stderr).not.toHaveBeenCalled()
+    } finally { stderr.mockRestore(); vi.unstubAllEnvs() }
+  })
+
   it('carries the trusted archive memory policy outside the renderer query [DON-252]', async () => {
     const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
     worker.terminate = vi.fn(async () => 0)

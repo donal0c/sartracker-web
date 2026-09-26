@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { Worker } from 'node:worker_threads'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -81,6 +82,44 @@ type ReplayChunk = {
 }
 
 describe('mission replay query [DON-278]', () => {
+  it.each(['generation', 'eligible-position-count', 'eligible-track-count'] as const)(
+    'retains only the exact failed %s comparison without changing the public rejection', async (guard) => {
+      const directory = mkdtempSync(path.join(tmpdir(), 'replay-guard-'))
+      const databasePath = path.join(directory, 'mission.sqlite')
+      const db = createReplayDatabase(databasePath)
+      const input = { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1 }
+      try {
+        insertPosition(db, ['fix-first', '2026-08-27T08:01:00Z', '2026-08-27T08:01:01Z'])
+        insertPosition(db, ['fix-second', '2026-08-27T08:03:00Z', '2026-08-27T08:03:01Z'])
+        const first = readMissionReplayState(db, input)
+        expect(first.nextCursor).not.toBeNull()
+        if (guard === 'generation') db.prepare("INSERT INTO mission_replay_generations VALUES ('mission-1', 1)").run()
+        else if (guard === 'eligible-position-count') insertPosition(db, ['fix-third', '2026-08-27T08:05:00Z', '2026-08-27T08:05:01Z'])
+        else insertGpx(db)
+        let failure: unknown
+        try { readMissionReplayTrackChunk(db, { ...input, cursor: first.nextCursor! }) } catch (error) { failure = error }
+        expect(failure).toBeInstanceOf(Error)
+        expect((failure as Error).message).toBe('Mission replay evidence changed while paging. Re-seek the selected time.')
+        const { readReplayPagingDiagnostic } = require('../../electron/mission-replay-paging-diagnostic.cjs') as {
+          readReplayPagingDiagnostic(error: unknown): unknown
+        }
+        expect(readReplayPagingDiagnostic(failure)).toEqual({ guard, expected: guard === 'generation' ? 0 : 2, observed: guard === 'generation' ? 1 : 3 })
+        expect(JSON.stringify(failure)).not.toContain('mission-1')
+        const worker = new Worker(path.resolve('electron/mission-replay-worker.cjs'), {
+          workerData: { databasePath, kind: 'chunk', query: { ...input, cursor: first.nextCursor } },
+        })
+        const message = await new Promise((resolve, reject) => {
+          worker.once('message', resolve)
+          worker.once('error', reject)
+          worker.once('exit', code => { if (code !== 0) reject(new Error(`Worker exited ${code}`)) })
+        })
+        await worker.terminate()
+        expect(message).toEqual({ type: 'error', name: 'Error', message: (failure as Error).message,
+          replayPagingDiagnostic: { guard, expected: guard === 'generation' ? 0 : 2, observed: guard === 'generation' ? 1 : 3 } })
+      } finally { db.close(); rmSync(directory, { recursive: true, force: true }) }
+    },
+  )
+
   it('rejects object-detail types absent from the retained object schema', () => {
     const db = createReplayDatabase()
     expect(() => readMissionReplayObjectChunk(db, { missionId: 'mission-1', selectedTime: '2026-08-27T09:00:00Z', trackLimit: 1, replayGeneration: 0,

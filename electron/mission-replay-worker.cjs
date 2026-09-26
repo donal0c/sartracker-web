@@ -2,6 +2,7 @@ const { parentPort, threadId, workerData } = require('node:worker_threads')
 
 const { assertReplayResultBounded } = require('./mission-replay-message-policy.cjs')
 const { openMissionReplayDatabase } = require('./mission-replay-database.cjs')
+const { readReplayPagingDiagnostic } = require('./mission-replay-paging-diagnostic.cjs')
 const {
   readMissionReplayObjectChunk,
   readMissionReplayFilterPage,
@@ -28,10 +29,12 @@ function run() {
     assertReplayResultBounded(result, workerData.query.trackLimit)
     parentPort.postMessage({ type: 'complete', workerThreadId: threadId, result })
   } catch (error) {
+    const diagnostic = readReplayPagingDiagnostic(error)
     parentPort.postMessage({
       type: 'error',
       name: error instanceof Error ? error.name : 'Error',
       message: error instanceof Error ? error.message : String(error),
+      ...(diagnostic === null ? {} : { replayPagingDiagnostic: diagnostic }),
     })
   } finally {
     database?.close()

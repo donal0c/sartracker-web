@@ -2,6 +2,7 @@ const path = require('node:path')
 const { Worker } = require('./mission-worker.cjs')
 const { normalizeReplayWorkerQuery } = require('./mission-replay-query.cjs')
 const { assertReplayResultBounded } = require('./mission-replay-message-policy.cjs')
+const { emitReplayPagingDiagnostic, REPLAY_PAGING_CHANGED_MESSAGE } = require('./mission-replay-paging-diagnostic.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'mission-replay-worker.cjs')
 
@@ -51,6 +52,10 @@ function runMissionReplayInWorker(input) {
       if (validationError === null) {
         completed = message.result
       } else {
+        // Emit from the main process before termination can discard worker output.
+        if (message?.type === 'error' && message.message === REPLAY_PAGING_CHANGED_MESSAGE) {
+          emitReplayPagingDiagnostic(message.replayPagingDiagnostic)
+        }
         rejectAndTerminate(new Error(`Mission replay worker failed: ${safeMessage(validationError)}`))
       }
     })
