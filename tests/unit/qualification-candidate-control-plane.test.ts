@@ -89,6 +89,50 @@ async function compilePlan(overrides: Record<string, unknown> = {}) {
 }
 
 describe('qualification candidate control plane', () => {
+  it('defers candidate human authority but preserves exact Debian identity at technical preflight', () => {
+    const definition = {
+      mode: 'candidate', requiredContracts: ['C29'], externalHuman: null,
+      identities: { candidate: { candidateId: 'beta13', version: '0.1.0-beta.13',
+        artifacts: [{ role: 'ci-deb', localBuild: false }] } },
+      runtimeInputs: { config: {} },
+      bindings: [{ contractId: 'C29', variantId: 'original-machine-training',
+        adapterId: 'external.c29.training', receiptValidatorId: 'external.c29.receipt',
+        proofMode: 'external-human', mandatory: true, phase: 'posthandover' }],
+    }
+    expect(validateBindingCoverage(definition).filter((blocker) => blocker.includes('C29'))).toEqual([])
+    expect(validateBindingCoverage({ ...definition,
+      identities: { candidate: { ...definition.identities.candidate, artifacts: [] } },
+    }).join(' ')).toMatch(/C29 requires the exact CI Debian artifact/u)
+  })
+
+  it('runs technical evidence without a human signer but cannot run or pass C29', async () => {
+    const fixturePath = await createFixture()
+    const plan = makePlan(fixturePath)
+    const definition = await compileCampaignDefinition({ plan: { ...plan,
+      requiredContracts: ['C00', 'C29'],
+      artifacts: [{ role: 'ci-deb', path: fixturePath, localBuild: false }],
+      bindings: [plan.bindings[0], { ...plan.bindings[0], contractId: 'C29',
+        variantId: 'original-machine-training', adapterId: 'external.c29.training',
+        receiptValidatorId: 'external.c29.receipt', proofMode: 'external-human',
+        sessionKind: 'pre-release-original-machine-training', phase: 'posthandover',
+        oracle: 'externally supplied original-machine training acceptance' }],
+    }, sourceIdentity })
+    const preflight = await preflightCampaign({ definition, campaignRoot: temporaryRoot! })
+    expect(preflight.status).toBe('READY')
+    const attempt = await runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!,
+      contractId: 'C00', variantId: 'synthetic-pass' })
+    expect(attempt.status).toBe('PASS')
+    await ingestAdvisoryJudgeResult({ attemptDirectory: attempt.attemptDirectory, result: {
+      schema: 'sartracker-oracle-blind-judge-result-v1', campaignId: definition.campaignId,
+      attemptId: attempt.attemptId, packetSha256: attempt.judgePacketSha256, verdict: 'pass', observations: [],
+    } })
+    await expect(runContractAttempt({ definition, preflight, campaignRoot: temporaryRoot!,
+      contractId: 'C29', variantId: 'original-machine-training' })).rejects.toThrow(/human authority/iu)
+    const verdict = await computeCampaignVerdict({ definition, campaignRoot: temporaryRoot! })
+    expect(verdict.contractRows.find((row) => row.contractId === 'C29')?.status).toBe('not-run')
+    expect(verdict.phases).toMatchObject({ humanAcceptance: { status: 'NOT_RUN' }, releaseComplete: false, teamRolloutEligible: false })
+  })
+
   it('reports repeated prerequisite failures once without throwing or acquiring a lease', async () => {
     const { definition } = await compilePlan({
       requiredContracts: ['C00'],
@@ -437,7 +481,7 @@ describe('qualification candidate control plane', () => {
       ...plan, mode: 'candidate', candidateId: 'beta13', version: '0.1.0-beta.13',
       claimScope: BETA13_CLAIM_SCOPE,
       requiredContracts: Array.from({ length: 30 }, (_, i) => `C${String(i).padStart(2, '0')}`),
-      bindings: Array.from({ length: 30 }, (_, i) => ({ ...plan.bindings[0],
+      bindings: Array.from({ length: 29 }, (_, i) => ({ ...plan.bindings[0],
         contractId: `C${String(i).padStart(2, '0')}`, proofMode: 'browser', oracle: 'claimed browser proof',
       })),
     }, sourceIdentity })

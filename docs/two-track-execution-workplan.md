@@ -4,6 +4,26 @@
 
 ## Current Beta 13 decision — 2026-09-25
 
+**Current sequence (Donal, clarified through CoS):** fully validate the exact build
+on Ubuntu, obtain final approval for controlled handover to Eamonn, then collect
+C29 acceptance on the original team machine before claiming operational suitability.
+The C29 signer is not a technical-preflight prerequisite. C29 stays mandatory and
+NOT_RUN/NEEDS_HUMAN_DECISION until real acceptance. C27 draft inspection follows
+the other technical checks; public-byte C00 follows actual approved publication.
+Technical `READY_FOR_APPROVAL` authorizes neither publication nor distribution.
+
+PR52 is merged at `b1bc51a2ed5e479b8eeaaf21b759001f2a208838`; CI36192361874 passed.
+Next: bounded staged-admission correction on `codex/beta13-staged-admission`,
+regressions and independent review/PR CI, authorized merge, then approved
+candidate tag/unpublished draft and one exact release-workflow Ubuntu campaign.
+All applicable C00–C28 checks, installed-deb/AppImage proof, 200 ms thresholds,
+fixed soaks, immutable inputs and failed receipts remain mandatory. C29 is not
+waived; no evidence-carryover redesign or operational claim is included.
+Publication/distribution still need Donal's final approval. Source owner updates
+canonical records; Sol remains sole Ubuntu owner. Preserve the dirty original checkout.
+
+### Historical preparation snapshot (superseded by the sequence above)
+
 **Current release-first queue:** master `00f1a8a9af4c57436f152c3cc1a51d69190da9e6`
 passed exact-source CI `36179770541`, including C12 cleanup, correctness/browser
 and packaged checks. PR50/51 and the contained C12/installer-name repair are

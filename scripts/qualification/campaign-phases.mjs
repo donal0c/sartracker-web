@@ -6,10 +6,20 @@ import {
 
 const FAILURE_PRIORITY = ['INVALID_EVIDENCE', 'CLEANUP_BLOCKED', 'FAIL', 'ABORTED_SAFE', 'ENVIRONMENT_BLOCKED', 'NEEDS_HUMAN_DECISION']
 
+/** Human acceptance follows controlled handover; technical phases keep their existing identities. */
+function phaseOf(binding) {
+  return binding.phase ?? (binding.proofMode === 'external-human' ? 'posthandover' : 'prepublication')
+}
+
 /** Enforce the approved separation between draft admission and fresh public-byte verification. */
 export function validateQualificationPhase(binding) {
-  const phase = binding.phase ?? 'prepublication'
-  if (!['prepublication', 'postpublication'].includes(phase)) throw new Error('Qualification phase is invalid.')
+  if (binding.contractId === 'C29' && binding.proofMode !== 'external-human') {
+    throw new Error('C29 requires external-human acceptance; technical proof cannot replace it.')
+  }
+  const phase = phaseOf(binding)
+  if (!['prepublication', 'postpublication', 'posthandover'].includes(phase)) throw new Error('Qualification phase is invalid.')
+  if (phase === 'posthandover' && (binding.contractId !== 'C29' || binding.proofMode !== 'external-human')) throw new Error('Only external-human C29 acceptance belongs after handover.')
+  if (binding.proofMode === 'external-human' && phase !== 'posthandover') throw new Error('C29 acceptance must remain after controlled handover.')
   if (phase === 'postpublication' && binding.contractId !== 'C00') throw new Error('Only C00 fresh-public verification belongs to the postpublication gate.')
   if (phase === 'postpublication' && binding.proofMode !== 'public-release') throw new Error('Postpublication verification requires distinct public-release evidence.')
   if (binding.proofMode === 'public-release' && phase !== 'postpublication') throw new Error('Fresh public evidence cannot be required or claimed before publication.')
@@ -19,10 +29,12 @@ export function validateQualificationPhase(binding) {
 export function evaluateQualificationPhases(bindings, attempts, evidenceErrors, notClaimedCapabilities = [], { mode = 'calibration' } = {}) {
   const prepublication = evaluatePhase('prepublication', bindings, attempts, evidenceErrors, notClaimedCapabilities)
   const postpublication = evaluatePhase('postpublication', bindings, attempts, evidenceErrors, notClaimedCapabilities)
+  const humanAcceptance = evaluatePhase('posthandover', bindings, attempts, evidenceErrors, notClaimedCapabilities)
   const evidenceComplete = prepublication.status === 'PASS' && postpublication.status === 'PASS'
+    && humanAcceptance.status === 'PASS'
     && notClaimedCapabilities.length === 0
   const releaseComplete = mode === 'candidate' && evidenceComplete
-  return Object.freeze({ prepublication, postpublication,
+  return Object.freeze({ prepublication, postpublication, humanAcceptance,
     evidenceComplete,
     releaseComplete,
     teamRolloutEligible: releaseComplete && postpublication.status === 'PASS',
@@ -33,7 +45,7 @@ export function evaluateQualificationPhases(bindings, attempts, evidenceErrors, 
 
 /** Retain all failures and require every mandatory variant in the named phase. */
 function evaluatePhase(phase, bindings, attempts, evidenceErrors, notClaimedCapabilities = []) {
-  const required = bindings.filter((binding) => binding.mandatory && (binding.phase ?? 'prepublication') === phase)
+  const required = bindings.filter((binding) => binding.mandatory && phaseOf(binding) === phase)
   const keys = new Set(required.map((binding) => `${binding.contractId}:${binding.variantId}`))
   const rows = attempts.filter((row) => keys.has(`${row.contractId}:${row.variantId}`))
   const missing = [...keys].filter((key) => !rows.some((row) => `${row.contractId}:${row.variantId}` === key))
@@ -48,7 +60,7 @@ function evaluatePhase(phase, bindings, attempts, evidenceErrors, notClaimedCapa
   })
 }
 
-/** Require the full applicable prepublication matrix and C29 before running C27. */
+/** Require the full technical matrix before draft inspection; human acceptance follows handover. */
 export function assertC27Admission(verdict, bindings, pendingBinding) {
   const phase = verdict?.phases?.prepublication
   const c27BindingKeys = bindings
@@ -61,6 +73,7 @@ export function assertC27Admission(verdict, bindings, pendingBinding) {
     ...(Array.isArray(pendingC00) ? pendingC00.map((key) => `missing required variant ${key}`) : []),
     'missing required contract C27',
     'missing required contract C00',
+    ...pendingHumanBlockers(verdict),
   ]
   if (verdict?.verdict !== 'ENVIRONMENT_BLOCKED'
       // Missing mandatory C27 rows make the computed prepublication phase NOT_RUN.
@@ -71,11 +84,11 @@ export function assertC27Admission(verdict, bindings, pendingBinding) {
       || pendingC27.some((key) => !c27BindingKeys.includes(key))
       || !pendingC27.includes(`${pendingBinding?.contractId}:${pendingBinding?.variantId}`)
       || !sameStringSets(verdict.blockers, expectedBlockers)
-      || !hasPassingContract(verdict, 'C29') || !hasReviewedResidualSet(verdict)
+      || !hasReviewedResidualSet(verdict)
       || !sameStrings(phase.notClaimedCapabilities?.map((entry) => entry.issueId), verdict.notClaimedCapabilities?.map((entry) => entry.issueId))
-      || !allOtherContractsReady(verdict, ['C27', 'C00'])
+      || !allOtherContractsReady(verdict, ['C27', 'C00', 'C29'])
       || !allRetainedAttemptsPass(verdict)) {
-    throw new Error('C27 requires every applicable BCP-17 gate and C29 to pass first; unresolved scope or evidence remains blocking.')
+    throw new Error('C27 requires every applicable technical BCP-17 gate to pass first; unresolved scope or evidence remains blocking.')
   }
   if ((verdict.deterministicFailures?.length ?? 0) > 0 || (verdict.evidenceErrors?.length ?? 0) > 0
       || (phase.notClaimedCapabilities?.length ?? 0) === 0) {
@@ -83,7 +96,7 @@ export function assertC27Admission(verdict, bindings, pendingBinding) {
   }
 }
 
-/** Require C27 and C29 before checking public release bytes after publication. */
+/** Require technical draft admission before fresh public bytes; this never authorizes publication. */
 export function assertPostpublicationAdmission(verdict, bindings, pendingBinding) {
   const status = verdict?.phases?.prepublication?.status
   const postpublication = verdict?.phases?.postpublication
@@ -94,6 +107,7 @@ export function assertPostpublicationAdmission(verdict, bindings, pendingBinding
   const expectedBlockers = [
     ...(Array.isArray(pendingC00) ? pendingC00.map((key) => `missing required variant ${key}`) : []),
     'missing required contract C00',
+    ...pendingHumanBlockers(verdict),
   ]
   if (!['PASS', 'SCOPE_LIMITED'].includes(status)
       || verdict?.verdict !== 'ENVIRONMENT_BLOCKED'
@@ -102,8 +116,8 @@ export function assertPostpublicationAdmission(verdict, bindings, pendingBinding
       || pendingC00.some((key) => !c00BindingKeys.includes(key))
       || !pendingC00.includes(`${pendingBinding?.contractId}:${pendingBinding?.variantId}`)
       || !sameStringSets(verdict.blockers, expectedBlockers)
-      || !hasPassingContract(verdict, 'C27') || !hasPassingContract(verdict, 'C29')) {
-    throw new Error('C00 requires the completed BCP-17 campaign, C29 acceptance, and a passing C27 publication decision.')
+      || !hasPassingContract(verdict, 'C27')) {
+    throw new Error('C00 requires the completed technical BCP-17 campaign and passing C27 draft inspection.')
   }
   if (verdict.mode === 'candidate' && (status !== 'SCOPE_LIMITED' || !hasReviewedResidualSet(verdict))) {
     throw new Error('C00 cannot follow an unrecognized or changed not-claimed capability scope.')
@@ -111,8 +125,52 @@ export function assertPostpublicationAdmission(verdict, bindings, pendingBinding
   if ((verdict.deterministicFailures?.length ?? 0) > 0 || (verdict.evidenceErrors?.length ?? 0) > 0) {
     throw new Error('C00 cannot run while candidate evidence contains failures or integrity errors.')
   }
-  if (!allOtherContractsReady(verdict, ['C00']) || !allRetainedAttemptsPass(verdict)) {
+  if (!allOtherContractsReady(verdict, ['C00', 'C29']) || !allRetainedAttemptsPass(verdict)) {
     throw new Error('C00 requires every prior applicable contract attempt to pass with no retained blockers.')
+  }
+}
+
+/** Allow only the explicitly visible missing human rows, never unrelated environment blockers. */
+function pendingHumanBlockers(verdict) {
+  const human = verdict?.phases?.humanAcceptance
+  if (!['NOT_RUN', 'NEEDS_HUMAN_DECISION', 'PASS'].includes(human?.status)) return []
+  const missing = human.missing ?? []
+  if (missing.some((key) => !key.startsWith('C29:'))) return []
+  return [...missing.map((key) => `missing required variant ${key}`),
+    ...(missing.length ? ['missing required contract C29'] : [])]
+}
+
+/** Report technical readiness for Donal's controlled-handover decision, never operational approval. */
+export function evaluateTechnicalHandover(verdict, bindings) {
+  const technical = verdict?.phases?.prepublication
+  const publicBytes = verdict?.phases?.postpublication
+  const technicalIds = new Set(bindings.filter((binding) => binding.mandatory
+    && phaseOf(binding) === 'prepublication').map((binding) => binding.contractId))
+  const completeMatrix = Array.from({ length: 29 }, (_, index) => `C${String(index).padStart(2, '0')}`)
+    .every((id) => technicalIds.has(id))
+  const permittedPending = new Set([
+    ...pendingHumanBlockers(verdict),
+    ...(publicBytes?.missing ?? []).map((key) => `missing required variant ${key}`),
+    ...((publicBytes?.missing?.length ?? 0) > 0 ? ['missing required contract C00'] : []),
+  ])
+  const ready = verdict?.mode === 'candidate' && completeMatrix && hasReviewedResidualSet(verdict)
+    && technical?.status === 'SCOPE_LIMITED'
+    && ['NOT_RUN', 'PASS'].includes(publicBytes?.status)
+    && ['NOT_RUN', 'NEEDS_HUMAN_DECISION', 'PASS'].includes(verdict?.phases?.humanAcceptance?.status)
+    && verdict.blockers.every((blocker) => permittedPending.has(blocker))
+    && verdict.evidenceErrors.length === 0 && verdict.deterministicFailures.length === 0
+    && allRetainedAttemptsPass(verdict)
+  return Object.freeze({ stage: 'technical-handover', status: ready ? 'READY_FOR_APPROVAL' : 'NOT_READY',
+    publicBytesVerified: publicBytes?.status === 'PASS',
+    humanAcceptance: verdict?.phases?.humanAcceptance?.status ?? 'NOT_RUN',
+    publicationAuthorized: false, distributionAuthorized: false, operationallyEligible: false,
+  })
+}
+
+/** Human training requests follow completed technical checks and still require named authorization. */
+export function assertC29Admission(verdict, bindings) {
+  if (evaluateTechnicalHandover(verdict, bindings).status !== 'READY_FOR_APPROVAL') {
+    throw new Error('C29 requires completed technical checks before requesting human acceptance; it cannot replace Ubuntu qualification.')
   }
 }
 
@@ -152,7 +210,8 @@ function sameCapabilityRecords(actual, expected) {
 /** Require every in-scope contract row to pass while allowing only listed phase rows to remain pending. */
 function allOtherContractsReady(verdict, pendingContractIds) {
   return verdict?.contractRows?.filter((row) => row.required).every((row) => pendingContractIds.includes(row.contractId)
-    ? row.status === 'not-run' : ['PASS', 'SCOPE_LIMITED'].includes(row.status)) === true
+    ? row.contractId === 'C29' ? ['not-run', 'NEEDS_HUMAN_DECISION', 'PASS'].includes(row.status) : row.status === 'not-run'
+    : ['PASS', 'SCOPE_LIMITED'].includes(row.status)) === true
 }
 
 /** Compare ordered identity lists without coercing malformed values. */
@@ -171,5 +230,6 @@ function sameStringSets(actual, expected) {
 function allRetainedAttemptsPass(verdict) {
   return Array.isArray(verdict?.retainedAttemptStatuses)
     && verdict.retainedAttemptStatuses.length > 0
-    && verdict.retainedAttemptStatuses.every((attempt) => attempt.status === 'PASS')
+    && verdict.retainedAttemptStatuses.every((attempt) => attempt.status === 'PASS'
+      || attempt.contractId === 'C29' && attempt.status === 'NEEDS_HUMAN_DECISION')
 }

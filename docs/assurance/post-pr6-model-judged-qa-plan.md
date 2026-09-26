@@ -764,9 +764,9 @@ Every catalogue entry below is a contract family. Its compiled variants are indi
 - **Environment/tier:** browser CI; exact AppImage and installed `.deb` release candidate.
 - **Cleanup:** complete lease cleanup/quarantine; no composite run uses real incident data.
 
-### C29 — Pre-release original-machine training acceptance
+### C29 — Post-handover original-machine training acceptance
 
-- **Goal:** collect named human acceptance on the original machine before release, using synthetic, replayed or deliberately disposable training data. SAR Tracker remains advisory and an independent training reference stays authoritative. Donal approved this separation from post-publication WAR-13B field shadow on 2026-09-19.
+- **Goal:** collect named human acceptance on the original machine after Ubuntu technical validation and approved controlled handover to Eamonn, before any operational-suitability claim. Donal clarified this order on 2026-09-25; signer setup is not an Ubuntu preflight prerequisite. Use synthetic, replayed or deliberately disposable training data. SAR Tracker remains advisory and an independent training reference stays authoritative. C29 remains separate from WAR-13B field shadow as approved on 2026-09-19; its legacy signed session-kind identifier is retained for compatibility.
 - **Authoritative oracle:** session/candidate identity, primary-source comparison checkpoints, stop/fallback timing and the frozen residual-risk record—not model opinion.
 - **Journey:** named authorization and exact candidate/original-machine binding; training pre-session gate; fallback drill; bounded training scenarios; compare at opening/transitions/warnings/close; stop on any trigger.
 - **Variants:** E0 ordinary feedback, E1 reproducible issue, E2 safety/regression within training only. Field/real-incident shadow is a separate post-publication activity and cannot substitute for this receipt.

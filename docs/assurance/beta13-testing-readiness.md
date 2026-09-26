@@ -94,7 +94,8 @@ and initial metadata drafting are now completed locally, not merged.
 3. **Qualification owner: bind actual inputs.** Obtain successful exact-source CI
    archive/run/attempt/artifact identities and both installer hashes. Verify actual
    installed `.deb` identity separately. Supply candidate ID/version, runtime input
-   manifest, release/rollback inputs and independent C29 authority/authorization.
+   manifest and release/rollback inputs. C29 authority/authorization is required
+   only for the later human-acceptance stage, not Ubuntu technical preflight.
    Use the existing runtime-input and artifact schemas; no invented placeholder
    identity is acceptable. Compile a NEW immutable campaign after all inputs exist.
 
@@ -120,11 +121,16 @@ and initial metadata drafting are now completed locally, not merged.
    Preserve every failed receipt. Changes invalidate affected/dependent evidence;
    broad shared-state changes require a full campaign restart.
 
-7. **Human acceptance and publication boundary.** Arrange C29 original-machine
-   training acceptance in parallel with automation, but use final exact artifacts.
+7. **Controlled handover and human acceptance.** Complete Ubuntu technical checks
+   first. `technicalHandover.status: READY_FOR_APPROVAL` is only a request for
+   Donal's final controlled-handover decision, never operational qualification.
+   C27 draft inspection may run with C29 pending; C00 public bytes require actual
+   approved publication. After approved handover to Eamonn, collect named C29
+   original-machine acceptance before any operational-suitability claim.
    PKG-001/same-profile package comparison remains explicit; historical different
-   machine observations are not closure. C27 draft decision is separate, then C00
-   fresh public-byte verification and explicit controlled distribution approval.
+   machine observations are not closure. No agent invents acceptance, signer or
+   profile identity. A technical campaign without human authority remains immutable
+   and cannot later have that authority inserted or claim complete qualification.
 
 ## Stop/continue rule
 

@@ -158,6 +158,27 @@ bytes. Direct-child and descendant cleanup are bounded and checked.
 
 ## Human and release phases
 
+Donal clarified the execution order on 2026-09-25: Ubuntu technical validation,
+approved controlled handover to Eamonn, then original-machine human acceptance.
+C29 is `posthandover`; missing signer setup does not block technical preflight.
+The controller checks authority before a C29 attempt and requires completed
+technical checks before issuing its pending request; controlled handover still
+needs separate approval. Public-byte C00 applies after actual publication and is
+not invented for an unpublished controlled handover. The existing signed-envelope
+session-kind string remains unchanged for compatibility, not as a publication-order rule.
+
+`technicalHandover` reports `READY_FOR_APPROVAL` only after all applicable C00–C28
+prepublication variants pass with the reviewed residual scope and no technical or
+integrity failures. It leaves publication, distribution and operational eligibility
+false. C29 and fresh public-byte C00 remain separately visible; neither is forged
+or waived. Full evidence completion still requires human acceptance. Definitions,
+source/artifact/input digests and retained attempts stay immutable: this change
+does not add later authority to a sealed technical campaign or transfer its results.
+The overall campaign verdict and CLI exit code continue to report incomplete
+qualification while C29 or public-byte C00 is missing. Read the separate
+`technicalHandover.status` for technical readiness; do not reinterpret a nonzero
+whole-campaign result as a pass or discard its pending rows.
+
 Registry hazard ownership is a single primary routing owner, not permission to
 skip the other required contracts in QA-plan section 4.2. The routing test
 checks every primary owner against that canonical many-contract map. In
@@ -176,7 +197,8 @@ The named signer supplies the signed envelope and evidence attachment for the
 fresh request. Invalid/stale submissions and missing attachments are retained.
 Training acceptance is distinct from postpublication WAR-13B field shadow.
 
-C27 requires fresh draft metadata, exact tag/artifact/checksum bytes, tag-driven
+C27 runs after other technical checks, with C29 allowed to remain pending. It
+requires fresh draft metadata, exact tag/artifact/checksum bytes, tag-driven
 release CI provenance before and after transfers, and independently downloaded
 prior rollback artifacts. It cannot authorize publication. After Donal's
 separate publication decision, C00 requires unauthenticated fresh public

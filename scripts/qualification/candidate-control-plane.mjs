@@ -30,8 +30,10 @@ import { compileRuntimeInputs, verifyRuntimeInputs } from './runtime-inputs.mjs'
 import { compileSuiteBinding, executeSuiteVariant, validateRetainedSuite } from './suite-adapter.mjs'
 import {
   assertC27Admission,
+  assertC29Admission,
   assertPostpublicationAdmission,
   evaluateQualificationPhases,
+  evaluateTechnicalHandover,
   validateQualificationPhase,
 } from './campaign-phases.mjs'
 import { compileReleaseInputs } from './release-receipts.mjs'
@@ -568,12 +570,18 @@ export async function runContractAttempt({
   if (changedInputs.length > 0) throw new Error(changedInputs.join('; '))
   await assertOwnedCampaignLease(preflight.lease, campaignRoot, normalized)
   const binding = findBinding(normalized, contractId, variantId)
+  if (binding.proofMode === 'external-human' && !normalized.externalHuman) {
+    throw new Error('C29 requires independently bound human authority and authorization before human acceptance can run; technical evidence does not replace it.')
+  }
   if (binding.phase === 'postpublication') {
     const verdict = await computeCampaignVerdict({ definition: normalized, campaignRoot })
     assertPostpublicationAdmission(verdict, normalized.bindings, binding)
   } else if (normalized.mode === 'candidate' && binding.contractId === 'C27') {
     const verdict = await computeCampaignVerdict({ definition: normalized, campaignRoot })
     assertC27Admission(verdict, normalized.bindings, binding)
+  } else if (normalized.mode === 'candidate' && binding.contractId === 'C29') {
+    const verdict = await computeCampaignVerdict({ definition: normalized, campaignRoot })
+    assertC29Admission(verdict, normalized.bindings)
   }
   const inputDigest = inputDigestFor(normalized, binding)
   const attemptsRoot = path.join(path.resolve(campaignRoot), 'attempts')
@@ -1143,7 +1151,7 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
                 ? 'PASS'
                 : requiredRows.every((row) => ['PASS', 'SCOPE_LIMITED'].includes(row.status))
                   ? 'SCOPE_LIMITED' : 'INVALID_EVIDENCE'
-  return Object.freeze({
+  const verdict = {
     schema: 'sartracker-qualification-campaign-verdict-v1',
     campaignId: normalized.campaignId,
     // A passing calibration/development campaign is evidence for that mode
@@ -1167,7 +1175,8 @@ export async function computeCampaignVerdict({ definition, campaignRoot }) {
     retainedAttemptStatuses: Object.freeze(allAttempts.map(({ contractId, variantId, attemptId, status }) => Object.freeze({
       contractId, variantId, attemptId, status,
     }))),
-  })
+  }
+  return Object.freeze({ ...verdict, technicalHandover: evaluateTechnicalHandover(verdict, normalized.bindings) })
 }
 
 /** Keep source/identity/cryptographic receipts deterministic while preserving every required visual judge. */
@@ -1553,8 +1562,8 @@ export function validateBindingCoverage(definition) {
       if (binding.adapterId.startsWith('release.') && !definition.releaseInputs) blockers.push(`missing exact release and rollback input handoff for ${contractId}`)
       if (binding.proofMode === 'ci-appimage' && !hasArtifact(definition, 'ci-appimage')) blockers.push(`missing exact CI AppImage artifact identity for ${contractId}`)
       if (binding.proofMode === 'installed-deb' && (!hasArtifact(definition, 'ci-deb') || !definition.runtimeInputs?.config.installedExecutablePath)) blockers.push(`missing exact installed deb artifact identity for ${contractId}`)
-      if (binding.proofMode === 'external-human' && (!definition.externalHuman || !hasArtifact(definition, 'ci-deb'))) {
-        blockers.push('C29 requires independently bound human authority, authorization and exact CI Debian artifact')
+      if (binding.proofMode === 'external-human' && !hasArtifact(definition, 'ci-deb')) {
+        blockers.push('C29 requires the exact CI Debian artifact; human authority is required at the later human acceptance stage')
       }
       const runtimeFixtures = definition.runtimeInputs?.config?.fixtures
       const packageScenario = binding.variantId?.replace(/-(?:appimage|installed)$/u, '')
