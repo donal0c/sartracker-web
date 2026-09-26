@@ -115,6 +115,46 @@ describe('archive launch ownership', () => {
     }
   })
 
+  it.skipIf(process.platform !== 'darwin')('sends the macOS group one SIGTERM across its grace period before one SIGKILL', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'sar-mac-term-once-'))
+    const handshake = path.join(root, 'pids.json')
+    const received = path.join(root, 'sigterm.log')
+    // Each process records every SIGTERM it receives and stays alive, so only
+    // escalation can end it. The child shares the dedicated launch group.
+    const record = `process.on('SIGTERM',()=>require('node:fs').appendFileSync(${JSON.stringify(received)},process.pid+'\\n'))`
+    const childCode = `${record};setInterval(()=>{},1000)`
+    const mainCode = `${record};const c=require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(childCode)}],{stdio:'ignore'});setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(handshake)},JSON.stringify([process.pid,c.pid])),200);setInterval(()=>{},1000)`
+    const launch = startArchiveLaunch(process.execPath, ['-e', mainCode], { cwd: process.cwd(), env: process.env })
+    try {
+      const [main, child] = await readHandshake(handshake)
+      const result = await launch.stop()
+      expect(result.cleanupVerified).toBe(true)
+      expect(result.signal).toBe('SIGKILL')
+      const counts = (await readFile(received, 'utf8')).trim().split('\n').map(Number)
+      expect(counts.filter(pid => pid === main)).toHaveLength(1)
+      expect(counts.filter(pid => pid === child)).toHaveLength(1)
+    } finally {
+      await launch.stop()
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 20000)
+
+  it.skipIf(process.platform !== 'darwin')('lets a macOS main exit cleanly on its single SIGTERM without escalation', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'sar-mac-clean-exit-'))
+    const handshake = path.join(root, 'pids.json')
+    const launch = startArchiveLaunch(process.execPath, ['-e', `process.on('SIGTERM',()=>process.exit(0));require('node:fs').writeFileSync(${JSON.stringify(handshake)},JSON.stringify([process.pid]));setInterval(()=>{},1000)`], { cwd: process.cwd(), env: process.env })
+    try {
+      await readHandshake(handshake)
+      const started = Date.now()
+      const result = await launch.stop()
+      expect(result).toMatchObject({ code: 0, signal: null, cleanupVerified: true })
+      expect(Date.now() - started).toBeLessThan(5000)
+    } finally {
+      await launch.stop()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('never binds an unrelated sentinel as the main process', async () => {
     const sentinel = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' })
     const launch = startArchiveLaunch(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { cwd: process.cwd(), env: process.env })

@@ -95,6 +95,46 @@ def interrupt_main(main):
             send_exact_signal(*ancestor, signal.SIGKILL)
 
 
+def signal_owned_once(known, conflicts, delivered, signum):
+    """Request each owned identity's termination at most once per signal.
+
+    A graceful stop is one SIGTERM followed, only if needed, by one SIGKILL.
+    Re-sending SIGTERM through the grace period would stop being a graceful
+    request. Descendants first seen during shutdown still receive the current
+    phase's signal once; reused PIDs stay excluded as identity conflicts.
+    """
+    owner.merge_owned(known, owner.descendants(os.getpid(), owner.process_table()), conflicts)
+    for pid, start in list(known.items()):
+        if pid in conflicts or signum in delivered.setdefault(pid, set()):
+            continue
+        owner.signal_identity(pid, start, signum)
+        delivered[pid].add(signum)
+
+
+def observe_main_exit(main, producer_pid, producer_code):
+    """Return main's exact wait status once observed, otherwise None.
+
+    A direct-child main is reaped by Popen.poll(), whose cached return code is
+    the only record of its status, so every poll must be offered here. A main
+    under a wrapper is read with waitpid; its absence alone is never proof.
+    """
+    if main is None:
+        return None
+    if main[0] == producer_pid:
+        if producer_code is None:
+            return None
+        return {'code': producer_code if producer_code >= 0 else None,
+                'signal': signal.Signals(-producer_code).name if producer_code < 0 else None}
+    try:
+        pid, status = os.waitpid(main[0], os.WNOHANG)
+    except ChildProcessError:
+        return None  # A live wrapper still parents main until interruption.
+    if not pid:
+        return None
+    return {'code': os.WEXITSTATUS(status) if os.WIFEXITED(status) else None,
+            'signal': signal.Signals(os.WTERMSIG(status)).name if os.WIFSIGNALED(status) else None}
+
+
 def run():
     """Hold custody until explicit stop or interruption and positive reaping."""
     args = owner.parse_args()
@@ -117,6 +157,7 @@ def run():
     failure = None
     buffer = b''
     stopping_at = None
+    delivered = {}
     deadline = time.monotonic() + args.runtime_timeout_ms / 1000
     if identity is None:
         failure = 'Archive launcher identity was not observable.'
@@ -128,18 +169,7 @@ def run():
     while True:
         try:
             code = producer.poll()
-            if main is not None and main_status is None:
-                if main[0] == producer.pid and code is not None:
-                    main_status = {'code': code if code >= 0 else None,
-                                   'signal': signal.Signals(-code).name if code < 0 else None}
-                elif main[0] != producer.pid:
-                    try:
-                        pid, status = os.waitpid(main[0], os.WNOHANG)
-                        if pid:
-                            main_status = {'code': os.WEXITSTATUS(status) if os.WIFEXITED(status) else None,
-                                           'signal': signal.Signals(os.WTERMSIG(status)).name if os.WIFSIGNALED(status) else None}
-                    except ChildProcessError:
-                        pass  # A live wrapper still parents main until interruption.
+            main_status = main_status or observe_main_exit(main, producer.pid, code)
             if time.monotonic() >= deadline:
                 raise RuntimeError('Archive owned launch exceeded its runtime bound.')
             if not state['stop_requested'] and select.select([4], [], [], 0)[0]:
@@ -176,16 +206,18 @@ def run():
                 stopping_at = time.monotonic()
             elapsed = time.monotonic() - stopping_at
             try:
-                owner.terminate_owned(producer.pid, known, conflicts,
-                                      signal.SIGKILL if interrupted or elapsed >= args.termination_grace_ms / 1000 else signal.SIGTERM)
+                signal_owned_once(known, conflicts, delivered,
+                                  signal.SIGKILL if interrupted or elapsed >= args.termination_grace_ms / 1000 else signal.SIGTERM)
                 # Main status must be read before the generic adopted-child reaper.
                 reapable = {pid: start for pid, start in known.items() if main is None or pid != main[0] or main_status is not None}
                 owner.reap_children(producer.pid, reapable)
                 table = owner.process_table()
                 owner.merge_owned(known, owner.descendants(os.getpid(), table), conflicts)
                 remaining = sorted(pid for pid, start in known.items() if table.get(pid, (None, None))[1] == start)
-                verified = (not remaining and not conflicts
-                            and producer.poll() is not None and children_exhausted())
+                code = producer.poll()
+                # This poll may be the one that reaps a direct-child main.
+                main_status = main_status or observe_main_exit(main, producer.pid, code)
+                verified = not remaining and not conflicts and code is not None and children_exhausted()
             except Exception:
                 verified, remaining = False, []
                 failure = failure or 'Archive descendant cleanup could not be verified.'

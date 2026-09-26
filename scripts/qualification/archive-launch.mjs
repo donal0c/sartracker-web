@@ -132,14 +132,23 @@ function startDirectMacLaunch(file, args, options) {
       throw error
     }
   }
-  /** Stop the dedicated native group, then require its disappearance. */
+  /**
+   * Stop the dedicated native group, then require its disappearance. The group
+   * receives one SIGTERM and, only if it outlives the grace period, one SIGKILL;
+   * repeating SIGTERM through the grace period would not be a graceful request.
+   */
   async function stop() {
     if (cleaned !== null) return cleaned
     if (launchError !== null && child.pid === undefined) return { cleanupVerified: true, code: null, signal: null }
     const started = Date.now()
+    const delivered = new Set()
     while (groupExists()) {
-      try { process.kill(-child.pid, Date.now() - started < 5000 ? 'SIGTERM' : 'SIGKILL') } catch (error) {
-        if (error.code !== 'ESRCH') throw error
+      const signal = Date.now() - started < 5000 ? 'SIGTERM' : 'SIGKILL'
+      if (!delivered.has(signal)) {
+        delivered.add(signal)
+        try { process.kill(-child.pid, signal) } catch (error) {
+          if (error.code !== 'ESRCH') throw error
+        }
       }
       if (Date.now() - started >= 10000) throw new Error('Archive native process group cleanup timed out.')
       await new Promise(resolve => setTimeout(resolve, 20))
