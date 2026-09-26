@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createHash } from 'node:crypto'
 
 import {
   ARCHIVE_CIPHERTEXT_MIN_BYTES,
@@ -15,7 +16,7 @@ const hash = 'a'.repeat(64)
 const head = 'b'.repeat(40)
 
 function report(): JsonObject {
-  return {
+  const value = {
     schemaVersion: 1,
     proofKind: 'packaged-large-archive-v1',
     contractId: 'C20-C22',
@@ -47,7 +48,14 @@ function report(): JsonObject {
       preset: 'field', path: `${root}/source/mission-store.sqlite`, privateCopyPath: `${root}/oracle/mission-store.sqlite`,
       manifestPath: `${root}/source/mission-store.sqlite.manifest.json`, sourceSha256: hash,
       privateCopySha256: hash, sourceBytes: ARCHIVE_SOURCE_MIN_BYTES, privateCopyBytes: ARCHIVE_SOURCE_MIN_BYTES,
-      manifestSha256: hash, inventory: { primary: { id: 'fixture-mission-000000000001' } },
+      manifestSha256: hash,
+      manifest: { preset: 'field', generatorVersion: 2, schemaVersion: 13, syntheticDataOnly: true,
+        workload: { mode: 'target-size', deviceCount: 32, activePositionDeviceCount: 8, realPositionRows: 8 },
+        database: { bytes: ARCHIVE_SOURCE_MIN_BYTES, sha256: hash },
+        rows: { totalMissionEvents: 1, byTable: { missions: 1, devices: 32, positions: 8, mission_events: 1 } } },
+      inventory: { primary: { id: 'fixture-mission-000000000001', status: 'active', start_time: '2026-01-01T00:00:00.000Z', schema_version: 13, positionCount: 8 },
+        fixturePositionCount: 8, activePositionDeviceCount: 8, provenance: { null: 8, fix: 0, other: 0 },
+        rowCounts: { missions: 1, devices: 32, positions: 8, mission_events: 1 } },
     },
     preArchive: {
       databasePath: `${root}/snapshots/prearchive-mission-store.sqlite`, closed: true, sidecarsAbsent: true,
@@ -85,9 +93,25 @@ function report(): JsonObject {
     inventory: { missionId: 'fixture-mission-000000000001', tables: [{ name: 'missions', sourceRows: 1, restoredRows: 1, sourceSha256: hash, restoredSourceSha256: hash }], extraEvents: [] },
     gaps: [],
   }
+  value.sourceFixture.manifestSha256 = createHash('sha256').update(JSON.stringify(value.sourceFixture.manifest, null, 2) + '\n').digest('hex')
+  return value
 }
 
 describe('composite large archive producer receipt', () => {
+  it('rejects a different well-formed manifest digest', () => {
+    const value = report()
+    ;(value.sourceFixture as JsonObject).manifestSha256 = 'f'.repeat(64)
+    expect(validateLargeArchiveProducerReceipt(value, {
+      appPath: `${root}/candidate.AppImage`, evidencePath: root, sourceHead: head,
+    }).valid).toBe(false)
+  })
+  it.each(['manifest', 'inventory'])('rejects missing archive-role %s evidence', field => {
+    const value = report()
+    delete (value.sourceFixture as JsonObject)[field]
+    expect(validateLargeArchiveProducerReceipt(value, {
+      appPath: `${root}/candidate.AppImage`, evidencePath: root, sourceHead: head,
+    }).valid).toBe(false)
+  })
   it('parses only the fixed app/evidence/head/variant invocation', () => {
     expect(parseArgs([
       '--app', '/candidate.AppImage', '--evidence', '/tmp/evidence', '--expected-head', head,

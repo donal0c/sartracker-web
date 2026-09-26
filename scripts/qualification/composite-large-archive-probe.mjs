@@ -25,7 +25,7 @@ import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { inspectStandaloneSqliteFixture } from './sqlite-fixture.mjs'
 import { compareArchiveDatabaseSnapshots } from './archive-field-oracle.mjs'
 import { createCompositeSourceManifest } from './composite-manifest.mjs'
-import { selectPagingSource } from './paging-source.mjs'
+import { ARCHIVE_FIELD_MIN_BYTES, assertArchiveFieldManifest, assertArchiveFieldInventory, selectArchiveFieldSource } from './archive-field-source.mjs'
 
 const execFile = promisify(execFileCallback)
 const pipeline = promisify(pipelineCallback)
@@ -34,7 +34,7 @@ const Database = require('better-sqlite3')
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 export const FIELD_ARCHIVE_VARIANT = 'field-archive-37gb'
-export const ARCHIVE_SOURCE_MIN_BYTES = 3_700_000_000
+export const ARCHIVE_SOURCE_MIN_BYTES = ARCHIVE_FIELD_MIN_BYTES
 export const ARCHIVE_CIPHERTEXT_MIN_BYTES = 3_500_000_000
 export const ARCHIVE_MIN_FREE_SPACE_BYTES = 64 * 1024 ** 3
 export const ARCHIVE_CONTAINER_VERSION = 2
@@ -337,7 +337,7 @@ async function prepareFieldFixture(evidencePath, profilePath) {
   return inspectStandaloneSqliteFixture(privateCopy, (inspectionPath) => {
     const database = new Database(inspectionPath, { readonly: true, fileMustExist: true })
     try {
-      const inventory = selectPagingSource(database, 'C07')
+      const inventory = selectArchiveFieldSource(database, manifest, source)
       const sourceMission = database.prepare('SELECT * FROM missions WHERE id = ?').get(inventory.primary.id)
       if (sourceMission === undefined) throw new Error('Field source mission row is missing from the private oracle copy.')
       return Object.freeze({
@@ -584,6 +584,14 @@ function normalizeInput(input) {
 }
 
 function validateFixture(fixture, evidencePath, failures) {
+  try {
+    assertArchiveFieldManifest(fixture?.manifest, { sha256: fixture?.sourceSha256, bytes: fixture?.sourceBytes })
+    assertArchiveFieldInventory(fixture.manifest, fixture.inventory)
+    const manifestDigest = createHash('sha256').update(`${JSON.stringify(fixture.manifest, null, 2)}\n`).digest('hex')
+    if (fixture.manifestSha256 !== manifestDigest) throw new Error('Field manifest digest differs.')
+  } catch {
+    failures.push('The field archive role, manifest identity, or all-position inventory differs.')
+  }
   if (!isObject(fixture) || fixture.preset !== 'field' || !absoluteUnder(fixture.path, evidencePath) || !absoluteUnder(fixture.privateCopyPath, evidencePath)
       || !absoluteUnder(fixture.manifestPath, evidencePath) || !SHA256.test(fixture.sourceSha256 ?? '') || fixture.privateCopySha256 !== fixture.sourceSha256
       || !Number.isSafeInteger(fixture.sourceBytes) || fixture.sourceBytes < ARCHIVE_SOURCE_MIN_BYTES

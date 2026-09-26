@@ -166,6 +166,12 @@ rejected app-quit recovery remains unexplained and did not exercise native windo
 close. Keep these separate from PR55 process ownership and the original 201 ms
 failure. No campaign, timing qualification or release claim follows.
 DON-254 comment `9b0c7117-ef51-4c88-8c35-5abeb51d2976` records the source proof.
+Field archive fixture repair: the composite producer now validates its original
+legacy v2/schema13 `field` manifest, byte/hash custody and unique active mission,
+then counts all positions including NULL provenance. C07 paging and fixture
+generation are unchanged. Manifest sidecar digest and complete inventory are
+bound in the receipt. Independent review accepted; 49 focused selector, receipt
+and generator tests plus targeted lint passed. Packaged field retry remains pending.
 
 Evidence and history: [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
 [active workplan](../docs/two-track-execution-workplan.md),
