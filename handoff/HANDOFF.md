@@ -1,39 +1,37 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-26. Release remains **HOLD**. PR53 is merged; master
-`2ff4d5742649da016a52c0e682f404d17df8c5dd` serializes release correctness.
-Source CI 36224020563 passed, but Beta13.1 release run 36225417118 failed five
-Chromium cases after correctness, strict responsiveness and build passed.
-No package/draft was produced. Both rejected tags remain immutable; Beta13's
-earlier AUD-03 contention failure is preserved in the Beta13.1 release note.
-The combined repair uses `codex/beta13-browser-release-repair`, **PR plus independent
-review**, not direct master. PR54 first head `a92266f9` repaired the original five
-browser failures; Linux CI then exposed two separately reproduced focus/fixture
-races, repaired in `9b034092`. That head passed local 6,045 source tests (26 existing
-skips), full 225 Chromium tests and native review; lint/types/build/budgets passed.
-Strict Debian mapping, 90-day retention and flaky-pass rejection remain intact.
-The next head `9b034092` was rejected by Linux CI 36233554495: 224 passes and
-one roster retry-pass, after the earlier repaired assertions passed. Its final
-async evaluation lost its protocol result; the original raw error is unavailable.
-Bounded diagnostics did not reproduce it. A corrected app-free GC probe confirms
-a Playwright 1.59.1/Chromium 147 driver defect with the same error wording;
-1.63.0/Chromium 153 contains the upstream fix and passes the same finite control.
-Original SAR causation remains suspected, not proven. The authorized bounded
-PR54 delta pins only that test toolchain and adds an isolated driver gate;
-runner-level red/green, 25 gate tests, lint and new-file type checks pass.
-Native toolchain-delta review accepted. New-toolchain local verification passes:
-6,046 source tests / 584 files (26 existing skips), lint/types/build/budgets,
-driver contract, 3/6/6 predecessor browser cases and full 225 Chromium tests
-with zero retries. Claude exact-head review accepted (L1 exact-pin check deferred).
-The pin also swaps the `_electron` driver for packaged smoke/soak/qualification
-harnesses; no local 1.63 `_electron` run is claimed, so exact-head Packaged Linux
-checks and the merged-source dispatch are that surface's evidence. Run 36241851816
-passed every required lane on `69e9badc`, including driver, 225 Chromium cases
-and packaged checks. Later documentation commits have identical executable inputs;
-their own required CI status must still be observed, not attributed to that run.
-Exact-head Linux 225/225 plus the driver gate is required before merge
-recommendation, then a full merged-source Linux workflow_dispatch before tagging. The compact cause and
-verification ledger is `docs/releases/beta13-browser-gate-repair.md`.
+Updated 2026-09-26 (evening). Release remains **HOLD**; no tag, draft or publication.
+PR54 merged at `4e9c53710d8930094afe80861c91e361ced354f8` (cause/verification ledger:
+`docs/releases/beta13-browser-gate-repair.md`). Master
+`09343ee94b8d4f4347da416fdb6596a83e08624c` (harness-only Train D allowlist fix) passed
+the full Linux `workflow_dispatch` with `run_repair_train_d_smoke=true`: run
+**36255209914**, every lane green and receipts read (strict <200 ms, driver contract,
+Chromium 225/225 flaky-rejecting, 960k, Train D AUD-08/AUD-09/restart, soak, legacy
+recovery, archive lifecycle, AppImage launch). Beta13 and Beta13.1 tags stay immutable.
+
+Two dispatch failures are **retained**; the later green run does not resolve them:
+- 36249965817 @ `4e9c5371`: Train D close rejected sanitized finish-fence stack frames
+  (the `/tmp/` path redaction removed file:line tails). Product behaviour was correct;
+  `09343ee9` binds sanitized frames to the admitted fence error, sanitizer unchanged.
+- 36252807378 @ `09343ee9`: archive lifecycle `current_fix_continuity_gate_breached`,
+  verify phase **201 ms** against the unchanged 200 ms gate. Cause unproven.
+
+**Open risk:** archive current-fix margin has thinned. Max gaps (create/verify/restore/
+cleanup, ms): 09-17 green `58ea2900` 103/104/128/157; failed run 132/201/–/–; green run
+127/158/189/151. The renderer poll (50 ms cadence) lagged ~100 ms while main stayed
+≤83 ms. Suspects since 09-17: DON-267 scheduling (`776985d2`, `2b59cf77`) and the PR54
+Playwright 1.63 `_electron`/CDP instrumentation. Needs a bounded DON-254 performance
+follow-up; never relax the gate. Ubuntu must prioritise archive verify/restore timing.
+
+Run 36255209914 installers are **validation-workflow** bytes
+(`sartracker-electron-validation_0.1.0-beta.13.2_*`), not release candidates: AppImage
+`6a7ac24f…99804e`, `.deb` `96f00390…bb40c5`, shared `app.asar` `6f350c02…83d2`.
+The private-map guard patterns found nothing in both installers' inventories or the
+`.deb` payload/asar. Release-workflow installers do not exist until a tag's release
+run passes. Run 36255209914 covers `09343ee9` only: the exact commit to be tagged,
+even if docs-only, must itself pass the complete Linux validation workflow_dispatch
+(`run_repair_train_d_smoke=true`); ordinary push CI omits required lanes.
+Full identities: `docs/releases/sartracker-electron-0.1.0-beta.13.2.md`.
 No final candidate is frozen or qualified. Donal authorized candidate tag and
 unpublished draft after verified source; publication/distribution need final approval.
 
@@ -100,9 +98,9 @@ PR52/53 source, browser, review and CI evidence is recorded in those PRs and
 DON-254; none is final tagged-candidate qualification. The private minZoom9 map
 scope remains bound; detail-only minZoom>12 remains fail-closed and out of scope.
 
-Finish the combined repair and exact-source/full-Chromium verification, then
-obtain reviewed-PR merge, pass the full exact-merged-source Linux dispatch and use
-a new write-once candidate tag. Only after release CI
+Merged-source Linux dispatch is complete (above). Next: Donal's tag decision with
+the retained 201 ms failure on record, a new write-once candidate tag, then release
+CI. Only after release CI
 create the authorized unpublished draft and bind its exact release-workflow installers and
 all technical inputs to one immutable campaign, and execute applicable technical
 rows serially. The 201 other technical variants may run after admission. C27 must

@@ -4,13 +4,16 @@
 
 This is incomplete release metadata, not a qualification report. Complete every
 applicable section of `TEMPLATE.md` from exact-candidate evidence before guarded
-publication. No candidate SHA, installer hash or Ubuntu result is asserted here.
+publication. Pre-tag source validation is recorded below; no release-workflow
+installer hash or Ubuntu result is asserted here.
 
 - Version: `0.1.0-beta.13.2`
 - Intended tag: `electron-v0.1.0-beta.13.2` (not created)
 - Linear: DON-254 qualification; DON-255 publication decision
 - Release-use classification: `ENGINEERING/TRAINING — NON-COUNTED`
-- Candidate identity / qualified platform and profile / CI run: PENDING
+- Validated source: `09343ee94b8d4f4347da416fdb6596a83e08624c` (tree
+  `bba3dc8e0c74e7ca2ade28e92fdc3af9596c46b0`), Linux validation run 36255209914
+- Tagged candidate commit / release-workflow run / qualified platform and profile: PENDING
 - Scope: controlled synthetic, replayed or disposable-data testing. Not
   sole-source operational software.
 - Distribution target: Linux x86-64 AppImage and actually installed Debian package;
@@ -43,6 +46,12 @@ Playwright 1.63.0, whose Chromium contains the upstream fix; an isolated app-fre
 driver regression passes and is now required alongside the unchanged SAR tests.
 This synthetic red/green evidence does not prove the original SAR failure's cause.
 
+After merge, the Repair Train D packaged smoke's expected-diagnostic check was
+corrected (`09343ee9`, harness only): the canonical sanitizer redacts private `/tmp/`
+paths, so the deliberate AUD-08 finish-fence refusal's stack frames lost their file
+positions on CI. Frames are now admitted only in AUD-08, at most four, of the named
+shapes, after the exact fence error. The sanitizer and product behaviour are unchanged.
+
 ## Preserved rejected candidates
 
 - Beta13 remains at `2d4f436add40ed9c279488c9ac4e3cb267c5cee2`. Release
@@ -58,6 +67,53 @@ This synthetic red/green evidence does not prove the original SAR failure's caus
 No workload, count oracle, timeout, retry policy or strict 200 ms threshold was
 weakened. This candidate requires its own successful tag-driven workflow.
 
+## Pre-tag Linux validation (merged source)
+
+Full `electron-linux-validation.yml` `workflow_dispatch`, `run_repair_train_d_smoke=true`.
+
+| Run | Source | Result |
+| --- | --- | --- |
+| 36249965817 | `4e9c5371` (PR54 merge) | **FAILED, retained**: Train D close rejected sanitized finish-fence stack frames; AUD-08/AUD-09 passed; soak, archive and launch skipped |
+| 36252807378 | `09343ee9` | **FAILED, retained**: archive lifecycle `current_fix_continuity_gate_breached`, verify 201 ms vs 200 ms; launch skipped |
+| 36255209914 | `09343ee9` | PASSED every lane; receipts read |
+
+Run 36255209914 receipts: strict <200 ms responsiveness, browser-driver contract,
+Chromium 225/225 with flaky passes rejected, 960k replay, Train D (AUD-08, AUD-09,
+restart; no failures), tracking soak, legacy recovery, archive lifecycle and AppImage
+launch with graceful close. Artifacts (expire 2026-12-25T16:22:21Z):
+
+| Artifact | ID | Digest |
+| --- | --- | --- |
+| electron-linux-artifacts | 10911110165 | `sha256:8ed0cbe7347cb38c9a1478cfe70d86435347c7bef35cf28b26dce90e96122d27` |
+| electron-linux-validation-evidence | 10911435096 | `sha256:429aff646525e919e8264025714a03a87c08f71913d81e1d120ba84005f1ba10` |
+| linux-correctness-evidence | 10910957774 | `sha256:5f1f3a05999e30da974f011566319007e7b310e032f9cc9283ecf561bb901d04` |
+| linux-package-evidence | 10910950303 | `sha256:a188e4e5af522f55800e7c928537b2d1f814ede10bd7de4197726f9f9261a345` |
+| validation-package | 10910381205 | `sha256:365596b810aee004000f1a3ab34cef71964cf9665253160411b26f57d4128dfa` |
+
+These are **validation-workflow** installers, not release candidates:
+
+| File | SHA-256 |
+| --- | --- |
+| `sartracker-electron-validation_0.1.0-beta.13.2_linux_x86_64.AppImage` | `6a7ac24ff242d521aa39d141ca57266d693ab51229228f86a00561ccae99804e` |
+| `sartracker-electron-validation_0.1.0-beta.13.2_linux_amd64.deb` | `96f003907a5bbc325632ee8ff2b767cc7381da93d77397d847167f9458bb40c5` |
+
+Both share `app.asar` `6f350c02f544b9351d6227dd000008034b69fbdef85499436c216b62f16583d2`.
+The release workflow's private-map filename guard patterns matched nothing in either
+installer's package-safety inventory, the extracted `.deb` payload or its 4,803 asar
+entries, and no packaged file carries an SQLite/MBTiles header. The release workflow
+must still apply its own guard to its own installers.
+
+Archive current-fix maximum gaps (ms; the gate fails at 200 or more):
+
+| Phase | 09-17 green `58ea2900` | 36252807378 | 36255209914 |
+| --- | --- | --- | --- |
+| create | 103 | 132 | 127 |
+| verify | 104 | **201** | 158 |
+| restore | 128 | not reached | 189 |
+| cleanup | 157 | not reached | 151 |
+
+The later pass does not resolve the 201 ms breach.
+
 ## Regression provenance
 
 - Classification: Regression correction
@@ -72,6 +128,9 @@ weakened. This candidate requires its own successful tag-driven workflow.
 - Regression gate: new adapter unit regressions, isolated browser-driver contract and retained full Chromium assertions;
   existing bcp17-final contracts still required
 - Remaining uncertainty: original PR54 roster protocol failure remains unconfirmed;
+  archive current-fix margin regression (201 ms retained breach, 189 ms passing
+  restore) is unresolved, cause unproven (suspects: DON-267 scheduling, Playwright 1.63
+  `_electron` instrumentation) and must be measured on Ubuntu under the unchanged gate;
   deferred synchronous mission-store startup isolation;
   DON-249/250/251 NOT_CLAIMED; PKG-001 original-machine/package proof remains required.
 
@@ -84,10 +143,12 @@ setup does not block Ubuntu checks. Public-byte verification follows separately
 approved publication. Candidate tag/unpublished draft preparation is authorized;
 publication and distribution are not approved.
 
-Before this tag is created, the reviewed merged source must pass the complete
-Linux validation workflow_dispatch, including strict responsiveness, tracking soak,
-960k, archive lifecycle and launch. Exact-final-head Linux Chromium 225/225 is
-required before recommending merge. C27 stays unattempted until its controls pass
+The reviewed merged source `09343ee9` passed the complete Linux validation
+workflow_dispatch (run 36255209914) after two retained failures. That run covers
+`09343ee9` only. The exact commit to be tagged must itself pass the complete Linux
+validation workflow_dispatch (`run_repair_train_d_smoke=true`) before tagging, even if
+it differs only in documentation. Ordinary push CI omits strict responsiveness, 960k,
+Train D, tracking soak and archive lifecycle and does not satisfy this. C27 stays unattempted until its controls pass
 or authentic acceptance was sealed with the original inputs. A retained
 NEEDS_HUMAN_DECISION blocks technical handover despite a later PASS; acceptance
 inputs cannot be injected after compilation. No controls, waivers or authentication
