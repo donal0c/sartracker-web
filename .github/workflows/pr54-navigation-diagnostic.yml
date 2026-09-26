@@ -1,0 +1,107 @@
+name: PR54 navigation diagnosis only
+
+on:
+  push:
+    branches: [codex/pr54-navigation-diagnostic]
+    paths: [.github/workflows/pr54-navigation-diagnostic.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  browser-diagnosis:
+    name: Unchanged PR54 browser lifecycle diagnosis (not qualification)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: 9b0340921e6468f454bd8500803af41f5fbab3a6
+      SOURCE_TREE: 750444691da5f6dfa40175f5c678d1451e2554c4
+    defaults:
+      run:
+        working-directory: source
+        shell: bash
+    steps:
+      - name: Checkout diagnostic instrumentation separately
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: diagnostic
+          persist-credentials: false
+      - name: Checkout unchanged PR54 source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: source
+          persist-credentials: false
+      - name: Bind original source and diagnostic instrumentation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git rev-parse 'HEAD^{tree}')" = "$SOURCE_TREE"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          mkdir -p tmp/pr54-ci-navigation/evidence
+          {
+            echo "source=$SOURCE_SHA"
+            echo "tree=$SOURCE_TREE"
+            echo "instrumentation=${{ github.sha }}"
+            echo "run=${{ github.run_id }} attempt=${{ github.run_attempt }}"
+            sha256sum tests/e2e/ui-feedback-batch.spec.ts playwright.config.ts
+            sha256sum ../diagnostic/scripts/diagnostics/pr54-navigation/* ../diagnostic/.github/workflows/pr54-navigation-diagnostic.yml
+          } > tmp/pr54-ci-navigation/evidence/identity.txt
+      - name: Setup identical Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - name: Install unchanged source dependencies and Chromium
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+          node --version > tmp/pr54-ci-navigation/evidence/runtime.txt
+          npm --version >> tmp/pr54-ci-navigation/evidence/runtime.txt
+          npx playwright --version >> tmp/pr54-ci-navigation/evidence/runtime.txt
+      - name: Preserve WAR06 predecessor
+        run: |
+          set -euo pipefail
+          npx playwright test --config playwright.war06.config.ts --project=chromium --workers=1 2>&1 | tee tmp/pr54-ci-navigation/evidence/war06.log
+      - name: Preserve WAR11 predecessor
+        run: |
+          set -euo pipefail
+          npx playwright test --config playwright.war11.config.ts --project=chromium --workers=1 2>&1 | tee tmp/pr54-ci-navigation/evidence/war11.log
+      - name: Preserve Train C predecessor
+        run: |
+          set -euo pipefail
+          npx playwright test --config playwright.train-c.config.ts --project=chromium --workers=1 2>&1 | tee tmp/pr54-ci-navigation/evidence/train-c.log
+      - name: Prepare observer-only sibling test and diagnostic config
+        run: node ../diagnostic/scripts/diagnostics/pr54-navigation/prepare.mjs
+      - name: One full Chromium diagnostic in original test order
+        run: |
+          set -euo pipefail
+          npx playwright test --config tmp/pr54-ci-navigation/playwright.config.ts --project=chromium --workers=1 --retries=0 --fail-on-flaky-tests 2>&1 | tee tmp/pr54-ci-navigation/evidence/full-chromium.log
+      - name: Verify source unchanged and capture process cleanup
+        if: always()
+        run: |
+          set -euo pipefail
+          git diff --exit-code HEAD -- .
+          git diff --cached --exit-code
+          {
+            git status --porcelain --untracked-files=all
+            ps -eo pid,ppid,args
+            ss -ltnp
+          } > tmp/pr54-ci-navigation/evidence/cleanup.txt
+          echo 'DIAGNOSTIC ONLY. This run cannot satisfy PR CI, release qualification, merge, tagging or publication gates.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain first-attempt browser and lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr54-navigation-diagnostic-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            source/tmp/pr54-ci-navigation/
+            source/test-results/pr54-ci-navigation/
+            source/test-results/war06-mission-scope/
+            source/test-results/war11-map-freshness/
+            source/test-results/train-c/
