@@ -1959,8 +1959,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C00",
         "proofMode": "source",
@@ -1974,7 +1974,27 @@
           "tests/unit/linux-package-toolchain.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/01-C00-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "supplementary-corrected-test-harness-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/corrected-source-suite-reruns-v2/01-C00-source",
+          "originalDce4EvidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/01-C00-source",
+          "testHarnessHead": "e2b95bb96b999380864adab1c09ab2720a415561",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Four test titles gained safe case indices. All original dce4 INVALID_EVIDENCE rows remain unchanged. Product/build files were diff-verified identical to dce4."
+        }
+      ]
     },
     {
       "order": 94,
@@ -1993,8 +2013,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C01",
         "proofMode": "source",
@@ -2007,7 +2027,17 @@
           "tests/unit/electron-startup-write-responsiveness.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/02-C01-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 95,
@@ -2026,8 +2056,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C01",
         "proofMode": "browser",
@@ -2036,7 +2066,26 @@
           "tests/e2e/theme-startup.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/03-C01-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery/03-C01-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/03-C01-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 96,
@@ -2055,8 +2104,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C02",
         "proofMode": "source",
@@ -2066,7 +2115,17 @@
           "tests/unit/electron-mission-finalization-scan.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/04-C02-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 97,
@@ -2085,8 +2144,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C02",
         "proofMode": "browser",
@@ -2096,7 +2155,26 @@
           "tests/e2e/mission.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/05-C02-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery/05-C02-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/05-C02-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 98,
@@ -2115,8 +2193,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C03",
         "proofMode": "source",
@@ -2144,7 +2222,17 @@
           "tests/unit/use-participant-selection-view-model.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/06-C03-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 99,
@@ -2163,8 +2251,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C03",
         "proofMode": "browser",
@@ -2175,7 +2263,26 @@
           "tests/e2e/repair-train-d-participants.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/07-C03-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery/07-C03-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/07-C03-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 100,
@@ -2194,8 +2301,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C04",
         "proofMode": "source",
@@ -2207,7 +2314,17 @@
           "tests/unit/hidden-current-display-warning.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/08-C04-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 101,
@@ -2226,8 +2343,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C04",
         "proofMode": "browser",
@@ -2237,7 +2354,26 @@
           "tests/e2e/war06-mission-scope.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/09-C04-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery/09-C04-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/09-C04-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 102,
@@ -2256,8 +2392,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C05",
         "proofMode": "source",
@@ -2267,7 +2403,17 @@
           "tests/unit/traccar-client.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/10-C05-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 103,
@@ -2286,8 +2432,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C05",
         "proofMode": "browser",
@@ -2296,7 +2442,26 @@
           "tests/e2e/tracking-ingest-health.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/11-C05-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery/11-C05-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/11-C05-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 104,
@@ -2315,8 +2480,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C06",
         "proofMode": "source",
@@ -2327,7 +2492,17 @@
           "tests/unit/stationary-attention.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/12-C06-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 105,
@@ -2346,8 +2521,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C06",
         "proofMode": "browser",
@@ -2356,7 +2531,26 @@
           "tests/e2e/stationary-attention.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/13-C06-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery/13-C06-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/13-C06-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 106,
@@ -2375,8 +2569,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C07",
         "proofMode": "source",
@@ -2399,7 +2593,17 @@
           "tests/unit/start-exact-breadcrumb-dot-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/14-C07-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 107,
@@ -2418,8 +2622,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C07",
         "proofMode": "browser",
@@ -2429,7 +2633,26 @@
           "tests/e2e/parity-visibility.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/15-C07-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/15-C07-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/15-C07-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 108,
@@ -2448,8 +2671,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C08",
         "proofMode": "source",
@@ -2500,7 +2723,17 @@
           "tests/unit/sync-coverage-overlay.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/16-C08-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 109,
@@ -2519,8 +2752,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C08",
         "proofMode": "browser",
@@ -2529,7 +2762,26 @@
           "tests/e2e/coverage.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/17-C08-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/17-C08-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/17-C08-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 110,
@@ -2548,8 +2800,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C09",
         "proofMode": "source",
@@ -2573,7 +2825,17 @@
           "tests/unit/start-gpx-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/18-C09-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 111,
@@ -2592,8 +2854,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C09",
         "proofMode": "browser",
@@ -2602,7 +2864,26 @@
           "tests/e2e/gpx-import.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/19-C09-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/19-C09-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/19-C09-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 112,
@@ -2621,8 +2902,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C10",
         "proofMode": "source",
@@ -2651,7 +2932,27 @@
           "tests/unit/replay-map-worker.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/20-C10-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "supplementary-corrected-test-harness-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/corrected-source-suite-reruns-v2/20-C10-source",
+          "originalDce4EvidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/20-C10-source",
+          "testHarnessHead": "e2b95bb96b999380864adab1c09ab2720a415561",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Four test titles gained safe case indices. All original dce4 INVALID_EVIDENCE rows remain unchanged. Product/build files were diff-verified identical to dce4."
+        }
+      ]
     },
     {
       "order": 113,
@@ -2670,8 +2971,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C10",
         "proofMode": "browser",
@@ -2681,7 +2982,26 @@
           "tests/e2e/repair-train-d-review.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/21-C10-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/21-C10-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/21-C10-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 114,
@@ -2700,8 +3020,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C11",
         "proofMode": "source",
@@ -2713,7 +3033,17 @@
           "tests/unit/search-operations-read-only.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/22-C11-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 115,
@@ -2732,8 +3062,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C11",
         "proofMode": "browser",
@@ -2742,7 +3072,26 @@
           "tests/e2e/mission-evidence-search-passes.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/23-C11-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/23-C11-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/23-C11-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 116,
@@ -2761,8 +3110,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C12",
         "proofMode": "source",
@@ -2788,7 +3137,17 @@
           "tests/unit/start-marker-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/24-C12-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 117,
@@ -2807,8 +3166,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C12",
         "proofMode": "browser",
@@ -2817,7 +3176,26 @@
           "tests/e2e/marker.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/25-C12-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/25-C12-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/25-C12-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 118,
@@ -2836,8 +3214,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C13",
         "proofMode": "source",
@@ -2855,7 +3233,17 @@
           "tests/unit/start-measurement-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/26-C13-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 119,
@@ -2874,8 +3262,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C13",
         "proofMode": "browser",
@@ -2886,7 +3274,26 @@
           "tests/e2e/measurement.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/27-C13-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "browser-prerequisite-recovery",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/prerequisite-browser-recovery-final/27-C13-browser",
+          "originalPrelaunchFailurePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/27-C13-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "browserVersion": "Google Chrome for Testing 153.0.8010.12 (Chromium/headless 1243)"
+        }
+      ]
     },
     {
       "order": 120,
@@ -2905,8 +3312,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C14",
         "proofMode": "source",
@@ -2943,7 +3350,17 @@
           "tests/unit/tauri-layer-catalog-store.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/28-C14-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 121,
@@ -2962,8 +3379,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C14",
         "proofMode": "browser",
@@ -2977,7 +3394,17 @@
           "tests/e2e/weather.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/29-C14-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 122,
@@ -2996,8 +3423,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C15",
         "proofMode": "source",
@@ -3023,7 +3450,17 @@
           "tests/unit/use-official-map-view-qualification.test.tsx"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/30-C15-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 123,
@@ -3042,8 +3479,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C15",
         "proofMode": "browser",
@@ -3053,7 +3490,17 @@
           "tests/e2e/official-map-raster-freshness.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/31-C15-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 124,
@@ -3072,8 +3519,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C16",
         "proofMode": "source",
@@ -3087,7 +3534,27 @@
           "tests/unit/settings-workspace.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/32-C16-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "supplementary-corrected-test-harness-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/corrected-source-suite-reruns-v2/32-C16-source",
+          "originalDce4EvidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/32-C16-source",
+          "testHarnessHead": "e2b95bb96b999380864adab1c09ab2720a415561",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Four test titles gained safe case indices. All original dce4 INVALID_EVIDENCE rows remain unchanged. Product/build files were diff-verified identical to dce4."
+        }
+      ]
     },
     {
       "order": 125,
@@ -3106,8 +3573,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C16",
         "proofMode": "browser",
@@ -3116,7 +3583,17 @@
           "tests/e2e/settings.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/33-C16-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 126,
@@ -3135,8 +3612,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C17",
         "proofMode": "source",
@@ -3161,7 +3638,27 @@
           "tests/unit/start-diagnostics-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/34-C17-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "supplementary-corrected-test-harness-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/corrected-source-suite-reruns-v2/34-C17-source",
+          "originalDce4EvidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/34-C17-source",
+          "testHarnessHead": "e2b95bb96b999380864adab1c09ab2720a415561",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Four test titles gained safe case indices. All original dce4 INVALID_EVIDENCE rows remain unchanged. Product/build files were diff-verified identical to dce4."
+        }
+      ]
     },
     {
       "order": 127,
@@ -3180,8 +3677,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C17",
         "proofMode": "browser",
@@ -3190,7 +3687,17 @@
           "tests/e2e/diagnostics.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/35-C17-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 128,
@@ -3209,8 +3716,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C18",
         "proofMode": "source",
@@ -3230,7 +3737,17 @@
           "tests/unit/tauri-mission-store.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/36-C18-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 129,
@@ -3249,8 +3766,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C19",
         "proofMode": "source",
@@ -3260,7 +3777,17 @@
           "tests/unit/operational-position-retention.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/37-C19-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 130,
@@ -3279,8 +3806,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C19",
         "proofMode": "browser",
@@ -3289,7 +3816,17 @@
           "tests/e2e/legacy-roster-recovery.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/38-C19-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 131,
@@ -3308,8 +3845,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C20",
         "proofMode": "source",
@@ -3324,7 +3861,17 @@
           "tests/unit/electron-mission-archive-worker.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/39-C20-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 132,
@@ -3343,8 +3890,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C21",
         "proofMode": "source",
@@ -3363,7 +3910,17 @@
           "tests/unit/mission-archive-custody-dialog.test.tsx"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/40-C21-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 133,
@@ -3382,8 +3939,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C22",
         "proofMode": "source",
@@ -3434,7 +3991,27 @@
           "tests/unit/mission-archive-review-runtime-orchestration.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/41-C22-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "supplementary-corrected-test-harness-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/corrected-source-suite-reruns-v2/41-C22-source",
+          "originalDce4EvidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/41-C22-source",
+          "testHarnessHead": "e2b95bb96b999380864adab1c09ab2720a415561",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Four test titles gained safe case indices. All original dce4 INVALID_EVIDENCE rows remain unchanged. Product/build files were diff-verified identical to dce4."
+        }
+      ]
     },
     {
       "order": 134,
@@ -3453,8 +4030,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C22",
         "proofMode": "browser",
@@ -3463,7 +4040,17 @@
           "tests/e2e/archive-review-operator-flow.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/42-C22-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 135,
@@ -3482,8 +4069,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C23",
         "proofMode": "source",
@@ -3503,7 +4090,17 @@
           "tests/unit/qualification-ipc-receipts.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/43-C23-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 136,
@@ -3522,8 +4119,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C23",
         "proofMode": "browser",
@@ -3532,7 +4129,17 @@
           "tests/e2e/harness-no-tauri-leak.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/44-C23-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 137,
@@ -3551,8 +4158,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C24",
         "proofMode": "source",
@@ -3575,7 +4182,17 @@
           "tests/unit/stationary-attention-projection.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/45-C24-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 138,
@@ -3594,8 +4211,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C25",
         "proofMode": "source",
@@ -3617,7 +4234,17 @@
           "tests/unit/seed-mission-store-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/46-C25-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 139,
@@ -3636,8 +4263,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C26",
         "proofMode": "source",
@@ -3652,7 +4279,27 @@
           "tests/unit/qualification-duplicate-launch.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "INVALID_EVIDENCE",
+          "receiptStatus": "INVALID_EVIDENCE",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/47-C26-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        },
+        {
+          "kind": "supplementary-corrected-test-harness-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/corrected-source-suite-reruns-v2/47-C26-source",
+          "originalDce4EvidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/47-C26-source",
+          "testHarnessHead": "e2b95bb96b999380864adab1c09ab2720a415561",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Four test titles gained safe case indices. All original dce4 INVALID_EVIDENCE rows remain unchanged. Product/build files were diff-verified identical to dce4."
+        }
+      ]
     },
     {
       "order": 140,
@@ -3671,8 +4318,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C27",
         "proofMode": "source",
@@ -3682,7 +4329,17 @@
           "tests/unit/qualification-repository-controls.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/48-C27-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 141,
@@ -3701,8 +4358,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; source evidence only; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary CI used correctness config; original adapter uses release-qualification config and JSON with exact discovered test IDs. CI is supporting evidence, not this receipt.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C28",
         "proofMode": "source",
@@ -3711,7 +4368,17 @@
           "tests/unit/start-mission-runtime.test.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/49-C28-source",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 142,
@@ -3730,8 +4397,8 @@
       ],
       "oracle": "Exact reviewed test inventory and each assertion; retained rendered frames; never package/scale/live substitution",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_ORIGINAL_SUITE",
-      "evidence": "Ordinary Chromium CI passed; original adapter requires zero retries and one retained final PNG per workflow with exact test IDs. Original receipt/capture set not established.",
+      "executionDisposition": "EXECUTED_WITH_RETAINED_ATTEMPT_HISTORY",
+      "evidence": "Source owner checked runtime ledger: passing original or documented recovery/supplementary attempt present. Original invalid receipts retained; no formal campaign admission. Full raw report hash audit remains separate.",
       "suiteSelection": {
         "contractId": "C28",
         "proofMode": "browser",
@@ -3740,7 +4407,17 @@
           "tests/e2e/full-mission-flow.spec.ts"
         ],
         "scope": "reviewed regression tests only; no package, scale, live or human substitution"
-      }
+      },
+      "liveEvidence": [
+        {
+          "kind": "original-source-browser-suite",
+          "status": "PASS",
+          "receiptStatus": "PASS",
+          "evidencePath": "/home/donal/sartracker-testing-dce4dfc4/tmp/full-original-programme-suites/50-C28-browser",
+          "candidateHead": "dce4dfc41ef800a0699d7030b2b8bb2aed234558",
+          "note": "Original dce4 attempt; INVALID_EVIDENCE is preserved as its own result."
+        }
+      ]
     },
     {
       "order": 143,
@@ -4954,5 +5631,14 @@
       "executionDisposition": "EXECUTE_OR_RECONCILE_EXACT_EVIDENCE",
       "evidence": "No admitted campaign receipt identified."
     }
-  ]
+  ],
+  "runtimeLedgerReview": {
+    "evidenceManifestSha256": "f69ccb55dc2474e3661228729b515a483aac58929f22f9f3f6320aca70fe57f7",
+    "sourceBrowserRows": 50,
+    "originalPass": 31,
+    "originalInvalidRetained": 19,
+    "browserPrerequisiteRecoveryPass": 13,
+    "supplementaryCorrectedHarnessPass": 6,
+    "rawReportAudit": "not independently repeated by source owner"
+  }
 }

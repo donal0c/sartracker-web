@@ -124,6 +124,12 @@ all101 focused assertions passed and18 case IDs are now distinct. Original INVAL
 receipts stay retained. Assertion bodies, validators and dce4 app bytes are
 unchanged. Corrected harness identity must be recorded separately, with fresh
 discovery and one corrected execution per affected row; no app rebuild/full CI.
+Source/browser execution is now complete: original31 PASS/19 INVALID, all13
+browser prerequisite recoveries PASS on dce4, all6 corrected-source rows PASS on
+e2b95 with original counts. Source owner checked the205-row runtime ledger and
+retained histories; raw1168-file manifest was not independently rehashed here.
+All formal campaign statuses remain NOT_RUN. Ubuntu currently waits at the secure
+administrator prompt for exact Debian installation; no parallel runtime workload.
 Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
 C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
 parked at their real prerequisites. Source/browser CI reuse needs exact suite and
