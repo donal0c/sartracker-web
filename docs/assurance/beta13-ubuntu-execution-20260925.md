@@ -163,3 +163,28 @@ then independently verify installed package status/version, canonical launcher a
 payload. These artifact/install checks are **NOT_RUN**: no final replacement artifact
 exists yet. Donal authorized administrator installation, with secure transient
 credential handling owned by the coordinator; no further install permission is needed.
+
+## PR54 two-test Linux diagnostic — 2026-09-26
+
+At the coordinator's bounded request, the isolated checkout
+`/home/donal/sartracker-pr54-focused-a92266f9` ran unchanged source
+`a92266f92d8ef2aae20f6b83403e288b86c2e2c5`, tree
+`0d8811107d83ca52cc2a19bddb9f24db720a309e`. Only
+`mission-review.spec.ts:123` and `ui-feedback-batch.spec.ts:176` ran, with
+`CI=1`, Chromium, one worker and zero retries. Both passed on their first attempt:
+2,285 ms and 1,962 ms respectively; total 5,754 ms, exit 0, no skipped/flaky tests.
+Testing stopped after this one run; the CI failures were not reproduced here.
+
+First-attempt trace ZIPs and screenshots were captured for both tests and independently
+hashed in `tmp/pr54-focused-diagnostic-20260926/closed-receipt.json` in the diagnostic
+checkout. Copies under worktree 3226's matching `tmp/` evidence directory matched
+all four retained SHA-256/size identities. The source remained clean, and no Node,
+Chromium or port-1420 workload remained after completion. The temporary config
+only added screenshots and an explicitly owned, non-reused Vite server.
+
+Environment: Node 22.22.2, npm 10.9.7, Playwright 1.59.1, Chromium
+147.0.7727.15, Ubuntu 24.04.2/kernel 7.0.0-28, 20 logical CPUs and about 31 GiB RAM.
+GitHub uses Ubuntu 22.04; its full-suite predecessors and hosted-runner contention
+were not reproduced by this focused idle-host run. This evidence neither diagnoses
+the races nor qualifies a candidate. No app code, assertions, browser version,
+final fixture, operational profile, package installation or campaign binding changed.

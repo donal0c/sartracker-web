@@ -81,7 +81,7 @@ Claude review on the stable exact head. The original local audit is retained at
 | F2: C27 controls | No control or acceptance mutation. C27 stays unattempted until its prerequisites pass. Review/check/scanning/push-protection gaps require Donal's decision; an enforced independent approval requires an eligible distinct GitHub reviewer. Local reviews do not satisfy that approval. |
 | F3: artifact lifetime | Release installers now retain for 90 days, matching browser evidence. Final admission must still inspect actual `expires_at` and sufficient remaining campaign margin. |
 | F4: pre-tag validation | After reviewed merge, require the full Linux validation workflow_dispatch on that exact source: responsiveness, tracking soak, 960k, archive lifecycle and launch, before creating the next immutable tag. |
-| F5: retained C27 attempts | No contract change. NEEDS_HUMAN_DECISION prevents technical handover; later PASS cannot erase it. Acceptance/key inputs are frozen at compile; live controls can be freshly re-observed. Choose the path before sealing. |
+| F5: failed browser evidence | Both source and release jobs always upload browser results; release identity uses the resolved tag commit and run attempt. First-attempt error contexts and first-retry traces are retained according to the existing Playwright configuration. |
 | F6: flaky-pass release | Both full Chromium commands add `--fail-on-flaky-tests`; existing diagnostic retries and workloads remain. A controlled synthetic first-fail/retry-pass probe returned exit 1 with one flaky test, proving enforcement. |
 
 The combined focused audit suites passed 119 tests. Independent native review found
@@ -103,3 +103,48 @@ remain unmet; no campaign compilation or C27 attempt follows. The write-permitte
 collaborators are technically eligible reviewers, but their availability is unknown.
 Any no-bypass PR gate would supersede the direct-master exception. Controls and
 auth decisions do not block completion of this repair PR.
+
+## PR54 first-head rejection and bounded follow-through
+
+Head `a92266f92d8ef2aae20f6b83403e288b86c2e2c5` was accepted by native and
+coordinator-arranged Claude code review (Claude independently ran 31 focused tests).
+Linux run [36230930233](https://github.com/donal0c/sartracker-web/actions/runs/36230930233)
+then correctly failed the new no-flaky-pass gate: 223 passed, two passed only on
+retry. All five original failures passed. Package and packaged-check jobs passed;
+dispatch-only qualification remains unrun. Correctness/browser job duration was
+24m56s, so this run does not justify increasing its 60-minute timeout.
+
+The uploaded correctness artifact `10902771746` is retained locally under
+`tmp/pr54-first-rejection/`. It contains first-attempt DOM error contexts and
+successful first-retry traces; the configuration did not capture first-attempt
+screenshots or traces. Those absent artifacts are not claimed. Unchanged local
+macOS focused cases passed 2/2, so controlled regressions establish the causes:
+
+| Finding | Cause and retained evidence | Bounded correction / verification |
+| --- | --- | --- |
+| mission-review:123, Escape leaves marker dialog open | Shared dialog defers focus through an effect and animation frame; an immediate key targets outside the panel, while docked Review correctly yields to a modal. CI DOM shows marker still open. Deterministic immediate-commit keyboard/focus regressions fail twice on old code. | Focus synchronously in the layout effect, retaining panel-scoped Escape and opener restoration. Two new regressions plus focus helpers pass; 83 affected unit tests and 31 affected browser cases pass. |
+| ui-feedback-batch:176, roster error absent | Global first-call rejection can be consumed by unrelated settings readers. CI DOM already shows Ops Lead. A controlled settings-updated refresh makes the original error assertion fail on the old fixture. | Keep test settings unavailable for every reader until explicitly restored immediately before Retry. Preserve original error/recovery/visibility assertions and observed competing read. No product settings behavior change. |
+
+Original focused cases pass 2/2 without retries after these corrections. The stable
+full local macOS Chromium run passed 225/225 in 6.1 minutes, with no failures or
+retries (`CI=1`, `--fail-on-flaky-tests`). Stable serial correctness passed 584
+files / 6,045 tests with 26 existing skips (595.28 seconds); changed source/test
+hashes remained unchanged. Lint, types, build and bundle budgets passed. Renewed
+exact-head review/CI remain pending.
+Sol's single unchanged Ubuntu focused diagnostic passed 2/2 first attempt and
+stopped; it did not reproduce the flakes. Ubuntu 24.04.2 differs from the GitHub
+22.04 full-suite/contended environment. First-attempt traces/screenshots and their
+hashes are retained in Sol's closed receipt; see the canonical Ubuntu report.
+
+Accepted nonblocking review follow-ups remain in DON-254: observe actual job margin;
+browser-only conservative history refetch can duplicate rows and consume the cap
+sooner (defer deduplication with regressions); add direct browser-backfill and Linux
+runtime/package/control-inspection coverage. No broader change is included.
+C27 retained-attempt and compile-bound acceptance rules remain unchanged.
+Sol's read-only duration audit found no structural conflict with the maximum
+seven-day acceptance window: named multi-day scenarios are accelerated workloads.
+Main-process timeout allowances total 75h17m, excluding repeated I/O, transfers,
+reviews and other overhead; this is neither a measured runtime nor a whole-campaign
+upper bound. The route remains unapproved. Any acceptance must be bound only when
+exact artifacts, authentication, inputs and schedule are ready before compilation.
+No workload, duration or acceptance definition changes accompany this repair.

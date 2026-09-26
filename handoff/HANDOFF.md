@@ -7,12 +7,15 @@ Chromium cases after correctness, strict responsiveness and build passed.
 No package/draft was produced. Both rejected tags remain immutable; Beta13's
 earlier AUD-03 contention failure is preserved in the Beta13.1 release note.
 The combined repair uses `codex/beta13-browser-release-repair`, **PR plus independent
-review**, not direct master. All five reproduced red and now pass first attempt;
-final full Chromium passes 225/225, 50 affected unit tests pass, and both native
-reviews accepted. Bounded audit fixes add strict Debian-version mapping, 90-day
-artifact retention and flaky-pass rejection; 119 focused tests pass and native
-review has no blockers. Final serial correctness passes 583 files / 6,043 tests
-(26 existing skips); lint, types, build and bundle budgets pass.
+review**, not direct master. PR54 first head `a92266f9` passed local source/browser
+checks and native/Claude review, but Linux CI 36230930233 correctly rejected two
+flaky passes (223 passed; original five fixed). Bounded follow-through fixes an
+immediate dialog-focus race and a first-call roster fixture race, both reproduced
+deterministically red before correction. Native delta reviews accepted; 83 affected
+unit and 31 browser tests pass without retries; full local Chromium 225/225 passes
+with flaky-pass rejection and no retries. Final serial source passes 584 files /
+6,045 tests (26 existing skips); lint, types, build and bundle budgets pass.
+Strict Debian mapping, 90-day retention and flaky-pass rejection remain intact.
 Exact-head Linux 225/225 is required before merge recommendation, then a full
 merged-source Linux workflow_dispatch before tagging. The compact cause and
 verification ledger is `docs/releases/beta13-browser-gate-repair.md`.

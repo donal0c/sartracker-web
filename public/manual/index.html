@@ -1985,7 +1985,9 @@
             on the left of the map instead of a full-screen window. The mission-control rail (Pause, Finish)
             and the map stay live and usable next to it, so reviewing the audit history never blocks
             operating the incident. A note at the top of the panel confirms it is read-only. Close Review or
-            press <strong>Esc</strong> to return the map to full width. When there is no active mission,
+            press <strong>Esc</strong> to return the map to full width. If a marker dialog is open over
+            Review, it takes keyboard focus immediately: the first <strong>Esc</strong> closes the dialog,
+            leaving Review open; another <strong>Esc</strong> closes Review. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
             If Finish completes while Review remains open, Review refreshes the persisted mission state and
             disables Search Operations entry immediately; an ordinary finished mission remains read-only.

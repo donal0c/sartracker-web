@@ -181,15 +181,25 @@ test('a rejected admin roster can be retried without leaving hide controls locke
     const { DEFAULT_APP_SETTINGS } = await import(settingsPath)
     const mission = useMissionStore.getState().currentMission
     Object.assign(window, { testOriginalMission: mission })
-    let attempts = 0
+    const roster = { available: false, calls: 0 }
+    Object.assign(window, { testRosterAvailability: roster })
     Object.assign(window, { sartrackerElectron: { archiveReview: { supported: false }, loadAppSettings: async () => {
-      if (attempts++ === 0) throw new Error('Test roster unavailable')
+      roster.calls += 1
+      if (!roster.available) throw new Error('Test roster unavailable')
       return { ...DEFAULT_APP_SETTINGS, missionDefaults: { ...DEFAULT_APP_SETTINGS.missionDefaults, adminRoster: ['Ops Lead'] } }
     } } })
     useMissionStore.setState({ phase: 'idle', currentMission: null, governanceMission: { ...mission, status: 'finalized', storage_state: 'live' } })
+    window.dispatchEvent(new Event('sartracker:settings-updated'))
   })
+  // A background map refresh must not bypass the unavailable-settings state.
+  await expect.poll(() => page.evaluate(() => (window as Window & {
+    testRosterAvailability: { calls: number }
+  }).testRosterAvailability.calls)).toBeGreaterThan(0)
   await page.getByTestId('mission-unlock-btn').click()
   await expect(page.getByText('Test roster unavailable', { exact: true })).toBeVisible()
+  await page.evaluate(() => {
+    (window as Window & { testRosterAvailability: { available: boolean } }).testRosterAvailability.available = true
+  })
   await page.getByRole('button', { name: 'Retry admin roster' }).click()
   await expect(page.getByText('Test roster unavailable', { exact: true })).toBeHidden()
   await expect(page.getByTestId('mission-unlock-admin')).toHaveValue('Ops Lead')

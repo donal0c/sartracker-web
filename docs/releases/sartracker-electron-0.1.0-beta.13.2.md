@@ -30,6 +30,10 @@ with the source candidate through a strict mapping, including the real installer
 control field before extraction. Release installers retain for 90 days; actual
 expiry and campaign margin must still be checked. Source and release CI both run
 all Chromium cases, reject flaky passes and preserve failure evidence.
+The first repair PR run exposed two more flaky passes: immediate Escape could
+arrive before dialog focus, and a background settings read could consume a test
+fixture's one-shot roster error. Dialog focus is now assigned during commit; the
+fixture models explicit unavailability until Retry. Original assertions are retained.
 
 ## Preserved rejected candidates
 

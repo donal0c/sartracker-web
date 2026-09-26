@@ -19,6 +19,11 @@ repair on `codex/beta13-browser-release-repair`, all five regressions plus full 
 Chromium under release configuration, stable source checks, independent review/PR
 CI and authorized merge. The same PR includes verified Debian version mapping,
 90-day artifact retention and flaky-pass rejection under the existing safety rule.
+PR54 first-head Linux run 36230930233 rejected two flaky passes while all original
+five regressions passed. Bounded red/green follow-through corrects immediate dialog
+focus and the admin-roster test's first-call failure race; both native delta reviews
+accepted, 83 affected unit and 31 browser tests passed. Stable full checks and new
+exact-head CI/review must finish; the prior head's acceptance does not cover this delta.
 After merge, a full `workflow_dispatch` Linux validation on that exact source must
 pass strict responsiveness, tracking soak, 960k, archive lifecycle and launch checks
 before any next tag. See `docs/releases/beta13-browser-gate-repair.md` for the
