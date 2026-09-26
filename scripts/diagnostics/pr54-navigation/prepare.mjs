@@ -14,6 +14,7 @@ const observer = readFileSync(new URL('./observer.ts', import.meta.url), 'utf8')
 const instrumented = `${observer}\n${original}`
 writeFileSync(siblingPath, instrumented, { flag: 'wx' })
 writeFileSync('tmp/pr54-ci-navigation/playwright.config.ts', readFileSync(new URL('./playwright.config.ts', import.meta.url)), { flag: 'wx' })
+writeFileSync('tmp/pr54-ci-navigation/raw-protocol-observer.cjs', readFileSync(new URL('./raw-protocol-observer.cjs', import.meta.url)), { flag: 'wx' })
 writeFileSync('tmp/pr54-ci-navigation/evidence/test-binding.json', JSON.stringify({
   originalPath, originalHash, siblingPath,
   instrumentedHash: createHash('sha256').update(instrumented).digest('hex'),

@@ -75,8 +75,11 @@ jobs:
           set -euo pipefail
           npx playwright test --config playwright.train-c.config.ts --project=chromium --workers=1 2>&1 | tee tmp/pr54-ci-navigation/evidence/train-c.log
       - name: Prepare observer-only sibling test and diagnostic config
-        run: node ../diagnostic/scripts/diagnostics/pr54-navigation/prepare.mjs
-      - name: One full Chromium diagnostic with target-only tracing
+        run: |
+          set -euo pipefail
+          NODE_PATH="$PWD/node_modules" node --test ../diagnostic/scripts/diagnostics/pr54-navigation/raw-protocol-observer.test.cjs
+          node ../diagnostic/scripts/diagnostics/pr54-navigation/prepare.mjs
+      - name: One full Chromium diagnostic with raw protocol error observation
         run: |
           set -euo pipefail
           npx playwright test --config tmp/pr54-ci-navigation/playwright.config.ts --project=chromium --workers=1 --retries=0 --fail-on-flaky-tests 2>&1 | tee tmp/pr54-ci-navigation/evidence/full-chromium.log
