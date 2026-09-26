@@ -1,8 +1,16 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-25. Release remains **HOLD**. PR52 merged at
-`b1bc51a2ed5e479b8eeaaf21b759001f2a208838`; exact-source CI
-[36192361874](https://github.com/donal0c/sartracker-web/actions/runs/36192361874) passed.
+Updated 2026-09-26. Release remains **HOLD**. PR53 merged at
+`2d4f436add40ed9c279488c9ac4e3cb267c5cee2`; exact-source CI
+[36222329312](https://github.com/donal0c/sartracker-web/actions/runs/36222329312) passed.
+The write-once Beta13 tag remains at that source. Release run 36223196332 failed
+before packaging: parallel correctness execution exceeded the unchanged AUD-03
+20-second test deadline; same-source serial CI passed in 5.586 seconds. Beta13.1
+aligns release correctness with the existing serial gate, retaining every workload,
+oracle and strict 200 ms qualification. See its release note for failed evidence.
+The release-command regression failed before correction, then all 56 affected
+tests and lint passed. Application source is unchanged; full source evidence is
+the merged CI above, with replacement exact-source and release CI still required.
 No final candidate is frozen or qualified. Donal authorized candidate tag and
 unpublished draft after verified source; publication/distribution need final approval.
 
@@ -75,8 +83,8 @@ The inbuilt browser verified the rendered manual's controlled-handover guidance.
 Independent native working-tree review accepted the boundary; exact-head review
 and CI readiness are recorded in the PR and DON-254, not candidate qualification.
 
-Finish staged-admission tests/review/PR CI. After authorized merge, create the
-authorized tag/unpublished draft, bind the exact release-workflow installers and
+Finish the bounded Beta13.1 pipeline correction and exact-source/release CI, then
+create the authorized unpublished draft and bind its exact release-workflow installers and
 all technical inputs to one immutable campaign, and execute applicable technical
 rows serially. C27 inspects the draft after other technical rows; public-byte C00
 only follows actual approved publication. Eamonn's C29 acceptance follows approved

@@ -102,7 +102,7 @@ describe('Electron release workflow safety [DON-260]', () => {
     expect(strict.run).toBe('npm run test:responsiveness')
     expect(strict.if).toBeUndefined()
     expect(strict['continue-on-error']).toBeUndefined()
-    expect(selectStep(gates, 'Unit tests').run).toBe('npm run test:correctness')
+    expect(selectStep(gates, 'Unit tests').run).toBe('npm run test:correctness -- --no-file-parallelism')
     expect(workflow.jobs['bundle-linux'].needs).toBe('gates')
     expect(selectStep(workflow.jobs['bundle-linux'], 'Packaged tracking soak (CI profile)').run)
       .toContain('npm run electron:smoke:tracking-soak:ci')

@@ -145,7 +145,7 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm run test:correctness
+        run: npm run test:correctness -- --no-file-parallelism
 
       - name: WAR-02B bounded property and mutation gate
         run: npm run test:war-02b
