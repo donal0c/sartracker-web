@@ -9,6 +9,18 @@ the full Linux `workflow_dispatch` with `run_repair_train_d_smoke=true`: run
 Chromium 225/225 flaky-rejecting, 960k, Train D AUD-08/AUD-09/restart, soak, legacy
 recovery, archive lifecycle, AppImage launch). Beta13 and Beta13.1 tags stay immutable.
 
+**Active repair:** the one Ubuntu AppImage archive diagnostic on those bytes
+exposed launcher-only SIGKILL and false inner cleanup while Electron survived.
+Astra owns `codex/archive-process-ownership` in the reused managed
+`pr54-navigation-diagnostic` checkout. Local wrapper/child/grandchild red/green
+and affected suites pass (212 tests, one Linux-only skip), lint/build pass, and
+native source review has no remaining blocker after two fixes. Full serial
+correctness passed 585 files / 6,053 tests / 27 skips (583.27 s); final affected
+tests also pass. Linux real-process/packaged proof is pending. Keep this
+bounded harness PR separate from the new C10 paging failure; no merge/tag/publication.
+Sol's one installed-deb archive diagnostic passed at 109/86/138/173 ms; the
+AppImage failure and original 201 ms CI breach remain. Details: Ubuntu report.
+
 Two dispatch failures are **retained**; the later green run does not resolve them:
 - 36249965817 @ `4e9c5371`: Train D close rejected sanitized finish-fence stack frames
   (the `/tmp/` path redaction removed file:line tails). Product behaviour was correct;
@@ -28,9 +40,13 @@ Run 36255209914 installers are **validation-workflow** bytes
 `6a7ac24f…99804e`, `.deb` `96f00390…bb40c5`, shared `app.asar` `6f350c02…83d2`.
 The private-map guard patterns found nothing in both installers' inventories or the
 `.deb` payload/asar. Release-workflow installers do not exist until a tag's release
-run passes. Run 36255209914 covers `09343ee9` only: the exact commit to be tagged,
-even if docs-only, must itself pass the complete Linux validation workflow_dispatch
-(`run_repair_train_d_smoke=true`); ordinary push CI omits required lanes.
+run passes. Release and validation workflows currently use the same installer
+filename pattern; bind by workflow run and hashes, never the filename.
+Run 36255209914 tested `09343ee9`; `e1ac888f` changes only this handoff and the
+external Markdown release note, so its unchanged executable inputs reuse that
+evidence. It was not separately dispatch-tested. Documentation-only descendants
+do not require a repeated dispatch; executable changes need affected verification.
+Ordinary push CI omits strict qualification lanes.
 Full identities: `docs/releases/sartracker-electron-0.1.0-beta.13.2.md`.
 No final candidate is frozen or qualified. Donal authorized candidate tag and
 unpublished draft after verified source; publication/distribution need final approval.
@@ -39,7 +55,7 @@ unpublished draft after verified source; publication/distribution need final app
 
 Donal authorized release-first stabilization and the existing `bcp17-final`
 C00–C29 campaign. Small contained verified fixes may go directly to master;
-the current browser persistence/layout repair requires a PR plus independent
+the current archive process-ownership repair requires a PR plus independent
 exact-head review. Do not merge without Donal's authority.
 No new features, full mapping, broad WAR or database redesign. Donal explicitly
 authorized the bounded release-path audit fixes and coordinator-arranged Claude
@@ -55,7 +71,7 @@ and pending; technical readiness is only `READY_FOR_APPROVAL`, never qualificati
 or publication/distribution authority. All applicable C00–C28 variants, package
 tiers, exact provenance, 200 ms thresholds, fixed soaks and retained failures stay.
 
-- Source/test/CI and canonical records: Astra `01a0d9f5-7727-7060-ab59-4549f3a513c8`, worktree `1608`.
+- Source/test/CI and canonical records: Astra `01a0d9f5-7727-7060-ab59-4549f3a513c8`, managed worktree `pr54-navigation-diagnostic` (original chat `1608`).
 - Sole Ubuntu installation/runtime/performance owner: Sol `01a0d9f5-771a-7993-9e10-4ae1cbb1e3bb`, worktree `3226`.
 - Preparation audit is finished; use its report, not its older handoff snapshot.
 - Coordinator: `01a023b0-f891-75f2-b0f3-7cb8b6b17abe`.
@@ -65,23 +81,12 @@ Serialize Ubuntu workloads through Sol.
 
 ## Verified baseline and diagnosed deltas
 
-The earlier C12 viewer-held-pipe and installer-name repair passed exact CI with
-exit 0, no timeout/error and zero descendants. Failed run `36174038700` remains
-retained; full prior identities are in the Ubuntu report and DON-254 comment
-`7461fc0a-2f8c-40ec-840c-647f7690c3c8`. Development proof is not qualification.
-
-PR52 merged separate v6 paging-ready fixtures (960k/2m/field), preserved C08
-stored live/cache provenance through SQL/IPC, and added a separate private-map
-C15 supplement for both package tiers. Existing mixed-backfill regressions,
-synthetic map faults and independent oracles remain; no product map change.
-
-Sol independently admitted all three fixtures; field is 5.32 GB, 3,999,988 primary
-fixes + 12 legacy, 100 devices/12 outings, complete backfill and exact audit links.
-Full hashes are in the Ubuntu report. Retain both C08 failures: incomplete v5
-backfill, then missing stored provenance in the old package. Repaired PR-CI
-AppImage diagnostic passed: 959,988 primary rows,
-1,500 pages, 1,300 chunks and independent exact sequence oracle; cleanup passed.
-This is not final tagged-candidate qualification.
+Earlier C12 ownership and PR52 fixture/provenance diagnostics passed; retain
+failed run `36174038700` and both old C08 failures. Exact identities, raw evidence
+and proof limits are in the Ubuntu report. Sol admitted v6 960k/2m/field fixtures
+(field: 5.32 GB, 3,999,988 primary + 12 legacy fixes, 100 devices/12 outings).
+Existing backfill regressions, synthetic map faults and independent oracles remain.
+None of this is final tagged-candidate qualification.
 
 Retain original private-map rejection: declared zoom8–16 versus actual9–16.
 Only the separately hashed metadata-only derivative is authorized, with unchanged
@@ -98,12 +103,14 @@ PR52/53 source, browser, review and CI evidence is recorded in those PRs and
 DON-254; none is final tagged-candidate qualification. The private minZoom9 map
 scope remains bound; detail-only minZoom>12 remains fail-closed and out of scope.
 
-Merged-source Linux dispatch is complete (above). Next: Donal's tag decision with
-the retained 201 ms failure on record, a new write-once candidate tag, then release
-CI. Only after release CI
-create the authorized unpublished draft and bind its exact release-workflow installers and
+Baseline merged-source Linux dispatch is complete (above). Next: verify and review
+the bounded ownership repair, then Sol's one exact-package AppImage diagnostic.
+Tag decisions retain the unexplained 201 ms failure and separate C10 investigation.
+Any later candidate uses a new write-once tag, then release
+CI. The release workflow automatically creates the unpublished draft; inspect it
+after the run and bind its exact release-workflow installers and
 all technical inputs to one immutable campaign, and execute applicable technical
-rows serially. The 201 other technical variants may run after admission. C27 must
+rows serially. The other 201 technical variants may run after admission. C27 must
 remain unattempted until repository-control prerequisites pass or an authentic
 acceptance was sealed into the original inputs: `NEEDS_HUMAN_DECISION` makes
 technical handover NOT_READY, and a later PASS cannot erase that retained attempt.

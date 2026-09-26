@@ -225,3 +225,99 @@ Node 22.22.2, npm 10.9.7, Playwright 1.59.1, Chromium 147.0.7727.15,
 20 logical CPUs and 33,303,224,320 bytes of physical RAM. GitHub Ubuntu 22.04
 and full-suite predecessor/load conditions remain unrepresented. No candidate
 qualification, source fix, package installation or campaign mutation occurred.
+
+## Validation-installer archive diagnostics — 2026-09-26 evening
+
+Donal authorized bounded Ubuntu diagnostics before final candidate admission.
+These use validation workflow run `36255209914`, source
+`09343ee94b8d4f4347da416fdb6596a83e08624c`, tree
+`bba3dc8e0c74e7ca2ade28e92fdc3af9596c46b0`. Both Mac and transferred Ubuntu
+installers matched the supplied full identities: AppImage
+`6a7ac24ff242d521aa39d141ca57266d693ab51229228f86a00561ccae99804e`, Debian
+`96f003907a5bbc325632ee8ff2b767cc7381da93d77397d847167f9458bb40c5`.
+Both contain executable `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`
+and application archive `6f350c02f544b9351d6227dd000008034b69fbdef85499436c216b62f16583d2`.
+Release and validation workflows may use identical filenames; provenance and
+hashes identify the bytes. No final candidate campaign was compiled.
+
+The isolated checkout `/home/donal/sartracker-archive-diagnostic-09343ee9`
+remained clean at the exact source. Each package received one unchanged lifecycle
+workload: 4,096 positions, 101 outing choices and 202 replay objects. Execution
+used the existing CI launch flags and software-rendering environment
+(`LIBGL_ALWAYS_SOFTWARE=1`, `GALLIUM_DRIVER=llvmpipe`, `LP_NUM_THREADS=2`) on native
+`DISPLAY=:0`, with same-user Xauthority. The strict 200 ms gate and 50 ms poll
+cadence remained unchanged. No timing profiler or retry was added.
+
+**AppImage: retained lifecycle failure, not a timing pass.** The exact AppImage
+launcher used the existing inspected-resource sidecar and extract-and-run path.
+At 17:38:42.678Z, after 33,088 ms, restart failed with “Packaged Electron exited
+before renderer readiness.” Source flow and the retained process snapshot show
+the restore interruption killed the launcher while actual Electron PID 38030
+remained alive, adopted by the owned supervisor. The second launch exited;
+single-instance rejection is a hypothesis because launch stderr was discarded.
+The raw receipt claimed cleanup complete while actual descendants still existed.
+Only the verified owned producer PID 38009 was then sent SIGTERM; the supervisor
+positively reaped its descendants at 17:40:23.795Z. `cleanupVerified` and
+`zeroDescendantsAfterRun` were true, both remaining-process arrays empty. No
+AppImage retry occurred. The failure receipt retained no partial phase metrics,
+so create/verify/restore timing cannot be presented as passing evidence.
+
+**Installed Debian: one successful diagnostic.** The coordinator completed a
+supported transient sudo installation, exit 0. Independent inspection confirmed
+`install ok installed`, version `0.1.0~beta.13.2`, the canonical dpkg-owned launcher
+and 140 payload entries against the verified installer. The direct installed
+executable ran from 17:43:30.114Z to 17:44:10.253Z, duration 40,139 ms, with two
+exact-build launches and exits. The harness and independent supervisor passed.
+
+| Phase | Current-fix maximum ms | Main watchdog maximum ms | Renderer frame maximum ms |
+|---|---:|---:|---:|
+| Create | 109 | 91.482 | 40.300 |
+| Verify | 86 | 57.832 | 45.600 |
+| Restore | 138 | 68.739 | 53.000 |
+| Cleanup | 173 | 56.798 | 28.200 |
+
+Interrupted decrypt received SIGKILL, restart removed both retained plaintext
+residual entries, and cleanup archived 5,516 rows with zero breadcrumb rows left.
+All closed evidence/privacy checks passed. Producer exit 0, no timeout/error,
+positive cleanup and zero descendants were recorded at 17:44:13.812Z; a separate
+process/listener check found no remaining workload. No operational profile was used.
+
+Raw receipts, invocations, runtime identities, process results and failure-process
+snapshot remain under the isolated checkout's `tmp/ubuntu-archive-diagnostic/`.
+Independently hash-verified copies are in worktree 3226's
+`tmp/ubuntu-archive-diagnostic-20260926/{appimage,deb}/`. The original CI 201 ms
+verify failure remains retained and unexplained. This hardware diagnostic neither
+repairs it nor qualifies any final release artifact. AppImage lifecycle ownership
+needs a bounded fix before that interrupted-restore path can be trusted. C27/C29,
+publication and controlled-handover approval remain separate.
+
+### Bounded archive-harness repair (local development)
+
+The launcher-only interruption and launch-failure cleanup date to the original
+smoke harness in `60bda977c7f69c9b78310c2e8af4a9b3ca5f7d95`. That identifies the
+source assumption, not a newly established first-bad installer or application
+regression. The old harness assumed the spawned PID was Electron main and counted
+its exit as cleanup; its tests did not model an AppImage wrapper with surviving
+children. Outer producer cleanup also did not validate the inner receipt's claim.
+
+A local disposable wrapper/child/grandchild regression first failed because
+`processCleanupCompleted` was true while both descendants survived; an unrelated
+sentinel stayed alive. The repair adds per-launch Linux subreaper custody, binds
+the inspector main to PID/start identity, obtains its exact SIGKILL wait status,
+and requires descendant reaping plus kernel ECHILD before positive cleanup.
+Partial launches remain registered, and missing cleanup proof retains the private
+profile. macOS uses a distinct direct-executable identity check and dedicated
+group cleanup. The ordinary qualification process runner is unchanged.
+
+Review found an unused inherited stderr pipe and a consuming wildcard wait;
+red/green controls now require no app stderr pipe and a non-consuming WNOWAIT
+exhaustion check. A separate mode-0600 `archive-launch-ownership.json` records
+numeric identities and terminal outcomes. The decrypt trigger, material plaintext
+oracle, workload, deadlines and strict 200 ms gate remain unchanged. Local tests
+and review are development evidence. Full serial correctness passed 585 files,
+6,053 tests and 27 skips in 583.27 s; final affected suites passed 212 tests with
+one Linux-only skip on macOS, six Python identity controls passed, and lint/build
+passed. Native read-only review found no remaining source blocker. Linux
+process-tree execution and Sol's
+subsequent exact-package AppImage diagnostic remain pending. No product behavior
+or operator manual change is involved.
