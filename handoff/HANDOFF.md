@@ -43,7 +43,8 @@ original C02 work remains in `1608`. Sol alone owns serial Ubuntu execution.
 CoS coordinates. Do not alter the dirty original checkout or coordinator checkout.
 No new workload should use the superseded uninstrumented build. Run36271106551
 was cancelled; instrumented run36271342456 built exact dce4 installers and passed
-packaged checks. Full correctness/browser CI remains pending at this closeout.
+packaged checks. All CI jobs, including full correctness/browser, subsequently
+passed in36271342456; this does not clear the separate failed diagnostic limits.
 The normal direct push used existing account privileges; GitHub reported protected
 ref/PR-rule bypass. No force/admin option, settings change or CI gate change occurred.
 
@@ -107,7 +108,9 @@ but its screenshots do not prove active/restored UI. C10 and C02 failed as above
 Donal decides controlled non-operational testing acceptance with these limits;
 no full qualification or operational handover claim. Nonblocking development is
 deferred; no new production edit/build follows this assessment. Preserve current
-CI and record its terminal result. Detailed runtime/source impact: Ubuntu report.
+CI evidence. The local controlled-testing ZIP and checksum sidecar are complete,
+verified and supplied to CoS for Donal's sharing decision; nothing was distributed.
+Detailed runtime/source impact: Ubuntu report.
 Use validation-workflow hashes, not installer names, to identify testing builds:
 release and validation currently share filenames. Release-workflow bytes require
 their own tag-driven successful run and unpublished draft; no final tag is frozen.
