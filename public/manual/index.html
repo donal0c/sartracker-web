@@ -1487,7 +1487,10 @@
             <strong>Hosted tracking history:</strong> browser testing mode keeps enough persisted
             breadcrumb history for reload/testing, but caps very large live imports so the browser does
             not exceed session storage quota. The live map can still draw the loaded tracker snapshot
-            during the current session.
+            during the current session. Reconnecting after a browser runtime restart fetches history
+            again from the mission's history start; a saved transport receipt is not a durable restart
+            cursor for rows that browser storage may have discarded. If session storage cannot save a
+            history request or batch, retrieval reports the failure and retries without claiming completion.
           </div>
           <div class="note">
             <strong>Desktop restart history:</strong> all operational positions remain stored in the
@@ -1503,7 +1506,7 @@
             eight requests in flight; it does not wait for the normal live-refresh interval between
             chunks. Current fixes are shown before that queue starts. While a long mission is catching up, Tracking says
             <strong>Breadcrumb history is reconciling</strong>; current fixes remain live. SAR Tracker
-            saves completed history in bounded batches and records each device's completed frontier so a
+            on desktop saves completed history in bounded batches and records each device's completed frontier so a
             restart resumes the unfinished range instead of replaying the whole prefix. For a participant
             added after mission start, that durable frontier retains the later participation boundary and
             resumes from the recorded cursor. If the coordinator later expands that participant's effective
@@ -1982,7 +1985,9 @@
             on the left of the map instead of a full-screen window. The mission-control rail (Pause, Finish)
             and the map stay live and usable next to it, so reviewing the audit history never blocks
             operating the incident. A note at the top of the panel confirms it is read-only. Close Review or
-            press <strong>Esc</strong> to return the map to full width. When there is no active mission,
+            press <strong>Esc</strong> to return the map to full width. If a marker dialog is open over
+            Review, it takes keyboard focus immediately: the first <strong>Esc</strong> closes the dialog,
+            leaving Review open; another <strong>Esc</strong> closes Review. When there is no active mission,
             Review opens full-screen with the mission selector for cross-mission audit.
             If Finish completes while Review remains open, Review refreshes the persisted mission state and
             disables Search Operations entry immediately; an ordinary finished mission remains read-only.

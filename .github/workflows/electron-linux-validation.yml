@@ -210,11 +210,14 @@ jobs:
           npx playwright test --config playwright.train-c.config.ts --project=chromium --workers=1 2>&1 \
             | tee tmp/electron-validation-evidence/train-c/playwright.log
 
-      - name: Coverage partial and recovery browser regressions
+      - name: Browser driver promise lifetime contract
+        run: npm run test:browser-driver
+
+      - name: Full Chromium release preflight
         run: |
           set -euo pipefail
           mkdir -p tmp/electron-validation-evidence/native-coverage-browser
-          npx playwright test tests/e2e/coverage.spec.ts --project=chromium --workers=1 2>&1 \
+          npm run test:e2e:chromium -- --fail-on-flaky-tests --output=test-results/release-chromium 2>&1 \
             | tee tmp/electron-validation-evidence/native-coverage-browser/playwright.log
           cp tmp/native-runtime-repair/claude-coverage-partial.png \
             tmp/native-runtime-repair/claude-coverage-recovered.png \
@@ -231,6 +234,9 @@ jobs:
             test-results/war06-mission-scope
             test-results/war11-map-freshness
             test-results/train-c
+            test-results/release-chromium
+            test-results/browser-driver
+            tmp/browser-driver
             tmp/war-11/browser-view-checked.png
             tmp/war-11/browser-package-removed.png
             tmp/war-11/browser-negative-result-retained.png

@@ -8,6 +8,7 @@ import {
   CANONICAL_INSTALLED_EXECUTABLE_PATH,
 } from './candidate-artifacts.mjs'
 import { hashLiveConfigDirectory } from './live-config-identity.mjs'
+import { debianVersionOf } from './debian-candidate-version.mjs'
 
 /** Require the explicitly documented data-only configuration fields. */
 function closed(value, fields, label) {
@@ -87,8 +88,8 @@ export async function verifyRuntimeInputs(inputs, source, version, workDirectory
   }
   const deb = config.ci.installers.find((entry) => entry.role === 'ci-deb')
   const installation = await inspectInstalledCandidate({ debPath: deb.path, debSha256: deb.sha256,
-    extractionDirectory: path.join(workDirectory, 'verified-installed-deb') })
-  if (installation.version !== version || await realpath(config.installedExecutablePath) !== config.installedExecutablePath) {
+    extractionDirectory: path.join(workDirectory, 'verified-installed-deb'), candidateVersion: version })
+  if (installation.version !== debianVersionOf(version) || await realpath(config.installedExecutablePath) !== config.installedExecutablePath) {
     throw new Error('Configured launch path is not the actual exact installed Debian executable.')
   }
   validateCanonicalInstalledExecutable(installation, config.installedExecutablePath)

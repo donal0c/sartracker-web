@@ -2,7 +2,7 @@
 /**
  * Beta verification gate.
  *
- * Runs the lint/build/test/test:backend/e2e/package/smoke chain that the Electron
+ * Runs the lint/build/test/test:backend/browser-driver/e2e/package/smoke chain that the Electron
  * beta release plan calls "Verification Before Sharing". On success it writes
  * a JSON evidence report to tmp/beta-artifacts/ that the agent cutting the
  * beta can attach to the release note.
@@ -48,6 +48,7 @@ const STEP_COMMANDS = {
   test: ['npm', ['run', 'test:correctness']],
   responsiveness: ['npm', ['run', 'test:responsiveness']],
   'test-backend': ['npm', ['run', 'test:backend']],
+  'browser-driver': ['npm', ['run', 'test:browser-driver']],
   'e2e-chromium': ['npm', ['run', 'test:e2e:chromium']],
   package: ['npm', ['run', 'electron:pack']],
   'tracking-soak-ci': ['npm', ['run', 'electron:smoke:tracking-soak:ci']],

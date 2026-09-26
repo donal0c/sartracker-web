@@ -1,5 +1,5 @@
 import {
-  useEffect,
+  useLayoutEffect,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -43,7 +43,7 @@ export function DialogOverlay({
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) {
       return
     }
@@ -54,9 +54,10 @@ export function DialogOverlay({
       return
     }
 
-    const focusFrame = requestAnimationFrame(() => focusFirstElement(panel))
+    // Own keyboard input as soon as the dialog is committed. Deferring focus to
+    // a frame leaves a visible dialog unable to receive an immediate Escape.
+    focusFirstElement(panel)
     return () => {
-      cancelAnimationFrame(focusFrame)
       restoreFocus(returnFocusRef.current)
       returnFocusRef.current = null
     }

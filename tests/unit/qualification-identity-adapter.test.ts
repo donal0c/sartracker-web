@@ -10,7 +10,8 @@ const sourceSha = 'a'.repeat(40)
 const archiveSha = 'b'.repeat(64)
 const appImageSha = 'c'.repeat(64)
 const debSha = 'd'.repeat(64)
-const version = '0.1.0-beta.13'
+const version = '0.1.0-beta.13.2'
+const debianVersion = '0.1.0~beta.13.2'
 const payload = [{ path: CANONICAL_INSTALLED_EXECUTABLE_PATH.slice(1), sha256: 'e'.repeat(64), size: 50, executableBits: 73 }]
 const run = {
   id: 123,
@@ -83,10 +84,10 @@ function report() {
       deb: { path: '/owned/candidate.deb', sha256: debSha, bytes: 20 },
       packageName: 'sartracker-web',
       status: 'install ok installed',
-      version,
+      version: debianVersion,
       architecture: 'amd64',
       files: payload,
-      payloadExpected: { packageName: 'sartracker-web', version, architecture: 'amd64', files: payload.map((entry) => ({ ...entry })) },
+      payloadExpected: { packageName: 'sartracker-web', version: debianVersion, architecture: 'amd64', files: payload.map((entry) => ({ ...entry })) },
     },
     installedExecutablePath: config.installedExecutablePath,
   }
@@ -137,6 +138,10 @@ describe('C00 CI and installation identity adapter', () => {
     ['archive hash', (value: ReturnType<typeof report>) => { value.ci.archive.sha256 = 'f'.repeat(64) }],
     ['installer bytes', (value: ReturnType<typeof report>) => { value.ci.installers[1].bytes++ }],
     ['installed payload', (value: ReturnType<typeof report>) => { value.installation.files[0].sha256 = 'f'.repeat(64) }],
+    ['wrong Debian candidate', (value: ReturnType<typeof report>) => {
+      value.installation.version = '0.1.0~beta.13.1'
+      value.installation.payloadExpected.version = '0.1.0~beta.13.1'
+    }],
   ])('rejects retained %s substitution', async (_label, mutate) => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'qualification-identity-adapter-'))
     try {

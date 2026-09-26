@@ -5,6 +5,7 @@ import { lstat, mkdir, readFile, readlink, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { streamCommandToFile } from './release-transfer.mjs'
+import { validateCandidateDebianVersion } from './debian-candidate-version.mjs'
 
 const execFile = promisify(execFileCallback)
 const REPOSITORY = 'donal0c/sartracker-web'
@@ -212,12 +213,13 @@ async function payloadInventory(root, relative = '') {
 }
 
 /** Compare the real installed filesystem and dpkg database with the verified CI deb. Never installs or uninstalls. */
-export async function inspectInstalledCandidate({ debPath, debSha256, extractionDirectory }) {
+export async function inspectInstalledCandidate({ debPath, debSha256, extractionDirectory, candidateVersion }) {
   if (process.platform !== 'linux' || process.arch !== 'x64') throw new Error('Installed Debian proof requires Linux x64.')
   const deb = await hashCandidateFile(debPath)
   if (deb.sha256 !== debSha256) throw new Error('Debian installer differs from the verified CI bytes.')
   const packageName = (await readCommand('dpkg-deb', ['-f', deb.path, 'Package'])).trim()
   const version = (await readCommand('dpkg-deb', ['-f', deb.path, 'Version'])).trim()
+  validateCandidateDebianVersion(version, candidateVersion)
   const architecture = (await readCommand('dpkg-deb', ['-f', deb.path, 'Architecture'])).trim()
   if (packageName !== 'sartracker-web') throw new Error('Unexpected candidate Debian package name.')
   await mkdir(extractionDirectory, { recursive: false, mode: 0o700 })

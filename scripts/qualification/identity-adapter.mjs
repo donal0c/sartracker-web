@@ -8,6 +8,7 @@ import {
   validateInstalledPayload,
 } from './candidate-artifacts.mjs'
 import { verifyRuntimeInputs } from './runtime-inputs.mjs'
+import { debianVersionOf } from './debian-candidate-version.mjs'
 
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
@@ -127,8 +128,9 @@ async function revalidateInstalledPackage(expected, attemptDirectory) {
       debPath: deb.path,
       debSha256: deb.sha256,
       extractionDirectory: path.join(root, 'installed-deb'),
+      candidateVersion: expected.version,
     })
-    if (installation.version !== expected.version || await realpath(expected.installedExecutablePath) !== expected.installedExecutablePath) {
+    if (installation.version !== debianVersionOf(expected.version) || await realpath(expected.installedExecutablePath) !== expected.installedExecutablePath) {
       throw new Error('Fresh installed package inspection does not match the canonical executable path.')
     }
     validateCanonicalInstalledExecutable(installation, expected.installedExecutablePath)
@@ -214,7 +216,7 @@ function independentlyValidateReport(report, expected) {
   const deb = expectedInstallers['ci-deb']
   if (!installation || installation.schema !== 'sartracker-candidate-installed-deb-v1'
       || !sameFileIdentity(installation.deb, deb) || installation.packageName !== 'sartracker-web'
-      || installation.version !== expected.version || installation.architecture !== 'amd64') throw new Error('Retained installed Debian identity differs from the exact candidate.')
+      || installation.version !== debianVersionOf(expected.version) || installation.architecture !== 'amd64') throw new Error('Retained installed Debian identity differs from the exact candidate.')
   const payloadExpected = installation.payloadExpected ?? report.payloadExpected
   if (!payloadExpected || !Array.isArray(payloadExpected.files)) throw new Error('Retained installation payload expectation is missing.')
   validateInstalledPayload(installation, payloadExpected)

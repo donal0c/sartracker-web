@@ -1,16 +1,39 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-26. Release remains **HOLD**. PR53 merged at
-`2d4f436add40ed9c279488c9ac4e3cb267c5cee2`; exact-source CI
-[36222329312](https://github.com/donal0c/sartracker-web/actions/runs/36222329312) passed.
-The write-once Beta13 tag remains at that source. Release run 36223196332 failed
-before packaging: parallel correctness execution exceeded the unchanged AUD-03
-20-second test deadline; same-source serial CI passed in 5.586 seconds. Beta13.1
-aligns release correctness with the existing serial gate, retaining every workload,
-oracle and strict 200 ms qualification. See its release note for failed evidence.
-The release-command regression failed before correction, then all 56 affected
-tests and lint passed. Application source is unchanged; full source evidence is
-the merged CI above, with replacement exact-source and release CI still required.
+Updated 2026-09-26. Release remains **HOLD**. PR53 is merged; master
+`2ff4d5742649da016a52c0e682f404d17df8c5dd` serializes release correctness.
+Source CI 36224020563 passed, but Beta13.1 release run 36225417118 failed five
+Chromium cases after correctness, strict responsiveness and build passed.
+No package/draft was produced. Both rejected tags remain immutable; Beta13's
+earlier AUD-03 contention failure is preserved in the Beta13.1 release note.
+The combined repair uses `codex/beta13-browser-release-repair`, **PR plus independent
+review**, not direct master. PR54 first head `a92266f9` repaired the original five
+browser failures; Linux CI then exposed two separately reproduced focus/fixture
+races, repaired in `9b034092`. That head passed local 6,045 source tests (26 existing
+skips), full 225 Chromium tests and native review; lint/types/build/budgets passed.
+Strict Debian mapping, 90-day retention and flaky-pass rejection remain intact.
+The next head `9b034092` was rejected by Linux CI 36233554495: 224 passes and
+one roster retry-pass, after the earlier repaired assertions passed. Its final
+async evaluation lost its protocol result; the original raw error is unavailable.
+Bounded diagnostics did not reproduce it. A corrected app-free GC probe confirms
+a Playwright 1.59.1/Chromium 147 driver defect with the same error wording;
+1.63.0/Chromium 153 contains the upstream fix and passes the same finite control.
+Original SAR causation remains suspected, not proven. The authorized bounded
+PR54 delta pins only that test toolchain and adds an isolated driver gate;
+runner-level red/green, 25 gate tests, lint and new-file type checks pass.
+Native toolchain-delta review accepted. New-toolchain local verification passes:
+6,046 source tests / 584 files (26 existing skips), lint/types/build/budgets,
+driver contract, 3/6/6 predecessor browser cases and full 225 Chromium tests
+with zero retries. Claude exact-head review accepted (L1 exact-pin check deferred).
+The pin also swaps the `_electron` driver for packaged smoke/soak/qualification
+harnesses; no local 1.63 `_electron` run is claimed, so exact-head Packaged Linux
+checks and the merged-source dispatch are that surface's evidence. Run 36241851816
+passed every required lane on `69e9badc`, including driver, 225 Chromium cases
+and packaged checks. Later documentation commits have identical executable inputs;
+their own required CI status must still be observed, not attributed to that run.
+Exact-head Linux 225/225 plus the driver gate is required before merge
+recommendation, then a full merged-source Linux workflow_dispatch before tagging. The compact cause and
+verification ledger is `docs/releases/beta13-browser-gate-repair.md`.
 No final candidate is frozen or qualified. Donal authorized candidate tag and
 unpublished draft after verified source; publication/distribution need final approval.
 
@@ -18,9 +41,11 @@ unpublished draft after verified source; publication/distribution need final app
 
 Donal authorized release-first stabilization and the existing `bcp17-final`
 C00–C29 campaign. Small contained verified fixes may go directly to master;
-the sequencing correction uses `codex/beta13-staged-admission` and requires
-a PR plus independent exact-head review. Do not merge without Donal's authority.
-No new features, full mapping, broad WAR, database redesign or Claude/Fable.
+the current browser persistence/layout repair requires a PR plus independent
+exact-head review. Do not merge without Donal's authority.
+No new features, full mapping, broad WAR or database redesign. Donal explicitly
+authorized the bounded release-path audit fixes and coordinator-arranged Claude
+independent review of their stable exact head on 2026-09-26; no general Claude/Fable delegation.
 DON-254 comment `75075194-78a0-4782-be1d-73f86e794e50` records the clarified sequence;
 its historical Done state is not whole-candidate qualification. DON-255 is downstream.
 
@@ -71,22 +96,22 @@ with owner-private lineage; C29 acceptance remains separate.
 
 ## Verification and next actions
 
-PR52 full correctness (6,013 tests), lint/type/build, browser coverage 7/7,
-independent review and CI passed. Final merged zoom-clamp delta passed review
-and 26 focused tests; detail-only minZoom>12 remains fail-closed and outside the
-bound minZoom9 map scope.
+PR52/53 source, browser, review and CI evidence is recorded in those PRs and
+DON-254; none is final tagged-candidate qualification. The private minZoom9 map
+scope remains bound; detail-only minZoom>12 remains fail-closed and out of scope.
 
-Staged admission: `npm run test:correctness -- --no-file-parallelism` passed
-580 files / 6,019 tests (26 existing skips) on unchanged final code/test hashes;
-52 focused checks passed (one skip). `npm run lint` and `npm run build` passed.
-The inbuilt browser verified the rendered manual's controlled-handover guidance.
-Independent native working-tree review accepted the boundary; exact-head review
-and CI readiness are recorded in the PR and DON-254, not candidate qualification.
-
-Finish the bounded Beta13.1 pipeline correction and exact-source/release CI, then
+Finish the combined repair and exact-source/full-Chromium verification, then
+obtain reviewed-PR merge, pass the full exact-merged-source Linux dispatch and use
+a new write-once candidate tag. Only after release CI
 create the authorized unpublished draft and bind its exact release-workflow installers and
 all technical inputs to one immutable campaign, and execute applicable technical
-rows serially. C27 inspects the draft after other technical rows; public-byte C00
+rows serially. The 201 other technical variants may run after admission. C27 must
+remain unattempted until repository-control prerequisites pass or an authentic
+acceptance was sealed into the original inputs: `NEEDS_HUMAN_DECISION` makes
+technical handover NOT_READY, and a later PASS cannot erase that retained attempt.
+Optional acceptance/key inputs cannot be added after compilation; live control
+fixes can be re-observed without changing sealed inputs. Choose that path before
+sealing; no control/settings/signature change is authorized. Public-byte C00
 only follows actual approved publication. Eamonn's C29 acceptance follows approved
 handover and cannot be inferred from Ubuntu evidence. No cross-campaign promotion
 or late mutation of sealed inputs is introduced.
@@ -99,8 +124,18 @@ GET-only and executed by Sol after preflight/candidate binding (DON-254 comment
 `af5f3aa6-5cd3-40c0-8947-4c327d3a5a3e`). No writes or expanded targets; keep
 credentials/target values private. Consent is cleared; live proof remains pending.
 C29 named original-machine/human acceptance remains required.
-Genuine beta13 installed-deb execution needs a supported authenticated administrator
-session; currently installed beta12.11 is not substitute proof. Recheck the separate
+Same-campaign C29 continuity requires the reviewed public authority, authorization
+and profile identities sealed before compilation; a keyless technical campaign
+cannot later add them while retaining its technical receipts. This prepares
+authority only: training, handover approval and the human signature still occur
+later. CoS is resolving the minimal prebinding inputs; do not freeze a tag or
+campaign until the reviewed-plan implications are settled. No lifecycle redesign
+or new acceptance prerequisite for technical execution is authorized.
+Donal authorized final Debian administrator installation; coordinator owns secure
+transient authentication. Ubuntu CLI/display probes passed, but GitHub OAuth was
+canceled unapproved. Public metadata works unauthenticated; artifact/draft access
+needs supported authentication. The Ubuntu report records exact boundaries.
+Currently installed beta12.11 is not substitute proof. Recheck the separate
 32 MiB ENOSPC volume before use; never alter authentication.
 
 Campaign definitions/runtime paths/raw logs stay in controlled private custody.

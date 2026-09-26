@@ -4,19 +4,27 @@
 
 This is incomplete release metadata, not a verification report. Complete every
 applicable section of `TEMPLATE.md` from exact-candidate evidence before guarded
-publication. No candidate SHA, installer hash or result is asserted here.
+publication. The rejected source/workflow result is preserved below; no successful
+candidate qualification or installer is asserted here.
 
 - Version: `0.1.0-beta.13.1`
-- Intended tag: `electron-v0.1.0-beta.13.1` (not created)
+- Rejected tag: `electron-v0.1.0-beta.13.1` at `2ff4d5742649da016a52c0e682f404d17df8c5dd`
 - Linear: DON-254 qualification; DON-255 publication decision
 - Release-use classification: `ENGINEERING/TRAINING — NON-COUNTED`
-- Candidate identity / qualified platform and profile / CI run: PENDING
+- Rejected CI run: `36225417118`, attempt 1, source `2ff4d5742649da016a52c0e682f404d17df8c5dd`
+- Qualified artifact / platform and profile: none; packaging did not start
 - Scope: controlled synthetic, replayed or disposable-data testing with an
   independent primary operational process. Not sole-source operational software.
 - Distribution target: Linux x86-64 AppImage and actually installed Debian package;
   both require independent exact-byte qualification. No Windows/macOS claim.
 
 ## What changed — subject to final verification
+
+This candidate was rejected before packaging: release run 36225417118 attempt 1
+passed correctness, strict responsiveness and build, then failed five Chromium
+tests. No installer or draft was produced. See
+[the five-failure ledger](beta13-browser-gate-repair.md). Preserve this tag unchanged;
+the next candidate is Beta13.2 after reviewed repair and verification.
 
 The merged breadcrumb and mission-history programme, team-request repairs and
 resilience repairs are included. Final notes must link their exact verification
