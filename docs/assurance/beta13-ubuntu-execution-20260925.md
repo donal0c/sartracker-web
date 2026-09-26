@@ -689,3 +689,145 @@ by continued watchdog summaries; maximum observed delay895ms is retained, withou
 per-archive-stage attribution. No fresh field workload or blind retry is authorized.
 The C02 partial observer patch remains outside this integration. No release or
 whole-candidate qualification follows these source and diagnostic results.
+
+### Additional retained field-state triage
+
+After renewed authorization, bounded read-only triage confirmed the retained
+prearchive mission row is `finished` and its archive registry is empty. The
+retained runtime log records backup completion at `2026-09-26T19:40:06.993Z`
+after 107,193 ms, with 114 main-event-loop summaries continuing through
+`20:35:46.806Z`. The maximum recorded delay was 895 ms at `19:40:50.286Z`,
+with later delays also over 200 ms. These overruns are retained; they are not
+attributed to an archive phase by this evidence. Continuing summaries rule out
+a complete main-event-loop freeze, while prearchive completion alone cannot
+distinguish subsequent producer inspection from product issuance/finalization
+awaits. No stage checkpoint or archive event in the retained records resolves
+that boundary. The 24,033-byte runtime log was mirrored with verified SHA256
+`b81f460aa8975c14a2b99c68e0c583da7a7994c0623d05801ab52c93adeecca4`.
+No heavy runtime, live-profile mutation or repeat followed this triage.
+
+A subsequent bounded read-only inspection of the actual retained profile,
+including its WAL, found the mission still finished, no finalization fence,
+no archive registry entries or custody-journal metadata, and an empty archive
+directory without staging. The last 20 audit events begin with mission finish
+and startup pause, followed by original fixture records; no durable archive or
+finalization request appears in that tail. This narrows the observation to no
+durable finalization admission, without proving whether the producer or a
+product operation before admission stalled. Sanitized states are retained in
+`bounded-finalization-triage.json`; no app launch, database copy or full scan
+was used.
+
+## Essential exact testing-build slice — dce4dfc4
+
+After Donal authorized resume following PR55 merge, source
+`dce4dfc41ef800a0699d7030b2b8bb2aed234558`, tree
+`ffcdb635b06b35cc06d84fd1538ecdb3ef20952c`, was admitted from bundle SHA256
+`8b0e11778070ec285672406e3e12d9585338c7c60fae335cb2d4daf19d34167a`.
+CI run 36271342456 produced installer artifact 10915273193 and evidence artifact
+10915482783. Source binding was clean before build; postbuild source changes
+were limited to generated version metadata. This is a testing-build slice,
+not candidate qualification or publication authority.
+
+Transferred AppImage: 157,874,117 bytes, SHA256
+`2d3b652e8a8c997e09dfcf6cb59b91d9731f21b1f7b60423cce3d67d8b92d94c`.
+Transferred Debian: 126,473,096 bytes, SHA256
+`ccb2862b4822ef6d4092f70aa00bc0cee55a57c8fef3f38723564c9ef26081a2`.
+All transferred records were rehashed. Inspected and runtime executable SHA256
+remained `6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`;
+new ASAR SHA256 was
+`43a3341ddfb157b96efb7f6030262abd9471e201b35488e78f91fc2b933dd341`.
+The installed 093 Debian was not replaced. Three exact-AppImage checks ran
+serially with existing compiled deadlines and independent oracles.
+
+- **C13 passed:** golden DD/IG/DMS, NaN/Infinity/out-of-range visible rejection,
+  magnetic/true bearing, persisted geometry, rendered overlay and measurement.
+  All four screenshots were independently inspected. Network-blocked basemap
+  degradation was visible; this is not provider or offline-map qualification.
+- **C28 routine passed its nine packaged bridge phases:** synthetic participant/
+  tracking and GPX, coverage/replay, persistence and restart, verified v2 archive,
+  immutable review/mutation denial, committed restore and sanitized diagnostics.
+  No network egress was recorded. Producer and independent routine validators
+  passed. The outer diagnostic initially chose the variant-only validator for a
+  routine receipt; that erroneous rejection log is retained. Its dispatch was
+  corrected to the existing producer CLI's routine validator and the same receipt
+  was validated without rerunning the workload. The three screenshots show idle
+  frames and an early recovery/loading frame, so they do not prove rendered
+  active/restored mission state. The bridge/persistence result and that UI proof
+  gap remain separate.
+- **C10 960k failed once:** the empty live-before lane passed, but ordinary
+  live-middle continuation failed before deliberate concurrent mutation. The new
+  diagnostic identifies `guard: generation`, `expected: 1`, `observed: 2`.
+  Partial rows: 53,952,926 bytes, SHA256
+  `9a0cba309a7499d9174f69e8ef3c8e2d8d5e97c87eaf60f369ac07951e6ebf4f`.
+  This establishes the violated guard, not the specific event advancing it.
+  The producer removed its profile, so no runtime log remains for retrospective
+  backup-event attribution. No 2m run or retry followed.
+
+All three producers closed with positive custody cleanup and zero descendants;
+C10 exited 1 without timeout. Independent closure confirmed clean source, no
+owned survivors, all disposable profiles absent and original 960k fixture
+unchanged. Twenty-seven raw files were mirrored and hash/size verified under
+`tmp/exact-testing-dce4dfc4/`; two large fixture/ASAR files remain remote with
+verified identities. Final slice headroom was 65,103,892,480 bytes.
+
+### C02 observer-only harness on the same direct CI payload
+
+One reviewed harness `99c3167e4ec5338e305df87c95752b599aae8aa3`, tree
+`2d9d4a40cc6cc5624edb35e2c84669d5631a027a`, bundle SHA256
+`1ecf71587b450d81601ff0108369d452b7a868fe882cf129e52a686683b1b49e`,
+ran against the hash-verified direct inspected dce4 CI executable/ASAR. This
+avoids AppImage wrapper PID ambiguity and is direct packaged-payload evidence,
+not genuine installed-Debian or AppImage-launch proof. Existing source/app
+bindings, deadline and independent lifecycle oracle were retained.
+
+Physical main PID 69038 exited unforced with code 0/null signal. The observer
+recorded beforeunload and page closure with no unexpected dialog. Before
+relaunch, active-session was absent and last-clean-exit was present with a valid
+timestamp. Nevertheless recovery PID 69167 reported `uncleanShutdown: true`,
+`lastCrash: null`, a recovery notice and active-to-paused mission transition.
+The producer reported pass, but the independent validator rejected it with
+`C02 graceful close was classified as unclean.` This is not an accepted pass;
+the clean marker versus recovery-classification discrepancy was sent to Astra.
+Both physical closes were code 0/null, cleanup and profile removal passed,
+source stayed clean and independent inspection found no owned survivors.
+Six raw files were mirrored/hash verified under
+`tmp/c02-dialog-diagnostic-20260926/`. No retry followed; runtime is idle.
+
+### Bounded source impact assessment; implementation deferred
+
+Donal's direction is to defer nonblocking edge/performance development during
+controlled-testing handover. No production or test change followed this assessment.
+C10's failed worker uses a read-only, query-only SQLite connection. Its generation
+guard fails visibly; the UI reports incomplete replay and states the live map was
+not changed. Re-seek and Return to Live remain available in source. Re-seek resets
+the cursor, but repeated invalidation can still prevent a long replay completing;
+no fresh packaged re-seek success is claimed. These observations do not demonstrate
+live tracking or stored-data corruption, nor do they prove unrestricted replay.
+
+A disposable local real-store/query reproduction confirms backup-only cursor
+invalidation: three synthetic fixes yield a valid continuation, syncBackup appends
+mission_backup_synced and advances generation2→3, and the continuation rejects
+with the same paging error. A create-plus-backup control advances1→2. The audit
+writer currently increments replay generation for every event. This mechanism is
+confirmed locally; it is not established as the actual packaged C10 cause. That
+run's last rows were written about37.676 seconds after controller start, report
+at39.289 seconds, below the default60-second autosave interval; profile/runtime
+logs were removed by the producer. Immediate backup or another writer is unproven.
+Both disposable local profiles were removed; no policy/guard/autosave change occurred.
+
+C02's clean physical shutdown and retained mission/audit snapshots argue against
+loss or corruption in this attempt. Source captures previous-session crash state
+before creating the new active-session marker, but the later crash-recovery IPC
+re-reads hadUncleanShutdown against that current marker. This explains the false
+previous-shutdown diagnostic warning. Separately, startup intentionally pauses any
+recoverable active mission, independently of crash status; the C02 oracle expects
+active-after-restart. That contract mismatch remains explicit and unresolved, not
+silently waived. Resume after this exact diagnostic was not exercised, so no new
+operator recovery proof is claimed.
+
+Disposition: exact testing bytes are available for Donal's controlled non-operational
+testing decision. No full qualification, operational-suitability or distribution
+approval follows. Retain failed C10/C02, the uncompleted large-field workload and
+its895ms observation, the C28 rendered lifecycle proof gap, original201ms failure,
+and prior ownership failures. The field workload can be excluded from the test
+commands, but no application-enforced large-field restriction is established.

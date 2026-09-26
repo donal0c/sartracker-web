@@ -18,8 +18,9 @@ settings or gates. No additional PR ceremony or documentation-only full rebuilds
 - C10 diagnostic `d62f85f5`, integrated as `8bb4bc62`: opt-in, failure-only
   generation/eligible-position/eligible-track expected-versus-observed counts.
   Public IPC error, paging rules, workload and deadlines remain unchanged.
-  The original 093 live-middle failure at offset182000→183000 remains unexplained.
-  Fresh packaged diagnostic evidence is required; source tests are not that proof.
+  Exact dce4 960k failed again: generation1→2 during ordinary live-middle paging.
+  Backup-only invalidation is locally reproduced, but the actual run's writer is
+  unknown (failure within39 seconds; runtime log removed). No fix/retry authorized.
 - Field selector `16768356`, integrated as `3a0769a5`: explicitly admits the
   original generator-v2/schema13 ≥3.7GB fixture and all-position archive custody.
   Its formerly failing preflight passed on the unchanged 093 app. That one run
@@ -30,14 +31,21 @@ settings or gates. No additional PR ceremony or documentation-only full rebuilds
 - C02: original app.quit attempt failed the independent unclean-recovery oracle.
   Native-window correction `8b71fb54` then failed in Playwright's beforeunload
   default auto-accept with “No dialog is showing”; no lifecycle receipt exists.
-  Checkout1608 retains two dirty helper/test files with a partial observer fix.
-  No Claude dispatch occurred. Preserve that patch; it is not integrated or
-  accepted runtime proof, and does not delay the C10 application build.
+  Followup99c3167e is clean/committed in1608: 42 tests, lint and review accepted.
+  One direct dce4 CI-payload attempt had unforced exit0, absent active marker and
+  valid clean marker, but failed the oracle on false unclean recovery state.
+  Source re-reads the current session marker; startup separately pauses recovered
+  active missions by design. No loss/corruption was demonstrated. Oracle/product
+  contract remains unresolved; no fix, waiver or retry, and no Claude dispatch.
 
 Astra owns source/build integration in managed `archive-fixture-contract`;
 original C02 work remains in `1608`. Sol alone owns serial Ubuntu execution.
 CoS coordinates. Do not alter the dirty original checkout or coordinator checkout.
-No new workload should use the superseded uninstrumented build.
+No new workload should use the superseded uninstrumented build. Run36271106551
+was cancelled; instrumented run36271342456 built exact dce4 installers and passed
+packaged checks. Full correctness/browser CI remains pending at this closeout.
+The normal direct push used existing account privileges; GitHub reported protected
+ref/PR-rule bypass. No force/admin option, settings change or CI gate change occurred.
 
 ## Verification snapshot
 
@@ -93,10 +101,13 @@ Retain full applicable C00–C29 variants, package tiers, fixed soaks and failed
 
 ## Next actions
 
-Push the verified grouped diagnostic source and hand Sol its exact CI installer
-identities for the bounded C10 attribution run. Keep C02 correction and field
-stage diagnosis separate; no blind reruns. Inspect terminal CI results and the
-affected packaged evidence before further candidate decisions.
+The essential exact testing slice is finished and runtime idle. C13 coordinates
+and four screenshots passed; C28 nine bridge/persistence/archive phases passed,
+but its screenshots do not prove active/restored UI. C10 and C02 failed as above.
+Donal decides controlled non-operational testing acceptance with these limits;
+no full qualification or operational handover claim. Nonblocking development is
+deferred; no new production edit/build follows this assessment. Preserve current
+CI and record its terminal result. Detailed runtime/source impact: Ubuntu report.
 Use validation-workflow hashes, not installer names, to identify testing builds:
 release and validation currently share filenames. Release-workflow bytes require
 their own tag-driven successful run and unpublished draft; no final tag is frozen.
