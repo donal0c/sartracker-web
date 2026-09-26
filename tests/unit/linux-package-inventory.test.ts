@@ -31,7 +31,7 @@ describe('packaged private-data exclusion [DON-146]', () => {
     'maps/source.tif', 'maps/source.gpkg', 'mission-track.gpx', 'diagnostics/raw.json'])('rejects %s', (name) => {
     expect(() => assertPublicPackageEntry(name, Buffer.from('synthetic'))).toThrow(/private/)
   })
-  it.each(['SQLite format 3\0', 'SARARCH2', 'PK\x03\x04'])('rejects renamed private payload signature', (signature) => {
+  it.each(['SQLite format 3\0', 'SARARCH2', 'PK\x03\x04'])('rejects renamed private payload signature (case %#)', (signature) => {
     expect(() => assertPublicPackageEntry('dist/renamed.bin', Buffer.from(signature))).toThrow(/private/)
   })
   it('retains application modules and curated manual screenshots', () => {

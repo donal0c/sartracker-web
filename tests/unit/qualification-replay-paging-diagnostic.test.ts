@@ -26,7 +26,7 @@ describe('failure-only replay paging diagnostic collector', () => {
     `sartracker-replay-paging-guard=${' '.repeat(10000)}${JSON.stringify(record)}\n`,
     `private prefix ${line}`,
     line.trimEnd(),
-  ])('rejects malformed, private, oversized and incomplete lines', input => {
+  ])('rejects malformed, private, oversized and incomplete lines (case %#)', input => {
     const collector = createReplayPagingDiagnosticCollector()
     collector.accept(Buffer.from(input))
     expect(collector.forFailure(failure)).toBeNull()
