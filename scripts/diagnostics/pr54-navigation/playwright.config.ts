@@ -7,7 +7,7 @@ export default defineConfig({
   outputDir: '../../test-results/pr54-ci-navigation',
   retries: 0,
   workers: 1,
-  use: { ...base.use, trace: 'on', screenshot: 'on' },
+  use: { ...base.use, trace: 'off', screenshot: 'off' },
   webServer: { ...base.webServer, reuseExistingServer: false, stdout: 'pipe', stderr: 'pipe' },
   projects: base.projects?.filter(project => project.name === 'chromium').map(project => ({
     ...project,

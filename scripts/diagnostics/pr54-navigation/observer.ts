@@ -1,12 +1,14 @@
 // Prepended to the unchanged original test file by prepare.mjs. No test body changes.
 import { test as navigationTest } from '@playwright/test'
+import { writeFile as writeNavigationEvidence } from 'node:fs/promises'
 const navigationEvents: unknown[] = []
 const navigationPending = new Map<unknown, { url: string; resourceType: string }>()
 
-navigationTest.beforeEach(async ({ page }, info) => {
+navigationTest.beforeEach(async ({ page, context }, info) => {
   navigationEvents.length = 0
   navigationPending.clear()
   if (!info.title.includes('a rejected admin roster')) return
+  await context.tracing.start({ screenshots: true, snapshots: true, sources: true })
   const record = (type: string, data: unknown) => {
     if (navigationEvents.length < 5000) navigationEvents.push({ at: Date.now(), type, data })
   }
@@ -52,9 +54,20 @@ navigationTest.beforeEach(async ({ page }, info) => {
   })
 })
 
-navigationTest.afterEach(async ({ page }, info) => {
+navigationTest.afterEach(async ({ page, context }, info) => {
   if (!info.title.includes('a rejected admin roster')) return
   navigationEvents.push({ at: Date.now(), type: 'testEnd', status: info.status,
     url: page.url(), pendingRequests: [...navigationPending.values()] })
-  await info.attach('navigation-events', { body: JSON.stringify(navigationEvents, null, 2), contentType: 'application/json' })
+  const eventsPath = info.outputPath('navigation-events.json')
+  await writeNavigationEvidence(eventsPath, JSON.stringify(navigationEvents, null, 2))
+  await info.attach('navigation-events', { path: eventsPath, contentType: 'application/json' })
+  try {
+    const screenshotPath = info.outputPath('test-finished.png')
+    await page.screenshot({ path: screenshotPath })
+    await info.attach('navigation-screenshot', { path: screenshotPath, contentType: 'image/png' })
+  } finally {
+    const tracePath = info.outputPath('navigation-trace.zip')
+    await context.tracing.stop({ path: tracePath })
+    await info.attach('navigation-trace', { path: tracePath, contentType: 'application/zip' })
+  }
 })
