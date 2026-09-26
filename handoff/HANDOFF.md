@@ -112,8 +112,12 @@ Retain C10/C02 and field failures; continue independent unrun variants using the
 existing adapters, deadlines and both genuine package tiers. No automatic fixes,
 blind retries, new PRs or rebuild loops. C13 and C28 diagnostic passes are separate
 from campaign admission; C28 active/restored rendered UI remains unproved.
-Runtime first restores the required 64GiB free-space floor through verified safe
-redundant-copy cleanup, then runs C23 and C26 and the remaining original queue.
+Runtime restored the required64GiB floor through verified recoverable redundant
+copy cleanup. Owner reports C23 AppImage PASS of8 predicates and C26 AppImage
+independent FAIL (exit127, restart audit, blocked network attempts), with positive
+cleanup. Raw readback is pending; retain failure and continue the original queue.
+Existing suite and soak adapter execution/revalidation contexts are supplied to
+the owner for all50 suite and24 soak bindings; no new campaign is invented.
 Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
 C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
 parked at their real prerequisites. Source/browser CI reuse needs exact suite and

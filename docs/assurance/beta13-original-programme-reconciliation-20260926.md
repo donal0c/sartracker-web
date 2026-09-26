@@ -10,7 +10,7 @@ All formal statuses below are NOT_RUN because no admitted campaign receipts have
 
 | Order | Contract | Original variant | Tier | Execution disposition |
 |---:|---|---|---|---|
-| 1 | C26 | duplicate-launch-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |
+| 1 | C26 | duplicate-launch-appimage | ci-appimage | RETAIN_REPORTED_FAILED_ATTEMPT |
 | 2 | C28 | routine-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |
 | 3 | C28 | routine-installed | installed-deb | WAIT_EXACT_DEBIAN_INSTALL |
 | 4 | C28 | field-scale-960k-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |
@@ -169,7 +169,7 @@ All formal statuses below are NOT_RUN because no admitted campaign receipts have
 | 157 | C13 | coordinate-surface-installed | installed-deb | WAIT_EXACT_DEBIAN_INSTALL |
 | 158 | C14 | map-surface-installed | installed-deb | WAIT_EXACT_DEBIAN_INSTALL |
 | 159 | C17 | family-contract-installed | installed-deb | WAIT_EXACT_DEBIAN_INSTALL |
-| 160 | C23 | packaged-ipc-containment-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |
+| 160 | C23 | packaged-ipc-containment-appimage | ci-appimage | RECONCILE_REPORTED_PASS |
 | 161 | C01 | startup-fault-admission-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |
 | 162 | C02 | lifecycle-recovery-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |
 | 163 | C07 | paging-960k-appimage | ci-appimage | EXECUTE_OR_RECONCILE_EXACT_EVIDENCE |

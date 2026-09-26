@@ -23,8 +23,8 @@
       ],
       "oracle": "Exact AppImage duplicate-launch rejection, one writer and one persisted mission across restart",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_OR_RECONCILE_EXACT_EVIDENCE",
-      "evidence": "No admitted campaign receipt identified."
+      "executionDisposition": "RETAIN_REPORTED_FAILED_ATTEMPT",
+      "evidence": "Ubuntu owner reports independent FAIL: firstExit127/cache cleanup error, restart audit includes mission_paused,69 blocked HTTPS request attempts. Producer PASS is insufficient. Positive cleanup; retain failure without blind retry. Raw readback pending."
     },
     {
       "order": 2,
@@ -4081,8 +4081,8 @@
       ],
       "oracle": "Real sandbox/context isolation and owning-renderer IPC admission, invalid payload and invalid sender rejection with retained raw observations",
       "formalCampaignStatus": "NOT_RUN",
-      "executionDisposition": "EXECUTE_OR_RECONCILE_EXACT_EVIDENCE",
-      "evidence": "No admitted campaign receipt identified."
+      "executionDisposition": "RECONCILE_REPORTED_PASS",
+      "evidence": "Ubuntu owner reports exact dce4 PASS of all8 independent predicates and positive cleanup; raw receipt readback by source owner pending. No campaign admission."
     },
     {
       "order": 161,
