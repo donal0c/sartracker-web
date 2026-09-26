@@ -124,6 +124,16 @@ test.describe('M17 layer tree workflows', () => {
     const layerTree = page.getByTestId('layer-tree')
     await expect(layerTree).toBeVisible()
 
+    // The expanded mission controls leave a compact workspace at 1280x720.
+    // Exercise its outer scroll with the mouse before testing inner tree scroll.
+    await page.getByTestId('layer-tree-search').hover()
+    await page.mouse.wheel(0, 220)
+    await expect.poll(() => layerTree.evaluate((element) => {
+      const tree = element.getBoundingClientRect()
+      const viewport = element.closest('[data-testid="sidebar-tab-content"]')!.getBoundingClientRect()
+      return Math.min(tree.bottom, viewport.bottom, window.innerHeight) - Math.max(tree.top, viewport.top, 0)
+    })).toBeGreaterThan(96)
+
     const before = await layerTree.evaluate((element) => {
       element.scrollTop = element.scrollHeight
       return {
@@ -142,6 +152,7 @@ test.describe('M17 layer tree workflows', () => {
       before.scrollTop - 5,
     )
     await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
+    await page.screenshot({ path: 'test-results/don187-layer-tree-after-refresh.png' })
   })
 
   test('persists tree metadata and visibility across reload within the mission harness', async ({

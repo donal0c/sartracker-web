@@ -89,3 +89,77 @@ The publicly published beta.12.11 rollback AppImage, Debian installer and `SHA25
 Update: PR52 is merged at `b1bc51a2ed5e479b8eeaaf21b759001f2a208838`, CI36192361874 passed. Its repaired PR-CI AppImage C08 diagnostic passed 959,988 exact primary rows over 1,500 pages and 1,300 chunks, independent sequence oracle and cleanup. This does not change the final-campaign NOT_RUN rows above. Original-map failure and separately bound derivative diagnostics remain distinct.
 
 Next: verify/review the staged-admission correction, create the now-authorized candidate tag/unpublished draft, obtain final release-workflow artifact provenance, arrange supported authenticated `.deb` installation, bind/rehash technical inputs, then execute applicable technical rows serially on Ubuntu. Donal clarified that controlled handover to Eamonn follows Ubuntu technical validation and final approval; C29 original-machine acceptance follows handover. No human signer is needed to start technical checks. Publication/distribution remain subject to final approval. Recheck affected/dependent rows if source changes.
+
+## Bounded Ubuntu prerequisite follow-up — 2026-09-26
+
+The clean Ubuntu preparation checkout is now at `2ff4d5742649da016a52c0e682f404d17df8c5dd`
+(tree `611d8947b1a30ec8715c7f9e7c40f266ecd22e9f`), in the existing owned directory
+`/home/donal/sartracker-beta13-final-2d4f436a`. Its pathname is historical, not source identity.
+Beta13 and beta13.1 release attempts failed before a final installer/draft existed;
+their source-CI packages are not qualification substitutes. Installation/runtime remain held.
+
+The release-path audit's H1 check found no Ubuntu `gh` CLI. Under explicit bounded setup
+authority, the official Linux amd64 GitHub CLI `2.101.0` was installed without sudo at
+`/home/donal/.local/share/gh/gh_2.101.0_linux_amd64/bin/gh`, with a user-local
+`/home/donal/.local/bin/gh` symlink. The archive SHA-256 was
+`9bca2d1c16825f109907a23307628a2f0698fbf99662b73a5cf0b020293072b8`;
+the official checksum-file SHA-256 was
+`f8bbc37fc5568a6a162d1a67b1e9c1afa9139f7b5a46dcde4a57bdaa0db33b60`.
+Both matched fresh official release metadata, and the archive also matched that checksum file.
+Node successfully resolved `gh --version` with `/home/donal/.local/bin` prepended to PATH.
+
+CLI authentication remains **FAIL**, separate from successful CLI installation:
+supported GitHub token environment/configuration was absent, and redacted
+`gh auth status` and `gh api` reads failed. The existing desktop Secret Service is
+present. A single supported OAuth device flow was subsequently authorized and
+started in a retained PTY, then canceled cleanly before any browser authorization
+at Donal's request to reassess the need. No grant, duplicate flow, credential
+transfer, insecure storage or policy change occurred. No credentials were read,
+copied or searched beyond supported integration presence.
+
+The subsequent bounded Ubuntu HTTPS probe supplied no credentials or cookies,
+followed no redirects and downloaded no package payloads. At 08:36 UTC it observed:
+
+| Official endpoint under `api.github.com/repos/donal0c/sartracker-web` | HTTP status |
+| --- | --- |
+| `/actions/runs/36225417118` | 200 |
+| `/actions/runs/36225417118/attempts/1/jobs?per_page=100` | 200 |
+| `/actions/runs/36225417118/artifacts?per_page=100` | 200; zero artifacts |
+| `/actions/runs/36224020563/artifacts?per_page=100` | 200 |
+| `/actions/artifacts/10900340922` | 200 |
+| `/actions/artifacts/10900340922/zip` | 401; requires authentication |
+| `/releases/368408426` (known beta12.10 draft) | 404 |
+| `/releases/tags/electron-v0.1.0-beta.12.11` | 200 |
+
+The reference source-CI artifact is not a final candidate; these are access checks
+only. The beta12.10 draft's existence was separately confirmed by an authorized
+Mac metadata read. Public provenance metadata does not itself require login;
+the current controller's `gh api` transport does. Archive downloads and unpublished
+draft access are genuine authentication boundaries, and C27 explicitly requires
+fresh authenticated draft reads/transfers. Response headers confirmed the public
+60-request/hour budget, with 52 remaining after eight probes. Native unauthenticated
+metadata transport would need a reviewed source change and rate-aware execution;
+no fake token, CLI wrapper or authentication bypass was used. The coordinator is
+deciding whether a new account grant is required. The closed sanitized probe is
+retained privately at `tmp/ubuntu-execution-20260926/public-github-access-probe.json`
+in the Ubuntu preparation checkout.
+
+H2 passed from Node with the existing explicit `DISPLAY=:0` and same-user Xauthority.
+Bare SSH inherits neither display nor Xauthority. Every actual controller invocation
+must explicitly supply current display authentication and the user-local CLI PATH;
+availability in a separate probe is not an admitted campaign or package launch.
+
+C27 is scheduled last and remains **unattempted** while known controls gaps would
+yield `NEEDS_HUMAN_DECISION`; such a retained attempt cannot later be erased by PASS.
+The 201 other technical variants may run when admitted. Optional risk authority,
+signed acceptance and reviewed public-key digest are frozen at compilation and
+cannot be inserted later. No waiver or repository settings change is authorized.
+Campaign compilation remains held for the coordinator's waiver/live-controls disposition.
+
+Final admission must freshly record the exact release artifact's `expires_at` and
+remaining margin for serial checks, repeated input verification and soaks. It must also
+compare `dpkg-deb -f <final-deb> Version` with the strict mapped candidate version,
+then independently verify installed package status/version, canonical launcher and
+payload. These artifact/install checks are **NOT_RUN**: no final replacement artifact
+exists yet. Donal authorized administrator installation, with secure transient
+credential handling owned by the coordinator; no further install permission is needed.

@@ -32,6 +32,7 @@ import type {
   SelectMissionParticipantsInput,
   AddMissionParticipantInput,
   Position,
+  PersistTrackingHistoryBatchInput,
   Outing,
   OutingFixSummary,
   EditOutingBoundariesInput,
@@ -79,6 +80,7 @@ import {
 } from '../mission-review/audit-events'
 import { normalizeTrackingIsoTimestamp } from '../tracking/tracking-timestamp'
 import { evaluateParticipantBackfill } from '../../../shared/participant-backfill-completeness.mjs'
+import { recordBrowserHistoryReceipts, type BrowserHistoryReceipt } from './browser-history-receipts'
 
 const MAX_SEARCH_OPERATION_ID_LENGTH = 200
 const MAX_SEARCH_OPERATION_LINK_COUNT = 200
@@ -131,6 +133,7 @@ type BrowserDrawingVersion = {
 }
 
 type BrowserHarnessState = {
+  readonly trackingHistoryReceipts?: readonly BrowserHistoryReceipt[]
   readonly missions: readonly Mission[]
   readonly devices: readonly Device[]
   readonly positions: readonly Position[]
@@ -333,6 +336,7 @@ export type BrowserHarnessStore = {
   readonly listDevices: (missionId: string) => Promise<readonly Device[]>
   readonly upsertDevice: (input: UpsertDeviceInput) => Promise<Device>
   readonly addPosition: (input: AddPositionInput) => Promise<Position>
+  readonly persistTrackingHistoryBatch: (input: PersistTrackingHistoryBatchInput) => Promise<readonly Position[]>
   readonly addPositionsBulk: (input: {
     readonly mission_id: string
     readonly positions: readonly Omit<AddPositionInput, 'mission_id'>[]
@@ -1941,6 +1945,29 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       save()
       return positions
     },
+    persistTrackingHistoryBatch: async (input) => {
+      ensureMissionMutable(input.mission_id, state.missions)
+      const receipts = recordBrowserHistoryReceipts(state.trackingHistoryReceipts ?? [], input)
+      const positions = input.positions.map((position) => createBrowserHarnessPosition({
+        ...position, mission_id: input.mission_id,
+      }))
+      let candidate = pruneTrackingPersistence({
+        ...state, positions: [...state.positions, ...positions], trackingHistoryReceipts: receipts,
+      }, MAX_PERSISTED_TRACKING_POSITIONS)
+      // Admission must fail visibly if storage fails. Commit memory only after
+      // sessionStorage succeeds; unlike general harness saves, never swallow it.
+      try {
+        window.sessionStorage.setItem(BROWSER_HARNESS_STORAGE_KEY, JSON.stringify(candidate))
+      } catch (error) {
+        if (!isStorageQuotaError(error)) throw error
+        candidate = pruneTrackingPersistence(candidate, EMERGENCY_PERSISTED_TRACKING_POSITIONS)
+        window.sessionStorage.setItem(BROWSER_HARNESS_STORAGE_KEY, JSON.stringify(candidate))
+      }
+      state = candidate
+      return positions
+    },
+    // No listTrackingHistoryCheckpoints: capped browser rows cannot substantiate
+    // a durable frontier. Runtime restart conservatively fetches history again.
     listPositions: async (missionId, deviceId) =>
       state.positions
         .filter((position) => {
@@ -4138,6 +4165,7 @@ function readHarnessState(): BrowserHarnessState {
   try {
     const parsed = JSON.parse(stored) as Partial<BrowserHarnessState>
     return {
+      trackingHistoryReceipts: Array.isArray(parsed.trackingHistoryReceipts) ? parsed.trackingHistoryReceipts : [],
       missions: Array.isArray(parsed.missions)
         ? parsed.missions.map((mission) => ({
             ...mission,

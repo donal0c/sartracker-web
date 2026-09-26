@@ -12,13 +12,28 @@ NOT_RUN/NEEDS_HUMAN_DECISION until real acceptance. C27 draft inspection follows
 the other technical checks; public-byte C00 follows actual approved publication.
 Technical `READY_FOR_APPROVAL` authorizes neither publication nor distribution.
 
-PR52 is merged at `b1bc51a2ed5e479b8eeaaf21b759001f2a208838`; CI36192361874 passed.
-Next: bounded staged-admission correction on `codex/beta13-staged-admission`,
-regressions and independent review/PR CI, authorized merge, then approved
-candidate tag/unpublished draft and one exact release-workflow Ubuntu campaign.
+PR52/53 are merged. Master `2ff4d5742649da016a52c0e682f404d17df8c5dd` passed
+source CI 36224020563, but Beta13.1 release run 36225417118 failed five full-Chromium
+cases before packaging. Next: combined bounded browser adapter/layout/test-fixture
+repair on `codex/beta13-browser-release-repair`, all five regressions plus full 225
+Chromium under release configuration, stable source checks, independent review/PR
+CI and authorized merge. The same PR includes verified Debian version mapping,
+90-day artifact retention and flaky-pass rejection under the existing safety rule.
+After merge, a full `workflow_dispatch` Linux validation on that exact source must
+pass strict responsiveness, tracking soak, 960k, archive lifecycle and launch checks
+before any next tag. See `docs/releases/beta13-browser-gate-repair.md` for the
+five-row cause/evidence ledger. Both rejected tags stay immutable. A new tag and
+unpublished draft follow verification, then one exact release-workflow Ubuntu campaign.
 All applicable C00–C28 checks, installed-deb/AppImage proof, 200 ms thresholds,
 fixed soaks, immutable inputs and failed receipts remain mandatory. C29 is not
 waived; no evidence-carryover redesign or operational claim is included.
+Donal authorized coordinator-arranged Claude independent review of these bounded
+audit fixes on their stable exact head (2026-09-26), not general delegation.
+C27 stays unattempted until controls pass or authentic risk acceptance is already
+sealed into the compiled/reviewed inputs. NEEDS_HUMAN_DECISION blocks technical
+handover and survives later passing attempts. A waiver cannot be injected later;
+live controls can be re-observed. Choose the control/acceptance path before sealing.
+The 201 other technical variants remain eligible after admission; C29 is separate.
 Publication/distribution still need Donal's final approval. Source owner updates
 canonical records; Sol remains sole Ubuntu owner. Preserve the dirty original checkout.
 

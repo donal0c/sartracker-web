@@ -1487,7 +1487,10 @@
             <strong>Hosted tracking history:</strong> browser testing mode keeps enough persisted
             breadcrumb history for reload/testing, but caps very large live imports so the browser does
             not exceed session storage quota. The live map can still draw the loaded tracker snapshot
-            during the current session.
+            during the current session. Reconnecting after a browser runtime restart fetches history
+            again from the mission's history start; a saved transport receipt is not a durable restart
+            cursor for rows that browser storage may have discarded. If session storage cannot save a
+            history request or batch, retrieval reports the failure and retries without claiming completion.
           </div>
           <div class="note">
             <strong>Desktop restart history:</strong> all operational positions remain stored in the
@@ -1503,7 +1506,7 @@
             eight requests in flight; it does not wait for the normal live-refresh interval between
             chunks. Current fixes are shown before that queue starts. While a long mission is catching up, Tracking says
             <strong>Breadcrumb history is reconciling</strong>; current fixes remain live. SAR Tracker
-            saves completed history in bounded batches and records each device's completed frontier so a
+            on desktop saves completed history in bounded batches and records each device's completed frontier so a
             restart resumes the unfinished range instead of replaying the whole prefix. For a participant
             added after mission start, that durable frontier retains the later participation boundary and
             resumes from the recorded cursor. If the coordinator later expands that participant's effective

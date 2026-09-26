@@ -174,7 +174,18 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Standard Chromium E2E
-        run: npm run test:e2e:chromium
+        run: npm run test:e2e:chromium -- --fail-on-flaky-tests
+
+      - name: Preserve Chromium release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-release-evidence-${{ steps.resolve_tag.outputs.commit }}-attempt-${{ github.run_attempt }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: warn
+          retention-days: 90
 
   bundle-linux:
     name: Bundle (linux-x86_64)
@@ -324,7 +335,7 @@ jobs:
             tmp/electron-dist/*.AppImage
             tmp/electron-dist/*.deb
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 90
 
   launch-smoke-linux:
     name: Launch smoke (Linux AppImage)

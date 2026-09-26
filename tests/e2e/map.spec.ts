@@ -345,8 +345,11 @@ test.describe('M2 map shell', () => {
         ['coordinate-target', 'coordinate-target'],
       ] as const
       for (const [registrationId, family] of warnings) {
+        // This is a presentation stress fixture, independent of real overlay
+        // recovery. Healthy overlays must not clear these test-owned warnings.
+        const warning = createMapOverlaySyncWarning(registrationId, family)
         useMapOverlayWarningStore.getState().raiseWarning(
-          createMapOverlaySyncWarning(registrationId, family),
+          { ...warning, registrationId: `layout-fixture-${registrationId}` as typeof registrationId },
         )
       }
     })
@@ -355,8 +358,8 @@ test.describe('M2 map shell', () => {
     await expect(warningRegion).toBeVisible()
     await expect(warningRegion).toHaveAttribute('aria-label', 'Active map alerts, 10 overlay warnings')
     await expect(warningRegion).toHaveAttribute('tabindex', '0')
-    await expect(warningRegion.getByTestId('map-overlay-warning-tracking')).toBeVisible()
-    await expect(warningRegion.getByTestId('map-overlay-warning-coordinate-target')).toBeVisible()
+    await expect(warningRegion.getByTestId('map-overlay-warning-layout-fixture-tracking')).toBeVisible()
+    await expect(warningRegion.getByTestId('map-overlay-warning-layout-fixture-coordinate-target')).toBeVisible()
     await expect.poll(() => warningRegion.evaluate((element) => getComputedStyle(element).overflowY))
       .toBe('auto')
 
@@ -374,7 +377,7 @@ test.describe('M2 map shell', () => {
         surfaceBottom: surface?.bottom ?? Number.NaN,
         surfaceHeight: surface?.height ?? Number.NaN,
         trackingFullyVisible: (() => {
-          const warning = element.querySelector('[data-testid="map-overlay-warning-tracking"]')
+          const warning = element.querySelector('[data-testid="map-overlay-warning-layout-fixture-tracking"]')
           if (!(warning instanceof HTMLElement)) return false
           const warningRect = warning.getBoundingClientRect()
           const regionRect = element.getBoundingClientRect()
@@ -390,7 +393,7 @@ test.describe('M2 map shell', () => {
     expect(dimensions.trackingFullyVisible).toBe(true)
     await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-top.png' })
 
-    const trackingCard = warningRegion.getByTestId('map-overlay-warning-tracking')
+    const trackingCard = warningRegion.getByTestId('map-overlay-warning-layout-fixture-tracking')
     const trackingCardBounds = await trackingCard.boundingBox()
     expect(trackingCardBounds).not.toBeNull()
     if (trackingCardBounds !== null) {
@@ -417,7 +420,7 @@ test.describe('M2 map shell', () => {
       (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
     )).toBe(true)
     const finalWarningFullyVisible = await warningRegion.evaluate((element) => {
-      const warning = element.querySelector('[data-testid="map-overlay-warning-coordinate-target"]')
+      const warning = element.querySelector('[data-testid="map-overlay-warning-layout-fixture-coordinate-target"]')
       if (!(warning instanceof HTMLElement)) return false
       const warningRect = warning.getBoundingClientRect()
       const regionRect = element.getBoundingClientRect()

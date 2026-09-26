@@ -464,6 +464,7 @@ async function routeTraccarSuccess(
 }
 
 async function routeControllableTraccar(page: import('@playwright/test').Page) {
+  const currentFixTime = new Date().toISOString()
   let available = true
   let successfulSessionRequestCount = 0
   const fulfill = async (
@@ -488,7 +489,7 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
         id: 1,
         name: 'S-Tab',
         status: 'online',
-        lastUpdate: '2026-07-12T09:51:09.000Z',
+        lastUpdate: currentFixTime,
       },
     ])
   })
@@ -499,7 +500,7 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
         deviceId: 1,
         latitude: 51.99917,
         longitude: -9.74406,
-        fixTime: '2026-07-12T09:51:09.000Z',
+        fixTime: currentFixTime,
         valid: true,
         attributes: { batteryLevel: 82 },
       },

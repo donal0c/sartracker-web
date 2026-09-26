@@ -122,7 +122,7 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
           </>
         )}
         {activeTab === 'layers' && (
-          <section className="flex min-h-fit flex-1 flex-col" data-testid={focusModeActive ? 'focus-mode-layer-controls' : undefined}>
+          <section className="flex min-h-0 flex-1 flex-col" data-testid={focusModeActive ? 'focus-mode-layer-controls' : undefined}>
             <LayerFilterPanel onCollapseWorkspace={onCollapseWorkspace} collapseDisabledReason={collapseDisabledReason} />
           </section>
         )}

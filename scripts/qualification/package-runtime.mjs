@@ -4,6 +4,7 @@ import { chmod, copyFile, mkdir, open, readFile, readdir, realpath, symlink } fr
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { appImageSquashfsOffset } from '../../build/appimage-offset.js'
+import { debianVersionOf } from './debian-candidate-version.mjs'
 import {
   CANONICAL_INSTALLED_EXECUTABLE_PATH,
   hashCandidateFile,
@@ -74,8 +75,8 @@ export async function preparePackageRuntime({ proofMode, artifact, version, work
     throw new Error('Installed proof requires an explicit real package executable path.')
   }
   const installation = await inspectInstalledCandidate({ debPath: input.path, debSha256: input.sha256,
-    extractionDirectory: path.join(workDirectory, 'inspected-deb') })
-  if (installation.version !== version) throw new Error('Installed Debian version differs from the candidate version.')
+    extractionDirectory: path.join(workDirectory, 'inspected-deb'), candidateVersion: version })
+  if (installation.version !== debianVersionOf(version)) throw new Error('Installed Debian version differs from the candidate version.')
   validateCanonicalInstalledExecutable(installation, installedExecutablePath)
   const executable = installation.files.find((entry) => `/${entry.path}` === installedExecutablePath && entry.sha256)
   const asarPath = path.join(path.dirname(installedExecutablePath), 'resources/app.asar')
