@@ -12,30 +12,26 @@ NOT_RUN/NEEDS_HUMAN_DECISION until real acceptance. C27 draft inspection follows
 the other technical checks; public-byte C00 follows actual approved publication.
 Technical `READY_FOR_APPROVAL` authorizes neither publication nor distribution.
 
-PR52/53 are merged. Master `2ff4d5742649da016a52c0e682f404d17df8c5dd` passed
-source CI 36224020563, but Beta13.1 release run 36225417118 failed five full-Chromium
-cases before packaging. Next: combined bounded browser adapter/layout/test-fixture
-repair on `codex/beta13-browser-release-repair`, all five regressions plus full 225
-Chromium under release configuration, stable source checks, independent review/PR
-CI and authorized merge. The same PR includes verified Debian version mapping,
-90-day artifact retention and flaky-pass rejection under the existing safety rule.
-PR54 first-head Linux run 36230930233 rejected two flaky passes while all original
-five regressions passed. Bounded red/green follow-through corrects immediate dialog
-focus and the admin-roster test's first-call failure race; both native delta reviews
-accepted, 83 affected unit and 31 browser tests passed. Stable full checks and new
-exact-head CI/review must finish; the prior head's acceptance does not cover this delta.
-Head `9b034092` was then rejected by Linux run 36233554495 (224 passes, one roster
-retry-pass after a lost final evaluation result; original cause suspected, not proven).
-Head `69e9badc` pins the Playwright test toolchain to 1.63.0 and adds a required
-isolated browser-driver gate in source CI, release CI and local `beta:verify`. The
-pin also changes the packaged-Electron `_electron` driver, so exact-head Packaged
-Linux checks and the merged-source dispatch must pass on it before any tag.
-After merge, a full `workflow_dispatch` Linux validation on that exact source must
-pass strict responsiveness, tracking soak, 960k, archive lifecycle and launch checks
-before any next tag. See `docs/releases/beta13-browser-gate-repair.md` for the
-five-row cause/evidence ledger. Both rejected tags stay immutable. A new tag and
-unpublished draft follow verification, then one exact release-workflow Ubuntu campaign.
-All applicable C00–C28 checks, installed-deb/AppImage proof, 200 ms thresholds,
+PR52/53/54/55 are merged. PR54's browser/driver repairs and the Train D
+sanitized-stack correction passed full merged093 Linux dispatch36255209914.
+PR55 merged at6a29a57a after exact5f CI36265017480, native ownership controls and
+matching AppImage lifecycle proof. The original201ms archive failure and actual
+SIGTRAP during forced harness teardown remain retained and distinct.
+Next: a testing build with the reviewed C10 failure-attribution diagnostic and
+field-selector repair. Donal authorized the grouped direct-master push to
+supersede uninstrumented merge run36271106551, preserving its terminal record.
+No settings/gate changes or repeated full suites for documentation-only conflicts.
+Sol alone runs exact-build C13 coordinates, the existing routine composite for
+synthetic tracking/persistence/restart/small archive-restore, then decisive C10
+960k attribution. No automatic2m expansion or new field-hour retry.
+The corrected field selector passed preflight, but the fixed3.7GB workload then
+timed out after finish/backup; cause unknown, no archive/restore qualification.
+C02's reviewed native-close harness encountered a Playwright dialog race; its
+partial followup remains preserved outside the build, requiring completion and
+focused review before renewed shutdown proof. No hidden PASS or scope waiver.
+See the Ubuntu report and handoff for identities, retained failures and next
+actions. No final candidate is frozen. Both rejected tags stay immutable.
+All applicable C00–C28 checks, installed-deb/AppImage proof,200ms thresholds,
 fixed soaks, immutable inputs and failed receipts remain mandatory. C29 is not
 waived; no evidence-carryover redesign or operational claim is included.
 Donal authorized coordinator-arranged Claude independent review of these bounded

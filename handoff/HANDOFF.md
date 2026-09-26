@@ -1,179 +1,108 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-26 (evening). Release remains **HOLD**; no tag, draft or publication.
-PR54 merged at `4e9c53710d8930094afe80861c91e361ced354f8` (cause/verification ledger:
-`docs/releases/beta13-browser-gate-repair.md`). Master
-`09343ee94b8d4f4347da416fdb6596a83e08624c` (harness-only Train D allowlist fix) passed
-the full Linux `workflow_dispatch` with `run_repair_train_d_smoke=true`: run
-**36255209914**, every lane green and receipts read (strict <200 ms, driver contract,
-Chromium 225/225 flaky-rejecting, 960k, Train D AUD-08/AUD-09/restart, soak, legacy
-recovery, archive lifecycle, AppImage launch). Beta13 and Beta13.1 tags stay immutable.
+Updated 2026-09-26. Release remains **HOLD**; no final candidate is qualified.
+Donal merged PR55 at `6a29a57a42395d8f239b0862a7ce626e67c73189`.
+Its reviewed head `5f546b45` passed Linux CI **36265017480**, native ownership
+controls and one matching AppImage lifecycle diagnostic. Actual main-process
+interruption and descendant cleanup are now verified. The second main exited
+SIGTRAP during forced harness teardown: retained and unexplained, not graceful
+window-close evidence. Independent source review found no ownership blocker.
 
-**Active repair:** the one Ubuntu AppImage archive diagnostic on those bytes
-exposed launcher-only SIGKILL and false inner cleanup while Electron survived.
-Astra owns `codex/archive-process-ownership` in the reused managed
-`pr54-navigation-diagnostic` checkout. Local wrapper/child/grandchild red/green
-and affected suites pass (212 tests, one Linux-only skip), lint/build pass, and
-native source review has no remaining blocker after two fixes. Full serial
-correctness passed 585 files / 6,053 tests / 27 skips (583.27 s); final affected
-tests also pass. Linux real-process/packaged proof is pending. Keep this
-bounded harness PR separate from the new C10 paging failure; no merge/tag/publication.
-Sol's one installed-deb archive diagnostic passed at 109/86/138/173 ms; the
-AppImage failure and original 201 ms CI breach remain. Details: Ubuntu report.
+## Active source and testing build
 
-Two dispatch failures are **retained**; the later green run does not resolve them:
-- 36249965817 @ `4e9c5371`: Train D close rejected sanitized finish-fence stack frames
-  (the `/tmp/` path redaction removed file:line tails). Product behaviour was correct;
-  `09343ee9` binds sanitized frames to the admitted fence error, sanitizer unchanged.
-- 36252807378 @ `09343ee9`: archive lifecycle `current_fix_continuity_gate_breached`,
-  verify phase **201 ms** against the unchanged 200 ms gate. Cause unproven.
+Donal resumed work after the stop and authorized the normal grouped direct-master
+push to supersede merged-source run **36271106551** for instrumented C10 bytes.
+Preserve that run and record its actual terminal state; do not change concurrency
+settings or gates. No additional PR ceremony or documentation-only full rebuilds.
 
-**Open risk:** archive current-fix margin has thinned. Max gaps (create/verify/restore/
-cleanup, ms): 09-17 green `58ea2900` 103/104/128/157; failed run 132/201/–/–; green run
-127/158/189/151. The renderer poll (50 ms cadence) lagged ~100 ms while main stayed
-≤83 ms. Suspects since 09-17: DON-267 scheduling (`776985d2`, `2b59cf77`) and the PR54
-Playwright 1.63 `_electron`/CDP instrumentation. Needs a bounded DON-254 performance
-follow-up; never relax the gate. Ubuntu must prioritise archive verify/restore timing.
+- C10 diagnostic `d62f85f5`, integrated as `8bb4bc62`: opt-in, failure-only
+  generation/eligible-position/eligible-track expected-versus-observed counts.
+  Public IPC error, paging rules, workload and deadlines remain unchanged.
+  The original 093 live-middle failure at offset182000→183000 remains unexplained.
+  Fresh packaged diagnostic evidence is required; source tests are not that proof.
+- Field selector `16768356`, integrated as `3a0769a5`: explicitly admits the
+  original generator-v2/schema13 ≥3.7GB fixture and all-position archive custody.
+  Its formerly failing preflight passed on the unchanged 093 app. That one run
+  then exhausted the unchanged 60-minute limit after finish/backup, with no
+  ciphertext or producer receipt. Cleanup passed; failed profile/DBs retained.
+  Continued watchdog summaries and CPU do not identify the stalled operation.
+  No blind retry or substitution with the different v6 paging fixture.
+- C02: original app.quit attempt failed the independent unclean-recovery oracle.
+  Native-window correction `8b71fb54` then failed in Playwright's beforeunload
+  default auto-accept with “No dialog is showing”; no lifecycle receipt exists.
+  Checkout1608 retains two dirty helper/test files with a partial observer fix.
+  No Claude dispatch occurred. Preserve that patch; it is not integrated or
+  accepted runtime proof, and does not delay the C10 application build.
 
-Run 36255209914 installers are **validation-workflow** bytes
-(`sartracker-electron-validation_0.1.0-beta.13.2_*`), not release candidates: AppImage
-`6a7ac24f…99804e`, `.deb` `96f00390…bb40c5`, shared `app.asar` `6f350c02…83d2`.
-The private-map guard patterns found nothing in both installers' inventories or the
-`.deb` payload/asar. Release-workflow installers do not exist until a tag's release
-run passes. Release and validation workflows currently use the same installer
-filename pattern; bind by workflow run and hashes, never the filename.
-Run 36255209914 tested `09343ee9`; `e1ac888f` changes only this handoff and the
-external Markdown release note, so its unchanged executable inputs reuse that
-evidence. It was not separately dispatch-tested. Documentation-only descendants
-do not require a repeated dispatch; executable changes need affected verification.
-Ordinary push CI omits strict qualification lanes.
-Full identities: `docs/releases/sartracker-electron-0.1.0-beta.13.2.md`.
-No final candidate is frozen or qualified. Donal authorized candidate tag and
-unpublished draft after verified source; publication/distribution need final approval.
+Astra owns source/build integration in managed `archive-fixture-contract`;
+original C02 work remains in `1608`. Sol alone owns serial Ubuntu execution.
+CoS coordinates. Do not alter the dirty original checkout or coordinator checkout.
+No new workload should use the superseded uninstrumented build.
 
-## Authority and active work
+## Verification snapshot
 
-Donal authorized release-first stabilization and the existing `bcp17-final`
-C00–C29 campaign. Small contained verified fixes may go directly to master;
-the current archive process-ownership repair requires a PR plus independent
-exact-head review. Do not merge without Donal's authority.
-No new features, full mapping, broad WAR or database redesign. Donal explicitly
-authorized the bounded release-path audit fixes and coordinator-arranged Claude
-independent review of their stable exact head on 2026-09-26; no general Claude/Fable delegation.
-DON-254 comment `75075194-78a0-4782-be1d-73f86e794e50` records the clarified sequence;
-its historical Done state is not whole-candidate qualification. DON-255 is downstream.
+C10 stable source cycle passed 587 files / 6,077 tests / 26 skips (589.26s),
+lint, TypeScript/build and bundle budgets. Eight affected suites passed76 tests;
+independent native review accepted. Field source passed49 focused tests and
+review; preflight additionally passed packaged diagnosis. Integration preserves
+those executable blobs and resolves documentation-only conflicts. Combined
+verification passed7 affected suites/95 tests, targeted lint and diff checks.
+These diagnostics/harness changes do not alter operator UI.
 
-Donal clarified the sequence through CoS on 2026-09-25: complete Ubuntu technical
-validation first, then controlled handover to Eamonn after approval, then C29
-acceptance on the original team machine before any operational-suitability claim.
-Do not require Eamonn's signer to start technical testing. C29 remains mandatory
-and pending; technical readiness is only `READY_FOR_APPROVAL`, never qualification
-or publication/distribution authority. All applicable C00–C28 variants, package
-tiers, exact provenance, 200 ms thresholds, fixed soaks and retained failures stay.
+PR55 patched controls:13 Python tests; native Linux ownership suite6 pass,
+3 Mac-only skips. Matching5f AppImage lifecycle: current-fix maxima104/110/167/174ms,
+strict200ms gate unchanged; real-main SIGKILL, residual removal and zero descendants
+verified. Full identities and the unexplained forced-teardown SIGTRAP are retained
+in the Ubuntu report. Ordinary push CI is not strict timing qualification.
 
-- Source/test/CI and canonical records: Astra `01a0d9f5-7727-7060-ab59-4549f3a513c8`, managed worktree `pr54-navigation-diagnostic` (original chat `1608`).
-- Sole Ubuntu installation/runtime/performance owner: Sol `01a0d9f5-771a-7993-9e10-4ae1cbb1e3bb`, worktree `3226`.
-- Preparation audit is finished; use its report, not its older handoff snapshot.
-- Coordinator: `01a023b0-f891-75f2-b0f3-7cb8b6b17abe`.
+Historical merged093 full Linux dispatch **36255209914** passed every lane,
+including strict responsiveness, Chromium225/225 flaky-rejecting,960k, Train D,
+soak, legacy recovery, archive lifecycle and AppImage launch.
+Documentation-only descendants reuse unchanged executable evidence, not a new
+exact-head runtime claim. Retain failures **36249965817** (sanitized Train D stack,
+fixed by093) and **36252807378** (archive verify201ms; cause unproven).
+Archive current-fix margin remains a DON-254 concern; never relax200ms.
 
-Do not alter the dirty original checkout or coordinator's release-prep checkout.
-Serialize Ubuntu workloads through Sol.
+## Authority and qualification boundaries
 
-## Verified baseline and diagnosed deltas
+Donal authorized bounded reviewed fixes directly to master and PR55 merge.
+No tag, publication/distribution, settings change, waiver or hidden gate bypass
+is part of this integration. DON-254's historical Done state does not qualify
+the candidate; DON-255 is downstream. DON-179 remains open.
 
-Earlier C12 ownership and PR52 fixture/provenance diagnostics passed; retain
-failed run `36174038700` and both old C08 failures. Exact identities, raw evidence
-and proof limits are in the Ubuntu report. Sol admitted v6 960k/2m/field fixtures
-(field: 5.32 GB, 3,999,988 primary + 12 legacy fixes, 100 devices/12 outings).
-Existing backfill regressions, synthetic map faults and independent oracles remain.
-None of this is final tagged-candidate qualification.
+Sequence: Ubuntu technical validation, approval for controlled handover to Eamonn,
+then C29 acceptance on the original team machine. C29 signer is not required to
+start technical testing; C29 itself remains mandatory and pending.
+Technical READY_FOR_APPROVAL authorizes neither publication nor distribution.
+CoS owns resolving minimal same-campaign authority/profile prebinding before
+sealing. Optional acceptance/key inputs cannot be added after compilation.
+C27 remains unattempted until controls pass or authentic acceptance is already
+sealed into the original reviewed inputs; NEEDS_HUMAN_DECISION blocks handover.
+Live controls may be re-observed. No control/settings/signature change is authorized.
+Public-byte C00 follows actual approved publication. No cross-campaign promotion.
 
-Retain original private-map rejection: declared zoom8–16 versus actual9–16.
-Only the separately hashed metadata-only derivative is authorized, with unchanged
-tile bytes and private provenance; never certify the original.
-That derivative (`16e55b8e…ec8b233`) passed the full old-installer diagnostic:
-31,729 independent PNG decodes, exact registration/serve/render, 15/15 required
-local tiles and Field ready, no external map requests, clean process/profile exit.
-Final admission must explicitly bind the derivative in a new immutable campaign
-with owner-private lineage; C29 acceptance remains separate.
+Private map/config, schema12 storage baseline and beta12.11 rollback installers
+are prepared; do not request again. Original private map zoom8–16 is rejected
+(actual9–16); only the separately hashed minZoom9 metadata derivative is authorized.
+Its earlier complete diagnostic passed, but final admission must bind derivative
+and private lineage in immutable inputs. No private map bytes/locations/screenshots
+enter repository evidence. C05 consent permits only existing configured account
+and selected tracker GET-only, executed by Sol; live proof remains pending.
+C29 human/original-machine acceptance cannot be inferred from Ubuntu evidence.
+Retain full applicable C00–C29 variants, package tiers, fixed soaks and failed receipts.
 
-## Verification and next actions
+## Next actions
 
-PR52/53 source, browser, review and CI evidence is recorded in those PRs and
-DON-254; none is final tagged-candidate qualification. The private minZoom9 map
-scope remains bound; detail-only minZoom>12 remains fail-closed and out of scope.
-
-Baseline merged-source Linux dispatch is complete (above). Next: verify and review
-the bounded ownership repair, then Sol's one exact-package AppImage diagnostic.
-Tag decisions retain the unexplained 201 ms failure and separate C10 investigation.
-Any later candidate uses a new write-once tag, then release
-CI. The release workflow automatically creates the unpublished draft; inspect it
-after the run and bind its exact release-workflow installers and
-all technical inputs to one immutable campaign, and execute applicable technical
-rows serially. The other 201 technical variants may run after admission. C27 must
-remain unattempted until repository-control prerequisites pass or an authentic
-acceptance was sealed into the original inputs: `NEEDS_HUMAN_DECISION` makes
-technical handover NOT_READY, and a later PASS cannot erase that retained attempt.
-Optional acceptance/key inputs cannot be added after compilation; live control
-fixes can be re-observed without changing sealed inputs. Choose that path before
-sealing; no control/settings/signature change is authorized. Public-byte C00
-only follows actual approved publication. Eamonn's C29 acceptance follows approved
-handover and cannot be inferred from Ubuntu evidence. No cross-campaign promotion
-or late mutation of sealed inputs is introduced.
-
-Prepared inputs now include private offline map, schema-12 storage baseline,
-private live config/selector and verified public beta12.11 rollback installers.
-Do not request these files again. Donal explicitly confirmed C05 reuse of the
-existing configured Traccar account and selected tracker on 2026-09-25, strictly
-GET-only and executed by Sol after preflight/candidate binding (DON-254 comment
-`af5f3aa6-5cd3-40c0-8947-4c327d3a5a3e`). No writes or expanded targets; keep
-credentials/target values private. Consent is cleared; live proof remains pending.
-C29 named original-machine/human acceptance remains required.
-Same-campaign C29 continuity requires the reviewed public authority, authorization
-and profile identities sealed before compilation; a keyless technical campaign
-cannot later add them while retaining its technical receipts. This prepares
-authority only: training, handover approval and the human signature still occur
-later. CoS is resolving the minimal prebinding inputs; do not freeze a tag or
-campaign until the reviewed-plan implications are settled. No lifecycle redesign
-or new acceptance prerequisite for technical execution is authorized.
-Donal authorized final Debian administrator installation; coordinator owns secure
-transient authentication. Ubuntu CLI/display probes passed, but GitHub OAuth was
-canceled unapproved. Public metadata works unauthenticated; artifact/draft access
-needs supported authentication. The Ubuntu report records exact boundaries.
-Currently installed beta12.11 is not substitute proof. Recheck the separate
-32 MiB ENOSPC volume before use; never alter authentication.
-
-Campaign definitions/runtime paths/raw logs stay in controlled private custody.
-Only closed sanitized map component evidence and its candidate-binding summary
-are shareable; no map bytes, locations or screenshots enter repository evidence.
-Full C00–C29 runtime/scale/soak/custody obligations remain. Live mission-store
-process isolation is post-Beta13; `app.whenReady()` remains outside the startup
-watchdog. DON-179 private retention/upload work is still open.
-
-## Contained diagnostic follow-up — 2026-09-26
-
-C10's ordinary replay continuation failure remains unexplained. Its bounded,
-default-off diagnostic now reports only the failed guard and expected/observed
-safe integers; public errors, paging, retries and thresholds are unchanged.
-Independent native source review accepted. Verification: 76 focused tests;
-full correctness 587 files / 6077 passed / 26 skipped; full lint and build pass.
-New packaged bytes and Sol's one bounded diagnostic are still needed.
-
-Sol's newer installed-Debian diagnostics and retained failures are in the Ubuntu
-report: C08 960k/2m, C13/C23/C16/C17 passed their independent diagnostic checks;
-C10 failed; field archive rejected its fixture before launch; C02's independently
-rejected app-quit recovery remains unexplained and did not exercise native window
-close. Keep these separate from PR55 process ownership and the original 201 ms
-failure. No campaign, timing qualification or release claim follows.
-DON-254 comment `9b0c7117-ef51-4c88-8c35-5abeb51d2976` records the source proof.
-Field archive fixture repair: the composite producer now validates its original
-legacy v2/schema13 `field` manifest, byte/hash custody and unique active mission,
-then counts all positions including NULL provenance. C07 paging and fixture
-generation are unchanged. Manifest sidecar digest and complete inventory are
-bound in the receipt. Independent review accepted; 49 focused selector, receipt
-and generator tests plus targeted lint passed. Packaged field retry remains pending.
+Push the verified grouped diagnostic source and hand Sol its exact CI installer
+identities for the bounded C10 attribution run. Keep C02 correction and field
+stage diagnosis separate; no blind reruns. Inspect terminal CI results and the
+affected packaged evidence before further candidate decisions.
+Use validation-workflow hashes, not installer names, to identify testing builds:
+release and validation currently share filenames. Release-workflow bytes require
+their own tag-driven successful run and unpublished draft; no final tag is frozen.
 
 Evidence and history: [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
 [active workplan](../docs/two-track-execution-workplan.md),
-[testing readiness](../docs/assurance/beta13-testing-readiness.md),
+[testing cadence](../docs/testing-and-review-cadence.md),
+[PR54 repair ledger](../docs/releases/beta13-browser-gate-repair.md),
 [pre-repair history](archive/2026-09-25-pre-c12-repair.md).

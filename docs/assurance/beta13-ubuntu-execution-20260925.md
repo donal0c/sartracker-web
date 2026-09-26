@@ -506,3 +506,186 @@ The exact retained 117,289,870-byte application archive remains remote with its
 already-bound SHA-256. Originals remain in the isolated Ubuntu checkout's
 matching directory. Runtime is available for reviewed process-ownership fix
 proof; no further heavy diagnostic was selected.
+
+## PR55 patched native process-ownership proof — 2026-09-26
+
+Astra independently accepted patched head
+`5f546b454db6ebc9eec9dfa079c360960a3c661a`, tree
+`9638ef337c4b61a2aadce8f56ff749bd4028fb0e`, for bounded native proof.
+The supplied Git bundle SHA-256
+`c54b82c5dbb21c163f618c3205d9c350f2bf683546e266ffbe83640e0ae4966b`
+matched on Mac and Ubuntu. Its prerequisite is the existing exact `09343ee9`
+source; import produced an isolated detached checkout at
+`/home/donal/sartracker-pr55-ownership-5f546b45`. Package manifest/lock were
+unchanged, so existing 093 dependency bytes were reused without installation.
+The installed 093 Debian product remained unchanged.
+
+Both supplied commands ran once under the existing independent Linux subreaper:
+
+- `python3 -B tests/unit/archive-launch-supervisor-regression.py`: 13 passed.
+- `npx vitest run tests/unit/archive-launch-ownership.test.ts`: six passed,
+  three Mac-only tests skipped; total 1.28 seconds.
+
+The real Linux fixtures asserted wrapped-child/grandchild cleanup while an
+unrelated sentinel remained alive, actual direct-main SIGKILL status, partial
+launch cleanup and unrelated-main rejection. Both outer commands exited 0,
+without timeout/error; positive cleanup and zero-descendant predicates passed.
+External process inspection found no fixture runtimes and source stayed clean.
+Seven raw invocation/process/log/closure files were mirrored locally and
+independently hash/size verified in `tmp/pr55-native-diagnostic-20260926/`.
+This proves the patched native fixture slice, not a new packaged executable.
+
+The unchanged archive harness uses the same `--expected-head` for clean source
+and visible packaged version. A mixed 5f harness/093 AppImage invocation would
+be rejected and was not attempted. Astra supplied the already-built matching
+5f CI installer from run `36265017480` for the separately authorized single
+4,096-position AppImage lifecycle diagnostic below. No identity guard was overridden.
+
+## Matching PR55 AppImage lifecycle diagnostic — normal exit unresolved
+
+The matching CI validation AppImage from run `36265017480`, installer artifact
+`10913855885`, is 157,874,024 bytes, SHA-256
+`18fbcb60882fb64acb719c665631c1300a572cc36cf45a18f7b3632e2592c605`.
+CI evidence artifact `10913965843` binds the exact 5f head/9638ef tree, clean
+pre-build source, and only the expected generated-version change after build.
+The application archive SHA-256 is
+`72197fd9e47fa276490bfc33e92259e8ada68eafcad334a9f991b78348b43d1c`;
+Electron executable SHA-256 remains
+`6344ae1d9044fedc54779e8bacaddc032fdcc0f55e146fc3623756eafa0bbaf8`.
+Installer and CI records were independently verified on Mac and Ubuntu. The
+existing runtime helper prepared a byte-identical AppImage launcher and inspected
+resources sidecar; extraction was inspection, not substituted launch evidence.
+The installed 093 Debian package was not replaced.
+
+The single authorized attempt used source and visible package head 5f, the
+unchanged CI flags/software-rendering environment, 4,096 positions, 101 outing
+choices, 202 replay objects, 50 ms compressed poll cadence and strict 200 ms
+gate. It ran from 19:19:19.818Z to 19:20:02.529Z, duration 42,711 ms. Existing
+lifecycle/timing oracle returned PASS, with no failure reasons:
+
+| Phase | Current-fix maximum ms | Main watchdog maximum ms | Renderer frame maximum ms |
+|---|---:|---:|---:|
+| Create | 104 | 64.276 | 46.500 |
+| Verify | 110 | 56.760 | 61.600 |
+| Restore | 167 | 85.486 | 54.500 |
+| Cleanup | 174 | 103.034 | 30.700 |
+
+Interrupted decrypt now bound and killed actual Electron PID 58793 with retained
+`SIGKILL` status, distinct from launcher PID 58792. Ownership cleanup passed.
+Restart PID 59042, launcher 59041, removed both retained plaintext entries.
+Final cleanup archived 5,516 rows with zero breadcrumbs remaining; immutable
+review counts/content matched before and after cleanup, privacy scan found zero
+exact-secret matches, and final plaintext residue count was zero. Source and
+rendered build identity matched the exact head.
+
+**The normal terminal exit is unresolved.** The separately retained ownership
+receipt records the second main process exiting with `code: null`,
+`signal: SIGTRAP`, `interrupted: false`, despite `cleanupVerified: true`.
+That is not a clean exit. The lifecycle oracle still passed, and the outer
+producer exited 0 with empty stderr, but neither fact explains the SIGTRAP.
+The unexpected terminal status was immediately escalated to Astra/CoS before
+merge judgment. No retry, threshold relaxation, silent identity override or
+release qualification claim followed. The original 093 AppImage failure and
+original CI 201 ms evidence remain retained.
+
+Outer positive subreaper cleanup and zero descendants passed; independent
+process inspection found no workload, source remained clean, and final disk
+headroom was 87,207,034,880 bytes. The owned lifecycle evidence directory has
+only the closed lifecycle report and ownership JSON; no retained crash/exit
+logs there explain the status. Eleven small raw/CI/input/invocation/runtime/
+process/ownership/lifecycle/closure files were mirrored locally and independently
+hash/size verified under `tmp/pr55-appimage-diagnostic-20260926/`. Original
+installer, launcher and inspected payload remain remote and were rehashed at
+closure. Runtime is idle; normal-exit triage is outstanding.
+
+### Corrected C02 window-close diagnostic — producer error retained
+
+One reviewed source `8b71fb5493a28caed2e8bb0bd17e7efc395ea34a`
+(tree `28d0a8132374cef2ff61d18b3478946f2ea65ad8`) window-close attempt
+used the unchanged installed 093 Debian executable/ASAR identities. The existing
+C02 interface binds harness source and application bytes separately; no identity
+guard was overridden. The original app.quit/unclean-recovery failure remains
+separate and retained.
+
+The producer exited 1 with an unhandled Playwright `ProtocolError`:
+`Page.handleJavaScriptDialog: No dialog is showing`. It wrote no lifecycle
+receipt, so neither graceful exit, shutdown-marker state, recovery behavior nor
+the independent lifecycle oracle has an accepted result. The failed profile is
+retained remotely; no retry or reload followed. This is an observed automation
+failure, not proof of a product shutdown defect or a passing corrected close.
+
+Outer process custody reported positive cleanup and zero descendants; independent
+process inspection confirmed no owned survivors and clean source. Four small
+invocation/process/log/external-closure files were mirrored and hash/size verified
+under `tmp/c02-window-close-diagnostic-20260926/`, with a separate identity manifest.
+The external closure includes existence-only checks for two named files after
+forced cleanup; these are not the producer's shutdown-marker receipt and carry
+no lifecycle conclusion. Astra/CoS received the primary failure immediately.
+
+### Reviewed field-selector diagnostic — fixed deadline exhausted
+
+One causally justified attempt used reviewed selector source
+`16768356c1b75b8e9fa38fdaf4d5934676a90a72`, tree
+`0722153864561c22102e43238993560900d4351b`, bundle SHA256
+`16bb4eb369fcd05125b8aa1b6a63463c18950f52779a9211b52875b356febda8`.
+The isolated checkout was clean, dependencies unchanged, and the producer's
+existing source/app identity separation was inspected. Installed 093 executable
+and ASAR hashes remained unchanged. The original field generator, fixed
+`field-archive-37gb` variant, independent table oracles and 3,600,000 ms deadline
+were retained. Initial headroom was 86,375,186,432 bytes. The earlier fixture
+rejection remains retained; no replacement paging fixture was substituted.
+
+The selector passed the earlier preflight boundary and the packaged application
+launched. A prearchive snapshot was retained, but no ciphertext was observed
+during bounded monitoring. At the original 60-minute deadline, owned-process
+custody terminated the producer with `SIGKILL`, reporting `timedOut: true` and
+`Owned process exceeded the 3600000-ms timeout.` Outer controller exited 1;
+stdout/stderr were empty. No closed producer receipt exists, so no archive,
+restore or all-table preservation result is accepted. Sustained main-process CPU
+was observed; the actual stalled operation and cause were not established.
+
+Donal's stop instruction arrived after this attempt began. No further workload
+or retry was started; the existing bounded operation was allowed to reach its
+terminal deadline and owned cleanup. Positive cleanup and zero descendants
+passed, with independent process inspection confirming no owned survivors and
+clean source. Both installed payload hashes were rechecked unchanged.
+
+The failed profile and databases remain remote. Source and private oracle copy
+are each 3,718,189,056 bytes with SHA256
+`bbb7790172e377ef749013ab366f163a6268e3ca2e3fdacbf542a2b606c5e1f7`,
+identical to the first attempt's fixed fixture. The prearchive snapshot is
+3,718,193,152 bytes with SHA256
+`913327a08dbc0d7ee820064ce1f99a14c8dd2005ad621739074b3d9ee59f734f`.
+Final headroom was 67,760,926,720 bytes. Five small raw invocation/process/log/
+manifest/closure files were mirrored and hash/size verified under
+`tmp/field-selector-diagnostic-20260926/`, with a separate identity manifest.
+This is a retained diagnostic timeout, not qualification. Runtime is idle;
+further investigation requires renewed direction.
+
+After renewed authorization, bounded read-only triage confirmed the retained
+prearchive mission row is `finished` and its archive registry is empty. The
+retained runtime log records backup completion at `2026-09-26T19:40:06.993Z`
+after 107,193 ms, with 114 main-event-loop summaries continuing through
+`20:35:46.806Z`. The maximum recorded delay was 895 ms at `19:40:50.286Z`,
+with later delays also over 200 ms. These overruns are retained; they are not
+attributed to an archive phase by this evidence. Continuing summaries rule out
+a complete main-event-loop freeze, while prearchive completion alone cannot
+distinguish subsequent producer inspection from product issuance/finalization
+awaits. No stage checkpoint or archive event in the retained records resolves
+that boundary. The 24,033-byte runtime log was mirrored with verified SHA256
+`b81f460aa8975c14a2b99c68e0c583da7a7994c0623d05801ab52c93adeecca4`.
+No heavy runtime, live-profile mutation or repeat followed this triage.
+
+### Integration assessment after PR55 merge
+
+Donal merged reviewed head5f at6a29a57a; exact-head CI36265017480 passed.
+Source review confirmed the retained SIGTRAP is actual main-process status during
+the harness's forced teardown, not a graceful-window-close assertion. It remains
+unexplained and separate from C02; ownership cleanup proof is accepted within scope.
+The reviewed C10 diagnostic and field-selector changes are now integrated for a
+testing build. Field preflight is repaired, but its later60-minute timeout is not.
+Read-only retained evidence shows mission finish and backup completion followed
+by continued watchdog summaries; maximum observed delay895ms is retained, without
+per-archive-stage attribution. No fresh field workload or blind retry is authorized.
+The C02 partial observer patch remains outside this integration. No release or
+whole-candidate qualification follows these source and diagnostic results.
