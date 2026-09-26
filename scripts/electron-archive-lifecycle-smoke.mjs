@@ -4,7 +4,7 @@
 // DON-252, DON-253). Every application operation crosses the public sandboxed
 // preload bridge; the harness never opens the mission database directly.
 
-import { execFile, spawn } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import {
@@ -40,6 +40,7 @@ import {
   startArchiveLifecycleLivenessMockTraccarServer,
 } from '../build/electron-archive-lifecycle-liveness-mock-traccar.js'
 import { startRenderTraceDiagnostics } from '../build/electron-render-trace-diagnostics.js'
+import { startArchiveLaunch } from './qualification/archive-launch.mjs'
 
 const require = createRequire(import.meta.url)
 const { readCleanupFailureDiagnosticFromMessage } = require(
@@ -144,13 +145,14 @@ const ARCHIVE_LIFECYCLE_DIAGNOSTIC_KEYS = new Set([
 ])
 
 let activeLaunch = null
+const ownedLaunches = new Set()
 let passphrase = ''
 let recoveryCode = ''
 
 if (process.argv[1] !== undefined
   && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(async (error) => {
-    await stopLaunch(activeLaunch).catch(() => undefined)
+    await Promise.allSettled([...ownedLaunches].map(stopLaunch))
     const sanitized = sanitizeFailureMessage(error)
     passphrase = ''
     recoveryCode = ''
@@ -494,7 +496,7 @@ async function main() {
         blocksProfileCleanup: true,
         run: async () => {
           try {
-            await stopLaunch(restartedLaunch)
+            return await stopLaunch(restartedLaunch)
           } catch (error) {
             activeLaunch = restartedLaunch ?? activeLaunch
             throw error
@@ -506,11 +508,19 @@ async function main() {
         blocksProfileCleanup: true,
         run: async () => {
           try {
-            await stopLaunch(initialLaunch)
+            return await stopLaunch(initialLaunch)
           } catch (error) {
             activeLaunch = initialLaunch ?? activeLaunch
             throw error
           }
+        },
+      },
+      {
+        name: 'partial_launches_stop',
+        blocksProfileCleanup: true,
+        run: async () => {
+          for (const launch of ownedLaunches) await stopLaunch(launch)
+          return { cleanupVerified: true }
         },
       },
       {
@@ -523,6 +533,19 @@ async function main() {
   lifecycleFailure = cleanup.failure
   profileCleanupCompleted = cleanup.profileCleanupCompleted
   if (cleanup.processCleanupCompleted) activeLaunch = null
+  try {
+    const ownershipEvidence = {
+      schema: 'sartracker-archive-launch-ownership-v1',
+      launches: [...ownedLaunches].map(launch => ({ number: launch.number, ...launch.ownership.snapshot() })),
+    }
+    await writeFile(path.join(options.evidenceDir, 'archive-launch-ownership.json'),
+      JSON.stringify(ownershipEvidence, null, 2), { flag: 'wx', mode: 0o600 })
+    // CI removes private staging after canonical publication; retain this closed,
+    // numeric-only ownership record in the producer log as well.
+    console.log(`archive-launch-ownership=${JSON.stringify(ownershipEvidence)}`)
+  } catch (error) {
+    lifecycleFailure ??= error
+  }
 
   if (lifecycleFailure === null && successEvidence === null) {
     lifecycleFailure = new Error('Archive-lifecycle success evidence state is incomplete.')
@@ -1174,9 +1197,8 @@ async function interruptRestoreAtDecrypt(input) {
       }
       await input.beforeKill()
       input.launch.mainInspector.close()
-      const requested = input.launch.appProcess.kill('SIGKILL')
-      if (!requested) throw new Error('Electron rejected the restore SIGKILL request.')
-      settleTrigger({ phase: progress.phase, inspection })
+      const exit = await input.launch.ownership.interrupt()
+      settleTrigger({ phase: progress.phase, inspection, exit })
       return true
     } catch (error) {
       rejectTrigger(error)
@@ -1211,11 +1233,7 @@ async function interruptRestoreAtDecrypt(input) {
     input.timeoutMs,
     'Timed out waiting for archive-review decrypt progress.',
   )
-  const exit = await withTimeout(
-    input.launch.exit,
-    30_000,
-    'Timed out waiting for the SIGKILLed Electron process to exit.',
-  )
+  const exit = observed.exit
   input.launch.mainInspector.close()
   await closeRendererTransports(input.launch)
   input.launch.exitResult = exit
@@ -3306,7 +3324,7 @@ async function launchPackagedApp(options, userDataDir, number) {
   const remoteDebuggingPort = await findFreePort()
   let inspectorPort = await findFreePort()
   while (inspectorPort === remoteDebuggingPort) inspectorPort = await findFreePort()
-  const appProcess = spawn(
+  const ownership = startArchiveLaunch(
     options.appPath,
     [
       `--inspect=${inspectorPort}`,
@@ -3321,21 +3339,20 @@ async function launchPackagedApp(options, userDataDir, number) {
         SARTRACKER_ELECTRON_BLOCK_NETWORK: '1',
         SARTRACKER_ELECTRON_SOAK_POLL_INTERVAL_MS: String(LIVENESS_POLL_INTERVAL_MS),
       },
-      stdio: ['ignore', 'ignore', 'pipe'],
     },
   )
-  let launchError = null
-  appProcess.once('error', (error) => { launchError = error })
-  appProcess.stderr?.resume()
-  const exit = new Promise((resolve) => {
-    appProcess.once('exit', (code, signal) => resolve({ code, signal }))
-  })
+  const appProcess = ownership.process
+  // Register custody before the first readiness await, including failed launches.
+  const launch = { number, ownership, appProcess, closed: false, exitResult: null }
+  ownedLaunches.add(launch)
   let browser
   let livenessBrowser
   let mainInspector
   try {
-    await waitForCdp(remoteDebuggingPort, appProcess, () => launchError)
+    await waitForCdp(remoteDebuggingPort, appProcess, ownership.readLaunchError)
     mainInspector = await connectMainInspector(inspectorPort, appProcess)
+    launch.mainInspector = mainInspector
+    launch.mainIdentity = await ownership.bindMain(await mainInspector.evaluate('process.pid'))
     const rendererEndpoint = `http://127.0.0.1:${remoteDebuggingPort}`
     browser = await chromium.connectOverCDP(rendererEndpoint)
     const context = browser.contexts()[0]
@@ -3363,26 +3380,23 @@ async function launchPackagedApp(options, userDataDir, number) {
     }
     const livenessPage = await selectExactRendererTarget(context, page, livenessContext)
     await livenessPage.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
-    return {
-      number,
-      appProcess,
+    Object.assign(launch, {
       browser,
       page,
       livenessBrowser,
       livenessPage,
       mainInspector,
-      exit,
-      exitResult: null,
       packagedBuildHeadMatched,
-      closed: false,
-    }
+    })
+    return launch
   } catch (error) {
     mainInspector?.close()
     await closeRendererTransports({ browser, livenessBrowser })
-    if (appProcess.exitCode === null && appProcess.signalCode === null) {
-      appProcess.kill('SIGKILL')
+    // Keep the registered launch even if this cleanup fails; final cleanup must
+    // retry it and withhold profile removal without positive ownership proof.
+    try { launch.exitResult = await ownership.stop(); launch.closed = true } catch {
+      launch.closed = false
     }
-    await withTimeout(exit, 10_000, 'Electron launch cleanup timed out.').catch(() => undefined)
     throw error
   }
 }
@@ -3441,30 +3455,16 @@ export async function closeRendererTransports(launch, dependencies = {}) {
 
 /** Stops one owned packaged process without touching unrelated Electron instances. */
 async function stopLaunch(launch) {
-  if (launch === null || launch === undefined) return null
+  if (launch === null || launch === undefined) return { cleanupVerified: true }
   if (launch.closed === true) {
-    return launch.exitResult ?? withTimeout(
-      launch.exit,
-      10_000,
-      'Electron shutdown exit was not observable.',
-    )
+    if (launch.exitResult?.cleanupVerified !== true) throw new Error('Electron shutdown ownership was not verified.')
+    return launch.exitResult
   }
   await launch.externalLivenessWatchdog?.stop().catch(() => undefined)
   await publishRenderTraceDiagnostic(launch)
   launch.mainInspector?.close()
   await closeRendererTransports(launch)
-  if (launch.appProcess.exitCode === null && launch.appProcess.signalCode === null) {
-    launch.appProcess.kill('SIGTERM')
-    const terminated = await Promise.race([
-      launch.exit.then(() => true),
-      delay(5_000).then(() => false),
-    ])
-    if (!terminated && launch.appProcess.exitCode === null
-      && launch.appProcess.signalCode === null) {
-      launch.appProcess.kill('SIGKILL')
-    }
-  }
-  const exitResult = await withTimeout(launch.exit, 10_000, 'Electron shutdown timed out.')
+  const exitResult = await launch.ownership.stop()
   launch.exitResult = exitResult
   launch.closed = true
   return exitResult
@@ -3757,7 +3757,10 @@ export async function cleanupArchiveLifecycleResources(input) {
   }
   for (const step of input.steps) {
     try {
-      await step.run()
+      const result = await step.run()
+      if (step.blocksProfileCleanup && result?.cleanupVerified !== true) {
+        throw new Error('Archive-lifecycle launch cleanup lacks positive process ownership proof.')
+      }
     } catch (error) {
       const normalizedError = normalizeNullishCleanupFailure(error, step.name)
       retainCleanupFailure(step.name, normalizedError)

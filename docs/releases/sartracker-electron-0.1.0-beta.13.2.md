@@ -92,6 +92,9 @@ launch with graceful close. Artifacts (expire 2026-12-25T16:22:21Z):
 
 These are **validation-workflow** installers, not release candidates:
 
+The release workflow currently uses the same filename pattern, including
+`-validation`. Workflow run identity and hashes distinguish the byte sets.
+
 | File | SHA-256 |
 | --- | --- |
 | `sartracker-electron-validation_0.1.0-beta.13.2_linux_x86_64.AppImage` | `6a7ac24ff242d521aa39d141ca57266d693ab51229228f86a00561ccae99804e` |
@@ -145,10 +148,13 @@ publication and distribution are not approved.
 
 The reviewed merged source `09343ee9` passed the complete Linux validation
 workflow_dispatch (run 36255209914) after two retained failures. That run covers
-`09343ee9` only. The exact commit to be tagged must itself pass the complete Linux
-validation workflow_dispatch (`run_repair_train_d_smoke=true`) before tagging, even if
-it differs only in documentation. Ordinary push CI omits strict responsiveness, 960k,
-Train D, tracking soak and archive lifecycle and does not satisfy this. C27 stays unattempted until its controls pass
+`09343ee9` only. Its unchanged executable inputs are reusable for `e1ac888f`, whose
+diff contains only `handoff/HANDOFF.md` and this external Markdown release note;
+`e1ac888f` was not separately dispatch-tested. Documentation-only descendants do
+not require a repeated dispatch. Executable changes require affected verification;
+ordinary push CI omits strict responsiveness, 960k, Train D, tracking soak and
+archive lifecycle. The tag-driven release run remains mandatory and automatically
+creates the unpublished draft. C27 stays unattempted until its controls pass
 or authentic acceptance was sealed with the original inputs. A retained
 NEEDS_HUMAN_DECISION blocks technical handover despite a later PASS; acceptance
 inputs cannot be injected after compilation. No controls, waivers or authentication
