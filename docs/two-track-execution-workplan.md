@@ -1,13 +1,16 @@
 # Two-Track Execution Workplan
 
-**Current2026-09-27:** beta13.3 source61b92e80/tree148f2856, release36309397874
-attempt1 SUCCESS;6174 correctness/302 strict/225 Chromium passes plus packaged
-gates. CI artifact10928579832 and unpublished draft397599722 hashes independently
-verified. Public CI admission no longer requires Ubuntu GitHub authentication;
-all provenance/byte checks remain. Luna owns exact new installation/payload proof,
-complete immutable inputs and the original205 serial programme. Field source is
-restored with reserve; preparation is not qualification. Beta13.2 stays untouched.
-Draft/C27/C29 and publication authority are unchanged. See handoff for next steps.
+**Current2026-09-27:** Astra is preparing authorized beta13.4 for the proven
+package screenshot-kind/judge-packet mismatch. Red/green pipeline coverage and
+five focused suites pass100 tests/one existing skip. Full source593 files/6164
+tests passed with27 skips; lint/build/budgets passed. New release CI is pending.
+Luna preserves C16's INVALID receipt and retained lease using reviewed no-delete
+manual quarantine. Beta13.3 source61b92e80, successful release36309397874 and
+draft397599722 remain historical; no source overlay or receipt relabeling.
+Both installer filenames must be canonical when compiling new immutable inputs.
+Original205 bindings, all safety/provenance gates, C27/C29 and publication
+authority remain unchanged. Finish existing runtime work; do not start another
+obsolete installation/campaign. See handoff for exact source/artifact custody.
 
 The beta13.2 snapshot below is historical, not the current candidate.
 

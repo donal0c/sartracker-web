@@ -16,6 +16,19 @@ other owners' work. No competing SSH, runtime workload or cleanup.
 
 ## Verified source/build
 
+Beta13.4 preparation is authorized: narrowly map retained `ui-screenshot` to the
+judge packet's existing `image` kind. C16 on61 wrote INVALID receipt/result then
+failed packet construction and retained its lease; original evidence stays
+invalid. Independent red/green and five focused suites pass100 tests/one existing
+skip, including persistence/lock failure protections. Full serial source passed
+593 files/6164 tests with27 skips (595.14s); lint/build/budgets passed. One new
+matching CI build remains pending; no overlay, retag or publication.
+Reviewed no-delete dead-owner quarantine completed: real Linux checks covered
+468 lease entries/11 attempt files, then unprivileged apply preserved the attempt.
+Recorded as manual recovery, never CLEANED/PASS; Luna remains sole runtime owner.
+No further beta13.3 installation/new campaign should start. Existing61 source/
+browser results are historical. [Beta13.4 note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
+
 Beta13.3 candidate:61b92e80ff16f43e1e8efd7d42129c5e0262fc54, tree
 148f2856f2c2c40889c7221f7c315d582a2bbdb7, tag electron-v0.1.0-beta.13.3.
 Release36309397874 attempt1 SUCCESS:6174 correctness PASS/10 skips,302 strict
@@ -59,43 +72,39 @@ This is CI/custody proof, not Ubuntu qualification or C27 approval.
 
 ## Ubuntu preparation and next actions
 
-Luna reports clean exact61b92e80 checkout and npm ci (797 packages), unchanged
-tracked tree. Genuine beta13.2 installation passed140/140 payload files
-(receipt6258e833...415424ad09f); this is historical, not beta13.3 installation.
+Luna admitted clean61b92e80 and the exact installed beta13.3 payload. Source,
+identity and package attempts now exist; their statuses stay bound to their
+original definitions. C16/C23 observer failures and C26's absent report remain
+invalid. Required fixture inventory includes all paging/replay/field/local1GiB,
+storage, approved private-map and live roles plus ENOSPC; details stay in the
+private inventory and Ubuntu report. Optional storage manifest is absent.
+Preserve old offhost archives and raw failure profiles. Retaining C16's whole
+lease consumes about1.17GB: remeasure every copy peak against64GiB floor plus
+1GiB margin; no large-fixture capacity claim until Luna rechecks it.
 
-Required field source43cbe389...dd25ed2 (5320654848 bytes) and its manifest are
-restored/verified. Explicit inventory includes paging/replay960k and2m,
-paging-2m-1gib via verified v6 source, field variants, genuine local1GiB,
-storage-mission, approved private-map derivative, private live inputs and ENOSPC.
-Optional storage manifest remains absent. Private inventory stays mode0600.
-Owner's latest inventory shows80738951168 free bytes after staging one field
-copy; remaining two-copy peak plus64GiB floor and1GiB margin leaves304422912
-bytes. Recheck after new artifacts/install and before workloads; no reserve cut.
-Old prelaunch DB copies and excluded legacy paging seed were recoverably archived
-offhost before exact removal; raw failure profiles/receipts remain preserved.
-
-1. Luna transfers/independently verifies the exact beta13.3 ZIP/installers, installs
-   the exact Debian package and verifies its full payload before launch.
-2. Compile complete immutable inputs on clean61b92e80, using actual
-   tmp/beta13.3-admission/release-input.json (draft397599722, Beta12.11 rollback).
+1. Astra verifies and builds the beta13.4 screenshot-kind harness repair; retain
+   beta13.3's failures, artifacts and campaigns. Luna finishes any active work;
+   do not install or compile another obsolete candidate while the new one builds.
+2. After verified CI handoff, Luna installs the exact new Debian package, verifies
+   its payload and compiles complete inputs on the matching clean source.
+   Both installer paths must retain their canonical release filenames; beta13.3
+   C00 exposed a generic AppImage basename despite matching hashes. Corrected
+   definition2ead60c2...007a9 preserved205; earlier23d4a6e7...7df99 stays historical.
    Explicit replay/local1GiB roles are mandatory; no symlink aliases or fallback.
    Use fixed absolute paths and identical --root, PATH/DISPLAY/XAUTHORITY.
    Public HTTP errors/rate limits fail closed. No Ubuntu GitHub login required
    for CI admission; draft/C27 authentication remains separate.
 3. Continue original205 technical bindings serially, preserving failures and
    independent unrun checks. Both AppImage and75 installed rows matter.
-   All formal rows remain NOT_RUN at this source handoff; preparation is not READY.
+   New beta13.4 formal rows remain NOT_RUN; previous-source tests do not qualify it.
 4. Technical approval precedes controlled handover and original-machine C29.
    C29 remains mandatory; its signer is not needed for technical testing.
    Do not inject human/risk trust roots absent from the reviewed plan.
    C27 controls/gap acceptance and public-byte/publication prerequisites remain.
 
-CoS admission audit:tmp/claude-final-admission-check-result.md. Its b79 install
-warning was resolved; precompile roles/environment are reflected above.
-Astra/CoS retain the later trust-root and candidate-mode documentation followups.
-Private-map authority is already recorded in the Ubuntu report: bind the exact
-approved metadata-only derivative with private lineage, preserve original
-rejection; historical diagnostic PASS does not qualify this candidate.
+Trust-root followups stay with Astra/CoS. Private-map authority is in the Ubuntu
+report: bind the approved metadata-only derivative and private lineage, preserve
+the original rejection; historical diagnostic PASS does not qualify a candidate.
 
 ## Deferred follow-up
 

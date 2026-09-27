@@ -214,6 +214,7 @@ function stripDefinitionDigest(definition) {
   return clone
 }
 
+/** Project retained media into the oracle-blind advisory judge vocabulary. */
 export function buildJudgePacket({ attemptId, result, captures = [] }) {
   if (!SAFE_ID_PATTERN.test(attemptId)) throw new Error('Judge packet attempt id is invalid.')
   const allowed = captures.map((capture) => {
@@ -223,10 +224,11 @@ export function buildJudgePacket({ attemptId, result, captures = [] }) {
     if (typeof capture.sha256 !== 'string' || !SHA256_PATTERN.test(capture.sha256)) {
       throw new Error(`Judge capture ${capture.name} has an invalid digest.`)
     }
-    if (!['image', 'video', 'dom', 'aria', 'action-record'].includes(capture.kind)) {
+    const kind = capture.kind === 'ui-screenshot' ? 'image' : capture.kind
+    if (!['image', 'video', 'dom', 'aria', 'action-record'].includes(kind)) {
       throw new Error(`Judge capture ${capture.name} has an invalid kind.`)
     }
-    return { name: capture.name, kind: capture.kind, sha256: capture.sha256 }
+    return { name: capture.name, kind, sha256: capture.sha256 }
   })
   return Object.freeze({
     schema: 'sartracker-oracle-blind-judge-packet-v1',

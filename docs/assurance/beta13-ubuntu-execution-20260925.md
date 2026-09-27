@@ -954,3 +954,45 @@ Beta13.2's140/140 installed-payload proof is historical; beta13.3 transfer,
 installation, payload verification and formal compile/preflight belong to Luna.
 All205 formal rows remain NOT_RUN at this source handoff. No C27/Ubuntu/full
 qualification, publication or distribution is claimed.
+
+## Screenshot packet compatibility repair — 2026-09-27
+
+Later beta13.3 execution supersedes the preceding preparation-only snapshot.
+Luna admitted the exact61 candidate. A first C00 identity attempt rejected the
+staged AppImage basename `ci-appimage` although SHA/size matched the CI ZIP.
+Canonical-filename staging produced definition
+`2ead60c2ac21252c76a5acd405cf941347f1f9f650e9f4864363df5b102007a9`
+with all205 bindings, preserving the old definition and receipts.
+
+C16 installed attempt `attempt-1790511628723-36d381ec` wrote an INVALID receipt,
+result and receipt-written state, then failed before its judge packet. Its raw
+report and three screenshots exist. The package adapter emitted `ui-screenshot`,
+materialization accepted it, and `buildJudgePacket` rejected that kind. A pure
+reproduction confirmed the invalid-kind exception; the later broad catch masked
+it as persistence failure and retained lease `lease-1790511554649-bc5c9a75` and
+the package resource lock. Separate workload-identity and process-observer
+failures remain INVALID. C23 also retained a process-observer failure despite
+passing functional predicates. C26's earlier absent report is a separate case.
+
+No supported CLI reclaims a dead resource lock. Astra supplied a separately
+reviewed, no-delete manual recovery helper: exact IDs/digest, owner/boot/dead-PID,
+open-handle/mapping, inode and pre/post byte checks; preserve the entire lease
+and original attempt, quarantine resource lock and lease, then campaign lock
+last. Local synthetic dry-run/apply passed, with Linux process checks mocked;
+The real host first refused unprivileged inspection of same-UID systemd PID1893.
+The reviewed revision used a separate privileged read-only process audit while
+keeping mutation unprivileged. Real Linux CHECKED_ONLY verified468 lease entries
+and11 attempt files; unprivileged apply then exited0, DEAD_OWNER_QUARANTINED,
+attemptUnchanged=true and cleanupClaimed=false. No secret or policy change was
+retained. This is manual quarantine, not CLEANED/PASS qualification. Retained
+data continues to consume disk reserve; Luna retains sole runtime ownership.
+
+Authorized beta13.4 repair projects only `ui-screenshot` into the existing
+packet `image` kind. The actual retained PNG/materialization/packet regression
+failed red before the fix; coverage spans both retained kinds, all five prior
+packet kinds, unknown-kind rejection, private metadata exclusion and unchanged
+deterministic status. Five focused suites pass100 tests/one existing skip,
+including EIO/ENOSPC receipt persistence and retained-lock controls. Full serial
+correctness passed593 files/6164 tests with27 skips in595.14s; lint/build/budgets
+passed. New exact release CI remains pending. No old receipt is upgraded,
+no gate changes and no publication. Application/operator behavior is unchanged.

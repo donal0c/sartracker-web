@@ -7,6 +7,8 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createPrivateMapPublicBinding } from '../../scripts/qualification/private-map-receipt.mjs'
 import { createSyntheticRasterTilePng } from '../../build/electron-official-map-qualification-smoke-lib.js'
+import { materializeCaptures } from '../../scripts/qualification/candidate-control-plane.mjs'
+import { buildJudgePacket } from '../../scripts/qualification/control-plane.mjs'
 
 import {
   PACKAGE_ADAPTER_CONTRACTS,
@@ -216,6 +218,53 @@ it('retains only explicit archive source/restored oracle references', async () =
   await expect(readFile(path.join(attemptDirectory, 'archive-restored-oracle.sqlite'), 'utf8')).resolves.toBe('restored oracle')
   expect(retained.every((entry) => entry.path.startsWith('archive-'))).toBe(true)
 })
+
+it.each(['ui-screenshot', 'image'] as const)('passes retained %s captures into the oracle-blind judge packet', async (retainedKind) => {
+  temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sartracker-capture-packet-'))
+  const evidenceDirectory = path.join(temporaryRoot, 'evidence')
+  const attemptsRoot = path.join(temporaryRoot, 'attempts')
+  const attemptDirectory = path.join(attemptsRoot, 'attempt-screenshot')
+  await mkdir(evidenceDirectory)
+  await mkdir(attemptDirectory, { recursive: true })
+  const png = createSyntheticRasterTilePng()
+  await writeFile(path.join(evidenceDirectory, 'operator.png'), png)
+  const retained = await retainCaptures([evidenceDirectory], attemptDirectory)
+  expect(retained.captureFailures).toEqual([])
+  expect(retained.captures).toHaveLength(1)
+  expect(retained.captures[0].kind).toBe('ui-screenshot')
+  const captures = await materializeCaptures(
+    retained.captures.map((capture: { kind: string }) => ({ ...capture, kind: retainedKind })),
+    attemptDirectory, attemptsRoot,
+  )
+  expect(captures[0].kind).toBe(retainedKind)
+  const result = { mode: 'candidate', status: 'INVALID_EVIDENCE', deterministicFailures: ['private-oracle-detail'] }
+  const packet = buildJudgePacket({ attemptId: 'attempt-screenshot', result, captures })
+  expect(packet.captures).toEqual([{
+    name: 'package-ui-operator.png', kind: 'image', sha256: createHash('sha256').update(png).digest('hex'),
+  }])
+  expect(packet.advisoryOnly).toBe(true)
+  expect(packet.deterministicVerdictWithheld).toBe(true)
+  expect(JSON.stringify(packet)).not.toContain('private-oracle-detail')
+  expect(JSON.stringify(packet)).not.toContain(temporaryRoot)
+  expect(result.status).toBe('INVALID_EVIDENCE')
+  expect(captures[0].kind).toBe(retainedKind)
+  expect(() => buildJudgePacket({
+    attemptId: 'attempt-screenshot', result, captures: [{ ...captures[0], kind: 'unknown-kind' }],
+  })).toThrow(/invalid kind/u)
+  await expect(materializeCaptures(
+    [{ ...retained.captures[0], kind: 'unknown-kind' }], attemptDirectory, attemptsRoot,
+  )).rejects.toThrow(/not an approved retained media kind/u)
+})
+
+it.each(['image', 'video', 'dom', 'aria', 'action-record'] as const)(
+  'preserves the existing %s judge-packet vocabulary', (kind) => {
+    const capture = { name: 'operator-state', kind, sha256: 'a'.repeat(64) }
+    const packet = buildJudgePacket({ attemptId: 'attempt-kinds', result: { mode: 'candidate' }, captures: [capture] })
+    expect(packet.captures).toEqual([capture])
+    expect(packet.advisoryOnly).toBe(true)
+    expect(packet.deterministicVerdictWithheld).toBe(true)
+  },
+)
 
 it('retains explicit capture failures instead of silently dropping unsafe image evidence', async () => {
   temporaryRoot = await mkdtemp(path.join(os.tmpdir(), 'sartracker-capture-retention-'))
