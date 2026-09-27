@@ -6,19 +6,29 @@ Updated 2026-09-27. **HOLD: no final candidate is qualified or approved for dist
 
 Donal directs continuation through the existing SAME-SOURCE route: integrate
 reviewed necessary harness repairs, verify the combined change, and create one
-matching beta13.2 release build through the existing tag/unpublished-draft
+matching release build through the existing tag/unpublished-draft
 workflow. Do not ask again for ordinary integration/build steps. No two-source
 policy, substituted CI identity, gate waiver, publication or distribution.
 The original205-binding technical programme remains mandatory.
+Latest direction: leave GitHub unconfigured on Ubuntu. Astra prepares beta13.3
+with bounded direct public HTTPS CI metadata reads; preserve beta13.2 unchanged.
+No cached-JSON trust, CLI shim or cross-host draft/C27 proof substitution.
 
 Astra owns source/build in managed `archive-fixture-contract`; Luna owns serial
 Ubuntu execution; CoS coordinates. Preserve the dirty original checkout and
-other owners' work. Ubuntu must HOLD the obsolete dce4 Debian installation.
+other owners' work. Ubuntu now has the verified exact b79 Debian installation.
 Final source, real successful CI and harness identities must agree before
 authentic campaign compilation. The release workflow runs full source/browser
 gates before packaging; its draft is not permission to publish.
 
 ## Active source work
+
+Beta13.3 public metadata transport:72/72 focused tests pass, including real ZIP
+extraction with authenticated gh deliberately unavailable; native independent
+review passed30/30 with no findings. Live unauthenticated inspection reproduced
+beta13.2's exact ZIP and installer identities. Lint/build/budgets pass; local
+serial correctness passed593 files,6157 tests/27 skips (591.70s). Linux release
+gates remain required. Evidence:tmp/public-ci-transport. Next:commit/tag beta13.3.
 
 Candidate b79eb82e94c226c68aa251594783b26c844fa8bc (tree
 239e79896709537f6d1304e35186c89681f9be2f) is pushed and tagged
@@ -26,26 +36,12 @@ electron-v0.1.0-beta.13.2. Release36303537300 attempt1 is fully SUCCESS.
 It includes test-title, observer and C28 repairs; these leave product/electron/build
 inputs unchanged. Independent review found no actionable issue.
 
-- Observer: omit an incomplete ENOENT/ESRCH sample only after fresh procfs confirms
-  the process disappeared. Live-process missing files, unexpected errors and
-  identity mismatches remain fatal. Prior valid observations remain mandatory.
-- C28: all9 callback invocations repaired; generic errors no longer count as
-  domain proof. Replay, marker and diagnostic fixtures reach exact intended
-  rejections. Follow-up binds outing overlap to its unchanged active outing,
-  records malformed GPX as a resolved file failure plus fresh durable custody,
-  and uses finished mission / genuine recovery issuance / valid wrong secret
-  for pause, finalization and review. Subsequent successful lifecycle remains.
-- Settings invalid-shape stays explicitly INVALID: null reaches an application
-  TypeError before validation. Replacing it with missing-provider-URL would
-  change the named operation; no substitute oracle has been invented.
-- GPX custody intentionally appends failure records; unchanged boundary means
-  mission and positions, not all database storage.
-
-Focused follow-up:101/101 across7 affected suites, ESLint, TypeScript and
-diff checks passed. Red controls retained under tmp/c28-failure-repair.
-Independent review found no actionable issue and separately passed33/33 tests.
-Earlier observer controls passed85/85 on Ubuntu;
-earlier title repairs passed101 assertions. Fresh release CI:6144 correctness
+Observer omission requires fresh process disappearance; live-process failures
+remain fatal. C28 callbacks and exact domain oracles are repaired (details in
+Ubuntu report); GPX custody writes are intentional, mission/positions unchanged.
+Settings invalid-shape remains INVALID: null reaches TypeError, no substitute
+stimulus. Focused101/101 and independent33/33 passed, with retained red controls.
+Beta13.2 release CI:6144 correctness
 PASS/10 skips,302 strict responsiveness PASS,225 Chromium PASS, driver/WAR
 controls, packaged tracking soak and launch smoke PASS. Draft397562767 remains
 unpublished. CI ZIP10927071248 and both installers were independently downloaded
@@ -93,12 +89,10 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
    Runtime owner confirmed clean exact b79/tree239e798 checkout at
    /home/donal/sartracker-beta13-diagnostic-3b27b1c5/tmp/ubuntu-b79-candidate,
    cloned from the public release tag; no overlay or bundle prerequisite bypass.
-   Ubuntu independently verified ZIP/installers with the unchanged verifier and
-   live public metadata. Formal admission still needs official gh authentication:
-   /home/donal/.local/bin/gh2.101.0 exists but is logged out. CoS requested one new,
-   short-lived repository-only Actions-read/Contents-read token through secure
-   Ubuntu input. No OAuth retry, credential copy or gh-transport impersonation.
-   This token scope is for preflight/draft reads; C27 visibility remains separate.
+   Ubuntu independently verified ZIP/installers. gh2.101.0 remains logged out;
+   no new login/token request. Await exact beta13.3 checkout/CI/installers before
+   formal admission; do not overlay the changed harness on b79. Later draft/C27
+   authentication remains separate. Public API rate limits fail closed.
 2. Finish genuine fixture preparation with the64GiB floor and installer margin.
    Proper local1GiB seed is transferred and hash-verified on Ubuntu by its owner;
    field-scale three-copy peak is still7,513,092,096 bytes short of the reserve
@@ -109,6 +103,19 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
    seal incomplete fixture roles, which cannot be added later.
 3. Compile/preflight using actual candidate CI, final clean source, fixtures,
    draft release and rollback inputs; no source substitutions or lease bypass.
+   Admission audit: coordinator `tmp/claude-final-admission-check-result.md`
+   (2026-09-27, exact b79). Its install warning is resolved by140/140 payload proof.
+   Astra/Luna precompile: explicitly bind replay-960k/2m, paging-2m-1gib,
+   paging-field-37gb and genuine field-local-1gib alongside all existing roles;
+   no symlink aliases or silent field fallback. Verify dependencies/browser from
+   existing receipts before reinstalling, fixed absolute paths and identical
+   explicit --root, PATH/DISPLAY/XAUTHORITY, and actual release-input.json.
+   Recover approved private-map derivative custody and original rejection before
+   binding; do not invent a new decision or erase the original evidence.
+   Astra/CoS later: reconcile candidate-mode docs omitting replay roles and
+   contradicting reviewed trust roots. Do not inject externalHuman/risk keys
+   absent from b79's reviewed plan. C29 authority and C27 gap resolution need a
+   later reviewed decision; these do not block independent technical preparation.
 4. Continue original205 technical bindings serially, preserving failures and
    continuing independent unrun checks. Both AppImage and75 installed rows matter.
 5. Technical approval precedes controlled handover and original-machine C29.
@@ -116,6 +123,14 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
    Public-byte, C27 human/control and publication steps wait on real prerequisites.
 
 DON-254 is the qualification record; historical Done does not qualify this build.
+After team handover, CoS owns Donal's requested substantial release-process
+post-mortem (DON-254 follow-up; Astra/Luna evidence). Assess each gate's real
+safety/integrity value and cost, redundant PR/build/docs cycles, harness false
+positives/provenance mistakes, late auth/fixture/disk prerequisites, agent stalls
+and ownership/context loss, triage/evidence reuse, actual critical path and
+operator burden. Deliver prioritized simplifications with owners and measurable
+acceptance criteria while preserving justified safeguards. Do not start this now
+or make it a release gate.
 DON-255 is downstream publication; DON-179 remains open. No automatic retries,
 PR ceremony or documentation-only rebuild loops. Strict200ms, workload sizes,
 deadlines, no-flaky policy and actual private/live fixture boundaries are unchanged.
@@ -126,7 +141,7 @@ deadlines, no-flaky policy and actual private/live fixture boundaries are unchan
 - [Original205 reconciliation](../docs/assurance/beta13-original-programme-reconciliation-20260926.md)
 - [Active workplan](../docs/two-track-execution-workplan.md)
 - [Testing cadence](../docs/testing-and-review-cadence.md)
-- [Beta13.2 draft notes](../docs/releases/sartracker-electron-0.1.0-beta.13.2.md)
+- [Beta13.3 draft notes](../docs/releases/sartracker-electron-0.1.0-beta.13.3.md)
 - [PR54 repair ledger](../docs/releases/beta13-browser-gate-repair.md)
 - [Earlier history](archive/2026-09-25-pre-c12-repair.md)
 

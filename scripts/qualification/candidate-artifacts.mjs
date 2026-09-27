@@ -6,6 +6,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import { streamCommandToFile } from './release-transfer.mjs'
 import { validateCandidateDebianVersion } from './debian-candidate-version.mjs'
+import { readPublicCiMetadata } from './public-ci-metadata.mjs'
 
 const execFile = promisify(execFileCallback)
 const REPOSITORY = 'donal0c/sartracker-web'
@@ -109,12 +110,7 @@ export async function inspectCiCandidateArchive({ archivePath, outputDirectory, 
   if (!/^0\.1\.0-beta\.\d+(?:\.\d+)?$/u.test(version)) throw new Error('Explicit candidate beta version is required.')
   if (!/^[a-f0-9]{40}$/u.test(expected.sourceSha)
       || ![expected.runId, expected.runAttempt, expected.artifactId].every((value) => Number.isSafeInteger(value) && value > 0)) throw new Error('Exact numeric CI identities and source SHA are required before querying GitHub.')
-  const run = JSON.parse(await readCommand('gh', ['api', `repos/${REPOSITORY}/actions/runs/${expected.runId}`]))
-  const artifact = JSON.parse(await readCommand('gh', ['api', `repos/${REPOSITORY}/actions/artifacts/${expected.artifactId}`]))
-  const jobs = run.path === WORKFLOW && run.run_attempt > 1
-    ? JSON.parse(await readCommand('gh', ['api', '--paginate', '--slurp',
-      `repos/${REPOSITORY}/actions/runs/${expected.runId}/jobs?filter=all&per_page=100`])).flatMap(page => page.jobs)
-    : []
+  const { run, artifact, jobs } = await readPublicCiMetadata(expected.runId, expected.artifactId)
   const provenance = validateCiArtifactProvenance(run, artifact, { ...expected, version }, jobs)
   const archive = await hashCandidateFile(archivePath)
   if (archive.sha256 !== provenance.archiveSha256 || archive.bytes !== provenance.archiveBytes) {

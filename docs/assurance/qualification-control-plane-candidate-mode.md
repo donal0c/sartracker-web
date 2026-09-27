@@ -125,6 +125,10 @@ archive, two installer roles (`ci-appimage`, `ci-deb`), version and provenance
 (`sourceSha`, `runId`, `runAttempt`, `artifactId`). File identities contain
 absolute `path`, `bytes` and `sha256`. GitHub metadata and installed payloads
 are checked afresh; local hashes or a downloaded deb do not prove installation.
+Public CI metadata uses direct unauthenticated HTTPS to the fixed repository,
+with bounded time/body/pagination and no redirect or credential fallback. HTTP
+errors (including rate limits) block admission; cached JSON is not fresh proof.
+Draft release and C27 authentication requirements remain separate and unchanged.
 
 Fixture roles currently include `storage-mission`, its optional separately
 bound `storage-mission-manifest`, and scale roles `paging-960k`, `paging-2m`,
