@@ -130,6 +130,14 @@ e2b95 with original counts. Source owner checked the205-row runtime ledger and
 retained histories; raw1168-file manifest was not independently rehashed here.
 All formal campaign statuses remain NOT_RUN. Ubuntu currently waits at the secure
 administrator prompt for exact Debian installation; no parallel runtime workload.
+Later AppImage rows10/18 exposed observer hashing after temporary ASAR removal.
+Authorized harness-only repair omits an incomplete sample only for ENOENT/ESRCH
+plus a fresh procfs check confirming process disappearance. Live-process missing
+files, identity mismatch and unexpected errors remain fatal; earlier valid runtime
+observations are still required. Red/green local controls and real ASAR deletion
+with simulated process exit passed;7 suites68 passed/17 platform skips, lint/diff
+passed. Independent Codex review found no issue. Linux process/runtime proof is
+still required before corrected attempts; original invalid attempts remain retained.
 Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
 C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
 parked at their real prerequisites. Source/browser CI reuse needs exact suite and

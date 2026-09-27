@@ -94,6 +94,23 @@ async function processSnapshot(pid) {
   return { pid: Number(pid), parent: Number(rest[1]), startTicks: rest[19] }
 }
 
+/** Omit an incomplete sample only when a fresh procfs check confirms process exit. */
+export async function observeWhileProcessExists(pid, sample, readIdentity = processSnapshot) {
+  try {
+    return await sample()
+  } catch (error) {
+    if (!['ENOENT', 'ESRCH'].includes(error?.code)) throw error
+    try {
+      await readIdentity(pid)
+    } catch (identityError) {
+      if (['ENOENT', 'ESRCH'].includes(identityError?.code)) return null
+      throw identityError
+    }
+    // Missing payload bytes from a still-existing process are not normal exit.
+    throw error
+  }
+}
+
 /**
  * Observe only descendants of the owned probe. Caller polls during execution
  * and requires at least one matched main process (and every declared restart).
@@ -121,17 +138,20 @@ export async function observePackageProcesses(runnerPid, expected) {
       cmdline = (await readFile(`/proc/${item.pid}/cmdline`)).toString().split('\0')
     } catch { continue }
     if (path.basename(executablePath) !== 'sartracker-web' || cmdline.some((part) => part.startsWith('--type='))) continue
-    const executable = await hashCandidateFile(executablePath)
-    const asar = await hashCandidateFile(path.join(path.dirname(executablePath), 'resources/app.asar'))
-    const environment = (await readFile(`/proc/${item.pid}/environ`)).toString().split('\0')
-    const appImagePath = environment.find((entry) => entry.startsWith('APPIMAGE='))?.slice('APPIMAGE='.length) ?? null
-    const after = await processSnapshot(item.pid)
-    if (after.startTicks !== item.startTicks || await realpath(`/proc/${item.pid}/exe`) !== executablePath) throw new Error('Process identity changed during observation.')
-    const observation = { pid: item.pid, startTicks: item.startTicks, launchPath: expected.launchPath,
-      executablePath, executableSha256: executable.sha256, asarSha256: asar.sha256,
-      artifactSha256: expected.artifactSha256, appImagePath, mainProcess: true, descendantOfRunner: true }
-    validateRuntimeObservation(observation, expected)
-    observations.push(observation)
+    const observation = await observeWhileProcessExists(item.pid, async () => {
+      const executable = await hashCandidateFile(executablePath)
+      const asar = await hashCandidateFile(path.join(path.dirname(executablePath), 'resources/app.asar'))
+      const environment = (await readFile(`/proc/${item.pid}/environ`)).toString().split('\0')
+      const appImagePath = environment.find((entry) => entry.startsWith('APPIMAGE='))?.slice('APPIMAGE='.length) ?? null
+      const after = await processSnapshot(item.pid)
+      if (after.startTicks !== item.startTicks || await realpath(`/proc/${item.pid}/exe`) !== executablePath) throw new Error('Process identity changed during observation.')
+      const observed = { pid: item.pid, startTicks: item.startTicks, launchPath: expected.launchPath,
+        executablePath, executableSha256: executable.sha256, asarSha256: asar.sha256,
+        artifactSha256: expected.artifactSha256, appImagePath, mainProcess: true, descendantOfRunner: true }
+      validateRuntimeObservation(observed, expected)
+      return observed
+    })
+    if (observation !== null) observations.push(observation)
   }
   return observations
 }
