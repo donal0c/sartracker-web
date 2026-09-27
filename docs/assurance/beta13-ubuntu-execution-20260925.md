@@ -854,3 +854,52 @@ cleanup candidates; failed profiles and raw evidence remain. Exact dce4 Debian
 installation is pending for75 installed rows. C23 then C26 are the first safe
 unrun rows after prerequisites. C00 public bytes, C27 release admission and C29
 original-machine human acceptance remain explicitly parked at actual prerequisites.
+
+### Matching release build — 2026-09-27
+
+Donal directed the existing same-source route. Reviewed harness fixes are pushed
+at **b79eb82e94c226c68aa251594783b26c844fa8bc**, tree
+**239e79896709537f6d1304e35186c89681f9be2f**, tag
+**electron-v0.1.0-beta.13.2**. [Release run36303537300](https://github.com/donal0c/sartracker-web/actions/runs/36303537300)
+attempt1 completed SUCCESS. Draft release397562767 is draft:true/prerelease:true;
+publication and distribution remain unauthorized. No two-source admission policy
+or CI identity substitution was introduced. The obsolete dce4 install is held.
+
+Release logs establish591 correctness files/6144 tests PASS with10 skips,
+WAR-02B19 PASS and controlled rebreak proof,15 strict files/302 PASS, browser-driver
+1 PASS and Chromium225 PASS. Lint, build/budgets, native package inspection,
+private-map guard, packaged tracking soak and AppImage launch smoke all passed.
+This does not resolve the original Ubuntu findings or replace the205 bindings.
+
+Source owner downloaded the original CI archive and ran the existing
+inspectCiCandidateArchive against fresh successful GitHub metadata. Actual bytes:
+
+| Input | Bytes | SHA-256 |
+| --- | ---: | --- |
+| CI ZIP, artifact10927071248 | 283892663 | 0f3f04da301711a9b25af8dbab64c26f6aa264c3e53fa78a1061d04306f13456 |
+| beta13.2 AppImage | 157874342 | d08bef62077f772058842d0929af9636f65637d641af5809927aa1b2fcc8d252 |
+| beta13.2 Debian | 126473360 | 45246c15c45c1e097e5f48d8124d0073f20cf1c73ca4649c1d5d91170b6f6bb7 |
+
+Both installer hashes also match independently read draft-asset metadata.
+The authenticated draft SHA256SUMS download is264 bytes, SHA-256
+00f8f07f53adea5a9385f823852b7dd4acf8a8d18c7adb0acf9529aa74588187;
+its two entries independently match the verified CI installer bytes.
+Retained local evidence lives under the integration worktree's
+tmp/authentic-admission: release-ci-inspection.json, release-full.log,
+release-transfer.json, original-release-artifact-10927071248.zip and extracted
+installers. The release/rollback input validates against draft397562767 and
+Beta12.11 rollback368498161. No Ubuntu installation or campaign READY is claimed.
+
+Runtime owner has the exact identities and owns independent Ubuntu download,
+verification and secure administrator install. Existing fixture inventory found
+v6 paging960k/2m and storage-mission; the storage manifest is absent. The legacy
+paging-2m-1gib file is not an admissible soak substitute. A genuine local1GiB seed
+was generated and integrity-checked. Restoring the verified archived field source
+requires safe duplicate cleanup to retain64GiB plus installer/extraction margin.
+Private-map derivative and live inputs remain explicit private bindings.
+
+Settings invalid-shape remains INVALID: null causes a product TypeError before
+validation. Changing to missing URL would alter the named stimulus. Other C28
+fixes have101 focused passes and independent33-pass review; only new packaged
+execution can establish their runtime result. Preserve every earlier failed,
+invalid and provenance-substituted receipt; no retrospective qualification.

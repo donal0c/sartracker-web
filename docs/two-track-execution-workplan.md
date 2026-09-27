@@ -2,7 +2,21 @@
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 
-## Current Beta 13 decision — 2026-09-25
+## Current Beta 13 decision — 2026-09-27
+
+**Current executable next step:** release36303537300 attempt1 is fully successful
+at b79eb82e94c226c68aa251594783b26c844fa8bc, tagged beta13.2; draft397562767
+is unpublished. The source owner independently verified CI ZIP10927071248 and
+both installer hashes. Ubuntu owns exact Debian installation, genuine fixture
+preparation and authentic original205-binding compile/preflight on this same
+clean source. No two-source policy or CI identity substitution. No additional
+build is needed for the documentation-only record. Source/browser6144 correctness
+PASS/10 skips,302 strict PASS and225 Chromium PASS are CI proof, not full Ubuntu
+qualification. Settings invalid-shape remains explicit INVALID; other original
+failures remain retained. See handoff/report for exact identities and fixture gaps.
+
+The following earlier preparation narrative is historical where it mentions a
+future testing build, missing final tag, dce4 installers or uncompleted C28 repairs.
 
 **Current sequence (Donal, clarified through CoS):** fully validate the exact build
 on Ubuntu, obtain final approval for controlled handover to Eamonn, then collect

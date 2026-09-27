@@ -20,10 +20,11 @@ gates before packaging; its draft is not permission to publish.
 
 ## Active source work
 
-Remote master remains dce4dfc4 at this checkpoint; local reviewed descendants
-include four duplicate-test-title corrections, process observer lifetime handling
-and C28 failure harness repairs. Product/electron/build inputs are unchanged by
-these later harness repairs. The current C28 follow-up passed independent review.
+Candidate b79eb82e94c226c68aa251594783b26c844fa8bc (tree
+239e79896709537f6d1304e35186c89681f9be2f) is pushed and tagged
+electron-v0.1.0-beta.13.2. Release36303537300 attempt1 is fully SUCCESS.
+It includes test-title, observer and C28 repairs; these leave product/electron/build
+inputs unchanged. Independent review found no actionable issue.
 
 - Observer: omit an incomplete ENOENT/ESRCH sample only after fresh procfs confirms
   the process disappeared. Live-process missing files, unexpected errors and
@@ -44,7 +45,12 @@ Focused follow-up:101/101 across7 affected suites, ESLint, TypeScript and
 diff checks passed. Red controls retained under tmp/c28-failure-repair.
 Independent review found no actionable issue and separately passed33/33 tests.
 Earlier observer controls passed85/85 on Ubuntu;
-earlier title repairs passed101 assertions. No fresh packaged proof yet.
+earlier title repairs passed101 assertions. Fresh release CI:6144 correctness
+PASS/10 skips,302 strict responsiveness PASS,225 Chromium PASS, driver/WAR
+controls, packaged tracking soak and launch smoke PASS. Draft397562767 remains
+unpublished. CI ZIP10927071248 and both installers were independently downloaded
+and hash/provenance verified; identities are in the Ubuntu report. This is not
+Ubuntu/full-programme proof.
 No operator behaviour changed, so the manual needs no update for these repairs.
 
 ## Retained failures and proof limits
@@ -79,10 +85,12 @@ these are supplemental identities, not exact new-candidate proof.
 Source owner checked205 bindings and50 histories; the1168-file raw manifest was
 not independently rehashed here. Ubuntu retained the64GiB floor.
 
-1. Record Linear and release-note HOLD state, integrate
-   the reviewed source and create the single matching beta13.2 tag build.
-2. Give Ubuntu the exact successful run/attempt/artifact identities and hashes;
-   install that real Debian payload through secure administrator entry.
+1. Ubuntu has final identities; independently verify/download and install the
+   real Debian payload through secure administrator entry. Keep harness at b79.
+2. Finish genuine fixture preparation with the64GiB floor and installer margin.
+   Proper local1GiB seed now exists; archived field source restoration needs
+   safe duplicate cleanup. No legacy paging fixture substitution. Storage manifest
+   is absent; preserve that fact. Live/private fixture inventory stays private.
 3. Compile/preflight using actual candidate CI, final clean source, fixtures,
    draft release and rollback inputs; no source substitutions or lease bypass.
 4. Continue original205 technical bindings serially, preserving failures and
