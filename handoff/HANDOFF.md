@@ -151,6 +151,15 @@ instead of throwing; pause fixture mutates state and mismatches its finished-mis
 label; finalize hits lifecycle/UUID before recovery; review secret has invalid shape.
 No product change or candidate rebuild. Use clean separately committed harness,
 never a dirty overlay; one verified subset attempt precedes further corrected runs.
+Source-binding audit now blocks corrected package/soak admission: the compiler,
+live-checkout checks, CI verifier and adapters share one source identity. Clean58f
+harness plus actual dce4 CI cannot pass honestly. Row36 reproduces the exact source
+mismatch before launch. Controllers for corrected rows14/16/24/26 substituted58f
+into CI provenance; preserve originals but invalidate provenance-dependent claims.
+No adapter-only bypass was implemented. A new two-source campaign policy would
+need Donal's decision: immutable dce4 candidate/CI, separately reviewed clean harness
+SHA/tree and allowed-diff proof, both identities sealed before future attempts,
+no retrospective admission. Repeated85/99 prerequisite tests cannot fix this gate.
 Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
 C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
 parked at their real prerequisites. Source/browser CI reuse needs exact suite and
