@@ -138,6 +138,19 @@ observations are still required. Red/green local controls and real ASAR deletion
 with simulated process exit passed;7 suites68 passed/17 platform skips, lint/diff
 passed. Independent Codex review found no issue. Linux process/runtime proof is
 still required before corrected attempts; original invalid attempts remain retained.
+Linux observer controls subsequently passed85/85. Corrected row18 retained its
+report but exposed a C28 false-positive oracle: all9 failure producers passed
+`page` instead of the callback, and any error string was accepted. Prior row8
+raw PASS is invalidated; preserve the receipt and audit all18 affected bindings.
+Bounded repair invokes every bridge and admits only exact domain rejections for
+replay, marker and diagnostics. Marker envelope and diagnostic filename fixtures
+now reach those intended boundaries. Independent review31/31 focused tests passed.
+Other6 variants remain INVALID: settings null throws TypeError before validation;
+outing needs an independently bound overlap oracle; GPX reports rejected files
+instead of throwing; pause fixture mutates state and mismatches its finished-mission
+label; finalize hits lifecycle/UUID before recovery; review secret has invalid shape.
+No product change or candidate rebuild. Use clean separately committed harness,
+never a dirty overlay; one verified subset attempt precedes further corrected runs.
 Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
 C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
 parked at their real prerequisites. Source/browser CI reuse needs exact suite and

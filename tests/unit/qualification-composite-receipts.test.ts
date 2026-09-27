@@ -462,14 +462,14 @@ describe('C28 composite packaged receipt', () => {
   it('requires phase-specific failure facts and an unchanged serialized state boundary', () => {
     const variantReport = copy(report())
     const state = JSON.stringify({ mission: { id: 'mission-c28', status: 'finished' }, positionCount: 2 })
-    const errorMessage = 'Mission is already finished.'
+    const errorMessage = 'Mission replay selected time is invalid.'
     variantReport.variant = {
-      variantId: 'failure-finish-finalize-archive',
-      coveredAxes: [...C28_VARIANT_AXIS_MAP['failure-finish-finalize-archive']],
+      variantId: 'failure-coverage-replay',
+      coveredAxes: [...C28_VARIANT_AXIS_MAP['failure-coverage-replay']],
       missingAxes: [],
       facts: {
-        phase: 'finishFinalizeArchive',
-        operation: 'finalizeMission.invalid-recovery',
+        phase: 'coverageReplay',
+        operation: 'readMissionReplay.invalid-selected-time',
         rejected: true,
         beforeState: state,
         afterState: state,
@@ -484,15 +484,68 @@ describe('C28 composite packaged receipt', () => {
     }
     expect(validateCompositeVariantReceipt(variantReport, {
       ...expected,
-      variantId: 'failure-finish-finalize-archive',
+      variantId: 'failure-coverage-replay',
     }).valid).toBe(true)
 
     const forged = copy(variantReport)
     ;((forged.variant as JsonObject).facts as JsonObject).mutationPreserved = false
     expect(validateCompositeVariantReceipt(forged, {
       ...expected,
-      variantId: 'failure-finish-finalize-archive',
+      variantId: 'failure-coverage-replay',
     }).valid).toBe(false)
+    for (const [errorName, message] of [['TypeError', 'operation is not a function'],
+      ['Error', 'Replay bridge is unavailable.'], ['Error', 'unrelated rejection'],
+      ['Error', 'Marker latitude must be a finite value between -90 and 90.'],
+      ['Error', "Error invoking remote method 'wrong-channel': Error: Mission replay selected time is invalid."]]) {
+      const invalid = copy(variantReport)
+      Object.assign((invalid.variant as JsonObject).facts as JsonObject, {
+        errorName, errorMessage: message,
+        errorMessageSha256: createHash('sha256').update(message).digest('hex'),
+      })
+      expect(validateCompositeVariantReceipt(invalid, {
+        ...expected, variantId: 'failure-coverage-replay',
+      }).valid).toBe(false)
+    }
+    for (const prefix of ['', 'page.evaluate: ', 'page.evaluate: Error: ']) {
+      for (const ipc of ['', "Error invoking remote method 'sartracker:mission-store:read-mission-replay': Error: "]) {
+        const valid = copy(variantReport)
+        const message = prefix + ipc + errorMessage
+        Object.assign((valid.variant as JsonObject).facts as JsonObject, {
+          errorMessage: message, errorMessageSha256: createHash('sha256').update(message).digest('hex'),
+        })
+        expect(validateCompositeVariantReceipt(valid, {
+          ...expected, variantId: 'failure-coverage-replay',
+        }).valid).toBe(true)
+      }
+    }
+    for (const [variantId, phase, operation, message] of [
+      ['failure-marker-search', 'markerSearch', 'upsertMarker.invalid-coordinate', 'Marker latitude must be a finite value between -90 and 90.'],
+      ['failure-sanitized-diagnostics', 'sanitizedDiagnostics', 'exportDiagnosticsReport.invalid-file-name', 'Diagnostics report file name is required.'],
+    ]) {
+      const valid = copy(variantReport)
+      const variant = valid.variant as JsonObject
+      Object.assign(variant, { variantId, coveredAxes: C28_VARIANT_AXIS_MAP[variantId] })
+      Object.assign(variant.facts as JsonObject, { phase, operation, errorMessage: message,
+        errorMessageSha256: createHash('sha256').update(message).digest('hex') })
+      expect(validateCompositeVariantReceipt(valid, { ...expected, variantId }).valid).toBe(true)
+      Object.assign(variant.facts as JsonObject, { errorName: 'TypeError' })
+      expect(validateCompositeVariantReceipt(valid, { ...expected, variantId }).valid).toBe(false)
+    }
+    for (const [variantId, phase, operation] of [
+      ['failure-settings-bootstrap', 'settingsBootstrap', 'saveAppSettings.invalid-shape'],
+      ['failure-mission-outing', 'missionOutingParticipants', 'createOuting.overlapping-active'],
+      ['failure-gpx', 'gpxDatedUndated', 'importGpxEvidencePaths.malformed'],
+      ['failure-pause-restart', 'pauseRestart', 'resumeMission.finished-mission'],
+      ['failure-finish-finalize-archive', 'finishFinalizeArchive', 'finalizeMission.invalid-recovery'],
+      ['failure-archive-review-restore', 'archiveReviewRestore', 'archiveReview.open.wrong-secret'],
+    ]) {
+      const invalid = copy(variantReport)
+      const variant = invalid.variant as JsonObject
+      Object.assign(variant, { variantId, coveredAxes: C28_VARIANT_AXIS_MAP[variantId] })
+      Object.assign(variant.facts as JsonObject, { phase, operation })
+      expect(validateCompositeVariantReceipt(invalid, { ...expected, variantId }).failureReasons)
+        .toContain(`C28 ${variantId} requires a reviewed operation-specific domain rejection oracle; generic rejection is not evidence.`)
+    }
   })
 
   it('requires a real predecessor-linked revision and supplement', () => {

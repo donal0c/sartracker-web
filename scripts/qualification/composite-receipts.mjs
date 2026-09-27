@@ -170,6 +170,26 @@ function validateVariantFacts(variantId, facts, expected, failures) {
       || sha256(Buffer.from(facts.errorMessage, 'utf8')) !== facts.errorMessageSha256) {
       failures.push(`C28 ${variantId} facts do not retain the exact phase rejection and unchanged state boundary.`)
     }
+    const domainMessages = {
+      'failure-coverage-replay': 'Mission replay selected time is invalid.',
+      'failure-marker-search': 'Marker latitude must be a finite value between -90 and 90.',
+      'failure-sanitized-diagnostics': 'Diagnostics report file name is required.',
+    }
+    const domainMessage = domainMessages[variantId]
+    const channels = {
+      'failure-coverage-replay': 'sartracker:mission-store:read-mission-replay',
+      'failure-marker-search': 'sartracker:mission-store:upsert-marker',
+      'failure-sanitized-diagnostics': 'sartracker:export-diagnostics-report',
+    }
+    const firstLine = typeof facts?.errorMessage === 'string' ? facts.errorMessage.split('\n')[0] : ''
+    const ipcPrefix = `Error invoking remote method '${channels[variantId]}': Error: `
+    const acceptedMessages = ['', 'page.evaluate: ', 'page.evaluate: Error: ']
+      .flatMap(prefix => [prefix + domainMessage, prefix + ipcPrefix + domainMessage])
+    if (domainMessage === undefined) {
+      failures.push(`C28 ${variantId} requires a reviewed operation-specific domain rejection oracle; generic rejection is not evidence.`)
+    } else if (facts?.errorName !== 'Error' || facts?.errorCode !== null || !acceptedMessages.includes(firstLine)) {
+      failures.push(`C28 ${variantId} did not retain its expected domain rejection.`)
+    }
     return
   }
   if (variantId === 'field-scale-960k' || variantId === 'field-scale-2m') {

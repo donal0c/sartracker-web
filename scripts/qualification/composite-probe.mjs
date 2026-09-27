@@ -1202,19 +1202,19 @@ const FAILURE_VARIANT_PHASES = Object.freeze({
 })
 
 /** Exercises one named phase's real rejection boundary and proves no mission mutation. */
-async function runPhaseFailureVariant(page, profilePath, missionId, variantId, archiveId) {
+export async function runPhaseFailureVariant(page, profilePath, missionId, variantId, archiveId) {
   const operation = FAILURE_VARIANT_OPERATIONS[variantId]
   if (operation === undefined) throw new Error(`Unsupported C28 failure variant: ${variantId}`)
   const beforeState = await readFailureBoundaryState(page, missionId)
   let rejection = null
   if (variantId === 'failure-settings-bootstrap') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async () => {
+    rejection = await invokeRejected( async () => page.evaluate(async () => {
       const bridge = window.sartrackerElectron
       if (bridge === undefined || typeof bridge.saveAppSettings !== 'function') throw new Error('Settings save bridge is unavailable.')
       return bridge.saveAppSettings(null)
     }))
   } else if (variantId === 'failure-mission-outing') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async (id) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.createOuting !== 'function') throw new Error('Outing bridge is unavailable.')
       return store.createOuting({ mission_id: id, label: 'C28 invalid finished outing', started_at: new Date().toISOString() })
@@ -1222,25 +1222,26 @@ async function runPhaseFailureVariant(page, profilePath, missionId, variantId, a
   } else if (variantId === 'failure-gpx') {
     const malformedPath = path.join(profilePath, 'malformed-c28.gpx')
     await writeFile(malformedPath, '<gpx><trk><trkseg><trkpt lat="not-a-coordinate" /></trkseg>', { encoding: 'utf8', mode: 0o600 })
-    rejection = await invokeRejected(page, async () => page.evaluate(async (input) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (input) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.importGpxEvidencePaths !== 'function') throw new Error('GPX bridge is unavailable.')
       return store.importGpxEvidencePaths({ missionId: input.missionId, paths: [input.path] })
     }, { missionId, path: malformedPath }))
   } else if (variantId === 'failure-marker-search') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async (id) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.upsertMarker !== 'function') throw new Error('Marker bridge is unavailable.')
-      return store.upsertMarker({ id: 'c28-invalid-marker', mission_id: id, type: 'clue', name: 'invalid', lat: 91, lon: -9, updated_by: 'C28' })
+      return store.upsertMarker({ id: 'c28-invalid-marker', mission_id: id, type: 'clue', name: 'invalid', lat: 91, lon: -9,
+        irish_grid_e: 450000, irish_grid_n: 580000, display_order: 0, updated_by: 'C28' })
     }, missionId))
   } else if (variantId === 'failure-coverage-replay') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async (id) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.readMissionReplay !== 'function') throw new Error('Replay bridge is unavailable.')
       return store.readMissionReplay({ missionId: id, selectedTime: 'not-an-iso-instant', timezone: 'Europe/Dublin', trackLimit: 1, objectLimit: 1 }, `c28-invalid-replay-${id}`)
     }, missionId))
   } else if (variantId === 'failure-pause-restart') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async (id) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.pauseMission !== 'function' || typeof store.resumeMission !== 'function') {
         throw new Error('Mission pause/resume bridge is unavailable.')
@@ -1253,22 +1254,22 @@ async function runPhaseFailureVariant(page, profilePath, missionId, variantId, a
       }
     }, missionId))
   } else if (variantId === 'failure-finish-finalize-archive') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async (input) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (input) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.finalizeMission !== 'function') throw new Error('Archive finalization bridge is unavailable.')
       return store.finalizeMission(input.missionId, { operationId: 'c28-invalid-operation', passphrase: 'wrong', recoveryCode: 'wrong' })
     }, { missionId, archiveId }))
   } else if (variantId === 'failure-archive-review-restore') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async (id) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const review = window.sartrackerElectron?.archiveReview
       if (review === undefined || typeof review.open !== 'function') throw new Error('Archive review bridge is unavailable.')
       return review.open({ operationId: 'c28-invalid-review-operation', archiveId: id, containerVersion: 2, slotType: 'passphrase', secret: 'wrong' })
     }, archiveId))
   } else if (variantId === 'failure-sanitized-diagnostics') {
-    rejection = await invokeRejected(page, async () => page.evaluate(async () => {
+    rejection = await invokeRejected( async () => page.evaluate(async () => {
       const bridge = window.sartrackerElectron
       if (bridge === undefined || typeof bridge.exportDiagnosticsReport !== 'function') throw new Error('Diagnostics bridge is unavailable.')
-      return bridge.exportDiagnosticsReport({ fileName: '\u0000', contents: 'C28 invalid filename' })
+      return bridge.exportDiagnosticsReport({ fileName: '', contents: 'C28 invalid filename' })
     }))
   }
   if (rejection === null) throw new Error(`C28 ${variantId} did not expose an actual rejection.`)
