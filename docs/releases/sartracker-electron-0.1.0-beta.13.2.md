@@ -11,7 +11,7 @@ installer hash or Ubuntu result is asserted here.
 - Intended tag: `electron-v0.1.0-beta.13.2` (not created)
 - Linear: DON-254 qualification; DON-255 publication decision
 - Release-use classification: `ENGINEERING/TRAINING — NON-COUNTED`
-- Validated source: `09343ee94b8d4f4347da416fdb6596a83e08624c` (tree
+- Historical validated source (not the final candidate): `09343ee94b8d4f4347da416fdb6596a83e08624c` (tree
   `bba3dc8e0c74e7ca2ade28e92fdc3af9596c46b0`), Linux validation run 36255209914
 - Tagged candidate commit / release-workflow run / qualified platform and profile: PENDING
 - Scope: controlled synthetic, replayed or disposable-data testing. Not
@@ -20,6 +20,21 @@ installer hash or Ubuntu result is asserted here.
   both require independent exact-byte qualification. No Windows/macOS claim.
 
 ## What changed
+
+The September27 integration uses one source for the release build and its
+qualification harness. It includes duplicate test-ID corrections, a process
+observer fix for confirmed process disappearance, and C28 fixture/oracle repairs.
+Generic dispatch errors no longer count as intended domain rejection. GPX
+malformed input is verified through its reported failure and retained custody;
+finished-mission, recovery-code and wrong-secret cases reach their named boundary.
+The settings invalid-shape contract remains unresolved and explicitly INVALID.
+Focused harness verification is101/101; exact-candidate release CI and Ubuntu
+qualification remain pending. No two-source admission policy was introduced.
+
+Preserve dce4 C10 paging failure, C02 recovery mismatch, field archive timeout,
+C26 package findings and every invalid harness attempt. These changes do not
+resolve those product/oracle findings. The original205-binding programme remains
+required; prior supplemental passes cannot qualify this new source by assertion.
 
 Includes the merged breadcrumb and mission-history programme and the reviewed
 release-gate repairs. This replacement fixes the layer tree's scroll constraint,

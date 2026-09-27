@@ -1,176 +1,111 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-26. Release remains **HOLD**; no final candidate is qualified.
-Donal merged PR55 at `6a29a57a42395d8f239b0862a7ce626e67c73189`.
-Its reviewed head `5f546b45` passed Linux CI **36265017480**, native ownership
-controls and one matching AppImage lifecycle diagnostic. Actual main-process
-interruption and descendant cleanup are now verified. The second main exited
-SIGTRAP during forced harness teardown: retained and unexplained, not graceful
-window-close evidence. Independent source review found no ownership blocker.
+Updated 2026-09-27. **HOLD: no final candidate is qualified or approved for distribution.**
 
-## Active source and testing build
+## Current authority and ownership
 
-Donal resumed work after the stop and authorized the normal grouped direct-master
-push to supersede merged-source run **36271106551** for instrumented C10 bytes.
-Preserve that run and record its actual terminal state; do not change concurrency
-settings or gates. No additional PR ceremony or documentation-only full rebuilds.
+Donal directs continuation through the existing SAME-SOURCE route: integrate
+reviewed necessary harness repairs, verify the combined change, and create one
+matching beta13.2 release build through the existing tag/unpublished-draft
+workflow. Do not ask again for ordinary integration/build steps. No two-source
+policy, substituted CI identity, gate waiver, publication or distribution.
+The original205-binding technical programme remains mandatory.
 
-- C10 diagnostic `d62f85f5`, integrated as `8bb4bc62`: opt-in, failure-only
-  generation/eligible-position/eligible-track expected-versus-observed counts.
-  Public IPC error, paging rules, workload and deadlines remain unchanged.
-  Exact dce4 960k failed again: generation1→2 during ordinary live-middle paging.
-  Backup-only invalidation is locally reproduced, but the actual run's writer is
-  unknown (failure within39 seconds; runtime log removed). No fix/retry authorized.
-- Field selector `16768356`, integrated as `3a0769a5`: explicitly admits the
-  original generator-v2/schema13 ≥3.7GB fixture and all-position archive custody.
-  Its formerly failing preflight passed on the unchanged 093 app. That one run
-  then exhausted the unchanged 60-minute limit after finish/backup, with no
-  ciphertext or producer receipt. Cleanup passed; failed profile/DBs retained.
-  Continued watchdog summaries and CPU do not identify the stalled operation.
-  No blind retry or substitution with the different v6 paging fixture.
-- C02: original app.quit attempt failed the independent unclean-recovery oracle.
-  Native-window correction `8b71fb54` then failed in Playwright's beforeunload
-  default auto-accept with “No dialog is showing”; no lifecycle receipt exists.
-  Followup99c3167e is clean/committed in1608: 42 tests, lint and review accepted.
-  One direct dce4 CI-payload attempt had unforced exit0, absent active marker and
-  valid clean marker, but failed the oracle on false unclean recovery state.
-  Source re-reads the current session marker; startup separately pauses recovered
-  active missions by design. No loss/corruption was demonstrated. Oracle/product
-  contract remains unresolved; no fix, waiver or retry, and no Claude dispatch.
+Astra owns source/build in managed `archive-fixture-contract`; Luna owns serial
+Ubuntu execution; CoS coordinates. Preserve the dirty original checkout and
+other owners' work. Ubuntu must HOLD the obsolete dce4 Debian installation.
+Final source, real successful CI and harness identities must agree before
+authentic campaign compilation. The release workflow runs full source/browser
+gates before packaging; its draft is not permission to publish.
 
-Astra owns source/build integration in managed `archive-fixture-contract`;
-original C02 work remains in `1608`. Sol alone owns serial Ubuntu execution.
-CoS coordinates. Do not alter the dirty original checkout or coordinator checkout.
-No new workload should use the superseded uninstrumented build. Run36271106551
-was cancelled; instrumented run36271342456 built exact dce4 installers and passed
-packaged checks. All CI jobs, including full correctness/browser, subsequently
-passed in36271342456; this does not clear the separate failed diagnostic limits.
-The normal direct push used existing account privileges; GitHub reported protected
-ref/PR-rule bypass. No force/admin option, settings change or CI gate change occurred.
+## Active source work
 
-## Verification snapshot
+Remote master remains dce4dfc4 at this checkpoint; local reviewed descendants
+include four duplicate-test-title corrections, process observer lifetime handling
+and C28 failure harness repairs. Product/electron/build inputs are unchanged by
+these later harness repairs. The current C28 follow-up passed independent review.
 
-C10 stable source cycle passed 587 files / 6,077 tests / 26 skips (589.26s),
-lint, TypeScript/build and bundle budgets. Eight affected suites passed76 tests;
-independent native review accepted. Field source passed49 focused tests and
-review; preflight additionally passed packaged diagnosis. Integration preserves
-those executable blobs and resolves documentation-only conflicts. Combined
-verification passed7 affected suites/95 tests, targeted lint and diff checks.
-These diagnostics/harness changes do not alter operator UI.
+- Observer: omit an incomplete ENOENT/ESRCH sample only after fresh procfs confirms
+  the process disappeared. Live-process missing files, unexpected errors and
+  identity mismatches remain fatal. Prior valid observations remain mandatory.
+- C28: all9 callback invocations repaired; generic errors no longer count as
+  domain proof. Replay, marker and diagnostic fixtures reach exact intended
+  rejections. Follow-up binds outing overlap to its unchanged active outing,
+  records malformed GPX as a resolved file failure plus fresh durable custody,
+  and uses finished mission / genuine recovery issuance / valid wrong secret
+  for pause, finalization and review. Subsequent successful lifecycle remains.
+- Settings invalid-shape stays explicitly INVALID: null reaches an application
+  TypeError before validation. Replacing it with missing-provider-URL would
+  change the named operation; no substitute oracle has been invented.
+- GPX custody intentionally appends failure records; unchanged boundary means
+  mission and positions, not all database storage.
 
-PR55 patched controls:13 Python tests; native Linux ownership suite6 pass,
-3 Mac-only skips. Matching5f AppImage lifecycle: current-fix maxima104/110/167/174ms,
-strict200ms gate unchanged; real-main SIGKILL, residual removal and zero descendants
-verified. Full identities and the unexplained forced-teardown SIGTRAP are retained
-in the Ubuntu report. Ordinary push CI is not strict timing qualification.
+Focused follow-up:101/101 across7 affected suites, ESLint, TypeScript and
+diff checks passed. Red controls retained under tmp/c28-failure-repair.
+Independent review found no actionable issue and separately passed33/33 tests.
+Earlier observer controls passed85/85 on Ubuntu;
+earlier title repairs passed101 assertions. No fresh packaged proof yet.
+No operator behaviour changed, so the manual needs no update for these repairs.
 
-Historical merged093 full Linux dispatch **36255209914** passed every lane,
-including strict responsiveness, Chromium225/225 flaky-rejecting,960k, Train D,
-soak, legacy recovery, archive lifecycle and AppImage launch.
-Documentation-only descendants reuse unchanged executable evidence, not a new
-exact-head runtime claim. Retain failures **36249965817** (sanitized Train D stack,
-fixed by093) and **36252807378** (archive verify201ms; cause unproven).
-Archive current-fix margin remains a DON-254 concern; never relax200ms.
+## Retained failures and proof limits
 
-## Authority and qualification boundaries
+- Exact dce4 C10 960k: generation1→2 in ordinary live-middle paging. Backup-only
+  invalidation is locally reproduced; the actual writer is unknown (37–39s,
+  runtime log removed). No product fix or blind retry.
+- C02 corrected native-window path: unforced exit0, no active marker, valid clean
+  marker, but false unclean-recovery oracle. Startup also intentionally pauses
+  recovered active missions. No demonstrated loss/corruption; semantics unresolved.
+- Original generator-v2/schema13 ≥3.7GB field archive: unchanged60-minute limit
+  exhausted after finish/backup, no ciphertext/producer receipt. Retain profile.
+- Earlier archive verify201ms breached strict200ms. Later pass does not explain
+  it. Historical PR55 forced teardown SIGTRAP is not graceful-close proof.
+- C23 AppImage owner reports8-predicate PASS. C26 retains exit127 cache cleanup,
+  restart audit mismatch and69 blocked HTTPS attempts; not provider-contact proof.
+- C28 field960k/2m failed setup (no active mission), not exercised product failure.
+  Temporary AppImage-file observation races invalidated other attempts.
+  Original row8 rawPASS is invalid: dispatch TypeError never exercised settings.
+  Audit all18 failure bindings; preserve original receipts.
+- Controllers for corrected rows14/16/24/26 substituted harness SHA into old CI
+  provenance. Preserve files; provenance-dependent claims are INVALID.
+  No retrospective admission or identity rewrite.
 
-Donal authorized bounded reviewed fixes directly to master and PR55 merge.
-No tag, publication/distribution, settings change, waiver or hidden gate bypass
-is part of this integration. DON-254's historical Done state does not qualify
-the candidate; DON-255 is downstream. DON-179 remains open.
+## Programme state and next actions
 
-Sequence: Ubuntu technical validation, approval for controlled handover to Eamonn,
-then C29 acceptance on the original team machine. C29 signer is not required to
-start technical testing; C29 itself remains mandatory and pending.
-Technical READY_FOR_APPROVAL authorizes neither publication nor distribution.
-CoS owns resolving minimal same-campaign authority/profile prebinding before
-sealing. Optional acceptance/key inputs cannot be added after compilation.
-C27 remains unattempted until controls pass or authentic acceptance is already
-sealed into the original reviewed inputs; NEEDS_HUMAN_DECISION blocks handover.
-Live controls may be re-observed. No control/settings/signature change is authorized.
-Public-byte C00 follows actual approved publication. No cross-campaign promotion.
+The coverage reconciliation preserves every original command/oracle. It is not
+a compiled campaign; all formal statuses remain NOT_RUN. Source/browser execution
+history:31 original PASS/19 INVALID,13 dependency-recovery browser PASS on dce4,
+6 title-corrected source PASS on e2b95 at original counts. Preserve both histories;
+these are supplemental identities, not exact new-candidate proof.
+Source owner checked205 bindings and50 histories; the1168-file raw manifest was
+not independently rehashed here. Ubuntu retained the64GiB floor.
 
-Private map/config, schema12 storage baseline and beta12.11 rollback installers
-are prepared; do not request again. Original private map zoom8–16 is rejected
-(actual9–16); only the separately hashed minZoom9 metadata derivative is authorized.
-Its earlier complete diagnostic passed, but final admission must bind derivative
-and private lineage in immutable inputs. No private map bytes/locations/screenshots
-enter repository evidence. C05 consent permits only existing configured account
-and selected tracker GET-only, executed by Sol; live proof remains pending.
-C29 human/original-machine acceptance cannot be inferred from Ubuntu evidence.
-Retain full applicable C00–C29 variants, package tiers, fixed soaks and failed receipts.
+1. Record Linear and release-note HOLD state, integrate
+   the reviewed source and create the single matching beta13.2 tag build.
+2. Give Ubuntu the exact successful run/attempt/artifact identities and hashes;
+   install that real Debian payload through secure administrator entry.
+3. Compile/preflight using actual candidate CI, final clean source, fixtures,
+   draft release and rollback inputs; no source substitutions or lease bypass.
+4. Continue original205 technical bindings serially, preserving failures and
+   continuing independent unrun checks. Both AppImage and75 installed rows matter.
+5. Technical approval precedes controlled handover and original-machine C29.
+   C29 signer is not needed to start technical testing; C29 remains mandatory.
+   Public-byte, C27 human/control and publication steps wait on real prerequisites.
 
-## Next actions
+DON-254 is the qualification record; historical Done does not qualify this build.
+DON-255 is downstream publication; DON-179 remains open. No automatic retries,
+PR ceremony or documentation-only rebuild loops. Strict200ms, workload sizes,
+deadlines, no-flaky policy and actual private/live fixture boundaries are unchanged.
 
-Donal corrected the scope: execute the full original extensive Ubuntu programme.
-Urgency defers nonblocking fixes, not tests. The earlier limited-slice handover-ready
-judgment is retracted; the prepared ZIP must not be distributed. The original
-205 bindings are mapped in the [coverage reconciliation](../docs/assurance/beta13-original-programme-reconciliation-20260926.md),
-with original commands/oracles retained in its JSON companion. This is not a
-compiled campaign; no frozen ledger was found in the runtime owner's bounded search.
-Retain C10/C02 and field failures; continue independent unrun variants using the
-existing adapters, deadlines and both genuine package tiers. No automatic fixes,
-blind retries, new PRs or rebuild loops. C13 and C28 diagnostic passes are separate
-from campaign admission; C28 active/restored rendered UI remains unproved.
-Runtime restored the required64GiB floor through verified recoverable redundant
-copy cleanup. Owner reports C23 AppImage PASS of8 predicates and C26 AppImage
-independent FAIL (exit127, restart audit, blocked network attempts), with positive
-cleanup. Raw readback is pending; retain failure and continue the original queue.
-Existing suite and soak adapter execution/revalidation contexts are supplied to
-the owner for all50 suite and24 soak bindings; no new campaign is invented.
-Suite discovery exposed repeated parameterized test IDs in C00/C10/C16/C17/C22/C26.
-Authorized harness-only repair adds safe case indices to four test titles;
-all101 focused assertions passed and18 case IDs are now distinct. Original INVALID
-receipts stay retained. Assertion bodies, validators and dce4 app bytes are
-unchanged. Corrected harness identity must be recorded separately, with fresh
-discovery and one corrected execution per affected row; no app rebuild/full CI.
-Source/browser execution is now complete: original31 PASS/19 INVALID, all13
-browser prerequisite recoveries PASS on dce4, all6 corrected-source rows PASS on
-e2b95 with original counts. Source owner checked the205-row runtime ledger and
-retained histories; raw1168-file manifest was not independently rehashed here.
-All formal campaign statuses remain NOT_RUN. Ubuntu currently waits at the secure
-administrator prompt for exact Debian installation; no parallel runtime workload.
-Later AppImage rows10/18 exposed observer hashing after temporary ASAR removal.
-Authorized harness-only repair omits an incomplete sample only for ENOENT/ESRCH
-plus a fresh procfs check confirming process disappearance. Live-process missing
-files, identity mismatch and unexpected errors remain fatal; earlier valid runtime
-observations are still required. Red/green local controls and real ASAR deletion
-with simulated process exit passed;7 suites68 passed/17 platform skips, lint/diff
-passed. Independent Codex review found no issue. Linux process/runtime proof is
-still required before corrected attempts; original invalid attempts remain retained.
-Linux observer controls subsequently passed85/85. Corrected row18 retained its
-report but exposed a C28 false-positive oracle: all9 failure producers passed
-`page` instead of the callback, and any error string was accepted. Prior row8
-raw PASS is invalidated; preserve the receipt and audit all18 affected bindings.
-Bounded repair invokes every bridge and admits only exact domain rejections for
-replay, marker and diagnostics. Marker envelope and diagnostic filename fixtures
-now reach those intended boundaries. Independent review31/31 focused tests passed.
-Other6 variants remain INVALID: settings null throws TypeError before validation;
-outing needs an independently bound overlap oracle; GPX reports rejected files
-instead of throwing; pause fixture mutates state and mismatches its finished-mission
-label; finalize hits lifecycle/UUID before recovery; review secret has invalid shape.
-No product change or candidate rebuild. Use clean separately committed harness,
-never a dirty overlay; one verified subset attempt precedes further corrected runs.
-Source-binding audit now blocks corrected package/soak admission: the compiler,
-live-checkout checks, CI verifier and adapters share one source identity. Clean58f
-harness plus actual dce4 CI cannot pass honestly. Row36 reproduces the exact source
-mismatch before launch. Controllers for corrected rows14/16/24/26 substituted58f
-into CI provenance; preserve originals but invalidate provenance-dependent claims.
-No adapter-only bypass was implemented. A new two-source campaign policy would
-need Donal's decision: immutable dce4 candidate/CI, separately reviewed clean harness
-SHA/tree and allowed-diff proof, both identities sealed before future attempts,
-no retrospective admission. Repeated85/99 prerequisite tests cannot fix this gate.
-Exact dce4 Debian installation remains necessary for all75 installed-tier rows.
-C00 public bytes, C27 release admission and C29 human acceptance remain explicitly
-parked at their real prerequisites. Source/browser CI reuse needs exact suite and
-configuration reconciliation; ordinary push CI did not cover C24 strict timing.
-Detailed runtime/source impact: Ubuntu report.
-Use validation-workflow hashes, not installer names, to identify testing builds:
-release and validation currently share filenames. Release-workflow bytes require
-their own tag-driven successful run and unpublished draft; no final tag is frozen.
+## Evidence pointers
 
-Evidence and history: [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md),
-[active workplan](../docs/two-track-execution-workplan.md),
-[testing cadence](../docs/testing-and-review-cadence.md),
-[PR54 repair ledger](../docs/releases/beta13-browser-gate-repair.md),
-[pre-repair history](archive/2026-09-25-pre-c12-repair.md).
+- [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md)
+- [Original205 reconciliation](../docs/assurance/beta13-original-programme-reconciliation-20260926.md)
+- [Active workplan](../docs/two-track-execution-workplan.md)
+- [Testing cadence](../docs/testing-and-review-cadence.md)
+- [Beta13.2 draft notes](../docs/releases/sartracker-electron-0.1.0-beta.13.2.md)
+- [PR54 repair ledger](../docs/releases/beta13-browser-gate-repair.md)
+- [Earlier history](archive/2026-09-25-pre-c12-repair.md)
+
+Historical dce4 CI36271342456 succeeded; it is not the new candidate. Preserve its
+artifacts and earlier093 CI36255209914. Beta12.11 remains the rollback reference;
+exact release/installer identities are prepared in tmp/authentic-admission.

@@ -521,6 +521,9 @@ describe('C28 composite packaged receipt', () => {
     for (const [variantId, phase, operation, message] of [
       ['failure-marker-search', 'markerSearch', 'upsertMarker.invalid-coordinate', 'Marker latitude must be a finite value between -90 and 90.'],
       ['failure-sanitized-diagnostics', 'sanitizedDiagnostics', 'exportDiagnosticsReport.invalid-file-name', 'Diagnostics report file name is required.'],
+      ['failure-pause-restart', 'pauseRestart', 'resumeMission.finished-mission', "Cannot transition mission with status 'finished'."],
+      ['failure-finish-finalize-archive', 'finishFinalizeArchive', 'finalizeMission.invalid-recovery', 'Mission archive operation failed safely (ARCHIVE_RECOVERY_ISSUANCE_INVALID).'],
+      ['failure-archive-review-restore', 'archiveReviewRestore', 'archiveReview.open.wrong-secret', 'Archive review operation failed safely (ARCHIVE_RESTORE_WRONG_KEY).'],
     ]) {
       const valid = copy(variantReport)
       const variant = valid.variant as JsonObject
@@ -533,11 +536,6 @@ describe('C28 composite packaged receipt', () => {
     }
     for (const [variantId, phase, operation] of [
       ['failure-settings-bootstrap', 'settingsBootstrap', 'saveAppSettings.invalid-shape'],
-      ['failure-mission-outing', 'missionOutingParticipants', 'createOuting.overlapping-active'],
-      ['failure-gpx', 'gpxDatedUndated', 'importGpxEvidencePaths.malformed'],
-      ['failure-pause-restart', 'pauseRestart', 'resumeMission.finished-mission'],
-      ['failure-finish-finalize-archive', 'finishFinalizeArchive', 'finalizeMission.invalid-recovery'],
-      ['failure-archive-review-restore', 'archiveReviewRestore', 'archiveReview.open.wrong-secret'],
     ]) {
       const invalid = copy(variantReport)
       const variant = invalid.variant as JsonObject
@@ -545,6 +543,54 @@ describe('C28 composite packaged receipt', () => {
       Object.assign(variant.facts as JsonObject, { phase, operation })
       expect(validateCompositeVariantReceipt(invalid, { ...expected, variantId }).failureReasons)
         .toContain(`C28 ${variantId} requires a reviewed operation-specific domain rejection oracle; generic rejection is not evidence.`)
+    }
+  })
+
+  it('binds an outing overlap rejection to the unchanged active outing', () => {
+    const state = JSON.stringify({ mission: { id: 'mission-c28' }, positionCount: 2,
+      outings: [{ id: 'outing-c28', label: 'C28 routine outing', started_at: '2026-09-26T12:00:00.000Z', ended_at: null }] })
+    const message = 'Outing window overlaps "C28 routine outing" (2026-09-26T12:00:00.000Z to active).'
+    const facts = { phase: 'missionOutingParticipants', operation: 'createOuting.overlapping-active',
+      beforeState: state, afterState: state, beforeStateSha256: createHash('sha256').update(state).digest('hex'),
+      afterStateSha256: createHash('sha256').update(state).digest('hex'), mutationPreserved: true,
+      rejected: true, errorName: 'Error', errorCode: null, errorMessage: message,
+      errorMessageSha256: createHash('sha256').update(message).digest('hex') }
+    const variantId = 'failure-mission-outing'
+    const candidate = { ...report(), variant: { variantId, coveredAxes: C28_VARIANT_AXIS_MAP[variantId], missingAxes: [], facts } }
+    expect(validateCompositeVariantReceipt(candidate, { ...expected, variantId }).valid).toBe(true)
+    facts.errorMessage = message.replace('12:00', '13:00')
+    facts.errorMessageSha256 = createHash('sha256').update(facts.errorMessage).digest('hex')
+    expect(validateCompositeVariantReceipt(candidate, { ...expected, variantId }).valid).toBe(false)
+  })
+
+  it('requires a reported GPX failure with new durable custody and no imported evidence', () => {
+    const state = JSON.stringify({ mission: { id: 'mission-c28' }, positionCount: 2 })
+    const sourcePath = path.join(expected.profilePath, 'malformed-c28.gpx')
+    const sourceSha256 = createHash('sha256').update('<gpx><trk><trkseg><trkpt lat="not-a-coordinate" /></trkseg>').digest('hex')
+    const reason = 'GPX file could not be parsed: malformed-c28.gpx'
+    const issue = { id: 'failure:1', batch_id: 'batch', batch_status: 'completed_with_failures',
+      file_name: 'malformed-c28.gpx', source_retained: true, content_sha256: sourceSha256, reason }
+    const facts = { phase: 'gpxDatedUndated', operation: 'importGpxEvidencePaths.malformed',
+      beforeState: state, afterState: state, beforeStateSha256: createHash('sha256').update(state).digest('hex'),
+      afterStateSha256: createHash('sha256').update(state).digest('hex'), mutationPreserved: true,
+      outcome: 'reported-file-failure', sourcePath, sourceSha256,
+      importResult: { imports: [], failures: [{ sourcePath, reason }] },
+      failureIssuesBefore: { entries: [], nextCursor: null }, failureIssuesAfter: { entries: [issue], nextCursor: null } }
+    const variantId = 'failure-gpx'
+    const candidate = { ...report(), variant: { variantId, coveredAxes: C28_VARIANT_AXIS_MAP[variantId], missingAxes: [], facts } }
+    expect(validateCompositeVariantReceipt(candidate, { ...expected, variantId }).valid).toBe(true)
+    for (const delta of [
+      { importResult: { imports: [{}], failures: [{ sourcePath, reason }] } },
+      { importResult: { imports: [], failures: [{ sourcePath, reason: 'unrelated error' }] } },
+      { failureIssuesBefore: { entries: [issue], nextCursor: null } },
+      { failureIssuesAfter: { entries: [{ ...issue, source_retained: false }], nextCursor: null } },
+      { failureIssuesAfter: { entries: [{ ...issue, content_sha256: 'a'.repeat(64) }], nextCursor: null } },
+      { failureIssuesAfter: { entries: [{ ...issue, projection_warnings: ['truncated'] }], nextCursor: null } },
+      { failureIssuesAfter: { entries: [issue], nextCursor: 'truncated' } },
+      { errorName: 'TypeError', errorMessage: 'operation is not a function' },
+    ]) {
+      expect(validateCompositeVariantReceipt({ ...candidate, variant: { ...candidate.variant, facts: { ...facts, ...delta } } },
+        { ...expected, variantId }).valid).toBe(false)
     }
   })
 

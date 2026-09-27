@@ -152,6 +152,10 @@ function validateVariantFacts(variantId, facts, expected, failures) {
   }
   if (Object.hasOwn(FAILURE_VARIANT_OPERATIONS, variantId)) {
     const expectedOperation = FAILURE_VARIANT_OPERATIONS[variantId]
+    if (variantId === 'failure-gpx') {
+      validateMalformedGpxFailure(facts, expected, failures)
+      return
+    }
     if (!hasExactKeys(facts, [
       'afterState', 'afterStateSha256', 'beforeState', 'beforeStateSha256', 'errorCode',
       'errorMessage', 'errorMessageSha256', 'errorName', 'mutationPreserved', 'operation',
@@ -174,12 +178,28 @@ function validateVariantFacts(variantId, facts, expected, failures) {
       'failure-coverage-replay': 'Mission replay selected time is invalid.',
       'failure-marker-search': 'Marker latitude must be a finite value between -90 and 90.',
       'failure-sanitized-diagnostics': 'Diagnostics report file name is required.',
+      'failure-pause-restart': "Cannot transition mission with status 'finished'.",
+      'failure-finish-finalize-archive': 'Mission archive operation failed safely (ARCHIVE_RECOVERY_ISSUANCE_INVALID).',
+      'failure-archive-review-restore': 'Archive review operation failed safely (ARCHIVE_RESTORE_WRONG_KEY).',
     }
-    const domainMessage = domainMessages[variantId]
+    let domainMessage = domainMessages[variantId]
+    if (variantId === 'failure-mission-outing') {
+      try {
+        const outings = JSON.parse(facts.beforeState).outings
+        if (outings?.length === 1 && outings[0].label === 'C28 routine outing'
+          && outings[0].ended_at === null && Number.isFinite(Date.parse(outings[0].started_at))) {
+          domainMessage = `Outing window overlaps "C28 routine outing" (${outings[0].started_at} to active).`
+        }
+      } catch { /* Invalid serialized fixture remains inadmissible below. */ }
+    }
     const channels = {
       'failure-coverage-replay': 'sartracker:mission-store:read-mission-replay',
       'failure-marker-search': 'sartracker:mission-store:upsert-marker',
       'failure-sanitized-diagnostics': 'sartracker:export-diagnostics-report',
+      'failure-pause-restart': 'sartracker:mission-store:resume-mission',
+      'failure-finish-finalize-archive': 'sartracker:mission-store:finalize-mission',
+      'failure-archive-review-restore': 'sartracker:archive-review:open',
+      'failure-mission-outing': 'sartracker:mission-store:create-outing',
     }
     const firstLine = typeof facts?.errorMessage === 'string' ? facts.errorMessage.split('\n')[0] : ''
     const ipcPrefix = `Error invoking remote method '${channels[variantId]}': Error: `
@@ -217,6 +237,34 @@ function validateVariantFacts(variantId, facts, expected, failures) {
     return
   }
   failures.push('C28 variant facts are unavailable for the requested producer variant.')
+}
+
+/** Verifies the malformed-file result and fresh retained failure custody, without inventing an exception. */
+function validateMalformedGpxFailure(facts, expected, failures) {
+  const sourcePath = path.join(expected.profilePath, 'malformed-c28.gpx')
+  const sourceSha256 = sha256(Buffer.from('<gpx><trk><trkseg><trkpt lat="not-a-coordinate" /></trkseg>', 'utf8'))
+  const reason = 'GPX file could not be parsed: malformed-c28.gpx'
+  const before = facts?.failureIssuesBefore
+  const after = facts?.failureIssuesAfter
+  const issue = after?.entries?.[0]
+  if (!hasExactKeys(facts, [
+    'phase', 'operation', 'beforeState', 'afterState', 'beforeStateSha256', 'afterStateSha256',
+    'mutationPreserved', 'outcome', 'sourcePath', 'sourceSha256', 'importResult', 'failureIssuesBefore', 'failureIssuesAfter',
+  ]) || facts.phase !== 'gpxDatedUndated' || facts.operation !== 'importGpxEvidencePaths.malformed'
+    || facts.outcome !== 'reported-file-failure' || facts.sourcePath !== sourcePath || facts.sourceSha256 !== sourceSha256
+    || facts.mutationPreserved !== true || typeof facts.beforeState !== 'string' || facts.beforeState !== facts.afterState
+    || sha256(Buffer.from(facts.beforeState, 'utf8')) !== facts.beforeStateSha256
+    || facts.beforeStateSha256 !== facts.afterStateSha256
+    || !Array.isArray(facts.importResult?.imports) || facts.importResult.imports.length !== 0
+    || !Array.isArray(facts.importResult?.failures) || facts.importResult.failures.length !== 1
+    || facts.importResult.failures[0]?.sourcePath !== sourcePath || facts.importResult.failures[0]?.reason !== reason
+    || !Array.isArray(before?.entries) || before.entries.length !== 0 || before.nextCursor !== null
+    || !Array.isArray(after?.entries) || after.entries.length !== 1 || after.nextCursor !== null
+    || !nonEmpty(issue?.id) || !nonEmpty(issue?.batch_id) || issue?.batch_status !== 'completed_with_failures'
+    || issue?.file_name !== 'malformed-c28.gpx' || issue?.content_sha256 !== sourceSha256
+    || issue?.source_retained !== true || issue?.reason !== reason || issue?.projection_warnings !== undefined) {
+    failures.push('C28 failure-gpx does not prove the malformed-file result, fresh retained failure custody, and unchanged mission/positions.')
+  }
 }
 
 /** Re-opens the independently copied BCP source and binds every field-scale fact to it. */

@@ -195,7 +195,7 @@ export async function runCompositeProbe(input) {
       ? created.variantFacts
       : null
     if (options.variant === 'failure-settings-bootstrap' || options.variant === 'failure-mission-outing') {
-      variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, null)
+      variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, null, passphraseInMemory)
     }
 
     currentPhase = 'gpxDatedUndated'
@@ -349,14 +349,16 @@ export async function runCompositeProbe(input) {
       observedUserDataPath: observedUserDataPaths.at(-1) ?? profilePath,
     }
     if (options.variant === 'failure-pause-restart' || options.variant === 'failure-finish-finalize-archive') {
-      variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, null)
+      variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, null, passphraseInMemory)
     }
 
     currentPhase = 'finishFinalizeArchive'
-    const finalized = await finalizeArchive(page, missionId, passphraseInMemory)
+    const finalized = await finalizeArchive(page, missionId, passphraseInMemory, {
+      allowFinished: options.variant === 'failure-pause-restart' || options.variant === 'failure-finish-finalize-archive',
+    })
     phases.finishFinalizeArchive = finalized
     if (options.variant === 'failure-archive-review-restore') {
-      variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, finalized.archiveId)
+      variantFacts = await runPhaseFailureVariant(page, profilePath, missionId, options.variant, finalized.archiveId, passphraseInMemory)
     }
     currentPhase = 'archiveReviewRestore'
     const review = await runArchiveReview(page, missionId, finalized.archiveId, passphraseInMemory, coverageReplay.replay.selectedTime)
@@ -1202,11 +1204,22 @@ const FAILURE_VARIANT_PHASES = Object.freeze({
 })
 
 /** Exercises one named phase's real rejection boundary and proves no mission mutation. */
-export async function runPhaseFailureVariant(page, profilePath, missionId, variantId, archiveId) {
+export async function runPhaseFailureVariant(page, profilePath, missionId, variantId, archiveId, passphrase) {
   const operation = FAILURE_VARIANT_OPERATIONS[variantId]
   if (operation === undefined) throw new Error(`Unsupported C28 failure variant: ${variantId}`)
-  const beforeState = await readFailureBoundaryState(page, missionId)
+  let issuance = null
+  if (variantId === 'failure-pause-restart' || variantId === 'failure-finish-finalize-archive') {
+    const finished = await page.evaluate(async (id) => window.sartrackerElectron.missionStore.finishMission(id), missionId)
+    if (finished?.status !== 'finished') throw new Error('C28 failure fixture did not reach finished state.')
+  }
+  if (variantId === 'failure-finish-finalize-archive') {
+    issuance = await page.evaluate(async (id) => window.sartrackerElectron.missionStore.issueMissionArchiveRecoveryCode(id), missionId)
+    if (!/^(?:[0-9A-HJKMNP-TV-Z]{5}-){7}[0-9A-HJKMNP-TV-Z]{5}$/u.test(issuance?.recoveryCode)
+      || typeof issuance?.operationId !== 'string') throw new Error('C28 failure fixture recovery issuance was invalid.')
+  }
+  const beforeState = await readFailureBoundaryState(page, missionId, variantId)
   let rejection = null
+  let gpxFacts = null
   if (variantId === 'failure-settings-bootstrap') {
     rejection = await invokeRejected( async () => page.evaluate(async () => {
       const bridge = window.sartrackerElectron
@@ -1214,19 +1227,26 @@ export async function runPhaseFailureVariant(page, profilePath, missionId, varia
       return bridge.saveAppSettings(null)
     }))
   } else if (variantId === 'failure-mission-outing') {
-    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
+    if (beforeState.outings?.length !== 1 || beforeState.outings[0].label !== 'C28 routine outing'
+      || beforeState.outings[0].ended_at !== null) throw new Error('C28 overlap fixture must have exactly one active routine outing.')
+    rejection = await invokeRejected( async () => page.evaluate(async (input) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.createOuting !== 'function') throw new Error('Outing bridge is unavailable.')
-      return store.createOuting({ mission_id: id, label: 'C28 invalid finished outing', started_at: new Date().toISOString() })
-    }, missionId))
+      return store.createOuting({ mission_id: input.missionId, label: 'C28 invalid overlapping outing', started_at: input.startedAt })
+    }, { missionId, startedAt: beforeState.outings[0].started_at }))
   } else if (variantId === 'failure-gpx') {
     const malformedPath = path.join(profilePath, 'malformed-c28.gpx')
-    await writeFile(malformedPath, '<gpx><trk><trkseg><trkpt lat="not-a-coordinate" /></trkseg>', { encoding: 'utf8', mode: 0o600 })
-    rejection = await invokeRejected( async () => page.evaluate(async (input) => {
+    const source = '<gpx><trk><trkseg><trkpt lat="not-a-coordinate" /></trkseg>'
+    await writeFile(malformedPath, source, { encoding: 'utf8', mode: 0o600 })
+    const failureIssuesBefore = await page.evaluate(async (id) => window.sartrackerElectron.missionStore.listGpxImportIssues({ missionId: id, limit: 100 }), missionId)
+    const importResult = await page.evaluate(async (input) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.importGpxEvidencePaths !== 'function') throw new Error('GPX bridge is unavailable.')
       return store.importGpxEvidencePaths({ missionId: input.missionId, paths: [input.path] })
-    }, { missionId, path: malformedPath }))
+    }, { missionId, path: malformedPath })
+    const failureIssuesAfter = await page.evaluate(async (id) => window.sartrackerElectron.missionStore.listGpxImportIssues({ missionId: id, limit: 100 }), missionId)
+    gpxFacts = { outcome: 'reported-file-failure', sourcePath: malformedPath, sourceSha256: sha256Text(source),
+      importResult, failureIssuesBefore, failureIssuesAfter }
   } else if (variantId === 'failure-marker-search') {
     rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const store = window.sartrackerElectron?.missionStore
@@ -1243,28 +1263,24 @@ export async function runPhaseFailureVariant(page, profilePath, missionId, varia
   } else if (variantId === 'failure-pause-restart') {
     rejection = await invokeRejected( async () => page.evaluate(async (id) => {
       const store = window.sartrackerElectron?.missionStore
-      if (store === undefined || typeof store.pauseMission !== 'function' || typeof store.resumeMission !== 'function') {
+      if (store === undefined || typeof store.resumeMission !== 'function') {
         throw new Error('Mission pause/resume bridge is unavailable.')
       }
-      await store.pauseMission(id)
-      try {
-        return await store.pauseMission(id)
-      } finally {
-        await store.resumeMission(id)
-      }
+      return store.resumeMission(id)
     }, missionId))
   } else if (variantId === 'failure-finish-finalize-archive') {
     rejection = await invokeRejected( async () => page.evaluate(async (input) => {
       const store = window.sartrackerElectron?.missionStore
       if (store === undefined || typeof store.finalizeMission !== 'function') throw new Error('Archive finalization bridge is unavailable.')
-      return store.finalizeMission(input.missionId, { operationId: 'c28-invalid-operation', passphrase: 'wrong', recoveryCode: 'wrong' })
-    }, { missionId, archiveId }))
+      return store.finalizeMission(input.missionId, { operationId: input.operationId, passphrase: input.passphrase, recoveryCode: input.recoveryCode })
+    }, { missionId, operationId: issuance.operationId, passphrase,
+      recoveryCode: (issuance.recoveryCode[0] === '0' ? '1' : '0') + issuance.recoveryCode.slice(1) }))
   } else if (variantId === 'failure-archive-review-restore') {
-    rejection = await invokeRejected( async () => page.evaluate(async (id) => {
+    rejection = await invokeRejected( async () => page.evaluate(async (input) => {
       const review = window.sartrackerElectron?.archiveReview
       if (review === undefined || typeof review.open !== 'function') throw new Error('Archive review bridge is unavailable.')
-      return review.open({ operationId: 'c28-invalid-review-operation', archiveId: id, containerVersion: 2, slotType: 'passphrase', secret: 'wrong' })
-    }, archiveId))
+      return review.open({ operationId: input.operationId, archiveId: input.archiveId, containerVersion: 2, slotType: 'passphrase', secret: input.secret })
+    }, { archiveId, operationId: randomUUID(), secret: `${passphrase}-wrong` }))
   } else if (variantId === 'failure-sanitized-diagnostics') {
     rejection = await invokeRejected( async () => page.evaluate(async () => {
       const bridge = window.sartrackerElectron
@@ -1272,34 +1288,33 @@ export async function runPhaseFailureVariant(page, profilePath, missionId, varia
       return bridge.exportDiagnosticsReport({ fileName: '', contents: 'C28 invalid filename' })
     }))
   }
-  if (rejection === null) throw new Error(`C28 ${variantId} did not expose an actual rejection.`)
-  const afterState = await readFailureBoundaryState(page, missionId)
+  if (rejection === null && gpxFacts === null) throw new Error(`C28 ${variantId} did not expose an actual rejection.`)
+  const afterState = await readFailureBoundaryState(page, missionId, variantId)
   const beforeSerialized = JSON.stringify(beforeState)
   const afterSerialized = JSON.stringify(afterState)
   return {
     phase: FAILURE_VARIANT_PHASES[variantId],
     operation,
-    rejected: true,
     beforeState: beforeSerialized,
     afterState: afterSerialized,
     beforeStateSha256: sha256Text(beforeSerialized),
     afterStateSha256: sha256Text(afterSerialized),
     mutationPreserved: beforeSerialized === afterSerialized,
-    ...rejection,
-    errorMessageSha256: sha256Text(rejection.errorMessage),
+    ...(gpxFacts ?? { rejected: true, ...rejection, errorMessageSha256: sha256Text(rejection.errorMessage) }),
   }
 }
 
 /** Reads a compact same-mission state snapshot for rejection-boundary comparison. */
-async function readFailureBoundaryState(page, missionId) {
-  return page.evaluate(async (id) => {
+async function readFailureBoundaryState(page, missionId, variantId) {
+  return page.evaluate(async ({ id, variant }) => {
     const store = window.sartrackerElectron?.missionStore
     if (store === undefined || typeof store.getMission !== 'function' || typeof store.countPositions !== 'function') {
       throw new Error('Failure-boundary state bridge is unavailable.')
     }
     const mission = await store.getMission(id)
-    return { mission, positionCount: await store.countPositions(id) }
-  }, missionId)
+    return { mission, positionCount: await store.countPositions(id),
+      ...(variant === 'failure-mission-outing' ? { outings: await store.listOutings(id) } : {}) }
+  }, { id: missionId, variant: variantId })
 }
 
 /** Converts one promise rejection into retained raw error facts. */
