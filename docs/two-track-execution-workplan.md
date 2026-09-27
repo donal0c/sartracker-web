@@ -1,11 +1,15 @@
 # Two-Track Execution Workplan
 
-**Latest direction2026-09-27:** leave GitHub unconfigured on Ubuntu. Astra owns
-the bounded public CI metadata transport repair and one new same-source
-beta13.3 candidate; beta13.2 remains untouched. Fresh provenance and every local
-byte/payload/fixture check remain mandatory. Luna continues serial fixture/disk
-preparation and waits for the new exact candidate before compilation. Draft/C27
-proof and publication authority are unchanged. See handoff for current checks.
+**Current2026-09-27:** beta13.3 source61b92e80/tree148f2856, release36309397874
+attempt1 SUCCESS;6174 correctness/302 strict/225 Chromium passes plus packaged
+gates. CI artifact10928579832 and unpublished draft397599722 hashes independently
+verified. Public CI admission no longer requires Ubuntu GitHub authentication;
+all provenance/byte checks remain. Luna owns exact new installation/payload proof,
+complete immutable inputs and the original205 serial programme. Field source is
+restored with reserve; preparation is not qualification. Beta13.2 stays untouched.
+Draft/C27/C29 and publication authority are unchanged. See handoff for next steps.
+
+The beta13.2 snapshot below is historical, not the current candidate.
 
 > **Canonical planning path.** Start here when deciding what to do next. All new planning, hardening, feedback, release, map, UI, verification, and parity work must either fit into this queue or update this queue before implementation starts.
 

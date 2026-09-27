@@ -903,3 +903,54 @@ validation. Changing to missing URL would alter the named stimulus. Other C28
 fixes have101 focused passes and independent33-pass review; only new packaged
 execution can establish their runtime result. Preserve every earlier failed,
 invalid and provenance-substituted receipt; no retrospective qualification.
+
+## Beta13.3 public CI transport and verified release — 2026-09-27
+
+Donal authorized leaving GitHub unconfigured on Ubuntu. Public run/artifact/job
+metadata now uses bounded direct HTTPS to fixed GitHub repository endpoints,
+without credentials, redirects or cached-JSON trust. Exact provenance validation,
+ZIP/installer/installed-payload/fixture checks remain unchanged. Draft/C27 access
+and human/publication authority are separate; no cross-host proof substitution.
+
+Candidate61b92e80ff16f43e1e8efd7d42129c5e0262fc54, tree
+148f2856f2c2c40889c7221f7c315d582a2bbdb7, annotated tag
+electron-v0.1.0-beta.13.3 (object96e76f9bbebdfd685f2c6f6b5c85f9e42d148f18).
+[Release36309397874](https://github.com/donal0c/sartracker-web/actions/runs/36309397874)
+attempt1 is SUCCESS. Actual logs:593 correctness files/6174 PASS/10 skips,
+WAR19 PASS and controlled rebreak PASS, strict15 files/302 PASS, driver1 PASS,
+Chromium225 PASS (no-flaky gate), lint/build/budgets, native/private-map package
+guards, packaged tracking soak and AppImage launch PASS. Ordinary Linux
+validation36309386672 also passed; its package is not the release installer.
+Local red/green focused72/72, independent native30/30 (no findings), serial
+correctness6157 PASS/27 skips, lint/build/budgets passed. No app/UI/manual change.
+
+| Verified CI artifact10928579832 member | Bytes | SHA-256 |
+| --- | ---: | --- |
+| Original CI ZIP | 283892596 | cd4c9221952cfab0c8d3acd09ab3f9eec8a1b936915062b5cb31dbcdd5193378 |
+| sartracker-electron-validation_0.1.0-beta.13.3_linux_x86_64.AppImage | 157874300 | 6cbce95b9f90c671c4d77b174511a8b212ca2319034fb6ca8db1d347fcb97f23 |
+| sartracker-electron-validation_0.1.0-beta.13.3_linux_amd64.deb | 126473408 | b100713a9f8e7e4fca1579c4caa0eb84c49c329eaa09d730c8210a70fe229601 |
+
+Artifact metadata expiry2026-12-26T09:26:56Z. Draft397599722 remains unpublished,
+with exactly these two installers and SHA256SUMS (264 bytes,
+a0f1d5fdd870a0ba06115a7555a0467048bda1a497b4e5822e23aa5639820bfd).
+Fresh draft metadata/checksum comparison matches CI; remote tag remained fixed
+before/after inspection. Source-host evidence is under tmp/beta13.3-admission:
+release-ci-inspection.json, release-transfer.json, draft-metadata-before/after.json,
+draft-SHA256SUMS and shape-validated release-input.json with unchanged Beta12.11
+rollback identities. Full CI logs are under tmp/public-ci-transport.
+The first source-host download exceeded120s and its partial file was cleaned by
+the transfer helper; failure retained. A600s retrieval to a new exclusive path
+passed. This changed no code, campaign timeout or test gate.
+
+Luna reports clean exact beta13.3 checkout/dependencies and restored field source
+43cbe38949bdcb3b419c1a745a8f36aee8d4ec62cb55a219babcf8922dd25ed2
+(5320654848 bytes), verified companion manifest, and explicit required roles.
+Two old prelaunch copies and the excluded legacy paging seed were archived
+offhost with verified contents/modes before exact removal; historical failures
+remain. Latest owner inventory:80738951168 free bytes after staging one field
+copy,304422912 above the remaining two-copy peak plus64GiB floor/1GiB margin.
+Recheck after new artifacts/install. Optional storage manifest remains absent.
+Beta13.2's140/140 installed-payload proof is historical; beta13.3 transfer,
+installation, payload verification and formal compile/preflight belong to Luna.
+All205 formal rows remain NOT_RUN at this source handoff. No C27/Ubuntu/full
+qualification, publication or distribution is claimed.
