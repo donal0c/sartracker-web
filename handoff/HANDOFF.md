@@ -85,8 +85,9 @@ these are supplemental identities, not exact new-candidate proof.
 Source owner checked205 bindings and50 histories; the1168-file raw manifest was
 not independently rehashed here. Ubuntu retained the64GiB floor.
 
-1. Ubuntu has final identities; independently verify/download and install the
-   real Debian payload through secure administrator entry. Keep harness at b79.
+1. CoS completed the exact45246c15 Debian install via its SSH PTY: dpkg exit0,
+   no app launch. No further administrator credential request is needed.
+   Luna owns full installed-payload verification; keep harness at b79.
    Runtime owner confirmed clean exact b79/tree239e798 checkout at
    /home/donal/sartracker-beta13-diagnostic-3b27b1c5/tmp/ubuntu-b79-candidate,
    cloned from the public release tag; no overlay or bundle prerequisite bypass.
