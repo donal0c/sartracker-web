@@ -87,7 +87,9 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
 
 1. CoS completed the exact45246c15 Debian install via its SSH PTY: dpkg exit0,
    no app launch. No further administrator credential request is needed.
-   Luna owns full installed-payload verification; keep harness at b79.
+   Luna reports installed-payload verification PASS:140/140 files, zero mismatches;
+   receipt SHA2566258e833351ed7eae353178e7669cbe5136e6e20d4df1479dc07a415424ad09f.
+   App remains unlaunched; keep harness at b79.
    Runtime owner confirmed clean exact b79/tree239e798 checkout at
    /home/donal/sartracker-beta13-diagnostic-3b27b1c5/tmp/ubuntu-b79-candidate,
    cloned from the public release tag; no overlay or bundle prerequisite bypass.
@@ -99,10 +101,12 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
    This token scope is for preflight/draft reads; C27 visibility remains separate.
 2. Finish genuine fixture preparation with the64GiB floor and installer margin.
    Proper local1GiB seed is transferred and hash-verified on Ubuntu by its owner;
-   archived field source restoration needs
-   safe duplicate cleanup. No legacy paging fixture substitution. Storage manifest
-   is absent; preserve that fact. Live/private fixture inventory stays private.
-   Do not seal incomplete fixture inputs: required roles cannot be added later.
+   field-scale three-copy peak is still7,513,092,096 bytes short of the reserve
+   after safe cache cleanup. No legacy paging fixture substitution or unique
+   failure-evidence deletion. Storage manifest is absent; preserve that fact.
+   Private inventory is prepared mode0600; runtime owner retains its paths/hashes.
+   All205 formal rows remain NOT_RUN. No runtime inputs compiled/sealed; do not
+   seal incomplete fixture roles, which cannot be added later.
 3. Compile/preflight using actual candidate CI, final clean source, fixtures,
    draft release and rollback inputs; no source substitutions or lease bypass.
 4. Continue original205 technical bindings serially, preserving failures and
