@@ -87,6 +87,9 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
 
 1. Ubuntu has final identities; independently verify/download and install the
    real Debian payload through secure administrator entry. Keep harness at b79.
+   Runtime owner confirmed clean exact b79/tree239e798 checkout at
+   /home/donal/sartracker-beta13-diagnostic-3b27b1c5/tmp/ubuntu-b79-candidate,
+   cloned from the public release tag; no overlay or bundle prerequisite bypass.
    Ubuntu independently verified ZIP/installers with the unchanged verifier and
    live public metadata. Formal admission still needs official gh authentication:
    /home/donal/.local/bin/gh2.101.0 exists but is logged out. CoS requested one new,
@@ -94,7 +97,8 @@ not independently rehashed here. Ubuntu retained the64GiB floor.
    Ubuntu input. No OAuth retry, credential copy or gh-transport impersonation.
    This token scope is for preflight/draft reads; C27 visibility remains separate.
 2. Finish genuine fixture preparation with the64GiB floor and installer margin.
-   Proper local1GiB seed now exists; archived field source restoration needs
+   Proper local1GiB seed is transferred and hash-verified on Ubuntu by its owner;
+   archived field source restoration needs
    safe duplicate cleanup. No legacy paging fixture substitution. Storage manifest
    is absent; preserve that fact. Live/private fixture inventory stays private.
    Do not seal incomplete fixture inputs: required roles cannot be added later.
