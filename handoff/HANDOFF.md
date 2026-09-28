@@ -9,7 +9,7 @@ Release gate: [checklist](../docs/release-checklist.md).
   immutable. See its [release note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
 - Foundation reset (P01–P05) is complete; CI 36445372627 passed.
 - **DON-281 (R01)** is fixed on master (6a7cfd53). Codex has reviewed and
-  pushed it, and Donal approved its scope. It is not in any release.
+  pushed it, and accepted its scope during review. It is not in any release.
 
 ## Verification limits
 
@@ -23,8 +23,7 @@ Release gate: [checklist](../docs/release-checklist.md).
 ## Next action
 
 Codex finishes Linux CI and the packaged check for DON-281. Start no other
-product slice until that is done. After that, follow the workplan (DON-283,
-DON-284).
+product slice until that is done. After that, follow the workplan's issue order.
 
 ## Pointers
 
