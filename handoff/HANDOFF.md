@@ -23,7 +23,8 @@ through be5fc69f; final CI passed. Foundation P01–P05 is complete.
 
 ## Known issues in 13.4 (fix order = workplan stage 2)
 
-1. Crash → Archive & Lock blocked with no Admin Roster (DON-281; next).
+1. Crash → Archive & Lock blocked with no Admin Roster (DON-281): fixed on
+   master, awaiting Codex validation; not in any release yet.
 2. Active 12.11 mission carried across upgrade shows "History incomplete" (DON-282).
 3. Recovery Resume un-pauses a mission paused before a crash (DON-283).
 4. Clean exits recorded as unexpected shutdowns: window X and SIGTERM (DON-284).
@@ -35,36 +36,31 @@ through be5fc69f; final CI passed. Foundation P01–P05 is complete.
 
 ## Next actions
 
-1. Foundation complete: CI 36445372627 passed on be5fc69f. Next product slice is
-   DON-281; new working-tree product edits are not covered by this CI result.
+1. Codex: validate DON-281 (result note `tmp/claude-handoffs/02-archive-recovery-result.md`
+   in the original checkout). Empty roster now routes to Settings → Admin roster
+   and back to the same decision; authority, warning and Complete/100% block
+   unchanged. Outbox-durability hypothesis not supported (see note); crash
+   marker is written for every open mission even with nothing pending, and its
+   "was lost" copy overstates that — separate decision, not changed here.
 2. Restore existing-area Discovery testing: retained package declares z8–16
    but contains z9–16. Confirm the tester's file identity, then validate a
    separately named metadata correction on unchanged 13.4. Broader maps stay last.
 3. Orientation: rotated camera is likely; isolated library testing confirms
    compass-click resets it. Confirm on the affected installation before changing code.
-4. Claude's next bounded slice is DON-281 crash/archive recovery. PR5 residual
-   triage is DON-289; maintenance checkpoint DON-290. Broader maps stay last.
-5. P05 is reconciled: 239 Done; 8 superseded by 278; 11/13/14 canceled for
-   obsolete scope. 254/265 Done means controlled-beta delivery, not matrix or
-   operational acceptance. Archived duplicates and original history preserved.
+4. Next product slices: DON-283, DON-284. PR5 residual triage is DON-289;
+   maintenance checkpoint DON-290. Broader maps stay last.
+5. P05 reconciled; 254/265 Done means controlled-beta delivery only.
 
 ## Verification snapshot (2026-09-28)
 
-- Claude's earlier 13.4 rehearsal caught unwritable-profile and lifecycle
-  failures; its mixed-row PASS counts are not complete manual/visual proof.
-- Codex: 90 focused tests passed, including red-first harness failures and
-  stale approval after asset replacement. Independent source review found no
-  further actionable P1/P2 findings in the corrections.
-- Full correctness: 592 files / 6,178 passed / 27 existing skips. The subsequent
-  participant-eligibility boundary correction passed the focused suite. Lint and
-  TypeScript checks pass. Final Linux CI on be5fc69f passed all jobs: 592 test
-  files, 6,197 tests passed / 10 skipped; 225 Chromium preflight tests passed,
-  plus targeted browser, WAR-02B and packaged checks. This validates foundation
-  source, not later product edits or operational acceptance.
-- Clean smoke tool 7173c301 on unchanged installed 13.4: exact tracking PASS
-  (27 fixes), 90 s outage/backfill PASS (45 fixes), lifecycle FAIL for DON-283/284
-  with histories still gap-free. Saved results: `~/team-smoke-codex-foundation-final-20260928/`.
-  Earlier mixed GPX/replay rows remain NOT TESTED for missing human checks.
+- Foundation: Linux CI 36445372627 on be5fc69f passed (6,197 tests; 225
+  Chromium preflight; packaged checks). Smoke tool 7173c301 on installed 13.4:
+  tracking and outage PASS, lifecycle FAIL for DON-283/284; results in
+  `~/team-smoke-codex-foundation-final-20260928/`. Mixed rows stay NOT TESTED.
+- DON-281 (local, not CI): correctness 593 files / 6,191 passed / 27 skips;
+  lint, types, bundle budget; 32 Chromium e2e; local macOS pack crash →
+  archive → roster → acknowledge → archive → restart probe PASS. Settings
+  is now a lazy chunk (main chunk had 20 bytes of budget headroom).
 
 ## Pointers
 
