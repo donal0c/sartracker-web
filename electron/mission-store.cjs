@@ -160,12 +160,14 @@ const {
   applyCoverageInvalidationDrain,
   applyCoverageManifestInventory,
   bumpCoverageChangeSequence,
+  invalidateCoverageForMissedProvenancePromotions,
   normalizeCoverageInvalidationDrain,
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
 
 const CURRENT_SCHEMA_VERSION = 13
 const MISSION_EVIDENCE_VERSION_SCHEMA = 12
+const COVERAGE_PROMOTION_REPAIR_METADATA_KEY = 'coverage_missed_provenance_promotion_repair'
 const LEGACY_GPX_BACKFILL_DELAY_MS = 4
 const LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS = 4
 const MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN = 100
@@ -4638,6 +4640,8 @@ function migrate(db, archiveDirectory) {
           9007199254740991)
       )`).run(migrationTime)
 
+    repairCoverageMissedProvenancePromotions(db, migrationTime)
+
     // Install after synchronous schema migration. Later bounded/background
     // evidence writes are runtime membership changes and must advance it.
     installArchiveCleanupMembershipTriggers(db, CURRENT_SCHEMA_VERSION)
@@ -4654,6 +4658,21 @@ function migrate(db, archiveDirectory) {
     gpxReceiptRecoveryRemaining: readUnsettledGpxImportReceiptPending(db),
     legacyArchiveRegistryBackfillRemaining: readLegacyArchiveRegistryBackfillPending(db),
   }
+}
+
+/**
+ * Runs the DON-282 coverage-ledger repair once per store, inside the migration
+ * transaction so a failure leaves neither a partial repair nor the marker.
+ * Later promotions invalidate coverage at write time and need no repair.
+ */
+function repairCoverageMissedProvenancePromotions(db, migrationTime) {
+  const marker = db.prepare('SELECT 1 FROM metadata WHERE key = ?')
+    .get(COVERAGE_PROMOTION_REPAIR_METADATA_KEY)
+  if (marker !== undefined) return
+  invalidateCoverageForMissedProvenancePromotions(db, migrationTime)
+  // A fixed value keeps otherwise identical stores byte-deterministic.
+  db.prepare("INSERT INTO metadata (key, value) VALUES (?, 'applied')")
+    .run(COVERAGE_PROMOTION_REPAIR_METADATA_KEY)
 }
 
 /** Returns true when an archive-review restore worker has been cancelled. */
@@ -8037,6 +8056,13 @@ function addPosition(db, input, coverageFaultInjection = {}) {
               timestamp_provenance_recorded_at = ? WHERE id = ?`)
               .run(receivedAt, existing.id)
             bumpMissionReplayGeneration(db, input.mission_id)
+            // Promotion admits the retained fix to coverage, so its chunk revision must move.
+            recordAcceptedCoveragePositions(db, {
+              missionId: input.mission_id,
+              positions: [{ device_id: existing.device_id, timestamp: existing.timestamp }],
+              updatedAt: receivedAt,
+              failAfterWrite: coverageFaultInjection.afterWrite === true,
+            })
           }
           refreshDeviceContact(db, input.mission_id, input.device_id, timestamp)
         }
@@ -8201,7 +8227,14 @@ function addPositionsBulk(
           if (existing.device_id === position.device_id) {
             if (decision.decision === 'duplicate' && timestampSource === 'fix') {
               const promotion = retainFixTimeProvenance.run(receivedAt, existing.id)
-              replayEligibilityChanged = replayEligibilityChanged || promotion.changes > 0
+              if (promotion.changes > 0) {
+                replayEligibilityChanged = true
+                // Promotion admits the retained fix to coverage, so its chunk revision must move.
+                acceptedCoveragePositions.push({
+                  device_id: existing.device_id,
+                  timestamp: existing.timestamp,
+                })
+              }
             }
             deviceObservations.record(position.device_id, timestamp)
           }

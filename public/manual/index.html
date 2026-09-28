@@ -1241,7 +1241,10 @@
             Exact stored fixes retain the fact that their timestamp came from Traccar
             <strong>fixTime</strong>, including after restart. Older database rows whose source-clock
             provenance cannot be proved remain unverified and are not silently admitted into exact dots,
-            coverage, ordering, or history inspection under their stored timestamp.
+            coverage, ordering, or history inspection under their stored timestamp. When Traccar later
+            re-delivers such a fix with its fixTime (for example, an active mission carried over from
+            an earlier version), that fix joins history coverage and the affected device's coverage is
+            rebuilt from the saved fixes. Rows Traccar never re-confirms stay excluded.
           </div>
           <div class="warning">
             <strong>Evidence health:</strong> if unique rejection evidence cannot reach the mission

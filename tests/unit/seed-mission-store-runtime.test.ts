@@ -143,7 +143,7 @@ describe('generateMissionStoreFixture [DON-242]', () => {
     expect(generated.manifest.bytes.byTable.positions).toBeGreaterThan(0)
     expect(generated.manifest.bytes.byTable.mission_events).toBeGreaterThan(0)
     expect(generated.manifest.database.sha256).toBe(
-      'fbf4f7e6fed1493b46349303ccdd096568eda5696d54bab17e6fa5b5e56fa00b',
+      '1f00713dcc406c7791550740137969270c94e43845b0ffd407710ff70d00ea0c',
     )
     const fixtureDatabase = new Database(outputPath, { readonly: true })
     try {
