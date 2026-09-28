@@ -1,7 +1,7 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-28 by Codex following Claude's foundation reset. Foundation
-corrections are in final validation; P05 backlog reconciliation remains separate.
+Updated 2026-09-28 by Codex following Claude's foundation reset. Source pushed
+through be5fc69f; final CI running. P05 live backlog reconciliation is complete.
 
 ## Release state
 
@@ -23,47 +23,49 @@ corrections are in final validation; P05 backlog reconciliation remains separate
 
 ## Known issues in 13.4 (fix order = workplan stage 2)
 
-1. Crash → Archive & Lock blocked with no Admin Roster (R01, top priority).
-2. Active 12.11 mission carried across upgrade shows "History incomplete" (R02).
-3. Recovery Resume un-pauses a mission paused before a crash (R03; reproduced by team-smoke 2026-09-28).
-4. Clean exits recorded as unexpected shutdowns: window X, and (new, team-smoke 2026-09-28) plain SIGTERM quit (R04).
-5. Unwritable profile → silent exit (R04; reproduced by team-smoke).
-6. Slow quit 8–15 s; first open of a ~1M-fix mission >2 min (R05).
-7. Minor: malformed IPC ids reach SQLite before rejection (R06).
+1. Crash → Archive & Lock blocked with no Admin Roster (DON-281; next).
+2. Active 12.11 mission carried across upgrade shows "History incomplete" (DON-282).
+3. Recovery Resume un-pauses a mission paused before a crash (DON-283).
+4. Clean exits recorded as unexpected shutdowns: window X and SIGTERM (DON-284).
+5. Unwritable profile → silent exit (DON-285).
+6. Slow quit/cold ~1M-fix open and native startup limitations (DON-286).
+7. Minor: malformed IPC ids reach SQLite before rejection (DON-287).
 8. New: with WebGL unavailable (GPU blocklisted), the app shows a black window
-   with no message (R08). Seen on the Ubuntu box without `--ignore-gpu-blocklist`.
+   with no message (DON-288), without `--ignore-gpu-blocklist`.
 
 ## Next actions
 
-1. Complete validation/delivery of the foundation corrections: failed-spawn
+1. Finish CI 36445372627 on be5fc69f; no blind retries. Foundation includes safe
    cleanup, lost-history detection, truthful partial results and approval hashes.
 2. Restore existing-area Discovery testing: retained package declares z8–16
    but contains z9–16. Confirm the tester's file identity, then validate a
    separately named metadata correction on unchanged 13.4. Broader maps stay last.
 3. Orientation: rotated camera is likely; isolated library testing confirms
    compass-click resets it. Confirm on the affected installation before changing code.
-4. Apply audited Linear dispositions after live checks; some old duplicates
-   are already deleted. P05 is not complete.
-5. R01 crash/archive recovery, then R02–R08, then maintenance beta 13.5 through
-   the new checklist — its first real use.
+4. Claude's next bounded slice is DON-281 crash/archive recovery. PR5 residual
+   triage is DON-289; maintenance checkpoint DON-290. Broader maps stay last.
+5. P05 is reconciled: 239 Done; 8 superseded by 278; 11/13/14 canceled for
+   obsolete scope. 254/265 Done means controlled-beta delivery, not matrix or
+   operational acceptance. Archived duplicates and original history preserved.
 
 ## Verification snapshot (2026-09-28)
 
-- Historical Ubuntu tool `eb610377` rehearsal on unchanged 13.4 caught the
-  unwritable-profile and lifecycle failures. Codex inspected saved results;
-  mixed-row PASS counts are not complete manual/visual proof. Outputs:
-  `~/team-smoke-rehearsal-13.4/`.
+- Claude's earlier 13.4 rehearsal caught unwritable-profile and lifecycle
+  failures; its mixed-row PASS counts are not complete manual/visual proof.
 - Codex: 90 focused tests passed, including red-first harness failures and
   stale approval after asset replacement. Independent source review found no
   further actionable P1/P2 findings in the corrections.
 - Full correctness: 592 files / 6,178 passed / 27 existing skips. The subsequent
   participant-eligibility boundary correction passed the focused suite. Lint and
-  TypeScript checks pass; corrected-tool packaged rehearsal and CI pending.
+  TypeScript checks pass. Exact-source CI 36445372627 remains running.
+- Clean smoke tool 7173c301 on unchanged installed 13.4: exact tracking PASS
+  (27 fixes), 90 s outage/backfill PASS (45 fixes), lifecycle FAIL for DON-283/284
+  with histories still gap-free. Saved results: `~/team-smoke-codex-foundation-final-20260928/`.
+  Earlier mixed GPX/replay rows remain NOT TESTED for missing human checks.
 
 ## Pointers
 
-- Private (non-repo) release environment note — box access, fixtures, live
-  config location: `~/workspace/vibes/sartracker-private/release-environment.md`.
+- Private environment/fixtures: `~/workspace/vibes/sartracker-private/release-environment.md`.
 - Post-mortem: `~/workspace/vibes/release post-mortem/` (08, 09, 10).
 - History: [Codex-era handoff](archive/2026-09-27-beta13-qualification-era.md),
   [pre-reset workplan](archive/2026-09-28-pre-reset-workplan.md), `docs/archive/`.

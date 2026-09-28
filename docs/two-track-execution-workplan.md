@@ -32,7 +32,7 @@ The plan was created on 2026-09-28 with Donal's clarification that CLAUDE.md and
 | P02 **ACTIVE** (Codex validating) | Archive obsolete assurance/release documents and remove retired campaign/controller surfaces, npm commands and CI-only orchestration after dependency review. | P01 policy; can overlap P03. | Active docs contain no conflicting instructions. Linked release notes, template and history remain accessible. Extract shared helpers; preserve useful startup/I/O, privacy, archive, tracking, GPX, map freshness, strict responsiveness and WAR02B property/negative-control tests. Do not delete all assurance-named tests blindly. Correct docs-trigger/concurrency behavior and obsolete Tauri release checks. |
 | P03 **ACTIVE** (Codex validating) | Bring working Ubuntu launcher, CDP driver, real-time Traccar/outage mock and required fixtures into simple team-smoke tooling. | P01 checklist; parallel to P02 on separate files. | Required rows run against unchanged 13.4 bytes, bounded cleanup and truthful PASS/FAIL/NOT_TESTED. Artifact and harness identities separate; no build trigger. Fix GPX/refusal/argument harness defects only as needed. Record Ubuntu environment health; half-configured NVIDIA packages are separate maintenance, not app failure. |
 | P04 **ACTIVE** (Codex validating) | Align publisher and release template to the checklist, including explicit owner-approved exceptions. | P01; integrate with P02/P03. | Dry-run and rejection tests preserve CI/tag/download/hash/provenance guards. Exceptions bind artifact/check/evidence/exposure/use/actual owner approval and expire per release; FAIL never becomes PASS. One reviewed result table supports one release decision. |
-| P05 **ACTIVE** (Linear changes pending) | Short current handoff; apply audited backlog/successor reconciliation; extract genuine missing defects. DON-254/255/265 and 42 open issues. | Parallel coordinator work; verify live issues before changes. | Handoff about 4 KB or less where practical, with state/next/proof/limits. All open issues accurately scoped or retained as acceptance gaps. Preserve/redact local-only history before deletion; prefer close/cancel/duplicate/archive. No bulk deletion or safety closure from stale evidence. |
+| P05 **DONE** | Live backlog reconciled: DON-239 Done; DON-8 superseded by DON-278; DON-11/13/14 canceled for obsolete scope. DON-254/265 explicitly limited to controlled-beta delivery; residuals extracted as DON-281–290. | Coordinator; live audit and readback on 2026-09-28. | Original descriptions/comments retained; archived duplicates left untouched. Remaining acceptance gaps retain their existing issues and rows below. |
 
 **Stage 1 result (2026-09-28; final validation in progress).** Claude shortened CLAUDE.md, aligned the checklist/publisher, archived obsolete procedures and removed the campaign front door while retaining useful CI probes. Codex's independent review reproduced and corrected three harness defects: failed-spawn cleanup, loss of earlier fixes escaping the oracle, and incomplete human checks reported as PASS. Exceptions now bind both approved artifact hashes as well as the tag. Mixed automated/manual rows remain NOT TESTED until completed. Keep the intertwined qualification library for now; extracting its useful probes is a separate bounded improvement, not a reason to delay this reset. P05 remains open pending live backlog reconciliation. New findings: R08 below; SIGTERM quit also recorded as unclean (R04).
 
@@ -125,7 +125,7 @@ Check the existing ledger against the precise wording before forwarding. Record 
 
 ## Coverage register — no open issue lost
 
-This maps the 42 open issues inspected on 28 September to the queue; it is not a live status refresh or a second issue database.
+This preserves the original 42-issue audit and its 28 September reconciliation. Linear remains the live status source. DON-239 is now Done; DON-8 is Duplicate → DON-278; DON-11/13/14 are canceled for obsolete intake/Tauri scope; DON-265 is Done for controlled-beta delivery only. Platform and operational acceptance remain open in their owning rows.
 
 | Open issue IDs | Owning row(s) |
 | --- | --- |
@@ -149,6 +149,13 @@ This maps the 42 open issues inspected on 28 September to the queue; it is not a
 
 Completed/duplicate record corrections also belong to P05: DON-146, DON-230/241/254/255 and links 113→144, 67→100, 134/138→191, 139→192. These are not extra implementations.
 
+New residual issue anchors (28 September): R01 → DON-281; R02 → DON-282;
+R03 → DON-283; R04 clean exit → DON-284; R04 unwritable profile → DON-285;
+R05 → DON-286; R06 → DON-287; R08 → DON-288; PR5 residual triage → DON-289;
+R07 maintenance checkpoint → DON-290. The five already archived duplicate
+records were not restored or deleted again. DON-254/265 preserve their original
+specifications as historical text and explicitly retain incomplete qualification.
+
 ODT coverage: delivered T01/04–10/13/18/20–22 → ledger T06; source T12/26 → T03; T14/19 → T01/T02; T23/24/25/28 → T05; T27 → T06; T29 → T04; mapping T02/03/11/15–17 → M01–M03. These T numbers refer to the investigation's 29 source rows, not this ledger's work IDs.
 
 Audit coverage: 13 confirmed Astra groups already repaired; AUD-12 → T07; nine unconfirmed leads and older Ox candidates → A02. Eight named WAR outputs already complete; WAR03/07/08/09/10 inform relevant rows rather than five compulsory whole-app audits; WAR05/13B → A03; WAR12 → P01/A05 as non-gating work. All 20 deferred PR5 candidates are covered by R05, T07, A01/A02 and P05 supersession.
@@ -165,11 +172,11 @@ Audit coverage: 13 confirmed Astra groups already repaired; AUD-12 → T07; nine
 
 ## Current checkpoint
 
-- **Done:** investigation and this ordered ledger. No product/test/release/Linear work executed as part of writing it.
-- **Prepared:** first Claude prompt at `/Users/donalocallaghan/workspace/vibes/sartracker-web/tmp/claude-handoffs/01-foundation-reset.md`. File prepared only; no Claude dispatch or implementation result is claimed. Expected return: sibling `01-foundation-reset-result.md`, followed by Codex validation.
-- **Next:** P01 instruction/checklist cleanup, with dependency inventory and P05 backlog preparation in parallel. Finish the foundation reset before R01 product work.
+- **Done:** Claude's foundation changes and Codex corrections pushed through be5fc69f; P05 live dispositions applied. Corrected-tool rehearsal on unchanged 13.4 passes exact tracking and outage/backfill, and truthfully fails lifecycle for DON-283/284. Mixed manual rows remain NOT TESTED.
+- **Active:** finish exact-source CI run 36445372627, then close the foundation checkpoint. Product fixes are not included in this reset.
+- **Next:** Claude's bounded R01 / DON-281 implementation, followed by Codex validation. Existing-area Discovery recovery and tester compass confirmation remain separate team-feedback actions; broader purchased maps stay last.
 - **Later:** T-stage decisions/features, audit/resilience closeout, non-mapping acceptance, then M01–M04.
-- **Open decisions:** qualification cadence/retirement during P01; governance/product questions above; actual mapping logistics. None prevents preparing the foundation reset.
-- **Evidence baseline:** master 8e1cc8af; released executable a273ae6d. Recheck live state before activating an issue.
+- **Open decisions:** governance/product questions above and actual mapping logistics. Campaign front-door retirement is resolved; useful intertwined packaged probes are retained.
+- **Evidence baseline:** foundation source be5fc69f; smoke tool 7173c301; released executable source a273ae6d. Recheck live state before activating an issue.
 
 Investigation sources: private post-mortem 10 and its six supporting reconciliations, prepared 28 September, under ~/workspace/vibes/release post-mortem/. Public/repository execution records must not copy licensed assets, credentials or private raw history. The earlier report's map-in-parallel recommendation is superseded by Donal's later instruction recorded above.
