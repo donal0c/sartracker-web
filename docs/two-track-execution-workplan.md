@@ -4,7 +4,13 @@ Updated 2026-09-28. This is the single active queue, replacing the accumulated p
 
 ## Locked queue — Donal's working plan, 28 September
 
-**1.1 / DON-282 DONE. NEXT numbered slice: 1.2 / DON-283. Before handover, triage DON-291's new lookback report for priority; no next product slice started.**
+**NEXT: DON-291 team-feedback slice — reproduce/fix mission-start lookback and add its missing packaged smoke. Handover prepared; implementation not yet confirmed started. Resume at 1.2 / DON-283 after review. 1.1 / DON-282 is DONE.**
+
+Coordinator priority decision, 28 September: investigate Eamonn's missing initial
+history before the next numbered fix because it affects current team testing.
+This is one bounded interruption, not a confirmed diagnosis or a parallel lane.
+The original numbered order resumes at 1.2 when this slice is validated or its
+specific missing decision is recorded.
 Foundation P01–P05 and archive recovery R01 / DON-281 are DONE. Do not repeat them.
 The five numbered steps below own execution order; the older R/T/A/H/M tables
 below supply detail and acceptance criteria, not a competing queue.

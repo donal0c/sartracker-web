@@ -23,8 +23,10 @@ CI 36474893891 passed (6,212 tests, 226 Chromium). Exact CI AppImage passed
 Ubuntu profile-copy upgrade, promotion, repeated old-code rollback repair,
 stable reopen and rendered warning checks. Evidence/hashes: DON-282.
 Store-driven re-delivery, not live Traccar or field acceptance. Watch stopped.
-Next numbered slice: 1.2 / DON-283. Before its handover, triage DON-291's new
-48-hour lookback report for priority as recorded in the workplan. Neither started.
+Next handover: DON-291 missing 48-hour lookback and required packaged smoke,
+prioritized for current team testing. Prompt: original checkout
+`tmp/claude-handoffs/04-mission-lookback.md`. Implementation not yet confirmed
+started. Resume numbered queue at 1.2 / DON-283 after Codex review.
 
 ## Pointers
 
