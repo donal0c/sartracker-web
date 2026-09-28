@@ -18,12 +18,13 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 ## Next action
 
-**1.1 / DON-282 reviewed; Linux CI/package proof pending, not released.**
-Fix 019ccdbe + rollback repair 2a6cc03f. Codex: 21 focused tests pass;
-Mac package built; packaged store/worker upgrade, promotion and three opens
-pass. Real packaged UI retains the honest reconciliation warning. This is
-synthetic Mac proof, not Linux or live Traccar proof. Cursor remains 1.1.
-Detail: `sartracker-web/tmp/claude-handoffs/03-legacy-upgrade-coverage-result.md`.
+**1.1 / DON-282 DONE, not released.** Fix 019ccdbe + 2a6cc03f;
+CI 36474893891 passed (6,212 tests, 226 Chromium). Exact CI AppImage passed
+Ubuntu profile-copy upgrade, promotion, repeated old-code rollback repair,
+stable reopen and rendered warning checks. Evidence/hashes: DON-282.
+Store-driven re-delivery, not live Traccar or field acceptance. Watch stopped.
+Next numbered slice: 1.2 / DON-283. Before its handover, triage DON-291's new
+48-hour lookback report for priority as recorded in the workplan. Neither started.
 
 ## Pointers
 
