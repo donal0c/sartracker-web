@@ -1,130 +1,72 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-27. **HOLD: no candidate is qualified or approved for distribution.**
+Updated 2026-09-28 by Claude. **beta.13.4 is published to the team as a controlled
+test build** (pre-release, not for live incidents).
 
-## Authority and ownership
+## Release state
 
-Donal directs the original205-binding technical programme through the existing
-SAME-SOURCE route. Leave GitHub unconfigured on Ubuntu: public CI metadata now
-uses bounded direct HTTPS, preserving fresh provenance and every byte check.
-No cached-JSON trust, CLI shim, two-source policy, gate waiver, publication or
-distribution. Do not ask again for ordinary authorized preparation/testing.
+- Tag `electron-v0.1.0-beta.13.4` → `a273ae6d` (= `origin/master` at release).
+  CI run 36319976860 green (all 5 jobs). Published 2026-09-28T06:39:54Z.
+- `.deb` `804aa08f…1891`, AppImage `466ce20d…41fc`. CI artifact = draft = `SHA256SUMS`
+  = anonymous public download (verified on Ubuntu).
+- Published **manually** after repeating the guarded publisher's checks, because one
+  gate is an approved deviation (5-/14-day soak not run; 15 h installed soak +
+  CI soak substituted). Recorded in the release note and post-mortem.
+- Release note: [beta13.4](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
 
-Astra owns source/build in managed archive-fixture-contract; Luna alone owns
-Ubuntu execution; CoS coordinates. Preserve the dirty original checkout and
-other owners' work. No competing SSH, runtime workload or cleanup.
+## Process decision (Donal, 2026-09-27)
 
-## Verified source/build
+Team betas are gated by an operator-shaped **smoke matrix** on the exact CI
+artifacts (the release note's table), not by the 205-binding programme. The
+205-binding programme continues as **non-gating qualification**; its findings
+feed the next beta. Do not rebuild after a failure without Donal's approval —
+record, continue independent checks, report. Full rationale: the private
+post-mortem (`~/workspace/vibes/release post-mortem/08-claude-takeover.md`).
 
-Beta13.4 preparation is authorized: narrowly map retained `ui-screenshot` to the
-judge packet's existing `image` kind. C16 on61 wrote INVALID receipt/result then
-failed packet construction and retained its lease; original evidence stays
-invalid. Independent red/green and five focused suites pass100 tests/one existing
-skip, including persistence/lock failure protections. Full serial source passed
-593 files/6164 tests with27 skips (595.14s); lint/build/budgets passed. One new
-matching CI build remains pending; no overlay, retag or publication.
-Reviewed no-delete dead-owner quarantine completed: real Linux checks covered
-468 lease entries/11 attempt files, then unprivileged apply preserved the attempt.
-Recorded as manual recovery, never CLEANED/PASS; Luna remains sole runtime owner.
-No further beta13.3 installation/new campaign should start. Existing61 source/
-browser results are historical. [Beta13.4 note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
+## Known issues shipped (fix in next beta, in priority order)
 
-Beta13.3 candidate:61b92e80ff16f43e1e8efd7d42129c5e0262fc54, tree
-148f2856f2c2c40889c7221f7c315d582a2bbdb7, tag electron-v0.1.0-beta.13.3.
-Release36309397874 attempt1 SUCCESS:6174 correctness PASS/10 skips,302 strict
-responsiveness PASS,225 Chromium PASS, driver/WAR checks, native/private-map
-package guards, packaged tracking soak and AppImage launch smoke PASS.
-Ordinary Linux validation36309386672 also passed; it is not the installer source.
+1. **Crash → Archive & Lock blocked without an Admin Roster.** Evidence-loss
+   acknowledgement dialog shows only "No admins configured"; operator is stuck.
+   Team told to configure an admin. **Top priority for the next build.**
+2. Active 12.11 mission carried across upgrade: coverage permanently "History
+   incomplete — Reason: worker"; legacy fixes lack v8+ provenance columns; data intact.
+3. Recovery Resume un-pauses a mission paused before a crash.
+4. Window-X close is recorded as unclean ("Unexpected shutdown detected" next
+   launch) — the known C02 false-unclean finding.
+5. Unwritable profile directory → silent exit (singleton lock failure treated as
+   duplicate launch).
+6. Quit takes 8–15 s; first open of a ~1M-fix mission took >2 min (second open
+   0.24 s; undiagnosed).
+7. Minor: malformed IPC ids reach SQLite before rejection (still rejected).
 
-Public transport focused72/72, independent native30/30 (no findings), local
-serial correctness593 files/6157 PASS/27 skips, lint/build/budgets passed.
-Original CLI-dependent integration failed red, then actual ZIP extraction and
-live unauthenticated inspection passed. No product/UI change; no manual update.
-Beta13.2 b79, its draft397562767 and all earlier evidence remain untouched.
+Earlier Codex-era findings (C10 replay generation, field archive 60-min timeout,
+201 ms archive verify, C26/C28 harness issues) remain open in DON-254; see
+[archived handoff](archive/2026-09-27-beta13-qualification-era.md).
 
-CI artifact10928579832: original ZIP283892596 bytes, verified against live public
-metadata and both extracted installer hashes. Draft397599722 remains unpublished;
-fresh draft SHA256SUMS and asset metadata match CI, and the tag stayed unchanged.
-Full hashes are in the Ubuntu report and tmp/beta13.3-admission.
-The source-host first download hit120s; its failure is retained. A separate
-600s retrieval succeeded. No campaign/test/gate timeout changed.
-This is CI/custody proof, not Ubuntu qualification or C27 approval.
+## Next actions
 
-## Retained failures and proof limits
+1. Collect team feedback on 13.4 for ~1 week.
+2. Fix known issue 1 (and 2–5 if cheap) with tests; cut beta.13.5 using the
+   same smoke-matrix gate.
+3. Codify the smoke matrix as `scripts/team-smoke/` (launcher, CDP driver,
+   real-time mock Traccar with outage switch, 12.11-profile upgrade fixture).
+   The ad-hoc versions live on the Ubuntu box in `~/sartracker-beta13.4-smoke/`.
+4. Decide the qualification track's cadence and decouple harness identity from
+   product identity (post-mortem R1–R4).
 
-- dce4 C10 960k: generation1→2 in ordinary live-middle paging. Backup-only
-  invalidation reproduced locally; actual writer unknown, runtime log removed.
-- C02: unforced exit0 and valid clean marker, but false unclean-recovery oracle;
-  startup intentionally pauses recovered missions. Semantics remain unresolved.
-- Original generator-v2/schema13 field archive exhausted60-minute limit after
-  finish/backup, without ciphertext/producer receipt. Preserve failed profile.
-- Archive verify201ms breached strict200ms; later pass does not explain it.
-  PR55 forced-teardown SIGTRAP is not graceful-close proof.
-- C26 retains exit127 cache cleanup, restart audit mismatch and69 blocked HTTPS
-  attempts; not provider-contact proof. C23 older AppImage8-predicate pass is
-  historical only.
-- C28 field setup failed before intended work. Original row8 rawPASS was dispatch
-  TypeError; corrected rows14/16/24/26 substituted harness SHA into old CI
-  provenance. Preserve all originals; provenance-dependent claims INVALID.
-- Current C28 settings invalid-shape still reaches TypeError before domain
-  validation. No missing-URL substitute. Other reviewed callbacks/oracles are
-  repaired; GPX custody writes are intentional, mission/positions unchanged.
+## Verification snapshot (Ubuntu 24.04, 27–28 Sep)
 
-## Ubuntu preparation and next actions
-
-Luna admitted clean61b92e80 and the exact installed beta13.3 payload. Source,
-identity and package attempts now exist; their statuses stay bound to their
-original definitions. C16/C23 observer failures and C26's absent report remain
-invalid. Required fixture inventory includes all paging/replay/field/local1GiB,
-storage, approved private-map and live roles plus ENOSPC; details stay in the
-private inventory and Ubuntu report. Optional storage manifest is absent.
-Preserve old offhost archives and raw failure profiles. Retaining C16's whole
-lease consumes about1.17GB: remeasure every copy peak against64GiB floor plus
-1GiB margin; no large-fixture capacity claim until Luna rechecks it.
-
-1. Astra verifies and builds the beta13.4 screenshot-kind harness repair; retain
-   beta13.3's failures, artifacts and campaigns. Luna finishes any active work;
-   do not install or compile another obsolete candidate while the new one builds.
-2. After verified CI handoff, Luna installs the exact new Debian package, verifies
-   its payload and compiles complete inputs on the matching clean source.
-   Both installer paths must retain their canonical release filenames; beta13.3
-   C00 exposed a generic AppImage basename despite matching hashes. Corrected
-   definition2ead60c2...007a9 preserved205; earlier23d4a6e7...7df99 stays historical.
-   Explicit replay/local1GiB roles are mandatory; no symlink aliases or fallback.
-   Use fixed absolute paths and identical --root, PATH/DISPLAY/XAUTHORITY.
-   Public HTTP errors/rate limits fail closed. No Ubuntu GitHub login required
-   for CI admission; draft/C27 authentication remains separate.
-3. Continue original205 technical bindings serially, preserving failures and
-   independent unrun checks. Both AppImage and75 installed rows matter.
-   New beta13.4 formal rows remain NOT_RUN; previous-source tests do not qualify it.
-4. Technical approval precedes controlled handover and original-machine C29.
-   C29 remains mandatory; its signer is not needed for technical testing.
-   Do not inject human/risk trust roots absent from the reviewed plan.
-   C27 controls/gap acceptance and public-byte/publication prerequisites remain.
-
-Trust-root followups stay with Astra/CoS. Private-map authority is in the Ubuntu
-report: bind the approved metadata-only derivative and private lineage, preserve
-the original rejection; historical diagnostic PASS does not qualify a candidate.
-
-## Deferred follow-up
-
-After team handover, CoS owns Donal's substantial release-process post-mortem
-(DON-254 follow-up; Astra/Luna evidence). Assess every gate's safety/integrity
-value and cost; redundant PR/build/docs cycles; harness false positives and
-provenance errors; late auth/fixture/disk prerequisites; agent stalls, context and
-ownership; triage/evidence reuse; actual critical path and operator burden.
-Deliver prioritized simplifications with owners and measurable acceptance
-criteria, preserving justified safeguards. Do not start now or add a release gate.
-
-DON-254 is canonical qualification history; historical Done does not qualify
-this build. DON-255 publication and DON-179 remain separate. No blind retries.
+Installed `.deb` 140/140 files byte-identical; 12.11 → 13.4 upgrade row-for-row
+intact; lifecycle/SIGKILL/renderer-crash recovery gap-free; coordinates;
+duplicate launch; sanitized bundle; bad credential; corrupt/newer DB refusal;
+archive create/reopen/wrong passphrase; GPX (via bridge); replay; attachments;
+stationary attention; 90 s provider outage zero-gap backfill; 960k-fix fixture;
+live Traccar 28/28 exact; 15 h soak 16,394 fixes zero gaps. Not tested: native
+file pickers, calendar-length soaks, 2M/field-scale, offline maps, disk-full.
 
 ## Evidence pointers
 
-- [Ubuntu report](../docs/assurance/beta13-ubuntu-execution-20260925.md)
-- [Original205 reconciliation](../docs/assurance/beta13-original-programme-reconciliation-20260926.md)
+- Ubuntu smoke workspace: `~/sartracker-beta13.4-smoke/` (logs, shots, profiles)
 - [Active workplan](../docs/two-track-execution-workplan.md)
-- [Testing cadence](../docs/testing-and-review-cadence.md)
-- [Beta13.3 draft notes](../docs/releases/sartracker-electron-0.1.0-beta.13.3.md)
-- [Browser repair ledger](../docs/releases/beta13-browser-gate-repair.md)
-- [Earlier history](archive/2026-09-25-pre-c12-repair.md)
+- [Codex-era handoff](archive/2026-09-27-beta13-qualification-era.md)
+- Linear: DON-254 (qualification), DON-255 (publication)
