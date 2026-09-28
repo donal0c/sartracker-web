@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-28 by Claude. **beta.13.4 is published to the team as a controlled
+Release baseline updated 2026-09-28 by Claude; planning sequence updated by Codex after Donal's clarification. **beta.13.4 is published to the team as a controlled
 test build** (pre-release, not for live incidents).
 
 ## Release state
@@ -45,14 +45,29 @@ Earlier Codex-era findings (C10 replay generation, field archive 60-min timeout,
 
 ## Next actions
 
-1. Collect team feedback on 13.4 for ~1 week.
-2. Fix known issue 1 (and 2–5 if cheap) with tests; cut beta.13.5 using the
-   same smoke-matrix gate.
-3. Codify the smoke matrix as `scripts/team-smoke/` (launcher, CDP driver,
-   real-time mock Traccar with outage switch, 12.11-profile upgrade fixture).
-   The ad-hoc versions live on the Ubuntu box in `~/sartracker-beta13.4-smoke/`.
-4. Decide the qualification track's cadence and decouple harness identity from
-   product identity (post-mortem R1–R4).
+Follow the [ordered delivery ledger](../docs/two-track-execution-workplan.md).
+Donal's latest order is **foundation reset first; purchased mapping last**.
+Claude Code owns implementation and testing; Codex coordinates and independently
+validates each chunk before advancing. The temporary first prompt is prepared at
+`/Users/donalocallaghan/workspace/vibes/sartracker-web/tmp/claude-handoffs/01-foundation-reset.md`.
+It covers P01–P05 and invites independent challenge. It has not been dispatched.
+
+1. P01–P05: simplify `CLAUDE.md`/active instructions, archive obsolete process
+   surfaces safely, establish the short checklist/smoke/publisher path, and
+   reconcile the backlog. Start from private post-mortem 09 §6a. Keep useful
+   safety tests; resolve campaign retirement explicitly rather than infer it.
+2. R01 first after that reset: crash/archive recovery, followed by scoped native
+   recovery fixes and a maintenance beta through the new process.
+3. Remaining team requests, audit/resilience dispositions and integrated
+   non-mapping verification follow the ledger. Gather team feedback meanwhile.
+4. Purchased-map delivery is the final functionality stage. Existing areas are
+   sufficient for team testing; normal Kerry coverage and occasional travel
+   logistics remain questions for the team, not an agreed national package.
+
+Only the plan was prepared in this chunk; no product tests, issue changes,
+release actions or team messages were performed. The old workplan is preserved
+in [the planning archive](archive/2026-09-28-pre-reset-workplan.md). The Ubuntu
+helpers remain at `~/sartracker-beta13.4-smoke/`; no execution is claimed here.
 
 ## Verification snapshot (Ubuntu 24.04, 27–28 Sep)
 
