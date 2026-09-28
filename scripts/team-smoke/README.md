@@ -29,14 +29,21 @@ node scripts/team-smoke/run.mjs \
 - Over SSH it borrows the logged-in desktop display automatically. Start long
   runs detached so a dropped session cannot stop them:
   `setsid nohup node scripts/team-smoke/run.mjs … > run.log 2>&1 < /dev/null &`.
-- Every launch uses a fresh profile under `--out`; real profiles are never
-  touched. Processes are killed by process group when a check ends.
+- Use a new `--out` directory for every run. Each check uses an isolated profile;
+  lifecycle checks deliberately reopen it. Real profiles are never touched.
+  Cleanup signals only successfully spawned, owned process groups.
 - Output: `results.md` (paste into the release note), `results.json` (tool
   commit, artifact hashes, timings), and per-check logs and screenshots.
 
 A full run takes about 25 minutes. Rows not automated here (live Traccar, large
 mission, soak, strict responsiveness, offline maps, CI run) show as NOT TESTED
 and are filled in by hand from the sources the checklist names.
+Mixed rows (lifecycle, GPX, basemaps/layers and installer custody) also remain
+NOT TESTED after their automated subset succeeds. Complete the named remaining
+checks, retain the automated evidence and append the operator, date, artifact
+identity and result in the release note before marking the whole row PASS.
+Any product failure remains FAIL. A local checksum match alone does not prove
+that the bytes came from CI; verify that custody explicitly.
 
 ## Results
 
@@ -45,10 +52,13 @@ and are filled in by hand from the sources the checklist names.
 - **NOT TESTED** — a prerequisite was missing or the tool itself failed. A tool
   error is missing evidence, not a product result. Verify by hand if cheap;
   if a check fails twice on the same step, stop fixing it during a release.
+  Also used when required manual/visual checks remain incomplete.
 
 ## Adding or changing a check
 
-A check is `{ check, id, run(ctx) }` in `checks/`. `check` must be a name from
+A check is `{ check, id, run(ctx), manualSteps? }` in `checks/`. Declare every
+required human step in `manualSteps`; a successful automated subset then stays
+NOT TESTED. `check` must be a name from
 `build/release-checklist.js`. Throw `ProductFailure` (via `expectProduct`) only
 for wrong product behaviour, `NotTested` for missing prerequisites; anything
 else is reported as a tool error. Verify outcomes in SQLite (`lib/store.mjs`),

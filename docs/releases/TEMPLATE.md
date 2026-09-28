@@ -65,6 +65,8 @@ Delete this section when every row passes. Otherwise one row per FAIL or NOT
 TESTED check; see the release checklist for the rules.
 
 Applies to: `electron-v<version>`
+Approved AppImage SHA-256: `<64-hex digest approved by Donal>`
+Approved .deb SHA-256: `<64-hex digest approved by Donal>`
 
 | Check | Result | Severity | Exposure and workaround | Approved by | Approval reference | Follow-up |
 | --- | --- | --- | --- | --- | --- | --- |

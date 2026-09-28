@@ -97,6 +97,7 @@ export default [
   {
     check: 'Markers, attachments and GPX import',
     id: 'markers-gpx',
+    manualSteps: ['Import through the native file picker and verify all 30 GPX points and the marker attachment are shown.'],
     async run(ctx) {
       const profile = path.join(ctx.runDir, 'profile')
       const photo = path.join(ctx.runDir, 'evidence-photo.png')
@@ -141,6 +142,7 @@ export default [
   {
     check: 'Replay, basemaps and layers',
     id: 'replay-basemaps',
+    manualSteps: ['Inspect the basemap screenshots for rendered tiles; verify layer toggles and the reconstructed replay on the map.'],
     async run(ctx) {
       const mock = await startMockTraccar()
       ctx.cleanups.push(() => mock.close())

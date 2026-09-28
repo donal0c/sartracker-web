@@ -114,6 +114,10 @@ export async function startMockTraccar({ port = 0 } = {}) {
     url: `http://127.0.0.1:${address.port}`,
     startMs,
     latestIndex,
+    firstIndexAtOrAfter(time) {
+      if (!Number.isFinite(time)) throw new Error('Mission start time is missing or invalid.')
+      return Math.max(0, Math.ceil((time - startMs) / STEP_MS))
+    },
     setOffline(value) {
       offline = value
     },

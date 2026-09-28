@@ -41,6 +41,14 @@ export function expectProduct(condition, message) {
   }
 }
 
+/** Keeps an automated subset distinct from a fully completed checklist row. */
+export function completedCheck(check, evidence) {
+  const remaining = check.manualSteps ?? []
+  return remaining.length === 0
+    ? { result: 'PASS', evidence }
+    : { result: 'NOT TESTED', evidence: `${evidence} Remaining manual checks: ${remaining.join(' ')}` }
+}
+
 /**
  * Renders results as the release-note table, one row per checklist check.
  *

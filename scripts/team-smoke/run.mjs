@@ -24,7 +24,7 @@ import startup from './checks/startup.mjs'
 import tracking from './checks/tracking.mjs'
 import upgrade from './checks/upgrade.mjs'
 import workflows from './checks/workflows.mjs'
-import { NotTested, ProductFailure, renderResultTable } from './lib/results.mjs'
+import { completedCheck, NotTested, ProductFailure, renderResultTable } from './lib/results.mjs'
 
 const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows]
 const CHECK_TIMEOUT_MS = 15 * 60_000
@@ -78,7 +78,7 @@ for (const check of selected) {
   try {
     const evidence = await withTimeout(check.run(ctx), CHECK_TIMEOUT_MS, check.id)
     if (strayError !== null) throw strayError
-    row = { result: 'PASS', evidence }
+    row = completedCheck(check, evidence)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (error instanceof ProductFailure) row = { result: 'FAIL', evidence: message }

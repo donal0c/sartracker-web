@@ -17,7 +17,10 @@ clock and under half a day of Donal's attention.
    them — never on a local rebuild:
    `node scripts/team-smoke/run.mjs --appimage <file> --deb <file> --sha256sums <file> --out <dir>`
    (see [team-smoke README](../scripts/team-smoke/README.md)). It prints the
-   table below with PASS / FAIL / NOT TESTED. Do the manual rows by hand.
+   table below with PASS / FAIL / NOT TESTED. Mixed rows stay NOT TESTED when
+   only their automated portion completed. Do the remaining manual checks,
+   retain the tool evidence and add who checked what, when, on which artifact
+   before marking the combined row PASS. Preserve any product FAIL.
 3. Paste the table into the release note and the draft body. Classify every
    FAIL or NOT TESTED row with the severity rule. Get Donal's decision on each
    non-Block one; record it under **Owner-approved exceptions**.
@@ -63,7 +66,7 @@ unit test keeps this table, the template and the publisher in agreement.
 | Live Traccar | One approved device, GET-only, stored fixes equal provider | Manual |
 | Coordinate conversion and rejection | Known round trip; invalid input rejected with clear messages | team-smoke `coordinates` |
 | Markers, attachments and GPX import | Marker saved; attachment byte-identical; GPX points imported and shown | team-smoke `markers-gpx`; native picker by hand |
-| Replay, basemaps and layers | Replay reconstructs a past time; live map unaffected; public basemaps load | team-smoke `replay-basemaps` |
+| Replay, basemaps and layers | Replay reconstructs a past time; live map unaffected; public basemaps render; layer toggles work | team-smoke `replay-basemaps`; render/layer checks by hand |
 | Encrypted archive create and reopen | Finish, archive, restart, reopen read-only; wrong passphrase refused | team-smoke `archive` |
 | Settings, secrets and support bundle | Settings persist; secret never echoed; bundle has no secret or home path | team-smoke `settings-support` |
 | Large mission opens responsive | One representative large mission opens and stays responsive | Manual with a large fixture |
@@ -82,6 +85,8 @@ A FAIL or NOT TESTED row is publishable only with an exception row in the note:
 ## Owner-approved exceptions
 
 Applies to: `electron-v<version>`
+Approved AppImage SHA-256: `<64-hex digest approved by Donal>`
+Approved .deb SHA-256: `<64-hex digest approved by Donal>`
 
 | Check | Result | Severity | Exposure and workaround | Approved by | Approval reference | Follow-up |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -89,7 +94,10 @@ Applies to: `electron-v<version>`
 
 The exception restates the observed result, so a FAIL is never relabelled as a
 pass. `Applies to` must match the tag being published, so an approval never
-carries into the next release. Severity must be **Ship with known issue** or
+carries into the next release. Both approved artifact digests must match the
+current checklist; replacing an artifact requires renewed approval, even under
+the same draft tag. The approval reference must cover those exact bytes and
+the recorded exposure. Severity must be **Ship with known issue** or
 **Backlog**.
 
 ## Rules for agents on a release

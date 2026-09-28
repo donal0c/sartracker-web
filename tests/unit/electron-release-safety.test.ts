@@ -111,6 +111,8 @@ function withExceptions(body: string, rows: string[], tag = TAG): string {
     '## Owner-approved exceptions',
     '',
     `Applies to: \`${tag}\``,
+    `Approved AppImage SHA-256: \`${'a'.repeat(64)}\``,
+    `Approved .deb SHA-256: \`${'b'.repeat(64)}\``,
     '',
     '| Check | Result | Severity | Exposure and workaround | Approved by | Approval reference | Follow-up |',
     '| --- | --- | --- | --- | --- | --- | --- |',
@@ -282,6 +284,13 @@ describe('release checklist guard', () => {
       approvalReference: 'Chat 2026-10-01',
       followUp: 'DON-999',
     }])
+  })
+
+  it('rejects changed artifacts under the same tag with stale owner approval', () => {
+    const approved = withExceptions(withResult(qualifiedReleaseBody(), 'Unwritable profile shows an error', 'FAIL'), [unwritableException])
+    const replaced = approved.replace(`\`sartracker_0.1.0.AppImage\` \`${'a'.repeat(64)}\``, `\`sartracker_0.1.0.AppImage\` \`${'c'.repeat(64)}\``)
+    expect(() => validateReleaseMatrix(replaced, TAG)).toThrow(/approved.*sha-256/i)
+    expect(() => validateReleaseMatrix(approved.replace(/^Approved \.deb SHA-256:.*$/mu, ''), TAG)).toThrow(/approved.*sha-256/i)
   })
 
   it('never lets an exception relabel a FAIL as a pass or cover a PASS row', () => {

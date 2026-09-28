@@ -27,7 +27,7 @@ Donal's go/no-go. In short:
 - **Block** (never publishable): data loss, wrong coordinates or mission state,
   silent failure in a safety path, sustained unresponsiveness, corrupted history.
 - **Ship with known issue**: visible, recoverable, written workaround — only with
-  Donal's recorded exception for that tag.
+  Donal's recorded exception for that tag and exact artifact hashes.
 - **Backlog**: cosmetic, engineering-scale, or a non-reproducing timing outlier.
 - **No rebuild or retag after a failure without Donal's explicit approval.**
   Record it, continue the independent checks, report.
@@ -40,7 +40,7 @@ Donal's go/no-go. In short:
 
 The 205-binding qualification campaign is **not** a release gate (Donal,
 2026-09-27). Its remaining packaged probes still run in CI as regression checks.
-Whether the campaign code is deleted is an open decision recorded in the handoff.
+Keep the intertwined library until a bounded extraction can preserve those probes.
 
 Everything else in this file is guidance for feature work, not a release gate.
 

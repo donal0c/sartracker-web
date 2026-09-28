@@ -1,7 +1,7 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-28 by Claude (foundation reset, stage 1 P01–P05). Awaiting
-Codex validation before stage 2 (R01) starts.
+Updated 2026-09-28 by Codex following Claude's foundation reset. Foundation
+corrections are in final validation; P05 backlog reconciliation remains separate.
 
 ## Release state
 
@@ -11,13 +11,15 @@ Codex validation before stage 2 (R01) starts.
   manually with Donal's approved soak deviation. [Release note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
 - The only release gate is now [docs/release-checklist.md](../docs/release-checklist.md):
   one table of 22 checks on the exact CI artifact, severity decided in advance,
-  owner exceptions bound to the tag, no rebuild after a failure without Donal.
+  owner exceptions bound to tag and approved artifact hashes, no rebuild after
+  a failure without Donal.
 - The guarded publisher enforces that checklist (`--check-notes` validates a
-  note offline). `scripts/team-smoke/` automates 16 of the checks.
+  note offline). Mixed automated/manual rows remain NOT TESTED until their
+  required human checks are recorded.
 - Qualification campaign: not a release gate (Donal, 2026-09-27). Its
   control-plane CLI and npm commands are removed; its packaged probes still run
-  in CI. **Open decision for Donal:** delete the remaining campaign code (see
-  the reset report) or keep it dormant.
+  in CI. Retain the intertwined library for now; later extraction can simplify
+  it without dropping working regression checks.
 
 ## Known issues in 13.4 (fix order = workplan stage 2)
 
@@ -33,21 +35,30 @@ Codex validation before stage 2 (R01) starts.
 
 ## Next actions
 
-1. Codex validates the reset (report: `tmp/claude-handoffs/01-foundation-reset-result.md`
-   in the original checkout).
-2. Apply the Linear changes listed in that report (no Linear access in the
-   Claude session).
-3. R01 crash/archive recovery, then R02–R08, then maintenance beta 13.5 through
+1. Complete validation/delivery of the foundation corrections: failed-spawn
+   cleanup, lost-history detection, truthful partial results and approval hashes.
+2. Restore existing-area Discovery testing: retained package declares z8–16
+   but contains z9–16. Confirm the tester's file identity, then validate a
+   separately named metadata correction on unchanged 13.4. Broader maps stay last.
+3. Orientation: rotated camera is likely; isolated library testing confirms
+   compass-click resets it. Confirm on the affected installation before changing code.
+4. Apply audited Linear dispositions after live checks; some old duplicates
+   are already deleted. P05 is not complete.
+5. R01 crash/archive recovery, then R02–R08, then maintenance beta 13.5 through
    the new checklist — its first real use.
 
 ## Verification snapshot (2026-09-28)
 
-- Team-smoke rehearsal on unchanged 13.4 bytes (Ubuntu 24.04, installed `.deb`,
-  `--ignore-gpu-blocklist`, tool `eb610377`): 13 PASS, 2 FAIL (unwritable
-  profile; lifecycle: issues 3 and 4), 7 NOT TESTED by design (manual rows).
-  Outputs on the box: `~/team-smoke-rehearsal-13.4/`.
-- Publisher: 40 unit tests, including exception acceptance/rejection.
-- Full correctness suite and lint: see the reset report for the final run.
+- Historical Ubuntu tool `eb610377` rehearsal on unchanged 13.4 caught the
+  unwritable-profile and lifecycle failures. Codex inspected saved results;
+  mixed-row PASS counts are not complete manual/visual proof. Outputs:
+  `~/team-smoke-rehearsal-13.4/`.
+- Codex: 90 focused tests passed, including red-first harness failures and
+  stale approval after asset replacement. Independent source review found no
+  further actionable P1/P2 findings in the corrections.
+- Full correctness: 592 files / 6,178 passed / 27 existing skips. The subsequent
+  participant-eligibility boundary correction passed the focused suite. Lint and
+  TypeScript checks pass; corrected-tool packaged rehearsal and CI pending.
 
 ## Pointers
 

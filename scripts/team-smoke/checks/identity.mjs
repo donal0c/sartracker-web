@@ -21,6 +21,7 @@ function artifactCheck(check, id, option) {
   return {
     check,
     id,
+    manualSteps: ['Confirm these exact bytes came from the CI-built draft assets.'],
     async run(ctx) {
       const file = ctx.options[option]
       if (file === undefined) throw new NotTested(`Pass --${option === 'appImage' ? 'appimage' : 'deb'} and --sha256sums.`)

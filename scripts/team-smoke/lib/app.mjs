@@ -21,6 +21,28 @@ import { expectProduct } from './results.mjs'
 const CDP_TIMEOUT_MS = 45_000
 const SHELL_TIMEOUT_MS = 90_000
 
+/** Starts an owned child and rejects spawn failures before exposing a PID to cleanup. */
+async function startChild(ctx, { profile, label, port, env = {} }) {
+  const log = createWriteStream(path.join(ctx.runDir, `${label}.log`), { flags: 'a' })
+  const child = spawn(ctx.app, [`--remote-debugging-port=${port}`, ...ctx.appArgs], {
+    detached: true,
+    env: { ...process.env, SARTRACKER_ELECTRON_USER_DATA_PATH: profile, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  child.stdout.pipe(log, { end: false })
+  child.stderr.pipe(log, { end: false })
+  child.once('close', () => log.end())
+  await new Promise((resolve, reject) => {
+    child.once('error', (error) => { log.end(); reject(error) })
+    child.once('spawn', () => {
+      if (!Number.isSafeInteger(child.pid) || child.pid <= 0) {
+        reject(new Error('Spawn returned no valid owned process ID.'))
+      } else resolve()
+    })
+  })
+  return child
+}
+
 /**
  * @typedef {Object} SmokeContext
  * @property {string} app packaged executable under test
@@ -50,14 +72,7 @@ const SHELL_TIMEOUT_MS = 90_000
 export async function launchApp(ctx, { profile, label, waitForShell = true, env = {} }) {
   await mkdir(profile, { recursive: true })
   const port = await freePort()
-  const log = createWriteStream(path.join(ctx.runDir, `${label}.log`), { flags: 'a' })
-  const child = spawn(ctx.app, [`--remote-debugging-port=${port}`, ...ctx.appArgs], {
-    detached: true,
-    env: { ...process.env, SARTRACKER_ELECTRON_USER_DATA_PATH: profile, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  child.stdout.pipe(log)
-  child.stderr.pipe(log)
+  const child = await startChild(ctx, { profile, label, port, env })
   const exited = new Promise((resolve) => child.once('exit', (code) => resolve(code)))
   let running = true
   void exited.then(() => {
@@ -66,13 +81,13 @@ export async function launchApp(ctx, { profile, label, waitForShell = true, env 
 
   /** @type {RunningApp} */
   const handle = {
-    pid: child.pid ?? -1,
+    pid: child.pid,
     page: /** @type {any} */ (null),
     exited,
     alive: () => running,
     async shot(name) {
       const file = path.join(ctx.runDir, `${label}-${name}.png`)
-      await handle.page.screenshot({ path: file }).catch(() => {})
+      await handle.page.screenshot({ path: file })
       return file
     },
     async stop(signal = 'SIGTERM') {
@@ -118,14 +133,7 @@ export async function launchApp(ctx, { profile, label, waitForShell = true, env 
  */
 export async function observeStartup(ctx, { profile, label, timeoutMs = 30_000 }) {
   const port = await freePort()
-  const log = createWriteStream(path.join(ctx.runDir, `${label}.log`), { flags: 'a' })
-  const child = spawn(ctx.app, [`--remote-debugging-port=${port}`, ...ctx.appArgs], {
-    detached: true,
-    env: { ...process.env, SARTRACKER_ELECTRON_USER_DATA_PATH: profile },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-  child.stdout.pipe(log)
-  child.stderr.pipe(log)
+  const child = await startChild(ctx, { profile, label, port })
   let exitCode = /** @type {number | null | undefined} */ (undefined)
   child.once('exit', (code) => {
     exitCode = code
@@ -142,14 +150,14 @@ export async function observeStartup(ctx, { profile, label, timeoutMs = 30_000 }
         const page = await firstAppPage(browser)
         await delay(5000)
         bodyText = await page.locator('body').innerText().catch(() => '')
-        await page.screenshot({ path: path.join(ctx.runDir, `${label}.png`) }).catch(() => {})
+        await page.screenshot({ path: path.join(ctx.runDir, `${label}.png`) })
         break
       }
       await delay(500)
     }
   } finally {
     try {
-      process.kill(-(child.pid ?? 0), 'SIGKILL')
+      process.kill(-child.pid, 'SIGKILL')
     } catch {
       // Already exited.
     }

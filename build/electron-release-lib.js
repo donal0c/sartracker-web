@@ -182,9 +182,20 @@ export function validateReleaseMatrix(body, tag) {
     }
   }
 
+  const appImage = parseArtifactIdentity(rows.get('AppImage SHA-256').evidence, '.AppImage')
+  const deb = parseArtifactIdentity(rows.get('.deb SHA-256').evidence, '.deb')
+  if (exceptions.size > 0) {
+    const section = markdownSection(body, 'Owner-approved exceptions')
+    for (const [label, artifact] of [['AppImage', appImage], ['.deb', deb]]) {
+      const approvalLine = `Approved ${label} SHA-256: \`${artifact.sha256}\``
+      if (!section.split('\n').some((line) => line.trim() === approvalLine)) {
+        throw new Error(`Owner exceptions require ${approvalLine}; approved artifact SHA-256 must match the current checklist.`)
+      }
+    }
+  }
   return {
-    appImage: parseArtifactIdentity(rows.get('AppImage SHA-256').evidence, '.AppImage'),
-    deb: parseArtifactIdentity(rows.get('.deb SHA-256').evidence, '.deb'),
+    appImage,
+    deb,
     exceptions: [...exceptions.values()],
   }
 }
