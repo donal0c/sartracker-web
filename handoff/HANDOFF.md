@@ -18,10 +18,11 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 ## Next action
 
-**1.1 / DON-282 fixed locally, awaiting Codex review** (not pushed, not on
-Linux, not released). Cause: fixTime promotion of an older fix skipped the
-coverage revision. Fix + per-mission generation-fence repair (survives 13.4
-rollback, review 03a); unproved rows stay excluded.
+**1.1 / DON-282 reviewed; Linux CI/package proof pending, not released.**
+Fix 019ccdbe + rollback repair 2a6cc03f. Codex: 21 focused tests pass;
+Mac package built; packaged store/worker upgrade, promotion and three opens
+pass. Real packaged UI retains the honest reconciliation warning. This is
+synthetic Mac proof, not Linux or live Traccar proof. Cursor remains 1.1.
 Detail: `sartracker-web/tmp/claude-handoffs/03-legacy-upgrade-coverage-result.md`.
 
 ## Pointers

@@ -4,7 +4,7 @@ Updated 2026-09-28. This is the single active queue, replacing the accumulated p
 
 ## Locked queue — Donal's working plan, 28 September
 
-**CURRENT: 1.1 / DON-282 — fixed locally, pending Codex review. The cursor stays at 1.1.**
+**CURRENT: 1.1 / DON-282 — source reviewed; Mac package probe passed; Linux CI and exact-package proof pending. The cursor stays at 1.1.**
 Foundation P01–P05 and archive recovery R01 / DON-281 are DONE. Do not repeat them.
 The five numbered steps below own execution order; the older R/T/A/H/M tables
 below supply detail and acceptance criteria, not a competing queue.
@@ -34,6 +34,7 @@ developer diagnostics. Sending email still requires Donal's instruction.
 
 ### New feedback and explicit exceptions
 
+- **Team follow-up, 28 September:** TB13-01 resolved by Eamonn; TB13-02 original supplied filename confirmed, corrected-package validation/delivery still pending under DON-144. New TB13-03 / DON-291 reports missing 48-hour history in a new mission, with beta 12 comparison. Step 1 intake: investigate after DON-282 review and explicitly decide priority before changing implementation order. No parallel product slice. DON-282 also exposed “All mission history shown” while unconfirmed legacy rows remain excluded: visibility/policy decision under 2.7/3.2; retain fixTime-only evidence rules.
 - **Already owned:** TB13-01 orientation confirmation and TB13-02 existing-area
   Discovery repair (DON-144). These are immediate support follow-ups alongside
   the queue, not permission to start step 5. The drafted reply has not been sent
