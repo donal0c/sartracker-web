@@ -74,6 +74,22 @@ unit test keeps this table, the template and the publisher in agreement.
 | Strict responsiveness (<200 ms) | Release workflow strict responsiveness step green | CI link |
 | Offline map package | Package imports and renders offline, or NOT APPLICABLE with reason | Manual |
 
+### Initial history smoke gap — DON-291
+
+The tracking check must also cover starting a mission with a lookback, including
+the reported 48-hour case. Use known provider history from before creation and
+an eligible device with historical fixes but no fresh live update. Verify that
+the expected devices and in-window tracks appear in the UI and are persisted,
+without waiting for a new fix. Respect the agreed participant rules. Verify
+window boundaries, restart preservation and visible failure when history cannot
+be retrieved in the regression tests.
+
+This requirement was recorded after Eamonn's report on 28 September. The
+repeatable packaged test is pending under DON-291; live tracking and outage
+backfill passes do not prove it. Until this part is exercised, the combined
+tracking row remains NOT TESTED. Integrate it into the existing tracking smoke,
+without introducing another qualification campaign.
+
 Identity checks (the first four) must PASS and cannot be excepted. Only
 **Offline map package** may be NOT APPLICABLE.
 
