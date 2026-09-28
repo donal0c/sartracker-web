@@ -17,12 +17,12 @@ import { ParticipantRuntimeBridge } from './features/participants/participant-ru
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
 import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
-import { SettingsWorkspace } from './components/settings-workspace'
 import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
 import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
 import { openExternalUrl } from './infrastructure/url-opener/open-external-url'
 import type { WeatherLinkSettings } from './features/settings/settings-types'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
+import { useSettingsWorkspaceStore } from './features/settings/settings-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
@@ -48,6 +48,13 @@ import { PersistentTrackingHealth } from './components/persistent-tracking-healt
 import { ThemeToggle } from './components/theme-toggle'
 import { useWorkspaceVisibility } from './features/mission/use-workspace-visibility'
 
+// Settings stays mounted so its open/close behaviour is unchanged; only its
+// code is split out of the default application chunk.
+const SettingsWorkspace = lazy(async () => {
+  const module = await import('./components/settings-workspace')
+
+  return { default: module.SettingsWorkspace }
+})
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
 
@@ -59,7 +66,10 @@ type RuntimeMode = 'electron' | 'hosted-browser'
 function App() {
   const status = useAppStore((state) => state.status)
   const focusModeActive = useFocusModeStore((state) => state.active)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsOpen = useSettingsWorkspaceStore((state) => state.open)
+  const settingsFocusTarget = useSettingsWorkspaceStore((state) => state.focusTarget)
+  const openSettingsWorkspace = useSettingsWorkspaceStore((state) => state.openWorkspace)
+  const closeSettingsWorkspace = useSettingsWorkspaceStore((state) => state.closeWorkspace)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
   const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
   const restoreWorkspaceRef = useRef<HTMLButtonElement>(null)
@@ -131,7 +141,7 @@ function App() {
         <CommandMast
           missionControlMinimized={missionControlMinimized}
           onOpenDiagnostics={openDiagnosticsWorkspace}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openSettingsWorkspace()}
           runtimeMode={runtimeMode}
           status={status}
         />
@@ -187,7 +197,13 @@ function App() {
       <MissionReviewWorkspace />
       <MarkerDialog />
       <DiagnosticsWorkspace />
-      <SettingsWorkspace onClose={() => setSettingsOpen(false)} open={settingsOpen} />
+      <Suspense fallback={null}>
+        <SettingsWorkspace
+          focusTarget={settingsFocusTarget}
+          onClose={closeSettingsWorkspace}
+          open={settingsOpen}
+        />
+      </Suspense>
     </main>
   )
 }

@@ -9,15 +9,17 @@ import {
 } from './outing-controls-section'
 import { ParticipantControlsSection } from './participant-controls-section'
 import { InlineDecisionDialog } from './inline-decision-dialog'
-import { AdminRosterError } from './admin-roster-error'
 import { MAX_MISSION_NAME_BYTES } from '../lib/mission-name'
 
 const MISSION_NAME_INPUT_ID = 'mission-name-input'
 const MISSION_OFFSET_INPUT_ID = 'mission-offset-input'
-const MISSION_UNLOCK_TITLE_ID = 'mission-unlock-dialog-title'
 const MISSION_FINISH_TITLE_ID = 'mission-finish-dialog-title'
 const MISSION_FINISH_DESCRIPTION_ID = 'mission-finish-dialog-description'
 const MAX_START_OFFSET_HOURS = 48
+const MissionUnlockDialog = lazy(async () => {
+  const module = await import('./mission-unlock-dialog')
+  return { default: module.MissionUnlockDialog }
+})
 const MissionEvidenceLossDialog = lazy(async () => {
   const module = await import('./mission-evidence-loss-dialog')
   return { default: module.MissionEvidenceLossDialog }
@@ -61,7 +63,9 @@ export function MissionControlPanel({
     startError,
     actionError,
     rosterError,
+    rosterStatus,
     retryAdminRoster,
+    openAdminRosterSettings,
     duplicateWarning,
     showFinishDialog,
     setShowFinishDialog,
@@ -502,73 +506,23 @@ export function MissionControlPanel({
       ) : null}
 
       {showUnlockDialog && governanceMission !== null ? (
-        <InlineDecisionDialog
-          className="mt-4 border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl"
-          data-testid="mission-unlock-dialog"
-          labelledBy={MISSION_UNLOCK_TITLE_ID}
-          onCancel={() => setShowUnlockDialog(false)}
-        >
-          <p
-            className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide"
-            id={MISSION_UNLOCK_TITLE_ID}
-          >
-            Admin Unlock
-          </p>
-          <div className="mt-4 space-y-4">
-            <label className="block space-y-2">
-              <span className="text-[11px] font-medium text-stone-300">
-                Admin Identity
-              </span>
-              <select
-                className="sar-input w-full px-3 py-2 text-sm"
-                data-testid="mission-unlock-admin"
-                onChange={(event) => setSelectedAdmin(event.target.value)}
-                value={selectedAdmin}
-              >
-                {adminRoster.length === 0 ? (
-                  <option value="">No admins configured</option>
-                ) : (
-                  adminRoster.map((admin) => (
-                    <option key={admin} value={admin}>
-                      {admin}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-            <label className="block space-y-2">
-              <span className="text-[11px] font-medium text-stone-300">
-                Unlock Reason
-              </span>
-              <textarea
-                className="sar-input min-h-24 w-full px-3 py-2 text-sm"
-                data-testid="mission-unlock-reason"
-                onChange={(event) => setUnlockReason(event.target.value)}
-                value={unlockReason}
-              />
-            </label>
-          </div>
-          <AdminRosterError message={rosterError} onRetry={retryAdminRoster} />
-          {actionError !== null ? <MissionActionError message={actionError} /> : null}
-          <div className="mt-4 flex gap-2">
-            <button
-              className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-40 hover:bg-amber-500"
-              data-testid="mission-unlock-confirm"
-              disabled={selectedAdmin.trim() === '' || unlockReason.trim() === '' || governanceBusy}
-              onClick={() => void confirmUnlock()}
-              type="button"
-            >
-              {governanceBusy ? 'Unlocking…' : 'Confirm Unlock'}
-            </button>
-            <button
-              className="flex-1 bg-stone-800 px-3 py-2 text-[12px] font-semibold text-stone-200 hover:bg-stone-700"
-              onClick={() => setShowUnlockDialog(false)}
-              type="button"
-            >
-              Cancel
-            </button>
-          </div>
-        </InlineDecisionDialog>
+        <Suspense fallback={<p role="status">Loading unlock controls…</p>}>
+          <MissionUnlockDialog
+            actionError={actionError}
+            adminRoster={adminRoster}
+            governanceBusy={governanceBusy}
+            onCancel={() => setShowUnlockDialog(false)}
+            onConfirm={() => void confirmUnlock()}
+            onOpenAdminRosterSettings={openAdminRosterSettings}
+            onRetryRoster={retryAdminRoster}
+            rosterError={rosterError}
+            rosterStatus={rosterStatus}
+            selectedAdmin={selectedAdmin}
+            setSelectedAdmin={setSelectedAdmin}
+            setUnlockReason={setUnlockReason}
+            unlockReason={unlockReason}
+          />
+        </Suspense>
       ) : null}
 
       {showEvidenceLossDialog && governanceMission !== null ? (
@@ -576,6 +530,8 @@ export function MissionControlPanel({
           <MissionEvidenceLossDialog
             actionError={actionError}
             adminRoster={adminRoster}
+            rosterStatus={rosterStatus}
+            onOpenAdminRosterSettings={openAdminRosterSettings}
             rosterError={rosterError}
             onRetryRoster={retryAdminRoster}
             evidenceLossReason={evidenceLossReason}

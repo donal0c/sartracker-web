@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 
-import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import type {
   FinalizeMissionResult,
   Mission,
@@ -19,6 +18,7 @@ import { useMissionReviewWorkspaceStore } from '../mission-review/mission-review
 import { useMissionStore, type MissionRuntimePhase } from './mission-store'
 import type { MissionTimerState } from './mission-timers'
 import { useMissionTimer } from './use-mission-timer'
+import { useGovernanceAdminRoster, type AdminRosterStatus } from './use-governance-admin-roster'
 import { useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 
@@ -38,7 +38,10 @@ export type MissionControlViewModel = {
   readonly startError: string | null
   readonly actionError: string | null
   readonly rosterError: string | null
+  readonly rosterStatus: AdminRosterStatus
   readonly retryAdminRoster: () => void
+  /** Leaves the open admin decision for Settings → Admin roster, returning on close. */
+  readonly openAdminRosterSettings: () => void
   readonly duplicateWarning: string | null
   readonly showFinishDialog: boolean
   readonly setShowFinishDialog: (show: boolean) => void
@@ -110,8 +113,6 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [startError, setStartError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [rosterError, setRosterError] = useState<string | null>(null)
-  const [rosterAttempt, setRosterAttempt] = useState(0)
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
@@ -121,8 +122,6 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [showEvidenceLossDialog, setShowEvidenceLossDialog] = useState(false)
   const [governanceBusy, setGovernanceBusy] = useState(false)
   const [governanceFeedback, setGovernanceFeedback] = useState<string | null>(null)
-  const [adminRoster, setAdminRoster] = useState<readonly string[]>([])
-  const [selectedAdmin, setSelectedAdmin] = useState('')
   const [unlockReason, setUnlockReason] = useState('')
   const [evidenceLossReason, setEvidenceLossReason] = useState('')
   const subscribeArchiveProgress = useCallback((
@@ -130,43 +129,25 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   ): (() => void) => window.sartrackerElectron?.onMissionArchiveProgress?.(listener)
     ?? (() => undefined), [])
 
-  useEffect(() => {
-    if (!showUnlockDialog && !showEvidenceLossDialog) {
-      return
-    }
-
-    let cancelled = false
-    setRosterError(null)
-
-    void loadAppSettings()
-      .then((settings) => {
-        if (cancelled) {
-          return
-        }
-
-        setAdminRoster(settings.missionDefaults.adminRoster)
-        setRosterError(null)
-        setSelectedAdmin((current) =>
-          current !== '' && settings.missionDefaults.adminRoster.includes(current)
-            ? current
-            : (settings.missionDefaults.adminRoster[0] ?? ''),
-        )
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setRosterError(toErrorMessage(error))
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [showEvidenceLossDialog, showUnlockDialog, rosterAttempt])
-
-  /** Retries only roster loading without clearing a lifecycle action failure. */
-  function retryAdminRoster(): void {
-    setRosterAttempt((attempt) => attempt + 1)
-  }
+  const {
+    adminRoster,
+    rosterStatus,
+    rosterError,
+    retryAdminRoster,
+    selectedAdmin,
+    setSelectedAdmin,
+    openAdminRosterSettings,
+  } = useGovernanceAdminRoster({
+    openDecision: showEvidenceLossDialog ? 'evidence-loss' : showUnlockDialog ? 'unlock' : null,
+    governanceBusy,
+    setDecisionOpen: (decision, open) => {
+      if (decision === 'unlock') {
+        setShowUnlockDialog(open)
+      } else {
+        setShowEvidenceLossDialog(open)
+      }
+    },
+  })
 
   function setMissionName(name: string): void {
     setMissionNameState(name)
@@ -456,7 +437,9 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     startError,
     actionError,
     rosterError,
+    rosterStatus,
     retryAdminRoster,
+    openAdminRosterSettings,
     duplicateWarning,
     showFinishDialog,
     setShowFinishDialog,

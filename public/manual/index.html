@@ -690,7 +690,7 @@
           <p>The top awareness strip keeps tracking connection status and last success visible on every Focus tab, including when the right workspace is hidden. Connected describes the feed; stale positions or a disconnected warning must not be treated as current tracking.</p>
           <p><strong>Theme: Standard / High contrast</strong> switches panel and control contrast. This preference is saved on this device for the next launch. If saving fails, the current theme still applies and a warning explains that it could not be saved.</p>
           <p><strong>Minimize</strong> removes the active Mission Control card in either display mode. The top strip retains mission name, state, Active search timer, Review and <strong>Restore mission</strong>. Restore the controls to access Pause or End Mission. A pause, recovery, mission decision or action failure automatically restores the controls and cancels the previous hide choice; returning to an active mission does not hide them again. Open mission decisions must be completed or cancelled before hiding the workspace.</p>
-          <p>Your saved contrast choice also applies during startup and on the startup-fault screen. If a mission dialog cannot load admin identities, use <strong>Retry admin roster</strong>; a successful reload restores the identity choices.</p>
+          <p>Your saved contrast choice also applies during startup and on the startup-fault screen. If a mission dialog cannot load admin identities, it shows <strong>Admin roster unavailable</strong>; use <strong>Retry admin roster</strong>, and a successful reload restores the identity choices. A failed load is never shown as “No admins configured”.</p>
           <p><strong>Layer Workspace → Collapse</strong> hides the full right workspace and returns its width to the map. <strong>Restore workspace</strong> is available in the top strip and works with keyboard Tab and Enter. Layer visibility, filters and the selected tab are retained. While paused or recovering, the safety controls stay expanded.</p>
           <p>The Devices list and selected-device details have separate scrolling areas. Scroll the list horizontally to reach all columns and Zoom; a device without a fix cannot be zoomed to.</p>
           <figure class="screenshot"><img src="assets/ui-feedback-focus.png" alt="Focus Mode with minimized mission, persistent disconnected warning and readable layer controls" /><figcaption>Browser exercise: disconnected tracking stays visible with the mission minimized.</figcaption></figure>
@@ -1320,6 +1320,26 @@
           <figure class="screenshot">
             <img src="assets/mission-evidence-loss-acknowledgement.png" alt="Mission Control acknowledgement for a known evidence gap, with an admin selector, permanent record field, and explicit warning that Complete or 100% remains unavailable" />
             <figcaption>An admin can close and retain a finished incident with a documented evidence gap; the action never restores evidence or permits Complete or 100%.</figcaption>
+          </figure>
+          <div class="note">
+            <strong>If no admins are configured:</strong> the acknowledgement (and Admin Unlock) needs a
+            named Admin Roster member. When the roster is empty the dialog says
+            <strong>No Admin Roster members are configured</strong>, keeps
+            <strong>Record Gap &amp; Allow Archive</strong> disabled, and offers
+            <strong>Open Admin Roster Settings</strong>. That opens Settings at
+            <strong>Mission Defaults → Admin roster</strong>. Add the responsible admin and choose
+            <strong>Save &amp; Close</strong>; SAR Tracker returns to the same dialog for the same mission,
+            reloads the roster and keeps the record you had already typed. Closing Settings without
+            saving returns to the dialog unchanged. The roster change is kept in local settings history.
+            This is a shortcut to the existing roster setting, not a new permission: the admin is
+            still checked when the acknowledgement is recorded, the critical warning stays, and
+            Complete or 100% remains unavailable. After an unexpected crash, SAR Tracker marks every
+            unfinished or not-yet-archived mission this way, even when no tracking data was waiting,
+            because it cannot prove nothing was lost.
+          </div>
+          <figure class="screenshot">
+            <img src="assets/mission-evidence-loss-empty-roster.png" alt="Acknowledge Known Evidence Loss dialog with an empty Admin Roster, explaining the route to Settings and offering Open Admin Roster Settings, with the record button disabled" />
+            <figcaption>With an empty Admin Roster, the acknowledgement explains the route to Settings instead of leaving Archive &amp; Lock stranded.</figcaption>
           </figure>
           <div class="note">
             <strong>Finish and finalization wait for evidence already observed:</strong> Finish closes

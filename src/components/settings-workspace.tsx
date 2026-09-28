@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type Ref, type SetStateAction } from 'react'
 
 import { getAppRuntimeController } from '../features/runtime/app-runtime-controller'
 import {
@@ -15,6 +15,7 @@ import {
   type CoordinateDisplayMode,
   type OfficialMapPackageSettings,
 } from '../features/settings/settings-types'
+import type { SettingsFocusTarget } from '../features/settings/settings-workspace-store'
 import {
   HOSTED_TRACCAR_HTTPS_BASE_URL,
   MAX_WEATHER_LINKS,
@@ -39,6 +40,8 @@ import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 type SettingsWorkspaceProps = {
   readonly open: boolean
   readonly onClose: () => void
+  /** Field to focus once settings have loaded, e.g. when a governance decision needs an admin. */
+  readonly focusTarget?: SettingsFocusTarget | null
 }
 
 const SETTINGS_WORKSPACE_TITLE_ID = 'settings-workspace-title'
@@ -46,7 +49,7 @@ const SETTINGS_WORKSPACE_TITLE_ID = 'settings-workspace-title'
 /**
  * Renders the operator settings workspace used for standalone configuration parity.
  */
-export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
+export function SettingsWorkspace({ open, onClose, focusTarget = null }: SettingsWorkspaceProps) {
   const [draft, setDraft] = useState<AppSettingsDraft | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -61,6 +64,18 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
   const [baselineCloseSnapshot, setBaselineCloseSnapshot] = useState<string | null>(null)
   const [showDiscardConfirmation, setShowDiscardConfirmation] = useState(false)
   const settingsValidationContext = useMemo(createSettingsValidationContext, [])
+  const adminRosterFieldRef = useRef<HTMLTextAreaElement>(null)
+  const settingsLoaded = open && !loading && draft !== null
+
+  useEffect(() => {
+    if (!settingsLoaded || focusTarget !== 'admin-roster') {
+      return
+    }
+
+    const field = adminRosterFieldRef.current
+    field?.scrollIntoView({ block: 'center' })
+    field?.focus()
+  }, [settingsLoaded, focusTarget])
 
   useEffect(() => {
     if (!open) {
@@ -248,6 +263,7 @@ export function SettingsWorkspace({ open, onClose }: SettingsWorkspaceProps) {
                   }}
                 />
                 <TextAreaField
+                  ref={adminRosterFieldRef}
                   label="Admin roster"
                   testId="settings-admin-roster"
                   value={adminRosterText}
@@ -1329,11 +1345,12 @@ function NumberField(props: {
   return <TextField {...props} type="number" />
 }
 
-function TextAreaField(props: {
+function TextAreaField({ ref, ...props }: {
   readonly label: string
   readonly value: string
   readonly onChange: (value: string) => void
   readonly testId?: string
+  readonly ref?: Ref<HTMLTextAreaElement>
 }) {
   return (
     <label className="block space-y-2">
@@ -1343,6 +1360,7 @@ function TextAreaField(props: {
       <textarea
         className="sar-input min-h-24 w-full px-3 py-2 text-sm"
         data-testid={props.testId}
+        ref={ref}
         onChange={(event) => props.onChange(event.target.value)}
         value={props.value}
       />

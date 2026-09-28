@@ -1,5 +1,7 @@
 import { InlineDecisionDialog } from './inline-decision-dialog'
+import { AdminIdentityField } from './admin-identity-field'
 import { AdminRosterError } from './admin-roster-error'
+import type { AdminRosterStatus } from '../features/mission/use-governance-admin-roster'
 
 const TITLE_ID = 'mission-evidence-loss-dialog-title'
 const DESCRIPTION_ID = 'mission-evidence-loss-dialog-description'
@@ -7,6 +9,8 @@ const DESCRIPTION_ID = 'mission-evidence-loss-dialog-description'
 type MissionEvidenceLossDialogProps = {
   readonly actionError: string | null
   readonly adminRoster: readonly string[]
+  readonly rosterStatus: AdminRosterStatus
+  readonly onOpenAdminRosterSettings: () => void
   readonly rosterError?: string | null
   readonly onRetryRoster?: () => void
   readonly evidenceLossReason: string
@@ -37,19 +41,15 @@ export function MissionEvidenceLossDialog(props: MissionEvidenceLossDialogProps)
         can be archived and locked with the warning retained.
       </p>
       <div className="mt-4 space-y-4">
-        <label className="block space-y-2">
-          <span className="text-[11px] font-medium text-stone-300">Admin Identity</span>
-          <select
-            className="sar-input w-full px-3 py-2 text-sm"
-            data-testid="mission-evidence-loss-admin"
-            onChange={(event) => props.setSelectedAdmin(event.target.value)}
-            value={props.selectedAdmin}
-          >
-            {props.adminRoster.length === 0 ? (
-              <option value="">No admins configured</option>
-            ) : props.adminRoster.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
-          </select>
-        </label>
+        <AdminIdentityField
+          adminRoster={props.adminRoster}
+          governanceBusy={props.governanceBusy}
+          onOpenAdminRosterSettings={props.onOpenAdminRosterSettings}
+          rosterStatus={props.rosterStatus}
+          selectedAdmin={props.selectedAdmin}
+          setSelectedAdmin={props.setSelectedAdmin}
+          testId="mission-evidence-loss-admin"
+        />
         <label className="block space-y-2">
           <span className="text-[11px] font-medium text-stone-300">Evidence Loss Record</span>
           <textarea

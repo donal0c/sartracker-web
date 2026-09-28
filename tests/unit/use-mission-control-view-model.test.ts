@@ -11,6 +11,7 @@ import type { MissionControlViewModel } from '../../src/features/mission/use-mis
 import { useMissionControlViewModel } from '../../src/features/mission/use-mission-control-view-model'
 import { useMissionReviewWorkspaceStore } from '../../src/features/mission-review/mission-review-workspace-store'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
+import { useSettingsWorkspaceStore } from '../../src/features/settings/settings-workspace-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 
 const mocks = vi.hoisted(() => ({
@@ -86,6 +87,120 @@ describe('useMissionControlViewModel', () => {
     await act(async () => { getModel().setShowUnlockDialog(true) })
     expect(getModel().rosterError).toBeNull()
     expect(getModel().actionError).toBeNull()
+  })
+
+  it('distinguishes a loading, failed and empty roster so failure is never shown as "no admins" [DON-281]', async () => {
+    let resolveSettings: (value: unknown) => void = () => undefined
+    mocks.loadAppSettings.mockReturnValueOnce(new Promise((resolve) => { resolveSettings = resolve }))
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowUnlockDialog(true) })
+    expect(getModel().rosterStatus).toBe('loading')
+
+    await act(async () => { resolveSettings(settingsWithAdminRoster([])) })
+    expect(getModel().rosterStatus).toBe('ready')
+    expect(getModel().adminRoster).toEqual([])
+
+    mocks.loadAppSettings.mockRejectedValueOnce(new Error('Roster unavailable'))
+    await act(async () => { getModel().retryAdminRoster() })
+    expect(getModel().rosterStatus).toBe('error')
+  })
+
+  it('routes an empty roster through Settings and back to the same acknowledgement draft [DON-281]', async () => {
+    mocks.loadAppSettings.mockResolvedValueOnce(settingsWithAdminRoster([]))
+    const governanceController = createEvidenceLossGovernanceController()
+    useMissionStore.setState({
+      governanceController,
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+    })
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowEvidenceLossDialog(true) })
+    expect(getModel().adminRoster).toEqual([])
+    act(() => getModel().setEvidenceLossReason('Crash logged at 22:14.'))
+
+    act(() => getModel().openAdminRosterSettings())
+    expect(getModel().showEvidenceLossDialog).toBe(false)
+    expect(useSettingsWorkspaceStore.getState()).toMatchObject({ open: true, focusTarget: 'admin-roster' })
+
+    mocks.loadAppSettings.mockResolvedValueOnce(settingsWithAdminRoster(['Ops Lead']))
+    await act(async () => { useSettingsWorkspaceStore.getState().closeWorkspace() })
+    expect(getModel().showEvidenceLossDialog).toBe(true)
+    expect(getModel().adminRoster).toEqual(['Ops Lead'])
+    expect(getModel().selectedAdmin).toBe('Ops Lead')
+    expect(getModel().evidenceLossReason).toBe('Crash logged at 22:14.')
+    expect(governanceController.acknowledgeGovernanceEvidenceLoss).not.toHaveBeenCalled()
+
+    await act(async () => getModel().confirmEvidenceLossAcknowledgement())
+    expect(governanceController.acknowledgeGovernanceEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-finished',
+      admin_name: 'Ops Lead',
+      reason: 'Crash logged at 22:14.',
+    })
+  })
+
+  it('returns to the unlock dialog after an Admin Roster detour [DON-281]', async () => {
+    mocks.loadAppSettings.mockResolvedValueOnce(settingsWithAdminRoster([]))
+    useMissionStore.setState({
+      governanceController: createEvidenceLossGovernanceController(),
+      governanceMission: createMission({ id: 'mission-finalized', status: 'finalized' }),
+    })
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowUnlockDialog(true) })
+    act(() => getModel().setUnlockReason('Add follow-up notes'))
+    act(() => getModel().openAdminRosterSettings())
+    expect(getModel().showUnlockDialog).toBe(false)
+
+    await act(async () => { useSettingsWorkspaceStore.getState().closeWorkspace() })
+    expect(getModel().showUnlockDialog).toBe(true)
+    expect(getModel().showEvidenceLossDialog).toBe(false)
+    expect(getModel().unlockReason).toBe('Add follow-up notes')
+  })
+
+  it('does not reopen a governance decision for a mission that changed while Settings was open [DON-281]', async () => {
+    mocks.loadAppSettings.mockResolvedValueOnce(settingsWithAdminRoster([]))
+    useMissionStore.setState({
+      governanceController: createEvidenceLossGovernanceController(),
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+    })
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowEvidenceLossDialog(true) })
+    act(() => getModel().openAdminRosterSettings())
+
+    act(() => useMissionStore.setState({
+      governanceMission: createMission({ id: 'another-mission', status: 'finished' }),
+    }))
+    await act(async () => { useSettingsWorkspaceStore.getState().closeWorkspace() })
+    expect(getModel().showEvidenceLossDialog).toBe(false)
+
+    // A later unrelated Settings visit must not resurrect the stale return.
+    await act(async () => { useSettingsWorkspaceStore.getState().openWorkspace() })
+    await act(async () => { useSettingsWorkspaceStore.getState().closeWorkspace() })
+    expect(getModel().showEvidenceLossDialog).toBe(false)
+  })
+
+  it('ignores the roster detour while a governance action is in flight [DON-281]', async () => {
+    let rejectAcknowledgement: (error: Error) => void = () => undefined
+    const governanceController = {
+      ...createEvidenceLossGovernanceController(),
+      acknowledgeGovernanceEvidenceLoss: vi.fn().mockReturnValue(
+        new Promise((_resolve, reject) => { rejectAcknowledgement = reject }),
+      ),
+    }
+    useMissionStore.setState({
+      governanceController,
+      governanceMission: createMission({ id: 'mission-finished', status: 'finished' }),
+    })
+    const { getModel } = renderHook()
+    await act(async () => { getModel().setShowEvidenceLossDialog(true) })
+    act(() => getModel().setEvidenceLossReason('Crash logged.'))
+    act(() => { void getModel().confirmEvidenceLossAcknowledgement() })
+    expect(getModel().governanceBusy).toBe(true)
+
+    act(() => getModel().openAdminRosterSettings())
+    expect(getModel().showEvidenceLossDialog).toBe(true)
+    expect(useSettingsWorkspaceStore.getState().open).toBe(false)
+
+    await act(async () => { rejectAcknowledgement(new Error('Selected admin is not authorized.')) })
+    expect(getModel().actionError).toMatch(/not authorized/i)
   })
 
   it('requires duplicate mission-name acknowledgement before starting a conflicting mission', async () => {
@@ -511,8 +626,34 @@ function resetStores(): void {
   })
   useMissionReviewWorkspaceStore.setState({ open: false })
   useFocusModeStore.setState({ active: false })
+  useSettingsWorkspaceStore.setState({ open: false, focusTarget: null })
   useParticipantStore.setState(useParticipantStore.getInitialState())
   useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+}
+
+function settingsWithAdminRoster(adminRoster: readonly string[]) {
+  return {
+    ...DEFAULT_APP_SETTINGS,
+    missionDefaults: { ...DEFAULT_APP_SETTINGS.missionDefaults, adminRoster },
+  }
+}
+
+function createEvidenceLossGovernanceController() {
+  return {
+    refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
+    finalizeGovernanceMission: vi.fn(),
+    acknowledgeGovernanceEvidenceLoss: vi.fn().mockResolvedValue({
+      state: 'critical',
+      reason: 'renderer_pending_evidence_lost',
+      pendingCount: 0,
+      corruptCount: 0,
+      conflictCount: 0,
+      rejectedCount: 0,
+      affectedDeviceCount: 0,
+      conflictDeviceIds: [],
+    }),
+    unlockGovernanceMission: vi.fn(),
+  }
 }
 
 function createController(overrides: Partial<ReturnType<typeof createController>> = {}) {

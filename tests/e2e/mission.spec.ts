@@ -263,6 +263,80 @@ test.describe('M5 mission control workflows', () => {
     expect(retained.eventTypes).toContain('mission_evidence_loss_acknowledged')
   })
 
+  test('routes an empty Admin Roster through Settings and back to evidence-loss acknowledgement [DON-281]', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Empty Roster Gap')
+    await page.getByTestId('mission-start-btn').click()
+    const missionId = await page.evaluate(
+      () => window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null,
+    )
+    expect(missionId).not.toBeNull()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog')
+      .getByRole('button', { name: 'Confirm Finish' })
+      .click()
+    await page.evaluate(async (id) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectEvidenceLoss(id)
+    }, missionId!)
+    await page.reload()
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
+    await page.waitForSelector('canvas', { timeout: 15_000 })
+
+    await page.getByTestId('mission-finalize-btn').click()
+    await submitSyntheticArchiveCustody(page)
+
+    const evidenceDialog = page.getByTestId('mission-evidence-loss-dialog')
+    await expect(evidenceDialog).toBeVisible()
+    const emptyNotice = evidenceDialog.getByTestId('admin-roster-empty-notice')
+    await expect(emptyNotice).toContainText('No Admin Roster members are configured')
+    await expect(page.getByTestId('mission-evidence-loss-confirm')).toBeDisabled()
+    const reason = 'Renderer crash recorded in the incident log at 22:14.'
+    await page.getByTestId('mission-evidence-loss-reason').fill(reason)
+
+    // Leaving Settings without saving returns to the same unresolved acknowledgement.
+    await emptyNotice.getByTestId('admin-roster-open-settings').click()
+    await expect(evidenceDialog).toBeHidden()
+    const rosterField = page.getByTestId('settings-admin-roster')
+    await expect(rosterField).toBeFocused()
+    await page.getByTestId('workspace-close-btn').click()
+    await expect(evidenceDialog).toBeVisible()
+    await expect(evidenceDialog.getByTestId('admin-roster-empty-notice')).toBeVisible()
+    await expect(page.getByTestId('mission-evidence-loss-reason')).toHaveValue(reason)
+    await expect(page.getByTestId('mission-evidence-loss-confirm')).toBeDisabled()
+
+    // Saving an admin returns with the refreshed roster and the draft intact.
+    await evidenceDialog.getByTestId('admin-roster-open-settings').click()
+    await expect(rosterField).toBeFocused()
+    await rosterField.fill('Ops Lead')
+    await page.getByTestId('settings-save').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(evidenceDialog).toBeVisible()
+    await expect(evidenceDialog.getByTestId('admin-roster-empty-notice')).toHaveCount(0)
+    await expect(page.getByTestId('mission-evidence-loss-admin')).toHaveValue('Ops Lead')
+    await expect(page.getByTestId('mission-evidence-loss-reason')).toHaveValue(reason)
+    await expect(evidenceDialog).toContainText('never permits Complete or 100%')
+    await page.getByTestId('mission-evidence-loss-confirm').click()
+
+    await expect(evidenceDialog).toBeHidden()
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
+      'Complete and 100% remain blocked permanently',
+    )
+    await finalizeWithSyntheticArchiveCustody(page)
+    await expect(page.getByTestId('mission-governance-card')).toContainText('finalized')
+
+    const retained = await page.evaluate(() => {
+      const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+      return {
+        evidenceLoss: state?.evidenceLossByMission ?? {},
+        eventTypes: state?.missionEvents.map((event) => event.event_type) ?? [],
+      }
+    })
+    expect(retained.evidenceLoss[missionId!]).toMatchObject({
+      reason: 'renderer_pending_evidence_lost',
+      acknowledgement: { adminName: 'Ops Lead', reason },
+    })
+    expect(retained.eventTypes).toContain('mission_evidence_loss_acknowledged')
+  })
+
   test('unlocks a finalized mission through the configured admin roster', async ({ page }) => {
     await page.evaluate(() => {
       window.localStorage.setItem(
