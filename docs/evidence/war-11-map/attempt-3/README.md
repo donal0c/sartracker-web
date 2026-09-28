@@ -23,5 +23,5 @@ captured. The 38 blocked-resource console messages have no retained request URLs
 and remain unclassified. Source-attributed service-worker diagnostics are not
 allowlisted. Raw local logs and private process/crash material are not included.
 
-See [the remediation record](../../../assurance/findings/war-11-offline-map-remediation.md)
+See [the remediation record](../../../archive/assurance/findings/war-11-offline-map-remediation.md)
 for source, browser, review and release limitations. Release remains HOLD.

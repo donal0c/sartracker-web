@@ -1537,7 +1537,7 @@ async function verifyBoundIdentities(definition) {
 
 /** Locate the reviewed plan from the executing source tree, never runtime configuration. */
 function reviewedCandidatePlanPath() {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/assurance/qualification-campaign-plan.json')
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../docs/archive/assurance/qualification-campaign-plan.json')
 }
 
 /** Ensure candidate coverage and make unresolved rows explicit blockers. */

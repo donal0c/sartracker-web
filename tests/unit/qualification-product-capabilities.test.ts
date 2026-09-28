@@ -45,7 +45,7 @@ describe('Beta 13 not-claimed capability scope', () => {
   })
 
   it('checks retained claim scope against the reviewed plan and keeps the issue inventory aligned', () => {
-    const campaign = JSON.parse(readFileSync('docs/assurance/qualification-campaign-plan.json', 'utf8'))
+    const campaign = JSON.parse(readFileSync('docs/archive/assurance/qualification-campaign-plan.json', 'utf8'))
     expect(campaign.claimScope.notClaimedIssueIds).toEqual(BETA13_CLAIM_SCOPE.notClaimedIssueIds)
     expect(BETA13_CLAIM_SCOPE.notClaimedIssueIds)
       .toEqual(BETA13_NOT_CLAIMED_CAPABILITIES.map((entry) => entry.issueId))
@@ -83,8 +83,8 @@ describe('Beta 13 not-claimed capability scope', () => {
   })
 
   it('keeps the complete C00-C29 campaign and absolute hazard inventory required', () => {
-    const campaign = JSON.parse(readFileSync('docs/assurance/qualification-campaign-plan.json', 'utf8'))
-    const registry = JSON.parse(readFileSync('docs/assurance/qualification-contracts.json', 'utf8'))
+    const campaign = JSON.parse(readFileSync('docs/archive/assurance/qualification-campaign-plan.json', 'utf8'))
+    const registry = JSON.parse(readFileSync('docs/archive/assurance/qualification-contracts.json', 'utf8'))
     expect(campaign.requiredContracts).toEqual(Array.from({ length: 30 }, (_, index) => `C${String(index).padStart(2, '0')}`))
     expect(campaign.bindings.some((binding) => binding.contractId === 'C19' && binding.mandatory)).toBe(true)
     expect(campaign.bindings.some((binding) => binding.contractId === 'C24' && binding.mandatory)).toBe(true)

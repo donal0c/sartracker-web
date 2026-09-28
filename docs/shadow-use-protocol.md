@@ -2,6 +2,13 @@
 
 Status: **Required protocol for any future SAR Tracker internal shadow-use beta.**
 
+> Note (2026-09-28 foundation reset): team betas are released for controlled
+> testing under [the release checklist](release-checklist.md). Using a build
+> beside a real incident is a separate decision by Donal and follows this
+> protocol. References below to DON-254 qualification and a release HOLD
+> describe the state when this protocol was written; they are not the current
+> team-beta gate.
+
 This is an operating protocol, not evidence that SAR Tracker is safe for sole
 operational use. It does not qualify an artifact, close a residual risk, replace
 the final release matrix, or authorize publication. The release note for the
@@ -11,7 +18,7 @@ The archive-lifecycle issue set (`DON-248`, `DON-252`, and `DON-253`) merged in
 PR #10 on 2026-09-09. Implementation and its pre-merge engineering evidence do
 not satisfy this protocol's field admission gate. Exact-candidate qualification,
 custody and release acceptance remain DON-254/DON-255 work; the
-[post-PR6 WAR-04B refresh](findings/WAR-04B.md) retains release HOLD.
+[post-PR6 WAR-04B refresh](archive/assurance/findings/WAR-04B.md) retains release HOLD.
 
 ## 1. What shadow use means
 

@@ -5,7 +5,7 @@ import { BACKUP_FAULT_VARIANTS } from '../../build/electron-storage-diagnostics-
 
 describe('mandatory packaged campaign coverage', () => {
   it('requires each packaged scenario on both delivery forms, including lifecycle and storage faults', async () => {
-    const plan = JSON.parse(await readFile('docs/assurance/qualification-campaign-plan.json', 'utf8')) as {
+    const plan = JSON.parse(await readFile('docs/archive/assurance/qualification-campaign-plan.json', 'utf8')) as {
       bindings: Array<{ contractId: string; variantId: string; adapterId: string; proofMode: string; mandatory: boolean }>
     }
     const rows = plan.bindings.filter((row) => row.adapterId === 'package.reviewed')

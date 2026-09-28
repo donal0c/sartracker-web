@@ -29,7 +29,7 @@ this transport does not change its proof model or publication authority.
 
 ## Regression provenance
 
-- Record: DON-254 and [retained Ubuntu evidence](../assurance/beta13-ubuntu-execution-20260925.md).
+- Record: DON-254 and [retained Ubuntu evidence](../archive/assurance/beta13-ubuntu-execution-20260925.md).
 - Trigger: Ubuntu's qualification preflight invoked authenticated `gh api` for
   public metadata even though direct unauthenticated GitHub reads succeed.
 - Affected surface: qualification admission, not SAR operator functionality.
@@ -43,7 +43,7 @@ this transport does not change its proof model or publication authority.
 - Verification: pre-tag focused and full-source results go in the canonical
   handoff/Linear record; this candidate requires its own green release workflow.
 - Earlier regressions: the [beta13.2 note](sartracker-electron-0.1.0-beta.13.2.md)
-  and [browser repair ledger](beta13-browser-gate-repair.md) retain their evidence.
+  and [browser repair ledger](../archive/releases/beta13-browser-gate-repair.md) retain their evidence.
   C10 paging, C02 recovery semantics, the field archive timeout, strict archive
   201ms breach, C26 findings and invalid C28 attempts remain unresolved/retained.
   This transport change does not claim to fix them.

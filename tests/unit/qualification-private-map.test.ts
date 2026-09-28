@@ -51,7 +51,7 @@ describe('private offline-map qualification [DON-254]', () => {
     expect(Object.keys(publicBinding)).toHaveLength(15)
   })
   it('adds exact-package private supplements while retaining both synthetic fault-matrix bindings', () => {
-    const plan = JSON.parse(readFileSync('docs/assurance/qualification-campaign-plan.json', 'utf8'))
+    const plan = JSON.parse(readFileSync('docs/archive/assurance/qualification-campaign-plan.json', 'utf8'))
     const rows = plan.bindings as Array<Record<string, unknown>>
     for (const [variantId, proofMode] of [['private-offline-map-appimage', 'ci-appimage'], ['private-offline-map-installed', 'installed-deb']]) {
       expect(rows).toContainEqual(expect.objectContaining({ contractId: 'C15', variantId, proofMode, mandatory: true }))

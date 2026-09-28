@@ -9,8 +9,8 @@
     "explicitlyEnabled": true
   },
   "registryPath": "qualification-contracts.json",
-  "fixturePaths": ["../../tests/fixtures/outing-window-vectors.json"],
-  "validatorPaths": ["../../scripts/qualification/control-plane.mjs"],
+  "fixturePaths": ["../../../tests/fixtures/outing-window-vectors.json"],
+  "validatorPaths": ["../../../scripts/qualification/control-plane.mjs"],
   "requiredContracts": ["C00", "C01"],
   "bindings": [
     { "contractId": "C00", "variantId": "synthetic-pass", "adapterId": "calibration.pass", "receiptValidatorId": "calibration.v1", "proofMode": "synthetic", "capability": "node", "resourceKey": "calibration", "mandatory": true, "command": ["internal-calibration", "pass"] },

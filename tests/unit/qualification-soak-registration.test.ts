@@ -14,7 +14,7 @@ describe('qualification packaged soak registration', () => {
   })
 
   it('binds the candidate plan to fixed adapter variants without field-scale substitution', async () => {
-    const plan = JSON.parse(await readFile('docs/assurance/qualification-campaign-plan.json', 'utf8')) as {
+    const plan = JSON.parse(await readFile('docs/archive/assurance/qualification-campaign-plan.json', 'utf8')) as {
       bindings: Array<Record<string, unknown>>
     }
     const soakBindings = plan.bindings.filter((binding) => binding.adapterId === 'soak.reviewed')

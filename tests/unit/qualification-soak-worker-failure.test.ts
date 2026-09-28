@@ -29,7 +29,7 @@ describe('soak worker failure terminal evidence', () => {
         schema: 'sartracker-qualification-campaign-plan-v1',
         campaignId: 'soak-worker-failure', mode: 'calibration', releaseEligible: false,
         authorization: { issue: 'DON-254', explicitlyEnabled: true },
-        registryPath: path.resolve('docs/assurance/qualification-contracts.json'),
+        registryPath: path.resolve('docs/archive/assurance/qualification-contracts.json'),
         fixturePaths: [fixture], artifacts: [{ role: 'ci-appimage', path: fixture, localBuild: false }],
         requiredContracts: ['C04'],
         bindings: [{ contractId: 'C04', variantId: 'ci', adapterId: 'soak.reviewed',

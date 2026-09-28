@@ -1,6 +1,6 @@
 # Repair Train A evidence
 
-See [the repair record](../../assurance/findings/repair-train-a.md) for causes,
+See [the repair record](../../archive/assurance/findings/repair-train-a.md) for causes,
 review dispositions, source identity and proof limits.
 
 - `native-base-red.json`, `policy-red.log`, `projection-red.log`: fresh failures

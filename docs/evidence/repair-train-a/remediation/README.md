@@ -1,7 +1,7 @@
 # External-review remediation evidence
 
 These receipts replace prior-head proof for the changed Train A application.
-[Disposition](../../../assurance/findings/repair-train-a-remediation.md) records
+[Disposition](../../../archive/assurance/findings/repair-train-a-remediation.md) records
 all accepted and rejected review claims and the escape analysis.
 
 - `source.log`: 417 files / 4,299 tests before accepted WAR-02A integration.

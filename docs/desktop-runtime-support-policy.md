@@ -62,9 +62,9 @@ Electron's bundled Chromium, the app has two defenses:
 > release workflow builds Linux x86-64 AppImage and `.deb` only. No Windows
 > build/launch job or `enable_windows` gate exists there; local macOS `--dir`
 > packaging is engineering evidence, not a CI-supported release lane. Electron
-> 40.10.0 is EOL. [WAR-11A](assurance/findings/WAR-11A.md) upgrades the affected
+> 40.10.0 is EOL. [WAR-11A](archive/assurance/findings/WAR-11A.md) upgrades the affected
 > AppImage builder and gates newly built outputs; the decision remains **HOLD**.
-> See [WAR-04B](assurance/findings/WAR-04B.md). A dependency declared
+> See [WAR-04B](archive/assurance/findings/WAR-04B.md). A dependency declared
 > `dev` may still be the shipped runtime or generate shipped launcher code;
 > upgrade priority must follow actual reachability, not npm classification.
 
@@ -139,7 +139,7 @@ WAR-11A selects the maintained upstream `v26` backport release 26.16.1, above
 GHSA-7g7r-gx96-252g's 26.15.0 fixed boundary. Local build Node must be at least
 22.12.0 for the updated native rebuild toolchain. Electron 40.10.0 and
 better-sqlite3 12.10.0 remain unchanged; this does not resolve runtime EOL or
-qualify a release. See [WAR-11A evidence](assurance/findings/WAR-11A.md).
+qualify a release. See [WAR-11A evidence](archive/assurance/findings/WAR-11A.md).
 
 Every Linux distribution command now extracts both installers and requires
 `scripts/verify-linux-package.mjs` before it can succeed. It checks generated

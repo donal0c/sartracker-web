@@ -76,7 +76,7 @@ shapes, after the exact fence error. The sanitizer and product behaviour are unc
 - Beta13.1 remains at `2ff4d5742649da016a52c0e682f404d17df8c5dd`. Release
   run 36225417118 attempt 1 passed correctness, strict responsiveness and build,
   then Chromium 220/225. No package or draft was produced by either rejected run.
-  [The five-failure ledger](beta13-browser-gate-repair.md) preserves causes,
+  [The five-failure ledger](../archive/releases/beta13-browser-gate-repair.md) preserves causes,
   reproductions, repairs, verification and the source-CI coverage gap.
 
 No workload, count oracle, timeout, retry policy or strict 200 ms threshold was

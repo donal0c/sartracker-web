@@ -1,7 +1,7 @@
 # Claude follow-up verification
 
 The supplied review targets `8865c7a6`. The current branch remains based on
-master `f4d1f321`. [Disposition](../../../assurance/findings/repair-train-b-claude-followup.md)
+master `f4d1f321`. [Disposition](../../../archive/assurance/findings/repair-train-b-claude-followup.md)
 separates confirmed defects, corrected claims and deliberate boundaries.
 
 ## Retained controls

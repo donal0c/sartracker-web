@@ -53,7 +53,7 @@ import {
   runContractAttempt,
 } from '../../scripts/qualification/candidate-control-plane.mjs'
 
-const registryPath = path.resolve('docs/assurance/qualification-contracts.json')
+const registryPath = path.resolve('docs/archive/assurance/qualification-contracts.json')
 const sourceIdentity = { sha: 'a'.repeat(40), tree: 'b'.repeat(40), dirty: false }
 let temporaryRoot: string | undefined
 

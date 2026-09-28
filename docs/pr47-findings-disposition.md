@@ -8,7 +8,7 @@ record from the active workplan; do not create a parallel execution queue.
 Sources: PR47 body; its task `01a0d014-c9fb-7e10-a26b-169f3b05ae55`;
 `docs/two-track-execution-workplan.md`; and the byte-preserved independent
 review at
-[`docs/assurance/findings/pr47-review-5b4f0b25.md`](assurance/findings/pr47-review-5b4f0b25.md).
+[`docs/archive/assurance/findings/pr47-review-5b4f0b25.md`](archive/assurance/findings/pr47-review-5b4f0b25.md).
 That review inspected source head `5b4f0b25`; it is historical evidence, not a
 review of the later repair head. IDs below distinguish the original 15
 findings (O), seven subsequent findings (R/P), six smaller review observations

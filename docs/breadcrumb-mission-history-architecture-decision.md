@@ -210,7 +210,7 @@ These are programme gates, subject to measured revision only through an explicit
 ## Programme Planning Rule
 
 The programme is delivered through the six ordered PRs in
-`docs/breadcrumb-programme-execution-policy.md`, followed by one final
+`docs/archive/breadcrumb-programme-execution-policy.md`, followed by one final
 team-facing release. BCP work units remain the just-in-time design and TDD
 boundaries inside those PRs. Each work unit receives a Fable design subsection
 covering safety invariants, failure modes, persistence/coordinate impact,

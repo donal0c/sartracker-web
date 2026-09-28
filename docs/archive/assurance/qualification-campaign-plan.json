@@ -17,10 +17,10 @@
   },
   "registryPath": "qualification-contracts.json",
   "fixturePaths": [
-    "../../tests/fixtures/outing-window-vectors.json"
+    "../../../tests/fixtures/outing-window-vectors.json"
   ],
   "validatorPaths": [
-    "../../scripts/qualification/control-plane.mjs"
+    "../../../scripts/qualification/control-plane.mjs"
   ],
   "expectedPlatform": "linux",
   "expectedArch": "x64",

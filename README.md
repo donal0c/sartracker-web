@@ -37,19 +37,18 @@ Known remaining parity gaps include full packaged offline map bundles, replay/tr
 
 ## Hosted Browser Testing
 
-The Vercel-hosted app is a testing and possible future deployment path, but it is not automatically equivalent to the installed Electron app.
+The Vercel-hosted app is a testing path only. It uses browser session storage
+and is not equivalent to the installed Electron app, which is the durable
+runtime (SQLite in WAL mode, backup mirror, diagnostics, local map packages).
 
-Current plan: [`docs/hosted-browser-testing-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/hosted-browser-testing-plan.md)
+## Working on the project
 
-Phase 0 intentionally uses browser session storage so teams can test the current operator surface quickly. The installed Electron app is the durable runtime with SQLite, WAL mode, backup mirror, diagnostics, local official-map packages, and desktop filesystem adapters.
-
-Planning rule: [`docs/two-track-execution-workplan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/two-track-execution-workplan.md) is the single active queue. Supporting docs explain details, but new tasks must be folded into that workplan before implementation.
-
-Supporting execution guides:
-
-- [`docs/team-testing-feedback-loop.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/team-testing-feedback-loop.md) — hosted testing instructions and bug triage
-- [`docs/electron-beta-handoff.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/electron-beta-handoff.md) — current Electron app handoff and Discovery map loading runbook
-- [`docs/tauri-beta-release-plan.md`](/Users/donalocallaghan/workspace/vibes/sartracker-web/docs/tauri-beta-release-plan.md) — superseded Tauri beta plan retained for history
+- [`CLAUDE.md`](CLAUDE.md) — engineering rules for people and agents
+- [`handoff/HANDOFF.md`](handoff/HANDOFF.md) — current state and next action
+- [`docs/two-track-execution-workplan.md`](docs/two-track-execution-workplan.md) — the single ordered queue
+- [`docs/release-checklist.md`](docs/release-checklist.md) — how a team beta is released
+- [`docs/team-testing-feedback-loop.md`](docs/team-testing-feedback-loop.md) — team testing and bug triage
+- `docs/archive/` — superseded plans, runbooks and assurance records, kept as history
 
 ## Stack
 

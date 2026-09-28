@@ -19,7 +19,7 @@ import { canonicalJson } from '../../scripts/qualification/control-plane.mjs'
 import { C28_REQUIRED_VARIANTS } from '../../scripts/qualification/composite-coverage.mjs'
 import { BETA13_CLAIM_SCOPE } from '../../scripts/qualification/product-capabilities.mjs'
 
-const registryPath = path.resolve('docs/assurance/qualification-contracts.json')
+const registryPath = path.resolve('docs/archive/assurance/qualification-contracts.json')
 const sourceIdentity = { sha: 'a'.repeat(40), tree: 'b'.repeat(40), dirty: false }
 let temporaryRoot: string | undefined
 
@@ -308,7 +308,7 @@ describe('qualification candidate control plane', () => {
 
   it('rechecks the executing source at verdict instead of trusting a retained source claim', async () => {
     await createFixture()
-    const planPath = path.resolve('docs/assurance/qualification-campaign-plan.json')
+    const planPath = path.resolve('docs/archive/assurance/qualification-campaign-plan.json')
     const reviewedPlan = JSON.parse(await readFile(planPath, 'utf8'))
     const bindings = reviewedPlan.bindings.filter((binding: { contractId: string }) => binding.contractId === 'C00')
     expect(bindings.length).toBeGreaterThan(0)

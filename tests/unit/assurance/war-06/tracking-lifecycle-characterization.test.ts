@@ -443,7 +443,7 @@ async function startCharacterizationRuntime(input: {
  * These are repair oracles. They are expected to remain RED against the current
  * unrepaired production routes and turn GREEN only after production rejects
  * cross-mission publication. Keep each route description linked to
- * docs/assurance/findings/war-06/WAR-06.md.
+ * docs/archive/assurance/findings/war-06/WAR-06.md.
  */
 describe.sequential('WAR-06 reachable lifecycle repair oracles', () => {
 it('rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR]', async () => {

@@ -18,4 +18,4 @@ after intentional evidence updates with `--write`. CI checks it before running.
 Do not compare historical input hashes with today's checkout or relabel old
 measurements as current. The original 239.509 ms cause and the concurrent
 204.046 ms SQLite read remain unresolved; operator-read and release qualification
-are separate. Current disposition: `docs/assurance/findings/legacy-recovery-review-followup.md`.
+are separate. Current disposition: `docs/archive/assurance/findings/legacy-recovery-review-followup.md`.

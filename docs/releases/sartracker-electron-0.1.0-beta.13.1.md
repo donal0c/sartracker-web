@@ -23,7 +23,7 @@ candidate qualification or installer is asserted here.
 This candidate was rejected before packaging: release run 36225417118 attempt 1
 passed correctness, strict responsiveness and build, then failed five Chromium
 tests. No installer or draft was produced. See
-[the five-failure ledger](beta13-browser-gate-repair.md). Preserve this tag unchanged;
+[the five-failure ledger](../archive/releases/beta13-browser-gate-repair.md). Preserve this tag unchanged;
 the next candidate is Beta13.2 after reviewed repair and verification.
 
 The merged breadcrumb and mission-history programme, team-request repairs and
