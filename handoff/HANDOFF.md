@@ -23,8 +23,9 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 ## Next action
 
-DON-281 is closed; its watch is stopped. Next queued slice is R02 / DON-282
-(legacy upgrade coverage), following the workplan. No next slice started.
+DON-281 is closed; its watch is stopped. **Next: locked plan 1.1 / DON-282**
+(legacy upgrade coverage). “What's next?” means one Claude prompt for that
+item, then Codex validation before advancing. No next slice started.
 
 ## Pointers
 

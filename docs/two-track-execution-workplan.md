@@ -2,11 +2,76 @@
 
 Updated 2026-09-28. This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
 
+## Locked queue — Donal's working plan, 28 September
+
+**NEXT: 1.1 / DON-282. No implementation is currently active.**
+Foundation P01–P05 and archive recovery R01 / DON-281 are DONE. Do not repeat them.
+The five numbered steps below own execution order; the older R/T/A/H/M tables
+below supply detail and acceptance criteria, not a competing queue.
+
+| Step | Ordered handovers within the step | Step exit |
+| --- | --- | --- |
+| **1. Repair the current reliability problems** | **1.1 NEXT:** older-mission upgrade coverage (R02 / DON-282). **1.2:** paused crash recovery (R03 / DON-283). **1.3:** clean window/SIGTERM exits (R04 / DON-284). **1.4:** unwritable-profile error (R04 / DON-285). **1.5:** slow open/quit and native startup investigation (R05 / DON-286). **1.6:** malformed IPC identifiers (R06 / DON-287). **1.7:** unavailable-WebGL visible failure (R08 / DON-288). **1.8:** resolve the recorded crash-warning wording decision from DON-281; retain the safety restriction unless separately approved. | Each defect repaired with relevant proof, or a concrete diagnosis/decision and explicit residual disposition. An investigation is not automatic authority for a store rewrite. |
+| **2. Finish the original non-mapping team requests** | **2.1:** settings/admin/unlock/recovery authority decisions, then agreed implementation (T01 / DON-219/220/221). **2.2:** active mission rename (T02 / DON-257). **2.3:** search-area labels, then marker coordinates (T03 / DON-214/135). **2.4:** local map image/print output (T04 / DON-216). **2.5:** external resources/drone/media and evacuation/gear residual decisions (T05 / DON-217/218). **2.6:** reconcile all 29 ODT rows, including delivered items and outings/layers (T06 / DON-100/215/256; replay successor DON-278). **2.7:** Clear Alias, then confirmed Replay/Search usability residuals (T07 / AUD-12 and DON-289). | Every ODT request has evidence of delivery or a recorded, agreed decision. Mapping rows transfer to step 5; no unanswered request is silently dropped. |
+| **3. Close the remaining WAR, audit and support obligations** | **3.1:** GPX recovery accounting (A01 / DON-289 candidates). **3.2:** remaining PR5/Astra/layer candidates, reproducing before fixes (A02 / DON-289). **3.3:** original-machine freezes and outstanding persistence/retention/audit proofs (A03 / DON-151/159/160/161/162/163/164/240/247). **3.4:** storage integrity, large-store recovery, indexes/retention and native-isolation decisions (A04 / DON-249/250/251, DON-286). **3.5:** residual package/scale/timing/memory and supported Electron runtime work (A05 / historical DON-254/146). **3.6:** supported platforms, support upload/inbox and optional extras dispositions (A06 / DON-25/179/181/115/141/21/258). | Every retained finding is repaired/proven, superseded with evidence, or explicitly deferred with owner, limits and revisit trigger. Broad old WAR charters do not become compulsory new audits. |
+| **4. Validate and release the stable non-mapping batch** | **4.1:** reconcile parity/requirements and historical programme accounting (H01 / DON-5/6/12/25/241/254/265). **4.2:** ordinary operator workflow on the supported package, manual and support handover (H02). **4.3:** maintenance release decision using the single checklist (R07 / DON-290). | One stable exact CI artifact, truthful results/known issues and Donal's publication decision. No claim that all 205 historical bindings passed, or that controlled testing equals operational acceptance. |
+| **5. Purchased maps and final handover — last** | **5.1:** agree normal/travel area logistics, products/rights and grid requirements (M01). **5.2:** private preparation, distribution and area import/management (M02 / DON-144). **5.3:** provider/grid/offline/platform verification (M03 / DON-7/76/115/141; DON-116 terrain decision). **5.4:** final integrated handover and explicit operational/QGIS-retirement decision (M04 / DON-5/6). | Required map workflow works on agreed devices and areas; final acceptance is explicit. No all-Ireland-in-memory assumption. |
+
+### The handover loop
+
+On **“what's next?”**, Codex reads this cursor and current evidence, then writes
+one bounded temporary prompt for the next numbered item. Claude investigates,
+challenges the proposed approach, implements and tests. Codex reviews, verifies
+the relevant runtime boundary, integrates and updates Linear plus this cursor.
+Only then does the cursor advance. A grouped item is split into named subparts
+inside its existing number when necessary; it is not handed over as a giant batch.
+No product work starts merely because an automated watch finishes.
+
+Codex may reconcile evidence and prepare missing team questions while Claude
+implements; only one product change and one owner of the Ubuntu test runtime.
+Team questions reuse existing answers and ask for operational choices, not
+developer diagnostics. Sending email still requires Donal's instruction.
+
+### New feedback and explicit exceptions
+
+- **Already owned:** TB13-01 orientation confirmation and TB13-02 existing-area
+  Discovery repair (DON-144). These are immediate support follow-ups alongside
+  the queue, not permission to start step 5. The drafted reply has not been sent
+  by Codex; no answer or corrected-map acceptance is assumed.
+- Every new report gets checked for duplication and assigned a numbered home.
+  Confirmed safety defects or blockers to team testing may interrupt the queue;
+  state the reason, the inserted bounded task and the resume point. Other bugs
+  join the appropriate step. No silent expansion or parallel implementation swarm.
+- A required team answer blocks only its dependent item. Record the missing
+  decision and the return point before taking the earliest independent item.
+  Skipping it is not completion or an approved deferral.
+- This is an order, not a two-week promise to implement every open issue.
+  Step 4 is the planned release checkpoint after required fixes/dispositions.
+  An earlier useful maintenance release needs an explicit recorded batch decision;
+  it must not disappear or move silently between the detail tables.
+- Release rules remain unchanged: no rebuild after failure without Donal,
+  preserve actual failures, and do not rerun unrelated campaigns. The process
+  reset is implemented; its first complete release remains to be exercised.
+
+### Coverage lock
+
+Live Linear refresh on 28 September returned **45 open, non-archived project
+issues**, all mapped to this queue through the coverage register below. All
+29 original ODT rows, the WAR/Astra/PR5 residual registers, current beta defects,
+and both new team reports are included. This means **every known item has a
+home**, not that every historical allegation is a current bug or every desired
+feature is approved. Decisions/deferrals require explicit recording.
+
+The additional DON-281 observations also remain accounted for: overstated crash
+wording → 1.8; existing Settings-mast/inline-dialog Escape conflict → 3.2;
+Mac renderer-crash process exit observation → 1.3/3.6, without assuming the Linux
+result proves Mac behavior. No extra unowned investigation is created.
+
 ## Agreed direction and boundaries
 
 Donal asked for one ordered plan covering process/testing repair, remaining defects, team requests, audit findings and backlog cleanup, with parallel work where useful and **purchased-map delivery last**. This supersedes the earlier investigation's suggestion to prepare maps in parallel with the first maintenance release.
 
-The team has beta.13.4 and its existing local map areas for controlled testing. Keep that published release immutable. A successful team beta is not operational/live-incident acceptance.
+The team has beta.13.4 for controlled testing. Its existing-area Discovery import is blocked for the reporting tester pending the support repair above; available public basemaps permit other appropriate testing. Keep the published release immutable. A successful team beta is not operational/live-incident acceptance.
 
 Mapping logistics remain open for discussion with the team. Donal estimates most work is within perhaps 20×20 or 40×40 km in Kerry, with occasional larger or distant operations. This is a planning hypothesis, not confirmed coverage. Owning national maps does not require installing national detail on every laptop, and files stored on disk are distinct from tiles loaded into memory. Do not estimate tile counts/size without chosen bounds and zoom/detail. Existing maps let other testing continue; no new mapping work is a prerequisite to stages 1–5.
 
@@ -15,14 +80,14 @@ The plan was created on 2026-09-28 with Donal's clarification that CLAUDE.md and
 ## How we will use this ledger
 
 - **Execution partnership (Donal):** Claude Code, using Opus 5.5, is the primary implementer. Codex supplies one temporary prompt per bounded chunk, coordinates dependencies and independently validates the result before advancing. Claude researches and challenges Codex's recommendations, chooses implementation/test details and explains justified changes. The first prompt groups P01–P05 as the foundation reset; later chunks are scoped from what is learned. Explicit user requirements and safety/authority boundaries still apply.
-- Work top to bottom by stage. Name the next row, owner, expected visible result and relevant tests before starting. Keep one product slice and one independent process/evidence slice active at a time; add a specialist only for a genuinely independent task.
+- Follow the locked numbered queue above. Name the next item, owner, expected visible result and relevant tests before starting. Keep one product slice and one independent process/evidence slice active at a time.
 - Status vocabulary: **NEXT**, **QUEUED**, **DECISION**, **PARKED**, **ACTIVE**, **DONE**, **DEFERRED**. DONE needs an evidence link; DEFERRED needs an explicit decision, reason and revisit trigger. A missing team answer blocks only dependent work.
 - Coordinator owns this queue, deduplication and integration. Assign an actual implementation owner on activation. One owner operates the shared Ubuntu install/profile and performance workloads; independent source work can proceed elsewhere.
 - Keep scope bounded. A new finding gets a named disposition; it does not silently expand the active patch or restart every check.
 - Close each row with the relevant issue, proof, remaining limits and next action. Implemented, tested locally, tested in the package, and accepted by operators are different claims.
 - Build release batches from stable completed slices. Do not issue a release per row or wait for every row to finish before delivering a useful maintenance beta.
 
-## Stage 1 — foundation reset first
+## Reference: foundation reset (complete)
 
 **Donal's clarification:** the CLAUDE.md/instruction, document and process cleanup proposed in post-mortem 09 §6a belongs first, before starting the next product fixes. This is the first work chunk, not optional housekeeping after a maintenance release. Source-of-truth cleanup, smoke tooling and backlog reconciliation may run in parallel inside this stage, with one integrator for shared files. Read-only baseline checks and preparation of team questions may proceed; product implementation waits for the reset checkpoint.
 
@@ -40,9 +105,10 @@ The plan was created on 2026-09-28 with Donal's clarification that CLAUDE.md and
 
 **Foundation finish condition:** active instructions, checklist, tooling, publisher and handoff agree; obsolete machinery no longer dictates work; important safety tests remain runnable; a bounded rehearsal on immutable 13.4 shows the new path is usable. Then move to R01. Mere document shortening is not completion, and exhaustive automation of every old check is not required.
 
-Fable's budget is one to two working sessions. If a step grows beyond roughly half a session, record the concrete remaining work and reduce the reset scope with Donal rather than silently expanding it. Preserve required checks and existing working tools. Proposed retirement of the non-gating campaign needs the explicit policy disposition in P01 before removal; there is no new automatic approval ceremony for ordinary reversible cleanup.
+The reset is complete. Campaign front-door retirement was resolved in P01/P02;
+useful packaged probes remain. Do not reopen the reset as a prerequisite to each fix.
 
-## Stage 2 — repair the shipped recovery and lifecycle problems
+## Reference: recovery and lifecycle acceptance
 
 Reproduce first. Use the actual installed application for native/packaged claims. A Settings shortcut must not silently redefine authority; a legacy migration must not invent provenance.
 
@@ -59,7 +125,7 @@ Reproduce first. Use the actual installed application for native/packaged claims
 
 R07 is a release checkpoint, not permission to ship or an assertion that every recovery issue is cheap. An unexplained failure remains recorded; independent checks continue. A harness-only repair reruns against the same binary.
 
-## Stage 3 — finish the remaining non-mapping team requests
+## Reference: original non-mapping team requests
 
 Prepare a small, deduplicated set of operational questions during stages 1–2, so answers can arrive before dependent implementation. Preparing questions is in scope; sending them requires Donal's instruction. Use the existing raw transcript/Q&A ledger, not a new question system.
 
@@ -75,7 +141,7 @@ Prepare a small, deduplicated set of operational questions during stages 1–2, 
 
 **Second checkpoint:** non-mapping team requirements are implemented with evidence, or have an explicit agreed deferral. Publish stable improvements in sensible batches using the same process. “No answer yet” is not “no longer required.”
 
-## Stage 4 — close audit and resilience debt proportionately
+## Reference: audit and resilience obligations
 
 Inventory and bounded diagnosis can run earlier; implementation order follows evidence and shared-file ownership. Bring a confirmed serious defect forward immediately. Broad unexecuted WAR charters are not a blanket prerequisite.
 
@@ -88,9 +154,11 @@ Inventory and bounded diagnosis can run earlier; implementation order follows ev
 | A05 QUEUED | Remaining package findings and dependency health. DON-254 C10/large archive/201ms/C26/C28; DON-146 runtime upgrade; memory-growth observation. | Separate product, harness and measurement causes; selected workload only. | Each failure has a bounded disposition; full-process memory measurement replaces the undercount. Builder upgrade is not Electron runtime upgrade. Pick/verify an appropriate runtime target when needed, with package proof. No generic full-campaign retry. |
 | A06 DECISION | Support upload/inbox, platform support and optional extras. DON-179/181; DON-13/14/115/141; DON-21/258. | Product/support decisions; local support export already exists. | Clear first-handover platforms; retain Windows evidence if required. Remote upload/privacy/retention explicitly chosen or deferred. Shortcut hints and portfolio/demo work explicitly later unless requested. |
 
-**Third checkpoint:** no unowned major finding. Source fixes, package acceptance and deferred capabilities remain distinguishable. Non-gating qualification keeps its current status until Donal explicitly changes it; P01/P02 must not silently turn retirement into an accomplished decision.
+**Audit exit:** no unowned major finding. Source fixes, package acceptance and
+deferred capabilities remain distinguishable. The campaign front door is retired;
+retained regression probes do not reinstate the 205-row release gate.
 
-## Stage 5 — verify the non-mapping handover before the final feature
+## Reference: non-mapping handover acceptance
 
 | ID / status | Work and existing owner records | Depends on / may run alongside | Finish condition |
 | --- | --- | --- | --- |
@@ -99,7 +167,7 @@ Inventory and bounded diagnosis can run earlier; implementation order follows ev
 
 Do this once on a stable integrated slice with risk-selected negative paths. Reuse unchanged evidence where justified. This is a coherent operator check, not a relaunch of 205 rows under a new name.
 
-## Stage 6 — purchased mapping, the final functionality stage
+## Reference: purchased mapping and final handover
 
 All M rows are **PARKED by Donal's sequencing decision** until the preceding required non-mapping work is complete or explicitly deferred. Gather questions through T-stage planning, but do not start conversion, map feature coding or large package benchmarking early.
 
