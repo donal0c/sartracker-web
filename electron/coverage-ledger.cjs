@@ -441,39 +441,34 @@ function bumpCoverageChangeSequence(database, missionId, updatedAt) {
 }
 
 /**
- * Repairs ledgers written before DON-282, when a retained fixTime-provenance
- * promotion could commit without moving its coverage chunk revision. That left
- * a "fresh" ledger digest the tile worker could never reproduce. Only devices
- * holding a promoted fix are invalidated; their chunks then rebuild from exact
- * accepted rows. No evidence row is read for anything but its identity.
+ * Invalidates one mission's coverage for every device holding a promoted fix.
+ * A retained fixTime-provenance promotion made by a build without DON-282 did
+ * not move its chunk revision, leaving a "fresh" digest the tile worker can
+ * never reproduce. Invalidated chunks rebuild from exact accepted rows; no
+ * evidence row is changed.
  */
-function invalidateCoverageForMissedProvenancePromotions(database, updatedAt) {
-  const promotedDevices = database.prepare(`SELECT DISTINCT position.mission_id,
-      position.device_id
+function invalidateCoverageForMissedProvenancePromotions(database, missionId, updatedAt) {
+  const promotedDevices = database.prepare(`SELECT DISTINCT position.device_id
     FROM positions AS position
-    WHERE position.timestamp_source = 'fix'
+    WHERE position.mission_id = ?
+      AND position.timestamp_source = 'fix'
       AND position.timestamp_provenance_recorded_at IS NOT NULL
       AND (position.received_at IS NULL
-        OR position.timestamp_provenance_recorded_at <> position.received_at)
-      AND EXISTS (
-        SELECT 1 FROM coverage_chunks AS chunk
-        WHERE chunk.mission_id = position.mission_id
-          AND chunk.device_id = position.device_id
-      )`).all()
+        OR position.timestamp_provenance_recorded_at <> position.received_at)`)
+    .all(missionId)
   const invalidateDevice = database.prepare(`UPDATE coverage_chunks SET
       content_rev = content_rev + 1,
       built_rev = NULL,
       updated_at = ?
     WHERE mission_id = ? AND device_id = ?`)
-  const missionIds = new Set()
-  for (const { mission_id: missionId, device_id: deviceId } of promotedDevices) {
-    invalidateDevice.run(updatedAt, missionId, deviceId)
-    missionIds.add(missionId)
+  let invalidatedChunkCount = 0
+  for (const { device_id: deviceId } of promotedDevices) {
+    invalidatedChunkCount += invalidateDevice.run(updatedAt, missionId, deviceId).changes
   }
-  for (const missionId of [...missionIds].sort(compareStringsByCodeUnit)) {
+  if (invalidatedChunkCount > 0) {
     bumpCoverageChangeSequence(database, missionId, updatedAt)
   }
-  return { invalidatedDeviceCount: promotedDevices.length }
+  return { invalidatedChunkCount }
 }
 
 /** Creates a stable tagged identity without allowing Unassigned collisions. */

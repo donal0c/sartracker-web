@@ -66,7 +66,7 @@ type PromotionStore = {
   readonly finalizeCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
 }
 
-const REPAIR_MARKER = 'coverage_missed_provenance_promotion_repair'
+const FENCE_KEY_PREFIX = 'coverage_promotion_fence:'
 
 let directory: string | undefined
 let store: PromotionStore | undefined
@@ -111,6 +111,38 @@ function countsByDevice(chunks: readonly ManifestChunk[]): Record<string, number
 /** Opens the profile database directly for evidence inspection or seeding. */
 function openRaw(readonly = false) {
   return new Database(path.join(directory!, 'mission-store.sqlite'), { readonly })
+}
+
+/**
+ * Reproduces exactly what beta.13.0–13.4 commit for a retained fixTime promotion:
+ * the row update and a replay-generation bump in one transaction, with no coverage change.
+ */
+function simulateBeta134Promotion(missionId: string, sourcePositionId: string, recordedAt: string): void {
+  const db = openRaw()
+  try {
+    db.transaction(() => {
+      const promoted = db.prepare(`UPDATE positions SET timestamp_source = 'fix',
+        timestamp_provenance_recorded_at = ? WHERE mission_id = ? AND source_position_id = ?
+        AND timestamp_source IS NULL`).run(recordedAt, missionId, sourcePositionId)
+      expect(promoted.changes).toBe(1)
+      db.prepare(`INSERT INTO mission_replay_generations (mission_id, generation) VALUES (?, 1)
+        ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`).run(missionId)
+    })()
+  } finally {
+    db.close()
+  }
+}
+
+/** Reads per-device content revisions for one mission. */
+function readRevisions(missionId: string): Record<string, number> {
+  const db = openRaw(true)
+  try {
+    return Object.fromEntries((db.prepare(`SELECT device_id, content_rev FROM coverage_chunks
+      WHERE mission_id = ? ORDER BY device_id`).all(missionId) as { device_id: string; content_rev: number }[])
+      .map((row) => [row.device_id, row.content_rev]))
+  } finally {
+    db.close()
+  }
 }
 
 /** Creates a schema-7 (beta.12.11-era) store with retained legacy fixes for two devices. */
@@ -163,8 +195,11 @@ describe('legacy fix-time provenance promotion keeps coverage attested [DON-282]
     const promoted = await buildCoverage(missionId, 'promoted')
     expect(countsByDevice(promoted)).toEqual({ 'historical-device': 1, 'legacy-device-2': 3 })
 
+    const revisionsBeforeRestart = readRevisions(missionId)
     for (const cycle of [1, 2]) {
       await reopen()
+      // This build's own promotions are fenced, so an ordinary reopen invalidates nothing.
+      expect(readRevisions(missionId)).toEqual(revisionsBeforeRestart)
       const chunks = await buildCoverage(missionId, `restart-${cycle}`)
       expect(countsByDevice(chunks)).toEqual({ 'historical-device': 1, 'legacy-device-2': 3 })
       expect(chunks.every((chunk) => chunk.builtRev === chunk.contentRev)).toBe(true)
@@ -210,7 +245,7 @@ describe('legacy fix-time provenance promotion keeps coverage attested [DON-282]
     })
   })
 
-  it('repairs a coverage ledger already left stale by an earlier missed promotion, exactly once', async () => {
+  it('repairs ledgers left stale by beta.13.4 promotions, again after a later rollback, and only then', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-don282-repair-'))
     await reopen()
     const mission = await store!.createMission({ name: 'Stale ledger', start_time: '2026-08-20T09:00:00.000Z' })
@@ -221,6 +256,7 @@ describe('legacy fix-time provenance promotion keeps coverage attested [DON-282]
       mission_id: mission.id,
       positions: [
         { source_position_id: 'a-1', device_id: 'device-a', lat: 52.1, lon: -9.5, timestamp: '2026-08-20T10:00:00.000Z' },
+        { source_position_id: 'a-2', device_id: 'device-a', lat: 52.101, lon: -9.501, timestamp: '2026-08-20T10:00:05.000Z' },
         { source_position_id: 'b-1', device_id: 'device-b', lat: 52.2, lon: -9.6, timestamp: '2026-08-20T10:00:00.000Z', timestamp_source: 'fix' },
       ],
     })
@@ -229,37 +265,43 @@ describe('legacy fix-time provenance promotion keeps coverage attested [DON-282]
     store!.close()
     store = undefined
 
-    // Reproduce the beta.13.4 on-disk state: a promotion committed without a ledger revision.
-    const db = openRaw()
+    // First damage: beta.13.4 promotes a-1 before this build ever opens the store.
+    simulateBeta134Promotion(mission.id, 'a-1', '2026-08-20T11:00:00.000Z')
+    const damaged = readRevisions(mission.id)
+    await reopen()
+    const firstRepair = readRevisions(mission.id)
+    expect(firstRepair['device-a']).toBe(damaged['device-a'] + 1)
+    expect(firstRepair['device-b']).toBe(damaged['device-b'])
+    expect(countsByDevice(await buildCoverage(mission.id, 'first-repair'))).toEqual({ 'device-a': 1, 'device-b': 1 })
+
+    await reopen()
+    expect(readRevisions(mission.id)).toEqual(firstRepair)
+    await buildCoverage(mission.id, 'first-stable')
+    await store!.prepareClose()
+    store!.close()
+    store = undefined
+
+    // Rollback: beta.13.4 runs again after a successful repair and promotes a-2.
+    simulateBeta134Promotion(mission.id, 'a-2', '2026-08-20T12:00:00.000Z')
+    await reopen()
+    const secondRepair = readRevisions(mission.id)
+    expect(secondRepair['device-a']).toBe(firstRepair['device-a'] + 1)
+    expect(secondRepair['device-b']).toBe(firstRepair['device-b'])
+    expect(countsByDevice(await buildCoverage(mission.id, 'second-repair'))).toEqual({ 'device-a': 2, 'device-b': 1 })
+
+    for (const cycle of [1, 2]) {
+      await reopen()
+      expect(readRevisions(mission.id)).toEqual(secondRepair)
+      expect(countsByDevice(await buildCoverage(mission.id, `second-stable-${cycle}`))).toEqual({ 'device-a': 2, 'device-b': 1 })
+    }
+    const db = openRaw(true)
     try {
-      db.prepare(`UPDATE positions SET timestamp_source = 'fix', timestamp_provenance_recorded_at = ?
-        WHERE source_position_id = 'a-1'`).run('2026-08-20T11:00:00.000Z')
-      db.prepare('DELETE FROM metadata WHERE key = ?').run(REPAIR_MARKER)
+      expect(db.prepare('SELECT value FROM metadata WHERE key = ?').get(`${FENCE_KEY_PREFIX}${mission.id}`))
+        .toEqual({ value: String((db.prepare('SELECT generation FROM mission_replay_generations WHERE mission_id = ?')
+          .get(mission.id) as { generation: number }).generation) })
     } finally {
       db.close()
     }
-    const before = openRaw(true)
-    const untouchedRevision = before.prepare(`SELECT content_rev FROM coverage_chunks
-      WHERE mission_id = ? AND device_id = 'device-b'`).get(mission.id)
-    before.close()
-
-    await reopen()
-    const repaired = await buildCoverage(mission.id, 'repaired')
-    expect(countsByDevice(repaired)).toEqual({ 'device-a': 1, 'device-b': 1 })
-
-    const after = openRaw(true)
-    try {
-      expect(after.prepare('SELECT value FROM metadata WHERE key = ?').get(REPAIR_MARKER)).toBeDefined()
-      expect(after.prepare(`SELECT content_rev FROM coverage_chunks
-        WHERE mission_id = ? AND device_id = 'device-b'`).get(mission.id)).toEqual(untouchedRevision)
-    } finally {
-      after.close()
-    }
-    const revisionsAfterRepair = repaired.map((chunk) => chunk.contentRev)
-
-    await reopen()
-    const stable = await buildCoverage(mission.id, 'second-open')
-    expect(stable.map((chunk) => chunk.contentRev)).toEqual(revisionsAfterRepair)
   })
 
   it('leaves fresh current-format missions untouched by the repair', async () => {

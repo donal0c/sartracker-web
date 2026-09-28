@@ -167,7 +167,7 @@ const {
 
 const CURRENT_SCHEMA_VERSION = 13
 const MISSION_EVIDENCE_VERSION_SCHEMA = 12
-const COVERAGE_PROMOTION_REPAIR_METADATA_KEY = 'coverage_missed_provenance_promotion_repair'
+const COVERAGE_PROMOTION_FENCE_KEY_PREFIX = 'coverage_promotion_fence:'
 const LEGACY_GPX_BACKFILL_DELAY_MS = 4
 const LEGACY_ARCHIVE_REGISTRY_BACKFILL_DELAY_MS = 4
 const MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN = 100
@@ -4640,7 +4640,7 @@ function migrate(db, archiveDirectory) {
           9007199254740991)
       )`).run(migrationTime)
 
-    repairCoverageMissedProvenancePromotions(db, migrationTime)
+    repairCoverageAfterUnfencedReplayGenerations(db, migrationTime)
 
     // Install after synchronous schema migration. Later bounded/background
     // evidence writes are runtime membership changes and must advance it.
@@ -4661,18 +4661,35 @@ function migrate(db, archiveDirectory) {
 }
 
 /**
- * Runs the DON-282 coverage-ledger repair once per store, inside the migration
- * transaction so a failure leaves neither a partial repair nor the marker.
- * Later promotions invalidate coverage at write time and need no repair.
+ * Repairs coverage for missions whose replay generation moved without this
+ * build observing it (DON-282). Every build able to open a v13 store advances
+ * the replay generation in the same transaction as a fixTime-provenance
+ * promotion, and this build records the generation it has accounted for as a
+ * per-mission fence. A missing or different fence therefore means a promotion
+ * may have skipped coverage (for example after running beta.13.4 again), so
+ * only that mission is rescanned. Runs inside the migration transaction.
  */
-function repairCoverageMissedProvenancePromotions(db, migrationTime) {
-  const marker = db.prepare('SELECT 1 FROM metadata WHERE key = ?')
-    .get(COVERAGE_PROMOTION_REPAIR_METADATA_KEY)
-  if (marker !== undefined) return
-  invalidateCoverageForMissedProvenancePromotions(db, migrationTime)
-  // A fixed value keeps otherwise identical stores byte-deterministic.
-  db.prepare("INSERT INTO metadata (key, value) VALUES (?, 'applied')")
-    .run(COVERAGE_PROMOTION_REPAIR_METADATA_KEY)
+function repairCoverageAfterUnfencedReplayGenerations(db, migrationTime) {
+  const unfenced = db.prepare(`SELECT generation.mission_id, generation.generation
+    FROM mission_replay_generations AS generation
+    LEFT JOIN metadata AS fence
+      ON fence.key = ? || generation.mission_id
+    WHERE fence.value IS NULL OR fence.value <> CAST(generation.generation AS TEXT)
+    ORDER BY generation.mission_id`)
+    .all(COVERAGE_PROMOTION_FENCE_KEY_PREFIX)
+  for (const row of unfenced) {
+    invalidateCoverageForMissedProvenancePromotions(db, row.mission_id, migrationTime)
+    writeCoveragePromotionFence(db, row.mission_id)
+  }
+}
+
+/** Records that coverage has observed every promotion up to the current replay generation. */
+function writeCoveragePromotionFence(db, missionId) {
+  db.prepare(`INSERT INTO metadata (key, value)
+    SELECT ? || mission_id, CAST(generation AS TEXT)
+    FROM mission_replay_generations WHERE mission_id = ?
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(COVERAGE_PROMOTION_FENCE_KEY_PREFIX, missionId)
 }
 
 /** Returns true when an archive-review restore worker has been cancelled. */
@@ -11817,6 +11834,8 @@ function bumpMissionReplayGeneration(db, missionId) {
     VALUES (?, 1)
     ON CONFLICT(mission_id) DO UPDATE SET generation = generation + 1`)
     .run(missionId)
+  // This build invalidates coverage for its own promotions in the same transaction.
+  writeCoveragePromotionFence(db, missionId)
 }
 
 /** Creates the stable cancellation error surfaced by renderer-owned coverage reads. */

@@ -20,7 +20,8 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 **1.1 / DON-282 fixed locally, awaiting Codex review** (not pushed, not on
 Linux, not released). Cause: fixTime promotion of an older fix skipped the
-coverage revision. Fix + one-time open repair; unproved rows stay excluded.
+coverage revision. Fix + per-mission generation-fence repair (survives 13.4
+rollback, review 03a); unproved rows stay excluded.
 Detail: `sartracker-web/tmp/claude-handoffs/03-legacy-upgrade-coverage-result.md`.
 
 ## Pointers
