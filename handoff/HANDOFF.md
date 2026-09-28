@@ -1,7 +1,7 @@
 # HANDOFF.md — Current state
 
 Updated 2026-09-28 by Codex following Claude's foundation reset. Source pushed
-through be5fc69f; final CI running. P05 live backlog reconciliation is complete.
+through be5fc69f; final CI passed. Foundation P01–P05 is complete.
 
 ## Release state
 
@@ -35,8 +35,8 @@ through be5fc69f; final CI running. P05 live backlog reconciliation is complete.
 
 ## Next actions
 
-1. Finish CI 36445372627 on be5fc69f; no blind retries. Foundation includes safe
-   cleanup, lost-history detection, truthful partial results and approval hashes.
+1. Foundation complete: CI 36445372627 passed on be5fc69f. Next product slice is
+   DON-281; new working-tree product edits are not covered by this CI result.
 2. Restore existing-area Discovery testing: retained package declares z8–16
    but contains z9–16. Confirm the tester's file identity, then validate a
    separately named metadata correction on unchanged 13.4. Broader maps stay last.
@@ -57,7 +57,10 @@ through be5fc69f; final CI running. P05 live backlog reconciliation is complete.
   further actionable P1/P2 findings in the corrections.
 - Full correctness: 592 files / 6,178 passed / 27 existing skips. The subsequent
   participant-eligibility boundary correction passed the focused suite. Lint and
-  TypeScript checks pass. Exact-source CI 36445372627 remains running.
+  TypeScript checks pass. Final Linux CI on be5fc69f passed all jobs: 592 test
+  files, 6,197 tests passed / 10 skipped; 225 Chromium preflight tests passed,
+  plus targeted browser, WAR-02B and packaged checks. This validates foundation
+  source, not later product edits or operational acceptance.
 - Clean smoke tool 7173c301 on unchanged installed 13.4: exact tracking PASS
   (27 fixes), 90 s outage/backfill PASS (45 fixes), lifecycle FAIL for DON-283/284
   with histories still gap-free. Saved results: `~/team-smoke-codex-foundation-final-20260928/`.
