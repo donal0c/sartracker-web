@@ -4,7 +4,7 @@ Updated 2026-09-28. This is the single active queue, replacing the accumulated p
 
 ## Locked queue — Donal's working plan, 28 September
 
-**NEXT: 1.1 / DON-282. No implementation is currently active.**
+**CURRENT: 1.1 / DON-282 — fixed locally, pending Codex review. The cursor stays at 1.1.**
 Foundation P01–P05 and archive recovery R01 / DON-281 are DONE. Do not repeat them.
 The five numbered steps below own execution order; the older R/T/A/H/M tables
 below supply detail and acceptance criteria, not a competing queue.

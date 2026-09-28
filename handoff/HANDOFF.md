@@ -8,24 +8,20 @@ Release gate: [checklist](../docs/release-checklist.md).
 - **beta.13.4** is the published controlled team beta (not for live incidents);
   immutable. See its [release note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
 - Foundation reset (P01–P05) is complete; CI 36445372627 passed.
-- **DON-281 (R01)** is complete on master (fix 6a7cfd53), independently
-  validated on Linux. It is not in any release.
+- **DON-281 (R01)** complete on master (6a7cfd53), Linux-validated; unreleased.
 
 ## Verification limits
 
-- DON-281: CI 36454746119 passed on 77e300e7 (6,208 tests, 226 Chromium).
-  Exact CI AppImage passed Ubuntu crash → roster Settings → acknowledge →
-  archive → restart; audit and warning retained. Evidence/hashes: DON-281.
-  This is development-package proof, not a new release or field acceptance.
-- The outbox durability defect is not established. The crash marker is written
-  for every open mission; its "was lost" wording overstates that. This is a
-  recorded finding: do not change it without Donal.
+- DON-281: CI 36454746119 and exact-AppImage Ubuntu recovery proof (see
+  DON-281). Development-package proof only, not a release.
+- Crash marker "was lost" wording overstates; recorded for 1.8, needs Donal.
 
 ## Next action
 
-DON-281 is closed; its watch is stopped. **Next: locked plan 1.1 / DON-282**
-(legacy upgrade coverage). “What's next?” means one Claude prompt for that
-item, then Codex validation before advancing. No next slice started.
+**1.1 / DON-282 fixed locally, awaiting Codex review** (not pushed, not on
+Linux, not released). Cause: fixTime promotion of an older fix skipped the
+coverage revision. Fix + one-time open repair; unproved rows stay excluded.
+Detail: `sartracker-web/tmp/claude-handoffs/03-legacy-upgrade-coverage-result.md`.
 
 ## Pointers
 
