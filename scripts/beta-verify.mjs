@@ -1,33 +1,24 @@
 #!/usr/bin/env node
 /**
- * Beta verification gate.
+ * Local pre-tag source check for a team beta.
  *
- * Runs the lint/build/test/test:backend/browser-driver/e2e/package/smoke chain that the Electron
- * beta release plan calls "Verification Before Sharing". On success it writes
- * a JSON evidence report to tmp/beta-artifacts/ that the agent cutting the
- * beta can attach to the release note.
- *
- * The script is intentionally cautious about heavy work:
- * - The `package` step runs `npm run electron:pack` which can
- *   take many minutes. Skip it with
- *   `--steps lint,build,test,test-backend,e2e-chromium` when iterating, but
- *   never skip it before sharing a beta.
- * - The `smoke` step is a manual checklist gate. The script prompts the
- *   operator to confirm each item rather than launching a GUI app headlessly.
+ * Runs the source gates of the tag-driven release workflow (lint, build,
+ * correctness, strict responsiveness, browser-driver contract, Chromium E2E)
+ * so failures surface before a tag is cut, and writes a JSON report to
+ * tmp/beta-artifacts/. It does not package or smoke: those run on the exact
+ * CI-built artifact per docs/release-checklist.md. The legacy Tauri backend is
+ * not shipped and is tested only when it changes (`npm run test:backend`).
  *
  * Usage:
- *   node scripts/beta-verify.mjs                       # full gate
+ *   node scripts/beta-verify.mjs                       # all steps
  *   node scripts/beta-verify.mjs --steps lint,build    # focused subset
- *   node scripts/beta-verify.mjs --no-smoke            # skip manual smoke prompt
  *   node scripts/beta-verify.mjs --report-dir <path>   # override report dir
  *
- * The script exits non-zero whenever any executed step fails or when the
- * operator declines a smoke checklist item.
+ * Exits non-zero when any executed step fails or any step is skipped.
  */
 
 import { execSync, spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { createInterface } from 'node:readline/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -47,24 +38,9 @@ const STEP_COMMANDS = {
   build: ['npm', ['run', 'build']],
   test: ['npm', ['run', 'test:correctness']],
   responsiveness: ['npm', ['run', 'test:responsiveness']],
-  'test-backend': ['npm', ['run', 'test:backend']],
   'browser-driver': ['npm', ['run', 'test:browser-driver']],
   'e2e-chromium': ['npm', ['run', 'test:e2e:chromium']],
-  package: ['npm', ['run', 'electron:pack']],
-  'tracking-soak-ci': ['npm', ['run', 'electron:smoke:tracking-soak:ci']],
-  // smoke is handled in-process via a manual checklist; no shell command runs.
-  smoke: ['__smoke__', []],
 }
-
-const SMOKE_CHECKLIST = [
-  'Packaged app launches without crashing.',
-  'Build/version is visible in the mast.',
-  'A new mission can be started.',
-  'Mission persists after closing and reopening the app.',
-  'Tracking settings can be opened and saved.',
-  'Packaged app starts with a corrupt/undecryptable stored Traccar secret and shows tracking disabled, not a startup fault.',
-  'Diagnostics export/open works.',
-]
 
 const ALLOWED_UNTRACKED_EVIDENCE_PREFIXES = [
   '.playwright-mcp/',
@@ -90,10 +66,6 @@ async function main() {
     return
   }
 
-  if (args.noSmoke) {
-    steps = steps.filter((step) => step !== 'smoke')
-  }
-
   const skippedSteps = ALL_BETA_STEPS.filter((step) => !steps.includes(step))
   const worktreeStatusAtStart = readReleaseWorktreeStatus()
   const blockingWorktreeChanges = findReleaseBlockingWorktreeChanges(
@@ -117,7 +89,7 @@ async function main() {
   console.log(`  release worktree clean at start: ${releaseWorktreeCleanAtStart ? 'yes' : 'no'}`)
   console.log(`  steps: ${steps.join(', ') || '(none)'}`)
   if (skippedSteps.length > 0) {
-    console.log(`  skipped via --steps/--no-smoke: ${skippedSteps.join(', ')}`)
+    console.log(`  skipped via --steps: ${skippedSteps.join(', ')}`)
   }
   console.log('')
 
@@ -187,7 +159,7 @@ async function main() {
 }
 
 function parseArgs(argv) {
-  const args = { steps: undefined, noSmoke: false, reportDir: undefined }
+  const args = { steps: undefined, reportDir: undefined }
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -196,8 +168,6 @@ function parseArgs(argv) {
       index += 1
     } else if (arg.startsWith('--steps=')) {
       args.steps = arg.slice('--steps='.length)
-    } else if (arg === '--no-smoke') {
-      args.noSmoke = true
     } else if (arg === '--report-dir') {
       args.reportDir = argv[index + 1]
       index += 1
@@ -221,7 +191,6 @@ function printUsageAndExit(code) {
       '',
       'Options:',
       '  --steps <list>        Comma-separated subset of: ' + ALL_BETA_STEPS.join(', '),
-      '  --no-smoke            Skip the manual smoke checklist prompt',
       '  --report-dir <path>   Override the JSON report output directory',
       '  -h, --help            Print this help text',
     ].join('\n'),
@@ -230,18 +199,11 @@ function printUsageAndExit(code) {
 }
 
 function describeCommand(step) {
-  if (step === 'smoke') {
-    return 'manual smoke checklist'
-  }
   const [bin, args] = STEP_COMMANDS[step]
   return [bin, ...args].join(' ')
 }
 
 async function runStep(step) {
-  if (step === 'smoke') {
-    return runSmokeChecklist()
-  }
-
   const [bin, args] = STEP_COMMANDS[step]
   const command = describeCommand(step)
   console.log(`▶ ${step}: ${command}`)
@@ -260,49 +222,6 @@ async function runStep(step) {
   console.log('')
 
   return { step, command, status, exitCode, durationMs, notes: '' }
-}
-
-async function runSmokeChecklist() {
-  const command = describeCommand('smoke')
-  console.log(`▶ smoke: ${command}`)
-  console.log('  Confirm each item by typing y, or n to fail. Anything else cancels.')
-
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
-  const startedAt = Date.now()
-  const failed = []
-
-  try {
-    for (let index = 0; index < SMOKE_CHECKLIST.length; index += 1) {
-      const item = SMOKE_CHECKLIST[index]
-      const answer = (await rl.question(`  ${index + 1}. ${item} [y/n] `)).trim().toLowerCase()
-      if (answer === 'y') {
-        continue
-      }
-      if (answer === 'n') {
-        failed.push(item)
-        continue
-      }
-      throw new Error(`smoke checklist cancelled at item ${index + 1}`)
-    }
-  } finally {
-    rl.close()
-  }
-
-  const durationMs = Date.now() - startedAt
-  const status = failed.length === 0 ? 'pass' : 'fail'
-  const notes = failed.length === 0 ? '' : `failed items: ${failed.join('; ')}`
-
-  console.log(`${status === 'pass' ? '✔' : '✖'} smoke (${(durationMs / 1000).toFixed(2)}s)`)
-  console.log('')
-
-  return {
-    step: 'smoke',
-    command,
-    status,
-    exitCode: status === 'pass' ? 0 : 1,
-    durationMs,
-    notes,
-  }
 }
 
 async function readVersionInfo() {

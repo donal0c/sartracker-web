@@ -29,11 +29,11 @@ name: Release (Electron Desktop)
 #   5. summary         (always): provenance + guarded publish instructions.
 #
 # macOS arm64 is NOT built or attached in this release lane (GitHub macOS
-# runners bill at 10x). The guarded publisher rejects extra, unqualified
-# distributables. A future macOS release must add its own CI build and smoke
-# matrix before attachment. See docs/releases/README.md.
+# runners bill at 10x). The guarded publisher rejects extra distributables.
 #
-# See docs/electron-beta-handoff.md for the team-facing handoff runbook.
+# After this workflow, follow docs/release-checklist.md: run
+# scripts/team-smoke on the exact draft assets, record results in the release
+# note, then publish with the guarded publisher.
 
 on:
   push:
@@ -164,8 +164,8 @@ jobs:
       # `electron/mission-store.cjs` on better-sqlite3, covered by the unit
       # tests above. The Tauri backend requires GTK system libs (`gdk-3.0`)
       # that are not provisioned on this runner, and gating an Electron
-      # release on retired-lane Rust tests is meaningless. Backend tests still
-      # run locally via `npm run beta:verify` and in the standard CI workflow.
+      # release on retired-lane Rust tests is meaningless. Run
+      # `npm run test:backend` locally only when src-tauri changes.
 
       - name: Web build (also runs bundle-size check)
         run: npm run build
@@ -631,12 +631,12 @@ jobs:
             echo "## macOS"
             echo ""
             echo "macOS arm64 is not built or attached in this lane. The guarded publisher"
-            echo "rejects any extra distributable without an explicit qualification matrix."
+            echo "rejects any extra distributable."
             echo ""
             echo "## Next step"
             echo ""
             if [ "$BUNDLE_LINUX_RESULT" = "success" ] && [ "$SMOKE_RESULT" = "success" ] && [ "$DRY_RUN" != "true" ]; then
-              echo "The release for \`${TAG}\` is in **DRAFT**. Qualify the exact draft AppImage and installed .deb, replace every pending matrix row with final evidence, then run the guarded publisher:"
+              echo "The release for \`${TAG}\` is in **DRAFT**. Follow docs/release-checklist.md: run scripts/team-smoke on the exact draft assets, record every result (and any owner-approved exception) in the release note and draft body, then run the guarded publisher:"
               echo ""
               echo '```bash'
               echo "npm run electron:release:publish -- --tag ${TAG} --repo ${GITHUB_REPOSITORY}"

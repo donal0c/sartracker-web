@@ -91,7 +91,7 @@ describe('Linux Electron renderer workflows [DON-260]', () => {
     }
     expect(selectStep(workflow.jobs.correctness, 'Strict responsiveness qualification (<200 ms)').run)
       .toBe('npm run test:responsiveness')
-    expect(selectStep(workflow.jobs.correctness, 'Record PR qualification boundary').run).toContain('release HOLD')
+    expect(workflow.jobs.correctness.steps.some((step) => step.name === 'Record PR qualification boundary')).toBe(false)
     const source = readFileSync('.github/workflows/electron-linux-validation.yml', 'utf8')
     expect(source).toContain("- 'vitest*.config.ts'")
     expect(source).not.toContain('continue-on-error: true')

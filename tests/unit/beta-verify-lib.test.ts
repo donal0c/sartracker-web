@@ -19,18 +19,14 @@ import {
 } from '../../build/beta-verify-lib.js'
 
 describe('parseBetaStepsFlag', () => {
-  it('keeps standard Chromium E2E in the full beta gate before packaging', () => {
+  it('mirrors the release workflow source gates and never packages locally', () => {
     expect(ALL_BETA_STEPS).toEqual([
       'lint',
       'build',
       'test',
       'responsiveness',
-      'test-backend',
       'browser-driver',
       'e2e-chromium',
-      'package',
-      'tracking-soak-ci',
-      'smoke',
     ])
   })
 
@@ -43,12 +39,11 @@ describe('parseBetaStepsFlag', () => {
   })
 
   it('returns the requested subset preserving canonical order', () => {
-    expect(parseBetaStepsFlag('package,lint,e2e-chromium,test,tracking-soak-ci')).toEqual([
+    expect(parseBetaStepsFlag('e2e-chromium,lint,responsiveness,test')).toEqual([
       'lint',
       'test',
+      'responsiveness',
       'e2e-chromium',
-      'package',
-      'tracking-soak-ci',
     ])
   })
 
@@ -67,13 +62,13 @@ describe('parseBetaStepsFlag', () => {
 })
 
 describe('mandatory beta responsiveness routing [DON-254]', () => {
-  it('runs correctness and strict qualification separately before packaging', () => {
+  it('runs correctness and strict responsiveness as separate steps', () => {
     const source = readFileSync('scripts/beta-verify.mjs', 'utf8')
     expect(source).toContain("test: ['npm', ['run', 'test:correctness']]")
     expect(source).toContain("responsiveness: ['npm', ['run', 'test:responsiveness']]")
     const steps = parseBetaStepsFlag(undefined)
     expect(steps.indexOf('responsiveness')).toBeGreaterThan(steps.indexOf('test'))
-    expect(steps.indexOf('responsiveness')).toBeLessThan(steps.indexOf('package'))
+    expect(steps.indexOf('responsiveness')).toBeLessThan(steps.indexOf('e2e-chromium'))
   })
 
   it('records a signal-terminated real child as failed, even when running a focused subset', async () => {
@@ -124,8 +119,8 @@ describe('formatBetaStepResult', () => {
 
   it('formats a skipped step without duration or exit code', () => {
     const result: BetaStepResult = {
-      step: 'package',
-      command: 'npm run electron:pack',
+      step: 'build',
+      command: 'npm run build',
       status: 'skip',
       exitCode: null,
       durationMs: 0,
@@ -133,7 +128,7 @@ describe('formatBetaStepResult', () => {
     }
 
     expect(formatBetaStepResult(result)).toBe(
-      'SKIP  package     npm run electron:pack  skipped via --steps',
+      'SKIP  build       npm run build  skipped via --steps',
     )
   })
 })
@@ -168,7 +163,7 @@ describe('summarizeBetaReport', () => {
       results: [
         passed('lint', 'npm run lint', 1000),
         failed('test', 'npm run test', 5000, 1, 'one test failing'),
-        skipped('package', 'npm run electron:pack'),
+        skipped('e2e-chromium', 'npm run test:e2e:chromium'),
       ],
     }
 
@@ -187,7 +182,7 @@ describe('summarizeBetaReport', () => {
       releaseWorktreeCleanAtStart: true,
       results: [
         passed('lint', 'npm run lint', 1000),
-        skipped('package', 'npm run electron:pack'),
+        skipped('e2e-chromium', 'npm run test:e2e:chromium'),
       ],
     }
 

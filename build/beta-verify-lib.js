@@ -1,10 +1,11 @@
 /**
- * Pure helpers for the beta verification gate.
+ * Pure helpers for the local pre-tag source check (`npm run beta:verify`).
  *
- * The gate runs the lint/build/test/test:backend/e2e/package/smoke chain that
- * the beta release plan calls "Verification Before Sharing". This module owns the
- * shaping logic only — process execution lives in scripts/beta-verify.mjs so
- * that the helpers stay deterministic and unit-testable.
+ * It runs the same source gates as the tag-driven release workflow so a
+ * failure is found before tagging. Packaging, the packaged soak and the
+ * artifact smoke happen on the CI-built release (docs/release-checklist.md),
+ * never on a local rebuild. This module owns the shaping logic only — process
+ * execution lives in scripts/beta-verify.mjs.
  *
  * Why a .js module under build/ instead of src/lib/: the verification gate is
  * Node-only tooling that must run before any TypeScript build step succeeds.
@@ -12,7 +13,7 @@
  */
 
 /**
- * @typedef {'lint' | 'build' | 'test' | 'responsiveness' | 'test-backend' | 'browser-driver' | 'e2e-chromium' | 'package' | 'tracking-soak-ci' | 'smoke'} BetaStep
+ * @typedef {'lint' | 'build' | 'test' | 'responsiveness' | 'browser-driver' | 'e2e-chromium'} BetaStep
  *
  * @typedef {Object} BetaStepResult
  * @property {BetaStep} step
@@ -37,12 +38,8 @@ export const ALL_BETA_STEPS = [
   'build',
   'test',
   'responsiveness',
-  'test-backend',
   'browser-driver',
   'e2e-chromium',
-  'package',
-  'tracking-soak-ci',
-  'smoke',
 ]
 
 /**

@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config'
 import base from './vitest.config'
 
-console.info('Correctness CI: strict wall-clock responsiveness qualification NOT RUN. Release remains on HOLD pending dedicated qualification.')
+console.info('Correctness mode: strict wall-clock <200 ms assertions NOT RUN here; run npm run test:responsiveness for timing.')
 
 export default defineConfig({
   ...base,

@@ -18,8 +18,10 @@ on:
       - '.github/workflows/electron-linux-validation.yml'
       - '.github/workflows/electron-release.yml'
       - 'electron/**'
-      - 'docs/**'
-      - 'handoff/**'
+      - 'docs/evidence/**'
+      - 'docs/release-checklist.md'
+      - 'docs/releases/TEMPLATE.md'
+      - 'docs/archive/assurance/*.json'
       - 'public/manual/**'
       - 'shared/**'
       - 'src/**'
@@ -38,8 +40,10 @@ on:
       - '.github/workflows/electron-linux-validation.yml'
       - '.github/workflows/electron-release.yml'
       - 'electron/**'
-      - 'docs/**'
-      - 'handoff/**'
+      - 'docs/evidence/**'
+      - 'docs/release-checklist.md'
+      - 'docs/releases/TEMPLATE.md'
+      - 'docs/archive/assurance/*.json'
       - 'public/manual/**'
       - 'shared/**'
       - 'src/**'
@@ -57,9 +61,11 @@ on:
 permissions:
   contents: read
 
+# Pushes and pull requests supersede older runs of the same event; a manual
+# dispatch (which runs the extra timing/soak lanes) is never cancelled by a push.
 concurrency:
-  group: electron-linux-validation-${{ github.ref }}
-  cancel-in-progress: true
+  group: electron-linux-validation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 env:
   NODE_VERSION: '22'
@@ -167,12 +173,6 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
         run: npm run test:responsiveness
 
-      - name: Record PR qualification boundary
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          echo 'PR correctness/build/launch evidence only; release HOLD.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Whole-candidate strict <200 ms source and packaged timing qualification is not run for PR merge. The bounded breadcrumb transport smoke is a targeted causal check only. Full qualification remains mandatory before beta/release, with every retained failure unresolved until repaired and qualified.' >> "$GITHUB_STEP_SUMMARY"
-
       - name: Electron responsiveness attribution controls
         run: |
           set -euo pipefail
@@ -230,7 +230,6 @@ jobs:
           name: linux-correctness-evidence-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
           path: |
             tmp/electron-validation-evidence
-            tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
             test-results/war11-map-freshness
             test-results/train-c
@@ -429,7 +428,6 @@ jobs:
           name: linux-package-evidence-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
           path: |
             tmp/electron-validation-evidence
-            tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
             test-results/war11-map-freshness
             test-results/train-c
@@ -700,14 +698,6 @@ jobs:
           node scripts/validate-electron-repair-train-d-smoke.mjs \
             --receipt tmp/electron-validation-evidence/repair-train-d/receipt.json
 
-      - name: Record deferred Repair Train D packaged qualification
-        if: always() && !(github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true)
-        run: |
-          set -euo pipefail
-          node scripts/record-electron-repair-train-d-deferred.mjs \
-            --output tmp/electron-validation-evidence/repair-train-d/receipt.json
-          echo 'Repair Train D packaged smoke: NOT RUN. Known baseline diagnostic blockers remain open under DON-254; skipped qualification is not a pass. Release remains HOLD.' >> "$GITHUB_STEP_SUMMARY"
-
       - name: Packaged legacy object recovery observer proof
         id: legacy_recovery_smoke
         timeout-minutes: 5
@@ -947,7 +937,6 @@ jobs:
           name: electron-linux-validation-evidence-${{ env.EXPECTED_SOURCE_SHA }}-attempt-${{ github.run_attempt }}
           path: |
             tmp/electron-validation-evidence
-            tmp/electron-validation-evidence/repair-train-d/receipt.json
             test-results/war06-mission-scope
             test-results/war11-map-freshness
             test-results/train-c

@@ -20,7 +20,6 @@
     "../../tests/fixtures/outing-window-vectors.json"
   ],
   "validatorPaths": [
-    "../../scripts/qualification-control-plane.mjs",
     "../../scripts/qualification/control-plane.mjs"
   ],
   "expectedPlatform": "linux",
