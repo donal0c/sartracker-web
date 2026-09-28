@@ -1,30 +1,20 @@
 /**
- * Fail-closed helpers for Electron draft-release qualification and publication.
+ * Fail-closed helpers for guarded Electron beta publication.
  *
  * The release workflow creates a draft. Publication is a separate act that is
- * allowed only after the exact draft assets have passed the complete packaged
- * smoke matrix. Keeping the validation pure makes the safety contract directly
- * unit-testable while the CLI wrapper owns GitHub and filesystem I/O.
+ * allowed only when the draft body carries a complete result for every check in
+ * `build/release-checklist.js`: each row is PASS, NOT APPLICABLE where the
+ * checklist allows it, or FAIL/NOT TESTED covered by an owner-approved
+ * exception bound to this tag. Keeping validation pure makes the contract
+ * directly unit-testable while the CLI wrapper owns GitHub and filesystem I/O.
  */
 
-const REQUIRED_QUALIFICATION_GATES = [
-  'AppImage SHA-256',
-  '.deb SHA-256',
-  'AppImage launch',
-  '.deb install and launch',
-  'Core lifecycle, restart/recovery, finish/finalize/archive',
-  'Coordinate rejection',
-  'Diagnostics/support/incident exports sanitized',
-  'Bad/corrupt stored credential reaches shell',
-  'Live Traccar connection and breadcrumb reconciliation',
-  'Official offline Discovery package',
-  'Duplicate launch',
-  'Five-day and fourteen-day packaged soak',
-  'Cross-profile exact breadcrumb identity comparison',
-  'Strict responsiveness (<200 ms)',
-]
+import {
+  EXCEPTABLE_SEVERITIES,
+  RELEASE_CHECKS,
+  RELEASE_RESULTS,
+} from './release-checklist.js'
 
-const NOT_APPLICABLE_GATE = 'Official offline Discovery package'
 const NON_FINAL_EVIDENCE = /\b(?:todo|pending|tbd|local pass|ci artifact pending|none)\b/iu
 const NON_FINAL_REGRESSION_EVIDENCE = /\b(?:todo|pending|tbd|local pass|ci artifact pending)\b/iu
 const SHA256_PATTERN = /\b[a-f0-9]{64}\b/iu
@@ -110,35 +100,92 @@ export async function peelGitHubTagToCommit(initial, loadAnnotatedTarget) {
 }
 
 /**
- * Validates the complete packaged-smoke table in a draft release body and
- * extracts the exact AppImage and Debian artifact identities.
+ * @typedef {Object} OwnerException
+ * @property {string} check
+ * @property {string} result
+ * @property {string} severity
+ * @property {string} exposure
+ * @property {string} approvedBy
+ * @property {string} approvalReference
+ * @property {string} followUp
+ */
+
+/**
+ * @typedef {QualificationIdentity & {exceptions: OwnerException[]}} ReleaseMatrix
+ */
+
+/**
+ * Validates the release checklist results and owner exceptions in a draft
+ * release body and extracts the exact AppImage and Debian artifact identities.
+ *
+ * A FAIL stays a FAIL: an exception must restate the row's observed result, so
+ * it can accept a known issue for this release but never relabel it as a pass.
+ * Exceptions name the tag they apply to, so a copied note cannot carry an old
+ * approval into a new release.
  *
  * @param {string} body
- * @returns {QualificationIdentity}
+ * @param {string} tag
+ * @returns {ReleaseMatrix}
  */
-export function validateQualificationBody(body) {
-  const rows = parseQualificationRows(body)
-
-  for (const gate of REQUIRED_QUALIFICATION_GATES) {
-    const row = rows.get(gate)
-    if (row === undefined) {
-      throw new Error(`Release qualification matrix is missing required gate "${gate}".`)
+export function validateReleaseMatrix(body, tag) {
+  const rows = parseReleaseRows(body)
+  const exceptions = parseOwnerExceptions(body, tag)
+  const known = new Set(RELEASE_CHECKS.map((check) => check.name))
+  for (const name of rows.keys()) {
+    if (!known.has(name)) {
+      throw new Error(`Release checklist results contain unknown check "${name}".`)
     }
-    if (row.result !== 'PASS' && !(gate === NOT_APPLICABLE_GATE && row.result === 'NOT APPLICABLE')) {
+  }
+
+  for (const check of RELEASE_CHECKS) {
+    const row = rows.get(check.name)
+    if (row === undefined) {
+      throw new Error(`Release checklist results are missing check "${check.name}".`)
+    }
+    if (!RELEASE_RESULTS.includes(row.result)) {
       throw new Error(
-        `Release qualification gate "${gate}" must pass: ${JSON.stringify(row.result)}.`,
+        `Release check "${check.name}" has unknown result ${JSON.stringify(row.result)}; ` +
+          `use ${RELEASE_RESULTS.join(', ')}.`,
       )
     }
     if (row.evidence === '' || NON_FINAL_EVIDENCE.test(row.evidence)) {
+      throw new Error(`Release check "${check.name}" has missing or non-final evidence.`)
+    }
+    const exception = exceptions.get(check.name)
+    if (row.result === 'PASS' || (row.result === 'NOT APPLICABLE' && check.notApplicableAllowed)) {
+      if (exception !== undefined) {
+        throw new Error(`Owner exception for "${check.name}" does not match a FAIL or NOT TESTED result.`)
+      }
+      continue
+    }
+    if (row.result === 'NOT APPLICABLE') {
+      throw new Error(`Release check "${check.name}" cannot be NOT APPLICABLE.`)
+    }
+    if (check.identity) {
+      throw new Error(`Identity check "${check.name}" must PASS; it cannot be covered by an exception.`)
+    }
+    if (exception === undefined) {
       throw new Error(
-        `Release qualification gate "${gate}" has missing or non-final evidence.`,
+        `Release check "${check.name}" is ${row.result} with no owner-approved exception.`,
       )
+    }
+    if (exception.result !== row.result) {
+      throw new Error(
+        `Owner exception for "${check.name}" records ${JSON.stringify(exception.result)} ` +
+          `but the check result is ${JSON.stringify(row.result)}.`,
+      )
+    }
+  }
+  for (const name of exceptions.keys()) {
+    if (!rows.has(name)) {
+      throw new Error(`Owner exception names unknown check "${name}".`)
     }
   }
 
   return {
     appImage: parseArtifactIdentity(rows.get('AppImage SHA-256').evidence, '.AppImage'),
     deb: parseArtifactIdentity(rows.get('.deb SHA-256').evidence, '.deb'),
+    exceptions: [...exceptions.values()],
   }
 }
 
@@ -379,39 +426,111 @@ export function assertReleaseUnchanged(initialRelease, finalRelease) {
 }
 
 /**
- * Parses the Packaged smoke matrix into one unique row per gate.
+ * Extracts one level-two Markdown section body, or null when absent.
+ *
+ * @param {string} body
+ * @param {string} heading
+ * @returns {string | null}
+ */
+function markdownSection(body, heading) {
+  if (typeof body !== 'string') {
+    throw new Error('Draft release body is unavailable.')
+  }
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  const match = new RegExp(`(?:^|\\n)## ${escaped}\\s*\\n([\\s\\S]*?)(?=\\n##\\s|\\s*$)`, 'u').exec(body)
+  return match === null ? null : match[1]
+}
+
+/**
+ * Splits the data rows of a Markdown table, skipping its header and rule.
+ *
+ * @param {string} section
+ * @param {string} firstHeader
+ * @returns {string[][]}
+ */
+function markdownTableRows(section, firstHeader) {
+  return section
+    .split(/\r?\n/u)
+    .filter((line) => line.trim().startsWith('|'))
+    .map((line) => line.trim().split('|').slice(1, -1).map((cell) => cell.trim()))
+    .filter((cells) => cells[0] !== firstHeader && !/^:?-+:?$/u.test(cells[0] ?? ''))
+}
+
+/**
+ * Parses the release checklist results into one unique row per check.
  *
  * @param {string} body
  * @returns {Map<string, {result: string, evidence: string}>}
  */
-function parseQualificationRows(body) {
-  if (typeof body !== 'string') {
-    throw new Error('Draft release body is unavailable.')
+function parseReleaseRows(body) {
+  const section = markdownSection(body, 'Release checklist results')
+  if (section === null) {
+    throw new Error('Draft release body has no Release checklist results section.')
   }
-  const sectionMatch =
-    /(?:^|\n)## Packaged smoke matrix\s*\n([\s\S]*?)(?=\n##\s|\s*$)/u.exec(body)
-  if (sectionMatch === null) {
-    throw new Error('Draft release body has no Packaged smoke matrix section.')
-  }
-
   const rows = new Map()
-  for (const line of sectionMatch[1].split(/\r?\n/u)) {
-    if (!line.trim().startsWith('|')) {
-      continue
-    }
-    const cells = line
-      .split('|')
-      .slice(1, -1)
-      .map((cell) => cell.trim())
-    if (cells.length !== 3 || cells[0] === 'Gate' || /^-+$/u.test(cells[0])) {
-      continue
+  for (const cells of markdownTableRows(section, 'Check')) {
+    if (cells.length !== 3) {
+      throw new Error(`Release checklist row must have Check, Result and Evidence: ${JSON.stringify(cells)}.`)
     }
     if (rows.has(cells[0])) {
-      throw new Error(`Release qualification matrix repeats gate "${cells[0]}".`)
+      throw new Error(`Release checklist results repeat check "${cells[0]}".`)
     }
     rows.set(cells[0], { result: cells[1].toUpperCase(), evidence: cells[2] })
   }
   return rows
+}
+
+/**
+ * Parses owner-approved exceptions. The section is optional; when present it
+ * must name the exact tag and give every field for every exception.
+ *
+ * @param {string} body
+ * @param {string} tag
+ * @returns {Map<string, OwnerException>}
+ */
+function parseOwnerExceptions(body, tag) {
+  const section = markdownSection(body, 'Owner-approved exceptions')
+  const exceptions = new Map()
+  if (section === null) {
+    return exceptions
+  }
+  const rows = markdownTableRows(section, 'Check')
+  if (rows.length === 0) {
+    return exceptions
+  }
+  const appliesTo = /^Applies to: `([^`]+)`\s*$/mu.exec(section)
+  if (appliesTo === null || appliesTo[1] !== tag) {
+    throw new Error(
+      `Owner-approved exceptions must state "Applies to: \`${tag}\`"; exceptions never carry to another release.`,
+    )
+  }
+  const fields = ['check', 'result', 'severity', 'exposure', 'approvedBy', 'approvalReference', 'followUp']
+  for (const cells of rows) {
+    if (cells.length !== fields.length) {
+      throw new Error(
+        'Owner exception rows need Check, Result, Severity, Exposure and workaround, ' +
+          `Approved by, Approval reference and Follow-up: ${JSON.stringify(cells)}.`,
+      )
+    }
+    const exception = Object.fromEntries(fields.map((field, index) => [field, cells[index]]))
+    exception.result = exception.result.toUpperCase()
+    for (const field of fields) {
+      if (exception[field] === '' || /\b(?:todo|tbd|pending)\b|&lt;/iu.test(exception[field])) {
+        throw new Error(`Owner exception for "${exception.check}" has a missing or placeholder ${field}.`)
+      }
+    }
+    if (!EXCEPTABLE_SEVERITIES.includes(exception.severity)) {
+      throw new Error(
+        `Owner exception for "${exception.check}" has severity ${JSON.stringify(exception.severity)}; ` +
+          `a Block finding cannot be published. Use ${EXCEPTABLE_SEVERITIES.join(' or ')}.`,
+      )
+    }
+    if (exceptions.has(exception.check)) {
+      throw new Error(`Owner exceptions repeat check "${exception.check}".`)
+    }
+    exceptions.set(exception.check, /** @type {OwnerException} */ (exception))
+  }
+  return exceptions
 }
 
 /**
@@ -427,7 +546,7 @@ function parseArtifactIdentity(evidence, extension) {
   const shaMatch = SHA256_PATTERN.exec(evidence)
   if (nameMatch === null || shaMatch === null) {
     throw new Error(
-      `${extension} qualification evidence must include the exact artifact filename and full SHA-256.`,
+      `${extension} checklist evidence must include the exact artifact filename and full SHA-256.`,
     )
   }
   return { name: nameMatch[1], sha256: shaMatch[0].toLowerCase() }

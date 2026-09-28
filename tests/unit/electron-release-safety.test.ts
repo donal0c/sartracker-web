@@ -10,10 +10,11 @@ import {
   assertReleaseUnchanged,
   parseSha256Manifest,
   peelGitHubTagToCommit,
-  validateQualificationBody,
   validateRegressionRecord,
+  validateReleaseMatrix,
   validateReleaseProvenance,
 } from '../../build/electron-release-lib.js'
+import { RELEASE_CHECKS } from '../../build/release-checklist.js'
 
 interface WorkflowStep {
   if?: string
@@ -46,29 +47,35 @@ function selectStep(job: WorkflowJob, name: string): WorkflowStep {
   return step as WorkflowStep
 }
 
+const TAG = 'electron-v0.1.0-beta.13.5'
+
 /**
- * Builds a fully qualified release body fixture.
+ * Evidence for one passing checklist row. Identity rows carry the exact
+ * artifact filename and digest that the publisher extracts.
+ */
+function passingEvidence(name: string): string {
+  if (name === 'AppImage SHA-256') {
+    return `\`sartracker_0.1.0.AppImage\` \`${'a'.repeat(64)}\`; CI artifact, draft and SHA256SUMS agree`
+  }
+  if (name === '.deb SHA-256') {
+    return `\`sartracker_0.1.0_amd64.deb\` \`${'b'.repeat(64)}\`; CI artifact, draft and SHA256SUMS agree`
+  }
+  return `team-smoke run 2026-10-01, \`${name.toLowerCase().replace(/[^a-z0-9]+/gu, '-')}.json\``
+}
+
+/**
+ * Builds a release body whose checklist rows all pass, except the offline map
+ * row which uses its permitted NOT APPLICABLE result.
  */
 function qualifiedReleaseBody(): string {
   return [
-    '## Packaged smoke matrix',
+    '## Release checklist results',
     '',
-    '| Gate | Result | Evidence |',
+    '| Check | Result | Evidence |',
     '| --- | --- | --- |',
-    '| AppImage SHA-256 | PASS | `sartracker_0.1.0.AppImage` `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`; `evidence/checksums.txt` |',
-    '| .deb SHA-256 | PASS | `sartracker_0.1.0_amd64.deb` `bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`; `evidence/checksums.txt` |',
-    '| AppImage launch | PASS | `evidence/appimage-launch.json` |',
-    '| .deb install and launch | PASS | `evidence/deb-launch.json` |',
-    '| Core lifecycle, restart/recovery, finish/finalize/archive | PASS | `evidence/lifecycle.json` |',
-    '| Coordinate rejection | PASS | `evidence/coordinates.json` |',
-    '| Diagnostics/support/incident exports sanitized | PASS | `evidence/diagnostics.json` |',
-    '| Bad/corrupt stored credential reaches shell | PASS | `evidence/bad-secret.json` |',
-    '| Live Traccar connection and breadcrumb reconciliation | PASS | `evidence/live-traccar.json` |',
-    '| Official offline Discovery package | NOT APPLICABLE | Map loading unchanged in this hotfix; no customer package supplied. |',
-    '| Duplicate launch | PASS | `evidence/duplicate-launch.json` |',
-    '| Five-day and fourteen-day packaged soak | PASS | `evidence/multi-day-soak.json` |',
-    '| Cross-profile exact breadcrumb identity comparison | PASS | `evidence/cross-profile.json` |',
-    '| Strict responsiveness (<200 ms) | PASS | Exact release commit source qualification and packaged strict timer evidence in `evidence/responsiveness.json` |',
+    ...RELEASE_CHECKS.map(({ name }) => name === 'Offline map package'
+      ? `| ${name} | NOT APPLICABLE | No offline map package ships with this build. |`
+      : `| ${name} | PASS | ${passingEvidence(name)} |`),
     '',
     '## Regression provenance',
     '',
@@ -90,6 +97,31 @@ function qualifiedReleaseBody(): string {
     `- Build commit: \`${'f'.repeat(40)}\``,
   ].join('\n')
 }
+
+/** Replaces the result and evidence of one checklist row. */
+function withResult(body: string, name: string, result: string, evidence = 'Observed on the exact artifact; see smoke log.'): string {
+  const row = new RegExp(`^\\| ${name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')} \\|.*$`, 'mu')
+  expect(row.test(body), `row ${name}`).toBe(true)
+  return body.replace(row, `| ${name} | ${result} | ${evidence} |`)
+}
+
+/** Appends an owner-approved exception section. */
+function withExceptions(body: string, rows: string[], tag = TAG): string {
+  return body.replace('## Regression provenance', [
+    '## Owner-approved exceptions',
+    '',
+    `Applies to: \`${tag}\``,
+    '',
+    '| Check | Result | Severity | Exposure and workaround | Approved by | Approval reference | Follow-up |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...rows,
+    '',
+    '## Regression provenance',
+  ].join('\n'))
+}
+
+const unwritableException =
+  '| Unwritable profile shows an error | FAIL | Ship with known issue | App exits silently; release note tells testers to check folder permissions | Donal | Chat 2026-10-01 | DON-999 |'
 
 describe('Electron release workflow safety [DON-260]', () => {
   const workflowPath = '.github/workflows/electron-release.yml'
@@ -173,92 +205,155 @@ describe('Electron release workflow safety [DON-260]', () => {
     const publisherSource = readFileSync('scripts/electron-release-publish.mjs', 'utf8')
     expect(publisherSource.match(/resolveRemoteTagCommit\(repo, args\.tag\)/gu)).toHaveLength(2)
     expect(publisherSource.match(/validateReleaseProvenance\(/gu)).toHaveLength(2)
-    expect(publisherSource.match(/validateRegressionRecord\(/gu)).toHaveLength(2)
+    expect(publisherSource.match(/validateRegressionRecord\(/gu)).toHaveLength(3)
     expect(publisherSource.match(/fetchDraftRelease\(repo, args\.tag\)/gu)).toHaveLength(2)
     expect(publisherSource).not.toContain('git rev-list')
     expect(publisherSource).not.toContain('targetCommitish')
 
-    const runbook = readFileSync('docs/releases/README.md', 'utf8')
-    expect(runbook).toContain(
-      'npm run electron:release:publish -- --tag electron-v<version>',
-    )
+    const runbook = readFileSync('docs/release-checklist.md', 'utf8')
     expect(runbook).not.toMatch(/gh release edit .*--draft=false/u)
     expect(runbook).not.toMatch(/gh release upload/u)
   })
 })
 
-describe('release qualification body guard [DON-260]', () => {
-  it.each(['HOLD', 'TODO', 'FAIL', 'SKIP', 'NOT APPLICABLE'])(
-    'rejects responsiveness qualification result %s [DON-254]', (result) => {
-      expect(() => validateQualificationBody(qualifiedReleaseBody().replace(
-        '| Strict responsiveness (<200 ms) | PASS |',
-        `| Strict responsiveness (<200 ms) | ${result} |`,
-      ))).toThrow(/must pass/i)
-    },
-  )
-
-  it('rejects a missing responsiveness row and keeps the release template on HOLD [DON-254]', () => {
-    expect(() => validateQualificationBody(qualifiedReleaseBody().replace(
-      /^\| Strict responsiveness .*\n/mu, '',
-    ))).toThrow(/Strict responsiveness/i)
-    const template = readFileSync('docs/releases/TEMPLATE.md', 'utf8')
-    expect(template).toContain('| Strict responsiveness (<200 ms) | HOLD |')
-    expect(template).toContain('npm run test:responsiveness')
-  })
-  it('accepts a complete matrix and returns distinct artifact identities', () => {
-    expect(validateQualificationBody(qualifiedReleaseBody())).toEqual({
-      appImage: {
-        name: 'sartracker_0.1.0.AppImage',
-        sha256: 'a'.repeat(64),
-      },
-      deb: {
-        name: 'sartracker_0.1.0_amd64.deb',
-        sha256: 'b'.repeat(64),
-      },
+describe('release checklist guard', () => {
+  it('accepts a complete checklist and returns distinct artifact identities', () => {
+    expect(validateReleaseMatrix(qualifiedReleaseBody(), TAG)).toEqual({
+      appImage: { name: 'sartracker_0.1.0.AppImage', sha256: 'a'.repeat(64) },
+      deb: { name: 'sartracker_0.1.0_amd64.deb', sha256: 'b'.repeat(64) },
+      exceptions: [],
     })
   })
 
-  it.each(['TODO', 'PENDING', 'LOCAL PASS', 'CI ARTIFACT PENDING'])(
-    'rejects non-final matrix result %s',
-    (result) => {
-      const body = qualifiedReleaseBody().replace(
-        '| AppImage launch | PASS |',
-        `| AppImage launch | ${result} |`,
-      )
-      expect(() => validateQualificationBody(body)).toThrow(/must pass/i)
+  it('rejects a missing, unknown or repeated check', () => {
+    expect(() => validateReleaseMatrix(
+      qualifiedReleaseBody().replace(/^\| Strict responsiveness .*\n/mu, ''), TAG,
+    )).toThrow(/missing check "Strict responsiveness/i)
+    expect(() => validateReleaseMatrix(
+      qualifiedReleaseBody().replace('| Duplicate launch |', '| Duplicate launches |'), TAG,
+    )).toThrow(/unknown check "Duplicate launches"/i)
+    const duplicated = qualifiedReleaseBody().replace(
+      /^(\| Duplicate launch \|.*)$/mu, '$1\n$1',
+    )
+    expect(() => validateReleaseMatrix(duplicated, TAG)).toThrow(/repeat check/i)
+    expect(() => validateReleaseMatrix('## Other\n', TAG)).toThrow(/no Release checklist results/i)
+  })
+
+  it.each(['HOLD', 'TODO', 'SKIP', 'LOCAL PASS', 'NOT RUN (DEVIATION)'])(
+    'rejects unknown result %s', (result) => {
+      expect(() => validateReleaseMatrix(
+        withResult(qualifiedReleaseBody(), 'Duplicate launch', result), TAG,
+      )).toThrow(/unknown result/i)
     },
   )
 
-  it('permits not-applicable only for the unchanged private map-package gate', () => {
-    const body = qualifiedReleaseBody().replace(
-      '| AppImage launch | PASS | `evidence/appimage-launch.json` |',
-      '| AppImage launch | NOT APPLICABLE | Linux launch was skipped. |',
-    )
-    expect(() => validateQualificationBody(body)).toThrow(/must pass/i)
-    expect(() => validateQualificationBody(qualifiedReleaseBody())).not.toThrow()
+  it('permits NOT APPLICABLE only where the checklist allows it', () => {
+    expect(() => validateReleaseMatrix(
+      withResult(qualifiedReleaseBody(), 'Live Traccar', 'NOT APPLICABLE', 'No provider available.'), TAG,
+    )).toThrow(/cannot be NOT APPLICABLE/i)
   })
 
-  it('rejects missing evidence and missing .deb qualification', () => {
-    expect(() =>
-      validateQualificationBody(
-        qualifiedReleaseBody().replace(
-          '| AppImage launch | PASS | `evidence/appimage-launch.json` |',
-          '| AppImage launch | PASS | pending |',
-        ),
-      ),
-    ).toThrow(/evidence/i)
+  it('rejects missing or placeholder evidence', () => {
+    for (const evidence of ['', 'pending', 'TODO', 'none']) {
+      expect(() => validateReleaseMatrix(
+        withResult(qualifiedReleaseBody(), 'Duplicate launch', 'PASS', evidence), TAG,
+      )).toThrow(/missing or non-final evidence/i)
+    }
+  })
 
-    expect(() =>
-      validateQualificationBody(
-        qualifiedReleaseBody().replace('| .deb install and launch |', '| Unknown gate |'),
-      ),
-    ).toThrow(/\.deb install and launch/i)
+  it.each(['FAIL', 'NOT TESTED'])('rejects %s without an owner exception', (result) => {
+    expect(() => validateReleaseMatrix(
+      withResult(qualifiedReleaseBody(), 'Unwritable profile shows an error', result), TAG,
+    )).toThrow(/no owner-approved exception/i)
+  })
+
+  it('accepts a FAIL covered by an exception and reports the exception', () => {
+    const body = withExceptions(
+      withResult(qualifiedReleaseBody(), 'Unwritable profile shows an error', 'FAIL', 'App exits with no window or message.'),
+      [unwritableException],
+    )
+    const matrix = validateReleaseMatrix(body, TAG)
+    expect(matrix.exceptions).toEqual([{
+      check: 'Unwritable profile shows an error',
+      result: 'FAIL',
+      severity: 'Ship with known issue',
+      exposure: 'App exits silently; release note tells testers to check folder permissions',
+      approvedBy: 'Donal',
+      approvalReference: 'Chat 2026-10-01',
+      followUp: 'DON-999',
+    }])
+  })
+
+  it('never lets an exception relabel a FAIL as a pass or cover a PASS row', () => {
+    const failed = withResult(qualifiedReleaseBody(), 'Unwritable profile shows an error', 'FAIL')
+    expect(() => validateReleaseMatrix(
+      withExceptions(failed, [unwritableException.replace('| FAIL |', '| NOT TESTED |')]), TAG,
+    )).toThrow(/records "NOT TESTED" but the check result is "FAIL"/i)
+    expect(() => validateReleaseMatrix(
+      withExceptions(qualifiedReleaseBody(), [unwritableException]), TAG,
+    )).toThrow(/does not match a FAIL or NOT TESTED/i)
+  })
+
+  it('refuses exceptions for identity checks and Block findings', () => {
+    const identityFailed = withResult(qualifiedReleaseBody(), 'Installed .deb payload', 'FAIL')
+    expect(() => validateReleaseMatrix(withExceptions(identityFailed, [
+      '| Installed .deb payload | FAIL | Ship with known issue | n/a | Donal | Chat | DON-1 |',
+    ]), TAG)).toThrow(/Identity check .* must PASS/i)
+    const failed = withResult(qualifiedReleaseBody(), 'Unwritable profile shows an error', 'FAIL')
+    expect(() => validateReleaseMatrix(withExceptions(failed, [
+      unwritableException.replace('Ship with known issue', 'Block'),
+    ]), TAG)).toThrow(/Block finding cannot be published/i)
+  })
+
+  it('binds exceptions to this tag and requires every field', () => {
+    const failed = withResult(qualifiedReleaseBody(), 'Unwritable profile shows an error', 'FAIL')
+    expect(() => validateReleaseMatrix(
+      withExceptions(failed, [unwritableException], 'electron-v0.1.0-beta.13.4'), TAG,
+    )).toThrow(/Applies to: `electron-v0.1.0-beta.13.5`/)
+    expect(() => validateReleaseMatrix(
+      withExceptions(failed, [unwritableException.replace('| Donal |', '| TODO |')]), TAG,
+    )).toThrow(/placeholder approvedBy/i)
+    expect(() => validateReleaseMatrix(
+      withExceptions(failed, [unwritableException.replace('| DON-999 |', '|')]), TAG,
+    )).toThrow(/need Check, Result, Severity/i)
+    expect(() => validateReleaseMatrix(withExceptions(failed, [
+      unwritableException, unwritableException,
+    ]), TAG)).toThrow(/repeat check/i)
   })
 
   it('rejects abbreviated or ambiguous artifact hashes', () => {
     expect(() =>
-      validateQualificationBody(qualifiedReleaseBody().replace('b'.repeat(64), 'bbbb…bbbb')),
+      validateReleaseMatrix(qualifiedReleaseBody().replace('b'.repeat(64), 'bbbb…bbbb'), TAG),
     ).toThrow(/sha-256/i)
+  })
+})
+
+describe('one release checklist', () => {
+  const names = RELEASE_CHECKS.map((check) => check.name)
+
+  /** Reads the first column of the table with the given header row. */
+  function tableChecks(path: string, header: string): string[] {
+    const lines = readFileSync(path, 'utf8').split('\n')
+    const start = lines.findIndex((line) => line.trim() === header)
+    expect(start, `${path} has a checklist table`).toBeGreaterThanOrEqual(0)
+    const rows: string[] = []
+    for (const line of lines.slice(start + 2)) {
+      if (!line.startsWith('|')) break
+      rows.push(line.split('|')[1].trim())
+    }
+    return rows
+  }
+
+  it('keeps the checklist document, release template and publisher in agreement', () => {
+    expect(tableChecks('docs/release-checklist.md', '| Check | What must be true | How |')).toEqual(names)
+    expect(tableChecks('docs/releases/TEMPLATE.md', '| Check | Result | Evidence |')).toEqual(names)
+  })
+
+  it('documents the guarded publish and offline note check', () => {
+    const checklist = readFileSync('docs/release-checklist.md', 'utf8')
+    expect(checklist).toContain('npm run electron:release:publish -- --tag')
+    expect(checklist).toContain('--check-notes')
+    expect(checklist).not.toMatch(/gh release edit .*--draft=false/u)
   })
 })
 
@@ -428,7 +523,7 @@ describe('remote annotated-tag peeling [DON-260]', () => {
 })
 
 describe('draft asset provenance guard [DON-260]', () => {
-  const qualification = validateQualificationBody(qualifiedReleaseBody())
+  const qualification = validateReleaseMatrix(qualifiedReleaseBody(), TAG)
   const manifest = parseSha256Manifest(
     [
       `${'a'.repeat(64)}  dist/sartracker_0.1.0.AppImage`,
@@ -554,8 +649,8 @@ describe('draft asset provenance guard [DON-260]', () => {
 
     const bodyChanged = structuredClone(initial)
     bodyChanged.body = bodyChanged.body.replace(
-      '`evidence/lifecycle.json`',
-      '`evidence/changed-lifecycle.json`',
+      '`duplicate-launch.json`',
+      '`changed-duplicate-launch.json`',
     )
     expect(() => assertReleaseUnchanged(initial, bodyChanged)).toThrow(/body changed/i)
 

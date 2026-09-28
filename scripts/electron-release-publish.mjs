@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 /**
- * Publishes an already-qualified Electron draft release.
+ * Publishes a checked Electron draft release.
  *
  * This is intentionally not a convenience wrapper around `gh release edit`.
- * It refuses publication unless the draft targets the exact local tag commit,
- * every packaged-smoke row is final, both Linux installers have full reviewed
- * hashes and evidence, the named draft assets exist, SHA256SUMS agrees, and a
- * fresh download of each installer hashes to the same value.
+ * It refuses publication unless the draft targets the exact remote tag commit,
+ * every row of the release checklist (`docs/release-checklist.md`) has a final
+ * result, any FAIL or NOT TESTED row carries an owner-approved exception for
+ * this tag, both Linux installers have full reviewed hashes, the named draft
+ * assets exist, SHA256SUMS agrees, and a fresh download of each installer
+ * hashes to the same value.
+ *
+ * `--check-notes <file>` validates a local release note offline (checklist
+ * results, exceptions and regression record) before tagging or editing a draft.
  */
 
 import { execFileSync } from 'node:child_process'
@@ -23,8 +28,8 @@ import {
   assertReleaseUnchanged,
   parseSha256Manifest,
   peelGitHubTagToCommit,
-  validateQualificationBody,
   validateRegressionRecord,
+  validateReleaseMatrix,
   validateReleaseProvenance,
 } from '../build/electron-release-lib.js'
 
@@ -39,11 +44,19 @@ main().catch((error) => {
 })
 
 /**
- * Runs every qualification guard and publishes only after fresh-download hash
- * proof succeeds.
+ * Runs every release guard and publishes only after fresh-download hash proof
+ * succeeds.
  */
 async function main() {
   const args = parseArgs(process.argv.slice(2))
+  if (args.checkNotes !== undefined) {
+    const body = await readFile(path.resolve(args.checkNotes), 'utf8')
+    validateRegressionRecord(body)
+    const matrix = validateReleaseMatrix(body, args.tag)
+    console.log(`Release note ${args.checkNotes} satisfies the checklist for ${args.tag}.`)
+    printExceptions(matrix.exceptions)
+    return
+  }
   const repo = args.repo ?? process.env.GITHUB_REPOSITORY
   if (repo === undefined || repo.trim() === '') {
     throw new Error('--repo is required outside GitHub Actions.')
@@ -55,7 +68,7 @@ async function main() {
   assertDraftReleaseState(release)
   validateReleaseProvenance(release.body, expectedCommit)
   validateRegressionRecord(release.body)
-  const qualification = validateQualificationBody(release.body)
+  const checklist = validateReleaseMatrix(release.body, args.tag)
   const assetNames = release.assets.map((asset) => asset.name)
 
   const downloadDir = await mkdtemp(path.join(os.tmpdir(), 'sartracker-release-publish-'))
@@ -64,8 +77,8 @@ async function main() {
   try {
     for (const name of [
       'SHA256SUMS',
-      qualification.appImage.name,
-      qualification.deb.name,
+      checklist.appImage.name,
+      checklist.deb.name,
     ]) {
       run('gh', [
         'release',
@@ -83,10 +96,10 @@ async function main() {
     const manifestBytes = await readFile(path.join(downloadDir, 'SHA256SUMS'))
     manifestSha256 = createHash('sha256').update(manifestBytes).digest('hex')
     manifest = parseSha256Manifest(manifestBytes.toString('utf8'))
-    assertQualifiedAssets(assetNames, qualification, manifest)
-    assertReleaseAssetMetadata(release.assets, qualification, manifestSha256)
-    await assertDownloadedHash(downloadDir, qualification.appImage)
-    await assertDownloadedHash(downloadDir, qualification.deb)
+    assertQualifiedAssets(assetNames, checklist, manifest)
+    assertReleaseAssetMetadata(release.assets, checklist, manifestSha256)
+    await assertDownloadedHash(downloadDir, checklist.appImage)
+    await assertDownloadedHash(downloadDir, checklist.deb)
   } finally {
     await rm(downloadDir, { recursive: true, force: true })
   }
@@ -96,27 +109,28 @@ async function main() {
   validateReleaseProvenance(finalRelease.body, expectedCommit)
   validateRegressionRecord(finalRelease.body)
   assertReleaseUnchanged(release, finalRelease)
-  const finalQualification = validateQualificationBody(finalRelease.body)
-  if (JSON.stringify(finalQualification) !== JSON.stringify(qualification)) {
-    throw new Error('Draft qualification identity changed during fresh-download verification.')
+  const finalChecklist = validateReleaseMatrix(finalRelease.body, args.tag)
+  if (JSON.stringify(finalChecklist) !== JSON.stringify(checklist)) {
+    throw new Error('Draft checklist identity changed during fresh-download verification.')
   }
-  assertReleaseAssetMetadata(finalRelease.assets, qualification, manifestSha256)
+  assertReleaseAssetMetadata(finalRelease.assets, checklist, manifestSha256)
   assertQualifiedAssets(
     finalRelease.assets.map((asset) => asset.name),
-    qualification,
+    checklist,
     manifest,
   )
   const finalRemoteCommit = await resolveRemoteTagCommit(repo, args.tag)
   if (finalRemoteCommit !== expectedCommit) {
     throw new Error(
-      `Remote tag moved during qualification: ${expectedCommit} -> ${finalRemoteCommit}.`,
+      `Remote tag moved during verification: ${expectedCommit} -> ${finalRemoteCommit}.`,
     )
   }
 
   console.log(
-    `Qualification guard passed for ${args.tag} at ${expectedCommit}: ` +
-      `${qualification.appImage.name} and ${qualification.deb.name}.`,
+    `Release guard passed for ${args.tag} at ${expectedCommit}: ` +
+      `${checklist.appImage.name} and ${checklist.deb.name}.`,
   )
+  printExceptions(checklist.exceptions)
   if (args.dryRun) {
     console.log('Dry run: release remains a draft.')
     return
@@ -134,7 +148,26 @@ async function main() {
     ],
     'inherit',
   )
-  console.log(`Published qualified prerelease: ${release.url}`)
+  console.log(`Published prerelease: ${release.url}`)
+}
+
+/**
+ * Prints each owner-approved exception so the person publishing sees exactly
+ * which known gaps they are shipping.
+ */
+function printExceptions(exceptions) {
+  if (exceptions.length === 0) {
+    console.log('Owner-approved exceptions: none.')
+    return
+  }
+  console.log(`Owner-approved exceptions (${exceptions.length}):`)
+  for (const exception of exceptions) {
+    console.log(
+      `  - ${exception.check}: ${exception.result}, ${exception.severity}; ` +
+        `approved by ${exception.approvedBy} (${exception.approvalReference}); ` +
+        `follow-up ${exception.followUp}`,
+    )
+  }
 }
 
 /**
@@ -169,7 +202,8 @@ async function resolveRemoteTagCommit(repo, tag) {
 }
 
 /**
- * Hashes one freshly downloaded release asset and compares it to qualification.
+ * Hashes one freshly downloaded release asset and compares it to the reviewed
+ * checklist digest.
  */
 async function assertDownloadedHash(downloadDir, artifact) {
   const bytes = await readFile(path.join(downloadDir, artifact.name))
@@ -186,7 +220,7 @@ async function assertDownloadedHash(downloadDir, artifact) {
  * Parses the narrow guarded-publisher CLI.
  */
 function parseArgs(argv) {
-  const args = { tag: undefined, repo: undefined, dryRun: false }
+  const args = { tag: undefined, repo: undefined, dryRun: false, checkNotes: undefined }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--tag') {
@@ -199,6 +233,11 @@ function parseArgs(argv) {
       index += 1
     } else if (arg.startsWith('--repo=')) {
       args.repo = arg.slice('--repo='.length)
+    } else if (arg === '--check-notes') {
+      args.checkNotes = argv[index + 1]
+      index += 1
+    } else if (arg.startsWith('--check-notes=')) {
+      args.checkNotes = arg.slice('--check-notes='.length)
     } else if (arg === '--dry-run') {
       args.dryRun = true
     } else if (arg === '--help' || arg === '-h') {
@@ -232,9 +271,11 @@ function printUsageAndExit(code) {
   console.log(
     [
       'Usage: npm run electron:release:publish -- --tag <electron-v*> --repo <owner/repo>',
+      '       npm run electron:release:publish -- --tag <electron-v*> --check-notes <release-note.md>',
       '',
       'Options:',
-      '  --dry-run   Run every guard and fresh-download hash without publishing',
+      '  --dry-run            Run every guard and fresh-download hash without publishing',
+      '  --check-notes <file> Validate a local release note offline; no GitHub access',
     ].join('\n'),
   )
   process.exit(code)

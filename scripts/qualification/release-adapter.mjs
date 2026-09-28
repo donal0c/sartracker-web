@@ -18,10 +18,10 @@ import {
   assertReleaseUnchanged,
   parseSha256Manifest,
   peelGitHubTagToCommit,
-  validateQualificationBody,
   validateRegressionRecord,
   validateReleaseProvenance,
 } from '../../build/electron-release-lib.js'
+import { validateLegacySmokeMatrix } from './legacy-release-matrix.mjs'
 import {
   validateExpectedIdentity,
   validateReleaseDownloadEvidence,
@@ -365,7 +365,7 @@ function assertReleaseMetadata(release, expected, phase, tagCommit) {
       || new Set(release.assets.map((asset) => asset.id)).size !== 3 || new Set(release.assets.map((asset) => asset.name)).size !== 3) throw new Error('Release metadata does not match the exact immutable release identity.')
   validateReleaseProvenance(release.body, tagCommit)
   validateRegressionRecord(release.body)
-  const qualification = validateQualificationBody(release.body)
+  const qualification = validateLegacySmokeMatrix(release.body)
   if (qualification.appImage.name !== expected.assets.find((asset) => asset.name.endsWith('.AppImage')).name
       || qualification.appImage.sha256 !== expected.assets.find((asset) => asset.name.endsWith('.AppImage')).sha256
       || qualification.deb.name !== expected.assets.find((asset) => asset.name.endsWith('.deb')).name
