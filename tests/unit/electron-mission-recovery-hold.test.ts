@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 
@@ -45,6 +45,7 @@ describe('electron mission store recovery hold (DON-283)', () => {
   let store: RecoveryHoldStore | null = null
 
   afterEach(async () => {
+    vi.useRealTimers()
     store?.close()
     store = null
     if (userDataPath !== null) {
@@ -135,6 +136,40 @@ describe('electron mission store recovery hold (DON-283)', () => {
     await opened.holdMissionForRecovery(mission.id)
 
     await expect(opened.resumeRecoveredMission(mission.id)).resolves.toMatchObject({ status: 'active' })
+  })
+
+  it('counts the recovery hold as paused time exactly once when it is lifted', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-29T10:00:00.000Z'))
+    const opened = await openStore()
+    const mission = await opened.createMission({ name: 'Paused time' })
+    vi.setSystemTime(new Date('2026-09-29T10:05:00.000Z'))
+    await opened.holdMissionForRecovery(mission.id)
+    vi.setSystemTime(new Date('2026-09-29T10:06:30.000Z'))
+
+    await expect(opened.resumeRecoveredMission(mission.id)).resolves.toMatchObject({
+      status: 'active',
+      paused_seconds: 90,
+    })
+  })
+
+  it('keeps a paused mission paused when its pause event is missing', async () => {
+    const opened = await openStore()
+    const mission = await opened.createMission({ name: 'Pause event missing' })
+    await opened.pauseMission(mission.id)
+    opened.close()
+    store = null
+    const Database = require('better-sqlite3') as new (file: string) => {
+      prepare: (sql: string) => { run: (...args: unknown[]) => unknown }
+      close: () => void
+    }
+    const raw = new Database(path.join(userDataPath!, 'mission-store.sqlite'))
+    raw.prepare(`DELETE FROM mission_events WHERE mission_id = ? AND event_type = 'mission_paused'`).run(mission.id)
+    raw.close()
+
+    const relaunched = await openStore()
+
+    await expect(relaunched.resumeRecoveredMission(mission.id)).resolves.toMatchObject({ status: 'paused' })
   })
 
   it('refuses a recovery hold on a mission that is not running', async () => {
