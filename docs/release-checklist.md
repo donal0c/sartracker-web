@@ -91,6 +91,27 @@ restart rules are also pinned by unit tests.
 Recorded after Eamonn's report on 28 September: live tracking and outage
 backfill passes do not prove initial lookback.
 
+### Team-reported issues become release checks
+
+Every issue the team reports is evidence that our testing missed something.
+Before its Linear issue closes:
+
+1. Record the **escape**: why the existing tests and this checklist did not catch it.
+2. Add a failing regression at the lowest level that shows the fault, then fix it.
+3. If the team met it through an operator workflow, make the smoke reproduce that
+   workflow (a new phase or row), so the same report cannot reach the team again.
+   If automation is not practical, add a named manual step to the relevant row.
+4. Add a line to the register below. A report that turns out not to be a product
+   defect still gets a line, saying why no check was added.
+
+| Report | Linear | Escape | Check that now covers it |
+| --- | --- | --- | --- |
+| TB13-01 map orientation | — | Not a defect: the map had been rotated; the compass resets it (confirmed by the reporter). | None needed. |
+| TB13-02 Discovery package rejected | DON-144 | The 13.4 smoke did not test offline maps; the supplied package declares zoom 8 but starts at 9. | **Offline map package** row must use the package the team actually holds. |
+| TB13-03 no history before mission start | DON-291 | The smoke never used a Start Offset, and added participants after Start. | **Tracking** row, start-with-lookback phase (above). |
+
+Older field regressions are recorded in the Linear Reliability & Regression Ledger.
+
 Identity checks (the first four) must PASS and cannot be excepted. Only
 **Offline map package** may be NOT APPLICABLE.
 

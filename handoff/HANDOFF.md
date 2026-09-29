@@ -30,6 +30,13 @@ restart; duplicate launch also passed. Synthetic provider proof, not field
 acceptance; Eamonn's exact click path unconfirmed. Evidence/hashes: DON-291.
 Bulky author artifacts deleted as requested; compact evidence retained in
 `tmp/don291-review-evidence` and `tmp/don291-linux-evidence`. Watch remains paused.
+Claude re-checked 29 Sep: AppImage hash = CI/SHA256SUMS, remote smoke tool
+= master; remaining rows on the same build: bad-credential, database-refusal,
+outage, coordinates, archive, settings-support PASS; lifecycle FAIL only on
+known DON-283/284; unwritable-profile FAIL = known DON-285; markers-gpx and
+replay-basemaps automated parts pass, manual parts not done. No new regression.
+Box `~/sartracker-don291-validation-20260929/claude-smoke-1/`. The box
+auto-suspends when idle (15 min); ask Donal to mask sleep targets.
 **NEXT: 1.2 / DON-283, paused-mission crash recovery. Not started.**
 
 ## Pointers

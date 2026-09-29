@@ -93,6 +93,10 @@ Everything else in this file is guidance for feature work, not a release gate.
 - **Regressions:** label field regressions `Regression` (and `Performance` when
   relevant) in Linear, with the original report, root cause and the new
   automated check. Release notes carry a short Regression provenance section.
+- **Team reports close the testing gap:** every issue the team reports needs an
+  escape note, a regression test, and — when they met it through a workflow — a
+  team-smoke phase that reproduces it, plus a line in the register in
+  [the release checklist](docs/release-checklist.md). Not optional.
 - **Operator manual:** keep `public/manual/index.html` current when anything
   user-visible changes.
 
