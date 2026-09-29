@@ -1090,7 +1090,9 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
       return state.participantBackfillCheckpoints.filter((checkpoint) =>
         checkpoint.mission_id === missionId)
     },
-    listMissions: async () => state.missions,
+    // Mirrors the Electron store: newest start time first.
+    listMissions: async () => [...state.missions]
+      .sort((left, right) => Date.parse(right.start_time) - Date.parse(left.start_time)),
     listMissionEvents: async (missionId) =>
       state.missionEvents
         .filter((event) => event.mission_id === missionId)

@@ -474,6 +474,24 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toContainText('active')
   })
 
+  test('offers Archive & Lock for the mission just finished, even when it was backdated [DON-294]', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Training This Morning')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await expect(page.getByTestId('mission-governance-card')).toContainText('Training This Morning')
+
+    await page.getByTestId('mission-name-input').fill('Backdated Incident')
+    await page.getByTestId('mission-offset-input').fill('48')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+
+    await expect(page.getByTestId('mission-governance-card')).toContainText('Backdated Incident')
+  })
+
   test('surfaces recovery on reload and can start fresh', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Fresh Flow')
     await page.getByTestId('mission-start-btn').click()

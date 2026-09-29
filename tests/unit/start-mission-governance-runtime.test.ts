@@ -115,6 +115,36 @@ describe('startMissionGovernanceRuntime', () => {
     })
   })
 
+  it('targets the most recently finished mission, not the latest start, for a backdated mission [DON-294]', async () => {
+    const applyRuntime = vi.fn()
+    const training: Mission = {
+      ...FINISHED_MISSION,
+      id: 'mission-training',
+      name: 'Training this morning',
+      start_time: '2026-09-29T08:00:00.000Z',
+      finish_time: '2026-09-29T09:00:00.000Z',
+    }
+    const backdatedIncident: Mission = {
+      ...FINISHED_MISSION,
+      id: 'mission-incident',
+      name: 'Incident started 48 h back',
+      start_time: '2026-09-27T12:00:00.000Z',
+      finish_time: '2026-09-29T12:00:00.000Z',
+    }
+
+    await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({
+        // The store lists missions by start time, newest first.
+        listMissions: vi.fn().mockResolvedValue([training, backdatedIncident]),
+      }),
+      applyRuntime,
+    })
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      governanceMission: backdatedIncident,
+    }))
+  })
+
   it('refreshes governance mission after finalizing', async () => {
     const applyRuntime = vi.fn()
     const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)

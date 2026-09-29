@@ -165,9 +165,7 @@ export async function startMissionGovernanceRuntime(
 
   async function refreshGovernanceMission(): Promise<void> {
     const missions = await dependencies.missionStore.listMissions()
-    governanceMission =
-      missions.find((mission) => mission.status === 'finished' || mission.status === 'finalized') ??
-      null
+    governanceMission = selectGovernanceMission(missions)
     governanceEvidenceHealth = await readGovernanceEvidenceHealth(governanceMission)
     publishRuntime()
     scheduleRecoveryRefresh()
@@ -251,4 +249,24 @@ function createUnavailableEvidenceHealth(): IngestEvidenceHealth {
     state: 'critical',
     reason: 'evidence_health_unavailable',
   }
+}
+
+/**
+ * Chooses the mission that Archive & Lock and unlock act on: the most recently
+ * finished one. Ordering by start time picked an older mission whenever the
+ * finished mission was started with a lookback (DON-294). Ties keep store order.
+ */
+function selectGovernanceMission(missions: readonly Mission[]): Mission | null {
+  let selected: Mission | null = null
+  let selectedFinish = Number.NEGATIVE_INFINITY
+  for (const mission of missions) {
+    if (mission.status !== 'finished' && mission.status !== 'finalized') continue
+    const finish = mission.finish_time === null ? Number.NEGATIVE_INFINITY : Date.parse(mission.finish_time)
+    const comparable = Number.isNaN(finish) ? Number.NEGATIVE_INFINITY : finish
+    if (selected === null || comparable > selectedFinish) {
+      selected = mission
+      selectedFinish = comparable
+    }
+  }
+  return selected
 }
