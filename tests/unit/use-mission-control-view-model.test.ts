@@ -297,6 +297,22 @@ describe('useMissionControlViewModel', () => {
     expect(selectInitialParticipants).toHaveBeenCalledWith('mission-1', 'Mission coordinator', draft)
   })
 
+  it('points governance at the mission just finished, not an earlier choice [DON-294]', async () => {
+    const controller = createController({
+      finishMission: vi.fn().mockResolvedValue(createMission({ id: 'mission-just-finished', status: 'finished' })),
+    })
+    const governanceController = {
+      refreshGovernanceMission: vi.fn().mockResolvedValue(undefined),
+      selectGovernanceMission: vi.fn().mockResolvedValue(undefined),
+    }
+    useMissionStore.setState({ controller, governanceController: governanceController as never, phase: 'active' })
+    const { getModel } = renderHook()
+
+    await act(async () => getModel().confirmFinish())
+
+    expect(governanceController.selectGovernanceMission).toHaveBeenCalledWith('mission-just-finished')
+  })
+
   it('keeps mission-start input visible when initial participant persistence fails', async () => {
     const controller = createController()
     const selectInitialParticipants = vi.fn().mockRejectedValue(

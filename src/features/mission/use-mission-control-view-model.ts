@@ -273,8 +273,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setActionError(null)
 
     try {
-      await controller.finishMission()
-      await governanceController?.refreshGovernanceMission()
+      const finished = await controller.finishMission()
+      await targetGovernanceAt(finished)
       setShowFinishDialog(false)
     } catch (error) {
       setActionError(toErrorMessage(error))
@@ -303,8 +303,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setActionError(null)
 
     try {
-      await controller.startFresh()
-      await governanceController?.refreshGovernanceMission()
+      const finished = await controller.startFresh()
+      await targetGovernanceAt(finished)
     } catch (error) {
       setActionError(toErrorMessage(error))
     }
@@ -432,6 +432,19 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     } finally {
       setGovernanceBusy(false)
     }
+  }
+
+  /**
+   * Points governance at the mission just finished. An earlier explicit choice
+   * must not keep Archive & Lock on an older mission (DON-294).
+   */
+  async function targetGovernanceAt(finished: Mission | null): Promise<void> {
+    if (governanceController === null) return
+    if (finished === null) {
+      await governanceController.refreshGovernanceMission()
+      return
+    }
+    await governanceController.selectGovernanceMission(finished.id)
   }
 
   /** Switches the governance card to another finished or archived mission. */

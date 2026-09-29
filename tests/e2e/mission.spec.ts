@@ -495,6 +495,14 @@ test.describe('M5 mission control workflows', () => {
     // Any finished mission stays reachable: the operator can switch the target.
     await page.getByTestId('mission-governance-select').selectOption({ label: 'Training This Morning' })
     await expect(chosen).toHaveText(/Training This Morning/)
+    // Finishing a new mission targets it, even after an earlier explicit choice.
+    await page.getByTestId('mission-name-input').fill('Third Mission')
+    await page.getByTestId('mission-offset-input').fill('24')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await expect(chosen).toHaveText(/Third Mission/)
   })
 
   test('surfaces recovery on reload and can start fresh', async ({ page }) => {
