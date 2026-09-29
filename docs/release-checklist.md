@@ -110,6 +110,18 @@ Before its Linear issue closes:
 | TB13-01 map orientation | — | Not a defect: the map had been rotated; the compass resets it (confirmed by the reporter). | None needed. |
 | TB13-02 Discovery package rejected | DON-144 | The 13.4 smoke did not test offline maps; the supplied package declares zoom 8 but starts at 9. | **Offline map package** row must use the package the team actually holds. |
 | TB13-03 no history before mission start | DON-291 | The smoke never used a Start Offset, and added participants after Start. | **Tracking** row, start-with-lookback phase (above). |
+| TB13-03 cause, found by team-mission | DON-292 | Every earlier flow started the first mission of a fresh profile; after any finished mission the pre-start selection was dropped. | **Team mission scenario** (lived-in profile); E2E `participants.spec.ts` [DON-292]. |
+| Map recentres on first update | DON-185 | Pre-register. | E2E `map.spec.ts` [DON-185]. |
+| Layer tree scroll resets | DON-187 | Pre-register. | E2E `layer-panel.spec.ts` [DON-187]. |
+| Map Tools chevron / Devices clicks open Marker Details | DON-186, DON-184 (63/84/119) | Pre-register. | E2E `drawing-tools.spec.ts` [DON-186], `devices-workspace.spec.ts` [DON-184]; unit `map-interaction-guards`. |
+| Sector radius wipes entry | DON-88, DON-120/188 | Pre-register. | Unit `drawing-dialog`; E2E `drawing-tools.spec.ts` [DON-188]. |
+| Layer toggles / hidden layers reappear | DON-62, DON-85 | Pre-register. | Unit `layer-stale-refresh-integration`; E2E `parity-visibility.spec.ts` DON-85. Gap: no rapid-toggle test across a tracking refresh. |
+| DD/DMS converter paste | DON-86, DON-128 | Pre-register. | E2E `coordinate-converter.spec.ts`; unit `coordinate-tool`. Gap: the smoke **coordinates** row covers DD and IG only. |
+| Weather links | DON-89/90/127 | Pre-register. | E2E `weather.spec.ts`; settings units. Gap: no packaged open-external check. |
+| Breadcrumb gaps, density, exact dots | DON-189, DON-259, DON-260 | Pre-register. | E2E `devices-workspace.spec.ts`; visual tracking; exact-dot units. |
+| Warning flashes on healthy polls | DON-261 | Pre-register. | Unit `polling-manager` [DON-261]; E2E `v1-regression`. |
+| Review freeze / blocks controls | DON-148, DON-176 | Pre-register. | E2E `mission-review.spec.ts`; bounded audit units. Gap: no 93k-event scale test (manual **Large mission** row). |
+| Map Tools fail until Reset Layer Catalog Metadata | DON-118 | Pre-register; hidden persisted catalog state. | E2E `measurement.spec.ts` "reveals hidden Map Tools layers…"; unit `drawing-toolbar`. Gap: no packaged test on a lived-in catalog; add Measure after relaunch to **Team mission scenario**. |
 
 Older field regressions are recorded in the Linear Reliability & Regression Ledger.
 
