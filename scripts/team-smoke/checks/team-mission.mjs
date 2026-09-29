@@ -135,6 +135,8 @@ async function drawSearchArea(page, name) {
   await page.getByTestId('drawing-name-input').fill(name)
   await page.getByTestId('drawing-save-btn').click()
   await delay(1500)
+  await page.getByTestId('drawing-toolbar-collapse').click().catch(() => {})
+  await delay(500)
 }
 
 /** Places a casualty marker, first confirming save is blocked until required fields are set. */
@@ -293,6 +295,20 @@ export default [
       await startOuting(app.page, 'Day 2 line search')
       await delay(45_000)
 
+      // Map Tools after a relaunch on a lived-in catalog (DON-118): Measure must work.
+      const canvas = app.page.locator('.maplibregl-canvas').first()
+      await app.page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
+      await app.page.getByTestId('drawing-tool-measure').click({ force: true })
+      await canvas.click({ position: { x: 680, y: 240 }, force: true })
+      await delay(400)
+      await canvas.click({ position: { x: 820, y: 300 }, force: true })
+      await delay(1500)
+      const measured = (await app.page.getByTestId('measurement-count').innerText().catch(() => '0')).trim()
+      await app.shot('measure-after-relaunch')
+      if (measured !== '1') findings.push(`Measure after relaunch recorded ${measured} measurements, expected 1`)
+      await app.page.getByTestId('drawing-toolbar-collapse').click().catch(() => {})
+      await delay(500)
+
       // Two-stage delete of the clue.
       const deletion = await deleteMarkerAt(app.page, { x: 360, y: 460 })
       if (!deletion.confirmationShown || !deletion.keptOpen) findings.push('marker delete did not require a second confirmation, or Keep did not keep it')
@@ -375,7 +391,7 @@ export default [
         + `(48 h lookback; group + device before Start; group, history-only device and late "Now" device after Start); `
         + `unselected groups absent; ${notes.join('; ')}; overnight quit and next-day resume; outage shown "${outageShown.slice(0, 80)}"`
       expectProduct(findings.length === 0, `${findings.join('; ')}. Data: ${summary}.`)
-      return `${summary}; stationary and stale indicators shown; casualty required fields enforced; two-stage delete; `
+      return `${summary}; Measure works after relaunch; stationary and stale indicators shown; casualty required fields enforced; two-stage delete; `
         + 'search area, timed and untimed GPX stored; replay into the backfilled window; archive reopened with the recovery code.'
     },
   },

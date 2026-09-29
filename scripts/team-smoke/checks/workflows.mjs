@@ -82,6 +82,20 @@ export default [
       await convert()
       const short = await resultOf('coordinate-result-ig')
       expectProduct(short?.includes('V 80500 84500'), `V 80 84 converted to ${short}, expected V 80500 84500.`)
+      // Team-reported paths (DON-86/128): a DD pair pasted into one field, and DMS.
+      await t('coordinate-mode-dd').click()
+      await t('coordinate-input-latitude').fill('52.004677 -9.748060')
+      await t('coordinate-input-longitude').fill('')
+      await convert()
+      const pasted = await resultOf('coordinate-result-ig')
+      expectProduct(pasted?.includes('V 80009 85011'), `Pasted DD pair converted to ${pasted}, expected V 80009 85011.`)
+      await t('coordinate-mode-dms').click()
+      await t('coordinate-input-dms-latitude').fill('52°10\'45.613"N 9°27\'53.798"W')
+      await t('coordinate-input-dms-longitude').fill('')
+      await convert()
+      const dms = await resultOf('coordinate-result-ig')
+      expectProduct(dms?.includes('Q 99842 04015'), `DMS pair converted to ${dms}, expected Q 99842 04015.`)
+      await t('coordinate-mode-ig').click()
       const rejected = []
       for (const bad of ['I 12345 67890', 'hello', 'V 1234 567']) {
         await t('coordinate-input-irish-grid-ref').fill(bad)
@@ -91,7 +105,7 @@ export default [
       }
       await app.shot('rejections')
       await app.stop()
-      return `DD↔IG round trip (Q 99842 04015); V 80 84 → V 80500 84500; rejected latitude 95, ${rejected.map((v) => `"${v}"`).join(', ')}.`
+      return `DD↔IG round trip (Q 99842 04015); pasted DD pair → V 80009 85011; DMS pair → Q 99842 04015; V 80 84 → V 80500 84500; rejected latitude 95, ${rejected.map((v) => `"${v}"`).join(', ')}.`
     },
   },
   {
