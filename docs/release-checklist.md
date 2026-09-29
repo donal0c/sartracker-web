@@ -122,6 +122,7 @@ Before its Linear issue closes:
 | Warning flashes on healthy polls | DON-261 | Pre-register. | Unit `polling-manager` [DON-261]; E2E `v1-regression`. |
 | Review freeze / blocks controls | DON-148, DON-176 | Pre-register. | E2E `mission-review.spec.ts`; bounded audit units. Gap: no 93k-event scale test (manual **Large mission** row). |
 | Map Tools fail until Reset Layer Catalog Metadata | DON-118 | Pre-register; hidden persisted catalog state. | E2E `measurement.spec.ts` "reveals hidden Map Tools layers…"; unit `drawing-toolbar`. Gap: no packaged test on a lived-in catalog; add Measure after relaunch to **Team mission scenario**. |
+| Test launch differs from the team's | DON-288 | Every smoke run on the test box uses `--ignore-gpu-blocklist` because its GPU is blocklisted (software rendering). Without it, 13.4 shows no map and no message. | Record the flag in every result table as a test-box accommodation; the DON-288 fix adds one launch without the flag that must show a visible failure. |
 
 Older field regressions are recorded in the Linear Reliability & Regression Ledger.
 
