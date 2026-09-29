@@ -23,7 +23,7 @@ CI 36474893891 passed (6,212 tests, 226 Chromium). Exact CI AppImage passed
 Ubuntu profile-copy upgrade, promotion, repeated old-code rollback repair,
 stable reopen and rendered warning checks. Evidence/hashes: DON-282.
 Store-driven re-delivery, not live Traccar or field acceptance. Watch stopped.
-**DON-291 awaiting Codex review (local commits, unpushed).** Cause
+**DON-291 source reviewed; Linux validation pending.** Cause
 reproduced on a packaged cc480ff2 build (13.4 tracking code): the 48 h
 lookback works for participants ticked before Start, but a participant added
 after Start silently defaulted to "effective now", fetched no earlier history
@@ -32,8 +32,9 @@ Donal chose (29 Sep) an explicit required **History from** choice (Mission
 start / Now / Custom) for late adds, plus a Start-offset notice and honest
 "no earlier history requested" wording. No membership or fixTime rule changed.
 team-smoke `tracking` now includes the 48 h lookback phase (mac package PASS).
-Not yet: Linux CI/AppImage proof, visual AI review (reviewer cannot run nested
-in Claude; captures checked by eye), Eamonn's actual click path unconfirmed.
+Codex: 65 focused tests, 9 browser flows and 5 visual scenarios pass; captures
+independently inspected. No standalone Claude visual-review receipt claimed.
+Not yet: Linux CI/AppImage proof. Eamonn's actual click path unconfirmed.
 Result: `tmp/claude-handoffs/04-mission-lookback-result.md` (original checkout).
 Resume numbered queue at 1.2 / DON-283 after Codex review.
 
