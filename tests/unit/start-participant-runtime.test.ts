@@ -738,6 +738,44 @@ describe('startParticipantRuntime [DON-271]', () => {
     })
   })
 
+  it('selects the draft captured at Start even when a mission change refresh clears the live draft', async () => {
+    const store = createStore()
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.refreshMission('mission-earlier')
+    await runtime.refreshMission(null)
+    runtime.applyGroups([{ group_id: 'group-1', name: 'Hill Team', parent_group_id: null }])
+    await runtime.applyRoster([device('device-1', 'group-1'), device('device-2', null)], '2026-08-23T10:00:00.000Z')
+    await runtime.refreshMission('mission-earlier')
+    runtime.toggleDraftGroup('group-1')
+    runtime.toggleDraftDevice('device-2')
+    const draft = runtime.takeDraftSnapshot()
+
+    await runtime.refreshMission('mission-next')
+    await runtime.selectInitialParticipants('mission-next', 'Coordinator', draft)
+
+    expect(store.selectMissionParticipants).toHaveBeenCalledWith(expect.objectContaining({
+      mission_id: 'mission-next',
+      groups: [expect.objectContaining({ traccar_group_id: 'group-1', member_device_ids: ['device-1'] })],
+      devices: [{ traccar_device_id: 'device-2' }],
+    }))
+  })
+
+  it('fails loudly when a non-empty selection records no participants', async () => {
+    const store = createStore({ participants: [] })
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: vi.fn(),
+    })
+    await runtime.applyRoster([device('device-2', null)])
+    runtime.toggleDraftDevice('device-2')
+
+    await expect(runtime.selectInitialParticipants('mission-1', 'Coordinator', runtime.takeDraftSnapshot()))
+      .rejects.toThrow(/no participants were recorded/i)
+  })
+
   it('propagates an initial participant write failure and preserves the operator draft', async () => {
     const store = createStore()
     store.selectMissionParticipants.mockRejectedValueOnce(new Error('participant write failed'))

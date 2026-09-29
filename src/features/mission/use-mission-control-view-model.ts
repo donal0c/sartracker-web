@@ -185,6 +185,11 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
 
     try {
+      // Capture the pre-start selection before the mission exists: the mission
+      // change that follows refreshes the participant runtime (DON-292).
+      const participantDraft = isMissionModelEnabled()
+        ? participantController?.takeDraftSnapshot()
+        : undefined
       const mission = await controller.startMission({
         name: normalizedName,
         ...(parsedOffset === 0
@@ -195,6 +200,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         await participantController?.selectInitialParticipants(
           mission.id,
           'Mission coordinator',
+          participantDraft,
         )
       }
 

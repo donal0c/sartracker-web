@@ -21,6 +21,31 @@ test.describe('mission participants [DON-271]', () => {
     })
   })
 
+  test('keeps pre-start selections for a mission started after finishing an earlier one [DON-292]', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Earlier Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await expect(page.getByTestId('participant-selection-step')).toBeVisible()
+
+    await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
+    await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
+    await expect(page.getByTestId('participant-selected-count')).not.toContainText('0 selected')
+    await page.getByTestId('mission-name-input').fill('Second Mission')
+    await page.getByTestId('mission-offset-input').fill('2')
+    await page.getByTestId('mission-start-btn').click()
+
+    await expect(page.getByTestId('participant-active-list')).toContainText('Hill Team')
+    await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
+    const recorded = await page.evaluate(() => {
+      const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
+      const mission = state?.missions.find((entry) => entry.name === 'Second Mission')
+      return state?.missionParticipants.filter((entry) => entry.mission_id === mission?.id).map((entry) => entry.kind).sort()
+    })
+    expect(recorded).toEqual(['device', 'group'])
+  })
+
   test('selects at mission start, excludes non-participant evidence, then supports backdated add and removal', async ({ page }) => {
     const selection = page.getByTestId('participant-selection-step')
     await expect(selection).toBeVisible()

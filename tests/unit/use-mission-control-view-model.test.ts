@@ -267,12 +267,24 @@ describe('useMissionControlViewModel', () => {
     expect(getModel().pauseResumeLabel).toBe('Pause')
   })
 
-  it('commits the explicit participant draft immediately after mission creation [DON-271]', async () => {
+  it('commits the draft captured before mission creation [DON-271] [DON-292]', async () => {
     const controller = createController()
+    const draft = { groupIds: ['group-1'], deviceIds: ['device-2'] }
+    const calls: string[] = []
+    const takeDraftSnapshot = vi.fn(() => {
+      calls.push('snapshot')
+      return draft
+    })
+    const startMission = controller.startMission
+    controller.startMission = vi.fn(async (input) => {
+      calls.push('create')
+      return startMission(input)
+    })
     const selectInitialParticipants = vi.fn().mockResolvedValue([])
     useMissionStore.setState({ controller, phase: 'idle' })
     useParticipantStore.setState({
       controller: {
+        takeDraftSnapshot,
         selectInitialParticipants,
       } as never,
     })
@@ -281,7 +293,8 @@ describe('useMissionControlViewModel', () => {
 
     await act(async () => getModel().startMission())
 
-    expect(selectInitialParticipants).toHaveBeenCalledWith('mission-1', 'Mission coordinator')
+    expect(calls).toEqual(['snapshot', 'create'])
+    expect(selectInitialParticipants).toHaveBeenCalledWith('mission-1', 'Mission coordinator', draft)
   })
 
   it('keeps mission-start input visible when initial participant persistence fails', async () => {
@@ -291,7 +304,7 @@ describe('useMissionControlViewModel', () => {
     )
     useMissionStore.setState({ controller, phase: 'idle' })
     useParticipantStore.setState({
-      controller: { selectInitialParticipants } as never,
+      controller: { selectInitialParticipants, takeDraftSnapshot: () => ({ groupIds: [], deviceIds: [] }) } as never,
     })
     const { getModel } = renderHook()
     act(() => {

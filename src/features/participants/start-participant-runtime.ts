@@ -49,6 +49,12 @@ type StartParticipantRuntimeDependencies = {
   readonly now?: () => Date
 }
 
+/** The groups and devices ticked in the pre-start picker. */
+export type ParticipantDraftSnapshot = {
+  readonly groupIds: readonly string[]
+  readonly deviceIds: readonly string[]
+}
+
 export type ParticipantRuntimeController = {
   readonly refreshMission: (missionId: string | null) => Promise<void>
   readonly refreshBackfillCheckpoints: (missionId: string) => Promise<void>
@@ -62,9 +68,16 @@ export type ParticipantRuntimeController = {
   readonly toggleDraftDevice: (deviceId: string) => void
   readonly toggleDraftGroup: (groupId: string) => void
   readonly clearDraft: () => void
+  /**
+   * Returns the operator's pre-start selection as it stands now. The Start
+   * handler captures it before creating the mission, because the mission
+   * change that follows may clear the live draft (DON-292).
+   */
+  readonly takeDraftSnapshot: () => ParticipantDraftSnapshot
   readonly selectInitialParticipants: (
     missionId: string,
     selectedBy: string,
+    draft?: ParticipantDraftSnapshot,
   ) => Promise<readonly MissionParticipant[]>
   readonly addParticipant: (input: Omit<AddMissionParticipantInput, 'mission_id' | 'ref' | 'kind'> & (
     | { readonly kind: 'device'; readonly ref: string }
@@ -271,8 +284,11 @@ export async function startParticipantRuntime(
       draftGroupIds = []
       publishRuntime()
     },
-    selectInitialParticipants: async (missionId, selectedBy) => {
-      if (draftGroupIds.length > 0 && !canSelectGroups()) {
+    takeDraftSnapshot: () => ({ groupIds: [...draftGroupIds], deviceIds: [...draftDeviceIds] }),
+    selectInitialParticipants: async (missionId, selectedBy, draft) => {
+      const selectedGroupIds = draft?.groupIds ?? draftGroupIds
+      const selectedDeviceIds = draft?.deviceIds ?? draftDeviceIds
+      if (selectedGroupIds.length > 0 && !canSelectGroups()) {
         const selectionError = incompleteRosterSelectionError()
         rosterReadError = selectionError.message
         error = selectionError.message
@@ -299,7 +315,7 @@ export async function startParticipantRuntime(
       try {
         const selected = await dependencies.participantStore.selectMissionParticipants({
           mission_id: missionId,
-          groups: draftGroupIds.map((groupId) => {
+          groups: selectedGroupIds.map((groupId) => {
             const group = requireGroup(availableGroups, groupId)
             return {
               traccar_group_id: group.group_id,
@@ -309,9 +325,15 @@ export async function startParticipantRuntime(
                 .map((device) => device.device_id),
             }
           }),
-          devices: draftDeviceIds.map((deviceId) => ({ traccar_device_id: deviceId })),
+          devices: selectedDeviceIds.map((deviceId) => ({ traccar_device_id: deviceId })),
           selected_by: selectedBy,
         })
+        if (selectedGroupIds.length + selectedDeviceIds.length > 0 && selected.length === 0) {
+          throw new Error(
+            'The mission started, but no participants were recorded from the pre-start selection. '
+              + 'Add the groups and devices under Participants, choosing History from: Mission start.',
+          )
+        }
         if (activeMissionId !== missionId || selectionGeneration !== operationGeneration) {
           return selected
         }
