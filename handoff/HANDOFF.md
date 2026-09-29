@@ -44,16 +44,20 @@ groups ticked before Start were silently dropped, including after a restart.
 It likely explains Eamonn's TB13-03. The draft is now captured at Start, and an
 empty result fails loudly. Codex review found no issues. The packaged probe
 went from [] to [group, device].
-**1.2a team-mission smoke** (3211b5ae) found DON-292 and DON-293 on its first
-run. With the fix, the Mac package passes: 9,679 fixes across 19 devices are
-exact. The offline map row is now mandatory.
-**DON-293 (team question):** Replay shows no backfilled lookback history at
-earlier times. Donal to ask the team.
-Full correctness 597 files / 6,231 passed.
-**NEXT:** CI on the pushed head, then the Ubuntu team-mission + lifecycle rows
-on the exact AppImage, then propose 13.5 (DON-281/282/283/291/292). Remaining
-1.2a work: the retro register, the no-GPU-flag launch, and an offline map
-using the team's package.
+**1.2a team-mission smoke** found DON-292, DON-293 and **DON-294** (Urgent).
+DON-294: after a backdated mission, Archive & Lock locked an older mission.
+Fixed by 9179d5ad..96726e64: the default is the most recently finished
+mission; the governance card has a Mission list; Finish targets the finished
+mission; Review uses the same default. Codex needed 3 rounds (2 real P2s
+fixed); no remaining findings. Offline map row is mandatory; the corrected
+Discovery derivative is ready (DON-144 comment; the app import is manual).
+Register: every past team report is mapped. DON-288 is reproduced on 13.4
+(no WebGL: no map, no message). The 13.4 workaround for DON-292 is verified.
+Full correctness 597 files / 6,236 passed; Chromium 230/230.
+**DON-293 (team question):** Replay shows no backfilled history at earlier times.
+**NEXT:** CI on the pushed head, then Ubuntu team-mission + lifecycle on the
+exact AppImage, then propose 13.5 (DON-281/282/283/291/292/294).
+Do not push while a candidate CI build runs: a new push cancels it.
 **Roles (Donal, 29 Sep):** Claude orchestrates and implements; Codex reviews.
 
 ## Pointers
