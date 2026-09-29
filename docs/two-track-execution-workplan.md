@@ -4,7 +4,7 @@ Updated 2026-09-28. This is the single active queue, replacing the accumulated p
 
 ## Locked queue — Donal's working plan, 28 September
 
-**NEXT: 1.2 / DON-283 — paused-mission crash recovery. DON-291 is DONE: CI36559932497 and exact-AppImage Ubuntu48h lookback/restart smoke passed; not released. 1.1 / DON-282 is DONE. No next implementation started.**
+**NEXT: 1.2a — realistic team-mission smoke scenario and retro register of team reports (Donal, 29 Sep). 1.2 / DON-283 implemented (bc34425e), awaiting Codex review, CI and Ubuntu lifecycle row. DON-291 DONE (not released).**
 
 Coordinator priority decision, 28 September: investigate Eamonn's missing initial
 history before the next numbered fix because it affects current team testing.
@@ -17,11 +17,35 @@ below supply detail and acceptance criteria, not a competing queue.
 
 | Step | Ordered handovers within the step | Step exit |
 | --- | --- | --- |
-| **1. Repair the current reliability problems** | **1.1 DONE:** older-mission upgrade coverage (R02 / DON-282). **1.2 NEXT:** paused crash recovery (R03 / DON-283). **1.3:** clean window/SIGTERM exits (R04 / DON-284). **1.4:** unwritable-profile error (R04 / DON-285). **1.5:** slow open/quit and native startup investigation (R05 / DON-286). **1.6:** malformed IPC identifiers (R06 / DON-287). **1.7:** unavailable-WebGL visible failure (R08 / DON-288). **1.8:** resolve the recorded crash-warning wording decision from DON-281; retain the safety restriction unless separately approved. | Each defect repaired with relevant proof, or a concrete diagnosis/decision and explicit residual disposition. An investigation is not automatic authority for a store rewrite. |
+| **1. Repair the current reliability problems** | **1.1 DONE:** older-mission upgrade coverage (R02 / DON-282). **1.2 IN REVIEW:** paused crash recovery (R03 / DON-283). **1.2a NEXT:** realistic team-mission smoke scenario on a lived-in profile, mandatory offline-map/upgrade/no-GPU-flag rows, and retro register of past team reports (gap audit 29 Sep; see below). **1.3:** clean window/SIGTERM exits (R04 / DON-284). **1.4:** unwritable-profile error (R04 / DON-285). **1.5:** slow open/quit and native startup investigation (R05 / DON-286). **1.6:** malformed IPC identifiers (R06 / DON-287). **1.7:** unavailable-WebGL visible failure (R08 / DON-288). **1.8:** resolve the recorded crash-warning wording decision from DON-281; retain the safety restriction unless separately approved. | Each defect repaired with relevant proof, or a concrete diagnosis/decision and explicit residual disposition. An investigation is not automatic authority for a store rewrite. |
 | **2. Finish the original non-mapping team requests** | **2.1:** settings/admin/unlock/recovery authority decisions, then agreed implementation (T01 / DON-219/220/221). **2.2:** active mission rename (T02 / DON-257). **2.3:** search-area labels, then marker coordinates (T03 / DON-214/135). **2.4:** local map image/print output (T04 / DON-216). **2.5:** external resources/drone/media and evacuation/gear residual decisions (T05 / DON-217/218). **2.6:** reconcile all 29 ODT rows, including delivered items and outings/layers (T06 / DON-100/215/256; replay successor DON-278). **2.7:** Clear Alias, then confirmed Replay/Search usability residuals (T07 / AUD-12 and DON-289). | Every ODT request has evidence of delivery or a recorded, agreed decision. Mapping rows transfer to step 5; no unanswered request is silently dropped. |
 | **3. Close the remaining WAR, audit and support obligations** | **3.1:** GPX recovery accounting (A01 / DON-289 candidates). **3.2:** remaining PR5/Astra/layer candidates, reproducing before fixes (A02 / DON-289). **3.3:** original-machine freezes and outstanding persistence/retention/audit proofs (A03 / DON-151/159/160/161/162/163/164/240/247). **3.4:** storage integrity, large-store recovery, indexes/retention and native-isolation decisions (A04 / DON-249/250/251, DON-286). **3.5:** residual package/scale/timing/memory and supported Electron runtime work (A05 / historical DON-254/146). **3.6:** supported platforms, support upload/inbox and optional extras dispositions (A06 / DON-25/179/181/115/141/21/258). | Every retained finding is repaired/proven, superseded with evidence, or explicitly deferred with owner, limits and revisit trigger. Broad old WAR charters do not become compulsory new audits. |
 | **4. Validate and release the stable non-mapping batch** | **4.1:** reconcile parity/requirements and historical programme accounting (H01 / DON-5/6/12/25/241/254/265). **4.2:** ordinary operator workflow on the supported package, manual and support handover (H02). **4.3:** maintenance release decision using the single checklist (R07 / DON-290). | One stable exact CI artifact, truthful results/known issues and Donal's publication decision. No claim that all 205 historical bindings passed, or that controlled testing equals operational acceptance. |
 | **5. Purchased maps and final handover — last** | **5.1:** agree normal/travel area logistics, products/rights and grid requirements (M01). **5.2:** private preparation, distribution and area import/management (M02 / DON-144). **5.3:** provider/grid/offline/platform verification (M03 / DON-7/76/115/141; DON-116 terrain decision). **5.4:** final integrated handover and explicit operational/QGIS-retirement decision (M04 / DON-5/6). | Required map workflow works on agreed devices and areas; final acceptance is explicit. No all-Ireland-in-memory assumption. |
+
+### 1.2a — close the team-usage testing gap (Donal, 29 Sep)
+
+A gap audit after DON-291 found that every team-found bug needed realistic or
+carried-over state: real settings, real map files, metadata persisted across
+days and betas. The smoke checks subsystems in a fresh profile at defaults.
+Deliverables, before 13.5:
+1. One team-smoke **team-mission** scenario on a lived-in profile: 48 h offset;
+   Traccar **group** plus individual devices, before and after Start; about
+   30 mock devices including stationary heartbeat devices; two outings with a
+   clean quit and next-day resume between them; outage; stationary, stale and
+   offline indicators asserted; casualty marker plus two-stage delete; search
+   area; timed and untimed GPX; replay into the backfilled window; finish,
+   archive, and reopen with the **recovery code**.
+2. Mandatory rows: offline map using the package the team holds, upgrade from
+   the team's current release with an active mission, and one launch without
+   `--ignore-gpu-blocklist` (DON-288).
+3. Retro register: give every past team report (DON-185/186/187/62/85/86/128/
+   89/90/127/189/259/260/261, Devices click leakage, DON-148/176, and the
+   recurring "Map Tools fail until Reset Layer Catalog Metadata") a register
+   line naming its durable test or a queued gap. Confirm the Map Tools failure
+   was root-caused.
+4. Ask the team for their own written test-mission steps; the scenario follows them.
+Audit working notes: `tmp/test-gap-audit/` (local, gitignored).
 
 ### The handover loop
 
