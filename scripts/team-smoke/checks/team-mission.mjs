@@ -1,0 +1,382 @@
+/**
+ * Team mission scenario (1.2a): one mission run the way the team runs it, on a
+ * profile that already holds a finished mission, against a provider shaped
+ * like a real deployment (about thirty devices in Traccar groups, stationary
+ * heartbeats, a stale device, 60 h of history).
+ *
+ * Every team-reported bug so far needed realistic or carried-over state, while
+ * the other rows exercise one subsystem each in a fresh profile at defaults.
+ * This row combines them: a 48 h Start Offset; a group and a device ticked
+ * before Start; a second group, a late device (Now) and a history-only device
+ * (Mission start) added after Start; outings; a casualty marker and a
+ * two-stage delete; a search area; timed and untimed GPX; a provider outage;
+ * a quit and next-day relaunch; replay into the backfilled window; and finish,
+ * archive and reopen with the recovery code. Stored fixes are compared with
+ * what the provider holds for each device from its own start.
+ */
+
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+
+import { delay, launchApp } from '../lib/app.mjs'
+import {
+  ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
+  missionPhase, placeMarker, resumeIfPrompted, startMission,
+} from '../lib/operator.mjs'
+import { expectProduct } from '../lib/results.mjs'
+import { missionFixes, withStore } from '../lib/store.mjs'
+import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
+
+const HOUR = 3_600_000
+const LOOKBACK_HOURS = 48
+const BACKFILL_BUDGET_MS = 15 * 60_000
+const MISSION = 'Team Mission Smoke'
+
+const group = (name) => TEAM_GROUPS.find((entry) => entry.name === name)
+const device = (name) => TEAM_DEVICES.find((entry) => entry.name === name)
+const members = (groupName) => TEAM_DEVICES.filter((entry) => entry.groupId === group(groupName).id)
+
+/**
+ * Verifies stored fixes against the provider for every selected device from
+ * its own history start, and that unselected devices are absent.
+ *
+ * @param {{fixFor: (id: number) => any, fixesBetween: (deviceId: number, from: number, to: number) => any[]}} mock
+ * @param {{sourcePositionId: number, lat: number, lon: number, time: number}[]} fixes
+ * @param {{starts: Record<number, number>, excluded: number[], until: number, tailToleranceMs?: number}} options
+ * @returns {Record<number, {stored: number, expected: number}>}
+ */
+export function verifyTeamFixes(mock, fixes, { starts, excluded, until, tailToleranceMs = 90_000 }) {
+  const deviceOf = (fix) => Math.floor(fix.sourcePositionId / 1_000_000)
+  const differing = fixes.filter((fix) => {
+    const served = mock.fixFor(fix.sourcePositionId)
+    return served === null || served.latitude !== fix.lat || served.longitude !== fix.lon || Date.parse(served.fixTime) !== fix.time
+  })
+  expectProduct(differing.length === 0,
+    `${differing.length}/${fixes.length} stored fixes differ from the provider (e.g. ${differing.slice(0, 3).map((fix) => fix.sourcePositionId).join(', ')}).`)
+  const leaked = fixes.filter((fix) => excluded.includes(deviceOf(fix)))
+  expectProduct(leaked.length === 0, `${leaked.length} fixes stored for devices that were never selected.`)
+  const early = fixes.filter((fix) => starts[deviceOf(fix)] !== undefined && fix.time < starts[deviceOf(fix)])
+  expectProduct(early.length === 0, `${early.length} stored fixes predate their device's history start.`)
+  const perDevice = {}
+  const gaps = []
+  for (const [id, from] of Object.entries(starts)) {
+    const stored = new Set(fixes.filter((fix) => deviceOf(fix) === Number(id)).map((fix) => fix.sourcePositionId))
+    const expected = mock.fixesBetween(Number(id), from, until - tailToleranceMs)
+    const missing = expected.filter((fix) => !stored.has(fix.id))
+    if (missing.length > 0) gaps.push(`device ${id}: ${missing.length}/${expected.length} missing (first ${missing[0].fixTime})`)
+    perDevice[id] = { stored: stored.size, expected: expected.length }
+  }
+  expectProduct(gaps.length === 0, `Provider fixes missing: ${gaps.slice(0, 5).join('; ')}.`)
+  return perDevice
+}
+
+/** Writes a timed track and an untimed route (static evidence) into the app-owned inbox. */
+async function writeGpxFiles(inbox) {
+  await mkdir(inbox, { recursive: true })
+  const start = Date.now() - 3 * HOUR
+  const timed = Array.from({ length: 40 }, (_, index) =>
+    `<trkpt lat="${(51.97 + index * 0.0002).toFixed(6)}" lon="${(-9.71 + index * 0.0002).toFixed(6)}">`
+      + `<time>${new Date(start + index * 60_000).toISOString()}</time></trkpt>`)
+  const untimed = Array.from({ length: 25 }, (_, index) =>
+    `<trkpt lat="${(51.98 - index * 0.0002).toFixed(6)}" lon="${(-9.73 + index * 0.0003).toFixed(6)}"></trkpt>`)
+  const timedFile = path.join(inbox, 'visiting-team-track.gpx')
+  const untimedFile = path.join(inbox, 'planned-route-no-times.gpx')
+  await writeFile(timedFile, `<?xml version="1.0"?><gpx version="1.1" creator="team-smoke"><trk><name>Visiting team track</name><trkseg>${timed.join('')}</trkseg></trk></gpx>`)
+  await writeFile(untimedFile, `<?xml version="1.0"?><gpx version="1.1" creator="team-smoke"><trk><name>Planned route</name><trkseg>${untimed.join('')}</trkseg></trk></gpx>`)
+  return [timedFile, untimedFile]
+}
+
+/** Reads the visible tracking health text. */
+async function trackingStatus(page) {
+  const parts = []
+  for (const id of ['tracking-warning', 'mast-tracking-cell', 'persistent-tracking-health', 'stationary-attention-summary']) {
+    const locator = page.getByTestId(id)
+    if (await locator.count() > 0) parts.push(await locator.first().innerText().catch(() => ''))
+  }
+  return parts.join(' / ').replace(/\s+/gu, ' ').trim()
+}
+
+/** Adds a participant during the mission with an explicit history choice. */
+async function addAfterStart(page, kind, label, historyFrom) {
+  const t = (id) => page.getByTestId(id)
+  await t('participant-add-kind').selectOption(kind)
+  await delay(300)
+  await t('participant-add-ref').selectOption({ label })
+  await t(`participant-history-start-${historyFrom}`).check()
+  await t('participant-add-btn').click()
+  await delay(1500)
+}
+
+/** Waits until every participant row reports its history complete. */
+async function waitForBackfill(page, budgetMs) {
+  const started = Date.now()
+  let statuses = []
+  while (Date.now() - started < budgetMs) {
+    statuses = await page.getByTestId('participant-backfill-status').allInnerTexts()
+    if (statuses.length > 0 && statuses.every((status) => /complete|no earlier history requested/i.test(status))) {
+      return { seconds: Math.round((Date.now() - started) / 1000), statuses }
+    }
+    await delay(10_000)
+  }
+  return { seconds: null, statuses }
+}
+
+/** Draws a three-point search area and saves it with a name. */
+async function drawSearchArea(page, name) {
+  const canvas = page.locator('.maplibregl-canvas').first()
+  await page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
+  await page.getByTestId('drawing-tool-search_area').click({ force: true })
+  for (const position of [{ x: 440, y: 220 }, { x: 620, y: 220 }, { x: 540, y: 360 }]) {
+    await canvas.click({ position, force: true })
+    await delay(300)
+  }
+  await canvas.click({ position: { x: 540, y: 360 }, button: 'right', force: true })
+  await page.getByTestId('drawing-dialog').waitFor({ timeout: 10_000 })
+  await page.getByTestId('drawing-name-input').fill(name)
+  await page.getByTestId('drawing-save-btn').click()
+  await delay(1500)
+}
+
+/** Places a casualty marker, first confirming save is blocked until required fields are set. */
+async function placeCasualty(page, { name, x, y }) {
+  const t = (id) => page.getByTestId(id)
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+  await t('marker-dialog').waitFor({ timeout: 10_000 })
+  await t('marker-dialog').getByText('Casualty', { exact: true }).click()
+  await t('marker-name-input').fill(name)
+  const blocked = await t('marker-save-btn').isDisabled()
+  await t('marker-condition-input').selectOption('Medical Emergency')
+  await t('marker-evacuation-priority-input').selectOption('Urgent')
+  await t('marker-save-btn').click()
+  await delay(2000)
+  return blocked
+}
+
+/** Opens the marker at a point and deletes it through the two-stage confirmation. */
+async function deleteMarkerAt(page, { x, y }) {
+  const t = (id) => page.getByTestId(id)
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+  await t('marker-dialog').waitFor({ timeout: 10_000 })
+  await t('marker-delete-btn').click()
+  const confirmationShown = await t('marker-delete-confirmation').isVisible()
+  await t('marker-delete-keep-btn').click()
+  const keptOpen = await t('marker-dialog').isVisible()
+  await t('marker-delete-btn').click()
+  await t('marker-delete-confirm-btn').click()
+  await delay(1500)
+  return { confirmationShown, keptOpen }
+}
+
+/** Starts, then ends, an outing with a label. */
+async function startOuting(page, label) {
+  await page.getByTestId('outing-label-input').fill(label)
+  await page.getByTestId('outing-start-btn').click()
+  await delay(1500)
+}
+
+/** Formats a time for a datetime-local input in the machine's zone. */
+function localInput(time) {
+  const when = new Date(time)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}T${pad(when.getHours())}:${pad(when.getMinutes())}`
+}
+
+export default [
+  {
+    check: 'Team mission scenario',
+    id: 'team-mission',
+    timeoutMs: 45 * 60_000,
+    manualSteps: ['Inspect the scenario screenshots: tracks for both groups on the map, stationary and stale indicators, casualty marker and search area visible.'],
+    async run(ctx) {
+      const findings = []
+      const notes = []
+      const mock = await startTeamTraccar()
+      ctx.cleanups.push(() => mock.close())
+      const profile = path.join(ctx.runDir, 'profile')
+      const [timedGpx, untimedGpx] = await writeGpxFiles(path.join(profile, 'gpx-inbox'))
+
+      // A lived-in profile: yesterday's training mission, finished.
+      let app = await launchApp(ctx, { profile, label: 'team-1-previous-mission' })
+      await connectProvider(app.page, mock.url)
+      await startMission(app.page, 'Yesterday Training', [])
+      await placeMarker(app.page, { name: 'Training IPP', x: 500, y: 300 })
+      await finishMission(app.page)
+      await delay(2000)
+
+      // Start 48 h back with a group and one device ticked before Start.
+      const t = (id) => app.page.getByTestId(id)
+      await t('mission-name-input').fill(MISSION)
+      await t('mission-offset-input').fill(String(LOOKBACK_HOURS))
+      await t('participant-group-picker').getByText('KMRT Hasty', { exact: true }).click()
+      await t('participant-device-picker').getByText('Dog Handler', { exact: true }).click()
+      await t('mission-start-btn').click()
+      await t('participant-management').waitFor({ timeout: 20_000 })
+      await delay(1500)
+      const missionStart = Date.parse(await app.page.evaluate(async () =>
+        (await window.sartrackerElectron.missionStore.getActiveMission())?.start_time))
+      expectProduct(Number.isFinite(missionStart) && Math.abs(mock.t0 - LOOKBACK_HOURS * HOUR - missionStart) < 10 * 60_000,
+        `Mission start ${new Date(missionStart).toISOString()} is not about ${LOOKBACK_HOURS} h before now.`)
+
+      // After Start: a second group and a history-only device from mission start; a late joiner from now.
+      await addAfterStart(app.page, 'group', 'KMRT Search', 'mission')
+      await addAfterStart(app.page, 'device', 'Drone Operator', 'mission')
+      const lateFrom = Date.now()
+      await addAfterStart(app.page, 'device', 'Late Joiner', 'now')
+
+      const backfill = await waitForBackfill(app.page, BACKFILL_BUDGET_MS)
+      await app.shot('backfill')
+      expectProduct(backfill.seconds !== null,
+        `Participant history did not complete within ${BACKFILL_BUDGET_MS / 60_000} min: ${JSON.stringify(backfill.statuses).slice(0, 300)}.`)
+      notes.push(`backfill of ${backfill.statuses.length} participant rows complete in ${backfill.seconds} s`)
+      const lateStatus = backfill.statuses.find((status) => /no earlier history requested/i.test(status))
+      if (lateStatus === undefined) findings.push('the late "Now" participant did not say no earlier history was requested')
+
+      // Safety indicators with realistic state.
+      await delay(20_000)
+      const status = await trackingStatus(app.page)
+      await app.shot('indicators')
+      if (!/stationary attention/i.test(status)) findings.push(`no stationary attention for devices still for hours: "${status.slice(0, 160)}"`)
+      if (!/stale/i.test(status)) findings.push(`no stale warning for a device silent 70 min: "${status.slice(0, 160)}"`)
+      await t('open-devices-workspace').click()
+      await delay(1500)
+      const deviceList = await t('device-list-scroll').innerText()
+      await app.shot('devices')
+      await closeWorkspace(app.page)
+      for (const selected of [...members('KMRT Hasty'), ...members('KMRT Search'), device('Dog Handler'), device('Drone Operator'), device('Late Joiner')]) {
+        if (!deviceList.includes(selected.name)) findings.push(`${selected.name} missing from the device list`)
+      }
+      for (const unselected of [...members('Visiting Team'), ...members('Unselected Team')]) {
+        if (deviceList.includes(unselected.name)) findings.push(`unselected ${unselected.name} shown in the device list`)
+      }
+
+      // Outing 1: casualty marker, search area, other teams' GPX.
+      await startOuting(app.page, 'Day 1 hasty search')
+      const casualtyBlocked = await placeCasualty(app.page, { name: 'Casualty Subject', x: 700, y: 420 })
+      if (!casualtyBlocked) findings.push('casualty marker could be saved before its required fields were set')
+      await placeMarker(app.page, { name: 'Glove found', x: 360, y: 460, type: 'clue' })
+      await drawSearchArea(app.page, 'Sector A1')
+      const imported = await app.page.evaluate(async (paths) => {
+        const store = window.sartrackerElectron.missionStore
+        const mission = await store.getActiveMission()
+        return store.importGpxEvidencePaths({ missionId: mission.id, paths })
+      }, [timedGpx, untimedGpx])
+      if (imported?.imports?.length !== 2 || imported?.failures?.length !== 0) {
+        findings.push(`GPX import of a timed and an untimed file returned ${JSON.stringify(imported).slice(0, 200)}`)
+      }
+
+      // Provider outage: visible, then backfilled.
+      const beforeOutage = await trackingStatus(app.page)
+      mock.setOffline(true)
+      let outageShown = ''
+      const outageStarted = Date.now()
+      while (Date.now() - outageStarted < 60_000) {
+        await delay(5000)
+        const during = await trackingStatus(app.page)
+        if (outageShown === '' && during !== beforeOutage && /unreachable|offline|error|retry|fail|lost|degraded|disconnect/i.test(during)) {
+          outageShown = during
+          await app.shot('outage')
+        }
+      }
+      mock.setOffline(false)
+      if (outageShown === '') findings.push('no visible warning during a 60 s provider outage')
+      await delay(40_000)
+      await t('outing-end-btn').click()
+      await delay(1500)
+
+      // Overnight: quit, stay closed, relaunch next day and resume.
+      await app.stop('SIGTERM')
+      await delay(90_000)
+      app = await launchApp(ctx, { profile, label: 'team-2-next-day' })
+      const resumed = await resumeIfPrompted(app.page, 20_000)
+      const phaseNextDay = await missionPhase(app.page)
+      expectProduct(phaseNextDay === 'ACTIVE', `Mission was ${phaseNextDay} after the next-day relaunch (recovery prompt ${resumed ? 'accepted' : 'not shown'}).`)
+      await startOuting(app.page, 'Day 2 line search')
+      await delay(45_000)
+
+      // Two-stage delete of the clue.
+      const deletion = await deleteMarkerAt(app.page, { x: 360, y: 460 })
+      if (!deletion.confirmationShown || !deletion.keptOpen) findings.push('marker delete did not require a second confirmation, or Keep did not keep it')
+
+      // Replay into the backfilled window (24 h after mission start).
+      await app.page.getByTestId('open-mission-review-workspace').click()
+      await delay(1500)
+      await app.page.getByRole('button', { name: 'Replay', exact: true }).click()
+      await delay(1500)
+      await app.page.getByTestId('mission-replay-time').fill(localInput(missionStart + 24 * HOUR))
+      await app.page.getByTestId('mission-replay-seek').click()
+      await delay(8000)
+      const replayState = (await app.page.getByTestId('mission-replay-reconstructed-state').innerText().catch(() => '')).replace(/\s+/gu, ' ')
+      const replayError = await app.page.getByTestId('mission-replay-error').innerText().catch(() => null)
+      const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
+      await app.shot('replay-day-1')
+      await app.page.getByTestId('mission-replay-return-live').click().catch(() => {})
+      await delay(1000)
+      await closeWorkspace(app.page)
+      if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
+      // Replay folds evidence at max(fixTime, recorded_at), so history fetched by
+      // the lookback backfill is not "known" at earlier replay times. Whether the
+      // team expects tracks there is an open question (DON-293); report the count.
+      notes.push(`replay at start+24 h read ${replayRecords === null ? 'an unknown number of' : replayRecords[2]} records (open question DON-293)`)
+
+      await t('outing-end-btn').click()
+      await delay(1500)
+      const until = Date.now()
+      await app.shot('before-finish')
+
+      // Exactness for every selected device from its own start; nothing for unselected devices.
+      const starts = Object.fromEntries([
+        ...members('KMRT Hasty'), ...members('KMRT Search'), device('Dog Handler'), device('Drone Operator'),
+      ].map((entry) => [entry.id, missionStart]))
+      starts[device('Late Joiner').id] = lateFrom + 5000
+      const fixes = missionFixes(profile, MISSION)
+      const perDevice = verifyTeamFixes(mock, fixes, {
+        starts,
+        excluded: [...members('Visiting Team'), ...members('Unselected Team')].map((entry) => entry.id),
+        until,
+      })
+      const lateEarly = fixes.filter((fix) => Math.floor(fix.sourcePositionId / 1_000_000) === device('Late Joiner').id
+        && fix.time < lateFrom - 5000)
+      if (lateEarly.length > 0) findings.push(`${lateEarly.length} Late Joiner fixes from before it was added with "Now"`)
+
+      // Finish, archive, relaunch and reopen with the recovery code.
+      await finishMission(app.page)
+      let recoveryCode = ''
+      await t('mission-finalize-btn').click()
+      await delay(800)
+      await t('archive-passphrase').fill(ARCHIVE_PASSPHRASE)
+      await t('archive-passphrase-confirmation').fill(ARCHIVE_PASSPHRASE)
+      await t('archive-issue-recovery-code').click()
+      await delay(500)
+      recoveryCode = (await t('archive-recovery-code').innerText()).trim()
+      await t('archive-recovery-code-confirmation').fill(recoveryCode)
+      await t('archive-finalize').click()
+      const archived = await app.page.getByText(/Mission archived to/).first()
+        .waitFor({ timeout: 180_000 }).then(() => true, () => false)
+      await app.shot('archived')
+      expectProduct(archived, `Archive did not complete: ${(await bodyText(app.page)).slice(0, 200)}`)
+      await app.stop()
+      app = await launchApp(ctx, { profile, label: 'team-3-reopen' })
+      await app.page.getByTestId('open-mission-review-workspace').click()
+      await delay(1500)
+      const archiveRows = app.page.locator('[data-testid^=archive-review-select-]')
+      await archiveRows.filter({ hasText: MISSION }).first().click().catch(() => archiveRows.first().click())
+      await app.page.getByTestId('archive-review-slot-recovery').click()
+      await app.page.getByTestId('archive-review-secret').fill(recoveryCode)
+      await app.page.getByTestId('archive-review-open').click()
+      const reopened = await app.page.getByTestId('mission-review-archive-banner')
+        .waitFor({ timeout: 90_000 }).then(() => true, () => false)
+      await app.shot('reopened-with-recovery-code')
+      await app.stop()
+      if (!reopened) findings.push('the archive did not reopen with its recovery code')
+
+      const drawings = withStore(profile, (db) => db.prepare('SELECT name FROM drawings').all().map((row) => row.name))
+      if (!drawings.includes('Sector A1')) findings.push('search area Sector A1 was not stored')
+      const summary = `${fixes.length} fixes across ${Object.keys(perDevice).length} selected devices equal the provider from each device's start `
+        + `(48 h lookback; group + device before Start; group, history-only device and late "Now" device after Start); `
+        + `unselected groups absent; ${notes.join('; ')}; overnight quit and next-day resume; outage shown "${outageShown.slice(0, 80)}"`
+      expectProduct(findings.length === 0, `${findings.join('; ')}. Data: ${summary}.`)
+      return `${summary}; stationary and stale indicators shown; casualty required fields enforced; two-stage delete; `
+        + 'search area, timed and untimed GPX stored; replay into the backfilled window; archive reopened with the recovery code.'
+    },
+  },
+]

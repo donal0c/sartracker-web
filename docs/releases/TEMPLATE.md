@@ -97,6 +97,7 @@ tool commit &lt;sha&gt;. Results: PASS, FAIL, NOT TESTED, or NOT APPLICABLE
 | Replay, basemaps and layers | TODO | TODO |
 | Encrypted archive create and reopen | TODO | TODO |
 | Settings, secrets and support bundle | TODO | TODO |
+| Team mission scenario | TODO | TODO |
 | Large mission opens responsive | TODO | TODO |
 | Packaged soak | TODO | TODO |
 | Strict responsiveness (<200 ms) | TODO | TODO |

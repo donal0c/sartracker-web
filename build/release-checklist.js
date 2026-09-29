@@ -39,10 +39,11 @@ export const RELEASE_CHECKS = Object.freeze(
     ['Replay, basemaps and layers', false, false],
     ['Encrypted archive create and reopen', false, false],
     ['Settings, secrets and support bundle', false, false],
+    ['Team mission scenario', false, false],
     ['Large mission opens responsive', false, false],
     ['Packaged soak', false, false],
     ['Strict responsiveness (<200 ms)', false, false],
-    ['Offline map package', false, true],
+    ['Offline map package', false, false],
   ].map(([name, identity, notApplicableAllowed]) =>
     Object.freeze({ name, identity, notApplicableAllowed }),
   ),

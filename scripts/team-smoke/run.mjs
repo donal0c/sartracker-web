@@ -24,9 +24,10 @@ import startup from './checks/startup.mjs'
 import tracking from './checks/tracking.mjs'
 import upgrade from './checks/upgrade.mjs'
 import workflows from './checks/workflows.mjs'
+import teamMission from './checks/team-mission.mjs'
 import { completedCheck, NotTested, ProductFailure, renderResultTable } from './lib/results.mjs'
 
-const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows]
+const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows, ...teamMission]
 const CHECK_TIMEOUT_MS = 15 * 60_000
 const INSTALLED_DEB_APP = '/opt/SAR Tracker Electron Validation/sartracker-web'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -76,7 +77,7 @@ for (const check of selected) {
   let row
   strayError = null
   try {
-    const evidence = await withTimeout(check.run(ctx), CHECK_TIMEOUT_MS, check.id)
+    const evidence = await withTimeout(check.run(ctx), check.timeoutMs ?? CHECK_TIMEOUT_MS, check.id)
     if (strayError !== null) throw strayError
     row = completedCheck(check, evidence)
   } catch (error) {

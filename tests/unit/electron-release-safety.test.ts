@@ -63,19 +63,14 @@ function passingEvidence(name: string): string {
   return `team-smoke run 2026-10-01, \`${name.toLowerCase().replace(/[^a-z0-9]+/gu, '-')}.json\``
 }
 
-/**
- * Builds a release body whose checklist rows all pass, except the offline map
- * row which uses its permitted NOT APPLICABLE result.
- */
+/** Builds a release body whose checklist rows all pass. */
 function qualifiedReleaseBody(): string {
   return [
     '## Release checklist results',
     '',
     '| Check | Result | Evidence |',
     '| --- | --- | --- |',
-    ...RELEASE_CHECKS.map(({ name }) => name === 'Offline map package'
-      ? `| ${name} | NOT APPLICABLE | No offline map package ships with this build. |`
-      : `| ${name} | PASS | ${passingEvidence(name)} |`),
+    ...RELEASE_CHECKS.map(({ name }) => `| ${name} | PASS | ${passingEvidence(name)} |`),
     '',
     '## Regression provenance',
     '',
@@ -248,6 +243,12 @@ describe('release checklist guard', () => {
       )).toThrow(/unknown result/i)
     },
   )
+
+  it('refuses NOT APPLICABLE for the offline map row, a team workflow (TB13-02)', () => {
+    expect(() => validateReleaseMatrix(
+      withResult(qualifiedReleaseBody(), 'Offline map package', 'NOT APPLICABLE', 'No package configured.'), TAG,
+    )).toThrow(/cannot be NOT APPLICABLE/i)
+  })
 
   it('permits NOT APPLICABLE only where the checklist allows it', () => {
     expect(() => validateReleaseMatrix(

@@ -69,10 +69,11 @@ unit test keeps this table, the template and the publisher in agreement.
 | Replay, basemaps and layers | Replay reconstructs a past time; live map unaffected; public basemaps render; layer toggles work | team-smoke `replay-basemaps`; render/layer checks by hand |
 | Encrypted archive create and reopen | Finish, archive, restart, reopen read-only; wrong passphrase refused | team-smoke `archive` |
 | Settings, secrets and support bundle | Settings persist; secret never echoed; bundle has no secret or home path | team-smoke `settings-support` |
+| Team mission scenario | One realistic mission on a lived-in profile: 48 h offset, Traccar groups and devices before and after Start, about 30 devices, outings, casualty marker, two-stage delete, search area, timed and untimed GPX, outage, overnight quit and resume, replay into the backfilled window, archive reopened with the recovery code; every fix exact per device | team-smoke `team-mission`; screenshots by eye |
 | Large mission opens responsive | One representative large mission opens and stays responsive | Manual with a large fixture |
 | Packaged soak | CI packaged soak green; plus one overnight installed soak when tracking or storage changed | CI link; overnight log |
 | Strict responsiveness (<200 ms) | Release workflow strict responsiveness step green | CI link |
-| Offline map package | Package imports and renders offline, or NOT APPLICABLE with reason | Manual |
+| Offline map package | The package the team actually holds imports, renders offline, and survives restart | Manual |
 
 ### Start-with-lookback — part of the tracking row (DON-291)
 
@@ -112,8 +113,8 @@ Before its Linear issue closes:
 
 Older field regressions are recorded in the Linear Reliability & Regression Ledger.
 
-Identity checks (the first four) must PASS and cannot be excepted. Only
-**Offline map package** may be NOT APPLICABLE.
+Identity checks (the first four) must PASS and cannot be excepted. No row may
+be NOT APPLICABLE: offline maps are a team workflow (TB13-02).
 
 ## Owner-approved exceptions
 
