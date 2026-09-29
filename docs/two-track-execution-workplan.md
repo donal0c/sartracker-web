@@ -4,7 +4,7 @@ Updated 2026-09-28. This is the single active queue, replacing the accumulated p
 
 ## Locked queue — Donal's working plan, 28 September
 
-**NEXT: DON-291 team-feedback slice — reproduce/fix mission-start lookback and add its missing packaged smoke. Handover prepared; implementation not yet confirmed started. Resume at 1.2 / DON-283 after review. 1.1 / DON-282 is DONE.**
+**NEXT: Codex review of DON-291 (local commits, unpushed): lookback cause reproduced and fixed; tracking smoke now covers a 48 h start. Then resume at 1.2 / DON-283. 1.1 / DON-282 is DONE.**
 
 Coordinator priority decision, 28 September: investigate Eamonn's missing initial
 history before the next numbered fix because it affects current team testing.

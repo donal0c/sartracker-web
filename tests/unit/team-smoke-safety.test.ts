@@ -6,7 +6,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { launchApp, observeStartup } from '../../scripts/team-smoke/lib/app.mjs'
-import { participantFirstIndices, verifyFixes } from '../../scripts/team-smoke/checks/tracking.mjs'
+import { participantFirstIndices, verifyFixes, verifyLookbackFixes } from '../../scripts/team-smoke/checks/tracking.mjs'
+import { startHistoryTraccar } from '../../scripts/team-smoke/lib/history-traccar.mjs'
 import { completedCheck, renderResultTable } from '../../scripts/team-smoke/lib/results.mjs'
 import workflows from '../../scripts/team-smoke/checks/workflows.mjs'
 import tracking from '../../scripts/team-smoke/checks/tracking.mjs'
@@ -152,6 +153,33 @@ describe('team smoke incomplete evidence', () => {
   it('does not infer CI custody from a local checksum match', () => {
     for (const check of identity.filter(entry => entry.id.startsWith('identity-'))) {
       expect(completedCheck(check, 'Local hash matches').result).toBe('NOT TESTED')
+    }
+  })
+})
+
+describe('team-smoke lookback verification [DON-291]', () => {
+  it('passes only an exact in-window copy and rejects leaks, gaps and unselected devices', async () => {
+    const mock = await startHistoryTraccar()
+    try {
+      const missionStart = mock.denseBand.from + 30_500
+      const until = mock.t0
+      const stored = (deviceId: number, from = missionStart) => mock.fixesBetween(deviceId, from, until)
+        .map((fix) => ({ sourcePositionId: fix.id, lat: fix.latitude, lon: fix.longitude, time: Date.parse(fix.fixTime) }))
+      const exact = [...stored(11), ...stored(12)]
+      const options = { missionStart, until, expectedDevices: [11, 12], excludedDevices: [13], tailToleranceMs: 0 }
+      expect(verifyLookbackFixes(mock, exact, options)[11]).toMatchObject({
+        first: new Date(mock.denseBand.from + 31_000).toISOString(),
+      })
+      const earlier = stored(11, missionStart - 1000)[0]!
+      expect(() => verifyLookbackFixes(mock, [earlier, ...exact], options)).toThrow(/predate mission start/)
+      expect(() => verifyLookbackFixes(mock, exact.slice(1), options)).toThrow(/missing/)
+      expect(() => verifyLookbackFixes(mock, [...exact, ...stored(13)], options)).toThrow(/never selected/)
+      expect(() => verifyLookbackFixes(mock, [{ ...exact[0]!, lat: exact[0]!.lat + 0.001 }, ...exact.slice(1)], options))
+        .toThrow(/differ/)
+      expect(() => verifyLookbackFixes(mock, exact, { ...options, missionStart: mock.t0 - 3_600_000 }))
+        .toThrow(/boundary band/)
+    } finally {
+      await mock.close()
     }
   })
 })

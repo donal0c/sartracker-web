@@ -61,7 +61,7 @@ unit test keeps this table, the template and the publisher in agreement.
 | Duplicate launch | Second instance exits; first keeps its mission | team-smoke `duplicate-launch` |
 | Upgrade from the team's current release | Profile made by the installed previous release opens; missions, markers and fixes row-for-row equal | team-smoke `upgrade` with `--previous-profile` |
 | Mission lifecycle and crash recovery | Start, pause, SIGKILL, renderer crash, graceful quit, resume; fixes gap-free; window X close is not reported as a crash | team-smoke `lifecycle`; window X close by hand |
-| Tracking matches provider exactly | Every stored fix equals the real-time mock's coordinates and time | team-smoke `tracking` |
+| Tracking matches provider exactly | Every stored fix equals the real-time mock's coordinates and time; a 48 h Start Offset brings in exact earlier history for selected participants | team-smoke `tracking` |
 | Provider outage warning and backfill | Visible warning during a 90 s outage; zero-gap backfill after | team-smoke `outage` |
 | Live Traccar | One approved device, GET-only, stored fixes equal provider | Manual |
 | Coordinate conversion and rejection | Known round trip; invalid input rejected with clear messages | team-smoke `coordinates` |
@@ -74,21 +74,22 @@ unit test keeps this table, the template and the publisher in agreement.
 | Strict responsiveness (<200 ms) | Release workflow strict responsiveness step green | CI link |
 | Offline map package | Package imports and renders offline, or NOT APPLICABLE with reason | Manual |
 
-### Initial history smoke gap — DON-291
+### Start-with-lookback — part of the tracking row (DON-291)
 
-The tracking check must also cover starting a mission with a lookback, including
-the reported 48-hour case. Use known provider history from before creation and
-an eligible device with historical fixes but no fresh live update. Verify that
-the expected devices and in-window tracks appear in the UI and are persisted,
-without waiting for a new fix. Respect the agreed participant rules. Verify
-window boundaries, restart preservation and visible failure when history cannot
-be retrieved in the regression tests.
+The team-smoke `tracking` check runs a second phase after the exactness phase,
+so the **Tracking matches provider exactly** row cannot PASS unless both ran.
+Against a history provider it starts a mission with a 48-hour Start Offset,
+ticks a history-only device (no fresh fix) and a walker before Start, and adds
+a third device after Start with **History from: Mission start**. Provider
+history fails at first: every participant row must show pending. After
+recovery every in-window provider fix must be stored exactly, nothing before
+mission start (checked to the second in a dense boundary band), nothing for an
+unselected device, all three devices shown in the device list, and all rows
+preserved with live fixes continuing after a restart. Window-boundary and
+restart rules are also pinned by unit tests.
 
-This requirement was recorded after Eamonn's report on 28 September. The
-repeatable packaged test is pending under DON-291; live tracking and outage
-backfill passes do not prove it. Until this part is exercised, the combined
-tracking row remains NOT TESTED. Integrate it into the existing tracking smoke,
-without introducing another qualification campaign.
+Recorded after Eamonn's report on 28 September: live tracking and outage
+backfill passes do not prove initial lookback.
 
 Identity checks (the first four) must PASS and cannot be excepted. Only
 **Offline map package** may be NOT APPLICABLE.

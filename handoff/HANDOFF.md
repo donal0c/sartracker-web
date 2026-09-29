@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-28. Issue order and known 13.4 issues: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-09-29. Issue order and known 13.4 issues: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md).
 
 ## Status
@@ -23,10 +23,19 @@ CI 36474893891 passed (6,212 tests, 226 Chromium). Exact CI AppImage passed
 Ubuntu profile-copy upgrade, promotion, repeated old-code rollback repair,
 stable reopen and rendered warning checks. Evidence/hashes: DON-282.
 Store-driven re-delivery, not live Traccar or field acceptance. Watch stopped.
-Next handover: DON-291 missing 48-hour lookback and required packaged smoke,
-prioritized for current team testing. Prompt: original checkout
-`tmp/claude-handoffs/04-mission-lookback.md`. Implementation not yet confirmed
-started. Resume numbered queue at 1.2 / DON-283 after Codex review.
+**DON-291 awaiting Codex review (local commits, unpushed).** Cause
+reproduced on a packaged cc480ff2 build (13.4 tracking code): the 48 h
+lookback works for participants ticked before Start, but a participant added
+after Start silently defaulted to "effective now", fetched no earlier history
+and still showed "backfill complete". Beta 12 had no participant model.
+Donal chose (29 Sep) an explicit required **History from** choice (Mission
+start / Now / Custom) for late adds, plus a Start-offset notice and honest
+"no earlier history requested" wording. No membership or fixTime rule changed.
+team-smoke `tracking` now includes the 48 h lookback phase (mac package PASS).
+Not yet: Linux CI/AppImage proof, visual AI review (reviewer cannot run nested
+in Claude; captures checked by eye), Eamonn's actual click path unconfirmed.
+Result: `tmp/claude-handoffs/04-mission-lookback-result.md` (original checkout).
+Resume numbered queue at 1.2 / DON-283 after Codex review.
 
 ## Pointers
 

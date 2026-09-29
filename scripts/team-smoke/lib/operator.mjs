@@ -42,7 +42,8 @@ export async function closeWorkspace(page) {
 }
 
 /**
- * Starts a mission and adds the named devices as participants.
+ * Starts a mission and adds the named devices as participants after Start,
+ * each with history from now (the add time).
  *
  * @param {import('playwright').Page} page
  * @param {string} name
@@ -53,12 +54,43 @@ export async function startMission(page, name, participants) {
   await t('mission-name-input').fill(name)
   await t('mission-start-btn').click()
   await delay(2000)
-  const select = page.locator('select').filter({ has: page.locator('option', { hasText: 'Choose…' }) }).first()
-  for (const participant of participants) {
-    await select.selectOption({ label: participant })
-    await page.getByRole('button', { name: /^add participant$/i }).click()
-    await delay(1200)
+  for (const participant of participants) await addParticipantAfterStart(page, participant, 'now')
+}
+
+/**
+ * Starts a mission with a start offset (lookback), ticking the named devices
+ * in the mission-start participant picker before pressing Start.
+ *
+ * @param {import('playwright').Page} page
+ * @param {{name: string, offsetHours: number, devices: string[]}} mission
+ */
+export async function startMissionWithLookback(page, { name, offsetHours, devices }) {
+  const t = byId(page)
+  await t('mission-name-input').fill(name)
+  await t('mission-offset-input').fill(String(offsetHours))
+  const picker = t('participant-device-picker')
+  for (const device of devices) {
+    await picker.getByText(device, { exact: true }).waitFor({ timeout: 30_000 })
+    await picker.getByText(device, { exact: true }).click()
   }
+  await t('mission-start-btn').click()
+  await t('participant-management').waitFor({ timeout: 20_000 })
+  await delay(1500)
+}
+
+/**
+ * Adds one device during a mission, choosing where its history starts.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} device
+ * @param {'now' | 'mission'} historyFrom
+ */
+export async function addParticipantAfterStart(page, device, historyFrom) {
+  const t = byId(page)
+  await t('participant-add-ref').selectOption({ label: device })
+  await t(`participant-history-start-${historyFrom}`).check()
+  await t('participant-add-btn').click()
+  await delay(1200)
 }
 
 /** Returns the mission phase chip text, for example ACTIVE or PAUSED. */
