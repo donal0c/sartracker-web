@@ -356,6 +356,9 @@ export default [
 
       // Finish, archive, relaunch and reopen with the recovery code.
       await finishMission(app.page)
+      const governanceName = (await t('mission-governance-card').innerText().catch(() => '')).replace(/\s+/gu, ' ')
+      expectProduct(governanceName.includes(MISSION),
+        `Archive & Lock offered a different mission after finishing "${MISSION}": "${governanceName.slice(0, 120)}" (DON-294).`)
       let recoveryCode = ''
       await t('mission-finalize-btn').click()
       await delay(800)
@@ -375,7 +378,7 @@ export default [
       await app.page.getByTestId('open-mission-review-workspace').click()
       await delay(1500)
       const archiveRows = app.page.locator('[data-testid^=archive-review-select-]')
-      await archiveRows.filter({ hasText: MISSION }).first().click().catch(() => archiveRows.first().click())
+      await archiveRows.filter({ hasText: MISSION }).first().click({ timeout: 15_000 })
       await app.page.getByTestId('archive-review-slot-recovery').click()
       await app.page.getByTestId('archive-review-secret').fill(recoveryCode)
       await app.page.getByTestId('archive-review-open').click()
@@ -385,6 +388,10 @@ export default [
       await app.stop()
       if (!reopened) findings.push('the archive did not reopen with its recovery code')
 
+      const statuses = withStore(profile, (db) => Object.fromEntries(db.prepare('SELECT name, status FROM missions').all().map((row) => [row.name, row.status])))
+      if (statuses[MISSION] !== 'finalized' || statuses['Yesterday Training'] !== 'finished') {
+        findings.push(`archive locked the wrong mission: ${JSON.stringify(statuses)}`)
+      }
       const drawings = withStore(profile, (db) => db.prepare('SELECT name FROM drawings').all().map((row) => row.name))
       if (!drawings.includes('Sector A1')) findings.push('search area Sector A1 was not stored')
       const summary = `${fixes.length} fixes across ${Object.keys(perDevice).length} selected devices equal the provider from each device's start `
