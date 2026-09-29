@@ -221,6 +221,8 @@ const MISSION_STORE_CHANNELS = {
   getRecoverableMission: 'sartracker:mission-store:get-recoverable-mission',
   pauseMission: 'sartracker:mission-store:pause-mission',
   resumeMission: 'sartracker:mission-store:resume-mission',
+  holdMissionForRecovery: 'sartracker:mission-store:hold-mission-for-recovery',
+  resumeRecoveredMission: 'sartracker:mission-store:resume-recovered-mission',
   finishMission: 'sartracker:mission-store:finish-mission',
   finalizeMission: 'sartracker:mission-store:finalize-mission',
   unlockFinalizedMission: 'sartracker:mission-store:unlock-finalized-mission',

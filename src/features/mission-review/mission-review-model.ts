@@ -363,6 +363,14 @@ function describeMissionEvent(
   switch (eventType) {
     case 'mission_created':
       return name === null ? 'Mission created.' : `Mission created as ${name}.`
+    case 'mission_paused':
+      return reason === 'recovery_hold'
+        ? 'Paused automatically after an unexpected shutdown, until the operator chose to resume.'
+        : 'Mission paused.'
+    case 'mission_resumed':
+      return reason === 'recovery_resume'
+        ? 'Resumed by the operator after an unexpected shutdown.'
+        : 'Mission resumed.'
     case 'device_created':
     case 'device_updated':
       return deviceId === null ? 'Tracking device updated.' : `Tracking device ${deviceId} updated.`

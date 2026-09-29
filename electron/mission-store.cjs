@@ -3046,6 +3046,9 @@ function createElectronMissionStore(options) {
       }),
     pauseMission: async (missionId) => transitionMission(db, missionId, 'active', 'paused'),
     resumeMission: async (missionId) => transitionMission(db, missionId, 'paused', 'active'),
+    holdMissionForRecovery: async (missionId) =>
+      transitionMission(db, missionId, 'active', 'paused', RECOVERY_HOLD_REASON),
+    resumeRecoveredMission: async (missionId) => resumeRecoveredMission(db, missionId),
     finishMission: async (missionId) =>
       enqueueAttachmentLifecycleOperation(missionId, () => finishMission(db, missionId)),
     finalizeMission: async (missionId, custody, operationContext) =>
@@ -5654,7 +5657,53 @@ function projectMissionStorageState(db, mission) {
   }
 }
 
-function transitionMission(db, missionId, requiredStatus, nextStatus) {
+/** Audit reason on the pause that startup places on a mission that was running at a crash. */
+const RECOVERY_HOLD_REASON = 'recovery_hold'
+/** Audit reason on the resume that lifts a recovery hold. */
+const RECOVERY_RESUME_REASON = 'recovery_resume'
+
+/**
+ * Resolves the operator's recovery Resume (DON-283). A mission that was running
+ * before the crash is on a recovery hold and returns to active. A mission the
+ * operator paused before the crash stays paused with no transition recorded.
+ */
+function resumeRecoveredMission(db, missionId) {
+  const mission = getMission(db, missionId)
+  if (mission.status !== 'paused') {
+    throw new Error(`Cannot resume recovered mission with status '${mission.status}'.`)
+  }
+  return isOnRecoveryHold(db, mission)
+    ? transitionMission(db, missionId, 'paused', 'active', RECOVERY_RESUME_REASON)
+    : mission
+}
+
+/**
+ * Reports whether the pause currently in force is a startup recovery hold. The
+ * pause event shares the mission's pause_time exactly, so the lookup uses the
+ * (mission_id, timestamp, event_type) index. Pauses recorded without a reason,
+ * including those written by earlier builds, count as operator pauses.
+ */
+function isOnRecoveryHold(db, mission) {
+  if (mission.pause_time === null) {
+    return false
+  }
+  const pauseEvent = db.prepare(`SELECT details_json
+    FROM mission_events
+    WHERE mission_id = ? AND timestamp = ? AND event_type = 'mission_paused'
+    ORDER BY rowid DESC
+    LIMIT 1`)
+    .get(mission.id, mission.pause_time)
+  if (pauseEvent === undefined || pauseEvent.details_json === null) {
+    return false
+  }
+  try {
+    return JSON.parse(pauseEvent.details_json).reason === RECOVERY_HOLD_REASON
+  } catch {
+    return false
+  }
+}
+
+function transitionMission(db, missionId, requiredStatus, nextStatus, reason) {
   assertArchiveCorrectionWriterIdleForDatabase(db, missionId)
   const mission = getMission(db, missionId)
   if (mission.status !== requiredStatus) {
@@ -5673,7 +5722,13 @@ function transitionMission(db, missionId, requiredStatus, nextStatus) {
           paused_seconds = paused_seconds + ?
       WHERE id = ?`)
       .run(nextStatus, pauseTime, additionalPausedSeconds, missionId)
-    insertEvent(db, missionId, eventType, timestamp, { status: nextStatus })
+    insertEvent(
+      db,
+      missionId,
+      eventType,
+      timestamp,
+      reason === undefined ? { status: nextStatus } : { status: nextStatus, reason },
+    )
   })
   transaction()
   return getMission(db, missionId)

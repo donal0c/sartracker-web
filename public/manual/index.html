@@ -936,7 +936,11 @@
           <div class="note">
             <strong>Recovery behavior:</strong> if the app finds an interrupted mission after reload or
             restart, it offers <strong>Resume</strong> or <strong>Start Fresh</strong>. Resume keeps the
-            mission continuity; Start Fresh abandons that recovery path and begins cleanly. Keep one
+            mission continuity; Start Fresh abandons that recovery path and begins cleanly. Resume returns
+            the mission to the state it was in before the interruption: a mission that was running carries
+            on, and a mission you had paused stays paused until you press Resume on the mission panel. The
+            time between the interruption and your choice counts as paused time, and Mission Review records
+            it as an automatic pause after an unexpected shutdown. Keep one
             mission open throughout a multi-day search, even if the app or machine is closed overnight.
             Finish and finalize only at operational stand-down; do not create a new mission each day as
             a storage workaround.

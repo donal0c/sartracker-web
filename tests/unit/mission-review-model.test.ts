@@ -106,6 +106,32 @@ describe('mission review model', () => {
     ])
   })
 
+  it('distinguishes the automatic recovery hold from an operator pause in the audit trail [DON-283]', () => {
+    const snapshot = buildMissionReviewSnapshot({
+      mission: createMission(),
+      info: createStoreInfo(),
+      events: [
+        createEvent('mission_paused', { status: 'paused' }),
+        createEvent('mission_resumed', { status: 'active' }),
+        createEvent('mission_paused', { status: 'paused', reason: 'recovery_hold' }),
+        createEvent('mission_resumed', { status: 'active', reason: 'recovery_resume' }),
+      ],
+      markers: [],
+      devices: [],
+      breadcrumbCount: 0,
+      drawings: [],
+      gpxImports: [],
+      layerMetadata: [],
+    })
+
+    expect(snapshot.eventRows.map((row) => row.description)).toEqual([
+      'Mission paused.',
+      'Mission resumed.',
+      'Paused automatically after an unexpected shutdown, until the operator chose to resume.',
+      'Resumed by the operator after an unexpected shutdown.',
+    ])
+  })
+
   it('produces safe coordinate display for invalid lat/lon', () => {
     const snapshot = buildMissionReviewSnapshot({
       mission: createMission(),

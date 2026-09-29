@@ -60,6 +60,8 @@ export type CoreFeatureRuntimeMissionStore = Pick<
   | 'getRecoverableMission'
   | 'pauseMission'
   | 'resumeMission'
+  | 'holdMissionForRecovery'
+  | 'resumeRecoveredMission'
   | 'finishMission'
   | 'createOuting'
   | 'endOuting'

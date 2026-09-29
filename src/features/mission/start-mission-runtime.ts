@@ -10,7 +10,14 @@ import { isMissionNameWithinBound, MAX_MISSION_NAME_BYTES } from '../../lib/miss
 type StartMissionRuntimeDependencies = {
   readonly missionStore: Pick<
     MissionStore,
-    'createMission' | 'listMissions' | 'getRecoverableMission' | 'pauseMission' | 'resumeMission' | 'finishMission'
+    | 'createMission'
+    | 'listMissions'
+    | 'getRecoverableMission'
+    | 'pauseMission'
+    | 'resumeMission'
+    | 'holdMissionForRecovery'
+    | 'resumeRecoveredMission'
+    | 'finishMission'
   >
   readonly applyRuntime: (runtime: MissionRuntimeState) => void
   readonly runMissionFinish?: <Result>(
@@ -47,9 +54,11 @@ export async function startMissionRuntime(
 ): Promise<MissionRuntimeController> {
   const recoverableMission = await dependencies.missionStore.getRecoverableMission()
   let currentMission: Mission | null = null
+  // A mission still running at startup is held (paused with a recovery reason)
+  // until the operator decides; an operator's own pause is left untouched.
   let currentRecoverableMission: Mission | null =
     recoverableMission?.status === 'active'
-      ? await dependencies.missionStore.pauseMission(recoverableMission.id)
+      ? await dependencies.missionStore.holdMissionForRecovery(recoverableMission.id)
       : recoverableMission
 
   publishRuntime()
@@ -118,7 +127,9 @@ export async function startMissionRuntime(
         return null
       }
 
-      const mission = await dependencies.missionStore.resumeMission(currentRecoverableMission.id)
+      // Lifts only a recovery hold: a mission paused by the operator before the
+      // crash comes back paused (DON-283).
+      const mission = await dependencies.missionStore.resumeRecoveredMission(currentRecoverableMission.id)
       currentMission = mission
       currentRecoverableMission = null
       publishRuntime()

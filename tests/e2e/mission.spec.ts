@@ -454,6 +454,26 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('current-mission-name')).toContainText('Recovery Flow')
   })
 
+  test('keeps a mission paused before the interruption paused after recovery Resume [DON-283]', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Paused Recovery Flow')
+    await page.getByTestId('mission-start-btn').click()
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+
+    await page.reload()
+    const dialog = page.getByTestId('mission-recovery-dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('A mission you had paused stays paused')
+    await dialog.getByRole('button', { name: 'Resume', exact: true }).click()
+
+    await expect(dialog).toBeHidden()
+    await expect(page.getByTestId('current-mission-name')).toContainText('Paused Recovery Flow')
+    await expect(page.getByTestId('mission-control')).toContainText('paused')
+
+    await page.getByTestId('mission-pause-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+  })
+
   test('surfaces recovery on reload and can start fresh', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Fresh Flow')
     await page.getByTestId('mission-start-btn').click()

@@ -24,8 +24,9 @@ const PAUSED_MISSION: Mission = {
 }
 
 describe('startMissionRuntime', () => {
-  it('treats an active persisted mission as recoverable by pausing it on startup', async () => {
-    const pauseMission = vi.fn().mockResolvedValue({
+  it('treats an active persisted mission as recoverable by placing it on a recovery hold at startup', async () => {
+    const pauseMission = vi.fn()
+    const holdMissionForRecovery = vi.fn().mockResolvedValue({
       ...ACTIVE_MISSION,
       status: 'paused',
       pause_time: '2026-04-09T11:00:00.000Z',
@@ -36,12 +37,14 @@ describe('startMissionRuntime', () => {
       missionStore: createMissionStoreStub({
         getRecoverableMission: vi.fn().mockResolvedValue(ACTIVE_MISSION),
         pauseMission,
+        holdMissionForRecovery,
       }),
       applyRuntime,
       now: () => new Date('2026-04-09T11:00:00.000Z'),
     })
 
-    expect(pauseMission).toHaveBeenCalledWith('mission-active')
+    expect(holdMissionForRecovery).toHaveBeenCalledWith('mission-active')
+    expect(pauseMission).not.toHaveBeenCalled()
     expect(applyRuntime).toHaveBeenCalledWith(
       expect.objectContaining({
         phase: 'recovery',
@@ -50,12 +53,14 @@ describe('startMissionRuntime', () => {
     )
   })
 
-  it('resumes a recoverable mission into active runtime state', async () => {
+  it('resumes a mission that was running before the crash into active runtime state', async () => {
     const applyRuntime = vi.fn()
+    const resumeMission = vi.fn()
     const runtime = await startMissionRuntime({
       missionStore: createMissionStoreStub({
         getRecoverableMission: vi.fn().mockResolvedValue(PAUSED_MISSION),
-        resumeMission: vi.fn().mockResolvedValue({
+        resumeMission,
+        resumeRecoveredMission: vi.fn().mockResolvedValue({
           ...PAUSED_MISSION,
           status: 'active',
           pause_time: null,
@@ -68,6 +73,7 @@ describe('startMissionRuntime', () => {
 
     await runtime.resumeRecoverableMission()
 
+    expect(resumeMission).not.toHaveBeenCalled()
     expect(applyRuntime).toHaveBeenLastCalledWith(
       expect.objectContaining({
         phase: 'active',
@@ -75,6 +81,28 @@ describe('startMissionRuntime', () => {
         recoverableMission: null,
       }),
     )
+  })
+
+  it('keeps a mission the operator paused before the crash paused after recovery Resume (DON-283)', async () => {
+    const applyRuntime = vi.fn()
+    const resumeRecoveredMission = vi.fn().mockResolvedValue(PAUSED_MISSION)
+    const runtime = await startMissionRuntime({
+      missionStore: createMissionStoreStub({
+        getRecoverableMission: vi.fn().mockResolvedValue(PAUSED_MISSION),
+        resumeRecoveredMission,
+      }),
+      applyRuntime,
+      now: () => new Date('2026-04-09T11:00:00.000Z'),
+    })
+
+    await expect(runtime.resumeRecoverableMission()).resolves.toMatchObject({ status: 'paused' })
+
+    expect(resumeRecoveredMission).toHaveBeenCalledWith('mission-paused')
+    expect(applyRuntime).toHaveBeenLastCalledWith({
+      phase: 'paused',
+      currentMission: PAUSED_MISSION,
+      recoverableMission: null,
+    })
   })
 
   it('starts fresh by finishing the recoverable mission and returning to idle', async () => {
@@ -311,7 +339,7 @@ describe('startMissionRuntime', () => {
 
   it('requests immediate autosave sync after recovery lifecycle decisions', async () => {
     const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
-    const resumeMission = vi.fn().mockResolvedValue(ACTIVE_MISSION)
+    const resumeRecoveredMission = vi.fn().mockResolvedValue(ACTIVE_MISSION)
     const finishMission = vi.fn().mockResolvedValue({
       ...PAUSED_MISSION,
       status: 'finished',
@@ -320,7 +348,7 @@ describe('startMissionRuntime', () => {
     const runtime = await startMissionRuntime({
       missionStore: createMissionStoreStub({
         getRecoverableMission: vi.fn().mockResolvedValue(PAUSED_MISSION),
-        resumeMission,
+        resumeRecoveredMission,
         finishMission,
       }),
       applyRuntime: vi.fn(),
@@ -368,6 +396,8 @@ function createMissionStoreStub(overrides: Record<string, unknown> = {}) {
     getRecoverableMission: vi.fn().mockResolvedValue(null),
     pauseMission: vi.fn(),
     resumeMission: vi.fn(),
+    holdMissionForRecovery: vi.fn(),
+    resumeRecoveredMission: vi.fn(),
     finishMission: vi.fn(),
     ...overrides,
   }

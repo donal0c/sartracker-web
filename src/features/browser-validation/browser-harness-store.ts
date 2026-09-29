@@ -285,6 +285,8 @@ export type BrowserHarnessStore = {
   readonly openExternalPath: (path: string) => Promise<void>
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
+  readonly holdMissionForRecovery: (missionId: string) => Promise<Mission>
+  readonly resumeRecoveredMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
   readonly issueMissionArchiveRecoveryCode: (
     missionId: string,
@@ -1146,7 +1148,7 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
               pausedMission.id,
               'mission_paused',
               pausedMission.pause_time ?? new Date().toISOString(),
-              { status: 'paused' },
+              { status: 'paused', reason: RECOVERY_HOLD_REASON },
             ),
           },
           pausedMission,
@@ -1203,6 +1205,60 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
           'mission_resumed',
           new Date().toISOString(),
           { status: 'active' },
+        ),
+      }
+      save()
+      return resumedMission
+    },
+    holdMissionForRecovery: async (missionId) => {
+      const mission = requireMission(missionId, state.missions)
+      if (mission.status !== 'active') {
+        throw new Error(`Cannot transition mission with status '${mission.status}'.`)
+      }
+      const pausedMission = {
+        ...mission,
+        status: 'paused' as const,
+        pause_time: new Date().toISOString(),
+      }
+      state = replaceMission(state, pausedMission, null, missionId)
+      state = {
+        ...state,
+        missionEvents: appendEvent(
+          state.missionEvents,
+          missionId,
+          'mission_paused',
+          pausedMission.pause_time,
+          { status: 'paused', reason: RECOVERY_HOLD_REASON },
+        ),
+      }
+      save()
+      return pausedMission
+    },
+    resumeRecoveredMission: async (missionId) => {
+      const mission = requireMission(missionId, state.missions)
+      if (mission.status !== 'paused') {
+        throw new Error(`Cannot resume recovered mission with status '${mission.status}'.`)
+      }
+      if (!isOnRecoveryHold(mission, state.missionEvents)) {
+        state = replaceMission(state, mission, missionId, null)
+        save()
+        return mission
+      }
+      const resumedMission = {
+        ...mission,
+        status: 'active' as const,
+        pause_time: null,
+        paused_seconds: mission.paused_seconds + calculatePausedSeconds(mission.pause_time),
+      }
+      state = replaceMission(state, resumedMission, missionId, null)
+      state = {
+        ...state,
+        missionEvents: appendEvent(
+          state.missionEvents,
+          missionId,
+          'mission_resumed',
+          new Date().toISOString(),
+          { status: 'active', reason: 'recovery_resume' },
         ),
       }
       save()
@@ -5428,6 +5484,25 @@ function upsertByStableId<T extends { readonly id: string }>(
   return entries.some((entry) => entry.id === next.id)
     ? entries.map((entry) => entry.id === next.id ? next : entry)
     : [...entries, next]
+}
+
+/** Audit reason on the startup pause of a mission found running (mirrors the Electron store). */
+const RECOVERY_HOLD_REASON = 'recovery_hold'
+
+/** Reports whether the pause in force is a startup recovery hold (DON-283). */
+function isOnRecoveryHold(mission: Mission, events: readonly MissionEvent[]): boolean {
+  const pauseEvent = [...events].reverse().find((event) =>
+    event.mission_id === mission.id
+    && event.event_type === 'mission_paused'
+    && event.timestamp === mission.pause_time)
+  if (pauseEvent === undefined || pauseEvent.details_json === null) {
+    return false
+  }
+  try {
+    return (JSON.parse(pauseEvent.details_json) as { reason?: unknown }).reason === RECOVERY_HOLD_REASON
+  } catch {
+    return false
+  }
 }
 
 function appendEvent(

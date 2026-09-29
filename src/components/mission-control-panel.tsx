@@ -457,6 +457,10 @@ export function MissionControlPanel({
             to continue the same operational record, or start fresh only if this is not the
             current incident.
           </p>
+          <p className="mt-2 text-[12px] leading-relaxed text-amber-100">
+            A mission that was running carries on. A mission you had paused stays paused
+            until you resume it from the mission panel.
+          </p>
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-amber-500"

@@ -1316,6 +1316,10 @@ export type MissionStore = {
   readonly getRecoverableMission: () => Promise<Mission | null>
   readonly pauseMission: (missionId: string) => Promise<Mission>
   readonly resumeMission: (missionId: string) => Promise<Mission>
+  /** Pauses a mission found running at startup, recorded as a recovery hold (DON-283). */
+  readonly holdMissionForRecovery: (missionId: string) => Promise<Mission>
+  /** Lifts a recovery hold; a mission the operator paused before the crash stays paused. */
+  readonly resumeRecoveredMission: (missionId: string) => Promise<Mission>
   readonly finishMission: (missionId: string) => Promise<Mission>
   readonly finalizeMission: (
     missionId: string,
@@ -1417,6 +1421,10 @@ export function createTauriMissionStore(): MissionStore {
     getRecoverableMission: () => invoke<Mission | null>('get_recoverable_mission'),
     pauseMission: (missionId) => invoke<Mission>('pause_mission', { missionId }),
     resumeMission: (missionId) => invoke<Mission>('resume_mission', { missionId }),
+    // The retired Tauri backend has no recovery-hold record, so it keeps the
+    // pre-DON-283 behaviour: hold is a plain pause and recovery Resume resumes.
+    holdMissionForRecovery: (missionId) => invoke<Mission>('pause_mission', { missionId }),
+    resumeRecoveredMission: (missionId) => invoke<Mission>('resume_mission', { missionId }),
     finishMission: (missionId) => invoke<Mission>('finish_mission', { missionId }),
     finalizeMission: (missionId, custody) =>
       invoke<FinalizeMissionResult>('finalize_mission', { missionId, custody }),
