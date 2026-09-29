@@ -289,7 +289,7 @@ export function MissionControlPanel({
                 value={startOffsetHours}
               />
             </div>
-            <ParticipantControlsSection phase={phase} />
+            <ParticipantControlsSection lookbackRequested={Number(startOffsetHours) > 0} phase={phase} />
           </div>
         ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">

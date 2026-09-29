@@ -67,6 +67,39 @@ test.describe('mission participants [DON-271]', () => {
     expect(retainedEvidenceDeviceIds).toContain('2')
   })
 
+  test('requires an explicit history start for a late add and backfills the lookback From mission start [DON-291]', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Lookback Late Add')
+    await page.getByTestId('mission-offset-input').fill('48')
+    await expect(page.getByTestId('participant-lookback-notice')).toContainText(
+      'Earlier history is only fetched for participants selected here',
+    )
+    await page.getByTestId('mission-start-btn').click()
+
+    await page.getByTestId('participant-add-ref').selectOption('1')
+    await expect(page.getByTestId('participant-add-btn')).toBeDisabled()
+    await page.getByTestId('participant-history-start-mission').check()
+    await page.getByTestId('participant-add-btn').click()
+    await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
+    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+
+    await page.getByTestId('participant-add-ref').selectOption('2')
+    await page.getByTestId('participant-history-start-now').check()
+    await page.getByTestId('participant-add-btn').click()
+    await expect(page.getByTestId('participant-backfill-status').last())
+      .toContainText('no earlier history requested')
+
+    const state = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__?.readState())
+    const missionStart = state?.missions[0]?.start_time
+    expect(Date.now() - Date.parse(missionStart ?? '')).toBeGreaterThan(47.9 * 3_600_000)
+    const alpha = state?.missionParticipants.find((participant) => participant.traccar_device_id === '1')
+    expect(alpha?.effective_from).toBe(missionStart)
+    expect(state?.participantBackfillCheckpoints).toEqual(expect.arrayContaining([
+      expect.objectContaining({ traccar_device_id: '1', window_from: missionStart }),
+    ]))
+    const bravo = state?.missionParticipants.find((participant) => participant.traccar_device_id === '2')
+    expect(bravo?.effective_from).toBe(bravo?.added_at)
+  })
+
   test('auto-follows a selected group from observation time and shows the coordinator a notice', async ({ page }) => {
     await page.evaluate(async () => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
@@ -120,6 +153,7 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-start-btn').click()
 
     await page.getByTestId('participant-add-ref').selectOption('2')
+    await page.getByTestId('participant-history-start-now').check()
     await page.getByTestId('participant-add-btn').click()
     await expect(page.getByTestId('participant-active-list')).toContainText('Bravo Team')
 
@@ -208,6 +242,7 @@ test.describe('mission participants [DON-271]', () => {
 
     await page.getByTestId('participant-add-kind').selectOption('group')
     await page.getByTestId('participant-add-ref').selectOption('101')
+    await page.getByTestId('participant-history-start-now').check()
     await page.getByTestId('participant-add-btn').click()
 
     await expect(page.getByTestId('participant-management')).toContainText(

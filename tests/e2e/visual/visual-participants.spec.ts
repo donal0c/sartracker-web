@@ -54,6 +54,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(backfillStatuses).toHaveCount(2)
     await expect(backfillStatuses.first()).toContainText('pending')
     await expect(backfillStatuses.last()).toContainText('pending')
+    // The required history-start choice makes the section taller than the
+    // visible panel; frame it from its heading so every checklist item is in view.
+    await page.getByTestId('participant-management').evaluate((section) => section.scrollIntoView({ block: 'start' }))
 
     await captureElementAndRegister(page, 'participant-management', {
       testId: 'participant-management-provenance-backfill',
@@ -66,12 +69,37 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 3. Each row visibly states device kind, explicit provenance, and an effective timestamp.
 4. The later-added device visibly states that history backfill is pending or retrying, not complete.
 5. Each participant has a distinct Remove action.
-6. The lower add-participant controls include individual/group choice, device choice, optional effective-from, and an Add participant action.
+6. The lower add-participant controls include individual/group choice, device choice, a "History from (required)" choice listing Mission start (with its time), Now (no earlier history) and Custom with a time field, and an Add participant action.
 7. No text suggests a pending backfill delays the current live position.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'both participant rows are visible',
         'pending backfill status is visible for both participant rows',
+      ],
+    })
+  })
+
+  test('a start offset warns that earlier history needs selected participants [DON-291]', async ({ page }) => {
+    await seedDiscovery(page, 3)
+    await page.getByTestId('mission-offset-input').fill('48')
+    await expect(page.getByTestId('participant-lookback-notice')).toBeVisible()
+    await expect(page.getByTestId('participant-none-selected-notice')).toBeVisible()
+
+    await captureElementAndRegister(page, 'participant-selection-step', {
+      testId: 'participant-lookback-start-notice',
+      testName: 'Start offset explains which participants get earlier history',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of SAR Tracker's mission-start participant selection step with a start offset entered:
+1. The section is headed "MISSION PARTICIPANTS" and shows "0 selected".
+2. A clearly visible notice beginning "Start offset" says earlier history is only fetched for participants selected here before Start.
+3. The same notice says a participant added after Start needs "History from: Mission start" to include that history.
+4. The separate no-participants notice is still visible and readable.
+5. Both notices are legible against the background and are not clipped.
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'lookback notice is visible after entering a 48 h offset',
+        'no-participants notice is visible',
       ],
     })
   })

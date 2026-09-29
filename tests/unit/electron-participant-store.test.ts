@@ -417,6 +417,54 @@ describe('Electron participant store [DON-271]', () => {
     expect(participants[1]).toMatchObject({ backfill_completed: 0 })
   })
 
+  it('backfills a 48 h lookback for a participant added after Start from mission start, and keeps it across reopen [DON-291]', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-29T06:00:00.000Z'))
+    const store = await createStore()
+    const missionStart = '2026-09-27T06:00:00.000Z'
+    const mission = await store.createMission({ name: 'Lookback mission', start_time: missionStart })
+    await store.selectMissionParticipants({ mission_id: mission.id, groups: [], devices: [], selected_by: 'Coordinator A' })
+
+    vi.setSystemTime(new Date('2026-09-29T06:05:00.000Z'))
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id, kind: 'device', ref: '11', effective_from: missionStart, confirmed_by: 'Coordinator A',
+    })).resolves.toMatchObject({ traccar_device_id: '11', effective_from: missionStart })
+    vi.setSystemTime(new Date('2026-09-29T06:06:00.000Z'))
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id, kind: 'device', ref: '12', confirmed_by: 'Coordinator A',
+    })).resolves.toMatchObject({ traccar_device_id: '12', effective_from: '2026-09-29T06:06:00.000Z' })
+    await expect(store.addMissionParticipant({
+      mission_id: mission.id, kind: 'device', ref: '13', effective_from: '2026-09-27T05:59:59.999Z', confirmed_by: 'Coordinator A',
+    })).rejects.toThrow()
+
+    const expectedWindow = [expect.objectContaining({
+      traccar_device_id: '11',
+      window_from: missionStart,
+      window_to: '2026-09-29T06:05:00.000Z',
+      reconciled_until: missionStart,
+      completed: 0,
+    }), expect.objectContaining({
+      // From now requests no earlier history: a zero-width, already complete window.
+      traccar_device_id: '12',
+      window_from: '2026-09-29T06:06:00.000Z',
+      window_to: '2026-09-29T06:06:00.000Z',
+      completed: 1,
+    })]
+    await expect(store.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual(expectedWindow)
+
+    const { database_path: databasePath } = await store.info()
+    await store.prepareClose()
+    store.close()
+    stores = stores.filter((candidate) => candidate !== store)
+    const reopened = createElectronMissionStore({ userDataPath: path.dirname(databasePath) })
+    stores.push(reopened)
+    await expect(reopened.listParticipantBackfillCheckpoints(mission.id)).resolves.toEqual(expectedWindow)
+    await expect(reopened.listMissionParticipants(mission.id)).resolves.toEqual([
+      expect.objectContaining({ traccar_device_id: '11', effective_from: missionStart, backfill_completed: 0 }),
+      expect.objectContaining({ traccar_device_id: '12', effective_from: '2026-09-29T06:06:00.000Z' }),
+    ])
+  })
+
   it('rejects participant, membership, and checkpoint writes as soon as a mission is finished', async () => {
     const store = await createStore()
     const mission = await store.createMission({

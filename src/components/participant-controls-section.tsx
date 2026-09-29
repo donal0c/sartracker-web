@@ -1,18 +1,27 @@
 import { useMemo, useState } from 'react'
 
+import { useMissionStore } from '../features/mission/mission-store'
 import { isMissionModelEnabled } from '../features/runtime/mission-model-flag'
+import {
+  participantRequestedEarlierHistory,
+  resolveParticipantEffectiveFrom,
+  type ParticipantHistoryStart,
+} from '../features/participants/participant-history-start'
 import { useParticipantStore } from '../features/participants/participant-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
 
 const COORDINATOR_ACTOR = 'Mission coordinator'
+const NO_EARLIER_HISTORY_STATUS = 'History: from when added; no earlier history requested'
 
 type ParticipantControlsSectionProps = {
   readonly phase: 'idle' | 'active' | 'paused' | 'recovery'
+  /** True when the operator has entered a start offset (lookback) on the start step. */
+  readonly lookbackRequested?: boolean
 }
 
 /** Renders explicit mission-start selection and append-only participant management. */
-export function ParticipantControlsSection({ phase }: ParticipantControlsSectionProps) {
+export function ParticipantControlsSection({ phase, lookbackRequested = false }: ParticipantControlsSectionProps) {
   const selection = useParticipantSelectionViewModel()
   const controller = useParticipantStore((state) => state.controller)
   const participants = useParticipantStore((state) => state.participants)
@@ -26,6 +35,9 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
   const [addKind, setAddKind] = useState<'device' | 'group'>('device')
   const [addRef, setAddRef] = useState('')
   const [effectiveFrom, setEffectiveFrom] = useState('')
+  const [historyStart, setHistoryStart] = useState<ParticipantHistoryStart | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
+  const missionStartTime = useMissionStore((state) => state.currentMission?.start_time ?? null)
 
   const activeParticipants = useMemo(
     () => participants.filter((participant) => participant.removed_at === null),
@@ -33,6 +45,11 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
   )
 
   if (!isMissionModelEnabled()) return null
+
+  function chooseHistoryStart(choice: ParticipantHistoryStart): void {
+    setHistoryStart(choice)
+    setAddError(null)
+  }
 
   if (phase === 'idle') {
     return (
@@ -94,6 +111,11 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
             testId="participant-device-picker"
           />
         </div>
+        {lookbackRequested ? (
+          <p className="sar-inline-alert p-2 text-xs text-amber-100" data-testid="participant-lookback-notice">
+            Start offset: Earlier history is only fetched for participants selected here before Start. A participant added after Start needs History from: Mission start to include it.
+          </p>
+        ) : null}
         {selection.selectedDeviceCount === 0 ? (
           <p className="text-xs text-stone-300" data-testid="participant-none-selected-notice">
             No participants selected. The mission may start, but reporting devices will remain outside mission evidence and off the operational map until a coordinator adds them.
@@ -163,14 +185,20 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
               </p>
               {participant.kind === 'device' && participant.backfill_completed !== undefined ? (
                 <p className="mt-1 text-[11px] text-stone-300" data-testid="participant-backfill-status">
-                  History backfill: {participant.backfill_completed === 1 ? 'complete' : 'pending / retrying'}
+                  {participantRequestedEarlierHistory(participant)
+                    ? `History backfill: ${participant.backfill_completed === 1 ? 'complete' : 'pending / retrying'}`
+                    : NO_EARLIER_HISTORY_STATUS}
                 </p>
               ) : null}
-          {participant.kind === 'group' &&
+              {participant.kind === 'group' &&
               (typeof participant.backfill_member_count === 'number' ||
                 participant.backfill_scope_unknown === true) ? (
                 <p className="mt-1 text-[11px] text-stone-300" data-testid="participant-backfill-status">
-                  History backfill: {formatGroupBackfillStatus(participant)}
+                  {participantRequestedEarlierHistory(participant) ||
+                    participant.backfill_scope_unknown === true ||
+                    participant.backfill_scope_error
+                    ? `History backfill: ${formatGroupBackfillStatus(participant)}`
+                    : NO_EARLIER_HISTORY_STATUS}
                 </p>
               ) : null}
             </div>
@@ -205,26 +233,56 @@ export function ParticipantControlsSection({ phase }: ParticipantControlsSection
             return <option key={id} value={id}>{item.name}</option>
           })}
         </select>
-        <label className="text-[11px] text-stone-300 sm:col-span-2">
-          Effective from (optional; defaults to now)
-          <input className="sar-input mt-1 w-full px-2 py-2 text-xs" data-testid="participant-effective-from" onChange={(event) => setEffectiveFrom(event.target.value)} type="datetime-local" value={effectiveFrom} />
-        </label>
+        <fieldset className="space-y-1 text-[11px] text-stone-300 sm:col-span-2" data-testid="participant-history-start">
+          <legend className="font-semibold text-stone-200">History from (required)</legend>
+          <label className="flex items-center gap-2">
+            <input checked={historyStart === 'mission-start'} data-testid="participant-history-start-mission" name="participant-history-start" onChange={() => chooseHistoryStart('mission-start')} type="radio" />
+            Mission start{missionStartTime === null ? '' : ` (${formatTimestamp(missionStartTime)})`}
+          </label>
+          <label className="flex items-center gap-2">
+            <input checked={historyStart === 'now'} data-testid="participant-history-start-now" name="participant-history-start" onChange={() => chooseHistoryStart('now')} type="radio" />
+            Now (no earlier history)
+          </label>
+          <div className="flex items-center gap-2">
+            <label className="flex shrink-0 items-center gap-2">
+              <input checked={historyStart === 'custom'} data-testid="participant-history-start-custom" name="participant-history-start" onChange={() => chooseHistoryStart('custom')} type="radio" />
+              Custom
+            </label>
+            <input aria-label="Custom history start time" className="sar-input min-w-0 flex-1 px-2 py-1 text-xs" data-testid="participant-effective-from" onChange={(event) => {
+              setEffectiveFrom(event.target.value)
+              chooseHistoryStart('custom')
+            }} type="datetime-local" value={effectiveFrom} />
+          </div>
+        </fieldset>
+        {addError !== null ? (
+          <p className="text-xs text-rose-300 sm:col-span-2" data-testid="participant-add-error">{addError}</p>
+        ) : null}
         <button
           className="sar-action-primary px-3 py-2 text-xs font-bold sm:col-span-2"
           data-testid="participant-add-btn"
-          disabled={saving || addRef === ''}
+          disabled={saving || addRef === '' || historyStart === null}
           onClick={() => {
+            const resolution = resolveParticipantEffectiveFrom({
+              choice: historyStart,
+              missionStartTime,
+              customLocalDateTime: effectiveFrom,
+            })
+            if (!resolution.ok) {
+              setAddError(resolution.message)
+              return
+            }
             const group = availableGroups.find((candidate) => candidate.group_id === addRef)
             void controller?.addParticipant({
               ...(addKind === 'group'
                 ? { kind: 'group', ref: { traccar_group_id: addRef, name: group?.name ?? addRef } } as const
                 : { kind: 'device', ref: addRef } as const),
               confirmed_by: COORDINATOR_ACTOR,
-              ...(effectiveFrom === '' ? {} : { effective_from: new Date(effectiveFrom).toISOString() }),
+              ...(resolution.effectiveFrom === undefined ? {} : { effective_from: resolution.effectiveFrom }),
             }).then((result) => {
               if (result !== null) {
                 setAddRef('')
                 setEffectiveFrom('')
+                setHistoryStart(null)
               }
             })
           }}

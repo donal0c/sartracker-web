@@ -24,6 +24,25 @@ describe('participation scope [DON-271]', () => {
     expect(scope.includesAt('11', '2026-08-20T11:00:00.000Z')).toBe(false)
   })
 
+  it('admits a 48 h lookback exactly from mission start for a history-only participant [DON-291]', () => {
+    const missionStart = '2026-09-27T06:00:00.000Z'
+    const scope = createParticipationScope({
+      participants: [participant({
+        traccar_device_id: '11', effective_from: missionStart, added_at: '2026-09-29T06:05:00.000Z',
+      })],
+      membershipEvents: [],
+      backfillCheckpoints: [checkpoint({
+        traccar_device_id: '11', window_from: missionStart, window_to: '2026-09-29T06:05:00.000Z',
+      })],
+    })
+
+    expect(scope.includesAt('11', '2026-09-27T05:59:59.999Z')).toBe(false)
+    expect(scope.includesAt('11', missionStart)).toBe(true)
+    expect(scope.includesAt('11', '2026-09-29T04:00:00.000Z')).toBe(true)
+    expect(scope.includesAt('13', '2026-09-29T04:00:00.000Z')).toBe(false)
+    expect(scope.historicalDeviceIdsThrough('2026-09-29T06:10:00.000Z')).toEqual(['11'])
+  })
+
   it('finds the first authorized evidence timestamp inside a fetched history range', () => {
     const scope = createParticipationScope({
       participants: [participant({

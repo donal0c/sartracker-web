@@ -396,7 +396,7 @@
               <ol>
                 <li>Open the app and confirm the top mast says <strong>ready</strong>.</li>
                 <li>Enter a clear mission name in <strong>Mission Control</strong>.</li>
-                <li>Use <strong>Start Offset</strong> only when the real search began before the app was opened.</li>
+                <li>Use <strong>Start Offset</strong> only when the real search began before the app was opened. Tick the participating groups or devices <em>before</em> pressing Start: earlier history is only fetched for them.</li>
                 <li>Press <strong>Start</strong>, then confirm the mission phase changes to <strong>active</strong>.</li>
                 <li>Check <strong>Tracking System</strong>, <strong>Layers</strong>, and <strong>Offline Map</strong> before field use.</li>
               </ol>
@@ -442,7 +442,7 @@
             <li>Use <strong>https://kmrtsar.eu</strong> as the Traccar provider base URL.</li>
             <li>Use <strong>Basic</strong> authentication with the team testing credentials.</li>
             <li>Run <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>.</li>
-            <li>Start a mission. Use a 24 or 48 hour <strong>Start Offset</strong> if breadcrumb history looks empty.</li>
+            <li>Start a mission. Use a 24 or 48 hour <strong>Start Offset</strong> if breadcrumb history looks empty, and select the participants before pressing Start.</li>
           </ol>
 
           <div class="note">
@@ -841,6 +841,19 @@
             <img src="assets/mission-participant-selection.png" alt="Mission participant selection showing no groups or devices pre-selected" />
             <figcaption>The participant start step makes the empty selection and its evidence consequence explicit.</figcaption>
           </figure>
+          <p>
+            <strong>Start Offset and participants.</strong> A Start Offset backdates the mission start; SAR Tracker
+            then fetches provider history from that start for every group or device selected before
+            <strong>Start</strong>. Devices that have not reported recently still appear with their earlier track.
+            Nothing is fetched for devices that are not selected. When you add a participant after Start,
+            <strong>History from</strong> must be chosen explicitly: <strong>Mission start</strong> includes their
+            history back to the (possibly backdated) mission start, <strong>Now</strong> records only from the moment
+            you add them, and <strong>Custom</strong> uses a time you enter. There is no default, because
+            <em>Mission start</em> could attribute a late joiner's earlier travel to the mission. A participant
+            added from <em>Now</em> shows <strong>History: from when added; no earlier history requested</strong>.
+            While history is being fetched, or cannot be retrieved, the row shows
+            <strong>pending / retrying</strong> and Finish stays unavailable.
+          </p>
           <p>
             A selected Traccar group follows later server-side membership changes from the time SAR Tracker
             observes them. A newly observed member's current position is shown immediately while the durable
