@@ -12,6 +12,7 @@ import type {
   SearchPassProjection,
   Outing,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { rankGovernanceCandidates } from '../mission/start-mission-governance-runtime'
 import type { LayerCatalogStore } from '../../infrastructure/layer-catalog-store/tauri-layer-catalog-store'
 import type { ArchiveReviewPublicSession } from '../../infrastructure/archive-review/archive-review-types'
 import type { ArchiveReviewAttachmentPage } from '../../infrastructure/archive-review/electron-archive-review-source'
@@ -1100,7 +1101,7 @@ function selectMissionFromList(
 
   return (
     missions.find((mission) => mission.status === 'active' || mission.status === 'paused') ??
-    missions.find((mission) => mission.status === 'finished' || mission.status === 'finalized') ??
+    rankGovernanceCandidates(missions)[0] ??
     missions[0] ??
     null
   )

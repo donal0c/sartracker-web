@@ -55,6 +55,7 @@ describe('startMissionGovernanceRuntime', () => {
       applyRuntime,
     })
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: recoveryMission,
       governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
@@ -63,6 +64,7 @@ describe('startMissionGovernanceRuntime', () => {
 
     expect(listMissions).toHaveBeenCalledTimes(2)
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: FINISHED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
@@ -91,6 +93,7 @@ describe('startMissionGovernanceRuntime', () => {
 
     expect(getIngestEvidenceHealth).toHaveBeenCalledWith(FINISHED_MISSION.id)
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: FINISHED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({
         state: 'critical',
@@ -110,6 +113,7 @@ describe('startMissionGovernanceRuntime', () => {
     })
 
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: FINALIZED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
@@ -145,6 +149,61 @@ describe('startMissionGovernanceRuntime', () => {
     }))
   })
 
+  it('lets the operator choose any finished or archived mission, which survives refresh [DON-294]', async () => {
+    const applyRuntime = vi.fn()
+    // A was archived, then restored for correction: finished again, with its original finish time.
+    const restoredForCorrection: Mission = {
+      ...FINISHED_MISSION,
+      id: 'mission-a',
+      name: 'Monday mission under correction',
+      start_time: '2026-09-28T08:00:00.000Z',
+      finish_time: '2026-09-28T18:00:00.000Z',
+    }
+    const laterBackdated: Mission = {
+      ...FINISHED_MISSION,
+      id: 'mission-b',
+      name: 'Backdated mission finished Tuesday',
+      start_time: '2026-09-27T08:00:00.000Z',
+      finish_time: '2026-09-29T18:00:00.000Z',
+    }
+    const listMissions = vi.fn().mockResolvedValue([restoredForCorrection, laterBackdated])
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({ listMissions }),
+      applyRuntime,
+    })
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      governanceMission: laterBackdated,
+      governanceCandidates: [laterBackdated, restoredForCorrection],
+    }))
+
+    await runtime.selectGovernanceMission('mission-a')
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ governanceMission: restoredForCorrection }))
+    await runtime.refreshGovernanceMission()
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ governanceMission: restoredForCorrection }))
+  })
+
+  it('keeps governance on the mission an admin just unlocked [DON-294]', async () => {
+    const applyRuntime = vi.fn()
+    const older: Mission = { ...FINALIZED_MISSION, id: 'mission-old', finish_time: '2026-09-28T18:00:00.000Z' }
+    const newer: Mission = { ...FINISHED_MISSION, id: 'mission-new', finish_time: '2026-09-29T18:00:00.000Z' }
+    const unlocked: Mission = { ...older, status: 'finished' }
+    const listMissions = vi.fn()
+      .mockResolvedValueOnce([newer, older])
+      .mockResolvedValue([newer, unlocked])
+    const runtime = await startMissionGovernanceRuntime({
+      missionStore: createMissionGovernanceStoreStub({
+        listMissions,
+        unlockFinalizedMission: vi.fn().mockResolvedValue(unlocked),
+      }),
+      applyRuntime,
+    })
+
+    await runtime.unlockGovernanceMission({ mission_id: 'mission-old', admin_name: 'Admin', reason: 'Correction' })
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({ governanceMission: unlocked }))
+  })
+
   it('refreshes governance mission after finalizing', async () => {
     const applyRuntime = vi.fn()
     const requestAutosaveSync = vi.fn().mockResolvedValue(undefined)
@@ -178,6 +237,7 @@ describe('startMissionGovernanceRuntime', () => {
     expect(finalizeMission).toHaveBeenCalledWith(FINISHED_MISSION.id, CUSTODY)
     expect(requestAutosaveSync).toHaveBeenCalledWith('mission-finalize')
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: ARCHIVED_FINISHED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })
@@ -208,6 +268,7 @@ describe('startMissionGovernanceRuntime', () => {
       await expect(runtime.finalizeGovernanceMission(FINISHED_MISSION.id, CUSTODY))
         .resolves.toEqual(finalizeResult)
       expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
         governanceMission: ARCHIVED_FINISHED_MISSION,
         governanceEvidenceHealth: expect.any(Object),
       })
@@ -373,6 +434,7 @@ describe('startMissionGovernanceRuntime', () => {
     )
     expect(getIngestEvidenceHealth).toHaveBeenCalledTimes(2)
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: FINISHED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({
         state: 'critical',
@@ -414,6 +476,7 @@ describe('startMissionGovernanceRuntime', () => {
     })
     expect(requestAutosaveSync).toHaveBeenCalledWith('mission-unlock')
     expect(applyRuntime).toHaveBeenLastCalledWith({
+      governanceCandidates: expect.any(Array),
       governanceMission: FINISHED_MISSION,
       governanceEvidenceHealth: expect.objectContaining({ state: 'healthy' }),
     })

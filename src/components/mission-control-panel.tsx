@@ -54,6 +54,8 @@ export function MissionControlPanel({
     currentMission,
     recoverableMission,
     governanceMission,
+    governanceCandidates,
+    selectGovernanceMission,
     focusModeActive,
     timerState,
     missionName,
@@ -363,9 +365,28 @@ export function MissionControlPanel({
                 <p className="text-[13px] font-semibold uppercase tracking-wide text-sky-200">
                   Mission Governance
                 </p>
-                <p className="mt-1 text-sm font-semibold text-stone-100">
-                  {governanceMission.name}
-                </p>
+                {governanceCandidates.length > 1 ? (
+                  <label className="mt-1 block text-[12px] text-stone-300">
+                    Mission
+                    <select
+                      aria-label="Mission for archive and unlock"
+                      className="sar-input mt-1 block w-full px-2 py-1 text-sm font-semibold text-stone-100"
+                      data-testid="mission-governance-select"
+                      onChange={(event) => void selectGovernanceMission(event.target.value)}
+                      value={governanceMission.id}
+                    >
+                      {governanceCandidates.map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                          {candidate.name}{candidate.status === 'finalized' ? ' (archived)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <p className="mt-1 text-sm font-semibold text-stone-100">
+                    {governanceMission.name}
+                  </p>
+                )}
                 <p className="mt-1 text-[13px] text-stone-300">
                   Status: <span className="font-mono uppercase">{governanceMission.status}</span>
                 </p>

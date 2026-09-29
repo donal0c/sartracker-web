@@ -356,7 +356,10 @@ export default [
 
       // Finish, archive, relaunch and reopen with the recovery code.
       await finishMission(app.page)
-      const governanceName = (await t('mission-governance-card').innerText().catch(() => '')).replace(/\s+/gu, ' ')
+      const governanceSelect = t('mission-governance-select')
+      const governanceName = ((await governanceSelect.count()) > 0
+        ? await governanceSelect.locator('option:checked').innerText()
+        : await t('mission-governance-card').innerText().catch(() => '')).replace(/\s+/gu, ' ')
       expectProduct(governanceName.includes(MISSION),
         `Archive & Lock offered a different mission after finishing "${MISSION}": "${governanceName.slice(0, 120)}" (DON-294).`)
       let recoveryCode = ''

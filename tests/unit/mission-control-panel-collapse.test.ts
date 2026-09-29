@@ -117,6 +117,41 @@ describe('MissionControlPanel collapse behavior', () => {
     expect(query('[data-testid="mission-finalize-confirm"]')).toBeNull()
   })
 
+  it('shows a mission choice on the governance card only when several missions qualify [DON-294]', async () => {
+    const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
+    const incident = createMission({ id: 'mission-incident', name: 'Backdated Incident', status: 'finished', storage_state: 'live' })
+    const training = createMission({ id: 'mission-training', name: 'Training', status: 'finalized', storage_state: 'live' })
+    const selectGovernanceMission = vi.fn(async () => {})
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: incident,
+      governanceCandidates: [incident],
+      selectGovernanceMission,
+    })
+    render(React.createElement(MissionControlPanel))
+    expect(query('[data-testid="mission-governance-select"]')).toBeNull()
+    act(() => root?.unmount())
+    host?.remove()
+
+    missionControlMock.model = createModel({
+      phase: 'idle',
+      currentMission: null,
+      governanceMission: incident,
+      governanceCandidates: [incident, training],
+      selectGovernanceMission,
+    })
+    render(React.createElement(MissionControlPanel))
+    const select = query('[data-testid="mission-governance-select"]') as HTMLSelectElement | null
+    expect(select?.value).toBe('mission-incident')
+    expect([...(select?.options ?? [])].map((option) => option.text)).toEqual(['Backdated Incident', 'Training (archived)'])
+    act(() => {
+      select!.value = 'mission-training'
+      select!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(selectGovernanceMission).toHaveBeenCalledWith('mission-training')
+  })
+
   it('offers Archive & Lock only for a finished mission whose live storage is proven', async () => {
     const { MissionControlPanel } = await import('../../src/components/mission-control-panel')
     missionControlMock.model = createModel({
@@ -216,6 +251,8 @@ function createModel(overrides: Partial<MissionControlViewModel> = {}): MissionC
     currentMission: createMission({ status: phase === 'paused' ? 'paused' : 'active' }),
     recoverableMission: null,
     governanceMission: null,
+    governanceCandidates: [],
+    selectGovernanceMission: vi.fn(async () => {}),
     focusModeActive: false,
     timerState: {
       elapsedSeconds: 3723,

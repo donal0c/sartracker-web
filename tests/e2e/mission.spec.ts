@@ -489,7 +489,12 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
-    await expect(page.getByTestId('mission-governance-card')).toContainText('Backdated Incident')
+    const chosen = page.getByTestId('mission-governance-select').locator('option:checked')
+    await expect(chosen).toHaveText(/Backdated Incident/)
+
+    // Any finished mission stays reachable: the operator can switch the target.
+    await page.getByTestId('mission-governance-select').selectOption({ label: 'Training This Morning' })
+    await expect(chosen).toHaveText(/Training This Morning/)
   })
 
   test('surfaces recovery on reload and can start fresh', async ({ page }) => {

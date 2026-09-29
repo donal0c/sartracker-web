@@ -34,6 +34,8 @@ type MissionGovernanceStoreBoundary = Pick<
 export type MissionGovernanceRuntimeState = {
   readonly governanceMission: Mission | null
   readonly governanceEvidenceHealth: IngestEvidenceHealth | null
+  /** Finished and archived missions, most recently finished first (DON-294). */
+  readonly governanceCandidates: readonly Mission[]
 }
 
 type StartMissionGovernanceRuntimeDependencies = {
@@ -44,6 +46,8 @@ type StartMissionGovernanceRuntimeDependencies = {
 
 export type MissionGovernanceController = {
   readonly refreshGovernanceMission: () => Promise<void>
+  /** Points Archive & Lock and unlock at an operator-chosen finished or archived mission. */
+  readonly selectGovernanceMission: (missionId: string) => Promise<void>
   readonly issueGovernanceArchiveRecoveryCode: (
     missionId: string,
   ) => Promise<MissionArchiveRecoveryIssuance>
@@ -76,12 +80,18 @@ export async function startMissionGovernanceRuntime(
 ): Promise<MissionGovernanceController> {
   let governanceMission: Mission | null = null
   let governanceEvidenceHealth: IngestEvidenceHealth | null = null
+  let governanceCandidates: readonly Mission[] = []
+  let chosenMissionId: string | null = null
   let recoveryRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
   await refreshGovernanceMission()
 
   return {
     refreshGovernanceMission,
+    selectGovernanceMission: async (missionId) => {
+      chosenMissionId = missionId
+      await refreshGovernanceMission()
+    },
     issueGovernanceArchiveRecoveryCode: (missionId) =>
       dependencies.missionStore.issueMissionArchiveRecoveryCode(missionId),
     cancelGovernanceArchiveOperation: (operationId) =>
@@ -136,6 +146,7 @@ export async function startMissionGovernanceRuntime(
       return result
     },
     finalizeGovernanceMission: async (missionId, custody) => {
+      chosenMissionId = missionId
       let result: FinalizeMissionResult
       try {
         result = await dependencies.missionStore.finalizeMission(missionId, custody)
@@ -157,6 +168,7 @@ export async function startMissionGovernanceRuntime(
     },
     unlockGovernanceMission: async (input) => {
       const mission = await dependencies.missionStore.unlockFinalizedMission(input)
+      chosenMissionId = input.mission_id
       await refreshGovernanceMission()
       await requestAutosaveSync('mission-unlock')
       return mission
@@ -165,14 +177,17 @@ export async function startMissionGovernanceRuntime(
 
   async function refreshGovernanceMission(): Promise<void> {
     const missions = await dependencies.missionStore.listMissions()
-    governanceMission = selectGovernanceMission(missions)
+    governanceCandidates = rankGovernanceCandidates(missions)
+    governanceMission = governanceCandidates.find((mission) => mission.id === chosenMissionId)
+      ?? governanceCandidates[0]
+      ?? null
     governanceEvidenceHealth = await readGovernanceEvidenceHealth(governanceMission)
     publishRuntime()
     scheduleRecoveryRefresh()
   }
 
   function publishRuntime(): void {
-    dependencies.applyRuntime({ governanceMission, governanceEvidenceHealth })
+    dependencies.applyRuntime({ governanceMission, governanceEvidenceHealth, governanceCandidates })
   }
 
   /** Rechecks a restart-visible custody blocker until the store clears it. */
@@ -252,21 +267,19 @@ function createUnavailableEvidenceHealth(): IngestEvidenceHealth {
 }
 
 /**
- * Chooses the mission that Archive & Lock and unlock act on: the most recently
- * finished one. Ordering by start time picked an older mission whenever the
- * finished mission was started with a lookback (DON-294). Ties keep store order.
+ * Lists finished and archived missions, most recently finished first. The first
+ * is the default target for Archive & Lock, unlock and Review: ordering by start
+ * time picked an older mission whenever the finished one was started with a
+ * lookback (DON-294). Ties and missing finish times keep store order.
  */
-function selectGovernanceMission(missions: readonly Mission[]): Mission | null {
-  let selected: Mission | null = null
-  let selectedFinish = Number.NEGATIVE_INFINITY
-  for (const mission of missions) {
-    if (mission.status !== 'finished' && mission.status !== 'finalized') continue
-    const finish = mission.finish_time === null ? Number.NEGATIVE_INFINITY : Date.parse(mission.finish_time)
-    const comparable = Number.isNaN(finish) ? Number.NEGATIVE_INFINITY : finish
-    if (selected === null || comparable > selectedFinish) {
-      selected = mission
-      selectedFinish = comparable
-    }
+export function rankGovernanceCandidates(missions: readonly Mission[]): readonly Mission[] {
+  const finishOf = (mission: Mission) => {
+    const time = mission.finish_time === null ? Number.NaN : Date.parse(mission.finish_time)
+    return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time
   }
-  return selected
+  return missions
+    .map((mission, index) => ({ mission, index }))
+    .filter(({ mission }) => mission.status === 'finished' || mission.status === 'finalized')
+    .sort((left, right) => finishOf(right.mission) - finishOf(left.mission) || left.index - right.index)
+    .map(({ mission }) => mission)
 }

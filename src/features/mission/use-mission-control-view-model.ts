@@ -29,6 +29,10 @@ export type MissionControlViewModel = {
   readonly currentMission: Mission | null
   readonly recoverableMission: Mission | null
   readonly governanceMission: Mission | null
+  /** Finished and archived missions the governance card can act on, most recent first. */
+  readonly governanceCandidates: readonly Mission[]
+  /** Points Archive & Lock and unlock at the chosen mission (DON-294). */
+  readonly selectGovernanceMission: (missionId: string) => Promise<void>
   readonly focusModeActive: boolean
   readonly timerState: MissionTimerState | null
   readonly missionName: string
@@ -103,6 +107,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const recoverableMission = useMissionStore((state) => state.recoverableMission)
   const controller = useMissionStore((state) => state.controller)
   const governanceMission = useMissionStore((state) => state.governanceMission)
+  const governanceCandidates = useMissionStore((state) => state.governanceCandidates)
   const governanceEvidenceHealth = useMissionStore((state) => state.governanceEvidenceHealth)
   const governanceController = useMissionStore((state) => state.governanceController)
   const participantController = useParticipantStore((state) => state.controller)
@@ -429,11 +434,24 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
   }
 
+  /** Switches the governance card to another finished or archived mission. */
+  async function selectGovernanceMission(missionId: string): Promise<void> {
+    if (governanceController === null) return
+    setActionError(null)
+    try {
+      await governanceController.selectGovernanceMission(missionId)
+    } catch (error) {
+      setActionError(toErrorMessage(error))
+    }
+  }
+
   return {
     phase,
     currentMission,
     recoverableMission,
     governanceMission,
+    governanceCandidates,
+    selectGovernanceMission,
     focusModeActive,
     timerState,
     missionName,
