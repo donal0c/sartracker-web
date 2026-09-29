@@ -34,7 +34,10 @@ start / Now / Custom) for late adds, plus a Start-offset notice and honest
 team-smoke `tracking` now includes the 48 h lookback phase (mac package PASS).
 Codex: 65 focused tests, 9 browser flows and 5 visual scenarios pass; captures
 independently inspected. No standalone Claude visual-review receipt claimed.
-Not yet: Linux CI/AppImage proof. Eamonn's actual click path unconfirmed.
+CI 36559932497 passed: 6,227 tests and 227 Chromium checks. Exact CI assets
+downloaded locally. Ubuntu smoke pending: host unreachable on 29 Sep
+(SSH timeout then Host is down). Watch paused until machine available;
+DON-291 stays In Review. Eamonn's actual click path unconfirmed.
 Result: `tmp/claude-handoffs/04-mission-lookback-result.md` (original checkout).
 Resume numbered queue at 1.2 / DON-283 after Codex review.
 
