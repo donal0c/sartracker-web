@@ -117,4 +117,29 @@ describe('team-mission fix verification (1.2a)', () => {
     expect(() => verifyTeamFixes(mock, [...stored(late.id, lateFrom - 5 * MINUTE), ...stored(walker.id, missionStart)], options)).toThrow(/predate/)
     expect(() => verifyTeamFixes(mock, [{ ...exact[0]!, lat: exact[0]!.lat + 0.001 }, ...exact.slice(1)], options)).toThrow(/differ/)
   })
+
+  it('holds a buffered burst back until the phone uploads it late, with serverTime after fixTime [DON-305]', async () => {
+    const { mock, advance, get } = await start()
+    const walker = devicesOfKind('walk')[0]!
+    const from = mock.t0 - 5 * HOUR
+    const to = mock.t0 - HOUR
+    const window = `deviceId=${walker.id}&from=${new Date(from).toISOString()}&to=${new Date(to).toISOString()}`
+    const everything = mock.fixesBetween(walker.id, from, to)
+    const burst = mock.holdBack(walker.id, from + 30 * MINUTE, to - 30 * MINUTE)
+    expect(burst.length).toBeGreaterThan(20)
+
+    const before = (await get(`/api/positions?${window}`)).body as Fix[]
+    expect(before.length).toBe(everything.length - burst.length)
+    expect(before.some((fix) => burst.includes(fix.id))).toBe(false)
+    expect(mock.fixesBetween(walker.id, from, to).length).toBe(before.length)
+
+    advance(10 * MINUTE)
+    const uploadedAt = mock.now()
+    mock.releaseHeld()
+    const after = (await get(`/api/positions?${window}`)).body as (Fix & { serverTime: string })[]
+    expect(after.map((fix) => fix.id)).toEqual(everything.map((fix) => fix.id))
+    const late = after.filter((fix) => burst.includes(fix.id))
+    expect(late.every((fix) => Date.parse(fix.serverTime) === uploadedAt && Date.parse(fix.fixTime) < uploadedAt - HOUR)).toBe(true)
+    for (const fix of after) expect(mock.fixFor(fix.id)).toEqual(fix)
+  })
 })

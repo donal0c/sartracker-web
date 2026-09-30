@@ -10,7 +10,8 @@
  * before Start; a second group, a late device (Now) and a history-only device
  * (Mission start) added after Start; outings; a casualty marker and a
  * two-stage delete; a search area; timed and untimed GPX; a provider outage;
- * a quit and next-day relaunch; replay into the backfilled window; and finish,
+ * a phone that uploads its buffered hours late (DON-305); a quit and next-day
+ * relaunch; replay into the backfilled window; and finish,
  * archive and reopen with the recovery code. Stored fixes are compared with
  * what the provider holds for each device from its own start.
  */
@@ -30,6 +31,9 @@ import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar
 const HOUR = 3_600_000
 const LOOKBACK_HOURS = 48
 const BACKFILL_BUDGET_MS = 15 * 60_000
+// DON-305: late uploads inside the recent window must be stored within one
+// 5-minute anti-entropy tick, plus polling and persistence margin.
+const LATE_UPLOAD_BUDGET_MS = 7 * 60_000
 const MISSION = 'Team Mission Smoke'
 
 const group = (name) => TEAM_GROUPS.find((entry) => entry.name === name)
@@ -194,6 +198,10 @@ export default [
       const notes = []
       const mock = await startTeamTraccar()
       ctx.cleanups.push(() => mock.close())
+      // A walker's phone lost signal 5 h to 1 h ago and has not uploaded that
+      // stretch yet, so the backfill cannot see it (DON-305).
+      const lateWalker = members('KMRT Hasty').filter((entry) => entry.kind === 'walk')[1]
+      const heldIds = mock.holdBack(lateWalker.id, mock.t0 - 5 * HOUR, mock.t0 - HOUR)
       const profile = path.join(ctx.runDir, 'profile')
       const [timedGpx, untimedGpx] = await writeGpxFiles(path.join(profile, 'gpx-inbox'))
 
@@ -232,6 +240,24 @@ export default [
       notes.push(`backfill of ${backfill.statuses.length} participant rows complete in ${backfill.seconds} s`)
       const lateStatus = backfill.statuses.find((status) => /no earlier history requested/i.test(status))
       if (lateStatus === undefined) findings.push('the late "Now" participant did not say no earlier history was requested')
+
+      // The phone regains signal and uploads the buffered stretch in one burst.
+      // Checked before the quit below, while the rest of the scenario runs.
+      const heldStored = () => {
+        const stored = new Set(missionFixes(profile, MISSION).map((fix) => fix.sourcePositionId))
+        return heldIds.filter((id) => stored.has(id)).length
+      }
+      expectProduct(heldStored() === 0, `${heldStored()} held-back fixes were stored before the phone uploaded them; the late-upload phase proves nothing.`)
+      const lateUploadedAt = mock.releaseHeld()
+      // Observe recovery on its own clock while the scenario continues, so the
+      // deadline is measured from when the burst is complete, not when checked.
+      let lateCompleteAt = null
+      const lateWatch = setInterval(() => {
+        try {
+          if (lateCompleteAt === null && heldStored() === heldIds.length) lateCompleteAt = Date.now()
+        } catch { /* store busy; the next sample retries */ }
+      }, 5_000)
+      ctx.cleanups.push(async () => clearInterval(lateWatch))
 
       // Safety indicators with realistic state.
       await delay(20_000)
@@ -305,6 +331,16 @@ export default [
       await delay(40_000)
       await t('outing-end-btn').click()
       await delay(1500)
+
+      // DON-305: every late-uploaded fix is stored within one sweep tick.
+      while (lateCompleteAt === null && Date.now() - lateUploadedAt < LATE_UPLOAD_BUDGET_MS) await delay(5_000)
+      clearInterval(lateWatch)
+      const lateStoredCount = heldStored()
+      const lateSeconds = lateCompleteAt === null ? null : Math.round((lateCompleteAt - lateUploadedAt) / 1000)
+      expectProduct(lateCompleteAt !== null && lateCompleteAt - lateUploadedAt <= LATE_UPLOAD_BUDGET_MS,
+        `${heldIds.length - lateStoredCount}/${heldIds.length} fixes that ${lateWalker.name}'s phone uploaded late (fix times 5 h to 1 h old) `
+          + `were not all stored within ${LATE_UPLOAD_BUDGET_MS / 60_000} min (complete after ${lateSeconds ?? 'never'} s; DON-305).`)
+      notes.push(`${heldIds.length} late-uploaded fixes (5 h to 1 h old) all stored ${lateSeconds} s after upload (sampled every 5 s)`)
 
       // Overnight: quit, stay closed, relaunch next day and resume.
       await app.stop('SIGTERM')

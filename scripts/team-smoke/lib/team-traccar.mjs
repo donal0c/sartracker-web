@@ -15,6 +15,10 @@
  * Every fix is a pure function of device and time, so the scenario can
  * recompute exactly what the provider holds and compare it with SQLite.
  * `setOffline(true)` answers 503 to every request (a full provider outage).
+ * `holdBack(deviceId, from, to)` hides a device's fixes in a past window until
+ * `releaseHeld()`, when they appear with serverTime at the release: a phone
+ * that buffered its track without signal and uploads it late (DON-305).
+ * Traccar filters positions by fixTime, so only a re-read finds them.
  */
 
 import { createServer } from 'node:http'
@@ -69,6 +73,8 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
   const t0 = Math.floor(now() / 1000) * 1000
   const historyStart = t0 - HISTORY_HOURS * HOUR
   let offline = false
+  /** Held-back fixes by id; the value is the upload (server) time, or null while held. */
+  const heldFixes = new Map()
 
   /** Fix times up to and including T0, per device kind. */
   const historyTimes = (device) => {
@@ -95,12 +101,15 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
   }
   const makeFix = (device, index, time) => {
     const iso = new Date(time).toISOString()
+    const id = device.id * 1_000_000 + index
+    const uploadedAt = heldFixes.get(id)
     return {
-      id: device.id * 1_000_000 + index,
+      id,
       deviceId: device.id,
       ...positionAt(device, time),
       altitude: 300, speed: device.kind === 'walk' ? 1.2 : 0, accuracy: 5,
-      fixTime: iso, deviceTime: iso, serverTime: iso,
+      fixTime: iso, deviceTime: iso,
+      serverTime: typeof uploadedAt === 'number' ? new Date(uploadedAt).toISOString() : iso,
       valid: true, protocol: 'osmand', attributes: { batteryLevel: 70 },
     }
   }
@@ -123,7 +132,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     for (let index = 0; ; index += 1) {
       const time = timeAt(device, index)
       if (time === null || time > to) break
-      if (time >= from) fixes.push(makeFix(device, index, time))
+      if (time >= from && heldFixes.get(device.id * 1_000_000 + index) !== null) fixes.push(makeFix(device, index, time))
     }
     return fixes
   }
@@ -189,6 +198,21 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     },
     setOffline(value) {
       offline = value
+    },
+    /**
+     * Hides a device's existing fixes with fix time in [from, to] until
+     * `releaseHeld()`. Returns the held source position ids.
+     */
+    holdBack(deviceId, from, to) {
+      const held = fixesBetween(deviceId, from, to).map((fix) => fix.id)
+      for (const id of held) heldFixes.set(id, null)
+      return held
+    },
+    /** Uploads every held fix now: it becomes visible with serverTime = now. */
+    releaseHeld() {
+      const uploadedAt = now()
+      for (const [id, value] of heldFixes) if (value === null) heldFixes.set(id, uploadedAt)
+      return uploadedAt
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),
   }
