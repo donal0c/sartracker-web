@@ -710,25 +710,18 @@
 
           <h3 id="devices">Devices workspace</h3>
           <figure class="screenshot">
-            <img src="assets/devices-workspace.png" alt="Devices workspace listing three teams with trail colours, status, last seen and Zoom and Add buttons, and a selected-device panel" />
+            <img src="assets/devices-workspace.png" alt="Devices workspace listing three teams with trail colours, status, last seen and a Zoom button, and a selected-device panel" />
             <figcaption>Open it with <strong>Open Devices</strong> in the Tracking tab. Close it with <strong>Close</strong> or Esc.</figcaption>
           </figure>
           <ul>
-            <li><strong>Filters</strong> along the top: Devices, Active, Hidden, Online, Stale, NoFix. The search box searches inside the chosen filter.</li>
+            <li><strong>Filters</strong> along the top: Devices, Hidden, Online, Stale, NoFix (the Active filter is being removed in beta.13.5). The search box searches inside the chosen filter.</li>
             <li><strong>Trail</strong> colour: click a swatch to pick a colour for that device's dot and trail.</li>
             <li><strong>Visible</strong>: untick <em>Shown</em> to hide a device's dot without removing it from the mission.</li>
             <li><strong>Zoom</strong> jumps the map to the device (not available if it has no fix).</li>
             <li>The <strong>selected device</strong> panel shows status, <strong>Last seen</strong>, <strong>Fix time</strong>, source, GPS accuracy, battery, speed and coordinates. Times are local, with the time zone and UTC offset.</li>
             <li><strong>Reconnect</strong> reloads settings and reconnects to the tracking server. Until a device sends a fresh fix it shows <strong>Unknown</strong> / <em>Last known</em>, not Online.</li>
           </ul>
-          <div class="warning">
-            <strong>Careful with the <em>Add</em> button.</strong> In the Devices workspace, <strong>Add</strong>
-            (and <strong>Remove</strong>) is a <em>map focus list</em>, separate from Mission Participants.
-            As soon as you press Add on one device, the map shows <strong>only</strong> the devices you have
-            added. Other mission participants disappear from the map, with no warning, even though they are
-            still in the mission. Press <strong>Remove</strong> on every added device to see everyone again.
-            If a team's dot has vanished, check this first.
-          </div>
+          <p>Who is tracked, saved and shown is decided only by <strong>Participants</strong> in Mission Control. The Devices workspace does not change it.</p>
 
           <h3>Breadcrumbs: line or dots</h3>
           <ul>
@@ -857,6 +850,10 @@
             the Kerry/West area, recommended), <strong>Mission Area</strong> (2–4 GB) or <strong>National</strong>
             (over 4 GB, prepared in advance, never during a mission).
           </p>
+          <div class="note">
+            If beta 13.4 rejected the Discovery package, open <strong>Settings</strong> and press
+            <strong>Save &amp; Close</strong> to recheck it, or add it again. Beta 13.5 accepts that package.
+          </div>
           <h3>Before you rely on it in the field</h3>
           <ol>
             <li>Pan and zoom to the area you will search.</li>
@@ -1332,7 +1329,6 @@
           </p>
           <h3>Things that can catch you out</h3>
           <ul>
-            <li><strong>The Devices workspace <em>Add</em> button hides other teams on the map</strong> (see <a href="#devices">Devices workspace</a>).</li>
             <li><strong>Public fallback maps do not work offline in the desktop app.</strong> Only an imported official map does.</li>
             <li><strong>Paused means no live refresh.</strong> The map does not update until you Resume.</li>
             <li><strong>Field ready</strong> covers only the view and zoom you checked.</li>
