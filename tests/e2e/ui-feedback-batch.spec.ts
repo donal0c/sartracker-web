@@ -235,7 +235,7 @@ for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1920, 108
       positions: [{ id: 'alpha-fix', device_id: 'alpha', lat: 53.34912, lon: -6.26031, altitude: null, speed: null, battery: null, accuracy: null, timestamp: new Date().toISOString(), source: 'gps', data_origin: 'live', cache_age_seconds: null, device_cache_stale: false }], breadcrumbs: [],
     }))
     await page.getByTestId('open-devices-workspace').click()
-    await expect(page.getByTestId('device-filter-tabs').locator('button')).toHaveCount(6)
+    await expect(page.getByTestId('device-filter-tabs').locator('button')).toHaveCount(5)
     expect(await page.getByTestId('device-filter-tabs').locator('button').evaluateAll((buttons) => buttons.every((button) => {
       const label = button.querySelector('span:last-child')!
       const bounds = button.getBoundingClientRect()
