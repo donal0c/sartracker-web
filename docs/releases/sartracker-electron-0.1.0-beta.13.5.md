@@ -68,6 +68,13 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   are taken to Settings → Admin Roster and back [DON-281].
 - **Upgraded missions no longer stay "History incomplete"** once their older
   positions are confirmed [DON-282].
+- **Minimize works during a mission** while an earlier finished mission is
+  waiting for Archive & Lock. In 13.4 the button did nothing [DON-307].
+- **Re-importing a retired GPX track now explains what to do.** 13.4 showed
+  "Cannot update retired GPX evidence" with an internal id. 13.5 says the
+  track was retired: copy or rename the file and import the copy [DON-306].
+- **Diagnostics reports start with the SAR Tracker version** and keep their
+  full content. 13.4 dropped the main section of a large report [DON-308].
 - **Late-uploaded positions are fetched promptly** [DON-305]. Every five
   minutes the app re-reads the last six hours of every participant, so a
   stretch a phone uploads after regaining signal is on the map within about
@@ -110,6 +117,9 @@ us what you saw; a photo of the screen is enough.
 - **No WebGL / blocklisted graphics:** the window can stay black with no
   message. Tell us your machine; the test box runs with
   `--ignore-gpu-blocklist` [DON-288].
+- **A retired GPX track cannot be restored by importing the same file.** Copy
+  or rename the file and import the copy; it appears as a new track. A proper
+  Restore is planned [DON-306, DON-309].
 - **Quitting can take 10–15 seconds.** Wait for the window to close before
   relaunching.
 - AppImage on Ubuntu may need `--no-sandbox`.

@@ -16,7 +16,7 @@
  * what the provider holds for each device from its own start.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
@@ -265,6 +265,14 @@ export default [
       await app.shot('indicators')
       if (!/stationary attention/i.test(status)) findings.push(`no stationary attention for devices still for hours: "${status.slice(0, 160)}"`)
       if (!/stale/i.test(status)) findings.push(`no stale warning for a device silent 70 min: "${status.slice(0, 160)}"`)
+      // DON-307: Minimize must work while yesterday's finished mission awaits Archive & Lock.
+      await t('mission-control-collapse-btn').click()
+      await delay(800)
+      const minimizedShown = await t('command-mast-mission-control-minimized').isVisible().catch(() => false)
+      const dockHidden = !(await t('mission-control-dock').isVisible().catch(() => false))
+      if (!minimizedShown || !dockHidden) findings.push('Minimize did nothing while an earlier finished mission awaited Archive & Lock (DON-307)')
+      await t('compact-mission-restore').click().catch(() => {})
+      await delay(800)
       await t('open-devices-workspace').click()
       await delay(1500)
       const deviceList = await t('device-list-scroll').innerText()
@@ -311,6 +319,27 @@ export default [
       }, [timedGpx, untimedGpx])
       if (imported?.imports?.length !== 2 || imported?.failures?.length !== 0) {
         findings.push(`GPX import of a timed and an untimed file returned ${JSON.stringify(imported).slice(0, 200)}`)
+      }
+      // DON-306: retire a track, re-import the same file (plain-words refusal), then a copy (imports).
+      const retireTarget = imported?.imports?.[0]?.id
+      expectProduct(typeof retireTarget === 'string',
+        `GPX import returned no track to retire, so the DON-306 re-import step cannot run: ${JSON.stringify(imported).slice(0, 200)}`)
+      const copyGpx = timedGpx.replace(/\.gpx$/u, ' (copy).gpx')
+      await copyFile(timedGpx, copyGpx)
+      const reimport = await app.page.evaluate(async ({ importId, path: sourcePath, copy }) => {
+        const store = window.sartrackerElectron.missionStore
+        const mission = await store.getActiveMission()
+        await store.deleteGpxImport(importId)
+        const again = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+        const copied = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [copy] })
+        return { again, copied }
+      }, { importId: retireTarget, path: timedGpx, copy: copyGpx })
+      const refusal = reimport.again?.failures?.[0]?.reason ?? ''
+      if (reimport.again?.imports?.length !== 0 || !/was retired from the mission.*copy or rename the file/su.test(refusal)) {
+        findings.push(`re-importing a retired GPX file did not give the plain-words refusal (DON-306): ${JSON.stringify(reimport.again).slice(0, 200)}`)
+      }
+      if (reimport.copied?.imports?.length !== 1 || reimport.copied?.failures?.length !== 0) {
+        findings.push(`a renamed copy of a retired GPX file did not import (DON-306): ${JSON.stringify(reimport.copied).slice(0, 200)}`)
       }
 
       // Provider outage: visible, then backfilled.

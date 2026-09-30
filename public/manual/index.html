@@ -1970,7 +1970,10 @@
             published, its retained source is shown as an explicit failed import, and the retired evidence is
             never silently returned to the active map. If replacement publication completes first, retirement
             applies to that transaction-current revision and the audit names its exact revision and digest rather
-            than the superseded source. File names are shown to
+            than the superseded source. A retired track cannot be brought back by importing the same file
+            again: SAR Tracker says the track was retired and asks you to copy or rename the file, then import
+            the copy, which appears as a new track. The retired track stays in the mission history and Replay.
+            File names are shown to
             the operator, but retained source bytes and full local paths stay behind the desktop boundary.
             The panel shows a bounded issue page and explicitly warns when additional retained issues
             exist beyond that page; a current import refreshes the sanitized issue list immediately. If a
@@ -2240,7 +2243,9 @@
             <li>
               <strong>Export Support Bundle</strong> (Diagnostics workspace) saves a single text file
               containing the environment snapshot, the most recent crash summaries, and the recent runtime
-              log, plus the tracking poll ledger and bounded storage diagnostics on desktop. Use the file-save location it reports, then
+              log, plus the tracking poll ledger and bounded storage diagnostics on desktop. Every report and
+              bundle starts with the SAR Tracker version. A very long report is cut at about 1 MB and says so
+              at the end. Use the file-save location it reports, then
               attach the file to email, a USB drive, or a chat message when reporting an issue.
             </li>
             <li>
