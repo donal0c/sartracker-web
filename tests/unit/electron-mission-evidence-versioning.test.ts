@@ -3612,6 +3612,42 @@ describe('mission evidence versioning [DON-277]', () => {
     })
   })
 
+  it('explains how to import a retired GPX file again, and the renamed copy imports [DON-306]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Retired GPX re-import' })
+    const sourcePath = path.join(userDataPath!, 'Blasket Jun 14.gpx')
+    const source = `<gpx version="1.1"><trk><name>Blasket</name><trkseg>
+      <trkpt lat="52.1" lon="-10.5"><time>2026-06-14T09:31:43Z</time></trkpt>
+      <trkpt lat="52.11" lon="-10.51"><time>2026-06-14T09:32:43Z</time></trkpt>
+    </trkseg></trk></gpx>`
+    await writeFile(sourcePath, source)
+    const first = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(first.failures).toEqual([])
+    const retiredId = first.imports[0]!.id
+    await expect(store.deleteGpxImport(retiredId)).resolves.toBe(true)
+
+    const again = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+
+    expect(again.imports).toEqual([])
+    expect(again.failures).toEqual([{
+      sourcePath,
+      reason: 'This GPX track was retired from the mission, so the same file cannot be imported again. To bring it back, copy or rename the file and import the copy.',
+    }])
+    expect(again.failures[0]!.reason).not.toContain(retiredId)
+
+    const copyPath = path.join(userDataPath!, 'Blasket Jun 14 (copy).gpx')
+    await writeFile(copyPath, source)
+    const copied = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [copyPath] })
+    expect(copied.failures).toEqual([])
+    expect(copied.imports).toEqual([expect.objectContaining({ id: expect.any(String) })])
+    expect(copied.imports[0]!.id).not.toBe(retiredId)
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare('SELECT retired_at IS NOT NULL AS retired FROM gpx_track_imports WHERE id = ?').get(retiredId))
+        .toEqual({ retired: 1 })
+    } finally { db.close() }
+  })
+
   it.each(gpxXmlGeometryRefusals)('retains rejected malformed geometry: $name [DON-274]', async ({ source, reason }) => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Malformed track geometry' })

@@ -10843,7 +10843,7 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
   }
 
   if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
-    throw new Error(`Cannot update retired GPX evidence ${existing.id}.`)
+    throw new Error(RETIRED_GPX_REIMPORT_MESSAGE)
   }
 
   const id = existing?.id ?? input.id ?? randomUUID()
@@ -11055,7 +11055,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
     throw new Error(`GPX evidence ${existing.id} has an interrupted staged import that must be recovered before retrying.`)
   }
   if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
-    throw new Error(`Cannot update retired GPX evidence ${existing.id}.`)
+    throw new Error(RETIRED_GPX_REIMPORT_MESSAGE)
   }
   if (existing === undefined) {
     const contentMatch = db.prepare(`SELECT * FROM gpx_track_imports
@@ -11395,6 +11395,11 @@ function assignGpxEvidenceToOuting(db, input) {
 }
 
 /** Retires the transaction-current GPX revision without deleting retained evidence. */
+// DON-306: a retired track keeps its path identity, so replay stays truthful
+// (retired_at bounds its visibility). Tell the operator how to proceed in plain
+// words; a real Restore needs retire/restore intervals (DON-309).
+const RETIRED_GPX_REIMPORT_MESSAGE = 'This GPX track was retired from the mission, so the same file cannot be imported again. To bring it back, copy or rename the file and import the copy.'
+
 function retireGpxEvidence(db, importId, faultInjection = {}) {
   let retired = false
   const transaction = db.transaction(() => {

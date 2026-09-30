@@ -197,7 +197,7 @@ export function installBrowserHarnessApi(): void {
         hasMoreImportIssues: false,
         error: issues.length === 0
           ? null
-          : `${issues.length} persisted GPX import issue${issues.length === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.`,
+          : `${issues.length} persisted GPX import issue${issues.length === 1 ? ' requires' : 's require'} operator review. Exact failure provenance was retained.`,
       })
     },
     seedReadOnlyMapSurface: async (input) => {

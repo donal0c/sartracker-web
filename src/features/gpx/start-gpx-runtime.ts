@@ -738,7 +738,7 @@ export async function startGpxRuntime(
     const suffix = nextCursor === null
       ? ''
       : ' Additional retained GPX import issues are available beyond this bounded page.'
-    return `${prefix} persisted GPX import issue${count === 1 ? '' : 's'} require operator review. Exact failure provenance was retained.${suffix}`
+    return `${prefix} persisted GPX import issue${count === 1 ? ' requires' : 's require'} operator review. Exact failure provenance was retained.${suffix}`
   }
 
   /** Reads one renderer projection window with mission-staleness fencing. */
