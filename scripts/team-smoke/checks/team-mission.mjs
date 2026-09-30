@@ -87,7 +87,7 @@ async function writeGpxFiles(inbox) {
 }
 
 /** Reads the visible tracking health text. */
-async function trackingStatus(page) {
+export async function trackingStatus(page) {
   const parts = []
   for (const id of ['tracking-warning', 'mast-tracking-cell', 'persistent-tracking-health', 'stationary-attention-summary']) {
     const locator = page.getByTestId(id)
@@ -97,7 +97,7 @@ async function trackingStatus(page) {
 }
 
 /** Adds a participant during the mission with an explicit history choice. */
-async function addAfterStart(page, kind, label, historyFrom) {
+export async function addAfterStart(page, kind, label, historyFrom) {
   const t = (id) => page.getByTestId(id)
   await t('participant-add-kind').selectOption(kind)
   await delay(300)
@@ -108,7 +108,7 @@ async function addAfterStart(page, kind, label, historyFrom) {
 }
 
 /** Waits until every participant row reports its history complete. */
-async function waitForBackfill(page, budgetMs) {
+export async function waitForBackfill(page, budgetMs) {
   const started = Date.now()
   let statuses = []
   while (Date.now() - started < budgetMs) {
@@ -140,7 +140,7 @@ async function drawSearchArea(page, name) {
 }
 
 /** Places a casualty marker, first confirming save is blocked until required fields are set. */
-async function placeCasualty(page, { name, x, y }) {
+export async function placeCasualty(page, { name, x, y }) {
   const t = (id) => page.getByTestId(id)
   await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
   await t('marker-dialog').waitFor({ timeout: 10_000 })

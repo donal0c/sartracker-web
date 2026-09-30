@@ -26,9 +26,10 @@ import upgrade from './checks/upgrade.mjs'
 import workflows from './checks/workflows.mjs'
 import teamMission from './checks/team-mission.mjs'
 import offlineMap from './checks/offline-map.mjs'
+import teamWorkflow from './checks/team-workflow.mjs'
 import { completedCheck, NotTested, ProductFailure, renderResultTable } from './lib/results.mjs'
 
-const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows, ...teamMission, ...offlineMap]
+const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows, ...teamMission, ...teamWorkflow, ...offlineMap]
 const CHECK_TIMEOUT_MS = 15 * 60_000
 const INSTALLED_DEB_APP = '/opt/SAR Tracker Electron Validation/sartracker-web'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
