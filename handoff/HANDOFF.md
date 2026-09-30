@@ -17,32 +17,34 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
   Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
-## Next action — beta.13.5 candidate in CI
+## Next action — beta.13.5 retag after DON-295
 
-**Tagged `electron-v0.1.0-beta.13.5` at d10ba78f; CI run 36677312888** (draft
-prerelease when green, ~55 min). Contents: DON-281, 282, 283, 291, 292, 294 and
-the Discovery package fix (ea2597c0: a package may declare more zoom levels
-than it holds; the real range is attested; out-of-range tiles still rejected).
-Codex review 32983a4b93e4: no product blockers; its two smoke-tool fixes are in.
-Full correctness 6,240 passed. Local Mac package: team-smoke `offline-map` on
-the team's real file (sha e317fd01…) imported offline, ready z9–16, 31,729
-tiles, rendered after restart.
+First candidate (tag at d10ba78f, CI 36677312888, AppImage `85fe6a16…`): box
+smoke all automated steps PASS except known DON-284 (lifecycle) and DON-285
+(unwritable profile); offline-map verified the team's package. Then the
+manual-refresh pass found **DON-295**: Devices "Add" hid and stopped recording
+all other participants (reproduced packaged; 13.4 has it too). Donal: fix in
+13.5, remove the button, rebuild and retag approved (30 Sep).
 
-Remaining steps (Donal approved, 30 Sep):
-1. When CI is green: download the draft assets to the box and run team-smoke
-   with `--previous-profile ~/sartracker-13.5-smoke/upgrade-from-13.4.pristine-copy`
-   (made by installed 13.4) and `--map-package` (path in the private note).
-   Tool checkout on the box is already at d10ba78f.
-2. Manual rows need a person: window-X, GPX picker, basemap glance, live
-   Traccar (read-only). Fill the note's table and exception hashes.
-3. Donal's go/no-go and exceptions (DON-284, 285; DON-288 known issue),
-   guarded publish, fresh-download check.
-4. Team note. **Correction:** a package 13.4 already rejected is not rechecked
-   on restart; the operator presses Settings → Save & Close (or adds the
-   package again). The release note says so.
-Parallel: manual refresh by a separate Claude instance (brief
-`tmp/claude-handoffs/05-manual-refresh.md`); it should mention re-checking a
-rejected Discovery package. Don't push during the candidate CI build.
+Fix 984e3abd (legacy list removed), smoke step af694cf2, note 9700b3ad.
+Codex review eb1e913fae51: no blockers; its smoke point is applied. Full
+correctness 6,235 passed (2 load-induced timeouts, pass alone). Chromium
+specs 20/20. Mac package team-mission: no findings.
+
+Next:
+1. Falsify the new team-mission step on the old draft (box
+   `~/sartracker-13.5-smoke/falsify-295`): it must report the Add control.
+2. Push, delete the draft release and tag, retag `electron-v0.1.0-beta.13.5`
+   at the new HEAD, and wait for CI.
+3. Re-run the full box smoke on the new draft assets (same flags; upgrade
+   profile and --map-package as before); tool checkout at the new HEAD.
+4. Manual rows (window-X, GPX picker, basemap glance, live Traccar), note table
+   and hashes, Donal's go/no-go, guarded publish, fresh-download check.
+5. Tell the manual-refresh session (`sartracker-foundation-reset-b6`, branch
+   docs/manual-refresh) when the fix is on origin/master so it can recapture
+   the Devices screenshots.
+Obsolete: `scripts/release-smoke/breadcrumb-live-exact-smoke.mjs` clicks the
+removed button (not in CI). Backlog: 8 cosmetic items on DON-295.
 **DON-293** (replay of backfilled history) awaits the team's answer.
 
 ## Pointers
