@@ -17,35 +17,32 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
   Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
-## Next action — beta.13.5 retag after DON-295
+## Next action — beta.13.5 candidate 3 in CI
 
-First candidate (tag at d10ba78f, CI 36677312888, AppImage `85fe6a16…`): box
-smoke all automated steps PASS except known DON-284 (lifecycle) and DON-285
-(unwritable profile); offline-map verified the team's package. Then the
-manual-refresh pass found **DON-295**: Devices "Add" hid and stopped recording
-all other participants (reproduced packaged; 13.4 has it too). Donal: fix in
-13.5, remove the button, rebuild and retag approved (30 Sep).
+Tag `electron-v0.1.0-beta.13.5` at 0ed54a4a, **CI 36695835717**. Candidate 2
+failed only on a stale E2E tab count (fixed; full Chromium 231/231 locally).
+Contents: DON-295 (Devices Add removed), the Discovery package fix (DON-144),
+and DON-281/282/283/291/292/294. Local commits 73d8076a and 5d053e96 (smoke
+tool and docs): push after CI.
 
-Fix 984e3abd (legacy list removed), smoke step af694cf2, note 9700b3ad.
-Codex review eb1e913fae51: no blockers; its smoke point is applied. Full
-correctness 6,235 passed (2 load-induced timeouts, pass alone). Chromium
-specs 20/20. Mac package team-mission: no findings.
+When CI is green:
+1. Push, bundle to the box, move the tool checkout to HEAD, download the draft.
+2. Run the full smoke with `--previous-profile
+   ~/sartracker-13.5-smoke/upgrade-from-13.4.pristine-copy --map-package …`
+   (see the private note); it includes the new `team-workflow` (expect
+   FAIL on DON-304 only) and `offline-map`.
+3. Fill the note's table; ask Donal for the .deb install, the manual rows
+   (window-X, GPX picker, basemap glance, live Traccar, F11) and go/no-go
+   with exceptions (DON-284, DON-285, DON-304).
+4. Guarded publish, fresh-download check, team note (tell the tester: History
+   from → Mission start; Maps → Discovery after start; post-install check).
 
-Next:
-1. Falsify the new team-mission step on the old draft (box
-   `~/sartracker-13.5-smoke/falsify-295`): it must report the Add control.
-2. Push, delete the draft release and tag, retag `electron-v0.1.0-beta.13.5`
-   at the new HEAD, and wait for CI.
-3. Re-run the full box smoke on the new draft assets (same flags; upgrade
-   profile and --map-package as before); tool checkout at the new HEAD.
-4. Manual rows (window-X, GPX picker, basemap glance, live Traccar), note table
-   and hashes, Donal's go/no-go, guarded publish, fresh-download check.
-5. Tell the manual-refresh session (`sartracker-foundation-reset-b6`, branch
-   docs/manual-refresh) when the fix is on origin/master so it can recapture
-   the Devices screenshots.
-Obsolete: `scripts/release-smoke/breadcrumb-live-exact-smoke.mjs` clicks the
-removed button (not in CI). Backlog: 8 cosmetic items on DON-295.
-**DON-293** (replay of backfilled history) awaits the team's answer.
+**Waiting on Donal (Claude raises these; Donal need not remember):**
+DON-296 default KMRT group · DON-304 as a known issue in 13.5 · DON-284
+"was lost" wording · DON-288 fallback expectation · DON-302 retire the old
+smoke · box sleep mask (`sudo systemctl mask sleep.target suspend.target`).
+**Ask the team on the next call:** DON-293 (replay of backfilled history).
+Full post-13.5 queue: the workplan table "After beta.13.5" (DON-296–304).
 
 ## Pointers
 
