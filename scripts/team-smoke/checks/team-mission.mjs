@@ -377,11 +377,16 @@ export default [
       await app.shot('archived')
       expectProduct(archived, `Archive did not complete: ${(await bodyText(app.page)).slice(0, 200)}`)
       await app.stop()
+      // The archive row button shows only the archive label; the mission name is
+      // on its enclosing entry. Select the row by the archive id in the store.
+      const archiveId = withStore(profile, (db) => db.prepare(
+        'SELECT a.id FROM mission_archives a JOIN missions m ON m.id = a.mission_id WHERE m.name = ? ORDER BY a.rowid DESC LIMIT 1',
+      ).get(MISSION)?.id)
+      expectProduct(archiveId !== undefined, `No archive row was stored for "${MISSION}".`)
       app = await launchApp(ctx, { profile, label: 'team-3-reopen' })
       await app.page.getByTestId('open-mission-review-workspace').click()
       await delay(1500)
-      const archiveRows = app.page.locator('[data-testid^=archive-review-select-]')
-      await archiveRows.filter({ hasText: MISSION }).first().click({ timeout: 15_000 })
+      await app.page.getByTestId(`archive-review-select-${archiveId}`).click({ timeout: 15_000 })
       await app.page.getByTestId('archive-review-slot-recovery').click()
       await app.page.getByTestId('archive-review-secret').fill(recoveryCode)
       await app.page.getByTestId('archive-review-open').click()
