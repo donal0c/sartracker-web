@@ -27,9 +27,10 @@ import workflows from './checks/workflows.mjs'
 import teamMission from './checks/team-mission.mjs'
 import offlineMap from './checks/offline-map.mjs'
 import teamWorkflow from './checks/team-workflow.mjs'
+import liveTraccar from './checks/live-traccar.mjs'
 import { completedCheck, NotTested, ProductFailure, renderResultTable } from './lib/results.mjs'
 
-const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows, ...teamMission, ...teamWorkflow, ...offlineMap]
+const CHECKS = [...identity, ...startup, ...upgrade, ...tracking, ...workflows, ...teamMission, ...teamWorkflow, ...offlineMap, ...liveTraccar]
 const CHECK_TIMEOUT_MS = 15 * 60_000
 const INSTALLED_DEB_APP = '/opt/SAR Tracker Electron Validation/sartracker-web'
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -125,13 +126,15 @@ function parseArgs(argv) {
     else if (arg === '--app') parsed.app = value(index++)
     else if (arg === '--previous-profile') parsed.previousProfile = value(index++)
     else if (arg === '--map-package') parsed.mapPackage = value(index++)
+    else if (arg === '--live-config') parsed.liveConfig = value(index++)
+    else if (arg === '--live-selector') parsed.liveSelector = value(index++)
     else if (arg === '--out') parsed.out = value(index++)
     else if (arg === '--only') parsed.only = argv[++index].split(',')
     else if (arg === '--app-arg') parsed.appArgs.push(argv[++index])
     else if (arg === '--help' || arg === '-h') {
       console.log('Usage: node scripts/team-smoke/run.mjs --out <dir> [--deb <file>] [--appimage <file>]\n'
         + '  [--sha256sums <file>] [--app <executable>] [--app-arg <arg>]... [--previous-profile <dir>]\n'
-        + '  [--map-package <team .mbtiles>]\n'
+        + '  [--map-package <team .mbtiles>] [--live-config <dir> --live-selector <file>]\n'
         + `  [--only <id,id>]\nChecks: ${CHECKS.map((check) => check.id).join(', ')}. See scripts/team-smoke/README.md.`)
       process.exit(0)
     } else throw new Error(`Unknown argument ${arg}. See scripts/team-smoke/README.md.`)
