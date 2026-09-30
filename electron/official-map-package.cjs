@@ -45,10 +45,10 @@ async function inspectOfficialMapPackage(packagePath, options = {}) {
   try {
     database = new Database(packagePath, { fileMustExist: true, readonly: true })
     const metadata = readAndValidateSchema(database)
+    // scanTiles rejects any tile outside the declared range. A package may declare
+    // more levels than it holds (TB13-02: minzoom 8, tiles z9–16), so the attested
+    // range is the one the tiles actually cover, never the unverified declaration.
     const scan = await scanTiles(database, metadata, options.decodeTile)
-    if (scan.minZoom !== metadata.minZoom || scan.maxZoom !== metadata.maxZoom) {
-      throw packageFailure('Official map package zoom metadata does not match its tiles.')
-    }
 
     const sha256 = await hashPackage(packagePath)
     const finalIdentity = readPackageIdentity(packagePath)
@@ -59,8 +59,8 @@ async function inspectOfficialMapPackage(packagePath, options = {}) {
     const verifiedAt = resolveTimestamp(options.now)
     return Object.freeze({
       bounds: Object.freeze(metadata.bounds),
-      minZoom: metadata.minZoom,
-      maxZoom: metadata.maxZoom,
+      minZoom: scan.minZoom,
+      maxZoom: scan.maxZoom,
       tileCount: scan.tileCount,
       tileFormat: metadata.tileFormat,
       sizeBytes: initial.sizeBytes,

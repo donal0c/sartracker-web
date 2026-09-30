@@ -163,6 +163,27 @@ describe('official map package attestation', () => {
     ).rejects.toThrow()
   })
 
+  it('accepts metadata that declares more zoom levels than the tiles hold and records the real range', async () => {
+    // The team's Discovery package declares minzoom 8 but its tiles start at z9 (TB13-02).
+    const packagePath = await createPackage({ declaredZoom: [8, 16], tileZooms: [9, 12, 16] })
+
+    const result = await inspectOfficialMapPackage(packagePath, { decodeTile: () => true })
+
+    expect(result).toMatchObject({ minZoom: 9, maxZoom: 16, tileCount: 3 })
+  })
+
+  it('still rejects tiles outside the declared zoom range', async () => {
+    const belowPath = await createPackage({ declaredZoom: [9, 16], tileZooms: [8, 12] })
+    await expect(
+      inspectOfficialMapPackage(belowPath, { decodeTile: () => true }),
+    ).rejects.toThrow('invalid tile coordinates')
+
+    const abovePath = await createPackage({ declaredZoom: [8, 15], tileZooms: [12, 16] })
+    await expect(
+      inspectOfficialMapPackage(abovePath, { decodeTile: () => true }),
+    ).rejects.toThrow('invalid tile coordinates')
+  })
+
   it('rejects WAL packages before readonly inspection creates SQLite sidecars', async () => {
     const packagePath = await createPackage()
     const database = new Database(packagePath)
@@ -231,6 +252,8 @@ async function createPackage(options: {
   readonly tileBytes?: Uint8Array
   readonly duplicate?: boolean
   readonly metadataValue?: string
+  readonly declaredZoom?: readonly [number, number]
+  readonly tileZooms?: readonly number[]
 } = {}): Promise<string> {
   const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-official-map-package-'))
   temporaryDirectories.push(temporaryDirectory)
@@ -249,15 +272,18 @@ async function createPackage(options: {
     const insertMetadata = database.prepare('INSERT INTO metadata (name, value) VALUES (?, ?)')
     insertMetadata.run('format', options.format ?? 'png')
     insertMetadata.run('bounds', '-10.25,51.85,-9.45,52.35')
-    insertMetadata.run('minzoom', '12')
-    insertMetadata.run('maxzoom', '12')
+    insertMetadata.run('minzoom', String(options.declaredZoom?.[0] ?? 12))
+    insertMetadata.run('maxzoom', String(options.declaredZoom?.[1] ?? 12))
     if (options.metadataValue !== undefined) insertMetadata.run('description', options.metadataValue)
     const insertTile = database.prepare(
       'INSERT INTO tiles (zoom_level, tile_column, tile_row, tile_data) VALUES (?, ?, ?, ?)',
     )
-    insertTile.run(12, 1935, 2743, Buffer.from(options.tileBytes ?? Buffer.from('tile')))
-    if (options.duplicate === true) {
-      insertTile.run(12, 1935, 2743, Buffer.from('duplicate'))
+    for (const zoom of options.tileZooms ?? [12]) {
+      // Kerry (-9.9, 52.1) at each zoom, so every address is inside the tile grid.
+      const column = Math.floor(((-9.9 + 180) / 360) * 2 ** zoom)
+      const row = Math.floor(((52.1 + 90) / 180) * 2 ** zoom)
+      insertTile.run(zoom, column, row, Buffer.from(options.tileBytes ?? Buffer.from('tile')))
+      if (options.duplicate === true) insertTile.run(zoom, column, row, Buffer.from('duplicate'))
     }
   } finally {
     database.close()
