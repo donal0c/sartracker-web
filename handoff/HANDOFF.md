@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-29. Issue order and known 13.4 issues: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-09-30. Issue order and known 13.4 issues: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md).
 
 ## Status
@@ -8,57 +8,45 @@ Release gate: [checklist](../docs/release-checklist.md).
 - **beta.13.4** is the published controlled team beta (not for live incidents);
   immutable. See its [release note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
 - Foundation reset (P01–P05) is complete; CI 36445372627 passed.
-- **DON-281 (R01)** complete on master (6a7cfd53), Linux-validated; unreleased.
 
 ## Verification limits
 
-- DON-281: CI 36454746119 and exact-AppImage Ubuntu recovery proof (see
-  DON-281). Development-package proof only, not a release.
-- Crash marker "was lost" wording overstates; recorded for 1.8, needs Donal.
+- All proofs are synthetic providers on the Ubuntu box, not live Traccar or
+  field acceptance. Per-issue evidence and hashes are in Linear (DON-281/282/291/292/294).
+- The crash-marker "was lost" wording overstates (1.8, needs Donal).
+- The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
+  Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
 ## Next action
 
-**1.1 / DON-282 DONE, not released.** Fix 019ccdbe + 2a6cc03f;
-CI 36474893891 passed (6,212 tests, 226 Chromium). Exact CI AppImage passed
-Ubuntu profile-copy upgrade, promotion, repeated old-code rollback repair,
-stable reopen and rendered warning checks. Evidence/hashes: DON-282.
-Store-driven re-delivery, not live Traccar or field acceptance. Watch stopped.
-**DON-291 DONE, not released.** Fix 46b0606c + smoke11c1bccc; CI36559932497
-passed (6,227 tests,227 Chromium). Exact CI AppImage on Ubuntu passed48h
-lookback, history outage/recovery, exact provider rows, rendered tracks and
-restart; duplicate launch also passed. Synthetic provider proof, not field
-acceptance; Eamonn's exact click path unconfirmed. Evidence/hashes: DON-291.
-Bulky author artifacts deleted as requested; compact evidence retained in
-`tmp/don291-review-evidence` and `tmp/don291-linux-evidence`. Watch remains paused.
-Claude re-checked 29 Sep: AppImage hash = CI/SHA256SUMS, remote smoke tool
-= master; remaining rows on the same build: bad-credential, database-refusal,
-outage, coordinates, archive, settings-support PASS; lifecycle FAIL only on
-known DON-283/284; unwritable-profile FAIL = known DON-285; markers-gpx and
-replay-basemaps automated parts pass, manual parts not done. No new regression.
-Box `~/sartracker-don291-validation-20260929/claude-smoke-1/`. The box
-auto-suspends when idle (15 min); ask Donal to mask sleep targets.
-**DON-283 fixed** (bc34425e + 6d3c253a): a paused mission stays paused through
-crash recovery. Codex review found no issues. Mac package lifecycle is clean.
-**DON-292 fixed (Urgent, b6f5b4a1):** after any finished mission, devices and
-groups ticked before Start were silently dropped, including after a restart.
-It likely explains Eamonn's TB13-03. The draft is now captured at Start, and an
-empty result fails loudly. Codex review found no issues. The packaged probe
-went from [] to [group, device].
-**1.2a team-mission smoke** found DON-292, DON-293 and **DON-294** (Urgent).
-DON-294: after a backdated mission, Archive & Lock locked an older mission.
-Fixed by 9179d5ad..96726e64: the default is the most recently finished
-mission; the governance card has a Mission list; Finish targets the finished
-mission; Review uses the same default. Codex needed 3 rounds (2 real P2s
-fixed); no remaining findings. Offline map row is mandatory; the corrected
-Discovery derivative is ready (DON-144 comment; the app import is manual).
-Register: every past team report is mapped. DON-288 is reproduced on 13.4
-(no WebGL: no map, no message). The 13.4 workaround for DON-292 is verified.
-Full correctness 597 files / 6,236 passed; Chromium 230/230.
-**DON-293 (team question):** Replay shows no backfilled history at earlier times.
-**NEXT:** CI on the pushed head, then Ubuntu team-mission + lifecycle on the
-exact AppImage, then propose 13.5 (DON-281/282/283/291/292/294).
-Do not push while a candidate CI build runs: a new push cancels it.
-**Roles (Donal, 29 Sep):** Claude orchestrates and implements; Codex reviews.
+**Unreleased on master (ee3b4903), all Codex-reviewed:** DON-281, 282, 283
+(paused stays paused after a crash), 291 (late-add history), 292 (pre-start
+ticks dropped after any finished mission; likely Eamonn's TB13-03), 294 (Archive
+& Lock targeted an older mission; now a Mission list on the governance card).
+1.2a team-mission smoke found 292, 293 and 294. Full correctness 6,236; Chromium 230.
+**Linux on the exact CI AppImage `01386b44…` (run 36643435970):** PASS for
+bad-credential, database-refusal, duplicate-launch, tracking+48 h, outage,
+coordinates+DMS, archive. Lifecycle FAIL only on DON-284. Team-mission data and
+DON-294 are verified in the store; the reopen step has a tool timeout (fix the
+archive-row selector). Evidence: box `~/sartracker-ee3b4903-validation/`.
+
+## Next: beta.13.5 (Donal approved, 30 Sep)
+1. Discovery: accept a package whose metadata claims more zoom levels than it
+   has (the team's `reeks-standard-60km-z16.mbtiles` declares z8, tiles z9–16).
+   Keep rejecting tiles outside the range and corrupt data; record the real
+   range. Add a test-only map import hook so the smoke loads the team's file.
+   Codex review. The derivative on DON-144 is then unnecessary.
+2. Fix the team-mission reopen selector.
+3. Known issues ship as written: DON-284, 285, 288 (Donal, 30 Sep).
+4. Bump to 0.1.0-beta.13.5, write the note from TEMPLATE, tag, CI draft.
+5. `docs/release-checklist.md` on the draft assets. Manual rows need a
+   person: window-X, GPX picker, basemap glance, live Traccar (read-only).
+6. Donal's go/no-go and exceptions, guarded publish, fresh-download check.
+7. Team note: fixes; the Discovery map works again with no re-import.
+Parallel: help/manual refresh by a separate Claude instance in its own
+worktree (brief: `tmp/claude-handoffs/05-manual-refresh.md`, local).
+Rules: Claude orchestrates, Codex reviews. Don't push during a candidate CI build.
+**DON-293** (replay of backfilled history) awaits the team's answer.
 
 ## Pointers
 
