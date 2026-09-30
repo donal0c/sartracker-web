@@ -2644,6 +2644,93 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('names a device whose late-upload sweep fails while current fixes stay live, then clears it [DON-305]', async () => {
+    let historyDown = false
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (to.getTime() - from.getTime() > 5 * 60 * 1000 && historyDown) {
+            throw new Error('history endpoint unavailable')
+          }
+          return []
+        },
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T02:00:00.000Z'),
+    })
+    const latestWarning = (): string =>
+      String(onStatusChange.mock.calls.at(-1)?.[0]?.warning ?? '')
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    historyDown = true
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 30_000)
+
+    expect(onStatusChange.mock.calls.at(-1)?.[0]?.mode).toBe('online')
+    expect(latestWarning()).toContain(
+      `Breadcrumb history incomplete for ${NORMALIZED_DEVICES[0]!.name}`,
+    )
+
+    historyDown = false
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 30_000)
+
+    expect(latestWarning()).not.toContain('Breadcrumb history incomplete')
+    poller.stop()
+  })
+
+  it.each([
+    { changed: false, republished: false },
+    { changed: true, republished: true },
+  ])('republishes a sweep chunk only when the store changed (changed=$changed) [DON-305]', async ({ changed, republished }) => {
+    const onSnapshot = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) =>
+          to.getTime() - from.getTime() > 5 * 60 * 1000
+            ? [NORMALIZED_BREADCRUMBS[0]!]
+            : [],
+      ),
+    }), {
+      intervalMs: 60 * 60 * 1000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockImplementation(async (input) => ({
+        changed: input.phase === 'initial' || changed,
+      })),
+      onSnapshot,
+      onStatusChange: vi.fn(),
+      // 20 h: one tick covers 12 h, so no pass-complete flush publishes.
+      now: () => new Date('2026-04-06T20:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    const snapshotsBeforeSweep = onSnapshot.mock.calls.length
+    expect(
+      onSnapshot.mock.calls.flatMap((call) => call[0].breadcrumbs),
+    ).toContainEqual(NORMALIZED_BREADCRUMBS[0])
+
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1_000)
+
+    expect(onSnapshot.mock.calls.length > snapshotsBeforeSweep).toBe(republished)
+    poller.stop()
+  })
+
   it('does not canonicalize history that failed durable persistence', async () => {
     const getCanonicalBreadcrumbs = vi.fn()
     const onSnapshot = vi.fn()

@@ -735,7 +735,13 @@ describe('breadcrumb history reconciler', () => {
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(100)
 
+    // Initial catch-up from the checkpoint, then a newest-first sweep that
+    // never reads before the late participant's scoped start [DON-305].
     expect(fetchBreadcrumbs.mock.calls.map((call) => [call[1], call[2]])).toEqual([
+      [
+        new Date('2026-04-06T12:00:00.000Z'),
+        new Date('2026-04-06T14:00:00.000Z'),
+      ],
       [
         new Date('2026-04-06T12:00:00.000Z'),
         new Date('2026-04-06T14:00:00.000Z'),
@@ -904,5 +910,209 @@ describe('breadcrumb history reconciler', () => {
       new Date('2026-04-06T00:00:00.000Z'),
       new Date('2026-04-06T02:00:00.000Z'),
     )
+  })
+})
+
+/**
+ * DON-305: Traccar filters `/api/positions` by fixTime, so fixes that a phone
+ * buffers and uploads late (signal regained, or the server was down) are only
+ * seen when a later sweep re-reads their older window.
+ */
+describe('breadcrumb history reconciler late uploads [DON-305]', () => {
+  const HOUR_MS = 60 * 60 * 1000
+  const MINUTE_MS = 60 * 1000
+  const POLL_MS = 30 * 1000
+  const TICK_MS = 5 * MINUTE_MS
+  const MISSION_START_MS = Date.parse('2026-09-28T12:00:00.000Z')
+  const NOW_MS = MISSION_START_MS + 48 * HOUR_MS
+
+  type ServerFix = {
+    readonly id: string
+    readonly deviceId: string
+    readonly fixMs: number
+    readonly serverMs: number
+  }
+
+  function createDevice(index: number): NormalizedTrackingDevice {
+    return { ...DEVICE, device_id: String(index), name: `Tracker ${index}`, unique_id: `tracker-${index}` }
+  }
+
+  function toPosition(fix: ServerFix): NormalizedTrackingPosition {
+    return {
+      id: fix.id,
+      device_id: fix.deviceId,
+      lat: 52,
+      lon: -9,
+      altitude: null,
+      speed: null,
+      battery: null,
+      accuracy: null,
+      timestamp: new Date(fix.fixMs).toISOString(),
+      timestamp_source: 'fix',
+      source: 'traccar',
+      data_origin: 'live',
+      cache_age_seconds: null,
+      device_cache_stale: false,
+    }
+  }
+
+  /** A fake Traccar: fixTime-filtered, and a fix exists only once the server has received it. */
+  function createLateUploadHarness(deviceCount: number) {
+    const devices = Array.from({ length: deviceCount }, (_, index) => createDevice(index + 1))
+    const fixes: ServerFix[] = []
+    for (const device of devices) {
+      for (let fixMs = MISSION_START_MS; fixMs <= NOW_MS; fixMs += 10 * MINUTE_MS) {
+        fixes.push({ id: `${device.device_id}-prompt-${fixMs}`, deviceId: device.device_id, fixMs, serverMs: fixMs })
+      }
+    }
+    const storedAtMsById = new Map<string, number>()
+    const requests: { readonly deviceId: string; readonly atMs: number; readonly from: number; readonly to: number }[] = []
+    const failures = { remaining: 0 }
+    const fetchBreadcrumbs = vi.fn(async (deviceId: string, from: Date, to: Date) => {
+      requests.push({ deviceId, atMs: Date.now(), from: from.getTime(), to: to.getTime() })
+      if (failures.remaining > 0) {
+        failures.remaining -= 1
+        throw new Error('Traccar unavailable')
+      }
+      return fixes
+        .filter((fix) =>
+          fix.deviceId === deviceId &&
+          fix.serverMs <= Date.now() &&
+          fix.fixMs >= from.getTime() &&
+          fix.fixMs <= to.getTime())
+        .map(toPosition)
+    })
+    const onChunk = vi.fn((chunk: { readonly positions: readonly NormalizedTrackingPosition[] }) => {
+      for (const position of chunk.positions) {
+        if (!storedAtMsById.has(position.id)) storedAtMsById.set(position.id, Date.now())
+      }
+    })
+    const warn = vi.fn()
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs,
+      onChunk,
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn },
+    })
+    const poll = (): void => {
+      reconciler.reconcile({
+        devices,
+        from: new Date(MISSION_START_MS),
+        until: new Date(Date.now()),
+      })
+    }
+    /** Advances in live-poll steps, re-authorizing the reconciler like the polling manager does. */
+    const runFor = async (durationMs: number): Promise<void> => {
+      const endMs = Date.now() + durationMs
+      while (Date.now() < endMs) {
+        poll()
+        await vi.advanceTimersByTimeAsync(Math.min(POLL_MS, endMs - Date.now()))
+      }
+    }
+    /** A phone buffered fixes from `fromMs` to `toMs` and uploads them all now. */
+    const uploadLateBurst = (deviceId: string, fromMs: number, toMs: number): readonly string[] => {
+      const ids: string[] = []
+      for (let fixMs = fromMs; fixMs <= toMs; fixMs += MINUTE_MS) {
+        const id = `${deviceId}-late-${fixMs}`
+        fixes.push({ id, deviceId, fixMs, serverMs: Date.now() })
+        ids.push(id)
+      }
+      return ids
+    }
+    const latestStoreDelayMs = (ids: readonly string[], uploadedAtMs: number): number => {
+      const missing = ids.filter((id) => !storedAtMsById.has(id))
+      if (missing.length > 0) return Number.POSITIVE_INFINITY
+      return Math.max(...ids.map((id) => storedAtMsById.get(id)! - uploadedAtMs))
+    }
+    return { devices, requests, runFor, uploadLateBurst, latestStoreDelayMs, failures, warn }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW_MS)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('stores a burst of the last few hours within one anti-entropy tick', async () => {
+    const harness = createLateUploadHarness(1)
+    await harness.runFor(10 * MINUTE_MS)
+    const uploadedAtMs = Date.now()
+    const burst = harness.uploadLateBurst('1', uploadedAtMs - 5 * HOUR_MS, uploadedAtMs - 5 * MINUTE_MS)
+
+    await harness.runFor(TICK_MS + POLL_MS)
+
+    expect(harness.latestStoreDelayMs(burst, uploadedAtMs)).toBeLessThanOrEqual(TICK_MS + POLL_MS)
+  })
+
+  it('stores late fixes from the recent window for every device on the same tick', async () => {
+    const harness = createLateUploadHarness(12)
+    await harness.runFor(10 * MINUTE_MS)
+    const uploadedAtMs = Date.now()
+    const bursts = harness.devices.flatMap((device) =>
+      harness.uploadLateBurst(device.device_id, uploadedAtMs - 4 * HOUR_MS, uploadedAtMs - HOUR_MS))
+
+    await harness.runFor(TICK_MS + POLL_MS)
+
+    expect(harness.latestStoreDelayMs(bursts, uploadedAtMs)).toBeLessThanOrEqual(TICK_MS + POLL_MS)
+  })
+
+  it('stores late fixes older than the recent window within one newest-first pass of a 48 h mission', async () => {
+    const harness = createLateUploadHarness(1)
+    await harness.runFor(10 * MINUTE_MS)
+    const uploadedAtMs = Date.now()
+    const oldBurst = harness.uploadLateBurst('1', uploadedAtMs - 23 * HOUR_MS, uploadedAtMs - 20 * HOUR_MS)
+
+    await harness.runFor(60 * MINUTE_MS)
+
+    // 42 h below the 6 h recent window at 3 x 2 h chunks per tick: 7 ticks.
+    expect(harness.latestStoreDelayMs(oldBurst, uploadedAtMs)).toBeLessThanOrEqual(8 * TICK_MS)
+  })
+
+  it('eventually stores late fixes from the start of the mission', async () => {
+    const harness = createLateUploadHarness(1)
+    await harness.runFor(10 * MINUTE_MS)
+    const uploadedAtMs = Date.now()
+    const earliest = harness.uploadLateBurst('1', MISSION_START_MS, MISSION_START_MS + HOUR_MS)
+
+    await harness.runFor(90 * MINUTE_MS)
+
+    expect(harness.latestStoreDelayMs(earliest, uploadedAtMs)).toBeLessThanOrEqual(90 * MINUTE_MS)
+  })
+
+  it('bounds anti-entropy requests per device per tick and stays inside the mission', async () => {
+    const harness = createLateUploadHarness(3)
+    await harness.runFor(10 * MINUTE_MS)
+    const initialRequestCount = harness.requests.length
+    await harness.runFor(30 * MINUTE_MS)
+
+    const sweepRequests = harness.requests.slice(initialRequestCount)
+    const requestsPerDeviceTick = new Map<string, number>()
+    for (const request of sweepRequests) {
+      const key = `${request.deviceId}@${Math.floor(request.atMs / POLL_MS)}`
+      requestsPerDeviceTick.set(key, (requestsPerDeviceTick.get(key) ?? 0) + 1)
+    }
+    expect(Math.max(...requestsPerDeviceTick.values())).toBeLessThanOrEqual(6)
+    expect(sweepRequests.every((request) => request.from >= MISSION_START_MS && request.to > request.from)).toBe(true)
+    expect(sweepRequests.every((request) => request.to - request.from <= 2 * HOUR_MS)).toBe(true)
+  })
+
+  it('retries the recent window on the next tick after a failed fetch, and names the device', async () => {
+    const harness = createLateUploadHarness(1)
+    await harness.runFor(10 * MINUTE_MS)
+    const uploadedAtMs = Date.now()
+    const burst = harness.uploadLateBurst('1', uploadedAtMs - 3 * HOUR_MS, uploadedAtMs - HOUR_MS)
+    harness.failures.remaining = 1
+
+    await harness.runFor(2 * TICK_MS + POLL_MS)
+
+    expect(harness.warn).toHaveBeenCalledWith(
+      'Tracking breadcrumb anti-entropy check failed for device.',
+      expect.objectContaining({ deviceName: 'Tracker 1', error: 'Traccar unavailable' }),
+    )
+    expect(harness.latestStoreDelayMs(burst, uploadedAtMs)).toBeLessThanOrEqual(2 * TICK_MS + POLL_MS)
   })
 })

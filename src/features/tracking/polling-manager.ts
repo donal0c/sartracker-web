@@ -376,6 +376,16 @@ export function createPollingManager(
     if (chunk.positions.length === 0) {
       return
     }
+    // DON-305: the sweep re-reads every device's recent hours each tick. A
+    // chunk the store reports unchanged holds only fixes already durable and
+    // already published, so it is not pushed through the render path again.
+    if (
+      chunk.phase === 'anti_entropy' &&
+      persistedDirectly &&
+      persistenceResult?.changed === false
+    ) {
+      return
+    }
     for (const position of chunk.positions) {
       pendingHistoryRenderPositions.push(position)
       if (!persistedDirectly) {

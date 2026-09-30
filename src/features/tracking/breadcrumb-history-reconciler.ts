@@ -9,6 +9,12 @@ const DEFAULT_MAX_CONCURRENCY = 8
 const DEFAULT_RETRY_BASE_MS = 1_000
 const DEFAULT_MAX_RETRY_MS = 30_000
 const DEFAULT_ANTI_ENTROPY_INTERVAL_MS = 5 * 60 * 1000
+// DON-305: a phone that regains signal uploads its buffered hours with old
+// fixTimes, which the fixTime-filtered live poll never requests again. Every
+// tick re-reads this trailing window for every device, newest first.
+const DEFAULT_ANTI_ENTROPY_RECENT_WINDOW_MS = 6 * 60 * 60 * 1000
+// Older history is swept newest first in this many chunks per device per tick.
+const DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK = 3
 
 type BreadcrumbHistoryReconcilerLogger = {
   readonly warn: (message: string, context: Record<string, unknown>) => void
@@ -37,6 +43,8 @@ type BreadcrumbHistoryReconcilerOptions = {
   readonly retryBaseMs?: number
   readonly maxRetryMs?: number
   readonly antiEntropyIntervalMs?: number
+  readonly antiEntropyRecentWindowMs?: number
+  readonly antiEntropyOlderChunksPerTick?: number
   readonly setTimeout?: typeof globalThis.setTimeout
   readonly clearTimeout?: typeof globalThis.clearTimeout
 }
@@ -101,9 +109,20 @@ type CompletedDeviceReconciliation = {
   readonly deviceName: string
   readonly missionStartMs: number
   readonly initialTargetMs: number
+  /**
+   * The current anti-entropy pass covers [missionStartMs, antiEntropyTargetMs].
+   * The cursor walks down from the target; everything at or above it has been
+   * swept in this pass. The pass is complete once it reaches missionStartMs.
+   */
   antiEntropyCursorMs: number
   antiEntropyTargetMs: number
   latestAvailableTargetMs: number
+}
+
+type AntiEntropyWindow = {
+  readonly fromMs: number
+  readonly toMs: number
+  readonly older: boolean
 }
 
 /**
@@ -131,6 +150,14 @@ export function createBreadcrumbHistoryReconciler(
     options.antiEntropyIntervalMs,
     DEFAULT_ANTI_ENTROPY_INTERVAL_MS,
   )
+  const antiEntropyRecentWindowMs = normalizePositiveInteger(
+    options.antiEntropyRecentWindowMs,
+    DEFAULT_ANTI_ENTROPY_RECENT_WINDOW_MS,
+  )
+  const antiEntropyOlderChunksPerTick = normalizePositiveInteger(
+    options.antiEntropyOlderChunksPerTick,
+    DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK,
+  )
   const scheduleTimeout = options.setTimeout ?? globalThis.setTimeout.bind(globalThis)
   const clearScheduledTimeout =
     options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis)
@@ -146,7 +173,6 @@ export function createBreadcrumbHistoryReconciler(
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let antiEntropyTimer: ReturnType<typeof setTimeout> | null = null
   let antiEntropyBatchInFlight = false
-  let antiEntropyNextDeviceIndex = 0
   let initialStartedAtMs: number | null = null
   let antiEntropyStartedAtMs: number | null = null
 
@@ -188,7 +214,11 @@ export function createBreadcrumbHistoryReconciler(
     )
     const antiEntropyCompletedChunkCount = completedDevices.reduce(
       (total, device) =>
-        total + countChunks(device.missionStartMs, device.antiEntropyCursorMs, chunkMs),
+        total + countChunks(
+          Math.max(device.missionStartMs, device.antiEntropyCursorMs),
+          device.antiEntropyTargetMs,
+          chunkMs,
+        ),
       0,
     )
     const failedIds = phase === 'initial' ? failedDeviceIds : antiEntropyFailedDeviceIds
@@ -203,7 +233,7 @@ export function createBreadcrumbHistoryReconciler(
     const completedDeviceCount = phase === 'initial'
       ? completedDevices.length
       : completedDevices.filter(
-          (device) => device.antiEntropyCursorMs >= device.antiEntropyTargetMs,
+          (device) => device.antiEntropyCursorMs <= device.missionStartMs,
         ).length
     const startedAtMs = phase === 'initial' ? initialStartedAtMs : antiEntropyStartedAtMs
     return {
@@ -255,7 +285,7 @@ export function createBreadcrumbHistoryReconciler(
       deviceName: job.deviceName,
       missionStartMs: job.missionStartMs,
       initialTargetMs: job.initialTargetMs,
-      antiEntropyCursorMs: job.missionStartMs,
+      antiEntropyCursorMs: job.latestAvailableTargetMs,
       antiEntropyTargetMs: job.latestAvailableTargetMs,
       latestAvailableTargetMs: job.latestAvailableTargetMs,
     })
@@ -597,6 +627,100 @@ export function createBreadcrumbHistoryReconciler(
     }, antiEntropyIntervalMs)
   }
 
+  const isCurrentCompletedDevice = (
+    device: CompletedDeviceReconciliation,
+    batchGeneration: number,
+  ): boolean =>
+    batchGeneration === generation &&
+    options.shouldContinue() &&
+    completedDevicesById.get(device.deviceId) === device
+
+  /**
+   * Plans one device's tick: the recent window, then the next older chunks of
+   * the pass, all newest first. Starts a new pass when the last one finished.
+   */
+  const planAntiEntropyWindows = (
+    device: CompletedDeviceReconciliation,
+  ): { readonly recentFloorMs: number; readonly windows: readonly AntiEntropyWindow[] } => {
+    if (device.antiEntropyCursorMs <= device.missionStartMs) {
+      device.antiEntropyTargetMs = device.latestAvailableTargetMs
+      device.antiEntropyCursorMs = device.antiEntropyTargetMs
+    }
+    const recentTopMs = device.latestAvailableTargetMs
+    const recentFloorMs = Math.max(
+      device.missionStartMs,
+      recentTopMs - antiEntropyRecentWindowMs,
+    )
+    const windows: AntiEntropyWindow[] = []
+    for (let toMs = recentTopMs; toMs > recentFloorMs; toMs -= chunkMs) {
+      windows.push({ fromMs: Math.max(recentFloorMs, toMs - chunkMs), toMs, older: false })
+    }
+    let olderTopMs = Math.min(device.antiEntropyCursorMs, recentFloorMs)
+    for (
+      let count = 0;
+      count < antiEntropyOlderChunksPerTick && olderTopMs > device.missionStartMs;
+      count += 1
+    ) {
+      const fromMs = Math.max(device.missionStartMs, olderTopMs - chunkMs)
+      windows.push({ fromMs, toMs: olderTopMs, older: true })
+      olderTopMs = fromMs
+    }
+    return { recentFloorMs, windows }
+  }
+
+  /** Sweeps one device's planned windows in order, one request in flight. */
+  const sweepAntiEntropyDevice = async (
+    device: CompletedDeviceReconciliation,
+    batchGeneration: number,
+  ): Promise<void> => {
+    const { recentFloorMs, windows } = planAntiEntropyWindows(device)
+    for (const [index, window] of windows.entries()) {
+      try {
+        const positions = await options.fetchBreadcrumbs(
+          device.deviceId,
+          new Date(window.fromMs),
+          new Date(window.toMs),
+        )
+        if (!isCurrentCompletedDevice(device, batchGeneration)) {
+          return
+        }
+        await options.onChunk({
+          phase: 'anti_entropy',
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+          historyFrom: new Date(device.missionStartMs),
+          from: new Date(window.fromMs),
+          to: new Date(window.toMs),
+          positions,
+        })
+        if (!isCurrentCompletedDevice(device, batchGeneration)) {
+          return
+        }
+      } catch (error) {
+        if (!isCurrentCompletedDevice(device, batchGeneration)) {
+          return
+        }
+        options.logger.warn('Tracking breadcrumb anti-entropy check failed for device.', {
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+          retryDelayMs: antiEntropyIntervalMs,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        antiEntropyFailedDeviceIds.add(device.deviceId)
+        return
+      }
+      // A failure returns above, so the pass cursor only moves over ranges
+      // that committed: the whole recent window, then each older chunk.
+      const nextWindow = windows[index + 1]
+      if (window.older) {
+        device.antiEntropyCursorMs = Math.min(device.antiEntropyCursorMs, window.fromMs)
+      } else if (nextWindow === undefined || nextWindow.older) {
+        device.antiEntropyCursorMs = Math.min(device.antiEntropyCursorMs, recentFloorMs)
+      }
+    }
+    antiEntropyFailedDeviceIds.delete(device.deviceId)
+  }
+
   async function runAntiEntropyBatch(batchGeneration: number): Promise<void> {
     if (
       batchGeneration !== generation ||
@@ -610,83 +734,25 @@ export function createBreadcrumbHistoryReconciler(
     antiEntropyStartedAtMs ??= Date.now()
     antiEntropyBatchInFlight = true
 
+    // Every device's recent window is swept on every tick; the device pool is
+    // bounded so a large team shares maxConcurrency requests in flight.
     const devices = [...completedDevicesById.values()].sort((left, right) =>
       compareStringsByCodeUnit(left.deviceId, right.deviceId),
     )
-    const selectedCount = Math.min(maxConcurrency, devices.length)
-    const selected: CompletedDeviceReconciliation[] = []
-    for (let offset = 0; offset < selectedCount; offset += 1) {
-      const index = (antiEntropyNextDeviceIndex + offset) % devices.length
-      const device = devices[index]
-      if (device !== undefined) {
-        selected.push(device)
-      }
-    }
-    antiEntropyNextDeviceIndex =
-      devices.length === 0
-        ? 0
-        : (antiEntropyNextDeviceIndex + selectedCount) % devices.length
-
-    await Promise.all(
-      selected.map(async (device) => {
-        if (device.antiEntropyCursorMs >= device.antiEntropyTargetMs) {
-          device.antiEntropyCursorMs = device.missionStartMs
-          device.antiEntropyTargetMs = device.latestAvailableTargetMs
-        }
-        const fromMs = device.antiEntropyCursorMs
-        const toMs = Math.min(fromMs + chunkMs, device.antiEntropyTargetMs)
-        if (toMs <= fromMs) {
-          return
-        }
-        try {
-          const positions = await options.fetchBreadcrumbs(
-            device.deviceId,
-            new Date(fromMs),
-            new Date(toMs),
-          )
-          if (
-            batchGeneration !== generation ||
-            !options.shouldContinue() ||
-            completedDevicesById.get(device.deviceId) !== device
-          ) {
-            return
+    let nextDeviceIndex = 0
+    const workers = Array.from(
+      { length: Math.min(maxConcurrency, devices.length) },
+      async () => {
+        while (nextDeviceIndex < devices.length) {
+          const device = devices[nextDeviceIndex]
+          nextDeviceIndex += 1
+          if (device !== undefined && isCurrentCompletedDevice(device, batchGeneration)) {
+            await sweepAntiEntropyDevice(device, batchGeneration)
           }
-          await options.onChunk({
-            phase: 'anti_entropy',
-            deviceId: device.deviceId,
-            deviceName: device.deviceName,
-            historyFrom: new Date(device.missionStartMs),
-            from: new Date(fromMs),
-            to: new Date(toMs),
-            positions,
-          })
-          if (
-            batchGeneration !== generation ||
-            !options.shouldContinue() ||
-            completedDevicesById.get(device.deviceId) !== device
-          ) {
-            return
-          }
-          device.antiEntropyCursorMs = toMs
-          antiEntropyFailedDeviceIds.delete(device.deviceId)
-        } catch (error) {
-          if (
-            batchGeneration !== generation ||
-            !options.shouldContinue() ||
-            completedDevicesById.get(device.deviceId) !== device
-          ) {
-            return
-          }
-          options.logger.warn('Tracking breadcrumb anti-entropy check failed for device.', {
-            deviceId: device.deviceId,
-            deviceName: device.deviceName,
-            retryDelayMs: antiEntropyIntervalMs,
-            error: error instanceof Error ? error.message : String(error),
-          })
-          antiEntropyFailedDeviceIds.add(device.deviceId)
         }
-      }),
+      },
     )
+    await Promise.all(workers)
     antiEntropyBatchInFlight = false
     if (batchGeneration === generation) {
       const progress = buildProgress('anti_entropy')
@@ -872,7 +938,6 @@ export function createBreadcrumbHistoryReconciler(
       failedDeviceIds.clear()
       antiEntropyFailedDeviceIds.clear()
       deviceQueue.length = 0
-      antiEntropyNextDeviceIndex = 0
       initialStartedAtMs = null
       antiEntropyStartedAtMs = null
     },
