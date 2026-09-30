@@ -5,6 +5,9 @@
 
 ## ⚠ Read first
 
+- **Devices → Add is gone.** In 13.4 it silently hid, and stopped recording,
+  every other participant [DON-295]. If you used it in 13.4, check that
+  mission's tracks in Review. 13.5 tracks and shows every participant.
 - **Starting a second mission in the same session now tracks the devices you
   picked.** In 13.4, if you finished one mission and then started another
   without restarting, the devices ticked before Start were silently dropped:
@@ -24,6 +27,13 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 (`libfuse2t64` on Ubuntu 24.04) and, on Ubuntu, `--no-sandbox`.
 
 ## What's new
+
+- **Devices no longer has Add/Remove or an "Active" filter** [DON-295]. In
+  13.4, pressing **Add** on one device silently hid every other participant
+  from the map and stopped recording their positions until **Remove** was
+  pressed. Who is tracked is now decided only by **Mission Control →
+  Participants**. If you pressed Add in 13.4, 13.5 ignores it and shows and
+  records all participants.
 
 - **Discovery map package accepted again** [DON-144]. The Kerry/Reeks package
   that 13.4 rejected ("zoom metadata does not match its tiles") now imports.
@@ -47,15 +57,17 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 
 ## Please test
 
-1. Finish a mission, then start a second one in the same session with
+1. Open **Devices** during a mission, hide and show a device, zoom to one;
+   confirm every participant stays on the map and keeps its trail.
+2. Finish a mission, then start a second one in the same session with
    devices ticked before Start; confirm they track and their lookback history
    appears.
-2. Import the Discovery package (or re-check it as above); switch the basemap
+3. Import the Discovery package (or re-check it as above); switch the basemap
    to **Discovery Topo** and confirm the map draws with Wi-Fi off.
-3. Finish → Archive & Lock → reopen the archive in Review; confirm it is the
+4. Finish → Archive & Lock → reopen the archive in Review; confirm it is the
    mission you just finished.
-4. Pause a mission, close the app, reopen and Resume; it should stay paused.
-5. Report problems with a support bundle (Diagnostics → Export Support Bundle).
+5. Pause a mission, close the app, reopen and Resume; it should stay paused.
+6. Report problems with a support bundle (Diagnostics → Export Support Bundle).
 
 ## Known issues
 
