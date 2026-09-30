@@ -5,7 +5,6 @@ import type { MissionStore } from '../../src/infrastructure/mission-store/tauri-
 import { startAppRuntime } from '../../src/features/runtime/start-app-runtime'
 import type { CoreFeatureRuntimeHandles } from '../../src/features/runtime/start-core-feature-runtimes'
 import { useMissionStore } from '../../src/features/mission/mission-store'
-import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
@@ -30,7 +29,7 @@ describe('app runtime startup', () => {
     coverageFlagState.enabled = false
     vi.unstubAllGlobals()
     useMissionStore.setState(useMissionStore.getInitialState())
-    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+    window.localStorage.clear()
     useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
     useParticipantStore.setState(useParticipantStore.getInitialState())
   })
@@ -390,7 +389,7 @@ describe('app runtime startup', () => {
     }))
   })
 
-  it('wires the active mission device selection into breadcrumb polling', async () => {
+  it('fetches history for every participant even with a saved legacy device list [DON-295]', async () => {
     useMissionStore.setState({
       phase: 'active',
       currentMission: {
@@ -405,8 +404,11 @@ describe('app runtime startup', () => {
         schema_version: 1,
       },
     })
-    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '7', true)
-    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '2', true)
+    // A 13.4 install may hold the retired Devices "Add" list; it must not narrow anything.
+    window.localStorage.setItem('sartracker:active-mission-devices', JSON.stringify({
+      state: { activeDeviceIdsByMission: { 'mission-1': ['2'] } },
+      version: 0,
+    }))
     useParticipantStore.setState({
       activeMissionId: 'mission-1',
       scope: createParticipationScope({
@@ -497,7 +499,7 @@ describe('app runtime startup', () => {
     }
     expect(pollingOptions.onCurrentSnapshot).toBe(onCurrentSnapshot)
     expect(pollingOptions.waitForCurrentEvidenceCapacity).toBe(waitForCurrentEvidenceCapacity)
-    expect(pollingOptions.getBreadcrumbDeviceIds?.()).toEqual(['2', '7'])
+    expect(pollingOptions.getBreadcrumbDeviceIds).toBeUndefined()
     expect(pollingOptions.getParticipantDeviceIds?.()).toEqual(['7'])
     await expect(pollingOptions.getInitialHistoryCheckpoints?.()).resolves.toEqual({
       '7': {
@@ -515,8 +517,6 @@ describe('app runtime startup', () => {
       selectionMetadataByDevice: {},
     })
 
-    useMissionStore.setState({ currentMission: null, phase: 'idle' })
-    expect(pollingOptions.getBreadcrumbDeviceIds?.()).toEqual([])
   })
 
   it('registers the service worker on startup', async () => {

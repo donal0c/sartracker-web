@@ -44,7 +44,6 @@ import type {
 } from './traccar-client'
 import type { CurrentPositionRejection } from './ingest-health'
 import { useMissionStore } from '../mission/mission-store'
-import { useActiveMissionDevicesStore } from './active-mission-devices-store'
 import type {
   ParticipantBackfillCheckpoint,
   PersistTrackingHistoryBatchInput,
@@ -1105,18 +1104,6 @@ export async function startTrackingRuntime(
       poller.requestPollNow?.()
     }
   })
-  const unsubscribeDeviceSelectionWake = useActiveMissionDevicesStore.subscribe(
-    (state, previousState) => {
-      const missionId = useMissionStore.getState().currentMission?.id ?? null
-      if (
-        missionId !== null &&
-        state.activeDeviceIdsByMission[missionId] !==
-          previousState.activeDeviceIdsByMission[missionId]
-      ) {
-        poller.requestPollNow?.()
-      }
-    },
-  )
   const unsubscribeParticipationScope = dependencies.subscribeParticipationScope?.((reason = 'scope') => {
     if (!acceptingRuntimeUpdates || runtimeGeneration !== activeTrackingRuntimeGeneration) return
     if (readParticipationScopeStatus() === 'ready') {
@@ -1150,7 +1137,6 @@ export async function startTrackingRuntime(
     cacheReadActive = false
     unregisterMissionEvidenceSettler()
     unsubscribeMissionWake()
-    unsubscribeDeviceSelectionWake()
     unsubscribeParticipationScope()
     throw error
   }
@@ -1169,7 +1155,6 @@ export async function startTrackingRuntime(
       pendingMissionCache = null
       deferredOperationalSnapshot = null
       unsubscribeMissionWake()
-      unsubscribeDeviceSelectionWake()
       unsubscribeParticipationScope()
     },
     async () => { await poller.stop(); selectedTransportStopped = true },

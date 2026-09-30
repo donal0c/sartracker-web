@@ -10,8 +10,6 @@ import {
   type DeviceWorkspaceFilter,
   type DeviceWorkspaceRow,
 } from '../features/tracking/device-workspace-model'
-import { useMissionStore } from '../features/mission/mission-store'
-import { useActiveMissionDevicesStore } from '../features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { SAR_PALETTE } from './color-palette-input'
 import { createDeviceColor } from '../features/tracking/tracking-color'
@@ -57,11 +55,6 @@ function DevicesWorkspaceContent(props: {
   const selectDevice = useDeviceWorkspaceStore((state) => state.selectDevice)
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
   const trackingStatus = useTrackingStore((state) => state.status)
-  const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
-  const activeDeviceIds = useActiveMissionDevicesStore((state) =>
-    state.getActiveDeviceIds(currentMissionId),
-  )
-  const setDeviceActive = useActiveMissionDevicesStore((state) => state.setDeviceActive)
   const deviceColors = useTrackingStyleStore((state) => state.deviceColors)
   const breadcrumbSize = useTrackingStyleStore((state) => state.breadcrumbSize)
   const breadcrumbTrailMode = useTrackingStyleStore((state) => state.breadcrumbTrailMode)
@@ -83,12 +76,11 @@ function DevicesWorkspaceContent(props: {
     () => buildDeviceWorkspaceRows(
       trackingSnapshot,
       hiddenDeviceIds,
-      activeDeviceIds,
       ingestHealth,
       attentionByDevice,
       trackingStatus.mode,
     ),
-    [activeDeviceIds, attentionByDevice, hiddenDeviceIds, ingestHealth, trackingSnapshot, trackingStatus.mode],
+    [attentionByDevice, hiddenDeviceIds, ingestHealth, trackingSnapshot, trackingStatus.mode],
   )
   const summary = useMemo(
     () => buildDeviceWorkspaceSummary(rows, trackingStatus),
@@ -112,7 +104,6 @@ function DevicesWorkspaceContent(props: {
 
   const filterTabs: readonly { readonly id: DeviceWorkspaceFilter; readonly label: string; readonly count: number }[] = [
     { id: 'all', label: 'Devices', count: summary.totalDevices },
-    { id: 'active', label: 'Active', count: summary.activeDevices },
     { id: 'hidden', label: 'Hidden', count: summary.hiddenDevices },
     { id: 'online', label: 'Online', count: summary.onlineDevices },
     { id: 'stale', label: 'Stale', count: summary.staleDevices },
@@ -298,11 +289,6 @@ function DevicesWorkspaceContent(props: {
                       deviceColor={deviceColors[row.deviceId] ?? createDeviceColor(row.deviceId)}
                       onSelectDevice={selectDevice}
                       onSetDeviceColor={setDeviceColor}
-                      onToggleActive={(deviceId, active) => {
-                        if (currentMissionId !== null) {
-                          setDeviceActive(currentMissionId, deviceId, active)
-                        }
-                      }}
                       onToggleVisibility={toggleDeviceVisibility}
                       onZoomDevice={zoomDevice}
                     />
@@ -436,8 +422,6 @@ function getEmptyStateMessage(filter: DeviceWorkspaceFilter, query: string): str
   switch (filter) {
     case 'all':
       return 'No devices available. Configure a tracking provider in Settings to see devices here.'
-    case 'active':
-      return 'No active mission devices selected. Add devices from the All filter to track them during this mission.'
     case 'hidden':
       return 'No hidden devices. Toggle visibility on individual devices to hide them from the map.'
     case 'online':
@@ -453,8 +437,6 @@ function getFilterLabel(filter: DeviceWorkspaceFilter): string {
   switch (filter) {
     case 'all':
       return 'Devices'
-    case 'active':
-      return 'Active'
     case 'hidden':
       return 'Hidden'
     case 'online':
@@ -476,7 +458,6 @@ function DeviceRow(props: {
   readonly deviceColor: string
   readonly onSelectDevice: (deviceId: string | null) => void
   readonly onSetDeviceColor: (deviceId: string, color: string) => void
-  readonly onToggleActive: (deviceId: string, active: boolean) => void
   readonly onToggleVisibility: (deviceId: string) => void
   readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
 }) {
@@ -596,17 +577,6 @@ function DeviceRow(props: {
           type="button"
         >
           Zoom
-        </button>
-        <button
-          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-100"
-          data-testid={`device-active-toggle-${props.row.deviceId}`}
-          onClick={(event) => {
-            event.stopPropagation()
-            props.onToggleActive(props.row.deviceId, !props.row.active)
-          }}
-          type="button"
-        >
-          {props.row.active ? 'Remove' : 'Add'}
         </button>
       </div>
     </div>

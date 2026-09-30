@@ -228,15 +228,25 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('device-visibility-bravo')).not.toBeChecked()
   })
 
-  test('keeps selection and search scoped to the active device list [DON-190]', async ({
+  test('offers no control that narrows the mission participants [DON-295]', async ({ page }) => {
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+
+    await expect(page.getByTestId('device-row-alpha')).toBeVisible()
+    await expect(page.getByTestId('device-row-bravo')).toBeVisible()
+    await expect(page.locator('[data-testid^="device-active-toggle-"]')).toHaveCount(0)
+    await expect(page.getByTestId('device-filter-active')).toHaveCount(0)
+  })
+
+  test('keeps selection and search scoped to the current filter list [DON-190]', async ({
     page,
   }) => {
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
     await expect(page.getByTestId('devices-inspector-title')).toContainText('Alpha Team')
 
-    await page.getByTestId('device-active-toggle-bravo').click()
-    await page.getByTestId('device-filter-active').click()
+    await page.getByTestId('device-visibility-bravo').click()
+    await page.getByTestId('device-filter-hidden').click()
 
     await expect(page.getByTestId('device-row-bravo')).toBeVisible()
     await expect(page.getByTestId('device-row-alpha')).toBeHidden()
@@ -247,7 +257,7 @@ test.describe('M19 devices workspace', () => {
     await expect(page.getByTestId('device-row-alpha')).toBeHidden()
     await expect(page.getByTestId('device-row-bravo')).toBeHidden()
     await expect(page.getByTestId('device-filter-empty-state')).toContainText(
-      'No devices match Alpha in Active',
+      'No devices match Alpha in Hidden',
     )
     await expect(page.getByTestId('devices-inspector-title')).toBeHidden()
   })

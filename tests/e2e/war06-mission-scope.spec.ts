@@ -82,12 +82,11 @@ for (const route of ['delayed history', 'participant hydration'] as const) {
 
     await page.evaluate(async (route) => {
       const [{ startTrackingRuntime }, { useMissionStore }, { applyTrackingSnapshot, applyTrackingStatus },
-        { createParticipationScope }, { useActiveMissionDevicesStore }] = await Promise.all([
+        { createParticipationScope }] = await Promise.all([
         import('/src/features/tracking/start-tracking-runtime.ts'),
         import('/src/features/mission/mission-store.ts'),
         import('/src/features/tracking/tracking-store.ts'),
         import('/src/features/participants/participation-scope.ts'),
-        import('/src/features/tracking/active-mission-devices-store.ts'),
       ])
       const missionA = useMissionStore.getState().currentMission!.id
       let loading = false
@@ -129,14 +128,12 @@ for (const route of ['delayed history', 'participant hydration'] as const) {
         },
         applyStatus: applyTrackingStatus,
       })
-      useActiveMissionDevicesStore.getState().setDeviceActive(missionA, 'war06', true)
       await hooks.onSnapshot(snapshot(true), { historyResetKey: missionA, missionEvidenceId: null })
       const control: BrowserRepairControl = {
         deliverOld: () => hooks.onSnapshot(snapshot(true), { historyResetKey: missionA, missionEvidenceId: null }),
         ready: () => { loading = false; notify() },
         fresh: async () => {
           const missionId = useMissionStore.getState().currentMission!.id
-          useActiveMissionDevicesStore.getState().setDeviceActive(missionId, 'war06', true)
           hooks.onCurrentSnapshot(snapshot(false), { historyResetKey: missionId, missionEvidenceId: null }, {
             missionId: null, claim: () => undefined, complete: () => undefined,
           })

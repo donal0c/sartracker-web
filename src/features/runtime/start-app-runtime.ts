@@ -39,7 +39,6 @@ import { applyTrackingSnapshot, applyTrackingStatus } from '../tracking/tracking
 import { readTrackingRuntimeConfig } from '../tracking/tracking-runtime-config'
 import type { TrackingRuntimeMissionStore, TrackingRuntimeStop } from '../tracking/start-tracking-runtime'
 import { DEFAULT_DEVICE_STALE_THRESHOLD_MS } from '../tracking/tracking-snapshot-health'
-import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import {
   applyCurrentPositionRejections,
   applyIngestEvidenceHealth,
@@ -396,10 +395,6 @@ export async function startAppRuntime(
             const mission = useMissionStore.getState().currentMission
             return mission === null ? null : new Date(mission.start_time)
           },
-          getBreadcrumbDeviceIds: () => {
-            const missionId = useMissionStore.getState().currentMission?.id ?? null
-            return useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId)
-          },
           getParticipantDeviceIds: () =>
             isMissionModelEnabled()
               ? useParticipantStore.getState().scope.historicalDeviceIdsThrough(
@@ -461,11 +456,7 @@ export async function startAppRuntime(
       readTrackingRuntimeConfig,
       applySnapshot: (snapshot) => {
         const missionId = useMissionStore.getState().currentMission?.id ?? null
-        applyTrackingSnapshot(
-          snapshot,
-          missionId,
-          useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId),
-        )
+        applyTrackingSnapshot(snapshot, missionId)
       },
       applyStatus: applyTrackingStatus,
       recordMissionEvidenceLoss: rejectionEvidenceDelivery?.recordMissionEvidenceLoss,

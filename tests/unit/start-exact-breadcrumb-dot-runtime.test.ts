@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { useMissionStore } from '../../src/features/mission/mission-store'
-import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { useExactBreadcrumbDotStore } from '../../src/features/tracking/exact-breadcrumb-dot-store'
 import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 
@@ -18,7 +17,6 @@ type ExactDotRuntimeModule = {
 describe('exact breadcrumb-dot runtime request ownership', () => {
   afterEach(() => {
     useMissionStore.setState(useMissionStore.getInitialState())
-    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
     useExactBreadcrumbDotStore.setState(useExactBreadcrumbDotStore.getInitialState())
     useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
     vi.restoreAllMocks()

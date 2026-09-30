@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../../src/features/map/map-target-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
-import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { useDeviceWorkspaceStore } from '../../src/features/tracking/device-workspace-store'
 import { useTrackingStyleStore } from '../../src/features/tracking/tracking-style-store'
 import { useTrackingStore } from '../../src/features/tracking/tracking-store'
@@ -96,7 +95,7 @@ describe('DevicesWorkspace', () => {
     vi.clearAllMocks()
     useDeviceWorkspaceStore.setState(useDeviceWorkspaceStore.getInitialState())
     useTrackingStore.setState(useTrackingStore.getInitialState())
-    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
+    window.localStorage.clear()
     useTrackingStyleStore.setState(useTrackingStyleStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
     useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
@@ -187,7 +186,12 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="device-attention-alpha"]')).toContain('latest fix uncorroborated')
   })
 
-  it('adds and removes mission-active devices via filter tabs', async () => {
+  it('offers no control that narrows the mission participants [DON-295]', async () => {
+    // A 13.4 install may hold the retired Devices "Add" list; it must not narrow the roster.
+    window.localStorage.setItem('sartracker:active-mission-devices', JSON.stringify({
+      state: { activeDeviceIdsByMission: { 'mission-1': ['bravo'] } },
+      version: 0,
+    }))
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
     useMissionStore.setState({
@@ -211,29 +215,13 @@ describe('DevicesWorkspace', () => {
 
     expect(document.querySelector('[data-testid="device-row-alpha"]')).not.toBeNull()
     expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
-
-    click('[data-testid="device-active-toggle-bravo"]')
-
-    expect(useActiveMissionDevicesStore.getState().getActiveDeviceIds('mission-1')).toEqual([
-      'bravo',
-    ])
-
-    click('[data-testid="device-filter-active"]')
-
-    expect(document.querySelector('[data-testid="device-row-bravo"]')).not.toBeNull()
-    expect(document.querySelector('[data-testid="device-row-alpha"]')).toBeNull()
-
-    click('[data-testid="device-active-toggle-bravo"]')
-
-    expect(useActiveMissionDevicesStore.getState().getActiveDeviceIds('mission-1')).toEqual([])
-    expect(getText('[data-testid="device-filter-empty-state"]')).toContain(
-      'No active mission devices selected',
-    )
+    expect(document.querySelector('[data-testid^="device-active-toggle-"]')).toBeNull()
+    expect(document.querySelector('[data-testid="device-filter-active"]')).toBeNull()
   })
 
-  it('keeps selected device and search scoped to the active filter list', async () => {
+  it('keeps selected device and search scoped to the current filter list [DON-190]', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
-    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: { ...STATUS, mode: 'online' } })
     useMissionStore.setState({
       currentMission: {
         id: 'mission-1',
@@ -248,24 +236,23 @@ describe('DevicesWorkspace', () => {
       },
       phase: 'active',
     })
-    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', 'bravo', true)
-    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'bravo' })
 
     render(React.createElement(DevicesWorkspace))
     await waitForElement('[data-testid="devices-workspace"]')
 
-    click('[data-testid="device-filter-active"]')
+    click('[data-testid="device-filter-online"]')
 
-    expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('bravo')
-    expect(getText('[data-testid="devices-inspector-title"]')).toContain('Bravo Team')
-    expect(document.querySelector('[data-testid="device-row-alpha"]')).toBeNull()
+    expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBe('alpha')
+    expect(getText('[data-testid="devices-inspector-title"]')).toContain('Alpha Team')
+    expect(document.querySelector('[data-testid="device-row-bravo"]')).toBeNull()
 
-    changeInput('[data-testid="device-list-search"]', 'Alpha')
+    changeInput('[data-testid="device-list-search"]', 'Bravo')
 
     expect(document.querySelector('[data-testid="device-row-alpha"]')).toBeNull()
     expect(document.querySelector('[data-testid="device-row-bravo"]')).toBeNull()
     expect(getText('[data-testid="device-filter-empty-state"]')).toContain(
-      'No devices match Alpha in Active',
+      'No devices match Bravo in Online',
     )
     expect(useDeviceWorkspaceStore.getState().selectedDeviceId).toBeNull()
   })

@@ -18,7 +18,6 @@ import type {
   TrackingSnapshotContext,
 } from '../../src/features/tracking/polling-manager'
 import { useMissionStore } from '../../src/features/mission/mission-store'
-import { useActiveMissionDevicesStore } from '../../src/features/tracking/active-mission-devices-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
 import { buildDeviceWorkspaceRows } from '../../src/features/tracking/device-workspace-model'
@@ -333,7 +332,6 @@ describe('startTrackingRuntime', () => {
 
   afterEach(() => {
     useMissionStore.setState(useMissionStore.getInitialState())
-    useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
   })
 
   it('keeps persistence cache cardinality independent of sourced tracking history volume', () => {
@@ -637,14 +635,10 @@ describe('startTrackingRuntime', () => {
     })
     expect(requestPollNow).toHaveBeenCalledTimes(1)
 
-    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '7', true)
-    expect(requestPollNow).toHaveBeenCalledTimes(2)
-
     stop()
     useMissionStore.setState({ phase: 'paused' })
     useMissionStore.setState({ phase: 'active' })
-    useActiveMissionDevicesStore.getState().setDeviceActive('mission-1', '8', true)
-    expect(requestPollNow).toHaveBeenCalledTimes(2)
+    expect(requestPollNow).toHaveBeenCalledTimes(1)
     expect(stopPoller).toHaveBeenCalledTimes(1)
   })
 

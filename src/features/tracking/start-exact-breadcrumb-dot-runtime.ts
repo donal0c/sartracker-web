@@ -1,5 +1,4 @@
 import { useMissionStore } from '../mission/mission-store'
-import { useActiveMissionDevicesStore } from './active-mission-devices-store'
 import {
   createExactBreadcrumbDotController,
   EXACT_BREADCRUMB_DOT_PAGE_LIMIT,
@@ -118,19 +117,17 @@ export function startExactBreadcrumbDotRuntime(
     controller.updateContext({
       missionId,
       trailMode: useTrackingStyleStore.getState().breadcrumbTrailMode,
-      activeDeviceIds:
-        useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId),
+      // Every mission participant; the retired Devices "Add" narrowing is gone [DON-295].
+      activeDeviceIds: [],
     })
   }
   const unsubscribeMission = useMissionStore.subscribe(updateContext)
   const unsubscribeStyle = useTrackingStyleStore.subscribe(updateContext)
-  const unsubscribeDevices = useActiveMissionDevicesStore.subscribe(updateContext)
   updateContext()
 
   return () => {
     unsubscribeMission()
     unsubscribeStyle()
-    unsubscribeDevices()
     controller.stop()
     applyExactBreadcrumbDotController(null)
   }

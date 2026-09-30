@@ -11,7 +11,6 @@ export type DeviceWorkspaceRow = {
   readonly deviceId: string
   readonly name: string
   readonly status: 'online' | 'offline' | 'unknown'
-  readonly active: boolean
   readonly hidden: boolean
   readonly hasFix: boolean
   readonly latitude: number | null
@@ -36,7 +35,6 @@ export type DeviceWorkspaceRow = {
 
 export type DeviceWorkspaceSummary = {
   readonly totalDevices: number
-  readonly activeDevices: number
   readonly onlineDevices: number
   readonly hiddenDevices: number
   readonly staleDevices: number
@@ -46,7 +44,7 @@ export type DeviceWorkspaceSummary = {
   readonly mode: TrackingConnectionStatus['mode']
 }
 
-export type DeviceWorkspaceFilter = 'all' | 'active' | 'hidden' | 'online' | 'nofix' | 'stale'
+export type DeviceWorkspaceFilter = 'all' | 'hidden' | 'online' | 'nofix' | 'stale'
 
 /**
  * Builds the operator-facing device roster rows from the current tracking snapshot.
@@ -54,7 +52,6 @@ export type DeviceWorkspaceFilter = 'all' | 'active' | 'hidden' | 'online' | 'no
 export function buildDeviceWorkspaceRows(
   snapshot: TrackingSnapshot,
   hiddenDeviceIds: readonly string[],
-  activeDeviceIds: readonly string[] = [],
   ingestHealth: CurrentPositionIngestHealthSummary = EMPTY_CURRENT_POSITION_INGEST_HEALTH,
   attentionByDevice: Readonly<Record<string, Pick<DeviceStationaryAttention, 'state' | 'acknowledged' | 'elapsedMs' | 'latestFixUnreliable'>>> = {},
   connectionMode: TrackingConnectionStatus['mode'] = 'online',
@@ -62,7 +59,6 @@ export function buildDeviceWorkspaceRows(
   const latestPositionByDevice = new Map(
     snapshot.positions.map((position) => [position.device_id, position] as const),
   )
-  const activeDeviceIdSet = new Set(activeDeviceIds)
   const unconfirmedCurrentDeviceIds = new Set(snapshot.unconfirmedCurrentDeviceIds)
 
   return [...snapshot.devices]
@@ -75,7 +71,6 @@ export function buildDeviceWorkspaceRows(
         name: device.name,
         status: connectionMode === 'online' && !unconfirmedCurrentDeviceIds.has(device.device_id)
           ? device.status : 'unknown' as const,
-        active: activeDeviceIdSet.has(device.device_id),
         hidden: hiddenDeviceIds.includes(device.device_id),
         hasFix: position !== null,
         latitude: position?.lat ?? null,
@@ -127,7 +122,7 @@ function formatAttentionElapsed(elapsedMs: number | undefined): string {
 }
 
 /**
- * Applies the active list tab before search so queries cannot escape the selected context.
+ * Applies the selected filter tab before search so queries cannot escape the selected context.
  */
 export function filterDeviceWorkspaceRows(
   rows: readonly DeviceWorkspaceRow[],
@@ -175,7 +170,6 @@ export function buildDeviceWorkspaceSummary(
 ): DeviceWorkspaceSummary {
   return {
     totalDevices: rows.length,
-    activeDevices: rows.filter((row) => row.active).length,
     onlineDevices: rows.filter((row) => row.status === 'online').length,
     hiddenDevices: rows.filter((row) => row.hidden).length,
     staleDevices: rows.filter((row) => row.stale).length,
@@ -193,8 +187,6 @@ function applyDeviceWorkspaceFilter(
   switch (filter) {
     case 'all':
       return rows
-    case 'active':
-      return rows.filter((row) => row.active)
     case 'hidden':
       return rows.filter((row) => row.hidden)
     case 'online':

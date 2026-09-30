@@ -174,14 +174,10 @@ async function injectRenderedTrackingFixture(page: Page): Promise<void> {
       throw new Error('Browser harness API unavailable.')
     }
     const { useMissionStore } = await import('/src/features/mission/mission-store.ts')
-    const { useActiveMissionDevicesStore } = await import(
-      '/src/features/tracking/active-mission-devices-store.ts'
-    )
     const missionId = useMissionStore.getState().currentMission?.id
     if (missionId === undefined) {
       throw new Error('Mission store did not expose the active synthetic mission.')
     }
-    useActiveMissionDevicesStore.getState().setDeviceActive(missionId, 'alpha', true)
     await harness.injectTrackingSnapshot({
       devices: [{
         device_id: 'alpha',

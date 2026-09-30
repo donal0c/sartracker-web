@@ -72,19 +72,18 @@ const STATUS: TrackingConnectionStatus = {
 
 describe('device workspace model', () => {
   it('labels retained live-origin fixes as last known while reconnecting [AUD-13]', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {}, 'idle')
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], undefined, {}, 'idle')
     expect(rows[0]).toMatchObject({ status: 'unknown', sourceDisplay: 'Last known' })
   })
 
   it('builds readable roster rows from the tracking snapshot', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'])
 
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({
       deviceId: 'alpha',
       sourceDisplay: 'Live',
       hidden: false,
-      active: true,
       batteryDisplay: '82%',
       accuracyDisplay: '7.5 m',
     })
@@ -96,22 +95,8 @@ describe('device workspace model', () => {
       deviceId: 'bravo',
       sourceDisplay: 'Stale',
       hidden: true,
-      active: false,
       speedDisplay: '—',
     })
-  })
-
-  it('splits active mission devices from the full roster without hiding names', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], ['bravo'])
-    const activeRows = rows.filter((row) => row.active)
-
-    expect(activeRows).toHaveLength(1)
-    expect(activeRows[0]).toMatchObject({
-      deviceId: 'bravo',
-      name: 'Bravo Team',
-      active: true,
-    })
-    expect(rows.map((row) => row.name)).toEqual(['Alpha Team', 'Bravo Team'])
   })
 
   it('shows per-device rejection health and server-only timestamp provenance [DON-267]', () => {
@@ -127,7 +112,6 @@ describe('device workspace model', () => {
             }
           : position),
       },
-      [],
       [],
       {
         totalRejected: 1,
@@ -148,7 +132,7 @@ describe('device workspace model', () => {
   })
 
   it('adds derived stationary attention without changing fix truth [DON-269]', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], undefined, {
       alpha: { state: 'attention', acknowledged: false, elapsedMs: 1_200_000 },
     })
     expect(rows[0]).toMatchObject({
@@ -158,7 +142,7 @@ describe('device workspace model', () => {
   })
 
   it('distinguishes unavailable and uncorroborated stationary evaluation', () => {
-    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], undefined, {
       alpha: { state: 'insufficient-data', acknowledged: false },
     })[0]).toMatchObject({
       stationaryAttention: false,
@@ -166,7 +150,7 @@ describe('device workspace model', () => {
       stationaryAttentionUnreliable: false,
     })
 
-    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], [], undefined, {
+    expect(buildDeviceWorkspaceRows(SNAPSHOT, [], undefined, {
       alpha: {
         state: 'attention',
         acknowledged: false,
@@ -180,12 +164,11 @@ describe('device workspace model', () => {
   })
 
   it('builds workspace summary counters aligned with tracking status', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'], ['alpha'])
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'])
     const summary = buildDeviceWorkspaceSummary(rows, STATUS)
 
     expect(summary).toMatchObject({
       totalDevices: 2,
-      activeDevices: 1,
       onlineDevices: 1,
       hiddenDevices: 1,
       staleDevices: 1,
@@ -199,11 +182,11 @@ describe('device workspace model', () => {
     )
   })
 
-  it('scopes device search to the active list filter', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], ['bravo'])
+  it('scopes device search to the selected filter', () => {
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'])
 
-    expect(filterDeviceWorkspaceRows(rows, 'active', 'Alpha').map((row) => row.deviceId)).toEqual([])
-    expect(filterDeviceWorkspaceRows(rows, 'active', 'Bravo').map((row) => row.deviceId)).toEqual([
+    expect(filterDeviceWorkspaceRows(rows, 'hidden', 'Alpha').map((row) => row.deviceId)).toEqual([])
+    expect(filterDeviceWorkspaceRows(rows, 'hidden', 'Bravo').map((row) => row.deviceId)).toEqual([
       'bravo',
     ])
     expect(filterDeviceWorkspaceRows(rows, 'all', 'Alpha').map((row) => row.deviceId)).toEqual([
@@ -212,12 +195,12 @@ describe('device workspace model', () => {
   })
 
   it('resolves selection to the first visible device when the current device is outside the list', () => {
-    const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], ['bravo'])
-    const activeRows = filterDeviceWorkspaceRows(rows, 'active', '')
+    const rows = buildDeviceWorkspaceRows(SNAPSHOT, ['bravo'])
+    const hiddenRows = filterDeviceWorkspaceRows(rows, 'hidden', '')
     const noFixRows = filterDeviceWorkspaceRows(rows, 'nofix', '')
 
-    expect(resolveVisibleDeviceSelection(activeRows, 'alpha')).toBe('bravo')
-    expect(resolveVisibleDeviceSelection(activeRows, 'bravo')).toBe('bravo')
+    expect(resolveVisibleDeviceSelection(hiddenRows, 'alpha')).toBe('bravo')
+    expect(resolveVisibleDeviceSelection(hiddenRows, 'bravo')).toBe('bravo')
     expect(resolveVisibleDeviceSelection(noFixRows, 'alpha')).toBeNull()
   })
 })

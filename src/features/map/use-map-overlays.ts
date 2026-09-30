@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import {
@@ -10,9 +10,7 @@ import { useMarkerStore } from '../markers/marker-store'
 import { syncMarkerOverlay } from '../markers/sync-marker-overlay'
 import { useMissionStore } from '../mission/mission-store'
 import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
-import { useActiveMissionDevicesStore } from '../tracking/active-mission-devices-store'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
-import { selectMissionTrackingSnapshot } from '../tracking/mission-active-tracking'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useCoverageStore } from '../tracking/coverage-store'
@@ -54,7 +52,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const hiddenMarkerIds = useLayerVisibilityStore((state) => state.hiddenMarkerIds)
   const markerState = useMarkerStore((state) => state.markers)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
-  const activeDeviceIds = useActiveMissionDevicesStore((state) => state.getActiveDeviceIds(missionId))
   const trackingStyle = useTrackingStylePreferences()
   const exactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
@@ -62,10 +59,6 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const coverageController = useCoverageStore((state) => state.controller)
   const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
   const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
-  const missionTrackingSnapshot = useMemo(
-    () => selectMissionTrackingSnapshot(trackingSnapshot, activeDeviceIds),
-    [activeDeviceIds, trackingSnapshot],
-  )
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -77,7 +70,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     const synchronizeOverlay = () => {
       syncTrackingOverlay(
         map,
-        getEffectiveTrackingVisible(groupVisibility) ? missionTrackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
+        getEffectiveTrackingVisible(groupVisibility) ? trackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
         hiddenDeviceIds,
         hiddenBreadcrumbDeviceIds,
         getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
@@ -98,7 +91,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     hiddenDeviceIds,
     trackingStyle,
     exactBreadcrumbDotState,
-    missionTrackingSnapshot,
+    trackingSnapshot,
     attentionByDevice,
   ])
 

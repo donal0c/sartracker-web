@@ -3,7 +3,6 @@ import type { Mission } from '../../../../src/infrastructure/mission-store/tauri
 import { startMissionRuntime } from '../../../../src/features/mission/start-mission-runtime'
 import { useMissionStore } from '../../../../src/features/mission/mission-store'
 import { createParticipationScope } from '../../../../src/features/participants/participation-scope'
-import { useActiveMissionDevicesStore } from '../../../../src/features/tracking/active-mission-devices-store'
 import {
   createPollingManager,
   type TrackingHistoryChunkPersistenceInput,
@@ -57,7 +56,6 @@ beforeEach(() => {
   vi.useFakeTimers()
   useTrackingStore.setState(useTrackingStore.getInitialState())
   useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
-  useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
 })
 
 afterEach(async () => {
@@ -79,7 +77,6 @@ afterEach(async () => {
   useMissionStore.setState(useMissionStore.getInitialState())
   useTrackingStore.setState(useTrackingStore.getInitialState())
   useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
-  useActiveMissionDevicesStore.setState(useActiveMissionDevicesStore.getInitialState())
   if (failures.length > 0) {
     throw new AggregateError(failures, 'WAR-06 characterization runtime cleanup failed.')
   }
@@ -188,14 +185,10 @@ function stationaryHistoryAfterMissionA(prefix: string): readonly NormalizedTrac
   ]
 }
 
-/** Applies the same mission-scoped device-selection boundary as the production app runtime. */
+/** Applies the same mission-scoped snapshot boundary as the production app runtime. */
 function applyCharacterizationSnapshot(nextSnapshot: TrackingSnapshot): void {
   const missionId = useMissionStore.getState().currentMission?.id ?? null
-  applyTrackingSnapshot(
-    nextSnapshot,
-    missionId,
-    useActiveMissionDevicesStore.getState().getActiveDeviceIds(missionId),
-  )
+  applyTrackingSnapshot(nextSnapshot, missionId)
 }
 
 /** Injects a stale publication only for the falsifiability control subprocess. */
@@ -449,7 +442,6 @@ describe.sequential('WAR-06 reachable lifecycle repair oracles', () => {
 it('rejects stale history publication at the real delayed poller flush [WAR-06-AUD-01-REPAIR]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
-  useActiveMissionDevicesStore.getState().setDeviceActive('mission-a', 'device-1', true)
   let currentScope = scopeForMission('mission-a')
   const missionACurrent = snapshot('mission-a-current')
   const missionAHistory = stationaryHistory('mission-a-history')
@@ -522,9 +514,6 @@ it('rejects stale history publication at the real delayed poller flush [WAR-06-A
           },
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
           getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
-          getBreadcrumbDeviceIds: () => useActiveMissionDevicesStore.getState().getActiveDeviceIds(
-            useMissionStore.getState().currentMission?.id ?? null,
-          ),
           getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
           persistHistoryChunk,
           ...withoutHistoryPersistenceHooks(hooks),
@@ -561,7 +550,6 @@ it('rejects stale history publication at the real delayed poller flush [WAR-06-A
   )
   expect(client.getCurrentPositions).toHaveBeenCalledTimes(2)
   await controller.finishMission()
-  useActiveMissionDevicesStore.getState().setDeviceActive('mission-b', 'device-1', true)
   await controller.startMission({ name: 'Mission B' })
   currentScope = scopeForMission('mission-b')
   expect(useMissionStore.getState().phase).toBe('active')
@@ -618,7 +606,6 @@ it('rejects stale history publication at the real delayed poller flush [WAR-06-A
 it('rejects deferred stale current-fix publication through finish-idle-start while a poll is in flight [WAR-06-AUD-02-REPAIR]', async () => {
   const controller = await createMissionController()
   await controller.startMission({ name: 'Mission A' })
-  useActiveMissionDevicesStore.getState().setDeviceActive('mission-a', 'device-1', true)
   let scopeStatus: 'loading' | 'ready' = 'loading'
   let currentScope = scopeForMission('mission-a')
   const missionAHistory = stationaryHistory('mission-a-deferred-history')
@@ -667,7 +654,6 @@ it('rejects deferred stale current-fix publication through finish-idle-start whi
   let replacement: Promise<Mission> | null = null
   const unsubscribeMissionTransition = useMissionStore.subscribe((state) => {
     if (state.phase === 'idle' && replacement === null) {
-      useActiveMissionDevicesStore.getState().setDeviceActive('mission-b', 'device-1', true)
       replacement = controller.startMission({ name: 'Mission B' })
     }
   })
@@ -705,9 +691,6 @@ it('rejects deferred stale current-fix publication through finish-idle-start whi
             },
             getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
             getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
-            getBreadcrumbDeviceIds: () => useActiveMissionDevicesStore.getState().getActiveDeviceIds(
-              useMissionStore.getState().currentMission?.id ?? null,
-            ),
             getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
             ...withoutHistoryPersistenceHooks(wrappedHooks),
             now: () => FIXED_NOW,
@@ -790,7 +773,6 @@ it('rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SI
   await controller.startMission({ name: 'Mission A' })
   await controller.finishMission()
   await controller.startMission({ name: 'Mission B' })
-  useActiveMissionDevicesStore.getState().setDeviceActive('mission-b', 'device-1', true)
   const currentScope = scopeForMission('mission-b')
   const cachedSnapshot = snapshot('mission-a-cached-fix', {
     dataOrigin: 'cache',
@@ -856,9 +838,6 @@ it('rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SI
         },
         getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
         getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
-        getBreadcrumbDeviceIds: () => useActiveMissionDevicesStore.getState().getActiveDeviceIds(
-          useMissionStore.getState().currentMission?.id ?? null,
-        ),
         getParticipantDeviceIds: () => currentScope.historicalDeviceIdsThrough(FIXED_NOW.toISOString()),
         ...withoutHistoryPersistenceHooks(hooks),
         now: () => FIXED_NOW,
