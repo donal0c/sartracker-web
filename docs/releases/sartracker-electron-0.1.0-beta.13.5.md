@@ -8,19 +8,27 @@
 - **Devices → Add is gone.** In 13.4 it silently hid, and stopped recording,
   every other participant [DON-295]. If you used it in 13.4, check that
   mission's tracks in Review. 13.5 tracks and shows every participant.
+- **Adding devices after Start: choose "History from: Mission start"** to
+  bring in the Start Offset (for example 48 hours) of earlier tracks. In 13.4,
+  devices added after Start silently got no earlier history. 13.5 asks every
+  time [DON-291]. Ticking devices or the KMRT group before pressing Start also
+  brings the history.
 - **Starting a second mission in the same session now tracks the devices you
-  picked.** In 13.4, if you finished one mission and then started another
-  without restarting, the devices ticked before Start were silently dropped:
-  the new mission tracked nobody and imported no lookback history. This is
-  fixed [DON-292]. If you saw "no history before the mission started" in 13.4,
-  please try again on 13.5.
+  ticked.** In 13.4 they were silently dropped after finishing an earlier
+  mission [DON-292].
 
 ## Before you upgrade
 
 1. Finish any active mission in 13.4 first, as usual.
 2. Copy your profile folder (`~/.config/sartracker-web`) if you might roll back.
-3. Install the `.deb` (recommended):
-   `sudo apt install ./sartracker-electron-validation_0.1.0-beta.13.5_linux_amd64.deb`
+3. Install:
+   - **AppImage** (PCLinuxOS and other systems): quit 13.4, replace the old
+     AppImage file on your desktop with
+     `sartracker-electron-validation_0.1.0-beta.13.5_linux_x86_64.AppImage`,
+     make it executable (right-click → Properties → Permissions, or
+     `chmod +x`), and start it the way you started 13.4.
+   - **.deb** (Ubuntu/Debian):
+     `sudo apt install ./sartracker-electron-validation_0.1.0-beta.13.5_linux_amd64.deb`
 
 Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 **OK** for each file you downloaded. The AppImage may need `libfuse2`
@@ -57,6 +65,12 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 
 ## Please test
 
+**First, on your own machine (we test on Ubuntu, you run PCLinuxOS):** start
+the new AppImage from the desktop the way you normally do. Confirm the map
+appears (not a black window), **Maps → Discovery Topo** draws the Reeks, and
+**F11** with **Focus Mode** goes full screen and back. If anything fails, tell
+us what you saw; a photo of the screen is enough.
+
 1. Open **Devices** during a mission, hide and show a device, zoom to one;
    confirm every participant stays on the map and keeps its trail.
 2. Finish a mission, then start a second one in the same session with
@@ -71,6 +85,9 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 
 ## Known issues
 
+- **Discovery is not remembered after a restart.** The app opens on
+  OpenTopoMap (an online map). After starting, choose **Maps → Discovery
+  Topo**, especially without internet [DON-304].
 - **Closing with the window X or a normal quit may show "Unexpected shutdown
   detected"** on the next launch. Data is unaffected [DON-284].
 - **Unwritable profile folder:** the app exits silently. If the app "does

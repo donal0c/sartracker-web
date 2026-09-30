@@ -586,6 +586,74 @@ BCP-08/BCP-10/BCP-12 evidence consumers.
 
 ---
 
+## Answer Round 4 — Beta 13.4 Field Use (2026-09-30)
+
+Questions sent by Donal by email on 2026-09-29 to the tester who filed TB13-03;
+answer received 2026-09-30. Wording preserved; greeting and sign-off omitted.
+
+### SAR-QA-023 — How TB13-03's 48-hour mission was set up
+
+**Question:** "When you created the 48-hour mission, did you tick devices
+before pressing Start, or add them afterwards?"
+**Answer, verbatim:** "Added afterwards."
+**Derived meaning:** TB13-03 is DON-291 (late adds silently defaulted to "now",
+dropping the lookback), not DON-292. 13.5 requires an explicit **History from**
+choice for late adds; **Mission start** brings the lookback history.
+
+### SAR-QA-024 — Traccar group structure
+
+**Question:** "In Traccar, are any of your groups inside other groups (e.g. a
+main KMRT group with sub-groups)? Which groups do you normally pick?"
+**Answer, verbatim:** "main KMRT group only, no sub groups."
+**Derived meaning:** Test with one flat team group. Nested groups are not a
+current team workflow.
+
+### SAR-QA-025 — A typical test mission, step by step
+
+**Question:** "Could you write down, step by step, a typical test mission as
+you run it: what you start with, what you add, how long it runs, whether you
+close the app overnight, what maps you use? We'll build our release test to
+follow exactly that."
+**Answer, verbatim:**
+
+> Start pc
+> Open Applmage from desktop ( Pclinux )
+> Enter mission name
+> Set Roll back time
+> Start
+> Discovery map by default.
+> From here, can convert coordinates, add cas location and know where people
+> are. mission develops from here.
+>
+> ( open topo and satellite maps also vital, for reeks Harvey maps and Hiker
+> also necessary --later)
+> ( all other settings are in by default )
+> Devices for KMRT should display if active by default.
+>
+> I use F11 with Focus mode to display to display full screen on linux.
+>
+> Setting up mission should be as easy as possible, only necessary info
+> displayed on main screen, everything else accessed through settings or other
+> panels at top.
+> Most people using this will have limited computer skills, it must be
+> intuitive and not overwhelming.Panel on RHS is gone too complicated , we need
+> to work on this for the next release.
+
+**Related prior IDs:** SAR-QA-015 (coordinator explicitly selects
+participants; SAR Tracker never auto-enrols the whole server).
+**Derived meaning (for Donal to confirm):**
+- The release smoke must replay this sequence: AppImage, name, Start Offset,
+  Start with nothing ticked, then participants; Discovery; coordinate
+  conversion; casualty marker; OpenTopoMap and satellite; Focus Mode full screen.
+- "Devices for KMRT should display if active by default" is in tension with
+  SAR-QA-015 as implemented (a new mission tracks no one until participants are
+  chosen). A coordinator-configured default group, pre-ticked but visible and
+  changeable, would satisfy both. **Unresolved: Donal's product decision.**
+- The right-hand panel is too complex for volunteers with limited computer
+  skills: a design goal for the next release.
+- Harvey and Hiker maps are needed "later" (M03).
+- Platform: AppImage on PCLinuxOS, not the Ubuntu .deb the release box tests.
+
 ## PR-5 Implementation Links — 2026-08-27
 
 These links add implementation traceability only; they do not amend or
