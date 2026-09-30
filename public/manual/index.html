@@ -1548,8 +1548,12 @@
             resumes from the recorded cursor. If the coordinator later expands that participant's effective
             history window, the running app picks up the earlier boundary without needing a restart and fills
             only the newly authorized prefix before widening the durable frontier. After catch-up, a
-            separately paced anti-entropy sweep checks older windows for late or corrected fixes, beginning
-            no earlier than that participant's validated history boundary. That sweep keeps the earlier
+            separately paced sweep checks for late or corrected fixes, beginning no earlier than that
+            participant's validated history boundary. When a phone regains signal (or the tracking server
+            comes back) it uploads its buffered track with the original fix times. Every five minutes the sweep
+            re-reads the last six hours of every participant, so a buffered stretch from that period appears on the
+            map within about five minutes; older history is re-read newest first, about every 35 minutes on a
+            48-hour mission. That sweep keeps the earlier
             authorized window eligible after a participant is removed, while live current-position scope
             remains active-only. If the boundary expands while a later chunk is still in flight, the later
             chunk is fetched again unless it was already durably acknowledged. This avoids

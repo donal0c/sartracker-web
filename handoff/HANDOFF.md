@@ -17,27 +17,22 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
   Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
-## Next action — fix DON-305 in beta.13.5, rebuild, box tonight
+## Next action — DON-305 fixed; retag 13.5, box tonight
 
-**Donal's decision (30 Sep): fix DON-305 in 13.5.** Late-uploaded Traccar fixes
-(phone regains signal, or the server comes back) are recovered only by the
-anti-entropy sweep (`breadcrumb-history-reconciler.ts`): one 2 h chunk per
-device every 5 min, oldest first, so about 2 h per pass on a 48 h mission. The
-live check found 2,418 of 4,671 missing 3 min after backfill; all arrived late,
-14:22–14:24. A re-run with them already on the server passed 4,671/4,671.
-See the DON-305 correction comment.
+**DON-305 fixed (30 Sep), Codex-reviewed (aw 22fcab037a6e), nothing blocking.**
+Every 5-min tick re-reads the last 6 h of every device, newest first, plus 3
+older chunks on a backward cursor (about 35 min per pass on 48 h). Unchanged
+sweep chunks skip the render path. Tests: reconciler late-upload suite,
+polling-manager (failure visible; unchanged not republished), mock
+`holdBack/releaseHeld`. Smoke: `team-mission` late-burst phase (7 min budget),
+`live-traccar` watches 7 min (late arrivals not yet due → NOT TESTED).
+Evidence: full correctness 6,247 pass; Chromium 231 pass; Mac package
+`team-mission` all automated steps pass (49 late fixes stored 295 s after
+upload; 9,791 fixes exact; screenshots checked). Load at 30 devices (~180 req/tick) is
+unverified until the box smoke/soak.
 
-Work order (tests first; Claude implements, Codex reviews):
-1. Add late uploads to the fake Traccar (`scripts/team-smoke/lib/mock-traccar.mjs`,
-   `team-traccar.mjs`): a device goes silent, then uploads a buffered burst.
-   Write a failing unit/integration test measuring recovery time.
-2. Fix: newest-first sweep that covers the recent hours on every tick, with
-   bounded load, so a late burst is stored within about one tick (5 min).
-   Keep SAR-QA-006/013/021 provenance (receipt time recorded, fixTime authority).
-3. Add a team-smoke late-upload phase, and make `live-traccar` wait past one
-   tick. Full correctness, full Chromium, and a Mac package run.
-4. Bump nothing (still 0.1.0-beta.13.5). Delete the draft and tag, retag at
-   the new HEAD (retag approved by Donal), and wait for CI.
+Then: commit, push, delete the 13.5 draft and tag, retag at the new HEAD
+(approved), wait for CI.
 
 **The Ubuntu box is shared (Donal's son's school machine).** Use it only when
 Donal says it is free, then release it. Tonight: full smoke on the new draft

@@ -16,6 +16,12 @@
 - **Starting a second mission in the same session now tracks the devices you
   ticked.** In 13.4 they were silently dropped after finishing an earlier
   mission [DON-292].
+- **Tracks a phone uploads late now appear within about five minutes.** When a
+  phone regains signal, or the tracking server comes back after an outage, the
+  phone uploads the positions it held. 13.4 fetched these only in a slow
+  background pass, oldest first: on a 48-hour mission a stretch could take up
+  to about two hours to appear, with no sign that it was missing [DON-305]. If a 13.4 mission has a gap after a signal
+  loss, check it in Review.
 
 ## Before you upgrade
 
@@ -62,6 +68,11 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   are taken to Settings → Admin Roster and back [DON-281].
 - **Upgraded missions no longer stay "History incomplete"** once their older
   positions are confirmed [DON-282].
+- **Late-uploaded positions are fetched promptly** [DON-305]. Every five
+  minutes the app re-reads the last six hours of every participant, so a
+  stretch a phone uploads after regaining signal is on the map within about
+  five minutes. Older history is re-read newest first, about every 35 minutes
+  on a 48-hour mission. If that re-read fails, Tracking names the device.
 
 ## Please test
 
@@ -71,17 +82,20 @@ appears (not a black window), **Maps → Discovery Topo** draws the Reeks, and
 **F11** with **Focus Mode** goes full screen and back. If anything fails, tell
 us what you saw; a photo of the screen is enough.
 
-1. Open **Devices** during a mission, hide and show a device, zoom to one;
+1. Put a phone in flight mode (or out of coverage) for 20 minutes while it
+   records, then reconnect; its trail for that time should appear within
+   about five minutes.
+2. Open **Devices** during a mission, hide and show a device, zoom to one;
    confirm every participant stays on the map and keeps its trail.
-2. Finish a mission, then start a second one in the same session with
+3. Finish a mission, then start a second one in the same session with
    devices ticked before Start; confirm they track and their lookback history
    appears.
-3. Import the Discovery package (or re-check it as above); switch the basemap
+4. Import the Discovery package (or re-check it as above); switch the basemap
    to **Discovery Topo** and confirm the map draws with Wi-Fi off.
-4. Finish → Archive & Lock → reopen the archive in Review; confirm it is the
+5. Finish → Archive & Lock → reopen the archive in Review; confirm it is the
    mission you just finished.
-5. Pause a mission, close the app, reopen and Resume; it should stay paused.
-6. Report problems with a support bundle (Diagnostics → Export Support Bundle).
+6. Pause a mission, close the app, reopen and Resume; it should stay paused.
+7. Report problems with a support bundle (Diagnostics → Export Support Bundle).
 
 ## Known issues
 
