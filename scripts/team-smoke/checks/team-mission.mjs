@@ -243,6 +243,27 @@ export default [
       await delay(1500)
       const deviceList = await t('device-list-scroll').innerText()
       await app.shot('devices')
+      // DON-295: nothing in Devices may narrow the mission. Hide one participant
+      // across several polls as an operator would: it and the others must keep
+      // recording while hidden, and the exact comparison at the end must hold.
+      const narrowing = await app.page.locator('[data-testid^="device-active-toggle-"], [data-testid="device-filter-active"]').count()
+      if (narrowing > 0) findings.push(`Devices still offers ${narrowing} control(s) that narrow the mission participants (DON-295)`)
+      const dog = String(device('Dog Handler').id)
+      const walker = String(members('KMRT Hasty').find((entry) => entry.kind === 'walk').id)
+      const storedCounts = () => withStore(profile, (db) => Object.fromEntries(db.prepare(
+        'SELECT p.device_id AS id, count(*) AS n FROM positions p JOIN missions m ON m.id = p.mission_id WHERE m.name = ? GROUP BY p.device_id',
+      ).all(MISSION).map((row) => [String(row.id), Number(row.n)])))
+      await t(`device-visibility-${dog}`).click()
+      const hiddenFrom = storedCounts()
+      await delay(70_000) // several live polls (walkers report every 20 s)
+      const hiddenTo = storedCounts()
+      await t(`device-visibility-${dog}`).click()
+      await delay(500)
+      for (const [label, id] of [['hidden Dog Handler', dog], ['KMRT Hasty walker', walker]]) {
+        if (!((hiddenTo[id] ?? 0) > (hiddenFrom[id] ?? 0))) {
+          findings.push(`${label} stored no new fixes while a device was hidden in Devices (${hiddenFrom[id] ?? 0} → ${hiddenTo[id] ?? 0}; DON-295)`)
+        }
+      }
       await closeWorkspace(app.page)
       for (const selected of [...members('KMRT Hasty'), ...members('KMRT Search'), device('Dog Handler'), device('Drone Operator'), device('Late Joiner')]) {
         if (!deviceList.includes(selected.name)) findings.push(`${selected.name} missing from the device list`)
