@@ -20,6 +20,9 @@ const FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS = Object.freeze([
   'Code Cache',
 ])
 const DEFAULT_INCIDENT_WINDOW_MINUTES = 30
+// Upper bound for the renderer support report inside one diagnostics file (DON-308).
+const MAX_SUPPORT_REPORT_BYTES = 1_000_000
+const MAX_SUPPORT_REPORT_LINE_BYTES = 32 * 1024
 const SECRET_LINE_KEY_PATTERN = /(password|token|secret|credential|api[-_]?key|authorization)\s*[:=]/i
 const REDACTED_USER_DATA_PATH = '[redacted-user-data-path]'
 
@@ -101,6 +104,7 @@ function createElectronRuntimeFiles(options) {
     return buildElectronDiagnosticsReport({
       contents,
       settings,
+      appVersion: options.appVersion,
       versions: options.versions,
       platform: options.platform,
       userDataPath,
@@ -237,6 +241,7 @@ function buildElectronDiagnosticsReport(input) {
   const officialMaps = input.settings?.officialMaps
   return [
     '[electron]',
+    `app version: ${readDiagnosticsValue(input.appVersion, 'unknown')}`,
     `electron: ${input.versions.electron}`,
     `chrome: ${input.versions.chrome}`,
     `node: ${input.versions.node}`,
@@ -257,9 +262,36 @@ function buildElectronDiagnosticsReport(input) {
     ...formatOfficialMapPackages(officialMaps?.packages),
     '',
     '[support-report]',
-    sanitizeDiagnosticsText(redactUserDataPath(input.contents, input.userDataPath)),
+    sanitizeSupportReportText(redactUserDataPath(input.contents, input.userDataPath)),
     '',
   ].join('\n')
+}
+
+/**
+ * Sanitizes the renderer support report as one text, so redaction that spans
+ * lines still applies, then caps it by whole lines with a visible note
+ * (DON-308). It used to pass one 32 KB bound and was replaced wholesale.
+ *
+ * @param {string} contents renderer support report text
+ * @returns {string} sanitized, bounded report text
+ */
+function sanitizeSupportReportText(contents) {
+  const lines = sanitizeDiagnosticsText(contents, { bounded: false }).split('\n')
+  const kept = []
+  let bytes = 0
+  for (const line of lines) {
+    const sanitized = Buffer.byteLength(line) > MAX_SUPPORT_REPORT_LINE_BYTES
+      ? '[redacted-structured-value-too-large]'
+      : line
+    const lineBytes = Buffer.byteLength(sanitized) + 1
+    if (bytes + lineBytes > MAX_SUPPORT_REPORT_BYTES) break
+    kept.push(sanitized)
+    bytes += lineBytes
+  }
+  if (kept.length < lines.length) {
+    kept.push(`[support report truncated: ${kept.length} of ${lines.length} lines shown]`)
+  }
+  return kept.join('\n')
 }
 
 function formatOfficialMapPackages(input) {
@@ -378,8 +410,8 @@ function sanitizeReportFileName(input) {
   return sanitized
 }
 
-function sanitizeDiagnosticsText(contents) {
-  let sanitized = sanitizeDiagnosticText(contents)
+function sanitizeDiagnosticsText(contents, options = {}) {
+  let sanitized = sanitizeDiagnosticText(contents, new Set(), options)
 
   for (const segment of FORBIDDEN_DIAGNOSTICS_PATH_SEGMENTS) {
     sanitized = sanitized.replaceAll(segment, '[redacted-path-segment]')

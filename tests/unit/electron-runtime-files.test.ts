@@ -128,6 +128,57 @@ describe('electron runtime files', () => {
     }
   })
 
+  it('states the app version first and keeps a large support report instead of dropping it [DON-308]', async () => {
+    const files = await createRuntimeFiles()
+    const eventLines = Array.from({ length: 2_000 }, (_, index) =>
+      `event ${index}: tracking poll completed for Walker ${index % 30} password=field-secret-${index}`)
+    const contents = ['Diagnostics Report', 'app version: 0.1.0-beta.13.5+sha.abc', '[environment]', ...eventLines].join('\n')
+    expect(Buffer.byteLength(contents)).toBeGreaterThan(32 * 1024)
+
+    const report = await readFile(await files.exportDiagnosticsReport({ fileName: 'big.txt', contents }), 'utf8')
+
+    expect(report.split('\n').slice(0, 2)).toEqual(['[electron]', 'app version: 0.1.0-beta.13.5'])
+    expect(report).not.toContain('[redacted-structured-value-too-large]')
+    expect(report).toContain('app version: 0.1.0-beta.13.5+sha.abc')
+    expect(report).toContain('event 1999: tracking poll completed for Walker 19')
+    expect(report).not.toContain('field-secret')
+  })
+
+  it('still redacts secrets that span lines in a large support report [DON-308]', async () => {
+    const files = await createRuntimeFiles()
+    const padding = Array.from({ length: 1_500 }, (_, index) => `event ${index}: ${'y'.repeat(20)}`)
+    const contents = [
+      'Diagnostics Report',
+      ...padding,
+      '{"password":',
+      '"SYNTHETIC_SECRET_A"}',
+      '{',
+      '  "auth": {',
+      '    "token":',
+      '      "SYNTHETIC_SECRET_B"',
+      '  }',
+      '}',
+    ].join('\n')
+    expect(Buffer.byteLength(contents)).toBeGreaterThan(32 * 1024)
+
+    const report = await readFile(await files.exportDiagnosticsReport({ fileName: 'multi.txt', contents }), 'utf8')
+
+    expect(report).toContain('event 1499:')
+    expect(report).not.toContain('SYNTHETIC_SECRET_A')
+    expect(report).not.toContain('SYNTHETIC_SECRET_B')
+  })
+
+  it('bounds a huge support report with a visible truncation note [DON-308]', async () => {
+    const files = await createRuntimeFiles()
+    const contents = ['Diagnostics Report', ...Array.from({ length: 40_000 }, (_, index) => `line ${index} ${'x'.repeat(40)}`)].join('\n')
+
+    const report = await readFile(await files.exportDiagnosticsReport({ fileName: 'huge.txt', contents }), 'utf8')
+
+    expect(report).toContain('line 0 ')
+    expect(report).toMatch(/\[support report truncated: \d+ of 40001 lines shown\]/)
+    expect(Buffer.byteLength(report)).toBeLessThan(1_100_000)
+  })
+
   it('exports a support bundle combining environment, crash history, and recent runtime log', async () => {
     const files = await createRuntimeFiles({
       readRecentCrashes: async () => [
@@ -592,6 +643,7 @@ describe('electron runtime files', () => {
       readRecentLog: logOverrides.readRecentLog,
       readStorageDiagnostics: logOverrides.readStorageDiagnostics,
       userDataPath,
+      appVersion: '0.1.0-beta.13.5',
       versions: {
         electron: '40.10.0',
         chrome: '144.0.7559.236',

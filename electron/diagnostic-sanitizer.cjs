@@ -38,7 +38,12 @@ function diagnosticByteLength(value) {
 /**
  * Redacts secrets and private local identity from free-form diagnostics text.
  */
-function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
+/**
+ * Redacts secrets, credentials and private paths from diagnostic text.
+ * `bounded: false` skips only the final whole-text size bound, for callers
+ * that bound the sanitized result themselves (DON-308 support report).
+ */
+function sanitizeDiagnosticText(input, sensitiveValues = new Set(), { bounded = true } = {}) {
   const structured = parseStructuredDiagnosticText(input)
   if (structured === STRUCTURED_DIAGNOSTIC_LIMIT_MARKER) {
     return STRUCTURED_DIAGNOSTIC_LIMIT_MARKER
@@ -66,7 +71,8 @@ function sanitizeDiagnosticText(input, sensitiveValues = new Set()) {
     sanitized = sanitized.replace(pattern, replacement)
   }
 
-  return boundDiagnosticText(redactSensitiveValues(sanitized, sensitiveValues))
+  const redacted = redactSensitiveValues(sanitized, sensitiveValues)
+  return bounded ? boundDiagnosticText(redacted) : redacted
 }
 
 /**

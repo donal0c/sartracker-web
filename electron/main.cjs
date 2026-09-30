@@ -1592,6 +1592,7 @@ async function startElectronApp(startupWatchdog) {
     .catch(() => undefined)
   const runtimeFiles = createElectronRuntimeFiles({
     userDataPath,
+    appVersion: app.getVersion(),
     versions: process.versions,
     platform: process.platform,
     safeStorageBackend: () =>
