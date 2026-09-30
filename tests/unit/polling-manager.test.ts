@@ -2731,6 +2731,51 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('keeps live breadcrumb polling flowing while a whole-team sweep holds its requests [DON-305]', async () => {
+    const devices = Array.from({ length: 12 }, (_, index) => ({
+      ...NORMALIZED_DEVICES[0]!,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    let sweeping = false
+    let liveRequestsDuringSweep = 0
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (!sweeping) return []
+          if (to.getTime() - from.getTime() > 5 * 60 * 1000) {
+            return new Promise(() => undefined)
+          }
+          liveRequestsDuringSweep += 1
+          return []
+        },
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T20:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    sweeping = true
+    // The sweep starts at five minutes and its requests never return.
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+    liveRequestsDuringSweep = 0
+    await vi.advanceTimersByTimeAsync(2 * 30_000)
+
+    expect(liveRequestsDuringSweep).toBeGreaterThanOrEqual(devices.length)
+    poller.stop()
+  })
+
   it('does not canonicalize history that failed durable persistence', async () => {
     const getCanonicalBreadcrumbs = vi.fn()
     const onSnapshot = vi.fn()

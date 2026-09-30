@@ -1100,6 +1100,35 @@ describe('breadcrumb history reconciler late uploads [DON-305]', () => {
     expect(sweepRequests.every((request) => request.to - request.from <= 2 * HOUR_MS)).toBe(true)
   })
 
+  it('leaves half the shared history transport free for live polling during a sweep', async () => {
+    const devices = Array.from({ length: 12 }, (_, index) => createDevice(index + 1))
+    let initialDone = false
+    let inFlight = 0
+    let maximumSweepInFlight = 0
+    const reconciler = createBreadcrumbHistoryReconciler({
+      fetchBreadcrumbs: vi.fn(async () => {
+        if (!initialDone) return []
+        inFlight += 1
+        maximumSweepInFlight = Math.max(maximumSweepInFlight, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, 1_000))
+        inFlight -= 1
+        return []
+      }),
+      onChunk: vi.fn(),
+      onProgress: vi.fn(),
+      shouldContinue: () => true,
+      logger: { warn: vi.fn() },
+    })
+    reconciler.reconcile({ devices, from: new Date(MISSION_START_MS), until: new Date(NOW_MS) })
+    await vi.advanceTimersByTimeAsync(0)
+    initialDone = true
+
+    await vi.advanceTimersByTimeAsync(TICK_MS + 60_000)
+
+    expect(maximumSweepInFlight).toBeGreaterThan(0)
+    expect(maximumSweepInFlight).toBeLessThanOrEqual(4)
+  })
+
   it('retries the recent window on the next tick after a failed fetch, and names the device', async () => {
     const harness = createLateUploadHarness(1)
     await harness.runFor(10 * MINUTE_MS)

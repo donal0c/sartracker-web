@@ -154,6 +154,10 @@ export function createBreadcrumbHistoryReconciler(
     options.antiEntropyRecentWindowMs,
     DEFAULT_ANTI_ENTROPY_RECENT_WINDOW_MS,
   )
+  // The sweep shares the polling manager's history transport budget with
+  // live breadcrumb polling; it takes at most half so live trails never
+  // queue behind a whole team's sweep [DON-305].
+  const antiEntropyMaxConcurrency = Math.max(1, Math.floor(maxConcurrency / 2))
   const antiEntropyOlderChunksPerTick = normalizePositiveInteger(
     options.antiEntropyOlderChunksPerTick,
     DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK,
@@ -735,13 +739,13 @@ export function createBreadcrumbHistoryReconciler(
     antiEntropyBatchInFlight = true
 
     // Every device's recent window is swept on every tick; the device pool is
-    // bounded so a large team shares maxConcurrency requests in flight.
+    // bounded to half of maxConcurrency, leaving the rest for live polling.
     const devices = [...completedDevicesById.values()].sort((left, right) =>
       compareStringsByCodeUnit(left.deviceId, right.deviceId),
     )
     let nextDeviceIndex = 0
     const workers = Array.from(
-      { length: Math.min(maxConcurrency, devices.length) },
+      { length: Math.min(antiEntropyMaxConcurrency, devices.length) },
       async () => {
         while (nextDeviceIndex < devices.length) {
           const device = devices[nextDeviceIndex]
