@@ -17,12 +17,15 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
   Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
-## Next action — box smoke on 13.5 candidate 5 tonight
+## Next action — box smoke on 13.5 candidate 6
 
-**Draft ready:** tag at f1c8f3c5, release run 36762062936 (attempt 2 re-ran the
-launch smoke only; attempt 1 was a black first-paint flake, re-run rendered).
-.deb `108ec88d…9fe8`, AppImage `e7ac6f7e…bb4e` (full hashes: Linear DON-305).
-CI soak passes (main-max 92.3 ms).
+**Candidate 6 = candidate 5 + team fixes (30 Sep, Donal: in 13.5, box waits):**
+DON-306 plain-words refusal when re-importing a retired GPX (copy/rename
+workaround; full Restore = DON-309, 13.6), DON-307 Minimize on a lived-in
+profile, DON-308 diagnostics report states the version and keeps its content.
+Codex-reviewed (aw b35981225cba). Mac: correctness 6,258, Chromium 232,
+packaged `team-mission` incl. the new steps. Draft hashes: Linear DON-305/306.
+Open for Eamonn: what the Outings panel is for; his layout doc is coming.
 
 **DON-305 fixed:** every 5-min tick re-reads the last 6 h of every device,
 newest first, plus 3 older chunks; the sweep takes at most 4 of the 8 shared
