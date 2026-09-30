@@ -73,7 +73,7 @@ unit test keeps this table, the template and the publisher in agreement.
 | Large mission opens responsive | One representative large mission opens and stays responsive | Manual with a large fixture |
 | Packaged soak | CI packaged soak green; plus one overnight installed soak when tracking or storage changed | CI link; overnight log |
 | Strict responsiveness (<200 ms) | Release workflow strict responsiveness step green | CI link |
-| Offline map package | The package the team actually holds imports, renders offline, and survives restart | Manual |
+| Offline map package | The package the team actually holds imports, renders offline, and survives restart | team-smoke `offline-map` with `--map-package`; rendered tiles by eye from its screenshots |
 
 ### Start-with-lookback — part of the tracking row (DON-291)
 
@@ -108,7 +108,7 @@ Before its Linear issue closes:
 | Report | Linear | Escape | Check that now covers it |
 | --- | --- | --- | --- |
 | TB13-01 map orientation | — | Not a defect: the map had been rotated; the compass resets it (confirmed by the reporter). | None needed. |
-| TB13-02 Discovery package rejected | DON-144 | The 13.4 smoke did not test offline maps; the supplied package declares zoom 8 but starts at 9. | **Offline map package** row must use the package the team actually holds. |
+| TB13-02 Discovery package rejected | DON-144 | The 13.4 smoke did not test offline maps; the supplied package declares zoom 8 but starts at 9. | **Offline map package** row must use the package the team actually holds: team-smoke `offline-map`; unit `official-map-package` "declares more zoom levels" [DON-144]. |
 | TB13-03 no history before mission start | DON-291 | The smoke never used a Start Offset, and added participants after Start. | **Tracking** row, start-with-lookback phase (above). |
 | TB13-03 cause, found by team-mission | DON-292 | Every earlier flow started the first mission of a fresh profile; after any finished mission the pre-start selection was dropped. | **Team mission scenario** (lived-in profile); E2E `participants.spec.ts` [DON-292]. |
 | Map recentres on first update | DON-185 | Pre-register. | E2E `map.spec.ts` [DON-185]. |

@@ -47,6 +47,7 @@ const {
   startInterruptedMissionCleanupRecovery,
 } = require('./archive-cleanup-startup.cjs')
 const { createElectronFileSystem } = require('./file-system.cjs')
+const { withTestMapPackageDialog } = require('./test-map-package-dialog.cjs')
 const { validateGpxImportEnvelope } = require('./gpx-import-envelope.cjs')
 const { createElectronOfficialMapProxy } = require('./official-map-proxy.cjs')
 const { createCrashLog, isRendererFaultReason } = require('./crash-log.cjs')
@@ -1659,7 +1660,7 @@ async function startElectronApp(startupWatchdog) {
   }
   const fileSystem = createElectronFileSystem({
     userDataPath: app.getPath('userData'),
-    dialog,
+    dialog: withTestMapPackageDialog(dialog),
     shell,
     getBrowserWindow: () => BrowserWindow.getFocusedWindow(),
   })

@@ -15,6 +15,7 @@ sudo apt install ./rc/*.deb                # needed for the installed-payload ch
 node scripts/team-smoke/run.mjs \
   --deb ~/rc/*.deb --appimage ~/rc/*.AppImage --sha256sums ~/rc/SHA256SUMS \
   --previous-profile <copy of a profile made by the team's current release> \
+  --map-package <the Discovery .mbtiles the team actually holds> \
   --out ~/smoke-<version>
 ```
 
@@ -24,6 +25,10 @@ node scripts/team-smoke/run.mjs \
   WebGL). The repo's other packaged smokes pass `--app-arg --ignore-gpu-blocklist`;
   do the same and say so in the release note. Launch args are recorded in
   `results.json`.
+- `offline-map` imports `--map-package` through Settings with the network
+  blocked. The native picker is answered by the app's test-only
+  `SARTRACKER_ELECTRON_TEST_OFFICIAL_MAP_PACKAGE_PATH` hook; import and
+  verification are the product's own. Never pass a package into the repo.
 - `--only lifecycle,tracking` runs selected checks. Check ids are printed with
   every result.
 - Over SSH it borrows the logged-in desktop display automatically. Start long
@@ -36,9 +41,9 @@ node scripts/team-smoke/run.mjs \
   commit, artifact hashes, timings), and per-check logs and screenshots.
 
 A full run takes about 25 minutes. Rows not automated here (live Traccar, large
-mission, soak, strict responsiveness, offline maps, CI run) show as NOT TESTED
+mission, soak, strict responsiveness, CI run) show as NOT TESTED
 and are filled in by hand from the sources the checklist names.
-Mixed rows (lifecycle, GPX, basemaps/layers and installer custody) also remain
+Mixed rows (lifecycle, GPX, basemaps/layers, offline map rendering and installer custody) also remain
 NOT TESTED after their automated subset succeeds. Complete the named remaining
 checks, retain the automated evidence and append the operator, date, artifact
 identity and result in the release note before marking the whole row PASS.
