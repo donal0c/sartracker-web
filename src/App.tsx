@@ -47,6 +47,7 @@ import { CompactMissionStrip } from './components/compact-mission-strip'
 import { PersistentTrackingHealth } from './components/persistent-tracking-health'
 import { ThemeToggle } from './components/theme-toggle'
 import { useWorkspaceVisibility } from './features/mission/use-workspace-visibility'
+import { selectWorkspaceHideBlockedReason } from './features/mission/workspace-hide-blocked-reason'
 
 // Settings stays mounted so its open/close behaviour is unchanged; only its
 // code is split out of the default application chunk.
@@ -85,13 +86,12 @@ function App() {
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMission = useMissionStore((state) => state.currentMission)
   const governanceMission = useMissionStore((state) => state.governanceMission)
-  const railCollapseBlockedReason = missionDecisionOpen
-    ? 'Complete or cancel the open mission decision before hiding this workspace.'
-    : missionActionError !== null
-    ? 'Resolve the mission action failure before hiding this workspace.'
-    : missionPhase === 'paused' || missionPhase === 'recovery' || governanceMission !== null
-      ? 'Mission pause, recovery or archive controls must remain visible.'
-      : null
+  const railCollapseBlockedReason = selectWorkspaceHideBlockedReason({
+    decisionOpen: missionDecisionOpen,
+    actionError: missionActionError,
+    phase: missionPhase,
+    governanceMission,
+  })
   const workspace = useWorkspaceVisibility(
     `${currentMission?.id ?? 'none'}:${missionPhase}:${governanceMission?.id ?? 'none'}`,
     railCollapseBlockedReason,

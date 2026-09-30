@@ -540,6 +540,22 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
   })
 
+  test('minimizes the active mission while an earlier finished mission awaits Archive & Lock [DON-307]', async ({ page }) => {
+    await page.getByTestId('mission-name-input').fill('Yesterday Training')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+
+    await page.getByTestId('mission-name-input').fill('Today Search')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('mission-control-collapse-btn').click()
+
+    await expect(page.getByTestId('mission-control-dock')).toBeHidden()
+    await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText('Today Search')
+  })
+
   test('does not show minimize in paused mission control', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Paused Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
