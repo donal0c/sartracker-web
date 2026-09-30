@@ -17,32 +17,27 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
   Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
-## Next action — beta.13.5 candidate 3 in CI
+## Next action — beta.13.5: publish when the live check passes
 
-Tag `electron-v0.1.0-beta.13.5` at 0ed54a4a, **CI 36695835717**. Candidate 2
-failed only on a stale E2E tab count (fixed; full Chromium 231/231 locally).
-Contents: DON-295 (Devices Add removed), the Discovery package fix (DON-144),
-and DON-281/282/283/291/292/294. Local commits 73d8076a and 5d053e96 (smoke
-tool and docs): push after CI.
+**Go given by Donal (30 Sep)** on draft `electron-v0.1.0-beta.13.5` (0ed54a4a,
+CI 36695835717): AppImage `52254f13…`, .deb `3e0197b2…`. Exceptions DON-284,
+DON-285 and DON-304, layer toggles and the overnight soak are approved.
+**Donal then chose to hold publication until the live Traccar check passes**:
+the server was unreachable on 30 Sep.
 
-When CI is green:
-1. Push, bundle to the box, move the tool checkout to HEAD, download the draft.
-2. Run the full smoke with `--previous-profile
-   ~/sartracker-13.5-smoke/upgrade-from-13.4.pristine-copy --map-package …`
-   (see the private note); it includes the new `team-workflow` (expect
-   FAIL on DON-304 only) and `offline-map`.
-3. Fill the note's table; ask Donal for the .deb install, the manual rows
-   (window-X, GPX picker, basemap glance, live Traccar, F11) and go/no-go
-   with exceptions (DON-284, DON-285, DON-304).
-4. Guarded publish, fresh-download check, team note (tell the tester: History
-   from → Mission start; Maps → Discovery after start; post-install check).
+- The box watcher `~/sartracker-13.5-smoke/live-watch/watch.sh` checks the
+  server every 3 min for 12 h, then runs team-smoke `live-traccar` once
+  (installed 13.5, approved device, GET-only). Result is in `live-watch/result`.
+- PASS: set the Live Traccar row to PASS, remove its exception, then
+  `npm run electron:release:publish -- --tag electron-v0.1.0-beta.13.5 --check-notes …`,
+  dry-run, and publish. Then check a fresh download and draft the team note.
+- FAIL: stop and tell Donal. It gave up after 12 h: ask Donal.
+- The full box smoke (smoke-3) and the manual rows are done; see the note's table.
 
-**Waiting on Donal (Claude raises these; Donal need not remember):**
-DON-296 default KMRT group · DON-304 as a known issue in 13.5 · DON-284
-"was lost" wording · DON-288 fallback expectation · DON-302 retire the old
-smoke · box sleep mask (`sudo systemctl mask sleep.target suspend.target`).
-**Ask the team on the next call:** DON-293 (replay of backfilled history).
-Full post-13.5 queue: the workplan table "After beta.13.5" (DON-296–304).
+**Waiting on Donal (Claude raises these):** DON-296 default KMRT group ·
+DON-284 wording · DON-288 fallback · DON-302 retire the old script (replaced
+by `live-traccar`) · box sleep mask (the first attempt did not apply).
+**Ask the team on the next call:** DON-293. Queue: the workplan table "After beta.13.5".
 
 ## Pointers
 

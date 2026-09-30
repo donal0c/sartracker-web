@@ -131,44 +131,49 @@ before upgrading. Never delete mission data; capture diagnostics first.
 ## Owner-approved exceptions
 
 Applies to: `electron-v0.1.0-beta.13.5`
-Approved AppImage SHA-256: `TODO`
-Approved .deb SHA-256: `TODO`
+Approved AppImage SHA-256: `52254f132ff15a85f42d0e887b58ed1e246abd150e86b3e4890ea49a8c19ed3c`
+Approved .deb SHA-256: `3e0197b2ca3689ed4f86af38f0af70b2ff5a49a6e38135a73bf6040cc5e735dd`
 
 | Check | Result | Severity | Exposure and workaround | Approved by | Approval reference | Follow-up |
 | --- | --- | --- | --- | --- | --- | --- |
-| Mission lifecycle and crash recovery | TODO | Ship with known issue | Clean quit may be reported as an unexpected shutdown; data unaffected. | TODO | TODO | DON-284 |
-| Unwritable profile shows an error | TODO | Ship with known issue | Silent exit; check folder permissions. | TODO | TODO | DON-285 |
-
-DON-288 (black window without WebGL) is a known issue, not a checklist row;
-it is recorded here as a test-box accommodation (`--ignore-gpu-blocklist`).
+| Unwritable profile shows an error | FAIL | Ship with known issue | Silent exit when `~/.config/sartracker-web` is not writable; check folder permissions. Same as 13.4. | Donal | In-session go/no-go, 30 Sep 2026, on the AppImage and .deb digests above | DON-285 |
+| Mission lifecycle and crash recovery | FAIL | Ship with known issue | A graceful quit is recorded as an unexpected shutdown; the next launch may say so. Fixes gap-free; window-X close passes. Same as 13.4. | Donal | In-session go/no-go, 30 Sep 2026, on the AppImage and .deb digests above | DON-284 |
+| Team mission scenario | FAIL | Ship with known issue | `team-workflow` (the team's own steps, SAR-QA-025): Discovery is not remembered after restart; choose Maps → Discovery Topo after starting. All other steps pass. Same as 13.4. | Donal | In-session go/no-go, 30 Sep 2026, on the AppImage and .deb digests above | DON-304 |
+| Live Traccar | NOT TESTED | Ship with known issue | The live server was unreachable from the test box and the Mac (TCP to its port failed; DNS resolves; the box reaches the internet). The app showed a visible "Disconnected · retrying" banner. The team uses live Traccar daily. | Donal: not needed if the live check passes | In-session decision 30 Sep 2026: hold publication until the live check passes | Re-run when the server is up |
+| Replay, basemaps and layers | NOT TESTED | Backlog | Automated replay passes and all four public basemaps render (screenshots checked). Layer toggles were not exercised by hand; Chromium E2E covers them (231/231). | Donal | In-session go/no-go, 30 Sep 2026, on the AppImage and .deb digests above | DON-299 |
+| Packaged soak | NOT TESTED | Backlog | CI packaged soak green (run 36695835717). The overnight installed soak was not run; tracking changed (DON-291/292/295). | Donal | In-session go/no-go, 30 Sep 2026, on the AppImage and .deb digests above | Overnight soak before the next release |
 
 ## Release checklist results
 
-Run on TODO against the exact CI artifacts from run TODO, team-smoke tool
-commit TODO. Results: PASS, FAIL, NOT TESTED, or NOT APPLICABLE.
+Run on 2026-09-30 against the exact CI artifacts from run 36695835717 (tag at
+0ed54a4a), team-smoke tool commit a36704fa, on Ubuntu 24.04 (test box). Launch
+args: `--no-sandbox --ignore-gpu-blocklist`. The box GPU is blocklisted
+(DON-288); this is a test-box accommodation. The team runs the AppImage on
+PCLinuxOS, which is not tested here (DON-298; a post-install check is in the
+team note).
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| CI release run | TODO | TODO |
-| AppImage SHA-256 | TODO | TODO |
-| .deb SHA-256 | TODO | TODO |
-| Installed .deb payload | TODO | TODO |
-| Startup with bad stored credential | TODO | TODO |
-| Corrupt or newer database refused | TODO | TODO |
-| Unwritable profile shows an error | TODO | TODO |
-| Duplicate launch | TODO | TODO |
-| Upgrade from the team's current release | TODO | TODO |
-| Mission lifecycle and crash recovery | TODO | TODO |
-| Tracking matches provider exactly | TODO | TODO |
-| Provider outage warning and backfill | TODO | TODO |
-| Live Traccar | TODO | TODO |
-| Coordinate conversion and rejection | TODO | TODO |
-| Markers, attachments and GPX import | TODO | TODO |
-| Replay, basemaps and layers | TODO | TODO |
-| Encrypted archive create and reopen | TODO | TODO |
-| Settings, secrets and support bundle | TODO | TODO |
-| Team mission scenario | TODO | TODO |
-| Large mission opens responsive | TODO | TODO |
-| Packaged soak | TODO | TODO |
-| Strict responsiveness (<200 ms) | TODO | TODO |
-| Offline map package | TODO | TODO |
+| CI release run | PASS | Run 36695835717 green on 0ed54a4a (lint, correctness, strict responsiveness, build, Chromium E2E, Linux bundle, packaged soak, AppImage launch). |
+| AppImage SHA-256 | PASS | `52254f132ff15a85f42d0e887b58ed1e246abd150e86b3e4890ea49a8c19ed3c`: GitHub draft asset digest = box-measured = SHA256SUMS; downloaded from the CI-created draft with `gh release download`. |
+| .deb SHA-256 | PASS | `3e0197b2ca3689ed4f86af38f0af70b2ff5a49a6e38135a73bf6040cc5e735dd`: GitHub draft asset digest = box-measured = SHA256SUMS; same custody. |
+| Installed .deb payload | PASS | sartracker-web 0.1.0~beta.13.5 installed; dpkg -V clean; 140/140 payload files byte-identical. |
+| Startup with bad stored credential | PASS | Reached the shell; tracking disabled with the re-enter-password warning. |
+| Corrupt or newer database refused | PASS | Newer schema and corrupt database refused with clear messages; mission-store.sqlite byte-identical. |
+| Unwritable profile shows an error | FAIL | Silent exit (code 0), no window or message. DON-285. |
+| Duplicate launch | PASS | Second instance exited without a window; the first kept its ACTIVE mission. |
+| Upgrade from the team's current release | PASS | Profile made by installed 13.4 (finished + active mission): missions, markers, drawings and fixes row-for-row equal (2/2/18); active mission held paused for Resume. |
+| Mission lifecycle and crash recovery | FAIL | Graceful quit recorded as unexpected shutdown (DON-284). Pause, SIGKILL, renderer crash and quit: 45 fixes gap-free. Window-X close by hand (Donal, 30 Sep): closed cleanly, clean-exit marker written; relaunch offered Resume with no unexpected-shutdown message; mission and GPX intact. |
+| Tracking matches provider exactly | PASS | 27 live fixes equal the provider; 48 h lookback history exact for selected participants, none before start, unselected absent; 5 more after restart. |
+| Provider outage warning and backfill | PASS | Visible OFFLINE warning during the 90 s outage; 48 fixes gap-free after reconnect. |
+| Live Traccar | NOT TESTED | Server unreachable from the box and the Mac (TCP to port failed); the app showed a visible Disconnected banner. Environment, not product. |
+| Coordinate conversion and rejection | PASS | DD↔IG round trip (Q 99842 04015); DD/DMS paste; invalid input rejected. |
+| Markers, attachments and GPX import | PASS | 2 markers; photo stored byte-identical; GPX via the bridge (30 points). Native picker by hand (Donal, 30 Sep): SAR-smoke-track.gpx imported and stored. |
+| Replay, basemaps and layers | NOT TESTED | Replay reconstructed 1 min back; live stayed ACTIVE; ESRI Satellite, OpenStreetMap, ESRI World Topo and OpenTopoMap render tiles (screenshots checked). Layer toggles not done by hand. |
+| Encrypted archive create and reopen | PASS | Archived with passphrase and recovery code, restarted, reopened read-only; wrong passphrase refused. |
+| Settings, secrets and support bundle | PASS | Settings persisted; secret empty after restart; bundle has no secret, home path or username. |
+| Team mission scenario | FAIL | `team-mission` PASS on all automated steps: 9,735 fixes across 19 devices exact; no Devices control narrows participants; a hidden participant and others kept recording (DON-295); screenshots checked. `team-workflow` (SAR-QA-025): every step passes except Discovery after relaunch (DON-304). |
+| Large mission opens responsive | PASS | Installed 13.5 on a 959,988-fix profile: shell in 1.5 s, mission ACTIVE in 2.0 s; Settings opens in 28–54 ms; main-loop gap p99 17 ms, max 24 ms. |
+| Packaged soak | NOT TESTED | CI packaged soak green; overnight installed soak not run. |
+| Strict responsiveness (<200 ms) | PASS | Release workflow strict responsiveness step green (run 36695835717). |
+| Offline map package | PASS | Team package (sha256 e317fd01…, z9–16, 31,729 tiles) imported offline, verified ready, still ready after restart; Discovery Topo tiles render before and after restart (screenshots checked). |

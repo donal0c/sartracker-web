@@ -109,8 +109,8 @@ export async function launchApp(ctx, { profile, label, waitForShell = true, env 
   await waitForCdp(port, () => running)
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
   handle.page = await firstAppPage(browser)
-  // The app asks before closing a window with an active mission; accept it as
-  // an operator confirming the close would.
+  // The app itself never asks before closing (window X drains and quits; Donal
+  // confirmed on 13.5). Accept any unexpected page dialog so it cannot hang a run.
   handle.page.on('dialog', (dialog) => {
     void dialog.accept().catch(() => {})
   })
