@@ -18,6 +18,8 @@ than only mocking the happy path. Confirm external-review findings in source.
 | Documentation only, no executable/test/config change | Check facts, links, commands and diff; confirm code and test trees are unchanged. Reuse their green tests. |
 | Pure logic or bounded backend fix | Red/green regression, affected suites, then the full source suite, lint and build on the stable change. |
 | Renderer/operator workflow | Above plus affected Playwright flows; visual captures and review when presentation matters. |
+| A UI control, label or count removed or renamed | Above plus the **full** Chromium suite (`npm run test:e2e:chromium`) before pushing or tagging: other specs assert on what was removed (the DON-295 retag failed CI on a stale count) [DON-317]. |
+| Mission-store schema or DDL (tables, indexes, triggers, schema version) | Above plus every `tests/unit/electron-archive-*.test.ts` suite: archive custody pins the exact schema version, index/trigger allowlist and tracked tables (DON-322's extra index broke Archive & Lock and only the archive suites caught it). |
 | SQLite, IPC, workers, credentials, filesystem, restart or native runtime | Above plus the packaged check for that boundary (a `scripts/team-smoke` check or an `electron:smoke:*` script) and Linux CI. Browser mocks alone are insufficient. |
 | Scale, long-duration or crash-recovery regression | Same-workload reproduction, causal diagnostics and the affected scale or interruption case. |
 | Release to testers | [The release checklist](release-checklist.md). |

@@ -24,12 +24,18 @@ export const MOCK_DEVICES = Object.freeze([
 /**
  * Starts the mock on 127.0.0.1.
  *
- * @param {{port?: number}} [options]
- * @returns {Promise<{url: string, startMs: number, fixFor: (sourcePositionId: number) => {deviceId: number, latitude: number, longitude: number, fixTime: string} | null, latestIndex: () => number, setOffline: (offline: boolean) => void, close: () => Promise<void>}>}
+ * `holdDevice` models one phone losing signal: that device serves nothing
+ * newer while the others stay live; `releaseDevice` uploads the held stretch
+ * with its original fix times, as a phone does when signal returns [DON-316].
+ *
+ * @param {{port?: number, now?: () => number}} [options]
+ * @returns {Promise<{url: string, startMs: number, fixFor: (sourcePositionId: number) => {deviceId: number, latitude: number, longitude: number, fixTime: string} | null, latestIndex: () => number, latestIndexFor: (deviceId: number) => number, holdDevice: (deviceId: number) => void, releaseDevice: (deviceId: number) => void, setOffline: (offline: boolean) => void, close: () => Promise<void>}>}
  */
-export async function startMockTraccar({ port = 0 } = {}) {
-  const startMs = Date.now()
+export async function startMockTraccar({ port = 0, now = Date.now } = {}) {
+  const startMs = now()
   let offline = false
+  /** Device id → last index served while its phone has no signal. */
+  const held = new Map()
 
   const fixAt = (device, index) => {
     const time = device.mode === 'stale' ? startMs - 3_600_000 : startMs + index * STEP_MS
@@ -52,8 +58,9 @@ export async function startMockTraccar({ port = 0 } = {}) {
       attributes: { batteryLevel: 80 },
     }
   }
-  const latestIndex = () => Math.floor((Date.now() - startMs) / STEP_MS)
-  const latestFor = (device) => fixAt(device, device.mode === 'stale' ? 0 : latestIndex())
+  const latestIndex = () => Math.floor((now() - startMs) / STEP_MS)
+  const servedIndex = (device) => (device.mode === 'stale' ? 0 : held.get(device.id) ?? latestIndex())
+  const latestFor = (device) => fixAt(device, servedIndex(device))
 
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://mock')
@@ -91,8 +98,8 @@ export async function startMockTraccar({ port = 0 } = {}) {
       const device = MOCK_DEVICES.find((candidate) => candidate.id === Number(deviceId))
       if (device === undefined) return json(200, [])
       const from = Date.parse(url.searchParams.get('from') ?? '1970-01-01T00:00:00Z')
-      const to = Date.parse(url.searchParams.get('to') ?? new Date().toISOString())
-      const last = device.mode === 'stale' ? 0 : latestIndex()
+      const to = Date.parse(url.searchParams.get('to') ?? new Date(now()).toISOString())
+      const last = servedIndex(device)
       const fixes = []
       for (let index = 0; index <= last; index += 1) {
         const fix = fixAt(device, index)
@@ -114,6 +121,17 @@ export async function startMockTraccar({ port = 0 } = {}) {
     url: `http://127.0.0.1:${address.port}`,
     startMs,
     latestIndex,
+    latestIndexFor(deviceId) {
+      const device = MOCK_DEVICES.find((candidate) => candidate.id === deviceId)
+      if (device === undefined) throw new Error(`Mock device ${deviceId} does not exist.`)
+      return servedIndex(device)
+    },
+    holdDevice(deviceId) {
+      held.set(deviceId, latestIndex())
+    },
+    releaseDevice(deviceId) {
+      held.delete(deviceId)
+    },
     firstIndexAtOrAfter(time) {
       if (!Number.isFinite(time)) throw new Error('Mission start time is missing or invalid.')
       return Math.max(0, Math.ceil((time - startMs) / STEP_MS))

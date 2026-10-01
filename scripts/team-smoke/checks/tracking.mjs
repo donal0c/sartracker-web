@@ -3,23 +3,29 @@
  * the provider served, the mission survives every interruption gap-free, and a
  * provider outage is visible and backfilled. The tracking row also starts a
  * mission with a 48 h lookback against known provider history (DON-291); it
- * cannot pass unless both parts ran.
+ * cannot pass unless both parts ran. Lifecycle, outage and controls also
+ * require fixes to keep arriving WHILE each event or control is in effect,
+ * because backfill makes a stopped recording look complete afterwards
+ * (DON-299 classes 2-3) [DON-315, DON-316].
  */
 
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
 import { LOOKBACK_HOURS, startHistoryTraccar } from '../lib/history-traccar.mjs'
+import { LIVE_LAG_LIMIT_STEPS, waitForStoredIds, watchLiveRecording } from '../lib/live-recording.mjs'
 import { startMockTraccar } from '../lib/mock-traccar.mjs'
 import {
   addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, resumeIfPrompted,
   startMission, startMissionWithLookback, togglePause,
 } from '../lib/operator.mjs'
-import { expectProduct } from '../lib/results.mjs'
+import { expectProduct, NotTested } from '../lib/results.mjs'
 import { missionFixes } from '../lib/store.mjs'
 
 const WALKERS = ['Walker Alpha', 'Walker Bravo']
 const PARTICIPANTS = [...WALKERS, 'Stationary Charlie']
+/** Mock device ids of the walkers. */
+const WALKERS_IDS = [1, 2]
 
 /**
  * Compares stored fixes with the provider and, for walking devices, requires
@@ -198,10 +204,10 @@ async function lookbackPhase(ctx) {
 }
 
 /** Starts a mock, the app and a mission with participants. */
-async function trackedMission(ctx, label, name) {
+async function trackedMission(ctx, label, name, profileName = 'profile') {
   const mock = await startMockTraccar()
   ctx.cleanups.push(() => mock.close())
-  const profile = path.join(ctx.runDir, 'profile')
+  const profile = path.join(ctx.runDir, profileName)
   const app = await launchApp(ctx, { profile, label })
   await connectProvider(app.page, mock.url)
   await startMission(app.page, name, PARTICIPANTS)
@@ -212,6 +218,90 @@ async function trackedMission(ctx, label, name) {
   })
   const firstExpectedByDevice = participantFirstIndices(mock, setup.missionStart, setup.participants)
   return { mock, profile, app, firstExpectedByDevice }
+}
+
+/**
+ * Mid-mission controls an operator can leave set while people are out. Each
+ * entry presses the control, and `undo` puts it back; recording must keep
+ * going while it is set, not only after it is undone (DON-299 class 2)
+ * [DON-315].
+ */
+function midMissionControls(page) {
+  const t = (id) => page.getByTestId(id)
+  const layerToggle = (nodeTestId) => ({
+    async press() {
+      await t('sidebar-tab-layers').click()
+      await t('layer-expand-all-btn').click()
+      await t(`layer-visibility-${nodeTestId}`).uncheck()
+    },
+    async undo() {
+      await t('sidebar-tab-layers').click()
+      await t(`layer-visibility-${nodeTestId}`).check()
+    },
+  })
+  return [
+    { label: 'the devices layer was hidden', ...layerToggle('layer-tracking-devices') },
+    { label: 'the breadcrumbs layer was hidden', ...layerToggle('layer-tracking-breadcrumbs') },
+    { label: 'the whole Tracking group was hidden', ...layerToggle('group-tracking') },
+    {
+      label: 'Focus Mode was on',
+      press: () => t('focus-mode-toggle').click(),
+      undo: () => t('focus-mode-toggle').click(),
+    },
+    {
+      label: 'the Devices workspace was open',
+      press: () => t('open-devices-workspace').click(),
+      undo: () => closeWorkspace(page),
+    },
+    {
+      label: 'Review was open',
+      press: () => t('open-mission-review-workspace').click(),
+      undo: () => closeWorkspace(page),
+    },
+    {
+      label: 'Replay was showing',
+      async press() {
+        await t('open-mission-review-workspace').click()
+        await page.getByRole('button', { name: 'Replay', exact: true }).click()
+        await t('mission-replay-seek').click()
+      },
+      async undo() {
+        await t('mission-replay-return-live').click()
+        await closeWorkspace(page)
+      },
+    },
+    (() => {
+      const toggle = t('basemap-menu-toggle')
+      const label = async () => (await toggle.innerText()).replace(/\s+/gu, ' ')
+      let original = null
+      return {
+        label: 'the basemap was switched',
+        async press() {
+          original = { label: await label() }
+          await toggle.click()
+          await delay(400)
+          const buttons = page.locator('[data-testid^="basemap-btn-"]')
+          const ids = await buttons.evaluateAll((nodes) => nodes.map((node) => ({
+            id: node.getAttribute('data-testid'), active: node.className.includes('bg-amber-300'), enabled: !node.disabled,
+          })))
+          original.id = ids.find((entry) => entry.active)?.id ?? null
+          const other = ids.find((entry) => !entry.active && entry.enabled)
+          if (original.id === null || other === undefined) throw new Error(`No second basemap to switch to: ${JSON.stringify(ids)}.`)
+          await t(other.id).click()
+          await delay(2000)
+          if (await label() === original.label) throw new Error(`The basemap stayed "${original.label}" after choosing ${other.id}; the control was not pressed.`)
+        },
+        async undo() {
+          await toggle.click()
+          await delay(400)
+          await t(original.id).click()
+          await delay(2000)
+          const restored = await label()
+          if (restored !== original.label) throw new Error(`Restoring the basemap left "${restored}", not "${original.label}".`)
+        },
+      }
+    })(),
+  ]
 }
 
 export default [
@@ -231,6 +321,35 @@ export default [
     },
   },
   {
+    // Recording while a control is set is part of tracking truth [DON-315].
+    check: 'Tracking matches provider exactly',
+    id: 'controls',
+    timeoutMs: 20 * 60_000,
+    async run(ctx) {
+      const name = 'Controls Smoke'
+      const { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'controls', name, 'controls-profile')
+      const findings = await watchLiveRecording({
+        mock, profile, missionName: name, devices: WALKERS_IDS, label: 'the mission had just started', durationMs: 100_000, graceMs: 40_000,
+      })
+      const pressed = []
+      for (const control of midMissionControls(app.page)) {
+        await control.press()
+        await delay(1000)
+        await app.shot(`controls-${pressed.length + 1}`)
+        findings.push(...await watchLiveRecording({
+          mock, profile, missionName: name, devices: WALKERS_IDS, label: control.label, durationMs: 75_000,
+        }))
+        await control.undo()
+        pressed.push(control.label)
+      }
+      await app.stop()
+      const result = verifyFixes(mock, missionFixes(profile, name), { firstExpectedByDevice })
+      expectProduct(findings.length === 0, `${findings.join('; ')}.`)
+      return `Walkers kept recording live (within ${LIVE_LAG_LIMIT_STEPS} fixes of the provider) while ${pressed.join(', ')}; `
+        + `${result.fixes} fixes, walkers gap-free ${JSON.stringify(result.perDevice)}.`
+    },
+  },
+  {
     check: 'Mission lifecycle and crash recovery',
     id: 'lifecycle',
     manualSteps: ['Close with the window X, reopen and confirm no false unexpected-shutdown report and no evidence-health warning in Tracking.'],
@@ -238,6 +357,13 @@ export default [
       const name = 'Lifecycle Smoke'
       const findings = []
       let { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'lifecycle-1', name)
+      // Walkers must record live after each relaunch, not only be backfilled
+      // at the end. The first poll after a launch is the grace period [DON-316].
+      const requireLive = async (label, durationMs) => {
+        findings.push(...await watchLiveRecording({
+          mock, profile, missionName: name, devices: WALKERS_IDS, label, durationMs, graceMs: 40_000,
+        }))
+      }
       // DON-318: the mock serves only valid fixes, so no rejected-position
       // evidence is ever held. No kill, crash or quit may then claim it was
       // lost and block Finish/Archive (Eamonn, 13.5).
@@ -251,7 +377,7 @@ export default [
           findings.push(`after ${after}, evidence health was ${health?.state ?? 'unreadable'} (${health?.reason ?? 'no reason'}) with no rejected position held (DON-318)`)
         }
       }
-      await delay(40_000)
+      await requireLive('the mission had just started', 100_000)
       const preservedFixes = missionFixes(profile, name)
 
       // Pause, then kill the main process as a power cut would.
@@ -263,7 +389,7 @@ export default [
       if (phaseAfterKill !== 'PAUSED') findings.push(`mission paused before SIGKILL came back ${phaseAfterKill} after Resume`)
       if (phaseAfterKill === 'PAUSED') await togglePause(app.page)
       await requireEvidenceHealthy('SIGKILL')
-      await delay(30_000)
+      await requireLive('resumed after SIGKILL', 100_000)
 
       // Renderer crash closes the app by design; relaunch and resume.
       const session = await app.page.context().newCDPSession(app.page)
@@ -274,7 +400,7 @@ export default [
       expectProduct(await resumeIfPrompted(app.page), 'No recovery prompt after renderer crash.')
       expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE after resuming from renderer crash.')
       await requireEvidenceHealthy('a renderer crash')
-      await delay(30_000)
+      await requireLive('resumed after a renderer crash', 100_000)
 
       // Graceful quit, then a normal relaunch must not claim a crash. The
       // window X button cannot be driven faithfully over CDP; check it by hand.
@@ -284,7 +410,7 @@ export default [
       if (crashState?.uncleanShutdown === true) findings.push('a graceful quit was recorded as an unexpected shutdown')
       await resumeIfPrompted(app.page, 15_000)
       await requireEvidenceHealthy('a graceful quit')
-      await delay(40_000)
+      await requireLive('resumed after a graceful quit', 100_000)
 
       // Graceful quit.
       await app.stop('SIGTERM')
@@ -292,7 +418,7 @@ export default [
       const summary = `pause, SIGKILL, renderer crash and graceful quit; ${result.fixes} fixes, walkers gap-free `
         + `${JSON.stringify(result.perDevice)}`
       expectProduct(findings.length === 0, `${findings.join('; ')}. Data: ${summary}.`)
-      return `${summary}; pause state preserved; graceful quit not reported as a crash; evidence health stayed healthy after each. Window X close: check by hand.`
+      return `${summary}; walkers recorded live after start and after each relaunch; pause state preserved; graceful quit not reported as a crash; evidence health stayed healthy after each. Window X close: check by hand.`
     },
   },
   {
@@ -310,6 +436,24 @@ export default [
         return parts.join(' / ').replace(/\s+/gu, ' ').trim()
       }
       await delay(30_000)
+      // One phone loses signal: the other walker must keep recording live,
+      // and the held stretch must arrive whole when signal returns [DON-316].
+      mock.holdDevice(1)
+      const oneDeviceFindings = await watchLiveRecording({
+        mock, profile, missionName: name, devices: [2], label: 'Walker Alpha had no signal', durationMs: 75_000,
+      })
+      // The held stretch must arrive from the phone's own late upload, before
+      // the provider outage below triggers a global recovery.
+      const heldIds = []
+      for (let index = mock.latestIndexFor(1) + 1; index <= mock.latestIndex(); index += 1) heldIds.push(1_000_000 + index)
+      mock.releaseDevice(1)
+      const heldStored = await waitForStoredIds({
+        ids: heldIds, timeoutMs: 90_000, read: () => missionFixes(profile, name).map((fix) => fix.sourcePositionId),
+      })
+      if (!heldStored) oneDeviceFindings.push(`${heldIds.length} fixes Walker Alpha uploaded on regaining signal were not stored within 90 s`)
+      if (heldIds.length < 5) throw new NotTested(`Only ${heldIds.length} fixes were held; the no-signal phase proves nothing.`)
+      expectProduct(oneDeviceFindings.length === 0, `${oneDeviceFindings.join('; ')}.`)
+      await delay(20_000)
       const before = await trackingStatus()
       const preservedFixes = missionFixes(profile, name)
       mock.setOffline(true)
@@ -330,7 +474,8 @@ export default [
       await app.stop()
       expectProduct(warned !== '', `No tracking warning during a 90 s provider outage. Status stayed: "${before.slice(0, 160)}".`)
       const result = verifyFixes(mock, missionFixes(profile, name), { firstExpectedByDevice, preservedFixes })
-      return `During the 90 s outage the tracking status showed "${warned.slice(0, 160)}"; after reconnect ${result.fixes} fixes, `
+      return `While Walker Alpha had no signal for 75 s, Walker Bravo kept recording live and Alpha's held fixes arrived on release, before the outage. `
+        + `During the 90 s outage the tracking status showed "${warned.slice(0, 160)}"; after reconnect ${result.fixes} fixes, `
         + `walkers gap-free ${JSON.stringify(result.perDevice)}.`
     },
   },
