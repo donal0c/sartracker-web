@@ -31,7 +31,11 @@ Release gate: [checklist](../docs/release-checklist.md).
   The CI 960k replay step fails on the same cause (2 s open), which also
   stops dispatched validation before the CI soak.
 - **DON-312** (new): soak exceeds the 2 GB memory budget on the Mac.
-- Then DON-304, DON-288, ... per the [workplan](../docs/two-track-execution-workplan.md).
+- **DON-304 fixed** (e018c128): Discovery restored after restart when its
+  package is ready, visible notice otherwise; team-smoke with the real
+  package at the next candidate. Follow-up DON-314 (Replay map).
+- Next: DON-313 (SQLite off the main thread, plan first), then DON-288, ...
+  per the [workplan](../docs/two-track-execution-workplan.md).
 - Mac evidence: `tmp/don-310-mac-soak/` (local, gitignored).
 Eamonn: Outings explanation on Donal's call; his layout doc feeds DON-297.
 Box (shared, ask Donal first): smoke tool, 13.4 upgrade profile, 960k fixture,

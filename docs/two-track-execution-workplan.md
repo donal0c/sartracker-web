@@ -13,7 +13,8 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 1 | Initial history catch-up can starve live trail polling (all 8 shared transport slots) | DON-311 | **Fixed 86b8384a** (6 of 8 slots for backfill, live first). Waiting: CI soak, then box `team-mission` backfill time |
 | 2 | Main-thread stalls of 280–520 ms in the normal-profile soak (pre-existing; data exact) | DON-310 | Attributed; harness fix f86777ca, A 2473beca, B f247773f (no measurable gain). Measurement ticket, closes with DON-313 |
 | 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac (renderer ~1.3 GB) | DON-312 | Heap attribution; check the box evidence |
-| 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | Tests first |
+| 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | **Fixed e018c128** (restore when package ready, visible notice otherwise). Waiting: team-smoke with the real package at the next candidate |
+| 3b | Replay ignores the Discovery package (always online map) | DON-314 | Tests first; reuse DON-304's resolver |
 | 3a | Move mission-store SQLite off the Electron main thread (soak stalls; 2 s main block opening a 960k store) | DON-313 | Plan first (worker behind the IPC contract), then tests-first; packaged SQLite/IPC/worker smoke |
 | 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Fallback wording decision, then fix |
 | 5 | Unwritable profile exits silently | DON-285 | Implementation |
