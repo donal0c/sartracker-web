@@ -31,6 +31,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
   const envelope = useParticipantStore((state) => state.envelope)
   const saving = useParticipantStore((state) => state.saving)
   const rosterError = useParticipantStore((state) => state.rosterError)
+  const defaultGroupId = useParticipantStore((state) => state.defaultGroupId)
+  const defaultGroupMissing = useParticipantStore((state) => state.defaultGroupMissing)
   const error = useParticipantStore((state) => state.error)
   const [addKind, setAddKind] = useState<'device' | 'group'>('device')
   const [addRef, setAddRef] = useState('')
@@ -60,7 +62,9 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
               Mission participants
             </p>
             <p className="mt-1 text-xs leading-relaxed text-stone-300">
-              Select the Traccar groups and individual devices taking part. Nothing is pre-selected.
+              {defaultGroupId !== null && selection.availableGroups.some((group) => group.groupId === defaultGroupId && group.selected)
+                ? "Select the Traccar groups and individual devices taking part. Your team's default group is ticked; untick it if it is not taking part."
+                : 'Select the Traccar groups and individual devices taking part. Nothing is pre-selected.'}
             </p>
           </div>
           <span className="sar-status-chip px-2 py-1 font-mono text-[11px]" data-testid="participant-selected-count">
@@ -84,6 +88,11 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
           </p>
         ) : null}
 
+        {defaultGroupMissing ? (
+          <p className="sar-inline-alert p-2 text-xs text-amber-200" data-testid="participant-default-group-missing">
+            Your team&apos;s default group (set in Settings) is not on the tracking server, so nothing was pre-ticked. Choose the groups taking part below.
+          </p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           <ParticipantPickerList
             emptyText="No Traccar groups are available. Device-level selection remains available."
@@ -91,7 +100,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
             items={selection.availableGroups.map((group) => ({
               id: group.groupId,
               label: group.name,
-              detail: `${group.currentMemberCount} current members`,
+              detail: `${group.currentMemberCount} current members${group.groupId === defaultGroupId ? ' · team default' : ''}`,
               selected: group.selected,
               onToggle: () => selection.toggleGroup(group.groupId),
             }))}

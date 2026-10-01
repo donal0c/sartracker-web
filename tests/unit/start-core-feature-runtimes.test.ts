@@ -24,7 +24,7 @@ describe('startCoreFeatureRuntimes', () => {
     })
     const startParticipantRuntime = vi.fn(async () => {
       callOrder.push('participant')
-      return { __id: 'participant' } as never
+      return { __id: 'participant', setDefaultGroup: vi.fn() } as never
     })
     const startMarkerRuntime = vi.fn(async () => {
       callOrder.push('marker')
@@ -74,7 +74,7 @@ describe('startCoreFeatureRuntimes', () => {
     const startMissionRuntime = vi.fn(async () => ({}) as never)
     const startMissionGovernanceRuntime = vi.fn(async () => ({}) as never)
     const startOutingRuntime = vi.fn(async () => ({}) as never)
-    const startParticipantRuntime = vi.fn(async () => ({}) as never)
+    const startParticipantRuntime = vi.fn(async () => ({ setDefaultGroup: vi.fn() }) as never)
     const startMarkerRuntime = vi.fn(async () => ({}) as never)
     const startDrawingRuntime = vi.fn(async () => ({}) as never)
     const startHelicopterRuntime = vi.fn(async () => ({}) as never)
@@ -134,6 +134,7 @@ describe('startCoreFeatureRuntimes', () => {
     const finishFence = vi.fn(async (_missionId: string, finish: () => Promise<unknown>) =>
       finish())
     const startParticipantRuntime = vi.fn(async () => ({
+      setDefaultGroup: vi.fn(),
       refreshMission: vi.fn(),
       runWithMembershipFinishFence: finishFence,
     }) as never)
@@ -158,7 +159,7 @@ describe('startCoreFeatureRuntimes', () => {
 
   it('keeps outing and participant runtimes inert when the internal flag is off', async () => {
     const startOutingRuntime = vi.fn(async () => ({}) as never)
-    const startParticipantRuntime = vi.fn(async () => ({}) as never)
+    const startParticipantRuntime = vi.fn(async () => ({ setDefaultGroup: vi.fn() }) as never)
 
     const handles = await startCoreFeatureRuntimes({
       missionStore: createMissionStoreStub(),

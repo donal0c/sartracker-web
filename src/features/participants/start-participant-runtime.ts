@@ -68,6 +68,8 @@ export type ParticipantRuntimeController = {
   readonly toggleDraftDevice: (deviceId: string) => void
   readonly toggleDraftGroup: (groupId: string) => void
   readonly clearDraft: () => void
+  /** Sets the coordinator-configured team group pre-ticked at Start, or null for none [DON-296]. */
+  readonly setDefaultGroup: (groupId: string | null) => void
   /**
    * Returns the operator's pre-start selection as it stands now. The Start
    * handler captures it before creating the mission, because the mission
@@ -111,6 +113,12 @@ export async function startParticipantRuntime(
   let availableGroups: readonly NormalizedTraccarGroup[] = []
   let draftDeviceIds: readonly string[] = []
   let draftGroupIds: readonly string[] = []
+  // The team's default group is pre-ticked until the coordinator changes the
+  // Start selection; it is never forced back after they untick it [DON-296].
+  let defaultGroupId: string | null = null
+  let autoTickedGroupId: string | null = null
+  let draftTouched = false
+  let groupsObserved = false
   let membershipNotices: readonly string[] = []
   let loading = false
   let saving = false
@@ -158,6 +166,7 @@ export async function startParticipantRuntime(
         if (previousMissionId !== null) {
           draftDeviceIds = []
           draftGroupIds = []
+          resetDraftDefault()
         }
       }
       const token = ++refreshToken
@@ -251,6 +260,8 @@ export async function startParticipantRuntime(
     },
     applyGroups: (groups) => {
       availableGroups = [...groups]
+      groupsObserved = true
+      applyDefaultGroupToDraft()
       publishRuntime()
     },
     reportRosterError: (message) => {
@@ -265,23 +276,29 @@ export async function startParticipantRuntime(
         draftGroupIds.includes(device.group_id)
       ) return
       draftDeviceIds = toggleId(draftDeviceIds, deviceId)
+      draftTouched = true
       publishRuntime()
     },
     toggleDraftGroup: (groupId) => {
-      const selectingGroup = !draftGroupIds.includes(groupId)
-      draftGroupIds = toggleId(draftGroupIds, groupId)
-      if (selectingGroup) {
-        const coveredDeviceIds = new Set(availableDevices
-          .filter((device) => device.group_id === groupId)
-          .map((device) => device.device_id))
-        draftDeviceIds = draftDeviceIds.filter((deviceId) =>
-          !coveredDeviceIds.has(deviceId))
-      }
+      toggleDraftGroupSelection(groupId)
+      draftTouched = true
       publishRuntime()
     },
     clearDraft: () => {
       draftDeviceIds = []
       draftGroupIds = []
+      resetDraftDefault()
+      publishRuntime()
+    },
+    setDefaultGroup: (groupId) => {
+      // A changed or cleared default replaces only the automatic tick, and
+      // only while the coordinator has not changed the selection themselves.
+      if (!draftTouched && autoTickedGroupId !== null && autoTickedGroupId !== groupId) {
+        draftGroupIds = draftGroupIds.filter((id) => id !== autoTickedGroupId)
+        autoTickedGroupId = null
+      }
+      defaultGroupId = groupId
+      applyDefaultGroupToDraft()
       publishRuntime()
     },
     takeDraftSnapshot: () => ({ groupIds: [...draftGroupIds], deviceIds: [...draftDeviceIds] }),
@@ -339,6 +356,7 @@ export async function startParticipantRuntime(
         }
         draftDeviceIds = []
         draftGroupIds = []
+        resetDraftDefault()
         await controller.refreshMission(missionId)
         return selected
       } catch (runtimeError) {
@@ -509,6 +527,9 @@ export async function startParticipantRuntime(
       availableGroups,
       draftDeviceIds,
       draftGroupIds,
+      defaultGroupId,
+      defaultGroupMissing: defaultGroupId !== null && groupsObserved
+        && !availableGroups.some((group) => group.group_id === defaultGroupId),
       membershipNotices,
       scope,
       envelope: assessParticipantEnvelope(scope.operationalDeviceIdsAt(now().toISOString())),
@@ -786,6 +807,41 @@ export async function startParticipantRuntime(
   }
 
   /** Allows group selection only when its complete starting membership is known. */
+  /** Adds or removes one group in the Start selection, dropping devices it now covers. */
+  function toggleDraftGroupSelection(groupId: string): void {
+    const selectingGroup = !draftGroupIds.includes(groupId)
+    draftGroupIds = toggleId(draftGroupIds, groupId)
+    if (selectingGroup) {
+      const coveredDeviceIds = new Set(availableDevices
+        .filter((device) => device.group_id === groupId)
+        .map((device) => device.device_id))
+      draftDeviceIds = draftDeviceIds.filter((deviceId) =>
+        !coveredDeviceIds.has(deviceId))
+    }
+  }
+
+  /**
+   * Pre-ticks the team's default group in an untouched Start selection, only
+   * when the roster is complete (Start refuses a group from an incomplete
+   * roster). The draft is read only by the Start step, so ticking it while a
+   * mission runs enrols no one; it prepares the next Start, including after
+   * Finish, when this runtime still points at the finished mission.
+   */
+  function applyDefaultGroupToDraft(): void {
+    if (defaultGroupId === null || draftTouched) return
+    if (draftGroupIds.includes(defaultGroupId) || !canSelectGroups()) return
+    if (!availableGroups.some((group) => group.group_id === defaultGroupId)) return
+    toggleDraftGroupSelection(defaultGroupId)
+    autoTickedGroupId = defaultGroupId
+  }
+
+  /** Starts a fresh Start selection that again receives the team default. */
+  function resetDraftDefault(): void {
+    draftTouched = false
+    autoTickedGroupId = null
+    applyDefaultGroupToDraft()
+  }
+
   function canSelectGroups(): boolean {
     return rosterObservationReceived && availableRosterComplete
   }
@@ -811,7 +867,9 @@ export async function startParticipantRuntime(
     availableRosterComplete = complete
     rosterObservationReceived = true
     rosterReadError = null
-    if (rosterChanged || completenessChanged || readErrorCleared) publishRuntime()
+    const draftBefore = draftGroupIds
+    applyDefaultGroupToDraft()
+    if (rosterChanged || completenessChanged || readErrorCleared || draftBefore !== draftGroupIds) publishRuntime()
   }
 }
 

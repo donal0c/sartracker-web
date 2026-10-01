@@ -22,6 +22,17 @@ export type MissionDefaultsSettings = {
   readonly stationaryAttentionMovementFloorM?: number
   readonly stationaryAttentionAccuracyFactor?: number
   readonly stationaryAttentionOutlierRejectM?: number
+  /**
+   * The team's own Traccar group, pre-ticked (and untickable) in the Start
+   * step. The name is kept so the choice stays readable if the server drops
+   * the group [DON-296].
+   */
+  readonly defaultParticipantGroup?: DefaultParticipantGroup | null
+}
+
+export type DefaultParticipantGroup = {
+  readonly groupId: string
+  readonly name: string
 }
 
 export type DataSourceSettings = {
@@ -148,6 +159,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     stationaryAttentionMovementFloorM: 15,
     stationaryAttentionAccuracyFactor: 2,
     stationaryAttentionOutlierRejectM: 500,
+    defaultParticipantGroup: null,
   },
   dataSource: {
     providerType: 'none',

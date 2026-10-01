@@ -118,6 +118,36 @@ describe('electron settings store', () => {
     await expect(access(path.join(userDataPath!, 'secrets.json'))).rejects.toThrow()
   })
 
+  it('remembers the team default group for the Start step [DON-296]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    expect((await store.loadAppSettings()).missionDefaults.defaultParticipantGroup).toBeNull()
+
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    const saved = await store.saveAppSettings({
+      ...draft,
+      missionDefaults: { ...draft.missionDefaults, defaultParticipantGroup: { groupId: ' 7 ', name: ' KMRT ' } },
+    })
+
+    expect(saved.missionDefaults.defaultParticipantGroup).toEqual({ groupId: '7', name: 'KMRT' })
+    expect((await store.loadAppSettings()).missionDefaults.defaultParticipantGroup)
+      .toEqual({ groupId: '7', name: 'KMRT' })
+  })
+
+  it.each([
+    ['an empty id', { groupId: '  ', name: 'KMRT' }],
+    ['a non-string id', { groupId: 7, name: 'KMRT' }],
+    ['a control character', { groupId: '7', name: 'KM\u0000RT' }],
+    ['an oversized name', { groupId: '7', name: 'K'.repeat(201) }],
+  ])('stores no default group for %s [DON-296]', async (_label, group) => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    const saved = await store.saveAppSettings({
+      ...draft,
+      missionDefaults: { ...draft.missionDefaults, defaultParticipantGroup: group as never },
+    })
+    expect(saved.missionDefaults.defaultParticipantGroup).toBeNull()
+  })
+
   it('atomically retains administrator roster changes across concurrent settings saves', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const first = createSettingsDraft(DEFAULT_APP_SETTINGS)

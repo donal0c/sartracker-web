@@ -21,6 +21,30 @@ test.describe('mission participants [DON-271]', () => {
     })
   })
 
+  test('pre-ticks the team default group chosen in Settings, and lets the coordinator untick it [DON-296]', async ({ page }) => {
+    await page.getByTestId('open-settings-workspace').click()
+    const field = page.getByTestId('settings-default-participant-group')
+    await field.selectOption({ label: 'Hill Team' })
+    await field.screenshot({ path: 'test-results/don-296-settings-field.png' })
+    await page.getByTestId('settings-save').click()
+    await page.keyboard.press('Escape')
+
+    const step = page.getByTestId('participant-selection-step')
+    const hillTeam = page.getByTestId('participant-group-picker').getByRole('checkbox', { name: /Hill Team/u })
+    await expect(hillTeam).toBeChecked()
+    await expect(step).toContainText('team default')
+    await expect(step).toContainText("Your team's default group is ticked")
+    await step.screenshot({ path: 'test-results/don-296-start-step.png' })
+
+    await hillTeam.uncheck()
+    await expect(hillTeam).not.toBeChecked()
+    await hillTeam.check()
+
+    await page.getByTestId('mission-name-input').fill('Default Group Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('participant-active-list')).toContainText('Hill Team')
+  })
+
   test('keeps pre-start selections for a mission started after finishing an earlier one [DON-292]', async ({ page }) => {
     await page.getByTestId('mission-name-input').fill('Earlier Mission')
     await page.getByTestId('mission-start-btn').click()

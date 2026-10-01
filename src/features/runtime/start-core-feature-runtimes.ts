@@ -45,6 +45,8 @@ import {
 import { resolveParticipantMissionId } from '../participants/participant-mission-context'
 import type { AutosaveSyncReason } from '../persistence/autosave-status-store'
 import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
+import { syncDefaultParticipantGroup } from '../participants/sync-default-participant-group'
+import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 
 /**
  * Mission store surface required by the six core feature runtimes. Derived
@@ -226,7 +228,9 @@ export async function startCoreFeatureRuntimes(
     if (participantMissionId !== null) {
       await participantRuntimeController.refreshMission(participantMissionId)
     }
-    cleanups.push(() => undefined)
+    cleanups.push(typeof window === 'undefined'
+      ? () => undefined
+      : syncDefaultParticipantGroup(participantRuntimeController, loadAppSettings, window))
   } else {
     applyParticipantController(null)
   }

@@ -36,6 +36,8 @@ import {
 } from '../lib/coordinate-preferences'
 import { isElectronRuntimeAvailable } from '../lib/desktop-runtime'
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
+import { useParticipantStore } from '../features/participants/participant-store'
+import { DefaultParticipantGroupField } from './default-participant-group-field'
 
 type SettingsWorkspaceProps = {
   readonly open: boolean
@@ -59,6 +61,7 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [coordinateDisplayMode, setCoordinateDisplayMode] = useState(readCoordinateDisplayMode)
+  const availableTraccarGroups = useParticipantStore((state) => state.availableGroups)
   const [coordinatorRosterText, setCoordinatorRosterText] = useState('')
   const [adminRosterText, setAdminRosterText] = useState('')
   const [baselineCloseSnapshot, setBaselineCloseSnapshot] = useState<string | null>(null)
@@ -277,6 +280,17 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
                       },
                     }))
                   }}
+                />
+
+                <DefaultParticipantGroupField
+                  groups={availableTraccarGroups}
+                  onChange={(value) =>
+                    updateDraft(setDraft, (current) => ({
+                      ...current,
+                      missionDefaults: { ...current.missionDefaults, defaultParticipantGroup: value },
+                    }))
+                  }
+                  value={draft.missionDefaults.defaultParticipantGroup ?? null}
                 />
 
                 <div className="space-y-2">

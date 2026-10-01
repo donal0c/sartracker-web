@@ -1,13 +1,13 @@
 /**
  * The team's own test mission, step by step, as they wrote it (SAR-QA-025,
  * 30 September 2026): start the AppImage, enter a mission name, set the roll
- * back time, press Start with nothing ticked, then add the one flat KMRT group
- * (SAR-QA-023/024); Discovery by default; convert coordinates; add a casualty
+ * back time, press Start, and "Devices for KMRT should display": KMRT is the
+ * team default group set once in Settings, so it is already ticked at Start
+ * (DON-296); Discovery by default; convert coordinates; add a casualty
  * location; see where people are; Focus Mode; OpenTopoMap and satellite.
  *
- * Keep this in the team's order. Each step that the team does differently from
- * the other checks is the point of this check: they add participants after
- * Start, which is how TB13-03 (DON-291) lost its 48 h of history.
+ * Keep this in the team's order. Adding a group after Start (how TB13-03 /
+ * DON-291 lost its 48 h of history) is covered by team-mission.
  */
 
 import path from 'node:path'
@@ -17,7 +17,7 @@ import { closeWorkspace, connectProvider, waitForBasemapLabel } from '../lib/ope
 import { expectProduct } from '../lib/results.mjs'
 import { missionFixes } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
-import { addAfterStart, placeCasualty, trackingStatus, verifyTeamFixes, waitForBackfill } from './team-mission.mjs'
+import { placeCasualty, trackingStatus, verifyTeamFixes, waitForBackfill } from './team-mission.mjs'
 
 const MISSION = 'KMRT Workflow Smoke'
 const TEAM_GROUP = 'KMRT Hasty'
@@ -52,6 +52,7 @@ export default [
       // Setup the team already has: the provider and the Discovery package.
       let app = await launchApp(ctx, { profile, label: 'workflow-setup', env })
       await connectProvider(app.page, mock.url)
+      await setTeamDefaultGroup(app.page, TEAM_GROUP)
       if (mapPackage !== undefined) {
         await importDiscovery(app)
         await selectBasemap(app, 'Discovery Topo')
@@ -68,9 +69,14 @@ export default [
         if (!basemap.includes('Discovery Topo')) findings.push(`Discovery was not the map after relaunch: "${basemap}"`)
       }
 
-      // "Enter mission name, set roll back time, Start": nothing ticked.
+      // "Enter mission name, set roll back time, Start": the team default
+      // group is already ticked, and nothing else [DON-296].
       await t('mission-name-input').fill(MISSION)
       await t('mission-offset-input').fill(String(ROLL_BACK_HOURS))
+      const kmrtTicked = await waitUntilChecked(app.page.getByTestId('participant-group-picker')
+        .locator('label', { hasText: TEAM_GROUP }).locator('input[type="checkbox"]'), 60_000)
+      await app.shot('start-default-group-ticked')
+      if (!kmrtTicked) findings.push(`${TEAM_GROUP} was not pre-ticked at Start although it is the team default group`)
       await t('mission-start-btn').click()
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
@@ -78,16 +84,13 @@ export default [
         (await window.sartrackerElectron.missionStore.getActiveMission())?.start_time))
       expectProduct(Number.isFinite(missionStart) && Math.abs(mock.t0 - ROLL_BACK_HOURS * HOUR - missionStart) < 10 * 60_000,
         `Mission start ${new Date(missionStart).toISOString()} is not about ${ROLL_BACK_HOURS} h before now.`)
-      const empty = (await t('participant-management').innerText()).replace(/\s+/gu, ' ')
-      await app.shot('started-nothing-ticked')
-      if (!/no (mission )?participants/i.test(empty)) findings.push(`starting with nothing ticked gave no visible "no participants" state: "${empty.slice(0, 160)}"`)
+      await app.shot('started-with-default-group')
 
-      // "Devices for KMRT should display": the team adds its group after Start.
-      await addAfterStart(app.page, 'group', TEAM_GROUP, 'mission')
+      // "Devices for KMRT should display": from the 48 h roll back, untouched.
       const backfill = await waitForBackfill(app.page, BACKFILL_BUDGET_MS)
       expectProduct(backfill.seconds !== null,
         `KMRT history did not complete within ${BACKFILL_BUDGET_MS / 60_000} min: ${JSON.stringify(backfill.statuses).slice(0, 300)}.`)
-      notes.push(`KMRT added after Start with "Mission start"; history complete in ${backfill.seconds} s`)
+      notes.push(`KMRT pre-ticked as the team default and started with the ${ROLL_BACK_HOURS} h roll back; history complete in ${backfill.seconds} s`)
 
       // "Convert coordinates".
       await t('open-coordinate-converter').click()
@@ -183,6 +186,33 @@ async function replayBasemap(app) {
   await app.shot('replay-basemap')
   await closeWorkspace(page)
   return { mapId, tileFailure }
+}
+
+/** Sets the team default group once in Settings, as the team would at setup [DON-296]. */
+async function setTeamDefaultGroup(page, groupName) {
+  await page.getByTestId('open-settings-workspace').click()
+  await delay(800)
+  const field = page.getByTestId('settings-default-participant-group')
+  // Groups are listed once the provider roster has been read.
+  await page.waitForFunction((name) => [...document.querySelectorAll('[data-testid="settings-default-participant-group"] option')]
+    .some((option) => option.textContent === name), groupName, { timeout: 60_000 })
+  await field.selectOption({ label: groupName })
+  // Save & Close closes Settings only after the save succeeded.
+  await page.getByTestId('settings-save').click()
+  await page.getByTestId('settings-save').waitFor({ state: 'hidden', timeout: 30_000 })
+}
+
+/**
+ * Waits for a checkbox to become checked; the group renders before the
+ * complete roster that allows the default to be ticked has arrived.
+ */
+async function waitUntilChecked(checkbox, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await checkbox.isChecked().catch(() => false)) return true
+    await delay(500)
+  }
+  return false
 }
 
 /** Imports the Discovery package through Settings (picker answered by the test hook). */

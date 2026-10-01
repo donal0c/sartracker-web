@@ -55,6 +55,48 @@ describe('ParticipantControlsSection [DON-271]', () => {
     useMissionStore.setState(useMissionStore.getInitialState())
   })
 
+  describe('team default group at Start [DON-296]', () => {
+    const groups = [
+      { group_id: 'group-kmrt', name: 'KMRT', parent_group_id: null },
+      { group_id: 'group-other', name: 'Other team', parent_group_id: null },
+    ]
+
+    it('marks the pre-ticked team default group and says it can be unticked', () => {
+      useParticipantStore.setState({
+        availableGroups: groups, draftGroupIds: ['group-kmrt'], defaultGroupId: 'group-kmrt', defaultGroupMissing: false,
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'idle' }))
+      const step = document.querySelector('[data-testid="participant-selection-step"]')?.textContent ?? ''
+      expect(step).toContain("Your team's default group is ticked")
+      expect(step).not.toContain('Nothing is pre-selected')
+      const picker = document.querySelector('[data-testid="participant-group-picker"]')?.textContent ?? ''
+      expect(picker).toContain('team default')
+    })
+
+    it('keeps the original wording when no default group is set', () => {
+      useParticipantStore.setState({ availableGroups: groups, defaultGroupId: null, defaultGroupMissing: false })
+      render(React.createElement(ParticipantControlsSection, { phase: 'idle' }))
+      expect(document.querySelector('[data-testid="participant-selection-step"]')?.textContent)
+        .toContain('Nothing is pre-selected')
+    })
+
+    it('does not claim the default is ticked after the coordinator unticks it', () => {
+      useParticipantStore.setState({
+        availableGroups: groups, draftGroupIds: [], defaultGroupId: 'group-kmrt', defaultGroupMissing: false,
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'idle' }))
+      expect(document.querySelector('[data-testid="participant-selection-step"]')?.textContent)
+        .not.toContain("Your team's default group is ticked")
+    })
+
+    it('says when the default group is not on the tracking server', () => {
+      useParticipantStore.setState({ availableGroups: groups.slice(1), defaultGroupId: 'group-kmrt', defaultGroupMissing: true })
+      render(React.createElement(ParticipantControlsSection, { phase: 'idle' }))
+      expect(document.querySelector('[data-testid="participant-default-group-missing"]')?.textContent)
+        .toContain('is not on the tracking server')
+    })
+  })
+
   describe('history start for participants added after Start [DON-291]', () => {
     const missionStart = '2026-09-27T06:10:39.479Z'
 

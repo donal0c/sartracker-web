@@ -46,6 +46,7 @@ const DEFAULT_APP_SETTINGS = Object.freeze({
     stationaryAttentionMovementFloorM: 15,
     stationaryAttentionAccuracyFactor: 2,
     stationaryAttentionOutlierRejectM: 500,
+    defaultParticipantGroup: null,
   }),
   dataSource: Object.freeze({
     providerType: 'none',
@@ -585,7 +586,22 @@ function normalizeMissionDefaults(input) {
     stationaryAttentionMovementFloorM: normalizeBoundedNumber(input.stationaryAttentionMovementFloorM, 5, 100, 15),
     stationaryAttentionAccuracyFactor: normalizeBoundedNumber(input.stationaryAttentionAccuracyFactor, 1, 5, 2),
     stationaryAttentionOutlierRejectM: normalizeBoundedNumber(input.stationaryAttentionOutlierRejectM, 100, 5_000, 500),
+    defaultParticipantGroup: normalizeDefaultParticipantGroup(input.defaultParticipantGroup),
   }
+}
+
+/**
+ * Keeps a team default group only when both its Traccar id and display name
+ * are bounded, printable text; anything else stores no default [DON-296].
+ */
+function normalizeDefaultParticipantGroup(input) {
+  if (input === null || typeof input !== 'object') return null
+  const groupId = typeof input.groupId === 'string' ? input.groupId.trim() : ''
+  const name = typeof input.name === 'string' ? input.name.trim() : ''
+  const printable = (value, maximum) =>
+    value !== '' && value.length <= maximum && !/[\u0000-\u001f\u007f]/u.test(value)
+  if (!printable(groupId, 64) || !printable(name, 200)) return null
+  return { groupId, name }
 }
 
 function normalizeBoundedNumber(value, minimum, maximum, fallback) {

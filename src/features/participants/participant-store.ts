@@ -28,6 +28,10 @@ export type ParticipantRuntimeState = {
   readonly availableGroups: readonly NormalizedTraccarGroup[]
   readonly draftDeviceIds: readonly string[]
   readonly draftGroupIds: readonly string[]
+  /** The team's default group from Settings, pre-ticked at Start [DON-296]. */
+  readonly defaultGroupId: string | null
+  /** True when the default group is set but the tracking server has no such group. */
+  readonly defaultGroupMissing: boolean
   readonly membershipNotices: readonly string[]
   readonly scope: ParticipationScope
   readonly envelope: ParticipantEnvelopeAssessment
@@ -52,6 +56,8 @@ const EMPTY_PARTICIPANT_RUNTIME: ParticipantRuntimeState = {
   availableGroups: [],
   draftDeviceIds: [],
   draftGroupIds: [],
+  defaultGroupId: null,
+  defaultGroupMissing: false,
   membershipNotices: [],
   scope: EMPTY_PARTICIPATION_SCOPE,
   envelope: assessParticipantEnvelope([]),

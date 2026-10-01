@@ -832,10 +832,19 @@
           <h3>Mission Participants</h3>
           <p>
             Before starting a mission, the mission model shows the live Traccar roster and asks
-            the coordinator to select participating groups and/or individual devices. Nothing is selected
-            automatically. Starting with none is allowed, but the screen states the consequence: reporting
-            devices remain outside mission evidence and off the operational mission map until explicitly
-            added. The full live roster remains available for later selection and diagnostics.
+            the coordinator to select participating groups and/or individual devices. Starting with none
+            is allowed, but the screen states the consequence: reporting devices remain outside mission
+            evidence and off the operational mission map until explicitly added. The full live roster
+            remains available for later selection and diagnostics.
+          </p>
+          <p>
+            <strong>Team default group.</strong> In <strong>Settings → Mission Defaults → Team default
+            group</strong>, choose your team's own Traccar group (for example KMRT). It is then ticked
+            automatically in the Start step of every new mission, marked <em>team default</em>, so its
+            members' history is fetched from the Start Offset. Untick it if your team is not taking part;
+            SAR Tracker will not tick it again for that mission. Nothing else is ever selected
+            automatically. If the group is no longer on the tracking server, the Start step says so and
+            nothing is ticked.
           </p>
           <figure class="screenshot">
             <img src="assets/mission-participant-selection.png" alt="Mission participant selection showing no groups or devices pre-selected" />
