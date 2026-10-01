@@ -4229,6 +4229,8 @@ function migrate(db, archiveDirectory) {
     );
     CREATE INDEX IF NOT EXISTS idx_gpx_import_failures_mission
       ON gpx_import_failures(mission_id, recorded_at, batch_id);
+    CREATE INDEX IF NOT EXISTS idx_gpx_import_failures_source
+      ON gpx_import_failures(mission_id, source_path, content_sha256);
     CREATE TABLE IF NOT EXISTS gpx_import_source_receipts (
       batch_id TEXT NOT NULL,
       mission_id TEXT NOT NULL,
@@ -5034,9 +5036,14 @@ function recoverUnsettledGpxImportReceipts(
       const counts = db.prepare(`SELECT
         (SELECT COUNT(*) FROM gpx_import_source_receipts
           WHERE batch_id = ? AND status = 'settled') AS completed_files,
-        (SELECT COUNT(*) FROM gpx_import_failures WHERE batch_id = ?) AS failed_files,
+        (SELECT COUNT(*) FROM (
+          SELECT source_path FROM gpx_import_failures WHERE batch_id = ?
+          UNION
+          -- A watched rescan settles a repeated failure without a new row [DON-322].
+          SELECT source_path FROM gpx_import_source_receipts
+            WHERE batch_id = ? AND status = 'failed')) AS failed_files,
         (SELECT total_files FROM gpx_import_batches WHERE id = ?) AS total_files`)
-        .get(batchId, batchId, batchId)
+        .get(batchId, batchId, batchId, batchId)
       const completed = Number(counts?.completed_files ?? 0)
       const failed = Number(counts?.failed_files ?? 0)
       const total = Number(counts?.total_files ?? 0)
@@ -10548,6 +10555,25 @@ function recordGpxImportFailureWithinTransaction(db, input, timestamp) {
   const existingFailure = db.prepare(`SELECT 1 FROM gpx_import_failures
     WHERE batch_id = ? AND source_path = ? LIMIT 1`).get(input.batchId, input.sourcePath)
   if (existingFailure !== undefined) return false
+  // A watched-folder rescan meets the same bad file every pass. When these
+  // exact bytes already failed at this path for this exact reason, the issue
+  // is already on record: settle this batch's receipt without a duplicate
+  // row. Changed bytes, a different reason or a later success all differ, so
+  // nothing new is hidden and a fixed parser simply imports the file [DON-322].
+  if (input.dedupeRepeatedFailure === true && db.prepare(`SELECT 1 FROM gpx_import_failures
+    WHERE mission_id = ? AND source_path = ? AND content_sha256 IS ? AND reason = ? LIMIT 1`)
+    .get(input.missionId, input.sourcePath, input.contentSha256 ?? null,
+      safeEvidenceFailureReason(input.reason)) !== undefined) {
+    db.prepare(`UPDATE gpx_import_batches
+      SET failed_files = failed_files + 1, updated_at = ? WHERE id = ?`)
+      .run(timestamp, input.batchId)
+    db.prepare(`UPDATE gpx_import_source_receipts
+      SET status = 'failed', source_bytes_base64 = NULL, updated_at = ?
+      WHERE batch_id = ? AND mission_id = ? AND source_path = ?
+        AND status IN ('pending', 'retained')`)
+      .run(timestamp, input.batchId, input.missionId, input.sourcePath)
+    return false
+  }
   const receipt = db.prepare(`SELECT status FROM gpx_import_source_receipts
     WHERE batch_id = ? AND mission_id = ? AND source_path = ?`).get(
     input.batchId,

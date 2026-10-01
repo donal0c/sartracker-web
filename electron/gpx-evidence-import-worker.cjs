@@ -131,6 +131,7 @@ async function run() {
           sourceBytesBase64: sourceBytes === null ? null : sourceBytes.toString('base64'),
           reason,
           rejections: Array.isArray(error?.gpxRejections) ? error.gpxRejections : [],
+          dedupeRepeatedFailure: envelope.skipRetiredSources === true,
         })
         failures.push({ sourcePath: normalizedPath, reason })
       }

@@ -3750,6 +3750,128 @@ describe('mission evidence versioning [DON-277]', () => {
 
   })
 
+  it('reports an unchanged malformed file in a watched folder once, and again only when it changes [DON-322]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Malformed file in a watched folder' })
+    const badPath = path.join(userDataPath!, 'broken.gpx')
+    const goodPath = path.join(userDataPath!, 'fine.gpx')
+    await writeFile(badPath, '<gpx version="1.1"><trk><trkseg><trkpt lat="51.9"')
+    await writeFile(goodPath, `<gpx version="1.1"><trk><name>Fine</name><trkseg>
+      <trkpt lat="52.03" lon="-9.6"><time>2026-06-29T09:00:00Z</time></trkpt>
+      <trkpt lat="52.04" lon="-9.61"><time>2026-06-29T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    const countFailures = async () => {
+      const db = openDatabase(await databasePath())
+      try {
+        return (db.prepare('SELECT COUNT(*) AS count FROM gpx_import_failures WHERE source_path = ?')
+          .get(badPath) as { count: number }).count
+      } finally { db.close() }
+    }
+    const rescan = () => store!.importGpxEvidencePaths({
+      missionId: mission.id, paths: [badPath, goodPath], skipRetiredSources: true,
+    })
+
+    const first = await rescan()
+    expect(first.failures).toEqual([{ sourcePath: badPath, reason: expect.any(String) }])
+    expect(first.imports).toHaveLength(1)
+    for (let pass = 0; pass < 3; pass += 1) {
+      // Each scan still says the file failed (current state), but keeps one issue on record.
+      expect((await rescan()).failures).toEqual(first.failures)
+    }
+    expect(await countFailures()).toBe(1)
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_source_receipts
+        WHERE status IN ('pending', 'retained')`).get()).toEqual({ count: 0 })
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_batches WHERE status = 'running'`).get())
+        .toEqual({ count: 0 })
+    } finally { db.close() }
+
+    // Changed bytes are a new file to check: recorded again, once.
+    await writeFile(badPath, '<gpx version="1.1"><trk><trkseg></trkseg></trk></gpx>')
+    await rescan()
+    await rescan()
+    expect(await countFailures()).toBe(2)
+
+    // A deliberate import always records what it found.
+    await store.importGpxEvidencePaths({ missionId: mission.id, paths: [badPath] })
+    expect(await countFailures()).toBe(3)
+
+    // Fixed in place: the next scan imports it.
+    await writeFile(badPath, `<gpx version="1.1"><trk><name>Fixed</name><trkseg>
+      <trkpt lat="52.05" lon="-9.6"><time>2026-06-30T09:00:00Z</time></trkpt>
+      <trkpt lat="52.06" lon="-9.61"><time>2026-06-30T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    const fixed = await rescan()
+    expect(fixed.failures ?? []).toEqual([])
+    expect(fixed.imports.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('keeps a deduplicated failure in its batch count when startup recovers an interrupted rescan [DON-322]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Interrupted rescan with a repeated bad file' })
+    const badPath = path.join(userDataPath!, 'bad.gpx')
+    const pendingPath = path.join(userDataPath!, 'pending.gpx')
+    await writeFile(badPath, '<gpx version="1.1"><trk><trkseg><trkpt lat="51.9"')
+    await store.importGpxEvidencePaths({ missionId: mission.id, paths: [badPath], skipRetiredSources: true })
+    const storePath = await databasePath()
+    await store.prepareClose()
+    store.close()
+    store = null
+    // A later rescan settled the repeated bad file without a new row, then the
+    // app died while the second file was still pending.
+    const db = openDatabase(storePath)
+    try {
+      const now = new Date().toISOString()
+      db.prepare(`INSERT INTO gpx_import_batches (id, mission_id, status, total_files, completed_files,
+        failed_files, started_at, updated_at, finished_at) VALUES ('rescan-2', ?, 'running', 2, 0, 1, ?, ?, NULL)`)
+        .run(mission.id, now, now)
+      const receipt = db.prepare(`INSERT INTO gpx_import_source_receipts (batch_id, mission_id, source_path,
+        file_name, status, content_sha256, source_bytes_base64, created_at, updated_at)
+        VALUES ('rescan-2', ?, ?, ?, ?, NULL, NULL, ?, ?)`)
+      receipt.run(mission.id, badPath, 'bad.gpx', 'failed', now, now)
+      receipt.run(mission.id, pendingPath, 'pending.gpx', 'pending', now, now)
+    } finally { db.close() }
+
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await vi.waitFor(async () => {
+      const check = openDatabase(storePath)
+      try {
+        expect(check.prepare(`SELECT status, failed_files, completed_files FROM gpx_import_batches WHERE id = 'rescan-2'`).get())
+          .toEqual({ status: 'interrupted', failed_files: 2, completed_files: 0 })
+      } finally { check.close() }
+    })
+  })
+
+  it('imports a watched file whose same bytes failed earlier for a passing reason [DON-322]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Transient failure in a watched folder' })
+    const sourcePath = path.join(userDataPath!, 'raced.gpx')
+    const source = `<gpx version="1.1"><trk><name>Raced</name><trkseg>
+      <trkpt lat="52.03" lon="-9.6"><time>2026-06-29T09:00:00Z</time></trkpt>
+      <trkpt lat="52.04" lon="-9.61"><time>2026-06-29T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`
+    await writeFile(sourcePath, source)
+    const db = openDatabase(await databasePath())
+    try {
+      const now = new Date().toISOString()
+      db.prepare(`INSERT INTO gpx_import_batches (id, mission_id, status, total_files, completed_files,
+        failed_files, started_at, updated_at, finished_at) VALUES ('raced-batch', ?, 'completed_with_failures', 1, 0, 1, ?, ?, ?)`)
+        .run(mission.id, now, now, now)
+      db.prepare(`INSERT INTO gpx_import_failures (id, batch_id, mission_id, source_path, file_name,
+        content_sha256, source_bytes_base64, reason, rejection_count, rejections_json, recorded_at)
+        VALUES ('raced-failure', 'raced-batch', ?, ?, 'raced.gpx', ?, NULL,
+        'GPX evidence changed while a same-content alias was being checked; retry the import.', 0, '[]', ?)`)
+        .run(mission.id, sourcePath, createHash('sha256').update(source).digest('hex'), now)
+    } finally { db.close() }
+
+    const rescan = await store.importGpxEvidencePaths({
+      missionId: mission.id, paths: [sourcePath], skipRetiredSources: true,
+    })
+
+    expect(rescan.imports).toHaveLength(1)
+  })
+
   it('records a changed retired file reached by a non-normalized path and settles its batch [DON-320]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Non-normalized watched path' })
