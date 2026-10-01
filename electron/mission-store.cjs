@@ -4229,8 +4229,10 @@ function migrate(db, archiveDirectory) {
     );
     CREATE INDEX IF NOT EXISTS idx_gpx_import_failures_mission
       ON gpx_import_failures(mission_id, recorded_at, batch_id);
-    CREATE INDEX IF NOT EXISTS idx_gpx_import_failures_source
-      ON gpx_import_failures(mission_id, source_path, content_sha256);
+    -- An extra index changes the schema shape that archive creation checks
+    -- (archive-scratch EXPECTED_INDEX_NAMES), here and in older builds.
+    -- Removes the one a pre-release DON-322 build created [DON-322].
+    DROP INDEX IF EXISTS idx_gpx_import_failures_source;
     CREATE TABLE IF NOT EXISTS gpx_import_source_receipts (
       batch_id TEXT NOT NULL,
       mission_id TEXT NOT NULL,
