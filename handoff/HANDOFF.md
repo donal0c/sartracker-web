@@ -13,10 +13,15 @@ Release gate: [checklist](../docs/release-checklist.md).
   follow-up ee32ac32, DON-296 78b00506, DON-302 a6731ece, DON-299 class 1
   a0b8643a, DON-300 items 1/2/7 aa1ec7dc (all pushed). Each was
   Codex-reviewed and its findings were fixed.
-- CI 36880796648 (ee32ac32) failed one timing test (fatal fence vs the 10 s
-  startup watchdog; passes locally). Hardened in e4dfdd5c (local, not
-  pushed). CI 36883863760 on aa1ec7dc is running: if green, push e4dfdd5c.
-  If that test fails again, investigate before anything else.
+- **DON-313 (evening):** history writes bounded to ≤256-fix atomic pieces;
+  store queue yields between queued writes; 960k qualification separates the
+  one-time upgrade repair; the soak harness counts off the app main thread
+  (e3831c9d, f97c3707, 0a20c3b5, pushed). Full suite 6,353 pass. Mac soak
+  launch 2 now passes; launch 1 startup catch-up still over 200 ms under VM
+  contention (240-450% CPU), so a quiet-machine or box soak is owed.
+- CI: run 36880796648's fatal-fence timing test hardened (e4dfdd5c); run
+  36883863760's Chromium flake hardened (706a4666). Push 706a4666 started a
+  new run; check it next.
 
 ## Verification limits
 
@@ -31,10 +36,8 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 ## Waiting on Donal
 
-- **DON-313:** attribution done; plan on the ticket. Recommended: bounded
-  sub-transactions with a real yield (not a worker). Also decide whether the
-  960k CI fixture carries the DON-282 fence (steady-state open) with a
-  separate one-time-repair row.
+- **DON-313:** approved and implemented. Owed: a soak on a quiet Mac (VM
+  paused) or the box for launch 1.
 - **DON-309:** schema 13 → 14 for retire/restore intervals (no going back to
   13.5 with the same profile). Recommended: accept.
 - **DON-300 item 8:** when a complete roster omits a group's devices, every

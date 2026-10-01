@@ -14,7 +14,7 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 2 | Main-thread stalls in the normal-profile soak (measurement) | DON-310 | Closes with DON-313 |
 | 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac | DON-312 | Heap attribution; check the box evidence |
 | 3 | Discovery remembered as the map across restarts | DON-304 | **Fixed e018c128.** Waiting: team-smoke with the real package |
-| 3a — **WAITING ON DONAL** | Soak stalls / 960k open block | DON-313 | Attributed 1 Oct: single long `addPositionsBulk` transactions (not back-to-back writes); the 960k "open" is the one-time DON-282 coverage repair (reopen 10–17 ms). **Plan on the ticket: bounded sub-transactions with a real yield, not a worker; plus the 960k fixture decision.** Donal to approve before code |
+| 3a | Soak stalls / 960k open block | DON-313 | **Implemented e3831c9d/f97c3707/0a20c3b5** (bounded pieces, writer yield, 960k upgrade row, harness counts off main). Launch 2 passes; launch 1 owed on a quiet machine or the box |
 | 3b | Replay ignores the Discovery package | DON-314 | **Fixed e73e5734** (pushed). Owed: `team-workflow` Replay step with the real package |
 | 4 | Visible failure when WebGL is unavailable | DON-288 | **Fixed 3f98a23f** (pushed). Owed: box `no-gpu-flag` (button → map draws via llvmpipe) |
 | 5 | Unwritable profile exits silently | DON-285 | **Fixed 6dbe43d3 + ee32ac32** (pushed). Owed: box `unwritable-profile` + `duplicate-launch` on the AppImage |
