@@ -362,6 +362,24 @@ export default [
       if (rescans.after !== rescans.before || rescans.results.some((result) => (result?.failures?.length ?? 0) !== 0)) {
         findings.push(`watched-folder rescans of a retired GPX file added import issues (${rescans.before} → ${rescans.after}; DON-320): ${JSON.stringify(rescans.results).slice(0, 200)}`)
       }
+      // DON-322: a malformed (non-retired) GPX in the watched folder reports
+      // once, not on every rescan.
+      const malformedGpx = timedGpx.replace(/\.gpx$/u, ' (malformed).gpx')
+      await writeFile(malformedGpx, '<gpx version="1.1"><trk><trkseg><trkpt lat="51.9"', 'utf8')
+      const malformedRescans = await app.page.evaluate(async (paths) => {
+        const store = window.sartrackerElectron.missionStore
+        const mission = await store.getActiveMission()
+        const issueCount = async () =>
+          (await store.listGpxImportIssues({ missionId: mission.id, limit: 100 })).entries.length
+        const before = await issueCount()
+        for (let pass = 0; pass < 2; pass += 1) {
+          await store.importGpxEvidencePaths({ missionId: mission.id, paths, skipRetiredSources: true })
+        }
+        return { before, after: await issueCount() }
+      }, [malformedGpx])
+      if (malformedRescans.after !== malformedRescans.before + 1) {
+        findings.push(`two watched-folder rescans of one malformed GPX file added ${malformedRescans.after - malformedRescans.before} import issues, not 1 (DON-322)`)
+      }
 
       // Provider outage: visible, then backfilled.
       const beforeOutage = await trackingStatus(app.page)
