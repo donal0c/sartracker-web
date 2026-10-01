@@ -209,6 +209,11 @@ body {
       font-size: 1.125rem;
     }
 
+  }
+
+  /* Full labels need about 110 px per button; below this width they ran
+     into each other ("DIAGNOSTICSFOCUS MODE" at 1440 px) [DON-300]. */
+  @media (max-width: 1640px) {
     .sar-mast-label-full {
       display: none;
     }

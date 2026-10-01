@@ -299,8 +299,9 @@ function DiagnosticsSection(props: {
       <div className="mt-4 space-y-3">
         {props.rows.map((row) => (
           <div className="sar-status-row flex items-start justify-between gap-4 pt-3 text-sm first:border-t-0 first:pt-0" key={`${props.title}-${row.label}`}>
-            <span className="text-stone-200">{row.label}</span>
-            <span className={rowToneClassName(row.tone)}>{row.value}</span>
+            <span className="shrink-0 text-stone-200">{row.label}</span>
+            {/* Long values (app version, paths) wrap inside the panel [DON-300]. */}
+            <span className={`min-w-0 break-all text-right ${rowToneClassName(row.tone)}`}>{row.value}</span>
           </div>
         ))}
       </div>
