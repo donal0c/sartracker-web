@@ -19,8 +19,9 @@ Release gate: [checklist](../docs/release-checklist.md).
   (e3831c9d, f97c3707, 0a20c3b5, pushed). Full suite 6,353 pass. Mac soak
   launch 2 now passes; launch 1 startup catch-up still over 200 ms under VM
   contention (240-450% CPU), so a quiet-machine or box soak is owed.
-- CI: 706a4666 green (36898010941). 965e96e4 pushed; run 36904008594 in
-  progress; push a5485b22 + docs after it. Mac soaks wait for Docker.
+- CI: 706a4666 green. Run 36904008594 (965e96e4) failed one packaged timing
+  gate (legacy-recovery first open 226 ms vs 200; no open-path change in the
+  delta): if 36908282541 repeats it, investigate before anything else.
 
 ## Verification limits
 
@@ -33,18 +34,18 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box sleeps when idle; open a Terminal for Donal's sudo password for
   `systemd-inhibit` on long runs.
 
-## Who is doing what (1 Oct evening; coordinator owns this file)
+## Who is doing what (1 Oct late; coordinator owns this file)
 
-- **Coordinator:** handoff, workplan, all pushes, Mac soaks. Done tonight:
-  DON-300 1-4,7,8 (a5485b22 local; 5 → DON-297). Next: DON-309 (schema 14,
-  decided) once 9f releases mission-store.cjs.
-- **Session 9f** (commits locally, coordinator pushes): DON-320 7ca2749d and
-  DON-321 965e96e4 (pushed); DON-318 in progress (owns mission-store.cjs,
-  main.cjs, preload.cjs); then DON-319 analysis, then DON-301 (manual merge;
-  takes `public/manual/index.html` then).
+- **Coordinator:** handoff, workplan, all pushes, Mac soaks; now DON-315/316/
+  317 (team-smoke additions, incl. DON-300 item 8 and DON-319 steps).
+- **Session 9f** (commits locally; coordinator pushes): recapture GPX panel
+  shots, then DON-322, then DON-309 (schema 14). Owns mission-store.cjs,
+  main.cjs, preload.cjs, GPX runtime, `public/manual/index.html`.
+- Pushed tonight (0e8553b3): DON-314/288/285/284/313/296/302/299c1/300/
+  318/319/320/321, DON-301 manual rewrite. CI run 36908282541 covers all.
 - Rules: announce files before editing; one heavy run at a time.
 - **When Donal frees Docker:** package once; Mac soak 3x (DON-313) and the
-  team-smoke rows for today's fixes; then push.
+  team-smoke rows for tonight's fixes.
 
 ## Waiting on Donal
 
@@ -57,10 +58,9 @@ Release gate: [checklist](../docs/release-checklist.md).
 - Eamonn's PCLinuxOS report: DON-318-321 (+DON-322 found). The runtime
   log holds ~7 h at his rate, so his bundle may lack the overnight event.
 
-- Then DON-300 items 3-6 (layout at 1440x900), DON-301 (manual rewrite
-  merge; conflicts with today's manual edits), then DON-315/316/317
-  (DON-299 smoke classes). Skip DON-297 (Eamonn's doc), DON-298 (box),
-  DON-293 (parked).
+- Waiting on Eamonn: support bundle, Layers screenshot, Tomies Wood GPX
+  (DON-319 root cause; DON-318 trigger). Skip DON-297 (Eamonn's doc),
+  DON-298 (box), DON-293 (parked).
 - Evidence owed at the next candidate: see the workplan list under the 13.6
   queue.
 - Local evidence: `tmp/don-313-attribution/` (profiles, 960k fixture,
