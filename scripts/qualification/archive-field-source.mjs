@@ -5,7 +5,7 @@ const tables = ['missions', 'devices', 'positions', 'mission_events']
 
 /** Bind the archive role to the original target-size generator and measured source. */
 export function assertArchiveFieldManifest(manifest, source) {
-  if (manifest?.preset !== 'field' || manifest.generatorVersion !== 2 || manifest.schemaVersion !== 13
+  if (manifest?.preset !== 'field' || manifest.generatorVersion !== 2 || ![13, 14].includes(manifest.schemaVersion)
       || manifest.syntheticDataOnly !== true || manifest.workload?.mode !== 'target-size'
       || manifest.workload.deviceCount !== 32 || manifest.workload.activePositionDeviceCount !== 8
       || manifest.scenario !== undefined || !/^[a-f0-9]{64}$/u.test(source?.sha256 ?? '')
@@ -25,7 +25,7 @@ export function assertArchiveFieldManifest(manifest, source) {
 /** Validate the retained all-position inventory against its bound legacy manifest. */
 export function assertArchiveFieldInventory(manifest, inventory) {
   if (inventory?.primary?.id !== missionId || inventory.primary.status !== 'active'
-      || inventory.primary.start_time !== startTime || inventory.primary.schema_version !== 13
+      || inventory.primary.start_time !== startTime || ![13, 14].includes(inventory.primary.schema_version)
       || inventory.activePositionDeviceCount !== 8
       || tables.some(table => inventory.rowCounts?.[table] !== manifest.rows.byTable[table])
       || inventory.fixturePositionCount !== manifest.rows.byTable.positions

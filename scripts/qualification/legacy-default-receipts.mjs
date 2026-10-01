@@ -40,7 +40,7 @@ export async function validateLegacyDefaultReceipt(report,expected) {
       const copied = await copyStandaloneSqliteFixture(actual,path.join(temporary,key+'.sqlite'))
       const db = new Database(copied.path,{readonly:true,fileMustExist:true})
       try {
-        if (db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get()?.value !== (key === 'fixture' ? '11' : '13')) throw new Error('Legacy recovery schema boundary differs.')
+        if (db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get()?.value !== (key === 'fixture' ? '11' : '14')) throw new Error('Legacy recovery schema boundary differs.')
         observations.push(key === 'fixture' ? inspectLegacyMarkerSource(db,report.source?.missionId) : inspectLegacyMarkerCustody(db,report.source?.missionId))
         positionObservations.push(inspectLegacyPositionSource(db,report.source?.missionId))
       } finally { db.close() }

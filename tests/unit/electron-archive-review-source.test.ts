@@ -1509,7 +1509,7 @@ async function createV13Fixture(): Promise<Fixture> {
     })
     const info = await store.info()
     expect(info.schema_version).toBe(CURRENT_SCHEMA_VERSION)
-    expect(info.schema_version).toBe(13)
+    expect(info.schema_version).toBe(14)
     await store.prepareClose()
     store.close()
     const archivedDatabase = new Database(info.database_path)

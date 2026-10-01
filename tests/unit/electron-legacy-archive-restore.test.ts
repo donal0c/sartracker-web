@@ -793,7 +793,7 @@ describe('legacy plaintext archive streaming restore', () => {
     try {
       expect(migrated.prepare(
         "SELECT value FROM metadata WHERE key = 'schema_version'",
-      ).get()).toEqual({ value: '13' })
+      ).get()).toEqual({ value: '14' })
       expect(migrated.prepare(`SELECT name FROM sqlite_master
         WHERE type = 'table' AND name IN (
           'mission_archives', 'mission_archive_supplements', 'mission_cleanup_journal'
@@ -867,7 +867,7 @@ describe('legacy plaintext archive streaming restore', () => {
     try {
       expect(migrated.prepare(
         "SELECT value FROM metadata WHERE key = 'schema_version'",
-      ).get()).toEqual({ value: '13' })
+      ).get()).toEqual({ value: '14' })
       expect(migrated.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
       expect(migrated.prepare('SELECT id, status FROM missions WHERE id = ?').get(missionId))
         .toEqual({ id: missionId, status: 'finalized' })
@@ -1116,7 +1116,8 @@ describe('legacy plaintext archive streaming restore', () => {
     const newerContainer = await createFixture({ archiveVersion: 2 })
     await expectFailedWithMainOwnedResidue(newerContainer.bytes, newerContainer.missionId, /unsupported.*version/iu)
 
-    const newerSchema = await createFixture({ schemaVersion: 14, databaseSchemaVersion: 14 })
+    // 14 is current since DON-309; the next unknown version must still fail closed.
+    const newerSchema = await createFixture({ schemaVersion: 15, databaseSchemaVersion: 15 })
     const sessionDirectory = path.join(rootDirectory, 'newer-schema-session')
     await expect(restoreTrackedLegacyMissionArchive({
       archivePath: newerSchema.archivePath,

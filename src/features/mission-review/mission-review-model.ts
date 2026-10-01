@@ -405,6 +405,13 @@ function describeMissionEvent(
         .join(' ')
     case 'gpx_import_deleted':
       return displayName === null ? 'GPX import retired; evidence retained.' : `GPX import ${displayName} retired; evidence retained.`
+    case 'gpx_import_restored':
+      return [
+        displayName === null ? 'Retired GPX import restored.' : `Retired GPX import ${displayName} restored.`,
+        sourcePath === null ? null : `Source: ${sourcePath}.`,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(' ')
     case 'mission_archived':
     case 'mission_archive_succeeded':
       return archivePath === null ? 'Mission archive created.' : `Archive created at ${archivePath}.`
@@ -501,5 +508,6 @@ const EVENT_TITLES: Record<
   mission_unlocked: { title: 'Mission Unlocked', description: 'Mission unlocked for correction.' },
   gpx_import_created: { title: 'GPX Import Created', description: null },
   gpx_import_updated: { title: 'GPX Import Updated', description: null },
+  gpx_import_restored: { title: 'GPX Import Restored', description: null },
   gpx_import_deleted: { title: 'GPX Import Retired', description: null },
 }

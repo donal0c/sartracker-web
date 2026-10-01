@@ -230,9 +230,11 @@ describe('mission-scoped archive scratch extraction', () => {
       expect(scratch.prepare(`SELECT name FROM sqlite_master
         WHERE type = 'trigger' ORDER BY name`).all().map((row: { readonly name: string }) => row.name))
         .toEqual(expectedScratchTriggerNames(true))
+      // The archive keeps format 13 but carries the store's schema 14, which
+      // makes a 13 build refuse to review it [DON-309].
       expect(scratch.prepare('SELECT key, value FROM metadata ORDER BY key').all()).toEqual([{
         key: 'schema_version',
-        value: '13',
+        value: '14',
       }])
       expect(scratch.prepare('PRAGMA foreign_key_check').all()).toEqual([])
       expect(scratch.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })

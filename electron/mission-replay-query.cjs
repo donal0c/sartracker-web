@@ -15,6 +15,38 @@ const MAX_REPLAY_FILTER_SEARCH_LENGTH = 120
 const MAX_REPLAY_SELECTED_TIME_LENGTH = 64
 const REPLAY_TIMEZONE = 'Europe/Dublin'
 
+/**
+ * A GPX track is hidden at the selected time when (a) its latest retire or
+ * restore audit event at or before that time is a retirement, (b) the time
+ * falls inside a gap a later restore event closed (from the retired_at it
+ * observed), or (c) it is retired with no such events at all (retired before
+ * restore existed). Binds exactly one parameter, the selected time [DON-309].
+ */
+const GPX_VISIBLE_AT_SELECTED_TIME = `NOT EXISTS (
+          SELECT 1 FROM (SELECT ? AS selected_time) AS at_time
+          WHERE EXISTS (SELECT 1 FROM mission_events AS restores
+              WHERE restores.mission_id = imports.mission_id
+                AND restores.event_type = 'gpx_import_restored'
+                AND json_extract(restores.details_json, '$.gpx_import_id') = imports.id
+                AND json_extract(restores.details_json, '$.previous_retired_at') <= at_time.selected_time
+                AND restores.timestamp > at_time.selected_time)
+            OR COALESCE(
+            (SELECT events.event_type FROM mission_events AS events
+              WHERE events.mission_id = imports.mission_id
+                AND events.event_type IN ('gpx_import_deleted', 'gpx_import_restored')
+                AND json_extract(events.details_json, '$.gpx_import_id') = imports.id
+                AND events.timestamp <= at_time.selected_time
+              ORDER BY events.timestamp DESC, events.rowid DESC LIMIT 1),
+            CASE WHEN imports.retired_at IS NOT NULL
+              AND imports.retired_at <= at_time.selected_time
+              AND NOT EXISTS (SELECT 1 FROM mission_events AS any_events
+                WHERE any_events.mission_id = imports.mission_id
+                  AND any_events.event_type IN ('gpx_import_deleted', 'gpx_import_restored')
+                  AND json_extract(any_events.details_json, '$.gpx_import_id') = imports.id)
+            THEN 'gpx_import_deleted' END
+          ) = 'gpx_import_deleted'
+        )`
+
 /** Builds the deterministic metadata snapshot and first bounded exact-track page for data known at T. */
 function readMissionReplayState(database, input) {
   assertLegacyEventProvenanceReady(database, input?.missionId)
@@ -124,7 +156,7 @@ function readMissionReplayFilterPageWithinSnapshot(database, input) {
       JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
       WHERE revisions.mission_id = ? AND revisions.import_state = 'complete'
         AND revisions.recorded_at <= ?
-        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+        AND ${GPX_VISIBLE_AT_SELECTED_TIME}
     ), choices AS (
       SELECT DISTINCT outing_id FROM eligible
       WHERE replay_rank = 1 AND outing_id IS NOT NULL
@@ -520,7 +552,7 @@ function readInitialGpxTrackRows(database, input, key, direction, candidateLimit
       JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
       WHERE revisions.mission_id = ? AND revisions.import_state = 'complete'
         AND revisions.recorded_at <= ?
-        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+        AND ${GPX_VISIBLE_AT_SELECTED_TIME}
     )
     SELECT
       eligible_gpx.import_id || ':' || eligible_gpx.revision_sequence || ':' ||
@@ -575,7 +607,7 @@ function countReplayTrackRows(database, input, eligiblePositionCount) {
       WHERE revisions.mission_id = ?
         AND revisions.import_state = 'complete'
         AND revisions.recorded_at <= ?
-        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+        AND ${GPX_VISIBLE_AT_SELECTED_TIME}
     )
     SELECT COUNT(*) AS count
         FROM eligible_gpx
@@ -690,7 +722,7 @@ function countStaticGpxPoints(database, input) {
       WHERE revisions.mission_id = ?
         AND revisions.import_state = 'complete'
         AND revisions.recorded_at <= ?
-        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+        AND ${GPX_VISIBLE_AT_SELECTED_TIME}
     )
     SELECT COUNT(*) AS count
     FROM eligible
@@ -715,7 +747,7 @@ function readStaticGpxEvidence(database, input) {
       JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
       WHERE revisions.mission_id = ? AND revisions.recorded_at <= ?
         AND revisions.import_state = 'complete'
-        AND (imports.retired_at IS NULL OR imports.retired_at > ?)
+        AND ${GPX_VISIBLE_AT_SELECTED_TIME}
     ), static_imports AS (
       SELECT eligible.*,
         (SELECT COUNT(*) FROM gpx_evidence_points AS points

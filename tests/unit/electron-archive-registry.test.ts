@@ -449,7 +449,7 @@ describe('schema v13 archive lifecycle migration', () => {
   it('adds only bounded registry, supplement and cleanup-journal metadata tables', async () => {
     const fixture = await createFixture()
     try {
-      expect(CURRENT_SCHEMA_VERSION).toBe(13)
+      expect(CURRENT_SCHEMA_VERSION).toBe(14)
       const tables = fixture.db.prepare(`SELECT name FROM sqlite_master
         WHERE type = 'table' AND name IN (
           'mission_archives', 'mission_archive_supplements', 'mission_cleanup_journal'
@@ -460,7 +460,7 @@ describe('schema v13 archive lifecycle migration', () => {
         'mission_cleanup_journal',
       ])
       expect(fixture.db.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '13' })
+        .toEqual({ value: '14' })
 
       const archiveColumns = fixture.db.prepare('PRAGMA table_info(mission_archives)')
         .all().map((row) => row.name)
@@ -498,7 +498,7 @@ describe('schema v13 archive lifecycle migration', () => {
     const inspection = new Database(databasePath) as DatabaseConnection
     try {
       expect(inspection.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
-        .toEqual({ value: '13' })
+        .toEqual({ value: '14' })
       assertReleaseResponsiveness(() => expect(durationMs).toBeLessThan(200))
     } finally {
       inspection.close()

@@ -323,7 +323,8 @@ function validateFixtureAndMigration(evidence) {
     migration.heartbeatMaxGapMs,
     'Migration heartbeat maximum gap',
   )
-  if (migration.schemaVersion !== 13
+  // The migrated store schema (14 since DON-309); archive proofs keep format 13.
+  if (migration.schemaVersion !== 14
     || requireMeasurement(migration.durationMs, 'Migration duration') <= 0
     || migrationHeartbeatMaxGapMs >= MAX_MAIN_CADENCE_MS
     || migration.backfillsSettled !== true) {

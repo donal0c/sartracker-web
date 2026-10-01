@@ -2405,7 +2405,8 @@ function readMaintenanceState(databasePath) {
       schemaVersion,
       failureMarkers: Object.freeze(failureMarkers),
       progress,
-      settled: schemaVersion === 13
+      // Current store schema (14 since DON-309).
+      settled: schemaVersion === 14
         && objectPending === 0
         && eventPending === 0
         && safeGpxPending === 0

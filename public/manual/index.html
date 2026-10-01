@@ -1056,8 +1056,9 @@
             <li>Each track's row says <strong>On map</strong>, or <strong>Hidden on map</strong> with the reason (<em>GPX Tracks is off in Layers</em> or <em>this track is off in Layers</em>) and a <strong>Show on map</strong> button. A listed track is not necessarily drawn: check this line if you cannot find a track.</li>
             <li>If showing a track could not be saved, the row says <strong>On map, but not saved (may be hidden after a restart)</strong> with a <strong>Save again</strong> button.</li>
             <li>Each imported track has its own colour. <strong>Retire</strong> takes it off the map but keeps the record; the retired track stays in the mission history and Replay.</li>
-            <li>A retired track cannot be brought back by importing the same file again: SAR Tracker says the track was retired and asks you to copy or rename the file, then import the copy, which appears as a new track.</li>
-            <li>A file you retire stays in the watched folder but is no longer imported. If it changes afterwards, SAR Tracker tells you once; to import the new version, copy or rename it.</li>
+            <li><strong>Bring a retired track back</strong> by importing the same file again with <strong>Import Files</strong> (or Import Folder). The same track returns, with its colour and name, and Review records that it was restored. If the file changed while it was retired, the new version is saved too. Replay still shows the track as hidden for the time it was retired.</li>
+            <li>A watched folder never brings a retired track back: the file stays in the folder but is not imported. If it changes, SAR Tracker tells you once; use <strong>Import Files</strong> to bring the track back with the new version.</li>
+            <li>A renamed copy of a retired file imports as a separate, new track.</li>
             <li>Points with no time are kept as <em>static</em> evidence and are not placed at an invented time.</li>
             <li>To link a track to an outing, type the coordinator's name in <strong>Coordinator name for outing assignments</strong>, then choose the outing on the track's row.</li>
             <li>Limits: 8 MiB per file and 100 files at a time. A bad file is refused with a reason and reported, never shown as a clean import. Wait for one import to finish before starting another.</li>

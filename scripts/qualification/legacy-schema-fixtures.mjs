@@ -45,7 +45,7 @@ export async function readLegacySchema(version) {
 
 /** Independently preserve every original marker column through migration, allowing only newly added columns. */
 export function inspectMigratedHistoricalFixture(database,fixture) {
-  if (database.prepare("SELECT value FROM metadata WHERE key='schema_version'").get()?.value !== '13') throw new Error('Historical fixture did not reach the current schema.')
+  if (database.prepare("SELECT value FROM metadata WHERE key='schema_version'").get()?.value !== '14') throw new Error('Historical fixture did not reach the current schema.')
   const mission = database.prepare('SELECT * FROM missions WHERE id=?').get(fixture.missionId)
   const originalMission = fixture.rows.missions.find(row => row.id === fixture.missionId)
   for (const key of ['id','name','start_time','notes']) if (mission?.[key] !== originalMission[key]) throw new Error(`Historical mission ${key} changed.`)

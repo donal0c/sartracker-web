@@ -296,10 +296,14 @@ function assertTrackedTableCoverage(db, schemaVersion) {
   }
 }
 
-/** Installs the canonical v13 triggers at the live-write boundary. */
+/**
+ * Installs the canonical cleanup-membership triggers at the live-write
+ * boundary. Store schema 14 has the same tables as 13 (it changes only how
+ * a restored GPX track replays) [DON-309].
+ */
 function installArchiveCleanupMembershipTriggers(db, schemaVersion) {
   if (db === null || typeof db !== 'object' || typeof db.prepare !== 'function'
-    || schemaVersion !== 13) {
+    || (schemaVersion !== 13 && schemaVersion !== 14)) {
     throw new ArchiveCleanupMembershipError(
       'ARCHIVE_CLEANUP_MEMBERSHIP_INPUT_INVALID',
       'Archive cleanup membership trigger installation input is invalid.',

@@ -36,7 +36,7 @@ export async function validateArchiveFieldReceipt(report, expected) {
   if (manifestFile.bytes > 8 * 1024 * 1024) throw new Error('Large archive fixture manifest exceeds its bound.')
   const manifest = JSON.parse(await readFile(manifestFile.path, 'utf8'))
   if (manifest.generatorVersion !== 2 || manifest.syntheticDataOnly !== true || manifest.preset !== 'field'
-      || manifest.schemaVersion !== 13 || manifest.workload?.deviceCount !== 32
+      || ![13, 14].includes(manifest.schemaVersion) || manifest.workload?.deviceCount !== 32
       || manifest.database?.sha256 !== fixture.sourceSha256 || manifest.database?.bytes !== fixture.sourceBytes) throw new Error('Large archive manifest does not bind the fixed field fixture.')
   await retainedIdentity(root, report.archive.archivePath, report.archive.ciphertextSha256, report.archive.ciphertextBytes)
   const before = await retainedIdentity(root, report.preArchive?.databasePath, report.preArchive?.sha256, report.preArchive?.bytes)

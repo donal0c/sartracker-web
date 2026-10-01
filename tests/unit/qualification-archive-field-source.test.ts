@@ -39,7 +39,7 @@ describe('legacy field archive source contract', () => {
   it.each([
     "UPDATE missions SET status='paused'", "UPDATE missions SET id='wrong'",
     'DELETE FROM missions', "INSERT INTO missions SELECT 'other',status,start_time,schema_version FROM missions",
-    'UPDATE missions SET schema_version=14', "UPDATE positions SET mission_id='other' WHERE id='position-0'",
+    'UPDATE missions SET schema_version=15', "UPDATE positions SET mission_id='other' WHERE id='position-0'",
     "DELETE FROM positions WHERE id='position-0'", "UPDATE devices SET mission_id='other' WHERE id='device-0'",
     "DELETE FROM mission_events",
   ])('rejects an ambiguous or mismatched database: %s', sql => {
@@ -49,7 +49,7 @@ describe('legacy field archive source contract', () => {
   })
 
   it.each([
-    { preset: 'bcp-field-37gb' }, { generatorVersion: 6 }, { schemaVersion: 14 }, { syntheticDataOnly: false },
+    { preset: 'bcp-field-37gb' }, { generatorVersion: 6 }, { schemaVersion: 15 }, { syntheticDataOnly: false },
     { database: { ...source, sha256: 'b'.repeat(64) } }, { database: { ...source, bytes: source.bytes + 1 } },
     { workload: { mode: 'breadcrumb-programme', deviceCount: 100, activePositionDeviceCount: 100, realPositionRows: 8 } },
   ])('rejects wrong manifest role, version, or identity: %j', delta => {

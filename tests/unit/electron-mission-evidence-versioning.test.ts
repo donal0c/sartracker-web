@@ -648,8 +648,8 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
-    expect(CURRENT_SCHEMA_VERSION).toBe(13)
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
+    expect(CURRENT_SCHEMA_VERSION).toBe(14)
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 14 })
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const inspection = openDatabase(path.join(userDataPath, 'mission-store.sqlite'))
       const count = Number(inspection.prepare(
@@ -1573,7 +1573,7 @@ describe('mission evidence versioning [DON-277]', () => {
     db.close()
 
     store = createElectronMissionStore({ userDataPath })
-    await expect(store.info()).resolves.toMatchObject({ schema_version: 13 })
+    await expect(store.info()).resolves.toMatchObject({ schema_version: 14 })
     const migratedDb = openDatabase(databaseFile)
     expect(migratedDb.prepare(`SELECT name FROM sqlite_master
       WHERE type = 'index' AND name = 'idx_positions_replay_known_fix'`).get()).toBeUndefined()
@@ -3612,7 +3612,7 @@ describe('mission evidence versioning [DON-277]', () => {
     })
   })
 
-  it('explains how to import a retired GPX file again, and the renamed copy imports [DON-306]', async () => {
+  it('a renamed copy of a retired file imports as a new track; the same file restores it [DON-306] [DON-309]', async () => {
     store = await createStore()
     const mission = await store.createMission({ name: 'Retired GPX re-import' })
     const sourcePath = path.join(userDataPath!, 'Blasket Jun 14.gpx')
@@ -3626,25 +3626,26 @@ describe('mission evidence versioning [DON-277]', () => {
     const retiredId = first.imports[0]!.id
     await expect(store.deleteGpxImport(retiredId)).resolves.toBe(true)
 
-    const again = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
-
-    expect(again.imports).toEqual([])
-    expect(again.failures).toEqual([{
-      sourcePath,
-      reason: 'This GPX track was retired from the mission, so the same file cannot be imported again. To bring it back, copy or rename the file and import the copy.',
-    }])
-    expect(again.failures[0]!.reason).not.toContain(retiredId)
-
     const copyPath = path.join(userDataPath!, 'Blasket Jun 14 (copy).gpx')
     await writeFile(copyPath, source)
     const copied = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [copyPath] })
     expect(copied.failures).toEqual([])
     expect(copied.imports).toEqual([expect.objectContaining({ id: expect.any(String) })])
     expect(copied.imports[0]!.id).not.toBe(retiredId)
+    const verify = openDatabase(await databasePath())
+    try {
+      expect(verify.prepare('SELECT retired_at IS NOT NULL AS retired FROM gpx_track_imports WHERE id = ?').get(retiredId))
+        .toEqual({ retired: 1 })
+    } finally { verify.close() }
+
+    // Since DON-309 the same file, imported deliberately, brings the track back.
+    const again = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    expect(again.failures).toEqual([])
+    expect(again.imports.map((entry) => entry.id)).toEqual([retiredId])
     const db = openDatabase(await databasePath())
     try {
       expect(db.prepare('SELECT retired_at IS NOT NULL AS retired FROM gpx_track_imports WHERE id = ?').get(retiredId))
-        .toEqual({ retired: 1 })
+        .toEqual({ retired: 0 })
     } finally { db.close() }
   })
 
@@ -3669,7 +3670,7 @@ describe('mission evidence versioning [DON-277]', () => {
         return (db.prepare('SELECT COUNT(*) AS count FROM gpx_import_failures').get() as { count: number }).count
       } finally { db.close() }
     }
-    let failuresBefore = await countFailures()
+    const failuresBefore = await countFailures()
 
     const onlyRetired = await store.importGpxEvidencePaths({
       missionId: mission.id,
@@ -3686,10 +3687,6 @@ describe('mission evidence versioning [DON-277]', () => {
     expect(mixed.failures ?? []).toEqual([])
     expect(mixed.imports).toHaveLength(1)
     expect(await countFailures()).toBe(failuresBefore)
-    // A deliberate import of the same file still explains the refusal.
-    const manual = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [retiredPath] })
-    expect(manual.failures?.[0]?.reason).toMatch(/was retired from the mission/u)
-    failuresBefore += 1
     const countBatches = async () => {
       const db = openDatabase(await databasePath())
       try {
@@ -3707,7 +3704,7 @@ describe('mission evidence versioning [DON-277]', () => {
       <trkpt lat="51.97" lon="-9.6"><time>2026-06-28T09:00:00Z</time></trkpt>
       <trkpt lat="51.99" lon="-9.62"><time>2026-06-28T09:05:00Z</time></trkpt>
     </trkseg></trk></gpx>`)
-    const changedReason = 'This GPX file was retired from the mission and has since changed. To import the new version, copy or rename the file and import the copy.'
+    const changedReason = 'This GPX file was retired and has since changed. To bring the track back with the new version, use Import Files.'
     const changedOnce = await store.importGpxEvidencePaths({
       missionId: mission.id, paths: [retiredPath], skipRetiredSources: true,
     })

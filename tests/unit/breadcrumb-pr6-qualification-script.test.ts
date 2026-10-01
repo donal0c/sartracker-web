@@ -1230,7 +1230,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     expect(settled.settled).toBe(true)
   })
 
-  it('reads a real fully settled schema-v13 maintenance snapshot', async () => {
+  it('reads a real fully settled current-schema (v14) maintenance snapshot', async () => {
     const root = await createTemporaryRoot()
     const databasePath = path.join(root, 'settled.sqlite')
     const database = new Database(databasePath)
@@ -1238,7 +1238,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
       database.exec(`
         CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         INSERT INTO metadata(key, value) VALUES
-          ('schema_version', '13'),
+          ('schema_version', '14'),
           ('legacy_archive_registry_backfill_cursor', '0'),
           ('legacy_archive_registry_backfill_target', '0');
         CREATE TABLE legacy_mission_object_backfill_state (
@@ -1274,7 +1274,7 @@ describe('Breadcrumb PR6 scale-qualification coordinator [DON-252 / BCP-15]', ()
     }
 
     await expect(waitForMaintenanceSettlement(databasePath)).resolves.toMatchObject({
-      schemaVersion: 13,
+      schemaVersion: 14,
       settled: true,
       progress: {
         archiveCursor: '0',

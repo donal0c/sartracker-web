@@ -38,7 +38,7 @@ export async function compareArchiveDatabaseSnapshots({ beforePath, afterPath, m
       const missions = db.prepare('SELECT id,status FROM missions').all()
       const status = phase === 'source-to-finished' && db === before ? 'active' : 'finished'
       if (missions.length !== 1 || missions[0].id !== missionId || missions[0].status !== status
-          || db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get()?.value !== '13') throw new Error('Archive field oracle requires one finished current-schema mission.')
+          || !['13', '14'].includes(db.prepare("SELECT value FROM metadata WHERE key='schema_version'").get()?.value)) throw new Error('Archive field oracle requires one finished current-schema mission.')
     }
     const tables = []
     const extraEvents = []
@@ -86,6 +86,9 @@ export async function compareArchiveDatabaseSnapshots({ beforePath, afterPath, m
                 || b.value.paused_seconds !== a.value.paused_seconds + pauseSeconds) throw new Error('Archive source mission finish transition differs.')
             b.value = { ...b.value, status: a.value.status, finish_time: a.value.finish_time, paused_seconds: a.value.paused_seconds }
           }
+          // Opening a schema 13 source in 13.6 migrates it to 14 (same tables, DON-309).
+          if (name === 'metadata' && !a.done && !b.done && a.value.key === 'schema_version'
+              && a.value.value === '13' && b.value.value === '14') b.value = { ...b.value, value: '13' }
           if (a.done || b.done || rowBytes(a.value) !== rowBytes(b.value)) throw new Error(`Archive ${name} lost or changed a source row.`)
           const bytes = rowBytes(a.value)
           leftHash.update(bytes); rightHash.update(bytes)

@@ -414,7 +414,7 @@ function validEvidence() {
       copiedBytes: 3_704_676_352,
     },
     migration: {
-      schemaVersion: 13,
+      schemaVersion: 14,
       durationMs: 1_000,
       heartbeatMaxGapMs: 100,
       backfillsSettled: true,

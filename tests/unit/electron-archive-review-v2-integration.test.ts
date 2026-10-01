@@ -425,6 +425,62 @@ function verifyRequestFromTicket(input: {
 }
 
 describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]', () => {
+  it.each([
+    ['a 13.6 archive of a schema-14 profile', '14'],
+    ['a 13.5-era archive whose database says schema 13', '13'],
+  ] as const)('reopens %s for review [DON-309]', async (_label, innerSchema) => {
+    const userDataPath = await mkdtemp(path.join(tmpdir(), `sartracker-archive-schema-${innerSchema}-`))
+    temporaryDirectories.add(userDataPath)
+    const store = createElectronMissionStore({ userDataPath })
+    try {
+      const mission = await seedReviewMission(store)
+      await store.finishMission(mission.id)
+      const databasePath = (await store.info()).database_path
+      if (innerSchema === '13') {
+        // An archive made by 13.5 copied that store's schema_version, 13.
+        const writer = new Database(databasePath)
+        try {
+          writer.prepare("UPDATE metadata SET value = '13' WHERE key = 'schema_version'").run()
+        } finally {
+          writer.close()
+        }
+      }
+      const finalized = await store.finalizeMission(mission.id,
+        { passphrase: PASSPHRASE, recoveryCode: RECOVERY_CODE },
+        { operationId: CREATE_OPERATION_ID, onProgress: () => undefined })
+      const ticket = store.issueMissionArchiveReviewTicket(finalized.archive.id)
+      expect(ticket.schemaVersion).toBe(13)
+
+      const restored = await restoreMissionArchiveForReview({
+        request: restoreRequestFromTicket({ ticket,
+          archiveDirectory: path.join(userDataPath, 'archives'),
+          reviewRoot: path.join(userDataPath, 'archive-review'),
+          operationId: OPEN_OPERATION_ID,
+          sessionId: '45454545-4545-4454-8454-454545454545' }),
+        secretBytes: Buffer.from(PASSPHRASE, 'utf8'),
+        cancellationFlag: new Int32Array(new SharedArrayBuffer(4)),
+      })
+
+      expect(restored).toMatchObject({ missionId: mission.id })
+      const reviewDatabase = new Database(
+        path.join(String(restored.sessionDirectory), 'mission-store.sqlite'),
+        { readonly: true },
+      )
+      try {
+        // 13.5 refuses to review a store above 13, so a 13.6 archive (14 inside) stays 13.6-only.
+        expect(reviewDatabase.prepare("SELECT value FROM metadata WHERE key = 'schema_version'").get())
+          .toEqual({ value: innerSchema })
+      } finally {
+        reviewDatabase.close()
+      }
+      await (restored as { readonly databaseFileHandle?: { readonly close: () => Promise<void> } })
+        .databaseFileHandle?.close()
+    } finally {
+      await store.prepareClose()
+      store.close()
+    }
+  })
+
   it('closes the untransferred database handle when extraction settlement fails after ready', async () => {
     const userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-archive-close-fault-'))
     temporaryDirectories.add(userDataPath)
@@ -685,7 +741,7 @@ describe('verified SARARCH2 archive-backed review integration [DON-252 / BCP-15]
       await rm(displacedSessionDirectory, { recursive: true, force: true })
 
       const info = await store.info()
-      expect(info.schema_version).toBe(13)
+      expect(info.schema_version).toBe(14)
       const requestEvent = readArchiveRequestEvent(
         info.database_path,
         finalized.archive.request_event_rowid,

@@ -5,7 +5,10 @@ const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 
 const Database = require('better-sqlite3')
-const { listArchiveInventoryForSchema } = require('./archive-inventory.cjs')
+const {
+  listArchiveInventoryForSchema,
+  storeSchemaMatchesArchiveFormat,
+} = require('./archive-inventory.cjs')
 const {
   readCurrentMissionFinalizationBoundary,
   readMissionFinalizationBoundaryByEpoch,
@@ -459,7 +462,8 @@ function rehydrateMissionFromSnapshot(input) {
         && finalized?.containerVersion === currentBoundary.containerVersion
         && finalized?.cleanupMembershipGeneration
           === currentBoundary.cleanupMembershipGeneration
-    if (integrity !== 'ok' || schema !== schemaVersion || mission?.id !== missionId
+    if (integrity !== 'ok' || !storeSchemaMatchesArchiveFormat(schema, schemaVersion)
+      || mission?.id !== missionId
       || mission.status !== 'finalized' || missionCount !== 1
       || !finalizationIdentityMatches
       || (finalized?.containerVersion === 2 && (

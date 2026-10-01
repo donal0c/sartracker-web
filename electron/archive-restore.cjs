@@ -6,6 +6,7 @@ const { createHash } = require('node:crypto')
 
 const Database = require('better-sqlite3')
 const { normalizeArchiveVerificationIdentity } = require('./archive-envelope.cjs')
+const { storeSchemaMatchesArchiveFormat } = require('./archive-inventory.cjs')
 const {
   unwrapMissionArchiveKey,
   zeroBuffer,
@@ -275,7 +276,7 @@ function inspectRestoredSession(request, sessionDirectory, extracted, databaseSi
     ).get()?.value)
     const missions = database.prepare('SELECT id FROM missions ORDER BY id').all()
     if (integrity?.integrity_check !== 'ok'
-      || schema !== request.schemaVersion
+      || !storeSchemaMatchesArchiveFormat(schema, request.schemaVersion)
       || missions.length !== 1
       || missions[0].id !== request.missionId) {
       throw new ArchiveRestoreError(

@@ -894,8 +894,19 @@ function computeArchivedTableContentDigest(db, input) {
   })
 }
 
+/**
+ * True when a database stamped with this store schema may sit inside an
+ * archive of this format. Store schema 14 (DON-309) has the same tables as
+ * 13, so a format-13 archive may hold either; a 13 build still refuses 14.
+ */
+function storeSchemaMatchesArchiveFormat(storeSchemaVersion, archiveFormatVersion) {
+  return storeSchemaVersion === archiveFormatVersion
+    || (archiveFormatVersion === 13 && storeSchemaVersion === 14)
+}
+
 module.exports = {
   ARCHIVE_INVENTORY_VERSION,
+  storeSchemaMatchesArchiveFormat,
   ARCHIVE_TABLE_INVENTORY,
   ArchiveInventoryError,
   listArchiveInventoryForSchema,

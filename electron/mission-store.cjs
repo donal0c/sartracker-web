@@ -166,7 +166,14 @@ const {
   recordAcceptedCoveragePositions,
 } = require('./coverage-ledger.cjs')
 
-const CURRENT_SCHEMA_VERSION = 13
+// 14: a retired GPX track can be restored; replay derives when it was hidden
+// from its retire/restore audit events. 13 builds must refuse such a store,
+// since they would show a restored track while it was retired [DON-309].
+const CURRENT_SCHEMA_VERSION = 14
+// The archive container's table and inventory schema. Store schema 14 has the
+// same tables as 13, so archives keep format 13; the copied schema_version
+// row (14) inside an archive is what makes a 13 build refuse to review it.
+const ARCHIVE_FORMAT_SCHEMA_VERSION = 13
 const MISSION_EVIDENCE_VERSION_SCHEMA = 12
 const COVERAGE_PROMOTION_FENCE_KEY_PREFIX = 'coverage_promotion_fence:'
 const LEGACY_GPX_BACKFILL_DELAY_MS = 4
@@ -682,7 +689,7 @@ function createElectronMissionStore(options) {
     ?? startArchiveCleanupWorker
   const archiveCleanupCoordinator = createArchiveCleanupCoordinator({
     db,
-    schemaVersion: CURRENT_SCHEMA_VERSION,
+    schemaVersion: ARCHIVE_FORMAT_SCHEMA_VERSION,
     now,
     yieldToMain: options.yieldArchiveCleanupToMain
       ?? (() => new Promise((resolve) => setImmediate(resolve))),
@@ -4878,7 +4885,7 @@ function migrateMissionStoreForArchiveReview(input) {
     db.pragma('journal_mode = DELETE')
     reportProgress('database-migration-verified')
     return Object.freeze({
-      schemaVersion: CURRENT_SCHEMA_VERSION,
+      schemaVersion: ARCHIVE_FORMAT_SCHEMA_VERSION,
       completedPages,
     })
   } finally {
@@ -6727,7 +6734,7 @@ async function finalizeMissionWithEncryptedArchive(input) {
       requestEventId: requestIdentity.requestEventId,
       archiveKind: 'finalized',
       createdAt: requestedAt,
-      schemaVersion: CURRENT_SCHEMA_VERSION,
+      schemaVersion: ARCHIVE_FORMAT_SCHEMA_VERSION,
       inventoryVersion: 1,
       previousArchiveId: requestIdentity.supplement?.previousArchiveId ?? null,
       previousArchiveSha256: requestIdentity.supplement?.previousArchiveSha256 ?? null,
@@ -10961,24 +10968,50 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
     }
   }
 
-  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+  // A deliberate import of a retired track's own file (same path or alias)
+  // restores it; a watched-folder scan never does [DON-309].
+  const restoring = existing?.retired_at !== null && existing?.retired_at !== undefined
+  if (restoring && input.restore_retired !== true) {
     throw new Error(RETIRED_GPX_REIMPORT_MESSAGE)
   }
 
   const id = existing?.id ?? input.id ?? randomUUID()
   const changedSource = existing !== undefined
     && (normalizedHash === null || normalizedHash !== existing.content_sha256)
+  if (restoring && !changedSource) {
+    assertSameHashGpxEvidenceMatches(db, existing, input, displayGeometryJson)
+    const restore = db.transaction(() => {
+      ensureWritableMission(db, missionId)
+      const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(existing.id)
+      if (current === undefined || current.mission_id !== missionId
+        || current.retired_at === null || current.import_state !== 'complete'
+        || current.content_sha256 !== normalizedHash
+        || Number(current.revision_sequence) !== Number(existing.revision_sequence)) {
+        throw new Error('GPX evidence changed while it was being restored; retry the import.')
+      }
+      db.prepare(`UPDATE gpx_track_imports SET retired_at = NULL, retired_by = NULL, updated_at = ?
+        WHERE id = ?`).run(timestamp, current.id)
+      upsertGpxAlias(db, missionId, current.id, input.source_path, input.file_name, timestamp)
+      insertGpxRestoredEvent(db, missionId, current, current, input.source_path, timestamp)
+      if (publicationReceipt !== null) {
+        settleGpxImportSourceReceiptWithinTransaction(db, publicationReceipt, timestamp)
+      }
+    })
+    restore.immediate()
+    return getById(db, 'gpx_track_imports', existing.id, 'GPX import')
+  }
   const revisionSequence = existing === undefined
     ? 1
     : changedSource ? Number(existing.revision_sequence) + 1 : Number(existing.revision_sequence)
+  const restoredPresentation = restoring ? presentationForRestoredGpx(existing, input) : null
   const row = {
     id,
     mission_id: missionId,
     source_path: existing?.source_path ?? input.source_path,
     file_name: input.file_name,
-    display_name: input.display_name,
+    display_name: restoredPresentation?.display_name ?? input.display_name,
     geometry_json: displayGeometryJson,
-    metadata_json: input.metadata_json ?? null,
+    metadata_json: restoredPresentation?.metadata_json ?? input.metadata_json ?? null,
     content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
     source_bytes_base64: input.source_bytes_base64 ?? existing?.source_bytes_base64 ?? null,
     timing_class: normalizeGpxTimingClass(input.timing_class ?? existing?.timing_class ?? 'undated'),
@@ -11014,6 +11047,18 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
       }
       return
     }
+    if (existing !== undefined) {
+      // A retire or another revision committed after the lookup must not be
+      // overwritten silently (it would revive a retired track) [DON-309].
+      const current = db.prepare('SELECT * FROM gpx_track_imports WHERE id = ?').get(existing.id)
+      if (current === undefined || current.mission_id !== missionId
+        || current.import_state !== 'complete'
+        || current.retired_at !== existing.retired_at
+        || Number(current.revision_sequence) !== Number(existing.revision_sequence)
+        || current.content_sha256 !== existing.content_sha256) {
+        throw new Error('GPX evidence changed while its new revision was being saved; retry the import.')
+      }
+    }
     const columns = Object.keys(row)
     const assignments = columns
       .filter((column) => !IMMUTABLE_UPSERT_COLUMNS.gpx_track_imports.has(column))
@@ -11024,6 +11069,7 @@ function upsertGpxEvidence(db, input, publicationReceipt = null) {
       ON CONFLICT(id) DO UPDATE SET ${assignments}`)
       .run(...columns.map((column) => row[column]))
     upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, timestamp)
+    if (restoring) insertGpxRestoredEvent(db, missionId, existing, row, input.source_path, timestamp)
     const auditEventId = insertEvent(
       db,
       missionId,
@@ -11173,7 +11219,8 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
   if (existing?.import_state === 'staging') {
     throw new Error(`GPX evidence ${existing.id} has an interrupted staged import that must be recovered before retrying.`)
   }
-  if (existing?.retired_at !== null && existing?.retired_at !== undefined) {
+  const restoring = existing?.retired_at !== null && existing?.retired_at !== undefined
+  if (restoring && input.restore_retired !== true) {
     throw new Error(RETIRED_GPX_REIMPORT_MESSAGE)
   }
   if (existing === undefined) {
@@ -11205,14 +11252,15 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
     ? 'legacy_baseline'
     : 'complete'
   const displayGeometryJson = compactGpxDisplayGeometry(input.geometry_json)
+  const restoredPresentation = restoring ? presentationForRestoredGpx(existing, input) : null
   const row = {
     id,
     mission_id: missionId,
     source_path: existing?.source_path ?? input.source_path,
     file_name: input.file_name,
-    display_name: input.display_name,
+    display_name: restoredPresentation?.display_name ?? input.display_name,
     geometry_json: displayGeometryJson,
-    metadata_json: input.metadata_json ?? null,
+    metadata_json: restoredPresentation?.metadata_json ?? input.metadata_json ?? null,
     content_sha256: normalizedHash ?? existing?.content_sha256 ?? null,
     // Exact bytes are authoritative in the immutable revision. Keeping a
     // second multi-megabyte copy in the active projection doubles one writer
@@ -11304,7 +11352,7 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
         && current.source_path === row.source_path
         && current.content_sha256 === row.content_sha256
       : current?.mission_id === existing.mission_id && current.import_state === 'complete'
-        && current.retired_at === null
+        && current.retired_at === existing.retired_at
         && Number(current.revision_sequence) === Number(existing.revision_sequence)
         && current.source_path === existing.source_path
         && current.content_sha256 === existing.content_sha256
@@ -11355,6 +11403,9 @@ async function upsertGpxEvidenceChunked(db, input, chunkSize = 25, publicationRe
         .run(publicationTimestamp, id)
     }
     upsertGpxAlias(db, missionId, id, input.source_path, input.file_name, publicationTimestamp)
+    if (restoring) {
+      insertGpxRestoredEvent(db, missionId, existing, row, input.source_path, publicationTimestamp)
+    }
     const auditEventId = insertEvent(
       db,
       missionId,
@@ -11571,7 +11622,7 @@ function hasReportedGpxFailure(db, missionId, sourcePath, contentSha256, reason)
     LIMIT 1`).get(missionId, sourcePath, contentSha256, safeEvidenceFailureReason(reason)) !== undefined
 }
 
-const RETIRED_GPX_CHANGED_MESSAGE = 'This GPX file was retired from the mission and has since changed. To import the new version, copy or rename the file and import the copy.'
+const RETIRED_GPX_CHANGED_MESSAGE = 'This GPX file was retired and has since changed. To bring the track back with the new version, use Import Files.'
 
 const RETIRED_GPX_REIMPORT_MESSAGE = 'This GPX track was retired from the mission, so the same file cannot be imported again. To bring it back, copy or rename the file and import the copy.'
 
@@ -11596,6 +11647,45 @@ function retireGpxEvidence(db, importId, faultInjection = {}) {
   faultInjection.beforeTransaction?.()
   transaction.immediate()
   return retired
+}
+
+/**
+ * Records that a retired GPX track is back. Replay reads this event (with the
+ * matching gpx_import_deleted) to hide the track only while it was retired.
+ */
+function insertGpxRestoredEvent(db, missionId, previous, result, sourcePath, timestamp) {
+  return insertEvent(db, missionId, 'gpx_import_restored', timestamp, {
+    gpx_import_id: previous.id,
+    source_path: sourcePath,
+    // The observed retirement time, so replay can hide the whole gap even
+    // for a track retired before retire events carried its id.
+    previous_retired_at: previous.retired_at,
+    previous_revision_sequence: Number(previous.revision_sequence),
+    previous_content_sha256: previous.content_sha256,
+    content_sha256: result.content_sha256,
+    revision_sequence: Number(result.revision_sequence),
+    restored: true,
+  })
+}
+
+/**
+ * Keeps the operator's chosen name and colour when a retired track comes back
+ * with changed bytes; parser counts come from the new file.
+ */
+function presentationForRestoredGpx(existing, input) {
+  let parsed = {}
+  let previous = {}
+  try { parsed = JSON.parse(input.metadata_json ?? '{}') ?? {} } catch { parsed = {} }
+  try { previous = JSON.parse(existing.metadata_json ?? '{}') ?? {} } catch { previous = {} }
+  const metadata = typeof previous?.color === 'string'
+    ? { ...parsed, color: previous.color }
+    : parsed
+  return {
+    display_name: existing.display_name,
+    metadata_json: input.metadata_json === undefined && existing.metadata_json === null
+      ? null
+      : JSON.stringify(metadata),
+  }
 }
 
 function upsertGpxAlias(db, missionId, importId, sourcePath, fileName, timestamp) {

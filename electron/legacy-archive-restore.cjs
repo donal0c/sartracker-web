@@ -34,7 +34,10 @@ const GENERAL_PURPOSE_UTF8 = 0x0800
 const ZIP64_UINT16_SENTINEL = 0xffff
 const ZIP64_UINT32_SENTINEL = 0xffffffff
 const SUPPORTED_LEGACY_CONTAINER_VERSION = 1
-const CURRENT_SUPPORTED_SCHEMA_VERSION = 13
+// Store schema 14 (DON-309) adds no tables; a 13.6 legacy archive says 14.
+const CURRENT_SUPPORTED_SCHEMA_VERSION = 14
+// Archives below this need the review migration; 13 and 14 open as they are.
+const REVIEW_MIGRATION_TARGET_SCHEMA_VERSION = 13
 const ZIP_EOCD_FIXED_BYTES = 22
 const ZIP_MAX_COMMENT_BYTES = 0xffff
 const ZIP_LOCAL_HEADER_BYTES = 30
@@ -1337,7 +1340,7 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
     const manifest = await readBoundedJson(manifestOutput, manifestEntry, outputOwnership)
     const mission = await readBoundedJson(missionOutput, missionEntry, outputOwnership)
     const schemas = validateMetadata(manifest, mission, request.expectedMissionId)
-    if (schemas.databaseSchemaVersion < CURRENT_SUPPORTED_SCHEMA_VERSION) {
+    if (schemas.databaseSchemaVersion < REVIEW_MIGRATION_TARGET_SCHEMA_VERSION) {
       // Reserve a rewritten database, WAL/backup space, and fixed schema headroom.
       // This is admission headroom, not a guarantee against concurrent disk use.
       await assertRestoreCapacity(entries, request.sessionDirectory, getAvailableDiskBytes,
@@ -1369,7 +1372,7 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
     const databasePath = outputPathForEntry(request.sessionDirectory, databaseEntry.name)
     await assertAllOutputsOwned(outputOwnership)
     const validationStepBytes = databaseEntry.uncompressedSize
-    const validationStepCount = schemas.databaseSchemaVersion < CURRENT_SUPPORTED_SCHEMA_VERSION
+    const validationStepCount = schemas.databaseSchemaVersion < REVIEW_MIGRATION_TARGET_SCHEMA_VERSION
       ? 3
       : 2
     const validationTotalBytes = validationStepBytes * validationStepCount
@@ -1393,7 +1396,7 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
       total: validationTotalBytes,
       detail: 'sqlite-integrity-complete',
     })
-    if (schemas.databaseSchemaVersion < CURRENT_SUPPORTED_SCHEMA_VERSION) {
+    if (schemas.databaseSchemaVersion < REVIEW_MIGRATION_TARGET_SCHEMA_VERSION) {
       try {
         migrateMissionStoreForArchiveReview({
           databasePath,
@@ -1421,7 +1424,11 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
     await assertAllOutputsOwned(outputOwnership)
     validateRestoredDatabase(databasePath, request.expectedMissionId, {
       ...schemas,
-      databaseSchemaVersion: CURRENT_SUPPORTED_SCHEMA_VERSION,
+      // The review migration writes the current store schema; 13 and 14 are
+      // opened unchanged.
+      databaseSchemaVersion: schemas.databaseSchemaVersion < REVIEW_MIGRATION_TARGET_SCHEMA_VERSION
+        ? CURRENT_SUPPORTED_SCHEMA_VERSION
+        : schemas.databaseSchemaVersion,
     })
     completedValidationBytes += validationStepBytes
     emitRestoreProgress(request, {
@@ -1507,7 +1514,8 @@ async function restoreLegacyMissionArchive(input, dependencies = {}) {
       databaseFileName: 'mission-store.sqlite',
       databaseIdentity,
       databaseFileHandle,
-      schemaVersion: CURRENT_SUPPORTED_SCHEMA_VERSION,
+      // The review format the session opens (format 13 holds store 13 or 14).
+      schemaVersion: REVIEW_MIGRATION_TARGET_SCHEMA_VERSION,
       entryCount: entries.length,
       attachmentCount: attachments.length,
       attachmentMappings: provedAttachmentMappings,

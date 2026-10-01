@@ -99,6 +99,8 @@ async function run() {
           timing_class: parsed.timingClass,
           points: parsed.points,
           rejections: parsed.rejections,
+          // Only a deliberate import brings a retired track back [DON-309].
+          restore_retired: envelope.skipRetiredSources !== true,
         }, 25, {
           batchId: workerData.batchId,
           missionId: envelope.missionId,
