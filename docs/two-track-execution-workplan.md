@@ -39,7 +39,9 @@ team-smoke `team-mission` backfill time; DON-304/DON-314/DON-296 team-smoke
 `team-workflow` (now with Replay over Discovery and the default group) and
 `offline-map` with the real Discovery package; DON-288 `no-gpu-flag` without the
 flag (button path); DON-285 `unwritable-profile` + `duplicate-launch`; DON-284
-`tracking` SIGTERM row and window-X close by hand; DON-312 check the box soak
+`tracking` SIGTERM row and window-X close by hand; DON-318 team-smoke
+`lifecycle` (healthy evidence after SIGKILL, renderer crash, graceful quit),
+also on PCLinuxOS; DON-313 normal-profile soak on a quiet machine; DON-312 check the box soak
 evidence for the memory budget. All need the box, only when Donal frees it.
 
 Release carry-overs: repeat the native file-picker hand check on the next
