@@ -297,6 +297,17 @@ describe('Mission Replay query IPC ownership [DON-278]', () => {
     await expect(missionStore.importGpxEvidencePaths({
       missionId: 'mission-1', paths: ['/field/' + 'x'.repeat(5_000)],
     })).rejects.toThrow(/GPX evidence paths.*invalid/i)
+    await missionStore.importGpxEvidencePaths({
+      missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: true,
+      rendererControlledBlob: oversizedUnknown,
+    })
+    expect(invoke).toHaveBeenLastCalledWith(
+      'sartracker:mission-store:import-gpx-evidence-paths',
+      { missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: true },
+    )
+    await expect(missionStore.importGpxEvidencePaths({
+      missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: 'yes',
+    })).rejects.toThrow(/GPX evidence paths.*invalid/i)
     await expect(missionStore.upsertSearchPass({
       mission_id: 'mission-1', search_area_id: 'area-1', assignment_id: 'assignment-1',
       started_at: '2026-08-28T10:00:00.000Z', ended_at: '2026-08-28T10:30:00.000Z',

@@ -2,6 +2,7 @@ const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
+const { readBoundedGpxSource } = require('./gpx-source-reader.cjs')
 
 const Database = require('better-sqlite3')
 const { createBulkDeviceObservationWriter } = require('./bulk-device-observations.cjs')
@@ -579,6 +580,9 @@ function createElectronMissionStore(options) {
   let outingFixSummaryWorkerTail = Promise.resolve()
   let coverageChunkWorkerTail = Promise.resolve()
   const queuedGpxEvidenceImports = []
+  // Watched-folder scans run one at a time to completion, so a scan's
+  // "already reported" check always sees the issues earlier scans recorded.
+  let watchedGpxScanTail = Promise.resolve()
   let gpxImportWorkerActive = false
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
@@ -1979,6 +1983,9 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       const shutdownTasks = active.map((entry) => entry.quiesced)
+      // Queued watched-folder scans refuse once shutdown is requested; join the
+      // running one, including its preflight reads, before the database closes.
+      shutdownTasks.push(watchedGpxScanTail)
       shutdownTasks.push(responsiveWritesSettled)
       shutdownTasks.push(breadcrumbSessionsSettled)
       shutdownTasks.push(breadcrumbQueryTail)
@@ -2872,56 +2879,10 @@ function createElectronMissionStore(options) {
     assignGpxImportToOuting: async (input) =>
       projectGpxImportForRenderer(assignGpxEvidenceToOuting(db, input)),
     importGpxEvidencePaths: async (input) => {
-      const candidate = normalizeGpxRendererRecord(input, 'GPX path import')
-      const missionId = normalizeGpxRendererId(candidate.missionId, 'GPX import mission')
-      if (
-        !Array.isArray(candidate.paths) || candidate.paths.length < 1 || candidate.paths.length > 100 ||
-        candidate.paths.some((entry) => typeof entry !== 'string'
-          || entry.length < 1 || entry.length > 4_096 || entry.trim() === '')
-      ) {
-        throw new Error('GPX import paths are invalid.')
-      }
-      const paths = candidate.paths.map((entry) => entry.trim())
-      ensureWritableMission(db, missionId)
-      if (migrationState.gpxReceiptRecoveryRemaining > 0
-        || gpxReceiptRecoveryFailure !== null) {
-        throw new Error(
-          'Interrupted GPX evidence receipts are still being recovered in bounded background slices. Current positions remain available; retry the import after recovery completes.',
-        )
-      }
-      const admittedBatchCount = queuedGpxEvidenceImports.length + (gpxImportWorkerActive ? 1 : 0)
-      if (admittedBatchCount >= MAX_ADMITTED_GPX_IMPORT_BATCHES) {
-        throw new Error(
-          'The GPX evidence import queue is full. Wait for an admitted import to settle before adding more files.',
-        )
-      }
-      const batchId = randomUUID()
-      startGpxImportBatch(db, {
-        batchId,
-        missionId,
-        totalFiles: paths.length,
-        paths,
-      })
-      const controller = new AbortController()
-      const result = enqueueGpxEvidenceImport({
-        databasePath,
-        foregroundWriterBuffer: responsiveWriter.pendingBuffer,
-        missionId,
-        paths,
-        batchId,
-        receiptsStarted: true,
-        faultInjection: options.gpxEvidenceImportFaultInjection,
-        signal: controller.signal,
-      })
-      const entry = {
-        controller,
-        completion: Promise.resolve(result).catch(() => undefined),
-        workerExited: result?.workerExited ?? Promise.resolve(),
-      }
-      entry.quiesced = Promise.allSettled([entry.completion, entry.workerExited])
-      activeGpxEvidenceImports.add(entry)
-      entry.quiesced.finally(() => activeGpxEvidenceImports.delete(entry))
-      return result
+      if (input?.skipRetiredSources !== true) return importGpxEvidencePathsNow(input)
+      const scan = watchedGpxScanTail.then(() => importGpxEvidencePathsNow(input))
+      watchedGpxScanTail = scan.then(() => undefined, () => undefined)
+      return scan
     },
     upsertSearchArea: async (input) => upsertSearchArea(db, evidenceVersionStore, input),
     listSearchAreas: async (missionId) => {
@@ -3512,6 +3473,80 @@ function createElectronMissionStore(options) {
   }
 
   /** Serializes GPX evidence publications so identical concurrent sources share one identity. */
+  /** Admits one bounded path import; watched scans first drop known retired answers. */
+  async function importGpxEvidencePathsNow(input) {
+    const candidate = normalizeGpxRendererRecord(input, 'GPX path import')
+    const missionId = normalizeGpxRendererId(candidate.missionId, 'GPX import mission')
+    if (
+      !Array.isArray(candidate.paths) || candidate.paths.length < 1 || candidate.paths.length > 100 ||
+      candidate.paths.some((entry) => typeof entry !== 'string'
+        || entry.length < 1 || entry.length > 4_096 || entry.trim() === '')
+    ) {
+      throw new Error('GPX import paths are invalid.')
+    }
+    if (candidate.skipRetiredSources !== undefined
+      && typeof candidate.skipRetiredSources !== 'boolean') {
+      throw new Error('GPX import retired-source option is invalid.')
+    }
+    assertGpxImportAdmissionOpen()
+    ensureWritableMission(db, missionId)
+    // Receipts, the worker and the retired lookup all use one normalized identity.
+    const requestedPaths = candidate.paths.map((entry) => normalizeGpxSourcePathIdentity(entry.trim()))
+    const paths = candidate.skipRetiredSources === true
+      ? await selectWatchedGpxPathsToImport(db, missionId, requestedPaths)
+      : requestedPaths
+    if (paths.length === 0) {
+      return { imports: [], failures: [], dispatchDurationMs: 0 }
+    }
+    assertGpxImportAdmissionOpen()
+    ensureWritableMission(db, missionId)
+    if (migrationState.gpxReceiptRecoveryRemaining > 0
+      || gpxReceiptRecoveryFailure !== null) {
+      throw new Error(
+        'Interrupted GPX evidence receipts are still being recovered in bounded background slices. Current positions remain available; retry the import after recovery completes.',
+      )
+    }
+    const admittedBatchCount = queuedGpxEvidenceImports.length + (gpxImportWorkerActive ? 1 : 0)
+    if (admittedBatchCount >= MAX_ADMITTED_GPX_IMPORT_BATCHES) {
+      throw new Error(
+        'The GPX evidence import queue is full. Wait for an admitted import to settle before adding more files.',
+      )
+    }
+    const batchId = randomUUID()
+    startGpxImportBatch(db, {
+      batchId,
+      missionId,
+      totalFiles: paths.length,
+      paths,
+    })
+    const controller = new AbortController()
+    const result = enqueueGpxEvidenceImport({
+      databasePath,
+      foregroundWriterBuffer: responsiveWriter.pendingBuffer,
+      missionId,
+      paths,
+      ...(candidate.skipRetiredSources === true ? { skipRetiredSources: true } : {}),
+      batchId,
+      receiptsStarted: true,
+      faultInjection: options.gpxEvidenceImportFaultInjection,
+      signal: controller.signal,
+    })
+    const entry = {
+      controller,
+      completion: Promise.resolve(result).catch(() => undefined),
+      workerExited: result?.workerExited ?? Promise.resolve(),
+    }
+    entry.quiesced = Promise.allSettled([entry.completion, entry.workerExited])
+    activeGpxEvidenceImports.add(entry)
+    entry.quiesced.finally(() => activeGpxEvidenceImports.delete(entry))
+    return result
+  }
+
+  /** Refuses new GPX import work once the store has started closing. */
+  function assertGpxImportAdmissionOpen() {
+    if (storeClosed || coverageShutdownRequested) throw new Error('Mission store is closing or closed.')
+  }
+
   function enqueueGpxEvidenceImport(input) {
     let resolveResult = () => undefined
     let rejectResult = () => undefined
@@ -11398,6 +11433,62 @@ function assignGpxEvidenceToOuting(db, input) {
 // DON-306: a retired track keeps its path identity, so replay stays truthful
 // (retired_at bounds its visibility). Tell the operator how to proceed in plain
 // words; a real Restore needs retire/restore intervals (DON-309).
+/**
+ * Drops the watched-folder paths that would only repeat a known answer: a
+ * retired file whose bytes are unchanged, or a retired file whose current
+ * state (changed bytes, or a read failure) was already reported. Anything else
+ * goes to the worker, so new evidence is never hidden. Reads use the worker's
+ * 8 MiB bound; paths arrive already normalized.
+ */
+async function selectWatchedGpxPathsToImport(db, missionId, paths) {
+  const selected = []
+  for (const normalizedPath of paths) {
+    const retired = readRetiredGpxSource(db, missionId, normalizedPath)
+    if (retired === undefined) {
+      selected.push(normalizedPath)
+      continue
+    }
+    let contentSha256 = null
+    let reason = RETIRED_GPX_CHANGED_MESSAGE
+    try {
+      const bytes = await readBoundedGpxSource(normalizedPath)
+      contentSha256 = createHash('sha256').update(bytes).digest('hex')
+      if (contentSha256 === retired.content_sha256) continue
+    } catch (error) {
+      reason = error instanceof Error ? error.message : String(error)
+    }
+    if (hasReportedGpxFailure(db, missionId, normalizedPath, contentSha256, reason)) continue
+    selected.push(normalizedPath)
+  }
+  return selected
+}
+
+/** Matches the worker's path identity, so receipts and failures agree. */
+function normalizeGpxSourcePathIdentity(sourcePath) {
+  return path.isAbsolute(sourcePath) ? path.normalize(sourcePath) : sourcePath
+}
+
+/** Returns the retired import this exact source path (or an alias of it) names. */
+function readRetiredGpxSource(db, missionId, sourcePath) {
+  return db.prepare(`SELECT content_sha256 FROM gpx_track_imports
+      WHERE mission_id = ? AND source_path = ? AND retired_at IS NOT NULL
+    UNION ALL
+    SELECT imports.content_sha256 FROM gpx_import_aliases AS aliases
+      JOIN gpx_track_imports AS imports ON imports.id = aliases.import_id
+      WHERE aliases.mission_id = ? AND aliases.source_path = ?
+        AND imports.retired_at IS NOT NULL
+    LIMIT 1`).get(missionId, sourcePath, missionId, sourcePath)
+}
+
+/** True once this exact path, content and reason were recorded as an import issue. */
+function hasReportedGpxFailure(db, missionId, sourcePath, contentSha256, reason) {
+  return db.prepare(`SELECT 1 FROM gpx_import_failures
+    WHERE mission_id = ? AND source_path = ? AND content_sha256 IS ? AND reason = ?
+    LIMIT 1`).get(missionId, sourcePath, contentSha256, safeEvidenceFailureReason(reason)) !== undefined
+}
+
+const RETIRED_GPX_CHANGED_MESSAGE = 'This GPX file was retired from the mission and has since changed. To import the new version, copy or rename the file and import the copy.'
+
 const RETIRED_GPX_REIMPORT_MESSAGE = 'This GPX track was retired from the mission, so the same file cannot be imported again. To bring it back, copy or rename the file and import the copy.'
 
 function retireGpxEvidence(db, importId, faultInjection = {}) {
@@ -11907,6 +11998,8 @@ function createCoverageRequestAbortError() {
 
 module.exports = {
   CURRENT_SCHEMA_VERSION,
+  RETIRED_GPX_CHANGED_MESSAGE,
+  readRetiredGpxSource,
   createElectronMissionStore,
   migrateMissionStoreForArchiveReview,
   finishGpxImportBatch,

@@ -341,6 +341,27 @@ export default [
       if (reimport.copied?.imports?.length !== 1 || reimport.copied?.failures?.length !== 0) {
         findings.push(`a renamed copy of a retired GPX file did not import (DON-306): ${JSON.stringify(reimport.copied).slice(0, 200)}`)
       }
+      // DON-320: the team keeps GPX files in a watched folder. Two rescans that
+      // meet the unchanged retired file must add no import issue. The call is
+      // the one the Rescan Watches control makes; adding the folder needs the
+      // native picker.
+      const rescans = await app.page.evaluate(async (paths) => {
+        const store = window.sartrackerElectron.missionStore
+        const mission = await store.getActiveMission()
+        const issueCount = async () =>
+          (await store.listGpxImportIssues({ missionId: mission.id, limit: 100 })).entries.length
+        const before = await issueCount()
+        const results = []
+        for (let pass = 0; pass < 2; pass += 1) {
+          results.push(await store.importGpxEvidencePaths({
+            missionId: mission.id, paths, skipRetiredSources: true,
+          }))
+        }
+        return { before, after: await issueCount(), results }
+      }, [timedGpx, untimedGpx, copyGpx])
+      if (rescans.after !== rescans.before || rescans.results.some((result) => (result?.failures?.length ?? 0) !== 0)) {
+        findings.push(`watched-folder rescans of a retired GPX file added import issues (${rescans.before} → ${rescans.after}; DON-320): ${JSON.stringify(rescans.results).slice(0, 200)}`)
+      }
 
       // Provider outage: visible, then backfilled.
       const beforeOutage = await trackingStatus(app.page)

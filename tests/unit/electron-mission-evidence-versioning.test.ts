@@ -78,7 +78,7 @@ type MissionEvidenceStore = {
     readonly totalCount: number
     readonly nextCursor: string | null
   }>
-  importGpxEvidencePaths(input: { readonly missionId: string; readonly paths: readonly string[] }): Promise<{
+  importGpxEvidencePaths(input: { readonly missionId: string; readonly paths: readonly string[]; readonly skipRetiredSources?: boolean }): Promise<{
     readonly imports: readonly { readonly id: string }[]
     readonly failures: readonly { readonly sourcePath: string; readonly reason: string }[]
     readonly dispatchDurationMs: number
@@ -3645,6 +3645,162 @@ describe('mission evidence versioning [DON-277]', () => {
     try {
       expect(db.prepare('SELECT retired_at IS NOT NULL AS retired FROM gpx_track_imports WHERE id = ?').get(retiredId))
         .toEqual({ retired: 1 })
+    } finally { db.close() }
+  })
+
+  it('skips a retired file on watched-folder rescans without recording another import issue [DON-320]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Watched folder with a retired track' })
+    const retiredPath = path.join(userDataPath!, 'Derrycunnihy June 28, 2026.gpx')
+    const newPath = path.join(userDataPath!, 'Tomies Wood.gpx')
+    await writeFile(retiredPath, `<gpx version="1.1"><trk><name>Derrycunnihy</name><trkseg>
+      <trkpt lat="51.97" lon="-9.6"><time>2026-06-28T09:00:00Z</time></trkpt>
+      <trkpt lat="51.98" lon="-9.61"><time>2026-06-28T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    await writeFile(newPath, `<gpx version="1.1"><trk><name>Tomies</name><trkseg>
+      <trkpt lat="52.03" lon="-9.6"><time>2026-06-29T09:00:00Z</time></trkpt>
+      <trkpt lat="52.04" lon="-9.61"><time>2026-06-29T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    const first = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [retiredPath] })
+    await expect(store.deleteGpxImport(first.imports[0]!.id)).resolves.toBe(true)
+    const countFailures = async () => {
+      const db = openDatabase(await databasePath())
+      try {
+        return (db.prepare('SELECT COUNT(*) AS count FROM gpx_import_failures').get() as { count: number }).count
+      } finally { db.close() }
+    }
+    let failuresBefore = await countFailures()
+
+    const onlyRetired = await store.importGpxEvidencePaths({
+      missionId: mission.id,
+      paths: [retiredPath],
+      skipRetiredSources: true,
+    })
+    expect(onlyRetired.imports).toEqual([])
+    expect(onlyRetired.failures ?? []).toEqual([])
+    const mixed = await store.importGpxEvidencePaths({
+      missionId: mission.id,
+      paths: [retiredPath, newPath],
+      skipRetiredSources: true,
+    })
+    expect(mixed.failures ?? []).toEqual([])
+    expect(mixed.imports).toHaveLength(1)
+    expect(await countFailures()).toBe(failuresBefore)
+    // A deliberate import of the same file still explains the refusal.
+    const manual = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [retiredPath] })
+    expect(manual.failures?.[0]?.reason).toMatch(/was retired from the mission/u)
+    failuresBefore += 1
+    const countBatches = async () => {
+      const db = openDatabase(await databasePath())
+      try {
+        return (db.prepare('SELECT COUNT(*) AS count FROM gpx_import_batches').get() as { count: number }).count
+      } finally { db.close() }
+    }
+    const batchesBeforeUnchanged = await countBatches()
+    await store.importGpxEvidencePaths({
+      missionId: mission.id, paths: [retiredPath], skipRetiredSources: true,
+    })
+    expect(await countBatches()).toBe(batchesBeforeUnchanged)
+
+    // A retired file that has since changed is new evidence: shown once, never hidden.
+    await writeFile(retiredPath, `<gpx version="1.1"><trk><name>Derrycunnihy</name><trkseg>
+      <trkpt lat="51.97" lon="-9.6"><time>2026-06-28T09:00:00Z</time></trkpt>
+      <trkpt lat="51.99" lon="-9.62"><time>2026-06-28T09:05:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    const changedReason = 'This GPX file was retired from the mission and has since changed. To import the new version, copy or rename the file and import the copy.'
+    const changedOnce = await store.importGpxEvidencePaths({
+      missionId: mission.id, paths: [retiredPath], skipRetiredSources: true,
+    })
+    expect(changedOnce.failures).toEqual([{ sourcePath: retiredPath, reason: changedReason }])
+    for (let rescan = 0; rescan < 2; rescan += 1) {
+      const repeated = await store.importGpxEvidencePaths({
+        missionId: mission.id, paths: [retiredPath], skipRetiredSources: true,
+      })
+      expect(repeated.failures ?? []).toEqual([])
+    }
+    expect(await countFailures()).toBe(failuresBefore + 1)
+
+    // Changed again to malformed XML: still exactly one issue, refused before parsing.
+    await writeFile(retiredPath, '<gpx version="1.1"><trk><trkseg><trkpt lat="51.9"')
+    const malformedScans = await Promise.all([0, 1, 2].map(() => store!.importGpxEvidencePaths({
+      missionId: mission.id, paths: [retiredPath], skipRetiredSources: true,
+    })))
+    expect(malformedScans.flatMap((result) => result.failures ?? []))
+      .toEqual([{ sourcePath: retiredPath, reason: changedReason }])
+    // A non-normalized spelling of the same path is the same file.
+    const unnormalized = path.join(path.dirname(retiredPath), '.', path.basename(retiredPath))
+      .replace(path.basename(retiredPath), `../${path.basename(path.dirname(retiredPath))}/${path.basename(retiredPath)}`)
+    const viaOtherSpelling = await store.importGpxEvidencePaths({
+      missionId: mission.id, paths: [unnormalized], skipRetiredSources: true,
+    })
+    expect(viaOtherSpelling.failures ?? []).toEqual([])
+    expect(await countFailures()).toBe(failuresBefore + 2)
+
+    // Replaced by an oversized file: the bounded-read refusal is shown once.
+    await writeFile(retiredPath, Buffer.alloc(8 * 1024 * 1024 + 1, 0x20))
+    const oversizedScans = []
+    for (let rescan = 0; rescan < 2; rescan += 1) {
+      oversizedScans.push(await store.importGpxEvidencePaths({
+        missionId: mission.id, paths: [retiredPath], skipRetiredSources: true,
+      }))
+    }
+    expect(oversizedScans.flatMap((result) => result.failures ?? []))
+      .toEqual([{ sourcePath: retiredPath, reason: expect.stringMatching(/8 MiB/u) }])
+    expect(await countFailures()).toBe(failuresBefore + 3)
+
+  })
+
+  it('records a changed retired file reached by a non-normalized path and settles its batch [DON-320]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Non-normalized watched path' })
+    const sourcePath = path.join(userDataPath!, 'Purple Tomies.gpx')
+    await writeFile(sourcePath, `<gpx version="1.1"><trk><name>Tomies</name><trkseg>
+      <trkpt lat="52.03" lon="-9.6"><time>2026-06-29T09:00:00Z</time></trkpt>
+      <trkpt lat="52.04" lon="-9.61"><time>2026-06-29T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    const first = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+    await store.deleteGpxImport(first.imports[0]!.id)
+    await writeFile(sourcePath, '<gpx version="1.1"><trk><trkseg></trkseg></trk></gpx>')
+    const dirName = path.basename(path.dirname(sourcePath))
+    const spelled = `${path.dirname(sourcePath)}/../${dirName}/./${path.basename(sourcePath)}`
+    expect(path.normalize(spelled)).toBe(sourcePath)
+    expect(spelled).not.toBe(sourcePath)
+
+    const result = await store.importGpxEvidencePaths({
+      missionId: mission.id, paths: [spelled], skipRetiredSources: true,
+    })
+
+    expect(result.failures).toEqual([{ sourcePath, reason: expect.stringMatching(/has since changed/u) }])
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare(`SELECT status FROM gpx_import_source_receipts
+        WHERE mission_id = ? AND status IN ('pending', 'retained')`).all(mission.id)).toEqual([])
+      expect(db.prepare(`SELECT status FROM gpx_import_batches WHERE mission_id = ?
+        ORDER BY started_at DESC, rowid DESC LIMIT 1`).get(mission.id)).toEqual({ status: 'completed_with_failures' })
+    } finally { db.close() }
+  })
+
+  it('refuses watched scans queued behind shutdown and joins the running one [DON-320]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Shutdown with queued watched scans' })
+    const sourcePath = path.join(userDataPath!, 'queued.gpx')
+    await writeFile(sourcePath, `<gpx version="1.1"><trk><name>Queued</name><trkseg>
+      <trkpt lat="52.03" lon="-9.6"><time>2026-06-29T09:00:00Z</time></trkpt>
+      <trkpt lat="52.04" lon="-9.61"><time>2026-06-29T09:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`)
+    const scans = [0, 1, 2].map(() => store!.importGpxEvidencePaths({
+      missionId: mission.id, paths: [sourcePath], skipRetiredSources: true,
+    }).then(() => 'settled', (error: unknown) => (error instanceof Error ? error.message : String(error))))
+
+    await store.prepareClose()
+    const outcomes = await Promise.all(scans)
+
+    expect(outcomes.filter((outcome) => outcome === 'Mission store is closing or closed.').length)
+      .toBeGreaterThanOrEqual(1)
+    const db = openDatabase(await databasePath())
+    try {
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_batches
+        WHERE mission_id = ? AND status = 'running'`).get(mission.id)).toEqual({ count: 0 })
     } finally { db.close() }
   })
 

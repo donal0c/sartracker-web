@@ -16,9 +16,13 @@ function validateGpxImportEnvelope(input) {
   if (missionId === '') {
     throw new Error('GPX import mission ID must be between 1 and 1000 characters.')
   }
+  if (input.skipRetiredSources !== undefined && typeof input.skipRetiredSources !== 'boolean') {
+    throw new Error('GPX import retired-source option must be a boolean.')
+  }
   return {
     missionId,
     paths: normalizeGpxImportPaths(input.paths),
+    ...(input.skipRetiredSources === true ? { skipRetiredSources: true } : {}),
   }
 }
 

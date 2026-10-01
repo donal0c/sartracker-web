@@ -1291,6 +1291,7 @@ export type MissionStore = {
   readonly importGpxEvidencePaths?: (input: {
     readonly missionId: string
     readonly paths: readonly string[]
+    readonly skipRetiredSources?: boolean
   }) => Promise<{
     readonly imports: readonly { readonly id: string }[]
     readonly failures: readonly { readonly sourcePath: string; readonly reason: string }[]

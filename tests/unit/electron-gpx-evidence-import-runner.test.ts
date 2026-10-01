@@ -53,6 +53,18 @@ describe('GPX evidence import worker runner [DON-277]', () => {
     })).toEqual({ missionId: maximumMissionId, paths: [maximumPath] })
   })
 
+  it('carries only a boolean watched-folder retired-source option [DON-320]', () => {
+    expect(validateGpxImportEnvelope({
+      missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: true,
+    })).toEqual({ missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: true })
+    expect(validateGpxImportEnvelope({
+      missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: false,
+    })).toEqual({ missionId: 'mission-1', paths: ['/watch/a.gpx'] })
+    expect(() => validateGpxImportEnvelope({
+      missionId: 'mission-1', paths: ['/watch/a.gpx'], skipRetiredSources: 1,
+    })).toThrow(/retired-source option/u)
+  })
+
   it('rejects non-object import envelopes and oversized mission or path scalars before worker creation', () => {
     const createWorker = vi.fn()
 

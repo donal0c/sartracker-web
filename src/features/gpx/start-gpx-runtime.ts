@@ -38,6 +38,7 @@ type GpxStoreBoundary = {
   readonly importGpxEvidencePaths?: (input: {
     readonly missionId: string
     readonly paths: readonly string[]
+    readonly skipRetiredSources?: boolean
   }) => Promise<{
     readonly imports: readonly { readonly id: string }[]
     readonly failures?: readonly { readonly sourcePath: string; readonly reason: string }[]
@@ -58,6 +59,13 @@ export type GpxImportFileInput = {
 }
 
 export type GpxImportResult = Pick<GpxTrackImport, 'id'>
+
+type PathImportSource = { readonly skipRetiredSources: boolean }
+
+/** An operator's explicit import: a retired file is refused in plain words. */
+const DELIBERATE_IMPORT: PathImportSource = { skipRetiredSources: false }
+/** A watched-folder scan meets retired files every pass; they are skipped, not failures. */
+const WATCHED_FOLDER_SCAN: PathImportSource = { skipRetiredSources: true }
 
 export type GpxImportOperationOutcome = 'imported' | 'empty' | 'refused' | 'stale' | 'failed'
 
@@ -307,7 +315,7 @@ export async function startGpxRuntime(
         if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
           return operationResult('stale')
         }
-        return await importPathsIntoRuntime(paths, missionId, missionToken)
+        return await importPathsIntoRuntime(paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
       }
       const files = await dependencies.watchSource.listDirectoryFiles(normalizedPath)
       if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
@@ -351,7 +359,12 @@ export async function startGpxRuntime(
           ) {
             const paths = await dependencies.watchSource.listDirectoryPaths(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
-            const result = await importPathsIntoRuntime(paths, missionId, missionToken)
+            const result = await importPathsIntoRuntime(
+              paths,
+              missionId,
+              missionToken,
+              WATCHED_FOLDER_SCAN,
+            )
             imported.push(...result.imports)
             if (result.failures !== undefined) failures.push(...result.failures)
             hadFailure ||= result.outcome === 'failed'
@@ -611,6 +624,7 @@ export async function startGpxRuntime(
     paths: readonly string[],
     expectedMissionId: string | null = state.activeMissionId,
     expectedMissionToken: number = missionGeneration,
+    source: PathImportSource = DELIBERATE_IMPORT,
   ): Promise<GpxImportOperationResult> {
     const missionId = expectedMissionId
     const missionToken = expectedMissionToken
@@ -630,7 +644,11 @@ export async function startGpxRuntime(
     state = { ...state, importing: true, error: null }
     publishRuntime()
     try {
-      const result = await dependencies.gpxStore.importGpxEvidencePaths({ missionId, paths })
+      const result = await dependencies.gpxStore.importGpxEvidencePaths({
+        missionId,
+        paths,
+        ...(source.skipRetiredSources ? { skipRetiredSources: true } : {}),
+      })
       if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale')
       const [importPage, issuePage] = await Promise.all([
         readGpxImportProjectionPage(
@@ -795,7 +813,8 @@ function describeRendererImportFailures(
 
 /** Keeps a multi-directory rescan's partial failure visible after later success. */
 function describeOperationFailures(failures: readonly GpxImportOperationFailure[]): string {
-  const details = failures.slice(0, 3).map((failure) => `${failure.fileName}: ${failure.reason}`)
+  const details = failures.slice(0, 3)
+    .map((failure) => `${failure.fileName}: ${failure.reason.replace(/\.+$/u, '')}`)
   const suffix = failures.length > details.length
     ? ` ${failures.length - details.length} additional failure${failures.length - details.length === 1 ? '' : 's'} were not shown.`
     : ''

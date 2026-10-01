@@ -114,6 +114,59 @@ describe('startGpxRuntime', () => {
     expect(importGpxEvidencePaths).toHaveBeenCalledOnce()
   })
 
+  it('watched-folder scans skip retired files; deliberate imports do not [DON-320]', async () => {
+    const listDirectoryPaths = vi.fn().mockResolvedValue(['/watch/retired.gpx'])
+    const importGpxEvidencePaths = vi.fn().mockResolvedValue({
+      imports: [], failures: [], dispatchDurationMs: 0,
+    })
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]), upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths,
+      },
+      watchSource: { listDirectoryFiles: vi.fn(), listDirectoryPaths },
+      applyRuntime: vi.fn(),
+    })
+    await controller.refreshMission('mission-1')
+    await controller.addWatchedDirectory('/watch')
+    await controller.rescanWatchedDirectories()
+    await controller.importPaths(['/watch/retired.gpx'])
+
+    expect(importGpxEvidencePaths.mock.calls.map(([input]) => input)).toEqual([
+      { missionId: 'mission-1', paths: ['/watch/retired.gpx'], skipRetiredSources: true },
+      { missionId: 'mission-1', paths: ['/watch/retired.gpx'], skipRetiredSources: true },
+      { missionId: 'mission-1', paths: ['/watch/retired.gpx'] },
+    ])
+  })
+
+  it('does not double the full stop when a failure reason ends a rescan summary [DON-320]', async () => {
+    const applyRuntime = vi.fn()
+    const controller = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]), upsertGpxImport: vi.fn(), deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths: vi.fn().mockResolvedValue({
+          imports: [],
+          failures: [{ sourcePath: '/watch/bad.gpx', reason: 'Import the copy.' }],
+          dispatchDurationMs: 1,
+        }),
+      },
+      watchSource: {
+        listDirectoryFiles: vi.fn(),
+        listDirectoryPaths: vi.fn().mockResolvedValue(['/watch/bad.gpx']),
+      },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-1')
+    await controller.addWatchedDirectory('/watch')
+    await controller.rescanWatchedDirectories()
+
+    const errors = applyRuntime.mock.calls
+      .map(([runtime]) => (runtime as { readonly error: string | null }).error)
+      .filter((error): error is string => error !== null)
+    expect(errors.at(-1)).toContain('bad.gpx: Import the copy.')
+    expect(errors.at(-1)).not.toContain('..')
+  })
+
   it('aggregates a failed watched directory without losing later imports [DON-274]', async () => {
     const listDirectoryPaths = vi.fn()
       .mockResolvedValueOnce([])

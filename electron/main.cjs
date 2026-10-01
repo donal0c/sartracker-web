@@ -1164,7 +1164,11 @@ function registerMissionStoreHandlers(missionStore, fileSystem, archiveReviewSes
     validateIpcSender(event)
     const envelope = validateGpxImportEnvelope(input)
     const paths = await fileSystem.validateGpxEvidencePaths(envelope.paths)
-    return missionStore.importGpxEvidencePaths({ missionId: envelope.missionId, paths })
+    return missionStore.importGpxEvidencePaths({
+      missionId: envelope.missionId,
+      paths,
+      ...(envelope.skipRetiredSources === true ? { skipRetiredSources: true } : {}),
+    })
   })
   ipcMain.handle(MISSION_STORE_CHANNELS.createMission, (event, input) => {
     validateIpcSender(event)

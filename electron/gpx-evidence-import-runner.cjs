@@ -31,6 +31,7 @@ function runGpxEvidenceImportInWorker(input) {
         foregroundWriterBuffer,
         missionId: envelope.missionId,
         paths: envelope.paths,
+        ...(envelope.skipRetiredSources === true ? { skipRetiredSources: true } : {}),
         batchId: input.batchId ?? randomUUID(),
         receiptsStarted: input.receiptsStarted === true,
         pauseAfter: normalizePauseAfter(input.faultInjection?.pauseAfter),

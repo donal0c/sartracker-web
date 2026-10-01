@@ -413,6 +413,12 @@ function projectGpxEvidencePathsForIpc(input) {
     }
     return entry
   })
+  if (input.skipRetiredSources !== undefined) {
+    if (typeof input.skipRetiredSources !== 'boolean') {
+      throw new Error('GPX evidence paths are invalid.')
+    }
+    output.skipRetiredSources = input.skipRetiredSources
+  }
   return output
 }
 

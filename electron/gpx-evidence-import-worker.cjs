@@ -5,7 +5,9 @@ const { parentPort, threadId, workerData } = require('node:worker_threads')
 const Database = require('better-sqlite3')
 const { SaxesParser } = require('saxes')
 const {
+  RETIRED_GPX_CHANGED_MESSAGE,
   finishGpxImportBatch,
+  readRetiredGpxSource,
   recordGpxImportFailure,
   recordGpxImportSourceReceipt,
   retainGpxImportSourceBytes,
@@ -59,6 +61,14 @@ async function run() {
         pauseForForcedKill('pending')
         sourceBytes = await readBoundedGpxSource(normalizedPath)
         const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+        // A watched scan reaches a retired path only when its bytes changed.
+        // Refuse before parsing, so malformed new bytes give the same one issue.
+        if (envelope.skipRetiredSources === true) {
+          const retired = readRetiredGpxSource(database, envelope.missionId, normalizedPath)
+          if (retired !== undefined && retired.content_sha256 !== contentSha256) {
+            throw new Error(RETIRED_GPX_CHANGED_MESSAGE)
+          }
+        }
         const sourceBytesBase64 = sourceBytes.toString('base64')
         await beforeWrite()
         retainGpxImportSourceBytes(database, {
