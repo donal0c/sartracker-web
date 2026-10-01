@@ -66,13 +66,17 @@ function createResponsiveMissionWriter(database) {
       }
       if (closing || signal?.aborted) return Promise.reject(createCancellation())
       if (fault !== null) return Promise.reject(fault)
-      Atomics.add(pending, 0, 1)
       // Each write is its own synchronous transaction on the main thread.
-      // Yield one task first, so writes queued together (for example six
-      // parallel history pieces) let timers, input and IPC run between them
-      // instead of running back-to-back as one long block. Order and
+      // A write queued behind others yields one task first, so writes queued
+      // together (for example six parallel history pieces) let timers, input
+      // and IPC run between them instead of running back-to-back as one long
+      // block. A write admitted to an idle writer runs as before. Order and
       // atomicity are unchanged [DON-313].
-      const operation = tail.then(yieldToEventLoop).then(() => execute(callback, signal))
+      const queuedBehindOthers = Atomics.load(pending, 0) > 0
+      Atomics.add(pending, 0, 1)
+      const operation = queuedBehindOthers
+        ? tail.then(yieldToEventLoop).then(() => execute(callback, signal))
+        : tail.then(() => execute(callback, signal))
       const completion = operation.finally(() => { Atomics.sub(pending, 0, 1) })
       tail = completion.catch(() => undefined)
       return completion

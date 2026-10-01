@@ -63,7 +63,7 @@ const BROWSER_FILES = Object.freeze({
 const STRICT_RESPONSIVENESS_FILES = Object.freeze([
   'breadcrumb-accumulator', 'breadcrumb-pr6-qualification-script', 'electron-archive-family-resource-lane',
   'electron-archive-plaintext-sweep-integration', 'electron-archive-registry', 'electron-cleanup-live-write-contention',
-  'electron-coverage-ledger', 'electron-mission-evidence-versioning', 'electron-mission-review-read-query-runner',
+  'electron-coverage-ledger', 'electron-history-piece-responsiveness', 'electron-mission-evidence-versioning', 'electron-mission-review-read-query-runner',
   'electron-search-operations-page', 'electron-startup-write-responsiveness', 'ingest-anomaly-outbox',
   'main-event-loop-probe', 'stationary-attention-projection', 'release-responsiveness',
 ].map((name) => `tests/unit/${name}.test.ts`))
