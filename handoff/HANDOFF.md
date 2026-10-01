@@ -19,11 +19,13 @@ Release gate: [checklist](../docs/release-checklist.md).
   (e3831c9d, f97c3707, 0a20c3b5, pushed). Full suite 6,353 pass. Mac soak
   launch 2 now passes; launch 1 startup catch-up still over 200 ms under VM
   contention (240-450% CPU), so a quiet-machine or box soak is owed.
-- CI: run 36913908137 (c34ecf22) packaged checks PASS (C09 fixed; the
-  226 ms legacy-recovery outlier did not recur); correctness pending.
-- **Local, unpushed:** fbd50397 (DON-309 smoke), 502a8495 + 61e31752
-  (DON-300 item 8 blank-roster and DON-319 drawn-line smoke; Codex clean).
-  Push with 9f's DON-309 commit after its full suite + Codex.
+- Pushed tonight after 0e8553b3: DON-322, DON-309 (schema 14, 2d3f784c),
+  DON-315/316/317 smoke, DON-300 items 5 (fold sections, 60204b3a) and 8
+  smoke, DON-319 smoke, lived-in profiles. CI 36917954157 green; run
+  36924268741 (60204b3a) in progress.
+- **None of tonight's team-smoke changes have run packaged yet** (controls,
+  lifecycle, outage, markers-gpx, replay-basemaps, team-workflow,
+  team-mission): first run when Docker/the box is free.
 
 ## Verification limits
 
@@ -39,12 +41,9 @@ Release gate: [checklist](../docs/release-checklist.md).
 ## Who is doing what (1 Oct late; coordinator owns this file)
 
 - **Coordinator:** handoff, workplan, all pushes, Mac soaks, team-smoke.
-  Next: DON-317 item 4 (lived-in profiles); then the first packaged run of
-  `controls`/`lifecycle`/`outage`/`markers-gpx`/`team-workflow`/
-  `team-mission` (all changed tonight, none run yet).
-- **Session 9f** (commits locally; coordinator pushes): DON-309 option A
-  (event-derived retired intervals, schema 14, archive readers accept 13+14)
-  implemented, running archive suites. Owns mission-store.cjs, main.cjs,
+  Next: first packaged run of tonight's smoke changes (needs Docker/box).
+- **Session 9f** (commits locally; coordinator pushes): DON-312 step 1
+  (heap/state counters in the soak sampler; no run). Owns mission-store.cjs, main.cjs,
   preload.cjs, GPX runtime, `public/manual/index.html`.
 - Rules: announce files before editing; one heavy run at a time.
 - **When Donal frees Docker:** package once; Mac soak 3x (DON-313) and the
