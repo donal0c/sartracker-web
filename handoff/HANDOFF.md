@@ -19,9 +19,8 @@ Release gate: [checklist](../docs/release-checklist.md).
   (e3831c9d, f97c3707, 0a20c3b5, pushed). Full suite 6,353 pass. Mac soak
   launch 2 now passes; launch 1 startup catch-up still over 200 ms under VM
   contention (240-450% CPU), so a quiet-machine or box soak is owed.
-- CI: run 36880796648's fatal-fence timing test hardened (e4dfdd5c); run
-  36883863760's Chromium flake hardened (706a4666). Push 706a4666 started a
-  new run; check it next. Mac soaks wait until Donal frees Docker.
+- CI: 706a4666 green (36898010941). 965e96e4 pushed; run 36904008594 in
+  progress; push a5485b22 + docs after it. Mac soaks wait for Docker.
 
 ## Verification limits
 
@@ -34,36 +33,29 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box sleeps when idle; open a Terminal for Donal's sudo password for
   `systemd-inhibit` on long runs.
 
-## Who is doing what (1 Oct evening; coordinator = this handoff's owner)
+## Who is doing what (1 Oct evening; coordinator owns this file)
 
-- **Coordinator session** (owns handoff, workplan, all pushes, Mac soaks):
-  DON-300 items 3-6 (layout), then DON-301 (manual merge). Owns
-  `public/manual/index.html`.
-- **Session 9f** (commits locally, reports each commit; no pushes):
-  DON-318 (decided: no loss marker when provably nothing pending; else "may
-  have been lost"), then DON-320, DON-321, DON-319 analysis (needs files).
-- Rules: announce a file before editing it; one heavy run at a time; manual
-  text goes to the coordinator.
-- **When Donal frees Docker:** coordinator packages once and runs the Mac
-  soak 3x (DON-313) plus team-smoke rows for today's fixes, then pushes.
+- **Coordinator:** handoff, workplan, all pushes, Mac soaks. Done tonight:
+  DON-300 1-4,7,8 (a5485b22 local; 5 → DON-297). Next: DON-309 (schema 14,
+  decided) once 9f releases mission-store.cjs.
+- **Session 9f** (commits locally, coordinator pushes): DON-320 7ca2749d and
+  DON-321 965e96e4 (pushed); DON-318 in progress (owns mission-store.cjs,
+  main.cjs, preload.cjs); then DON-319 analysis, then DON-301 (manual merge;
+  takes `public/manual/index.html` then).
+- Rules: announce files before editing; one heavy run at a time.
+- **When Donal frees Docker:** package once; Mac soak 3x (DON-313) and the
+  team-smoke rows for today's fixes; then push.
 
 ## Waiting on Donal
 
-- **DON-313:** approved and implemented. Owed: a soak on a quiet Mac (VM
-  paused) or the box for launch 1.
-- **DON-309:** schema 13 → 14 for retire/restore intervals (no going back to
-  13.5 with the same profile). Recommended: accept.
-- **DON-300 item 8:** when a complete roster omits a group's devices, every
-  member gets a durable "left" (tracking gap). Recommended: confirm absence
-  over two consecutive complete rosters, one group-level notice.
+- Nothing open. Decided tonight: DON-318 residual accepted; DON-300 item 8
+  (confirm twice, dated at confirmation); DON-309 schema 14 accepted;
+  DON-301 to 9f.
 
 ## Next action
 
-- **Team report from Eamonn (PCLinuxOS, 1 Oct), triaged by session 9f:**
-  DON-318 (Urgent, false evidence-loss block on Finish/Archive; decision
-  for Donal), DON-319 (GPX not on map), DON-320 (retired GPX retried every
-  rescan), DON-321 (diagnostics flooded). DON-318 is next. PCLinuxOS
-  rendered the map without the GPU flag, and Discovery worked there.
+- Eamonn's PCLinuxOS report: DON-318-321 (+DON-322 found). The runtime
+  log holds ~7 h at his rate, so his bundle may lack the overnight event.
 
 - Then DON-300 items 3-6 (layout at 1440x900), DON-301 (manual rewrite
   merge; conflicts with today's manual edits), then DON-315/316/317
