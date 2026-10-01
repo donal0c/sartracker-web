@@ -21,6 +21,7 @@ import {
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
   validateFinalLineTotalAudit,
+  shouldReadCheckpointPositionCount,
 } from '../../build/electron-tracking-soak-lib.js'
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
 
@@ -1261,5 +1262,16 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       ],
       backupDurationTrendMs: 7,
     })
+  })
+})
+
+describe('tracking soak checkpoint drain [DON-310]', () => {
+  it('counts durable positions only once the mock has served the checkpoint batch', () => {
+    // A full COUNT on the app's main thread every 50 ms loaded the very
+    // loop the soak measures; the mock's own counter gates it instead.
+    expect(shouldReadCheckpointPositionCount({ completedBatches: 8, targetBatch: 240 })).toBe(false)
+    expect(shouldReadCheckpointPositionCount({ completedBatches: 239, targetBatch: 240 })).toBe(false)
+    expect(shouldReadCheckpointPositionCount({ completedBatches: 240, targetBatch: 240 })).toBe(true)
+    expect(shouldReadCheckpointPositionCount({ completedBatches: 241, targetBatch: 240 })).toBe(true)
   })
 })

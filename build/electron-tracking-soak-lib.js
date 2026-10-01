@@ -1079,6 +1079,15 @@ export function classifyOperatorInteraction(input) {
   }
 }
 
+/**
+ * Gates the checkpoint drain's durable COUNT on the mock's own batch counter.
+ * The COUNT is a synchronous SQLite scan on the app's main thread, so polling
+ * it every 50 ms for the whole run loaded the loop the soak measures [DON-310].
+ */
+export function shouldReadCheckpointPositionCount({ completedBatches, targetBatch }) {
+  return completedBatches >= targetBatch
+}
+
 /** Calculates interval slopes without conflating retained positions and redundant telemetry. */
 export function buildTrackingGrowthEvidence(checkpoints) {
   const normalized = checkpoints.map((checkpoint) => ({ ...checkpoint }))

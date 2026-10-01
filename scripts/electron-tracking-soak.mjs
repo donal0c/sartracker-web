@@ -79,6 +79,7 @@ import {
   parseDarwinProcessTreeResidentMemory,
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
+  shouldReadCheckpointPositionCount,
 } from '../build/electron-tracking-soak-lib.js'
 import {
   buildTrackingSoakExpectedPositionTruthEvidence,
@@ -2740,13 +2741,16 @@ async function waitForCheckpoint(input) {
       targetBatch: input.targetBatch,
       completedBatch: mockState.completedBatches,
     })
-    const positionRows = await input.launch.page.evaluate(
-      async ({ missionId }) =>
-        window.sartrackerElectron?.missionStore.countPositions(missionId) ?? 0,
-      { missionId: input.missionId },
-    )
-    if (mockState.completedBatches >= input.targetBatch && positionRows >= input.expectedPositions) {
-      return
+    if (shouldReadCheckpointPositionCount({
+      completedBatches: mockState.completedBatches,
+      targetBatch: input.targetBatch,
+    })) {
+      const positionRows = await input.launch.page.evaluate(
+        async ({ missionId }) =>
+          window.sartrackerElectron?.missionStore.countPositions(missionId) ?? 0,
+        { missionId: input.missionId },
+      )
+      if (positionRows >= input.expectedPositions) return
     }
     await delay(50)
   }
