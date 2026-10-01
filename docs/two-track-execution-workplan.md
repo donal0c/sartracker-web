@@ -2,30 +2,33 @@
 
 Updated 2026-09-30. This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
 
-## After beta.13.5 — team answers and findings, 30 September (Claude tracks these)
+## Next release (13.6) — ordered queue, 1 October (Claude tracks these)
 
-Team answers SAR-QA-023–025 and the DON-295 escape produced these items. Each
-has a ticket; Claude keeps this list current and raises it at every checkpoint.
-Donal does not need to remember any of it.
+beta.13.5 was published on 1 Oct 2026 (tag fac5adcf). This is the queue for the
+next release, safety and fail-visible issues first. Each item has a ticket.
+Claude keeps the list current; Donal does not need to remember any of it.
 
 | Order | Item | Ticket | Needs |
 | --- | --- | --- | --- |
-| 1 | Default team group pre-ticked at Start ("KMRT should display by default"), within SAR-QA-015 | DON-296 | **Donal decision**, then tests-first build |
-| 2 | Simplify the right-hand panel for volunteers ("gone too complicated") | DON-297 | Design proposal to Donal, then team check |
-| 3 | PCLinuxOS VM on the test box; smoke the AppImage there before the next release | DON-298 | Setup (Donal: VM approved for next release) |
-| 4 | Hidden-gap sweep: persisted legacy state, mid-mission controls, checks during failures | DON-299 | Implementation |
-| 5 | Clean exit recorded as a crash, plus the "was lost" wording | DON-284 | Donal wording decision (1.8), then fix |
-| 6 | Unwritable profile exits silently | DON-285 | Implementation |
-| 7 | Visible failure without WebGL | DON-288 | Fallback expectation decision |
-| 8 | Eight cosmetic items from the manual pass (item 8 may be safety-relevant) | DON-300 | Implementation |
-| 9 | Merge the manual rewrite | DON-301 | Review, then merge |
-| 10 | Replay of backfilled history: **question not yet sent** | DON-293 | Ask on the team's phone call |
-| 11 | Harvey and Hiker maps | DON-303 | Stage 5 (maps last) |
-| 12 | Retire or rewrite the obsolete live-exact smoke | DON-302 | Donal OK to retire |
-| 2a | Discovery kept as the map across restarts ("Discovery map by default") | DON-304 | Tests first; ships as a known issue in 13.5 if Donal agrees |
+| 1 | Initial history catch-up can starve live trail polling (all 8 shared transport slots) | DON-311 | Tests first (see DON-305's live-polling test) |
+| 2 | Main-thread stalls of 400–670 ms in the normal-profile soak (pre-existing; data exact) | DON-310 | Attribute the stalls, then fix; re-test on a GPU machine |
+| 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | Tests first |
+| 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Fallback wording decision, then fix |
+| 5 | Unwritable profile exits silently | DON-285 | Implementation |
+| 6 | Clean exit recorded as a crash, plus the "was lost" wording | DON-284 | Donal wording decision, then fix |
+| 7 | Restore a retired GPX track with truthful replay | DON-309 | Migration plus replay/archive changes |
+| 8 | Default team group pre-ticked at Start | DON-296 | **Donal decision** |
+| 9 | Simplify the right-hand panel; Eamonn's layout doc; Outings panel clarity | DON-297 | Eamonn's doc and call, then a design proposal |
+| 10 | PCLinuxOS VM on the test box; smoke the AppImage there | DON-298 | Setup |
+| 11 | Hidden-gap sweep: persisted legacy state, mid-mission controls, checks during failures | DON-299 | Implementation |
+| 12 | Cosmetic items from the manual pass; merge the manual rewrite | DON-300, DON-301 | Implementation, review |
+| 13 | Replay of backfilled history (question not yet sent) | DON-293 | Ask the team |
+| 14 | Retire or rewrite the obsolete live-exact smoke | DON-302 | Donal OK to retire |
+| 15 | Harvey and Hiker maps | DON-303 | Maps last |
 
-For 13.5 itself, the PCLinuxOS gap is covered by a short post-install check in
-the team note (Donal, 30 Sep).
+Release carry-overs: repeat the native file-picker hand check on the next
+candidate; run the installed normal-profile soak again (now about 20 min on
+the box) and compare with DON-310's baseline.
 
 ## Locked queue — Donal's working plan, 28 September
 
