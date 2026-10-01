@@ -11,6 +11,13 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-toolbar-expand').click()
   })
 
+  test('shows how to finish a Search Area while the tool is armed [DON-300]', async ({ page }) => {
+    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    const hint = page.getByTestId('drawing-tool-hint')
+    await expect(hint).toContainText('double-click or right-click to finish')
+    await page.getByTestId('drawing-toolbar').screenshot({ path: 'test-results/don-300-search-area-hint.png' })
+  })
+
   test('creates a line drawing from the toolbar and persists it', async ({ page }) => {
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await clickMap(page, { x: 420, y: 240 })

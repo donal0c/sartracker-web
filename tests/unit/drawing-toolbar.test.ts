@@ -48,6 +48,15 @@ describe('DrawingToolbar', () => {
     useMissionStore.setState(useMissionStore.getInitialState())
   })
 
+  it('tells the operator how to finish an armed Search Area [DON-300]', async () => {
+    const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
+    useDrawingStore.setState({ activeTool: 'search_area' })
+    render(React.createElement(DrawingToolbar))
+
+    const hint = document.querySelector('[data-testid="drawing-tool-hint"]')
+    expect(hint?.textContent).toMatch(/double-click or right-click to finish/iu)
+  })
+
   it('does not render a Select button in the expanded Map Tools list', async () => {
     const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
     render(React.createElement(DrawingToolbar))

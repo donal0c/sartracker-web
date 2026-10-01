@@ -17,7 +17,7 @@ import { useMissionStore } from '../features/mission/mission-store'
 // normal map click in that fallback mode or through the Layers panel.
 const DRAWING_TOOL_OPTIONS = [
   { value: 'line', label: 'Line', hint: 'Click points, double-click or right-click to finish' },
-  { value: 'search_area', label: 'Search Area', hint: 'Draw polygon then fill in search metadata' },
+  { value: 'search_area', label: 'Search Area', hint: 'Click the corners, then double-click or right-click to finish and add the search details' },
   { value: 'range_ring', label: 'Range Rings', hint: 'Click a centre point, then configure rings' },
   { value: 'bearing_line', label: 'Bearing', hint: 'Click an origin, then enter bearing and distance' },
   { value: 'search_sector', label: 'Sector', hint: 'Click a centre point, then set bearings and radius' },
@@ -62,6 +62,11 @@ export function DrawingToolbar() {
           role="alert"
         >
           Error: {error}
+        </p>
+      ) : null}
+      {activeDefinition !== undefined && 'hint' in activeDefinition && !disabled ? (
+        <p className="w-72 max-w-full border-b border-stone-700 px-3 py-2 text-xs text-amber-100" data-testid="drawing-tool-hint" role="status">
+          {activeDefinition.hint}
         </p>
       ) : null}
       {expanded ? (

@@ -140,8 +140,8 @@ export function buildDiagnosticsSnapshot(
   const configurationRows: readonly DiagnosticsRow[] = [
     {
       label: 'Mission model',
-      value: input.missionModelEnabled === true ? 'enabled (internal)' : 'disabled',
-      tone: input.missionModelEnabled === true ? 'warning' : 'default',
+      value: input.missionModelEnabled === true ? 'enabled' : 'disabled',
+      tone: input.missionModelEnabled === true ? 'default' : 'warning',
     },
     {
       label: 'Provider URL',
@@ -256,7 +256,7 @@ function buildSupportReport(
     `layer catalog state: ${input.layerCatalogState.error ?? 'healthy'}`,
     '',
     '[configuration]',
-    `mission model: ${input.missionModelEnabled === true ? 'enabled (internal)' : 'disabled'}`,
+    `mission model: ${input.missionModelEnabled === true ? 'enabled' : 'disabled'}`,
     `provider type: ${input.settings.dataSource.providerType}`,
     `provider url: ${redactProviderUrlCredentials(input.settings.dataSource.baseUrl) || 'not configured'}`,
     `auth mode: ${input.settings.dataSource.authMode}`,

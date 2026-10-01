@@ -219,6 +219,19 @@ describe('DevicesWorkspace', () => {
     expect(document.querySelector('[data-testid="device-filter-active"]')).toBeNull()
   })
 
+  it('names the search scope without repeating "devices" [DON-300]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: { ...STATUS, mode: 'online' } })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: null })
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    const search = () => document.querySelector<HTMLInputElement>('[data-testid="device-list-search"]')?.placeholder
+    expect(search()).toBe('Search all devices')
+    click('[data-testid="device-filter-online"]')
+    expect(search()).toBe('Search online devices')
+  })
+
   it('keeps selected device and search scoped to the current filter list [DON-190]', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: { ...STATUS, mode: 'online' } })

@@ -89,10 +89,11 @@ describe('diagnostics model', () => {
     expect(snapshot.storageRows.some((row) => row.label === 'Schema version' && row.value === '3')).toBe(true)
     expect(snapshot.configurationRows.some((row) => row.label === 'Official maps' && row.value === 'configured')).toBe(true)
     expect(snapshot.configurationRows.some((row) => row.label === 'Official packages' && row.value === '1 ready / 2 registered')).toBe(true)
+    // The mission model is the shipped mode, not an internal preview [DON-300].
     expect(snapshot.configurationRows).toContainEqual({
       label: 'Mission model',
-      value: 'enabled (internal)',
-      tone: 'warning',
+      value: 'enabled',
+      tone: 'default',
     })
     expect(snapshot.repair.targetMissionLabel).toContain('Night Ops')
     expect(snapshot.supportReport).toContain('Diagnostics Report')
@@ -117,7 +118,7 @@ describe('diagnostics model', () => {
     expect(snapshot.supportReport).not.toContain('mountainrescue_org.txt')
     expect(snapshot.supportReport).not.toContain('reeks-standard-60km-z16.mbtiles')
     expect(snapshot.supportReport).toContain('layer metadata entries: 3')
-    expect(snapshot.supportReport).toContain('mission model: enabled (internal)')
+    expect(snapshot.supportReport).toContain('mission model: enabled\n')
     expect(snapshot.supportReport).toContain('[coverage]')
     expect(snapshot.supportReport).toContain('queue depth: 3')
     expect(snapshot.supportReport).toContain('queue age ms: 120000')

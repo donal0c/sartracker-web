@@ -251,7 +251,7 @@ function DevicesWorkspaceContent(props: {
                   data-testid="device-list-search"
                   onChange={(event) => setDeviceQuery(event.currentTarget.value)}
                   onInput={(event) => setDeviceQuery(event.currentTarget.value)}
-                  placeholder={`Search ${getFilterLabel(activeFilter).toLowerCase()} devices`}
+                  placeholder={`Search ${activeFilter === 'all' ? 'all' : getFilterLabel(activeFilter).toLowerCase()} devices`}
                   type="search"
                   value={deviceQuery}
                 />
