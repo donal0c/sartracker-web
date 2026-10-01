@@ -320,34 +320,57 @@ export default [
       if (imported?.imports?.length !== 2 || imported?.failures?.length !== 0) {
         findings.push(`GPX import of a timed and an untimed file returned ${JSON.stringify(imported).slice(0, 200)}`)
       }
-      // DON-306: retire a track, re-import the same file (plain-words refusal), then a copy (imports).
+      // DON-306/309: retire a track; a renamed copy imports as a new track;
+      // re-importing the same file deliberately brings the same track back,
+      // and Replay keeps it hidden for the time it was retired.
       const retireTarget = imported?.imports?.[0]?.id
       expectProduct(typeof retireTarget === 'string',
-        `GPX import returned no track to retire, so the DON-306 re-import step cannot run: ${JSON.stringify(imported).slice(0, 200)}`)
+        `GPX import returned no track to retire, so the DON-306/309 restore step cannot run: ${JSON.stringify(imported).slice(0, 200)}`)
       const copyGpx = timedGpx.replace(/\.gpx$/u, ' (copy).gpx')
       await copyFile(timedGpx, copyGpx)
       const reimport = await app.page.evaluate(async ({ importId, path: sourcePath, copy }) => {
         const store = window.sartrackerElectron.missionStore
         const mission = await store.getActiveMission()
+        const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        const shows = async (at) => JSON.stringify(await store.readMissionReplay({
+          missionId: mission.id, selectedTime: new Date(at).toISOString(), timezone: 'Europe/Dublin', trackLimit: 500, objectLimit: 100,
+        }, `smoke-don-309-${at}`)).includes(importId)
+        const beforeRetire = Date.now()
+        await pause(3000)
         await store.deleteGpxImport(importId)
-        const again = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
         const copied = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [copy] })
-        return { again, copied }
+        await pause(3000)
+        const insideGap = Date.now()
+        await pause(3000)
+        const again = await store.importGpxEvidencePaths({ missionId: mission.id, paths: [sourcePath] })
+        await pause(3000)
+        const afterRestore = Date.now()
+        return {
+          copied, again,
+          replay: { beforeRetire: await shows(beforeRetire), insideGap: await shows(insideGap), afterRestore: await shows(afterRestore) },
+        }
       }, { importId: retireTarget, path: timedGpx, copy: copyGpx })
-      const refusal = reimport.again?.failures?.[0]?.reason ?? ''
-      if (reimport.again?.imports?.length !== 0 || !/was retired from the mission.*copy or rename the file/su.test(refusal)) {
-        findings.push(`re-importing a retired GPX file did not give the plain-words refusal (DON-306): ${JSON.stringify(reimport.again).slice(0, 200)}`)
+      if (reimport.copied?.imports?.length !== 1 || reimport.copied?.failures?.length !== 0
+        || reimport.copied?.imports?.[0]?.id === retireTarget) {
+        findings.push(`a renamed copy of a retired GPX file did not import as a new track (DON-306): ${JSON.stringify(reimport.copied).slice(0, 200)}`)
       }
-      if (reimport.copied?.imports?.length !== 1 || reimport.copied?.failures?.length !== 0) {
-        findings.push(`a renamed copy of a retired GPX file did not import (DON-306): ${JSON.stringify(reimport.copied).slice(0, 200)}`)
+      if (reimport.again?.imports?.length !== 1 || reimport.again?.failures?.length !== 0
+        || reimport.again?.imports?.[0]?.id !== retireTarget) {
+        findings.push(`re-importing a retired GPX file did not bring the same track back (DON-309): ${JSON.stringify(reimport.again).slice(0, 200)}`)
+      }
+      const { beforeRetire, insideGap, afterRestore } = reimport.replay
+      if (!beforeRetire || insideGap || !afterRestore) {
+        findings.push(`Replay of a restored GPX track was not truthful (DON-309): shown before retirement ${beforeRetire}, `
+          + `while retired ${insideGap} (expected false), after restore ${afterRestore}`)
       }
       // DON-320: the team keeps GPX files in a watched folder. Two rescans that
-      // meet the unchanged retired file must add no import issue. The call is
-      // the one the Rescan Watches control makes; adding the folder needs the
-      // native picker.
-      const rescans = await app.page.evaluate(async (paths) => {
+      // meet the unchanged retired file must add no import issue, and a
+      // watched scan never restores it (DON-309). The call is the one the
+      // Rescan Watches control makes; adding the folder needs the native picker.
+      const rescans = await app.page.evaluate(async ({ paths, importId }) => {
         const store = window.sartrackerElectron.missionStore
         const mission = await store.getActiveMission()
+        await store.deleteGpxImport(importId)
         const issueCount = async () =>
           (await store.listGpxImportIssues({ missionId: mission.id, limit: 100 })).entries.length
         const before = await issueCount()
@@ -358,9 +381,12 @@ export default [
           }))
         }
         return { before, after: await issueCount(), results }
-      }, [timedGpx, untimedGpx, copyGpx])
+      }, { paths: [timedGpx, untimedGpx, copyGpx], importId: retireTarget })
       if (rescans.after !== rescans.before || rescans.results.some((result) => (result?.failures?.length ?? 0) !== 0)) {
         findings.push(`watched-folder rescans of a retired GPX file added import issues (${rescans.before} → ${rescans.after}; DON-320): ${JSON.stringify(rescans.results).slice(0, 200)}`)
+      }
+      if (rescans.results.some((result) => (result?.imports ?? []).some((entry) => entry?.id === retireTarget))) {
+        findings.push('a watched-folder rescan restored a retired GPX track; only a deliberate import may (DON-309)')
       }
       // DON-322: a malformed (non-retired) GPX in the watched folder reports
       // once, not on every rescan.
