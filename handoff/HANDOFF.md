@@ -21,7 +21,7 @@ Release gate: [checklist](../docs/release-checklist.md).
   contention (240-450% CPU), so a quiet-machine or box soak is owed.
 - CI: run 36880796648's fatal-fence timing test hardened (e4dfdd5c); run
   36883863760's Chromium flake hardened (706a4666). Push 706a4666 started a
-  new run; check it next.
+  new run; check it next. Mac soaks wait until Donal frees Docker.
 
 ## Verification limits
 
@@ -45,6 +45,12 @@ Release gate: [checklist](../docs/release-checklist.md).
   over two consecutive complete rosters, one group-level notice.
 
 ## Next action
+
+- **Team report from Eamonn (PCLinuxOS, 1 Oct), triaged by session 9f:**
+  DON-318 (Urgent, false evidence-loss block on Finish/Archive; decision
+  for Donal), DON-319 (GPX not on map), DON-320 (retired GPX retried every
+  rescan), DON-321 (diagnostics flooded). DON-318 is next. PCLinuxOS
+  rendered the map without the GPU flag, and Discovery worked there.
 
 - Then DON-300 items 3-6 (layout at 1440x900), DON-301 (manual rewrite
   merge; conflicts with today's manual edits), then DON-315/316/317

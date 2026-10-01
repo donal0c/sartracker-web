@@ -10,6 +10,7 @@ Claude keeps the list current; Donal does not need to remember any of it.
 
 | Order | Item | Ticket | Needs |
 | --- | --- | --- | --- |
+| 0 — **NEXT (team report, Urgent)** | False "EVIDENCE HEALTH CRITICAL — rejected-position evidence was lost" blocks Finish/Archive while diagnostics show nothing pending (Eamonn, PCLinuxOS, 1 Oct) | DON-318 | Support bundle requested from Eamonn; decision for Donal on the ticket (no loss marker when provably nothing pending; wording). Tests first. Related: DON-284 slow quit |
 | 1 | Initial history catch-up can starve live trail polling | DON-311 | **Fixed 86b8384a.** Waiting: CI soak, then box `team-mission` backfill time |
 | 2 | Main-thread stalls in the normal-profile soak (measurement) | DON-310 | Closes with DON-313 |
 | 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac | DON-312 | Heap attribution; check the box evidence |
@@ -17,6 +18,7 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 3a | Soak stalls / 960k open block | DON-313 | **Implemented e3831c9d/f97c3707/0a20c3b5** (bounded pieces, writer yield, 960k upgrade row, harness counts off main). Launch 2 passes; launch 1 owed on a quiet machine or the box |
 | 3b | Replay ignores the Discovery package | DON-314 | **Fixed e73e5734** (pushed). Owed: `team-workflow` Replay step with the real package |
 | 4 | Visible failure when WebGL is unavailable | DON-288 | **Fixed 3f98a23f** (pushed). Owed: box `no-gpu-flag` (button → map draws via llvmpipe) |
+| 4a | GPX imports listed but not on the map (watched folder; team report) | DON-319 | Needs Eamonn's files; hypotheses on the ticket |
 | 5 | Unwritable profile exits silently | DON-285 | **Fixed 6dbe43d3 + ee32ac32** (pushed). Owed: box `unwritable-profile` + `duplicate-launch` on the AppImage |
 | 6 | Clean exit recorded as a crash; wording | DON-284 | **Fixed ee32ac32** (pushed; IPC re-read the running session's marker). Owed: box `tracking` SIGTERM row + window-X by hand |
 | 7 — **WAITING ON DONAL** | Restore a retired GPX track with truthful replay | DON-309 | Plan on the ticket. **Decision: schema 13 → 14 (no going back to 13.5 with the same profile)**; recommendation accept |
@@ -24,7 +26,9 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 9 | Simplify the right-hand panel; Eamonn's doc | DON-297 | Eamonn's doc and call |
 | 10 | PCLinuxOS VM on the test box | DON-298 | Setup (box) |
 | 11 | Hidden-gap sweep | DON-299 | **Class 1 done a0b8643a** (recording cannot read stored view state). Classes 2–5: DON-315/316/317 (smoke additions, box) |
-| 12 | Cosmetic items; merge the manual rewrite | DON-300, DON-301 | **NEXT** |
+| 11a | Watched folder re-tries a retired GPX every rescan (unbounded identical issues; team report) | DON-320 | Implementation; relates to DON-309/306 |
+| 12 | Cosmetic items; merge the manual rewrite | DON-300, DON-301 | Items 1/2/7 done aa1ec7dc; 3-6, item 8 (decision) and DON-301 open |
+| 12a | Diagnostics breadcrumbs flooded by unchanged tracking_status_changed (team report) | DON-321 | Implementation |
 | 13 | Replay of backfilled history (question not yet sent) | DON-293 | Ask the team (parked) |
 | 14 | Retire the obsolete live-exact smoke | DON-302 | **Done a6731ece** |
 | 15 | Harvey and Hiker maps | DON-303 | Maps last |
