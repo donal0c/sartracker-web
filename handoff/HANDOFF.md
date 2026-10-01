@@ -27,15 +27,19 @@ Release gate: [checklist](../docs/release-checklist.md).
   time at the next release candidate (dispatched CI stops at the 960k step).
 - **DON-310**: Mac GPU soak still stalls (291/479 ms), so not llvmpipe.
   Donal chose A+B (done: 2473beca, f247773f); no measurable gain, so route
-  C is open as **DON-313** (SQLite off the main thread), queued after DON-304.
+  C is open as **DON-313** (SQLite off the main thread).
   The CI 960k replay step fails on the same cause (2 s open), which also
   stops dispatched validation before the CI soak.
 - **DON-312** (new): soak exceeds the 2 GB memory budget on the Mac.
 - **DON-304 fixed** (e018c128): Discovery restored after restart when its
   package is ready, visible notice otherwise; team-smoke with the real
   package at the next candidate. Follow-up DON-314 (Replay map).
-- Next: DON-313 (SQLite off the main thread, plan first), then DON-288, ...
-  per the [workplan](../docs/two-track-execution-workplan.md).
+- **Next: DON-313** in a fresh session. Its Linear comments hold the Mac
+  evidence paths, repro/profiling commands and the first step (prove long
+  tasks vs back-to-back writes). Plan to Donal before coding. Then DON-314,
+  DON-288, ... per the [workplan](../docs/two-track-execution-workplan.md).
+- Evidence owed at the next candidate (box): see the workplan's list under
+  the 13.6 queue.
 - Mac evidence: `tmp/don-310-mac-soak/` (local, gitignored).
 Eamonn: Outings explanation on Donal's call; his layout doc feeds DON-297.
 Box (shared, ask Donal first): smoke tool, 13.4 upgrade profile, 960k fixture,

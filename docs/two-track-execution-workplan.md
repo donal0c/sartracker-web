@@ -14,8 +14,8 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 2 | Main-thread stalls of 280–520 ms in the normal-profile soak (pre-existing; data exact) | DON-310 | Attributed; harness fix f86777ca, A 2473beca, B f247773f (no measurable gain). Measurement ticket, closes with DON-313 |
 | 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac (renderer ~1.3 GB) | DON-312 | Heap attribution; check the box evidence |
 | 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | **Fixed e018c128** (restore when package ready, visible notice otherwise). Waiting: team-smoke with the real package at the next candidate |
+| 3a — **NEXT** | Move mission-store SQLite off the Electron main thread (soak stalls; 2 s main block opening a 960k store) | DON-313 | Plan first (worker behind the IPC contract), then tests-first; packaged SQLite/IPC/worker smoke |
 | 3b | Replay ignores the Discovery package (always online map) | DON-314 | Tests first; reuse DON-304's resolver |
-| 3a | Move mission-store SQLite off the Electron main thread (soak stalls; 2 s main block opening a 960k store) | DON-313 | Plan first (worker behind the IPC contract), then tests-first; packaged SQLite/IPC/worker smoke |
 | 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Fallback wording decision, then fix |
 | 5 | Unwritable profile exits silently | DON-285 | Implementation |
 | 6 | Clean exit recorded as a crash, plus the "was lost" wording | DON-284 | Donal wording decision, then fix |
@@ -28,6 +28,12 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 13 | Replay of backfilled history (question not yet sent) | DON-293 | Ask the team |
 | 14 | Retire or rewrite the obsolete live-exact smoke | DON-302 | Donal OK to retire |
 | 15 | Harvey and Hiker maps | DON-303 | Maps last |
+
+Next-candidate evidence owed (Claude tracks): DON-311 packaged CI tracking soak
+(from the release run; dispatched validation stops at the 960k step) and the
+team-smoke `team-mission` backfill time; DON-304 team-smoke `team-workflow` and
+`offline-map` with the real Discovery package; DON-312 check the box soak
+evidence for the memory budget. All need the box, only when Donal frees it.
 
 Release carry-overs: repeat the native file-picker hand check on the next
 candidate; run the installed normal-profile soak again (now about 20 min on
