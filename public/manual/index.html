@@ -1310,7 +1310,11 @@
             boundary: anything admitted before Finish reaches durable storage before the mission status
             changes, while later history cannot leak into the closed mission. If
             a batch cannot be acknowledged, it first records a mission-scoped durable loss marker and
-            then shows that rejected-position evidence was lost during runtime shutdown. If even that
+            then shows that rejected-position evidence may have been lost when the app closed
+            unexpectedly. This appears only if the app held unsaved rejected positions when it closed;
+            an admin records the known loss before Finish/Archive. If SAR Tracker cannot tell (for
+            example the first start after upgrading from 13.5 following an unexpected close), it shows
+            the same warning for every open mission. If even that
             marker cannot be written, runtime replacement fails closed instead of installing a new
             controller over unresolved evidence. The desktop main process now owns this
             boundary for normal window close, reload, and app quit: it keeps the renderer
