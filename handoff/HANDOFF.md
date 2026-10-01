@@ -34,6 +34,19 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box sleeps when idle; open a Terminal for Donal's sudo password for
   `systemd-inhibit` on long runs.
 
+## Who is doing what (1 Oct evening; coordinator = this handoff's owner)
+
+- **Coordinator session** (owns handoff, workplan, all pushes, Mac soaks):
+  DON-300 items 3-6 (layout), then DON-301 (manual merge). Owns
+  `public/manual/index.html`.
+- **Session 9f** (commits locally, reports each commit; no pushes):
+  DON-318 (decided: no loss marker when provably nothing pending; else "may
+  have been lost"), then DON-320, DON-321, DON-319 analysis (needs files).
+- Rules: announce a file before editing it; one heavy run at a time; manual
+  text goes to the coordinator.
+- **When Donal frees Docker:** coordinator packages once and runs the Mac
+  soak 3x (DON-313) plus team-smoke rows for today's fixes, then pushes.
+
 ## Waiting on Donal
 
 - **DON-313:** approved and implemented. Owed: a soak on a quiet Mac (VM
