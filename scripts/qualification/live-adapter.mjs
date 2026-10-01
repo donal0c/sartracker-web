@@ -1,159 +1,30 @@
 import { createHash } from 'node:crypto'
-import { lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { lstat, mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { validateLiveExactReceipt } from './live-receipts.mjs'
-import { runOwnedProcess } from './owned-process.mjs'
-import { assertOwnedProcessCleanup, isOwnedProcessCleanupError } from './owned-process-custody.mjs'
-import { hashLiveConfigDirectory } from './live-config-identity.mjs'
-import { hashCandidateFile } from './candidate-artifacts.mjs'
-import { observePackageProcesses, preparePackageRuntime } from './package-runtime.mjs'
 
-const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const LIVE_SCRIPT = path.join(PROJECT_ROOT, 'scripts/release-smoke/breadcrumb-live-exact-smoke.mjs')
 const LIVE_ACCESS = 'GET_ONLY'
 const CANDIDATE_ROLE = 'ci-appimage'
 const RUNTIME_INPUT_SCHEMA = 'sartracker-bound-runtime-inputs-v1'
 const VERSION_PATTERN = /^0\.1\.0-beta\.\d+(?:\.\d+)?$/u
 const SHA1 = /^[a-f0-9]{40}$/u
 const SHA256 = /^[a-f0-9]{64}$/u
+// Historical command identity, kept so retained receipts still validate [DON-302].
 const EXACT_COMMAND = Object.freeze(['node', 'scripts/release-smoke/breadcrumb-live-exact-smoke.mjs'])
 const PROCESS_SCHEMA = 'sartracker-live-process-v1'
-const RECEIPT_SCHEMA = 'sartracker-live-receipt-v1'
-const REPORT_SCHEMA = 'sartracker-live-report-v1'
-const MAX_OUTPUT_BYTES = 4 * 1024 * 1024
-const PROCESS_TIMEOUT_MS = 15 * 60 * 1000
-const CLEANUP_TIMEOUT_MS = 10_000
-const TERMINATION_GRACE_MS = 5_000
 
-/** Execute the reviewed packaged C05 live exact proof with a fixed GET-only boundary. */
-export async function executeLiveVariant({ normalized, binding, attemptDirectory, workDirectory }) {
-  const expected = compileLiveExpectation(normalized, binding)
-  const attemptRoot = await requireDirectory(attemptDirectory, 'attempt directory')
-  const workRoot = await requireDirectory(workDirectory, 'work directory')
-  const reportPath = path.join(attemptRoot, 'live-report.json')
-  const processPath = path.join(attemptRoot, 'live-process.json')
-  const evidenceDirectory = path.join(workRoot, 'live-evidence')
-  const privateVisualDirectory = path.join(workRoot, 'private-visual')
-  await assertAbsent(reportPath)
-  await assertAbsent(processPath)
-
-  let processResult
-  let report
-  let reportValidation
-  let reportBytes
-  let failureCode = null
-  let runtime
-  let cleanupBlockedError = null
-  try {
-    const runtimeDirectory = path.join(workRoot, 'package-runtime')
-    await verifyLiveFixtures(expected)
-    runtime = await preparePackageRuntime({
-      proofMode: 'ci-appimage',
-      artifact: expected.artifact,
-      version: expected.version,
-      workDirectory: runtimeDirectory,
-    })
-    processResult = await runOwnedProcess({
-      file: process.execPath,
-      args: [LIVE_SCRIPT],
-      cwd: PROJECT_ROOT,
-      env: {
-        ...process.env,
-        ...runtime.environment,
-        SMOKE_APP: runtime.launchPath,
-        SMOKE_EVIDENCE: evidenceDirectory,
-        SMOKE_PRIVATE_VISUAL_DIR: privateVisualDirectory,
-        SMOKE_CONFIG_SOURCE: expected.liveConfig.path,
-        SMOKE_TARGET_SELECTOR_FILE: expected.liveSelector.path,
-        SMOKE_EXPECTED_VERSION: expected.version,
-        SMOKE_EXPECTED_APP_SHA256: expected.artifact.sha256,
-      },
-      timeoutMs: PROCESS_TIMEOUT_MS,
-      maxOutputBytes: MAX_OUTPUT_BYTES,
-      cleanupTimeoutMs: CLEANUP_TIMEOUT_MS,
-      terminationGraceMs: TERMINATION_GRACE_MS,
-      observe: ({ pid }) => observePackageProcesses(pid, {
-        proofMode: runtime.proofMode,
-        launchPath: runtime.launchPath,
-        artifactSha256: runtime.artifactSha256,
-        executableSha256: runtime.executableSha256,
-        asarSha256: runtime.asarSha256,
-      }),
-    })
-    assertOwnedProcessCleanup(processResult, 'live.get-only')
-    try { await verifyLiveFixtures(expected) } catch { failureCode = 'LIVE_FIXTURE_CHANGED' }
-    const summaryPath = path.join(evidenceDirectory, 'summary.json')
-    const summary = await readJsonIfPresent(summaryPath)
-    if (summary !== null) {
-      try {
-        reportValidation = validateLiveExactReceipt(summary, {
-          artifactSha256: expected.artifact.sha256,
-          version: expected.version,
-        })
-        report = summary
-        reportBytes = jsonBytes(report)
-      } catch {
-        failureCode = 'LIVE_REPORT_INVALID'
-      }
-    } else {
-      failureCode = 'LIVE_REPORT_MISSING'
-    }
-  } catch (error) {
-    if (isOwnedProcessCleanupError(error, 'live.get-only')) {
-      cleanupBlockedError = error
-      throw error
-    }
-    failureCode = failureCode ?? 'LIVE_ADAPTER_FAILED'
-  } finally {
-    if (cleanupBlockedError === null) {
-      try { await removePrivateEvidence(privateVisualDirectory) } catch { failureCode = failureCode ?? 'PRIVATE_EVIDENCE_CLEANUP_FAILED' }
-      try { await removePrivateEvidence(evidenceDirectory) } catch { failureCode = failureCode ?? 'LIVE_EVIDENCE_CLEANUP_FAILED' }
-    }
-  }
-
-  const safeProcess = retainProcessEvidence(processResult, failureCode)
-  const passed = failureCode === null && report !== undefined && reportValidation?.status === 'PASS'
-    && safeProcess.exitCode === 0 && safeProcess.signal === null && safeProcess.timedOut === false
-    && safeProcess.processError === null && safeProcess.zeroDescendantsAfterRun === true
-    && safeProcess.outputOverflowed === false && safeProcess.ownedPidsAfterExit.length === 0
-    && safeProcess.runtimeIdentityObserved === true
-  if (!passed) failureCode = failureCode ?? 'LIVE_PROCESS_FAILED'
-
-  if (reportBytes === undefined) {
-    report = { schema: REPORT_SCHEMA, status: 'ERROR', scope: 'packaged-live-get-only', errorCode: failureCode }
-    reportBytes = jsonBytes(report)
-  }
-  const reportSha256 = sha256(reportBytes)
-  const processBytes = jsonBytes(safeProcess)
-  const processSha256 = sha256(processBytes)
-  await writeJsonExclusive(reportPath, report)
-  await writeJsonExclusive(processPath, safeProcess)
-  return Object.freeze({
-    schema: RECEIPT_SCHEMA,
-    status: passed ? 'PASS' : 'INVALID_EVIDENCE',
-    observed: {
-      reportPath,
-      processPath,
-      reportSha256,
-      processSha256,
-      processBytes: processBytes.byteLength,
-      process: safeProcess,
-      runtime: runtime === undefined ? null : runtimeSummary(runtime),
-      validation: passed ? reportValidation : { status: 'INVALID_EVIDENCE', failureReasons: [failureCode] },
-      scope: 'packaged-live-get-only',
-      sourceSha: expected.sourceSha,
-      artifactSha256: expected.artifact.sha256,
-      version: expected.version,
-    },
-    evidence: ['live-report.json', 'live-process.json'],
-    reportPath,
-    processPath,
-    releaseEligible: false,
-    reportBytes: reportBytes.byteLength,
-    processBytes: processBytes.byteLength,
-  })
+/**
+ * The packaged C05 live exact smoke (breadcrumb-live-exact-smoke.mjs) drove
+ * Devices controls removed by DON-295 and was retired on 1 Oct 2026 (DON-302).
+ * Team-smoke live-traccar supersedes it. New runs are refused visibly;
+ * retained receipts still validate below.
+ */
+export async function executeLiveVariant() {
+  throw new Error(
+    'The packaged live exact smoke was retired on 1 Oct 2026 (DON-302). '
+      + 'Run team-smoke live-traccar for the Live Traccar check instead.',
+  )
 }
 
 /** Revalidate retained C05 live evidence, including process cleanup and report identity. */
@@ -261,25 +132,6 @@ function validateBinding(binding) {
   }
 }
 
-/** Keep process outcome facts while excluding arbitrary stdout, stderr and environment values. */
-function retainProcessEvidence(processResult, failureCode) {
-  const runtimeObservations = sanitizeRuntimeObservations(processResult?.observationResults)
-  return {
-    schema: PROCESS_SCHEMA,
-    exitCode: processResult?.exitCode ?? null,
-    signal: processResult?.signal ?? null,
-    timedOut: processResult?.timedOut === true,
-    processError: processResult?.processError === null && failureCode === null ? null : (processResult ? 'OWNED_PROCESS_FAILED' : 'PROCESS_NOT_STARTED'),
-    zeroDescendantsAfterRun: processResult?.zeroDescendantsAfterRun === true,
-    ownedPidsAfterExit: Array.isArray(processResult?.ownedPidsAfterExit) ? processResult.ownedPidsAfterExit.filter((value) => Number.isSafeInteger(value) && value > 0) : [],
-    outputOverflowed: processResult?.outputOverflowed === true,
-    stdoutBytes: Buffer.byteLength(processResult?.stdout ?? '', 'utf8'),
-    stderrBytes: Buffer.byteLength(processResult?.stderr ?? '', 'utf8'),
-    runtimeIdentityObserved: runtimeObservations.length > 0,
-    runtimeObservations,
-  }
-}
-
 /** Validate only the allowlisted process cleanup facts retained by the adapter. */
 function validateProcessEvidence(value, expectedRuntime) {
   const allowed = ['exitCode', 'ownedPidsAfterExit', 'outputOverflowed', 'processError', 'runtimeIdentityObserved', 'runtimeObservations', 'schema', 'signal', 'stderrBytes', 'stdoutBytes', 'timedOut', 'zeroDescendantsAfterRun']
@@ -345,36 +197,10 @@ async function requireDirectory(directory, label) {
   return directory
 }
 
-/** Ensure a retained path has not already been created by another owner. */
-async function assertAbsent(filePath) {
-  try {
-    await lstat(filePath)
-    throw new Error(`Retained file already exists: ${path.basename(filePath)}.`)
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
-  }
-}
-
-/** Read JSON only when a producer report exists. */
-async function readJsonIfPresent(filePath) {
-  try { return JSON.parse(await readFile(filePath, 'utf8')) }
-  catch (error) { if (error?.code === 'ENOENT') return null; throw error }
-}
-
 /** Read one retained JSON file. */
 async function readJson(filePath, label) {
   try { return JSON.parse(await readFile(filePath, 'utf8')) }
   catch { throw new Error(`${label} is not valid retained JSON.`) }
-}
-
-/** Remove private screenshot and live-provider work products after the report is read. */
-async function removePrivateEvidence(directory) {
-  await rm(directory, { recursive: true, force: true })
-}
-
-/** Write one flat retained JSON artifact without overwriting another producer. */
-async function writeJsonExclusive(filePath, value) {
-  await writeFile(filePath, jsonBytes(value), { flag: 'wx', mode: 0o600 })
 }
 
 /** Serialize bounded JSON bytes deterministically. */
@@ -399,36 +225,6 @@ function safeFailureReason(error, fallback) {
   return fallback
 }
 
-/** Rehash the private live fixture inputs before and after the producer run. */
-async function verifyLiveFixtures(expected) {
-  for (const [role, fixture] of [['live-config', expected.liveConfig], ['live-selector', expected.liveSelector]]) {
-    const actual = role === 'live-config' ? await hashLiveConfigDirectory(fixture.path) : await hashCandidateFile(fixture.path)
-    if (actual.sha256 !== fixture.sha256 || actual.bytes !== fixture.bytes) throw new Error('Live fixture identity changed.')
-  }
-}
-
-/** Retain only process IDs, ticks and independently hashed package identities. */
-function sanitizeRuntimeObservations(values) {
-  const unique = new Map()
-  for (const group of Array.isArray(values) ? values : []) {
-    for (const value of Array.isArray(group) ? group : []) {
-      if (!value || !Number.isSafeInteger(value.pid) || value.pid <= 0 || typeof value.startTicks !== 'string'
-          || !/^\d+$/u.test(value.startTicks) || !SHA256.test(value.artifactSha256 ?? '')
-          || !SHA256.test(value.executableSha256 ?? '') || !SHA256.test(value.asarSha256 ?? '')
-          || value.mainProcess !== true || value.descendantOfRunner !== true) continue
-      if (typeof value.launchPath !== 'string' || !path.isAbsolute(value.launchPath)
-          || typeof value.executablePath !== 'string' || !path.isAbsolute(value.executablePath)
-          || (value.appImagePath !== null && (typeof value.appImagePath !== 'string' || !path.isAbsolute(value.appImagePath)))) continue
-      const item = { pid: value.pid, startTicks: value.startTicks, launchPath: value.launchPath,
-        executablePath: value.executablePath, appImagePath: value.appImagePath,
-        artifactSha256: value.artifactSha256, executableSha256: value.executableSha256, asarSha256: value.asarSha256,
-        mainProcess: true, descendantOfRunner: true }
-      unique.set(`${item.pid}:${item.startTicks}`, item)
-    }
-  }
-  return [...unique.values()].sort((left, right) => left.pid - right.pid || left.startTicks.localeCompare(right.startTicks))
-}
-
 /** Validate retained runtime observations without trusting a generic launched flag. */
 function validRuntimeObservations(values, expected) {
   const seen = new Set()
@@ -445,18 +241,6 @@ function validRuntimeObservations(values, expected) {
     seen.add(key)
     return true
   })
-}
-
-/** Project the independently prepared runtime identity into the retained C05 receipt. */
-function runtimeSummary(runtime) {
-  return {
-    proofMode: runtime.proofMode,
-    launchPath: runtime.launchPath,
-    installedExecutablePath: runtime.installedExecutablePath ?? null,
-    artifactSha256: runtime.artifactSha256,
-    executableSha256: runtime.executableSha256,
-    asarSha256: runtime.asarSha256,
-  }
 }
 
 /** Validate the sealed C05 runtime expectation before using it as an observation oracle. */

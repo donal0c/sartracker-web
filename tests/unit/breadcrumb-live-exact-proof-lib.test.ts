@@ -400,7 +400,7 @@ describe('allowlisted archive evidence', () => {
             bbox: { x: 12.125, y: 20, width: 80, height: 28 },
             intercept: {
               tag: 'aside',
-              testId: 'device-active-toggle-1199891612',
+              testId: 'device-select-1199891612',
               className: 'fixed inset-0',
             },
           },

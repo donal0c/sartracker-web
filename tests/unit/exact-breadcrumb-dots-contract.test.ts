@@ -23,7 +23,6 @@ const PAGE_LIMIT = 10_000
 
 const CONTRACT_SUITE_PATHS = [
   'tests/unit/breadcrumb-live-exact-proof-lib.test.ts',
-  'tests/unit/breadcrumb-live-exact-smoke-safety.test.ts',
   'tests/unit/electron-breadcrumb-36h-proof-lib.test.ts',
   'tests/unit/electron-breadcrumb-dot-ipc.test.ts',
   'tests/unit/electron-breadcrumb-dot-mission-store.test.ts',
