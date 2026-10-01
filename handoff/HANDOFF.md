@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-09-30. Issue order and known 13.4 issues: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-01. Issue order (13.6 queue): [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md).
 
 ## Status
@@ -13,25 +13,24 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 ## Verification limits
 
-- All proofs are synthetic providers on the Ubuntu box, not live Traccar or
-  field acceptance. Per-issue evidence and hashes are in Linear (DON-281/282/291/292/294).
-- The crash-marker "was lost" wording overstates (1.8, needs Donal).
-- The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
-  Donal to run `sudo systemctl mask sleep.target suspend.target`.
+- Live Traccar is verified for one approved device (4,431/4,431 incl. 2,463
+  late uploads); everything else on the box uses synthetic providers, not field
+  acceptance. PCLinuxOS (the team's OS) is untested (DON-298).
+- The box sleeps when idle. For a long run, open a Terminal so Donal types the
+  sudo password for a temporary `systemd-inhibit` (see 13.5's `c6/install.sh`).
 
-## Next action — send the team note; plan 13.6
+## Next action — start 13.6 with DON-311
 
-Donal sends the 13.5 team note (drafted in session). 13.6 queue: DON-310
-(soak stalls, top), DON-309 (GPX restore), DON-288 (no-WebGL message),
-DON-284/285/304, initial catch-up transport cap (follow-up of DON-305).
-Eamonn: Outings explanation (call) and his layout doc (to ticket).
-Box: candidate-6 smoke, soak and large-mission evidence under
-~/sartracker-13.5-smoke/{c6,soak-compare}; ask Donal before deleting.
+13.5 is out and the team note went to Eamonn (1 Oct). Work the 13.6 queue in the
+[workplan](../docs/two-track-execution-workplan.md) top-down, starting with
+DON-311 (initial catch-up can starve live trails), then DON-310 (soak stalls).
+Eamonn: Outings explanation on Donal's call; his layout doc feeds DON-297.
+Box (shared, ask Donal first): smoke tool, 13.4 upgrade profile, 960k fixture,
+live fixtures in `~/sartracker-live-fixtures`; old folders cleaned 1 Oct.
 
 **Waiting on Donal (Claude raises these):** DON-296 default KMRT group ·
-DON-284 wording · DON-288 fallback · DON-302 retire the old live script · box
-sleep mask. **Ask the team:** DON-293. Queue: the workplan "After beta.13.5".
-Box leftovers: `~/Desktop/SAR-smoke-track.gpx` (test file; Donal may delete).
+DON-284 wording · DON-288 fallback · DON-302 retire the old live script.
+**Ask the team:** DON-293.
 
 ## Pointers
 
