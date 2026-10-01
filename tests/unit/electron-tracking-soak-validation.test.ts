@@ -44,7 +44,9 @@ describe('Electron tracking soak validation boundary [DON-246]', () => {
       ...BASE_SETTINGS,
       trackingPollIntervalMs: 25,
       trackingMinimumPollIntervalMs: 25,
-      trackingHistoryAntiEntropyIntervalMs: 25,
+      // Production sweeps once per ten polls (5 min / 30 s); the soak keeps
+      // that ratio so it measures realistic load [DON-310].
+      trackingHistoryAntiEntropyIntervalMs: 250,
     })
   })
 

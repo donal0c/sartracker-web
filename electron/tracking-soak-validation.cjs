@@ -1,5 +1,7 @@
 const MINIMUM_SOAK_INTERVAL_MS = 5
 const MAXIMUM_SOAK_INTERVAL_MS = 1_000
+// Production polls every 30 s and sweeps every 5 min.
+const SOAK_POLLS_PER_SWEEP = 10
 
 /**
  * Applies an accelerated polling interval only inside an explicit isolated Electron profile.
@@ -26,11 +28,11 @@ function applyTrackingSoakRuntimeOverride(runtimeSettings, options = {}) {
     ...runtimeSettings,
     trackingPollIntervalMs: intervalMs,
     trackingMinimumPollIntervalMs: intervalMs,
-    // The packaged soak compresses live polling by the same factor. Keep its
-    // anti-entropy repair clock in that explicit validation profile too, or a
-    // deliberately late historical fix can outlive the bounded CI job even
-    // though production recovery remains correctly scheduled at five minutes.
-    trackingHistoryAntiEntropyIntervalMs: intervalMs,
+    // The packaged soak compresses live polling, so its anti-entropy repair
+    // clock is compressed by the same factor. It keeps production's ratio of
+    // one sweep per ten polls (5 min / 30 s); a sweep on every poll measured
+    // ten times production's sweep load [DON-267, DON-310].
+    trackingHistoryAntiEntropyIntervalMs: intervalMs * SOAK_POLLS_PER_SWEEP,
   }
 }
 
