@@ -1479,6 +1479,9 @@ describe('Electron main startup', () => {
         | undefined
       expect(uncaughtHandler).toBeDefined()
     })
+    // Let startup finish first: the 10 s advance below must exercise only the
+    // fatal fence bound, not a startup-stage watchdog on a slow runner.
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalled())
 
     uncaughtHandler?.(new Error('fatal runtime fault'))
     await vi.advanceTimersByTimeAsync(0)
