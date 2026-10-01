@@ -1,4 +1,32 @@
-import { BASEMAP_STORAGE_KEY, persistBasemapPreference, readStoredBasemap } from '../../src/lib/map-preferences'
+import {
+  BASEMAP_STORAGE_KEY,
+  persistBasemapPreference,
+  readStoredBasemap,
+  readStoredMapPreference,
+} from '../../src/lib/map-preferences'
+
+describe('stored map preference for startup restore [DON-304]', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('returns a stored official map so startup can restore it once its package is verified', () => {
+    window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'official_discovery_topo')
+
+    expect(readStoredMapPreference()).toBe('official_discovery_topo')
+  })
+
+  it('returns a stored public map and nothing for an empty or unknown preference', () => {
+    window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'openstreetmap')
+    expect(readStoredMapPreference()).toBe('openstreetmap')
+
+    window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'official_unknown_map')
+    expect(readStoredMapPreference()).toBeNull()
+
+    window.localStorage.clear()
+    expect(readStoredMapPreference()).toBeNull()
+  })
+})
 
 describe('map preference persistence', () => {
   beforeEach(() => {

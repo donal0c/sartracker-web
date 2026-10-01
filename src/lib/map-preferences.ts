@@ -1,8 +1,10 @@
 import {
   DEFAULT_BASEMAP_ID,
   getBasemapById,
+  getOfficialMapById,
   isOfficialMapId,
   type BasemapId,
+  type OfficialMapId,
   type RenderableMapId,
 } from './map-config'
 
@@ -30,6 +32,29 @@ export function readStoredBasemap(): BasemapId {
     return getBasemapById(candidate as BasemapId).id
   } catch {
     return DEFAULT_BASEMAP_ID
+  }
+}
+
+/**
+ * Reads the operator's last chosen map, including an official map, so startup
+ * can restore it once its local package is verified [DON-304]. Returns null
+ * when nothing valid is stored or storage is unavailable.
+ */
+export function readStoredMapPreference(): RenderableMapId | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const candidate = window.localStorage.getItem(BASEMAP_STORAGE_KEY)
+    if (candidate === null) {
+      return null
+    }
+    return isOfficialMapId(candidate as RenderableMapId)
+      ? getOfficialMapById(candidate as OfficialMapId).id
+      : getBasemapById(candidate as BasemapId).id
+  } catch {
+    return null
   }
 }
 

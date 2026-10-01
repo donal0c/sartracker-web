@@ -13,7 +13,7 @@
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
-import { closeWorkspace, connectProvider } from '../lib/operator.mjs'
+import { closeWorkspace, connectProvider, waitForBasemapLabel } from '../lib/operator.mjs'
 import { expectProduct } from '../lib/results.mjs'
 import { missionFixes } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
@@ -64,7 +64,7 @@ export default [
       app = await launchApp(ctx, { profile, label: 'workflow', env })
       const t = (id) => app.page.getByTestId(id)
       if (mapPackage !== undefined) {
-        const basemap = (await t('basemap-menu-toggle').innerText()).replace(/\s+/gu, ' ')
+        const basemap = await waitForBasemapLabel(app.page, 'Discovery Topo')
         if (!basemap.includes('Discovery Topo')) findings.push(`Discovery was not the map after relaunch: "${basemap}"`)
       }
 

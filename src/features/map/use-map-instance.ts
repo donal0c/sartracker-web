@@ -14,7 +14,13 @@ import {
   type MapHealth,
 } from '../../lib/map-health'
 import { createTileHealthTracker } from '../../lib/tile-health-tracker'
-import { persistBasemapPreference, readStoredBasemap } from '../../lib/map-preferences'
+import {
+  persistBasemapPreference,
+  readStoredBasemap,
+  readStoredMapPreference,
+} from '../../lib/map-preferences'
+import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
+import { resolveStartupMapRestore } from './startup-map-restore'
 import { createRasterStyle, IRELAND_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
 import { isTileErrorEvent } from './is-tile-error-event'
@@ -40,6 +46,8 @@ export type MapInstanceController = {
   readonly mapHealth: MapHealth
   readonly mapRef: RefObject<maplibregl.Map | null>
   readonly mapReadyVersion: number
+  /** Why a stored official map could not be restored at startup, until the operator picks a map. */
+  readonly startupMapNotice: string | null
   readonly handleBasemapChange: (nextBasemapId: RenderableMapId) => void
 }
 
@@ -49,6 +57,8 @@ export type MapInstanceController = {
  */
 export function useMapInstance(): MapInstanceController {
   const initialBasemapId = readStoredBasemap()
+  const storedMapPreferenceRef = useRef(readStoredMapPreference())
+  const operatorChoseMapRef = useRef(false)
   const initialBasemapIdRef = useRef(initialBasemapId)
   const initialStyleRef = useRef(createRasterStyle(initialBasemapId))
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -65,6 +75,7 @@ export function useMapInstance(): MapInstanceController {
   const [mapReadyVersion, setMapReadyVersion] = useState(0)
   const [styleRetryVersion, setStyleRetryVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
+  const [startupMapNotice, setStartupMapNotice] = useState<string | null>(null)
   const [mapHealth, setMapHealth] = useState<MapHealth>(() =>
     createLoadingMapHealth(getRenderableMapLabel(initialBasemapId)),
   )
@@ -75,11 +86,15 @@ export function useMapInstance(): MapInstanceController {
     useCoverageStore.getState().controller?.notifyRendererFailure(failure)
   }), [])
 
-  useEffect(() => {
-    persistBasemapPreference(activeBasemapId)
-  }, [activeBasemapId])
-
+  /** Applies an operator's map choice; it always wins over startup restore. */
   function handleBasemapChange(nextBasemapId: RenderableMapId) {
+    operatorChoseMapRef.current = true
+    setStartupMapNotice(null)
+    applyBasemap(nextBasemapId)
+  }
+
+  function applyBasemap(nextBasemapId: RenderableMapId) {
+    persistBasemapPreference(nextBasemapId)
     const previousBasemapId = activeBasemapIdRef.current
     if (nextBasemapId === previousBasemapId) {
       if (styleFailureRef.current === null) return
@@ -103,6 +118,39 @@ export function useMapInstance(): MapInstanceController {
       },
     })
   }
+
+  // An official map starts on the online default until its package is
+  // verified, then is restored; a stored choice is never silently dropped.
+  // Only real map changes are persisted, so the startup default never
+  // overwrites the stored choice [DON-304].
+  useEffect(() => {
+    const storedMapId = storedMapPreferenceRef.current
+    if (storedMapId === null || storedMapId === initialBasemapIdRef.current) return
+    let cancelled = false
+    void loadAppSettings()
+      .then((settings) => settings.officialMaps, () => null)
+      .then((officialMaps) => {
+        if (cancelled || operatorChoseMapRef.current) return
+        const restore = resolveStartupMapRestore({ storedMapId, officialMaps })
+        if (restore.kind === 'restore') {
+          applyBasemap(restore.mapId)
+        } else if (restore.kind === 'unavailable') {
+          setStartupMapNotice(restore.message)
+        }
+        if (restore.kind !== 'none') {
+          void recordDiagnosticEvent({
+            level: restore.kind === 'restore' ? 'info' : 'warn',
+            category: 'map',
+            event: restore.kind === 'restore' ? 'stored_map_restored' : 'stored_map_unavailable',
+            fields: { mapId: restore.mapId },
+          })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+    // Runs once per map instance: startup restore only.
+  }, [])
 
   useEffect(() => {
     const signature = `${activeBasemapId}:${mapHealth.status}:${mapHealth.message}`
@@ -256,6 +304,7 @@ export function useMapInstance(): MapInstanceController {
     mapHealth,
     mapRef,
     mapReadyVersion,
+    startupMapNotice,
     handleBasemapChange,
   }
 }

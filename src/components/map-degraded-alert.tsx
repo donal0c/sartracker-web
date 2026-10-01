@@ -15,11 +15,13 @@ export function MapDegradedAlert({ mapHealth, offlineReadiness }: MapDegradedAle
   const showMapDegraded = mapHealth.status === 'degraded'
   const showOfflineWarning = offlineReadiness.tone === 'danger' || offlineReadiness.tone === 'warning'
   const overlayWarnings = mapHealth.overlayWarnings ?? []
+  const startupMapNotice = mapHealth.startupMapNotice ?? null
   const overlayWarningCountLabel = overlayWarnings.length === 1
     ? '1 overlay warning'
     : `${overlayWarnings.length} overlay warnings`
 
-  if (!showMapDegraded && !showOfflineWarning && overlayWarnings.length === 0) {
+  if (!showMapDegraded && !showOfflineWarning && overlayWarnings.length === 0
+    && startupMapNotice === null) {
     return null
   }
 
@@ -31,6 +33,16 @@ export function MapDegradedAlert({ mapHealth, offlineReadiness }: MapDegradedAle
       role="region"
       tabIndex={0}
     >
+      {startupMapNotice === null ? null : (
+        <div
+          aria-live="assertive"
+          className="pointer-events-auto border border-amber-300/80 bg-stone-950/95 px-3 py-1.5 text-left text-[11px] font-bold text-amber-100 shadow-lg shadow-black/40"
+          data-testid="map-startup-notice"
+          role="alert"
+        >
+          {startupMapNotice}
+        </div>
+      )}
       {showMapDegraded ? (
         <div
           aria-live="assertive"

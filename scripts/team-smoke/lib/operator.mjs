@@ -34,6 +34,22 @@ export async function connectProvider(page, url) {
   await closeWorkspace(page)
 }
 
+/**
+ * Waits for the basemap menu to show a map. A stored official map is restored
+ * asynchronously once its package is verified at startup [DON-304]. Returns
+ * the last label seen so a finding can quote it.
+ */
+export async function waitForBasemapLabel(page, expected, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs
+  let label = ''
+  while (Date.now() < deadline) {
+    label = (await page.getByTestId('basemap-menu-toggle').innerText()).replace(/\s+/gu, ' ')
+    if (label.includes(expected)) return label
+    await delay(250)
+  }
+  return label
+}
+
 /** Closes an open workspace panel if one is showing. */
 export async function closeWorkspace(page) {
   const close = page.getByTestId('workspace-close-btn')

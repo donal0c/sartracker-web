@@ -78,7 +78,13 @@ export function useMapController(): MapController {
     activeBasemapId: mapInstance.activeBasemapId,
     containerRef: mapInstance.containerRef,
     hoverCoordinate: mapInstance.hoverCoordinate,
-    mapHealth: { ...mapInstance.mapHealth, overlayWarnings },
+    mapHealth: {
+      ...mapInstance.mapHealth,
+      overlayWarnings,
+      ...(mapInstance.startupMapNotice === null
+        ? {}
+        : { startupMapNotice: mapInstance.startupMapNotice }),
+    },
     mapRef: mapInstance.mapRef,
     handleBasemapChange: mapInstance.handleBasemapChange,
   }

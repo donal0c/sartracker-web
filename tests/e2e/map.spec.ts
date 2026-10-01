@@ -771,3 +771,32 @@ async function readTrackingOverlaySynchronized(page: import('@playwright/test').
     return map.getSource('tracking') !== undefined && map.getLayer('tracking-devices-circle') !== undefined
   })
 }
+
+test.describe('stored map choice across restarts [DON-304]', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('sartracker.map.basemap', 'official_discovery_topo')
+    })
+  })
+
+  test('explains why a stored Discovery map was not restored and keeps the choice', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+
+    const notice = page.getByTestId('map-startup-notice')
+    await expect(notice).toBeVisible({ timeout: 15000 })
+    await expect(notice).toContainText('Discovery Topo unavailable')
+    await expect(notice).toContainText('showing OpenTopoMap')
+    await expect(page.getByTestId('basemap-menu-toggle')).toContainText('OpenTopoMap')
+    expect(await page.evaluate(() => window.localStorage.getItem('sartracker.map.basemap')))
+      .toBe('official_discovery_topo')
+  })
+
+  test('the Leaflet fallback does not overwrite a stored official map choice', async ({ page }) => {
+    await page.goto('/?missionHarness=1&mapRenderer=leaflet')
+    await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible({ timeout: 15000 })
+    await page.waitForTimeout(500)
+
+    expect(await page.evaluate(() => window.localStorage.getItem('sartracker.map.basemap')))
+      .toBe('official_discovery_topo')
+  })
+})

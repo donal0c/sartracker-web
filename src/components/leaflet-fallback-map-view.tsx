@@ -87,11 +87,10 @@ export function LeafletFallbackMapView() {
     [groupVisibility, drawingTypeVisibility],
   )
 
-  useEffect(() => {
-    persistBasemapPreference(activeBasemapId)
-  }, [activeBasemapId])
-
+  // Persist only real map changes so the startup default never overwrites a
+  // stored official map choice this renderer cannot show [DON-304].
   function handleBasemapChange(nextBasemapId: BasemapId): void {
+    persistBasemapPreference(nextBasemapId)
     setMapHealth(createLoadingMapHealth(getBasemapById(nextBasemapId).label))
     setActiveBasemapId(nextBasemapId)
   }

@@ -15,7 +15,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
 import { delay, launchApp } from '../lib/app.mjs'
-import { bodyText, closeWorkspace } from '../lib/operator.mjs'
+import { bodyText, closeWorkspace, waitForBasemapLabel } from '../lib/operator.mjs'
 import { NotTested, expectProduct } from '../lib/results.mjs'
 
 const VERIFY_TIMEOUT_MS = 5 * 60_000
@@ -65,14 +65,17 @@ export default [
       await second.shot('settings-after-restart')
       expectProduct(/1\/1 ready/u.test(status), `After restart the package panel shows: ${status.slice(0, 200)}`)
       await closeWorkspace(second.page)
-      await selectDiscovery(second)
+      // The operator's map must survive the restart, not be re-selected [DON-304].
+      const afterRestart = await waitForBasemapLabel(second.page, 'Discovery Topo')
       await second.shot('discovery-after-restart')
+      expectProduct(afterRestart.includes('Discovery Topo'),
+        `After restart the map is "${afterRestart}", not Discovery Topo.`)
       await second.stop()
       const restarted = await readStoredPackage(profile)
       expectProduct(restarted?.status === 'ready', `After restart the stored package is ${restarted?.status}.`)
 
       return `Team package sha256 ${sourceSha.slice(0, 16)}… imported offline and verified ready `
-        + `(z${stored.minZoom}–${stored.maxZoom}, ${stored.tileCount} tiles); Discovery Topo selected; still ready after restart.`
+        + `(z${stored.minZoom}–${stored.maxZoom}, ${stored.tileCount} tiles); Discovery Topo selected; still ready and still the map after restart.`
     },
   },
 ]

@@ -33,6 +33,8 @@ export type MapHealth = {
   readonly message: string
   /** Overlay warnings are independent of basemap tile health. */
   readonly overlayWarnings?: readonly MapOverlaySyncWarning[]
+  /** Why the operator's stored official map was not restored at startup [DON-304]. */
+  readonly startupMapNotice?: string
 }
 
 const MAP_OVERLAY_FAMILY_LABELS: Readonly<Record<MapOverlayFamily, string>> = {

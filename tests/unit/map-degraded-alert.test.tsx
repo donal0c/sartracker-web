@@ -34,3 +34,22 @@ describe('map overlay warning alert', () => {
     expect(markup).not.toContain('type="button"')
   })
 })
+
+describe('startup map notice [DON-304]', () => {
+  it('shows why the stored official map was not restored, even when the basemap is healthy', () => {
+    const markup = renderToStaticMarkup(
+      <MapDegradedAlert
+        mapHealth={{
+          status: 'ready',
+          message: 'OpenTopoMap basemap ready',
+          startupMapNotice: 'Discovery Topo unavailable: its offline package cannot be found — showing OpenTopoMap.',
+        } as MapHealth}
+        offlineReadiness={{ tone: 'success', label: 'Offline map ready' } as OfflineMapReadiness}
+      />,
+    )
+
+    expect(markup).toContain('data-testid="map-startup-notice"')
+    expect(markup).toContain('role="alert"')
+    expect(markup).toContain('Discovery Topo unavailable')
+  })
+})
