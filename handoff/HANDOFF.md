@@ -5,9 +5,11 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 ## Status
 
-- **beta.13.4** is the published controlled team beta (not for live incidents);
-  immutable. See its [release note](../docs/releases/sartracker-electron-0.1.0-beta.13.4.md).
-- Foundation reset (P01–P05) is complete; CI 36445372627 passed.
+- **beta.13.5 published 1 Oct 2026** (controlled team beta, not for live
+  incidents): tag fac5adcf, release run 36784213719, AppImage `3847d36d…94e0`,
+  .deb `012ec1fe…2e61`; fresh public download matches. Six owner-approved
+  exceptions (DON-284/285/288/299/304/310 + native picker) in the note.
+- beta.13.4 superseded.
 
 ## Verification limits
 
@@ -17,32 +19,14 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box auto-suspends when idle; the sleep inhibitor is denied over SSH. Ask
   Donal to run `sudo systemctl mask sleep.target suspend.target`.
 
-## Next action — box smoke on 13.5 candidate 6
+## Next action — send the team note; plan 13.6
 
-**Candidate 6 = candidate 5 + team fixes (30 Sep, Donal: in 13.5, box waits):**
-DON-306 plain-words refusal when re-importing a retired GPX (copy/rename
-workaround; full Restore = DON-309, 13.6), DON-307 Minimize on a lived-in
-profile, DON-308 diagnostics report states the version and keeps its content.
-Codex-reviewed (aw b35981225cba). Mac: correctness 6,258, Chromium 232,
-packaged `team-mission` incl. the new steps. Draft hashes: Linear DON-305/306.
-Open for Eamonn: what the Outings panel is for; his layout doc is coming.
-
-**DON-305 fixed:** every 5-min tick re-reads the last 6 h of every device,
-newest first, plus 3 older chunks; the sweep takes at most 4 of the 8 shared
-transport slots (the first version starved live trails; found by the CI soak).
-Codex-reviewed, nothing blocking. Follow-up: initial catch-up still uses all 8.
-Donal authorized re-running flaky CI on the same artifact without asking.
-
-**The Ubuntu box is shared (Donal's son's school machine).** Use it only when
-Donal says it is free, then release it. Tonight: full smoke on the new draft
-(`--previous-profile ~/sartracker-13.5-smoke/upgrade-from-13.4.pristine-copy`,
-`--map-package`, `--live-config/--live-selector`: see the private note), plus the
-new `crash-archive` and `no-gpu-flag` checks. The .deb needs reinstalling:
-open a Terminal via osascript so Donal only types the password. If he agrees,
-run the overnight installed soak. Then fill the note's table (current
-exceptions: DON-284/285/304 + layer toggles + soak; Donal approved them for
-the previous candidate, so re-confirm on the new hashes), publish, check a
-fresh download, and draft the team note.
+Donal sends the 13.5 team note (drafted in session). 13.6 queue: DON-310
+(soak stalls, top), DON-309 (GPX restore), DON-288 (no-WebGL message),
+DON-284/285/304, initial catch-up transport cap (follow-up of DON-305).
+Eamonn: Outings explanation (call) and his layout doc (to ticket).
+Box: candidate-6 smoke, soak and large-mission evidence under
+~/sartracker-13.5-smoke/{c6,soak-compare}; ask Donal before deleting.
 
 **Waiting on Donal (Claude raises these):** DON-296 default KMRT group ·
 DON-284 wording · DON-288 fallback · DON-302 retire the old live script · box
