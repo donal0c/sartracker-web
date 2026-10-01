@@ -247,7 +247,7 @@ describe('TrackingStatusPanel', () => {
     render(React.createElement(TrackingStatusPanel))
 
     const warning = getText('[data-testid="ingest-evidence-health-warning"]')
-    expect(warning).toContain('rejected-position evidence was lost during runtime shutdown')
+    expect(warning).toContain('rejected-position evidence may have been lost when the app closed unexpectedly')
     expect(warning).toContain('finalization and archive export are blocked')
     expect(warning).toContain('authorized admin records the permanent known loss')
     expect(warning).not.toContain('until storage is repaired')

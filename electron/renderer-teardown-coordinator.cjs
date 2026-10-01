@@ -89,6 +89,7 @@ function createRendererTeardownCoordinator(dependencies) {
           let lossScopes = []
           if (drained) {
             await resolveRendererEvidenceIncidents('drained')
+            await consumeRendererEvidencePending()
           } else if (!drained) {
             const currentScopes = await listRendererEvidenceScopes()
             const resolvedIncidentScopes = await resolveRendererEvidenceIncidents('lost')
@@ -104,6 +105,7 @@ function createRendererTeardownCoordinator(dependencies) {
             await persistEvidenceLossForScopes(currentScopes.filter(
               (scope) => !provisionalMissionIds.has(scope.mission_id),
             ))
+            await consumeRendererEvidencePending(lossScopes)
           }
           state = 'settled'
           pendingByRequestId.delete(requestId)
@@ -173,7 +175,29 @@ function createRendererTeardownCoordinator(dependencies) {
     await persistEvidenceLossForScopes(currentScopes.filter(
       (scope) => !incidentMissionIds.has(scope.mission_id),
     ))
-    return mergeRendererEvidenceScopes(incidentScopes, currentScopes)
+    const lossScopes = mergeRendererEvidenceScopes(incidentScopes, currentScopes)
+    await consumeRendererEvidencePending(lossScopes)
+    return lossScopes
+  }
+
+  /**
+   * Removes pending markers once their outcome is durable: every marker after a
+   * clean drain, or the sealed missions' markers after a loss. A failed removal
+   * only leaves a conservative marker behind, so it never fails the teardown.
+   */
+  async function consumeRendererEvidencePending(sealedScopes) {
+    if (typeof missionStore.clearRendererEvidencePending !== 'function') return
+    if (sealedScopes !== undefined && sealedScopes.length === 0) return
+    try {
+      if (sealedScopes === undefined) await missionStore.clearRendererEvidencePending()
+      else {
+        await missionStore.clearRendererEvidencePending({
+          mission_ids: sealedScopes.map((scope) => scope.mission_id),
+        })
+      }
+    } catch {
+      // The marker stays; the next failure seals the same mission again.
+    }
   }
 
   /** Persists one confirmed loss against the exact named mission scopes. */
@@ -183,6 +207,9 @@ function createRendererTeardownCoordinator(dependencies) {
         mission_id: scope.mission_id,
         reason: RENDERER_EVIDENCE_LOSS_REASON,
         scope_reason: scope.scope_reason,
+        ...(scope.pending_marker_key === undefined
+          ? {}
+          : { pending_marker_key: scope.pending_marker_key }),
       })
     }
   }
@@ -224,6 +251,15 @@ function createRendererTeardownCoordinator(dependencies) {
     await ensureUnexpectedRendererLossFenced()
     unexpectedRendererLossDetected = false
     unexpectedRendererLossFence = null
+    // From here the renderer keeps pending markers, so their absence after a
+    // later failure means nothing was held. Not awaited: until the write lands
+    // (or if it fails) the next decision is conservative, never optimistic,
+    // and the shell is not held back for it.
+    if (typeof missionStore.establishRendererEvidenceProtocol === 'function') {
+      void Promise.resolve()
+        .then(() => missionStore.establishRendererEvidenceProtocol())
+        .catch(() => undefined)
+    }
   }
 
   /** Joins or retries the unexpected-loss fence before later lifecycle work. */

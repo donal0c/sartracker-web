@@ -8,6 +8,167 @@ import {
 import type { CurrentPositionRejection } from '../../src/features/tracking/ingest-health'
 
 describe('rejection evidence delivery [DON-268]', () => {
+  it('tells main durably when it starts and stops holding a mission\'s evidence [DON-318]', async () => {
+    const calls: string[] = []
+    let releaseDelivery: (() => void) | undefined
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        setRendererEvidencePending: vi.fn(async (input) => {
+          calls.push(`pending:${input.mission_id}:${input.pending}`)
+        }),
+        recordIngestRejections: vi.fn(async (input) => {
+          await new Promise<void>((resolve) => { releaseDelivery = resolve })
+          calls.push('delivered')
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+
+    delivery.record([createRejection('source:held')], observation('mission-1'))
+    await vi.waitFor(() => expect(calls).toEqual(['pending:mission-1:true']))
+    await vi.waitFor(() => expect(releaseDelivery).toBeTypeOf('function'))
+    releaseDelivery?.()
+    await delivery.flushMission('mission-1')
+    await vi.waitFor(() => expect(calls).toEqual([
+      'pending:mission-1:true',
+      'delivered',
+      'pending:mission-1:false',
+    ]))
+  })
+
+  it('never writes a marker when nothing was held [DON-318]', async () => {
+    const setRendererEvidencePending = vi.fn(async () => undefined)
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        setRendererEvidencePending,
+        recordIngestRejections: vi.fn(async () => ({ acknowledgedDeliveryIds: [], health: healthy() })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth: vi.fn(),
+    })
+    delivery.record([], observation('mission-1'))
+    await delivery.flushMission('mission-1')
+    await delivery.dispose()
+    expect(setRendererEvidencePending).not.toHaveBeenCalled()
+  })
+
+  it('shows a critical warning and retries when the pending marker cannot be written [DON-318]', async () => {
+    const applyEvidenceHealth = vi.fn()
+    const timers: (() => void)[] = []
+    const setRendererEvidencePending = vi.fn()
+      .mockRejectedValueOnce(new Error('disk unavailable'))
+      .mockResolvedValue(undefined)
+    let releaseDelivery: (() => void) | undefined
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        setRendererEvidencePending,
+        recordIngestRejections: vi.fn(async (input) => {
+          await new Promise<void>((resolve) => { releaseDelivery = resolve })
+          return {
+            acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+            health: healthy(),
+          }
+        }),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      setTimeout: ((listener: () => void) => {
+        timers.push(listener)
+        return timers.length
+      }) as unknown as typeof globalThis.setTimeout,
+      clearTimeout: vi.fn() as unknown as typeof globalThis.clearTimeout,
+    })
+
+    delivery.record([createRejection('source:held')], observation('mission-1'))
+    await vi.waitFor(() => expect(applyEvidenceHealth).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'critical', reason: 'evidence_delivery_unavailable' }),
+    ))
+    timers.splice(0).forEach((listener) => listener())
+    await vi.waitFor(() => expect(setRendererEvidencePending).toHaveBeenCalledTimes(2))
+    expect(setRendererEvidencePending).toHaveBeenLastCalledWith({ mission_id: 'mission-1', pending: true })
+    releaseDelivery?.()
+  })
+
+  it('clears its own marker warning when a failed marker write later succeeds [DON-318]', async () => {
+    const applyEvidenceHealth = vi.fn()
+    const timers: (() => void)[] = []
+    const setRendererEvidencePending = vi.fn()
+      .mockResolvedValueOnce(undefined) // pending: true
+      .mockRejectedValueOnce(new Error('disk unavailable')) // pending: false fails
+      .mockResolvedValue(undefined) // retry succeeds
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        setRendererEvidencePending,
+        recordIngestRejections: vi.fn(async (input) => ({
+          acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+          health: healthy(),
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      setTimeout: ((listener: () => void) => {
+        timers.push(listener)
+        return timers.length
+      }) as unknown as typeof globalThis.setTimeout,
+      clearTimeout: vi.fn() as unknown as typeof globalThis.clearTimeout,
+    })
+
+    delivery.record([createRejection('source:held')], observation('mission-1'))
+    await delivery.flushMission('mission-1')
+    await vi.waitFor(() => expect(applyEvidenceHealth).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'critical', reason: 'evidence_delivery_unavailable' }),
+    ))
+    timers.splice(0).forEach((listener) => listener())
+    await vi.waitFor(() => expect(setRendererEvidencePending).toHaveBeenCalledTimes(3))
+    await vi.waitFor(() => expect(applyEvidenceHealth).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'healthy', reason: null }),
+    ))
+  })
+
+  it('clears the marker warning when evidence is delivered before a failed first marker write is retried [DON-318]', async () => {
+    const applyEvidenceHealth = vi.fn()
+    const timers: (() => void)[] = []
+    const setRendererEvidencePending = vi.fn()
+      .mockRejectedValueOnce(new Error('disk unavailable'))
+      .mockResolvedValue(undefined)
+    const delivery = createRejectionEvidenceDelivery({
+      missionStore: {
+        setRendererEvidencePending,
+        recordIngestRejections: vi.fn(async (input) => ({
+          acknowledgedDeliveryIds: input.rejections.map((entry) => entry.deliveryId),
+          health: healthy(),
+        })),
+      },
+      applyRejections: vi.fn(),
+      applyEvidenceHealth,
+      setTimeout: ((listener: () => void) => {
+        timers.push(listener)
+        return timers.length
+      }) as unknown as typeof globalThis.setTimeout,
+      clearTimeout: vi.fn() as unknown as typeof globalThis.clearTimeout,
+    })
+
+    delivery.record([createRejection('source:held')], observation('mission-1'))
+    await delivery.flushMission('mission-1')
+    await vi.waitFor(() => expect(applyEvidenceHealth).toHaveBeenCalledWith(
+      expect.objectContaining({ state: 'critical', reason: 'evidence_delivery_unavailable' }),
+    ))
+    // Delivered before any retry: nothing is held, so the warning clears.
+    await vi.waitFor(() => expect(applyEvidenceHealth).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'healthy', reason: null, pendingCount: 0 }),
+    ))
+    timers.splice(0).forEach((listener) => listener())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(applyEvidenceHealth).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'healthy', reason: null, pendingCount: 0 }),
+    )
+  })
+
   it('drains more than one batch at Finish, accepts finished-mission evidence, then finalizes', async () => {
     const persisted: string[] = []
     const delivery = createRejectionEvidenceDelivery({

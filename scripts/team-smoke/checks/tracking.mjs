@@ -233,11 +233,24 @@ export default [
   {
     check: 'Mission lifecycle and crash recovery',
     id: 'lifecycle',
-    manualSteps: ['Close with the window X, reopen and confirm no false unexpected-shutdown report.'],
+    manualSteps: ['Close with the window X, reopen and confirm no false unexpected-shutdown report and no evidence-health warning in Tracking.'],
     async run(ctx) {
       const name = 'Lifecycle Smoke'
       const findings = []
       let { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'lifecycle-1', name)
+      // DON-318: the mock serves only valid fixes, so no rejected-position
+      // evidence is ever held. No kill, crash or quit may then claim it was
+      // lost and block Finish/Archive (Eamonn, 13.5).
+      const requireEvidenceHealthy = async (after) => {
+        const health = await app.page.evaluate(async () => {
+          const store = window.sartrackerElectron.missionStore
+          const mission = await store.getActiveMission()
+          return mission === null ? null : store.getIngestEvidenceHealth(mission.id)
+        })
+        if (health?.state !== 'healthy') {
+          findings.push(`after ${after}, evidence health was ${health?.state ?? 'unreadable'} (${health?.reason ?? 'no reason'}) with no rejected position held (DON-318)`)
+        }
+      }
       await delay(40_000)
       const preservedFixes = missionFixes(profile, name)
 
@@ -249,6 +262,7 @@ export default [
       const phaseAfterKill = await missionPhase(app.page)
       if (phaseAfterKill !== 'PAUSED') findings.push(`mission paused before SIGKILL came back ${phaseAfterKill} after Resume`)
       if (phaseAfterKill === 'PAUSED') await togglePause(app.page)
+      await requireEvidenceHealthy('SIGKILL')
       await delay(30_000)
 
       // Renderer crash closes the app by design; relaunch and resume.
@@ -259,6 +273,7 @@ export default [
       app = await launchApp(ctx, { profile, label: 'lifecycle-3-after-renderer-crash' })
       expectProduct(await resumeIfPrompted(app.page), 'No recovery prompt after renderer crash.')
       expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE after resuming from renderer crash.')
+      await requireEvidenceHealthy('a renderer crash')
       await delay(30_000)
 
       // Graceful quit, then a normal relaunch must not claim a crash. The
@@ -268,6 +283,7 @@ export default [
       const crashState = await app.page.evaluate(() => window.sartrackerElectron.readCrashRecoveryState())
       if (crashState?.uncleanShutdown === true) findings.push('a graceful quit was recorded as an unexpected shutdown')
       await resumeIfPrompted(app.page, 15_000)
+      await requireEvidenceHealthy('a graceful quit')
       await delay(40_000)
 
       // Graceful quit.
@@ -276,7 +292,7 @@ export default [
       const summary = `pause, SIGKILL, renderer crash and graceful quit; ${result.fixes} fixes, walkers gap-free `
         + `${JSON.stringify(result.perDevice)}`
       expectProduct(findings.length === 0, `${findings.join('; ')}. Data: ${summary}.`)
-      return `${summary}; pause state preserved; graceful quit not reported as a crash. Window X close: check by hand.`
+      return `${summary}; pause state preserved; graceful quit not reported as a crash; evidence health stayed healthy after each. Window X close: check by hand.`
     },
   },
   {

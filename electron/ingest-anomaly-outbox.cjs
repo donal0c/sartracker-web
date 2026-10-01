@@ -1,8 +1,9 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 
 const {
+  removeFileDurably,
   syncDirectoryDurably,
   writeFileDurably,
 } = require('./durable-file.cjs')
@@ -14,6 +15,12 @@ const INGEST_ANOMALY_OUTBOX_REPLAY_BATCH_HYPOTHESIS = 8
 const DEGRADED_HEALTH_MARKER_NAME = 'degraded-health.json.marker'
 const RENDERER_EVIDENCE_INCIDENT_PREFIX = 'renderer-evidence-incident-'
 const RENDERER_EVIDENCE_INCIDENT_SUFFIX = '.json.marker'
+const RENDERER_EVIDENCE_PENDING_MARKER_PATTERN =
+  /^renderer-evidence-pending-([a-f0-9]{16})\.json\.marker$/u
+// Written once a session's renderer keeps pending markers. Without it (a
+// profile last run by 13.5 or earlier, or a marker write that failed) the
+// absence of a marker proves nothing [DON-318].
+const RENDERER_EVIDENCE_PROTOCOL_MARKER_NAME = 'renderer-evidence-protocol-v1.json.marker'
 const ACKNOWLEDGEABLE_EVIDENCE_LOSS_REASONS = new Set([
   'mission_persistence_failed',
   'renderer_pending_evidence_lost',
@@ -89,6 +96,159 @@ function createIngestAnomalyOutbox(options) {
       replayRetryTimer = null
     }
     return operationTail
+  }
+
+  /**
+   * Durably records whether the renderer holds rejected-position evidence for
+   * one mission that is not yet in this outbox. Main-side loss after a renderer
+   * or process failure applies only where this marker says something was held.
+   * Each marker carries a key, so sealing the same marker twice never makes a
+   * second loss generation.
+   */
+  function setRendererEvidencePending(missionId, pending) {
+    return enqueue(async () => {
+      validateMissionScope(missionId)
+      if (typeof pending !== 'boolean') {
+        throw new Error('Renderer evidence pending state must be true or false.')
+      }
+      const markerPath = path.join(
+        options.directoryPath,
+        rendererEvidencePendingMarkerName(missionId),
+      )
+      if (!pending) {
+        await removeFileIfPresent(markerPath)
+        return
+      }
+      // Keep the key while the same holding continues; a marker whose key was
+      // already sealed (its removal failed) belongs to an earlier holding.
+      await initializeDirectoryAndFailureState()
+      const existing = await readPendingMarker(markerPath).catch(() => null)
+      const sealedKey = recoveryKeysByScope.get(failureScope(missionId))
+        ?.get('renderer_pending_evidence_lost')
+      if (existing?.missionId === missionId && existing.markerKey !== sealedKey) return
+      await fs.mkdir(options.directoryPath, { recursive: true })
+      await writeFileDurably(
+        markerPath,
+        JSON.stringify({
+          version: 1,
+          missionId,
+          scope: failureScope(missionId),
+          markerKey: createHash('sha256').update(randomUUID(), 'utf8').digest('hex'),
+        }),
+        { platform },
+      )
+    })
+  }
+
+  /**
+   * Lists the markers of missions whose renderer held unsaved evidence. A
+   * marker that cannot be attributed, or a profile not yet running the marker
+   * protocol, makes the answer uncertain, never "nothing pending".
+   */
+  function readRendererEvidencePending() {
+    return enqueue(async () => {
+      let names
+      try {
+        names = await fs.readdir(options.directoryPath)
+      } catch (error) {
+        if (error?.code === 'ENOENT') return { markers: [], missionIds: [], uncertain: true }
+        throw error
+      }
+      const markers = []
+      let uncertain = !names.includes(RENDERER_EVIDENCE_PROTOCOL_MARKER_NAME)
+      for (const name of names.sort()) {
+        if (!RENDERER_EVIDENCE_PENDING_MARKER_PATTERN.test(name)) continue
+        try {
+          const marker = await readPendingMarker(path.join(options.directoryPath, name))
+          if (marker === null) uncertain = true
+          else markers.push(marker)
+        } catch (error) {
+          if (error?.code !== 'ENOENT') uncertain = true
+        }
+      }
+      markers.sort((left, right) => left.missionId.localeCompare(right.missionId))
+      return { markers, missionIds: markers.map((marker) => marker.missionId), uncertain }
+    })
+  }
+
+  /**
+   * Removes the named missions' markers and every marker that cannot be
+   * attributed (those only ever widened a loss to all open missions, which the
+   * caller has just sealed). With no list, removes every marker.
+   */
+  function clearRendererEvidencePending(missionIds) {
+    return enqueue(async () => {
+      let names
+      try {
+        names = await fs.readdir(options.directoryPath)
+      } catch (error) {
+        if (error?.code === 'ENOENT') return
+        throw error
+      }
+      const selectedScopes = missionIds === null
+        ? null
+        : new Set(missionIds.map((missionId) => {
+          validateMissionScope(missionId)
+          return failureScope(missionId)
+        }))
+      for (const name of names) {
+        const match = RENDERER_EVIDENCE_PENDING_MARKER_PATTERN.exec(name)
+        if (match === null) continue
+        const markerPath = path.join(options.directoryPath, name)
+        const attributable = await readPendingMarker(markerPath).catch(() => null)
+        if (selectedScopes === null || selectedScopes.has(match[1]) || attributable === null) {
+          await removeFileIfPresent(markerPath)
+        }
+      }
+    })
+  }
+
+  /** Records that this profile's renderer now keeps pending markers. */
+  function establishRendererEvidenceProtocol() {
+    return enqueue(async () => {
+      await fs.mkdir(options.directoryPath, { recursive: true })
+      await writeFileDurably(
+        path.join(options.directoryPath, RENDERER_EVIDENCE_PROTOCOL_MARKER_NAME),
+        JSON.stringify({ version: 1 }),
+        { platform },
+      )
+    })
+  }
+
+  /** Withdraws the protocol after a failed marker write, so absence proves nothing. */
+  function invalidateRendererEvidenceProtocol() {
+    return enqueue(() => removeFileIfPresent(
+      path.join(options.directoryPath, RENDERER_EVIDENCE_PROTOCOL_MARKER_NAME),
+    ))
+  }
+
+  /** Durably removes one file; an already absent file is the desired state. */
+  async function removeFileIfPresent(filePath) {
+    await removeFileDurably(filePath, { platform }).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error
+    })
+  }
+
+  /** Reads one pending marker, returning null when it cannot be attributed to its filename. */
+  async function readPendingMarker(markerPath) {
+    const match = RENDERER_EVIDENCE_PENDING_MARKER_PATTERN.exec(path.basename(markerPath))
+    let marker
+    try {
+      marker = JSON.parse(await fs.readFile(markerPath, 'utf8'))
+    } catch (error) {
+      if (error?.code === 'ENOENT') throw error
+      return null
+    }
+    if (
+      match === null ||
+      marker?.version !== 1 ||
+      typeof marker.missionId !== 'string' ||
+      marker.missionId.trim() === '' ||
+      failureScope(marker.missionId) !== match[1] ||
+      typeof marker.markerKey !== 'string' ||
+      !/^[a-f0-9]{64}$/u.test(marker.markerKey)
+    ) return null
+    return { missionId: marker.missionId, markerKey: marker.markerKey }
   }
 
   /** Writes, projects, and only then removes one canonical envelope. */
@@ -167,7 +327,7 @@ function createIngestAnomalyOutbox(options) {
   }
 
   /** Persists the honest completeness block when volatile evidence cannot be retained. */
-  function markEvidenceLoss(missionId, reason) {
+  function markEvidenceLoss(missionId, reason, sealKey) {
     return enqueue(async () => {
       await assertMissionMutationAllowed(missionId)
       await initializeDirectoryAndFailureState()
@@ -180,8 +340,18 @@ function createIngestAnomalyOutbox(options) {
       }
       validateMissionScope(missionId)
       await assertMissionMutationAllowed(missionId)
+      if (sealKey !== undefined && (typeof sealKey !== 'string' || !/^[a-f0-9]{64}$/u.test(sealKey))) {
+        throw new Error('Ingest evidence-loss seal key is invalid.')
+      }
       const scope = failureScope(missionId)
-      await sealEvidenceLoss(scope, missionId, reason)
+      // The same pending marker sealed again (its removal failed earlier) is
+      // the same loss: no new generation, so an admin acknowledgement stands.
+      if (
+        sealKey !== undefined &&
+        failuresByScope.get(scope)?.has(reason) === true &&
+        recoveryKeysByScope.get(scope)?.get(reason) === sealKey
+      ) return
+      await sealEvidenceLoss(scope, missionId, reason, sealKey)
     })
   }
 
@@ -512,13 +682,13 @@ function createIngestAnomalyOutbox(options) {
     for (const incident of [...rendererEvidenceIncidentsByKey.values()]) {
       for (const scopeEntry of incident.scopes) {
         removeRendererEvidencePendingInMemory(scopeEntry.scope)
-        if (!failuresByScope.get(scopeEntry.scope)?.has('renderer_pending_evidence_lost')) {
-          addFailure(scopeEntry.scope, 'renderer_pending_evidence_lost')
-          lossGenerationByScope.set(
-            scopeEntry.scope,
-            (lossGenerationByScope.get(scopeEntry.scope) ?? 0) + 1,
-          )
-        }
+        // A lost incident is a new possible loss even over an earlier
+        // (perhaps acknowledged) one: always a new generation [DON-318].
+        addFailure(scopeEntry.scope, 'renderer_pending_evidence_lost')
+        lossGenerationByScope.set(
+          scopeEntry.scope,
+          (lossGenerationByScope.get(scopeEntry.scope) ?? 0) + 1,
+        )
         await persistFailureScope(scopeEntry.scope)
       }
       await removeRendererEvidenceIncident(incident.incidentKey)
@@ -547,13 +717,13 @@ function createIngestAnomalyOutbox(options) {
       await assertMissionMutationAllowed(scopeEntry.missionId)
       removeRendererEvidencePendingInMemory(scopeEntry.scope)
       if (outcome === 'lost') {
-        if (!failuresByScope.get(scopeEntry.scope)?.has('renderer_pending_evidence_lost')) {
-          addFailure(scopeEntry.scope, 'renderer_pending_evidence_lost')
-          lossGenerationByScope.set(
-            scopeEntry.scope,
-            (lossGenerationByScope.get(scopeEntry.scope) ?? 0) + 1,
-          )
-        }
+        // A lost incident is a new possible loss even over an earlier
+        // (perhaps acknowledged) one: always a new generation [DON-318].
+        addFailure(scopeEntry.scope, 'renderer_pending_evidence_lost')
+        lossGenerationByScope.set(
+          scopeEntry.scope,
+          (lossGenerationByScope.get(scopeEntry.scope) ?? 0) + 1,
+        )
       }
       await assertMissionMutationAllowed(scopeEntry.missionId)
       await persistFailureScope(scopeEntry.scope)
@@ -752,7 +922,12 @@ function createIngestAnomalyOutbox(options) {
     stageRendererEvidenceIncident,
     stageRendererEvidenceUncertainty,
     readEvidenceLossAcknowledgementCandidate,
+    clearRendererEvidencePending,
+    establishRendererEvidenceProtocol,
+    invalidateRendererEvidenceProtocol,
+    readRendererEvidencePending,
     runWithHealthyEvidenceFence,
+    setRendererEvidencePending,
   }
 
   /** Builds a non-secret token for the exact sticky loss state of one mission. */
@@ -778,12 +953,28 @@ function createIngestAnomalyOutbox(options) {
   }
 
   /** Converts one confirmed renderer incident into a sticky loss generation. */
-  async function sealEvidenceLoss(scope, missionId, reason) {
+  async function sealEvidenceLoss(scope, missionId, reason, sealKey) {
     await assertMissionMutationAllowed(missionId)
     lossGenerationByScope.set(scope, (lossGenerationByScope.get(scope) ?? 0) + 1)
     addFailure(scope, reason)
-    await fs.mkdir(options.directoryPath, { recursive: true })
-    await persistFailureScope(scope)
+    const recoveryKeys = recoveryKeysByScope.get(scope) ?? new Map()
+    const previousKey = recoveryKeys.get(reason)
+    if (sealKey !== undefined) {
+      recoveryKeys.set(reason, sealKey)
+      recoveryKeysByScope.set(scope, recoveryKeys)
+    }
+    try {
+      await fs.mkdir(options.directoryPath, { recursive: true })
+      await persistFailureScope(scope)
+    } catch (error) {
+      // The key only ever means "durably sealed": a failed write must not let
+      // a retry skip the seal [DON-318]. The in-memory loss stays (conservative).
+      if (sealKey !== undefined) {
+        if (previousKey === undefined) recoveryKeys.delete(reason)
+        else recoveryKeys.set(reason, previousKey)
+      }
+      throw error
+    }
   }
 
   /** Removes only the exact provisional renderer state from one mission scope. */
@@ -987,6 +1178,11 @@ function parseRendererEvidenceIncident(fileName, contents) {
     }
   })
   return { incidentKey, scopes: mergeRendererIncidentScopes([], scopes) }
+}
+
+/** Names one mission's pending marker by its opaque scope, never its raw id. */
+function rendererEvidencePendingMarkerName(missionId) {
+  return `renderer-evidence-pending-${failureScope(missionId)}.json.marker`
 }
 
 /** Creates the allow-listed opaque incident marker filename. */

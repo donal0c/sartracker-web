@@ -30,7 +30,7 @@ const {
     readonly initialize: () => Promise<void>
     readonly dispose: () => void
     readonly deliver: (envelope: RejectionEnvelope) => Promise<{ readonly persisted: boolean }>
-    readonly markEvidenceLoss: (missionId: string, reason: string) => Promise<void>
+    readonly markEvidenceLoss: (missionId: string, reason: string, sealKey?: string) => Promise<void>
     readonly stageRendererEvidenceUncertainty: (
       missionId: string,
       incidentId: string,
@@ -65,6 +65,14 @@ const {
         readonly readAcknowledgedLossToken?: () => string | null | Promise<string | null>
       },
     ) => Promise<Result>
+    readonly setRendererEvidencePending: (missionId: string, pending: boolean) => Promise<void>
+    readonly readRendererEvidencePending: () => Promise<{
+      readonly markers: readonly { readonly missionId: string; readonly markerKey: string }[]
+      readonly missionIds: readonly string[]
+      readonly uncertain: boolean
+    }>
+    readonly establishRendererEvidenceProtocol: () => Promise<void>
+    readonly clearRendererEvidencePending: (missionIds: readonly string[] | null) => Promise<void>
     readonly health: (missionId?: string) => Promise<{
       readonly pendingCount: number
       readonly corruptCount: number
@@ -1056,6 +1064,143 @@ describe('durable ingest anomaly outbox [DON-268]', () => {
     const pendingFiles = (await readdir(directoryPath)).filter((name) => name.endsWith('.json'))
     expect(pendingFiles).toHaveLength(1)
     expect(pendingFiles[0]).toMatch(/^[a-f0-9]{16}-[a-f0-9]{64}\.json$/u)
+  })
+
+  it('keeps a durable per-mission marker while the renderer holds rejected-position evidence [DON-318]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-pending-'))
+    const outbox = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    // Before any session ran the marker protocol, absence proves nothing.
+    await expect(outbox.readRendererEvidencePending()).resolves.toMatchObject({ missionIds: [], uncertain: true })
+    await outbox.establishRendererEvidenceProtocol()
+    await expect(outbox.readRendererEvidencePending()).resolves.toMatchObject({ missionIds: [], uncertain: false })
+
+    await outbox.setRendererEvidencePending('mission-1', true)
+    await outbox.setRendererEvidencePending('mission-2', true)
+    const firstKey = (await outbox.readRendererEvidencePending()).markers[0]!.markerKey
+    // Re-marking a held mission keeps its key: it is the same holding.
+    await outbox.setRendererEvidencePending('mission-1', true)
+    expect((await outbox.readRendererEvidencePending()).markers[0]!.markerKey).toBe(firstKey)
+    expect((await readdir(directoryPath)).filter((name) => name.startsWith('renderer-evidence-pending-')))
+      .toHaveLength(2)
+    expect((await readdir(directoryPath)).some((name) => name.endsWith('.tmp'))).toBe(false)
+
+    // A new process reads the same durable truth.
+    const restarted = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    await expect(restarted.readRendererEvidencePending()).resolves.toMatchObject({
+      missionIds: ['mission-1', 'mission-2'],
+      uncertain: false,
+    })
+    await restarted.setRendererEvidencePending('mission-1', false)
+    await restarted.setRendererEvidencePending('mission-3', false)
+    await expect(restarted.readRendererEvidencePending()).resolves.toMatchObject({
+      missionIds: ['mission-2'],
+      uncertain: false,
+    })
+    // A new holding after release gets a new key.
+    await restarted.setRendererEvidencePending('mission-1', true)
+    const renewed = (await restarted.readRendererEvidencePending()).markers.find((marker) => marker.missionId === 'mission-1')
+    expect(renewed?.markerKey).not.toBe(firstKey)
+    // Marker files are not envelopes: health and replay ignore them.
+    await expect(restarted.health('mission-2')).resolves.toMatchObject({ pendingCount: 0, corruptCount: 0 })
+  })
+
+  it('treats a crash before the marker rename as no marker, and a damaged marker as uncertain until cleared [DON-318]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-pending-crash-'))
+    const outbox = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    await outbox.establishRendererEvidenceProtocol()
+    await outbox.setRendererEvidencePending('mission-1', true)
+    const [markerName] = (await readdir(directoryPath)).filter((name) => name.startsWith('renderer-evidence-pending-'))
+    // An interrupted atomic write leaves only its temporary file behind.
+    await writeFile(path.join(directoryPath, `renderer-evidence-pending-${'a'.repeat(16)}.json.marker.1234.tmp`), '{')
+    await expect(outbox.readRendererEvidencePending()).resolves.toMatchObject({ missionIds: ['mission-1'], uncertain: false })
+
+    // A marker we cannot read could belong to any mission: never "nothing pending".
+    const damagedName = `renderer-evidence-pending-${'b'.repeat(16)}.json.marker`
+    await writeFile(path.join(directoryPath, damagedName), 'not json')
+    await expect(outbox.readRendererEvidencePending()).resolves.toMatchObject({ missionIds: ['mission-1'], uncertain: true })
+    await writeFile(path.join(directoryPath, markerName!), JSON.stringify({ version: 1, missionId: 'other-mission' }))
+    await expect(outbox.readRendererEvidencePending()).resolves.toMatchObject({ missionIds: [], uncertain: true })
+
+    // Clearing the sealed missions also removes what cannot be attributed.
+    await outbox.clearRendererEvidencePending(['mission-9'])
+    await expect(outbox.readRendererEvidencePending()).resolves.toMatchObject({ missionIds: [], uncertain: false })
+  })
+
+  it('does not start a new loss generation when the same marker is sealed twice [DON-318]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-seal-key-'))
+    const outbox = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    const markerKey = 'c'.repeat(64)
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', markerKey)
+    const acknowledged = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    // The marker's removal failed, and a later failure seals it again.
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', markerKey)
+    const restarted = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    await restarted.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', markerKey)
+    await expect(restarted.readEvidenceLossAcknowledgementCandidate('mission-1'))
+      .resolves.toEqual(acknowledged)
+
+    // A different holding that was lost is a new loss the admin must see.
+    await restarted.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', 'd'.repeat(64))
+    await expect(restarted.readEvidenceLossAcknowledgementCandidate('mission-1'))
+      .resolves.not.toEqual(acknowledged)
+    await expect(restarted.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', 'not-a-key'))
+      .rejects.toThrow(/seal key/u)
+  })
+
+  it('re-seals after a failed seal write instead of treating the key as done [DON-318]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-seal-retry-'))
+    const outbox = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    const markerKey = 'f'.repeat(64)
+    const original = fsPromises.open.bind(fsPromises)
+    const openSpy = vi.spyOn(fsPromises, 'open').mockImplementationOnce((async () => {
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+    }) as typeof fsPromises.open).mockImplementation(original as typeof fsPromises.open)
+    try {
+      await expect(outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', markerKey))
+        .rejects.toThrow('disk full')
+    } finally {
+      openSpy.mockRestore()
+    }
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', markerKey)
+
+    const restarted = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    await expect(restarted.readEvidenceLossAcknowledgementCandidate('mission-1'))
+      .resolves.toMatchObject({ reasons: ['renderer_pending_evidence_lost'] })
+  })
+
+  it('gives a new holding a fresh key when a sealed marker was left behind [DON-318]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-sealed-leftover-'))
+    const outbox = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    await outbox.establishRendererEvidenceProtocol()
+    await outbox.setRendererEvidencePending('mission-1', true)
+    const sealedKey = (await outbox.readRendererEvidencePending()).markers[0]!.markerKey
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', sealedKey)
+    // The marker's removal failed, so it is still there when new evidence is held.
+    await outbox.setRendererEvidencePending('mission-1', true)
+
+    const freshKey = (await outbox.readRendererEvidencePending()).markers[0]!.markerKey
+    expect(freshKey).not.toBe(sealedKey)
+    const acknowledged = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', freshKey)
+    await expect(outbox.readEvidenceLossAcknowledgementCandidate('mission-1'))
+      .resolves.not.toEqual(acknowledged)
+  })
+
+  it('makes a newly lost staged incident a new loss generation over an acknowledged one [DON-318]', async () => {
+    directoryPath = await mkdtemp(path.join(tmpdir(), 'sartracker-ingest-outbox-incident-generation-'))
+    const outbox = createIngestAnomalyOutbox({ directoryPath, projectEnvelope: vi.fn() })
+    await outbox.markEvidenceLoss('mission-1', 'renderer_pending_evidence_lost', 'a'.repeat(64))
+    const acknowledged = await outbox.readEvidenceLossAcknowledgementCandidate('mission-1')
+
+    await outbox.stageRendererEvidenceIncident(
+      [{ missionId: 'mission-1', scopeReason: 'finished_unfinalized_mission' }],
+      'incident-after-acknowledgement',
+    )
+    await outbox.resolveRendererEvidenceIncidents('incident-after-acknowledgement', 'lost')
+
+    await expect(outbox.readEvidenceLossAcknowledgementCandidate('mission-1'))
+      .resolves.not.toEqual(acknowledged)
   })
 
   function createEnvelope(deliveryId: string): RejectionEnvelope {

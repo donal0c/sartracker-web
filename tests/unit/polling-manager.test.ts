@@ -476,6 +476,57 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('never saves a history chunk or checkpoint past a rejection that is not yet durable (crash case) [DON-318]', async () => {
+    // If the app dies while a rejected row is only in memory, nothing after it
+    // was checkpointed, so the next start re-reads the window and re-derives it.
+    const position = {
+      ...NORMALIZED_BREADCRUMBS[0]!, id: 'accepted-after-rejection',
+      device_id: NORMALIZED_DEVICES[0]!.device_id,
+      timestamp: '2026-04-06T01:00:00.000Z',
+    }
+    const rejection = {
+      deviceId: NORMALIZED_DEVICES[0]!.device_id,
+      reason: 'invalid_coordinates' as const,
+      rowIndex: 1,
+      anomalyKey: 'source:held-rejection',
+      sourcePositionId: 'held-rejection',
+      canonicalEvidence: { source_position_id: 'held-rejection', device_id: NORMALIZED_DEVICES[0]!.device_id },
+    }
+    const neverDurable = createDeferred<void>()
+    const persistHistoryChunks = vi.fn().mockResolvedValue(undefined)
+    const persistHistoryRequest = vi.fn().mockResolvedValue(undefined)
+    const onBreadcrumbRejections = vi.fn().mockReturnValue(neverDurable.promise)
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbsWithReport: vi.fn().mockResolvedValue({ accepted: [position], rejected: [rejection] }),
+    }), {
+      intervalMs: 30_000, staleThresholdMs: 300_000,
+      getHistoryResetKey: () => 'mission-a',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      getBreadcrumbDeviceIds: () => [NORMALIZED_DEVICES[0]!.device_id],
+      persistHistoryChunks, persistHistoryRequest, onBreadcrumbRejections,
+      onSnapshot: vi.fn(), onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T02:00:00.000Z'),
+    })
+    try {
+      poller.start()
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(onBreadcrumbRejections).toHaveBeenCalledWith([rejection], expect.objectContaining({ missionId: 'mission-a' }))
+      expect(persistHistoryChunks).not.toHaveBeenCalled()
+      // Once the rejection is durable the same chunk is saved, so the gate is real.
+      neverDurable.resolve()
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(persistHistoryChunks).toHaveBeenCalledWith([
+        expect.objectContaining({ expectedMissionId: 'mission-a', positions: [position] }),
+      ])
+    } finally {
+      neverDurable.resolve()
+      await poller.stop()
+    }
+  })
+
   it('keeps an acknowledged original-mission history group out of a replacement mission [DON-254]', async () => {
     const originalCommit = createDeferred<void>()
     let missionId = 'mission-a'

@@ -143,7 +143,13 @@ type ElectronMissionStore = {
   readonly listRendererEvidenceScopesAwaitingClosure: () => Promise<readonly {
     readonly mission_id: string
     readonly scope_reason: string
+    readonly pending_marker_key?: string
   }[]>
+  readonly setRendererEvidencePending: (input: {
+    readonly mission_id: string
+    readonly pending: boolean
+  }) => Promise<void>
+  readonly establishRendererEvidenceProtocol: () => Promise<void>
   readonly pauseMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly resumeMission: (missionId: string) => Promise<{ readonly status: string }>
   readonly finishMission: (missionId: string) => Promise<{ readonly status: string }>
@@ -707,16 +713,27 @@ describe('electron mission store', () => {
     const finished = await store.createMission({ name: 'Finished Renderer Scope' })
     await store.finishMission(finished.id)
     const active = await store.createMission({ name: 'Active Renderer Scope' })
-
+    // Before the marker protocol runs, absence proves nothing: every open mission [DON-318].
     await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
       { mission_id: active.id, scope_reason: 'active_mission' },
       { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
     ])
+    await store.establishRendererEvidenceProtocol()
+    // Then only missions whose renderer held unsaved evidence are in scope.
+    await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([])
+    await store.setRendererEvidencePending({ mission_id: active.id, pending: true })
+    await store.setRendererEvidencePending({ mission_id: finished.id, pending: true })
+
+    const markerKey = expect.stringMatching(/^[a-f0-9]{64}$/u)
+    await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
+      { mission_id: active.id, scope_reason: 'active_mission', pending_marker_key: markerKey },
+      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission', pending_marker_key: markerKey },
+    ])
 
     await store.pauseMission(active.id)
     await expect(store.listRendererEvidenceScopesAwaitingClosure()).resolves.toEqual([
-      { mission_id: active.id, scope_reason: 'paused_recoverable_mission' },
-      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission' },
+      { mission_id: active.id, scope_reason: 'paused_recoverable_mission', pending_marker_key: markerKey },
+      { mission_id: finished.id, scope_reason: 'finished_unfinalized_mission', pending_marker_key: markerKey },
     ])
   })
 

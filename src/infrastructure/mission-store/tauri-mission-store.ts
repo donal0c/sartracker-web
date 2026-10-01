@@ -1240,6 +1240,10 @@ export type MissionStore = {
     readonly mission_id: string
     readonly reason: IngestEvidenceLossReason
   }) => Promise<IngestEvidenceHealth>
+  readonly setRendererEvidencePending?: (input: {
+    readonly mission_id: string
+    readonly pending: boolean
+  }) => Promise<void>
   readonly acknowledgeIngestEvidenceLoss: (
     input: AcknowledgeIngestEvidenceLossInput,
   ) => Promise<IngestEvidenceHealth>

@@ -36,6 +36,10 @@ const {
         readonly incident_id?: string
         readonly outcome: 'drained' | 'lost'
       }) => Promise<unknown>
+      readonly clearRendererEvidencePending?: (input?: {
+        readonly mission_ids: readonly string[]
+      }) => Promise<unknown>
+      readonly establishRendererEvidenceProtocol?: () => Promise<unknown>
     }
     readonly createRequestId: () => string
     readonly setTimeout: (listener: () => void, delayMs: number) => unknown
@@ -674,6 +678,99 @@ describe('renderer teardown coordinator', () => {
     expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledTimes(2)
   })
 
+  it('consumes the pending markers it sealed, so a later failure does not seal them again [DON-318]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-consume',
+      setTimeout: vi.fn(() => 11),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    await coordinator.markRendererUnavailable()
+
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledOnce()
+    expect(missionStore.clearRendererEvidencePending).toHaveBeenCalledWith({ mission_ids: ['mission-1'] })
+    expect(missionStore.recordIngestEvidenceLoss.mock.invocationCallOrder[0])
+      .toBeLessThan(missionStore.clearRendererEvidencePending.mock.invocationCallOrder[0]!)
+  })
+
+  it('seals nothing and clears no marker when no mission holds renderer evidence [DON-318]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    missionStore.listRendererEvidenceScopesAwaitingClosure.mockResolvedValue([])
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-none',
+      setTimeout: vi.fn(() => 12),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    await expect(coordinator.markRendererUnavailable()).resolves.toEqual({ mode: 'no_unfinalized_mission' })
+    expect(missionStore.recordIngestEvidenceLoss).not.toHaveBeenCalled()
+    expect(missionStore.clearRendererEvidencePending).not.toHaveBeenCalled()
+  })
+
+  it('clears every pending marker after a confirmed clean drain [DON-318]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    const webContents = createWebContents()
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-drained',
+      setTimeout: vi.fn(() => 13),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+    const preparation = coordinator.prepare({ webContents }, 'window_close')
+    await vi.waitFor(() => expect(webContents.send).toHaveBeenCalledOnce())
+    listeners.get(RENDERER_TEARDOWN_READY_CHANNEL)?.(
+      { sender: webContents },
+      { requestId: 'request-drained', ok: true },
+    )
+
+    await expect(preparation).resolves.toEqual({ mode: 'renderer_drained' })
+    expect(missionStore.clearRendererEvidencePending).toHaveBeenCalledWith()
+    expect(missionStore.recordIngestEvidenceLoss).not.toHaveBeenCalled()
+  })
+
+  it('seals with the marker key and establishes the marker protocol once a renderer is available [DON-318]', async () => {
+    const listeners = new Map<string, (event: unknown, input: unknown) => void>()
+    const missionStore = createMissionStore()
+    missionStore.listRendererEvidenceScopesAwaitingClosure.mockResolvedValue([{
+      mission_id: 'mission-1',
+      scope_reason: 'active_mission',
+      pending_marker_key: 'e'.repeat(64),
+    }] as never)
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: createIpcMain(listeners),
+      missionStore,
+      createRequestId: () => 'request-protocol',
+      setTimeout: vi.fn(() => 14),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+    })
+
+    await coordinator.markRendererUnavailable()
+    expect(missionStore.recordIngestEvidenceLoss).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      reason: 'renderer_pending_evidence_lost',
+      scope_reason: 'active_mission',
+      pending_marker_key: 'e'.repeat(64),
+    })
+    expect(missionStore.establishRendererEvidenceProtocol).not.toHaveBeenCalled()
+    await coordinator.markRendererAvailable()
+    await vi.waitFor(() => expect(missionStore.establishRendererEvidenceProtocol).toHaveBeenCalledOnce())
+    expect(missionStore.recordIngestEvidenceLoss.mock.invocationCallOrder[0])
+      .toBeLessThan(missionStore.establishRendererEvidenceProtocol.mock.invocationCallOrder[0]!)
+  })
+
   it('ignores forged acknowledgements from another renderer', async () => {
     let timeoutListener: (() => void) | undefined
     const listeners = new Map<string, (event: unknown, input: unknown) => void>()
@@ -736,6 +833,8 @@ function createMissionStore() {
     recordIngestEvidenceLoss: vi.fn(async () => ({ state: 'critical' })),
     stageRendererEvidenceIncident: vi.fn(async () => ({ state: 'degraded' })),
     resolveRendererEvidenceIncidents: vi.fn(async () => ({ state: 'healthy' })),
+    clearRendererEvidencePending: vi.fn(async () => undefined),
+    establishRendererEvidenceProtocol: vi.fn(async () => undefined),
   }
 }
 

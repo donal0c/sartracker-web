@@ -395,7 +395,7 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
 
     const warning = page.getByTestId('ingest-evidence-health-warning')
     await expect(warning).toContainText(
-      'rejected-position evidence was lost during runtime shutdown',
+      'rejected-position evidence may have been lost when the app closed unexpectedly',
     )
     await expect(warning).toContainText('finalization and archive export are blocked')
 
@@ -406,7 +406,7 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
       severity: 'critical',
       verificationPrompt: `Verify SAR Tracker's runtime-shutdown evidence-loss warning:
 1. Tracking remains ONLINE and the normal tracking counters stay visible because current positions are still the live safety priority.
-2. A red critical evidence-health warning explicitly says rejected-position evidence was lost during runtime shutdown.
+2. A red critical evidence-health warning explicitly says rejected-position evidence may have been lost when the app closed unexpectedly.
 3. The warning says current positions remain live.
 4. The warning explicitly says mission finalization and archive export are blocked.
 5. The presentation does not claim the lost anomaly evidence was saved or recoverable.

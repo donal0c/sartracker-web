@@ -66,7 +66,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
             </p>
           ) : rendererEvidenceDegraded ? (
             <p className="mt-1" data-testid="coverage-evidence-degraded">
-              Anomaly evidence could not be fully saved. History cannot be called complete.
+              Anomaly evidence may not have been fully saved. History cannot be called complete.
               {' '}Current positions remain live; resolve the evidence warning in Tracking.
             </p>
           ) : degraded ? (

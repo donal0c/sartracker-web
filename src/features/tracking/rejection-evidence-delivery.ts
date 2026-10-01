@@ -21,6 +21,11 @@ type RejectionEvidenceMissionStore = {
     readonly mission_id: string
     readonly reason: IngestEvidenceLossReason
   }) => Promise<IngestEvidenceHealth>
+  /** Durably tells main whether this renderer holds a mission's unsaved evidence. */
+  readonly setRendererEvidencePending?: (input: {
+    readonly mission_id: string
+    readonly pending: boolean
+  }) => Promise<void>
 }
 
 type RejectionEvidenceDeliveryDependencies = {
@@ -124,6 +129,11 @@ export function createRejectionEvidenceDelivery(
   const activeObservationCountByMission = new Map<string, number>()
   const observationWaitersByMission = new Map<string, Set<() => void>>()
   let missionObservationSettler: ((missionId: string) => Promise<void>) | null = null
+  // Main seals a loss after a renderer or process failure only for missions
+  // this renderer marked as holding evidence [DON-318].
+  const pendingMarkerDurableByMission = new Map<string, boolean>()
+  const pendingMarkerSyncByMission = new Map<string, Promise<void>>()
+  const pendingMarkerFailedMissionIds = new Set<string>()
 
   /** Tracks one current-position observation until its mission evidence is staged. */
   function beginMissionObservation(missionId: string | null): MissionEvidenceObservation {
@@ -220,6 +230,7 @@ export function createRejectionEvidenceDelivery(
     }
     if (context.missionId !== null && hasPendingMission(context.missionId)) {
       publishRendererPendingHealth()
+      syncPendingMarker(context.missionId)
     }
     scheduleFlush()
   }
@@ -264,6 +275,7 @@ export function createRejectionEvidenceDelivery(
       }
     }
     await ensureAllEvidenceLossMarkersDurable()
+    await Promise.all(pendingMarkerSyncByMission.values())
     if (retryTimer !== null) {
       clearTimeoutFn(retryTimer)
       retryTimer = null
@@ -492,6 +504,7 @@ export function createRejectionEvidenceDelivery(
           removedCount += 1
         }
       }
+      if (removedCount > 0) syncPendingMarker(first.missionId)
       if (!disposed) {
         publishEvidenceHealth(first.missionId, result.health)
         if (removedCount === 0 && pendingByMissionAndAnomaly.size > 0) {
@@ -678,6 +691,11 @@ export function createRejectionEvidenceDelivery(
         : 'healthy'
     let reason = critical?.reason ?? degraded?.reason ??
       (rendererPendingCount > 0 ? 'renderer_evidence_pending' : null)
+    // A pending marker main could not record is its own, clearable warning.
+    if (pendingMarkerFailedMissionIds.size > 0 && state !== 'critical') {
+      state = 'critical'
+      reason = 'evidence_delivery_unavailable'
+    }
     if (evidenceLossMissionIds.size > 0) {
       state = 'critical'
       const missionId = [...evidenceLossMissionIds].sort()[0]
@@ -711,6 +729,40 @@ export function createRejectionEvidenceDelivery(
       return
     }
     publishEvidenceHealth(missionId, health)
+  }
+
+  /**
+   * Brings main's durable pending marker in line with what this renderer
+   * holds, one write at a time per mission. A failed write is shown as a
+   * critical evidence warning and retried; it is never read as "nothing held".
+   */
+  function syncPendingMarker(missionId: string): void {
+    const setPending = dependencies.missionStore.setRendererEvidencePending
+    if (setPending === undefined) return
+    const previous = pendingMarkerSyncByMission.get(missionId) ?? Promise.resolve()
+    const sync = previous.then(async () => {
+      const pending = hasPendingMission(missionId)
+      const durable = pendingMarkerDurableByMission.get(missionId)
+      if (durable === pending || (durable === undefined && !pending)) {
+        // Nothing to write: any earlier marker failure no longer matters.
+        if (pendingMarkerFailedMissionIds.delete(missionId) && !disposed) publishAggregateHealth()
+        return
+      }
+      await setPending({ mission_id: missionId, pending })
+      pendingMarkerDurableByMission.set(missionId, pending)
+      if (pendingMarkerFailedMissionIds.delete(missionId) && !disposed) publishAggregateHealth()
+    }).catch(() => {
+      if (disposed) return
+      pendingMarkerFailedMissionIds.add(missionId)
+      publishAggregateHealth()
+      setTimeoutFn(() => syncPendingMarker(missionId), retryDelayMs)
+    })
+    pendingMarkerSyncByMission.set(missionId, sync)
+    void sync.finally(() => {
+      if (pendingMarkerSyncByMission.get(missionId) === sync) {
+        pendingMarkerSyncByMission.delete(missionId)
+      }
+    })
   }
 
   /** Returns whether the renderer still owns evidence for one mission. */

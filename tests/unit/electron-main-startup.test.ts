@@ -1811,16 +1811,27 @@ describe('Electron main startup', () => {
     await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
   })
 
-  it('turns an unclean restart into a durable mission completeness blocker', async () => {
+  it.each([
+    ['blocks a mission whose renderer held evidence', true, true, { state: 'critical', reason: 'renderer_pending_evidence_lost' }],
+    ['leaves a mission healthy when nothing was held (Eamonn, 13.5)', false, true, { state: 'healthy', reason: null }],
+    ['stays conservative for a profile last run by 13.5 (no marker protocol)', false, false, { state: 'critical', reason: 'renderer_pending_evidence_lost' }],
+  ] as const)('after an unclean restart, %s [DON-318]', async (_name, held, protocol, expected) => {
     const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
       readonly createElectronMissionStore: (input: { readonly userDataPath: string }) => {
         readonly createMission: (input: { readonly name: string }) => Promise<{ readonly id: string }>
+        readonly setRendererEvidencePending: (input: {
+          readonly mission_id: string
+          readonly pending: boolean
+        }) => Promise<void>
+        readonly establishRendererEvidenceProtocol: () => Promise<void>
         readonly close: () => void
       }
     }
     mkdirSync(testUserDataPath, { recursive: true })
     const seedStore = createElectronMissionStore({ userDataPath: testUserDataPath })
     const mission = await seedStore.createMission({ name: 'Unclean restart evidence' })
+    if (protocol) await seedStore.establishRendererEvidenceProtocol()
+    if (held) await seedStore.setRendererEvidencePending({ mission_id: mission.id, pending: true })
     seedStore.close()
     const { createCrashLog } = require('../../electron/crash-log.cjs') as {
       readonly createCrashLog: (input: { readonly userDataPath: string }) => {
@@ -1840,10 +1851,7 @@ describe('Electron main startup', () => {
       ([channel]) => channel === 'sartracker:mission-store:get-ingest-evidence-health',
     )?.[1]
 
-    await expect(healthHandler(createPackagedSenderEvent(), mission.id)).resolves.toMatchObject({
-      state: 'critical',
-      reason: 'renderer_pending_evidence_lost',
-    })
+    await expect(healthHandler(createPackagedSenderEvent(), mission.id)).resolves.toMatchObject(expected)
   })
 
   it('reserves interrupted cleanup before review IPC without waiting for row batches', async () => {

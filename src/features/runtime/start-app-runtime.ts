@@ -170,6 +170,9 @@ export async function startAppRuntime(
           ...(missionStore.recordIngestEvidenceLoss === undefined
             ? {}
             : { recordIngestEvidenceLoss: missionStore.recordIngestEvidenceLoss }),
+          ...(missionStore.setRendererEvidencePending === undefined
+            ? {}
+            : { setRendererEvidencePending: missionStore.setRendererEvidencePending }),
         },
         applyRejections: applyCurrentPositionRejections,
         applyEvidenceHealth: applyIngestEvidenceHealth,

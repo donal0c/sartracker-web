@@ -207,6 +207,7 @@ const MAX_MUTABLE_EVIDENCE_COORDINATES = 50_000
 const MAX_MUTABLE_EVIDENCE_NESTING_DEPTH = 16
 const MAX_MUTABLE_EVIDENCE_PATH_LENGTH = 4_096
 const MAX_GPX_RENDERER_ID_LENGTH = 1_000
+const MAX_RENDERER_EVIDENCE_MISSION_ID_LENGTH = 1_000
 const MAX_GPX_RENDERER_OUTING_ID_LENGTH = 200
 const MAX_GPX_RENDERER_ACTOR_LENGTH = 120
 const MAX_GPX_ISSUE_FILE_NAME_LENGTH = 500
@@ -583,6 +584,8 @@ function createElectronMissionStore(options) {
   // Watched-folder scans run one at a time to completion, so a scan's
   // "already reported" check always sees the issues earlier scans recorded.
   let watchedGpxScanTail = Promise.resolve()
+  // Set when a renderer pending marker could not be written this session.
+  let rendererEvidenceMarkerWriteFailed = false
   let gpxImportWorkerActive = false
   const db = new Database(databasePath)
   db.pragma('journal_mode = WAL')
@@ -2966,15 +2969,68 @@ function createElectronMissionStore(options) {
         WHERE status IN ('active', 'paused', 'finished')
         ORDER BY start_time DESC, rowid DESC`,
     ).map((mission) => mission.id),
-    listRendererEvidenceScopesAwaitingClosure: async () => all(
-      db,
-      `SELECT id, status FROM missions
-        WHERE status IN ('active', 'paused', 'finished')
-        ORDER BY start_time DESC, rowid DESC`,
-    ).map((mission) => ({
-      mission_id: mission.id,
-      scope_reason: rendererEvidenceScopeReason(mission.status),
-    })),
+    // Only missions whose renderer held unsaved rejected-position evidence
+    // (a durable pending marker) can have lost it. When that cannot be known
+    // (damaged marker, protocol not yet running, a failed marker write) every
+    // open mission might have [DON-318].
+    listRendererEvidenceScopesAwaitingClosure: async () => {
+      const pending = await ingestAnomalyOutbox.readRendererEvidencePending()
+      const uncertain = pending.uncertain || rendererEvidenceMarkerWriteFailed
+      const markerKeys = new Map(pending.markers.map((marker) => [marker.missionId, marker.markerKey]))
+      return all(
+        db,
+        `SELECT id, status FROM missions
+          WHERE status IN ('active', 'paused', 'finished')
+          ORDER BY start_time DESC, rowid DESC`,
+      ).filter((mission) => uncertain || markerKeys.has(mission.id))
+        .map((mission) => ({
+          mission_id: mission.id,
+          scope_reason: rendererEvidenceScopeReason(mission.status),
+          ...(uncertain || !markerKeys.has(mission.id)
+            ? {}
+            : { pending_marker_key: markerKeys.get(mission.id) }),
+        }))
+    },
+    setRendererEvidencePending: async (input) => {
+      const missionId = normalizeBoundedRequiredText(
+        input?.mission_id,
+        'Renderer evidence mission',
+        MAX_RENDERER_EVIDENCE_MISSION_ID_LENGTH,
+      )
+      if (typeof input?.pending !== 'boolean') {
+        throw new Error('Renderer evidence pending state must be true or false.')
+      }
+      if (input.pending) getMission(db, missionId)
+      try {
+        await ingestAnomalyOutbox.setRendererEvidencePending(missionId, input.pending)
+      } catch (error) {
+        if (input.pending) {
+          // Absence of a marker no longer proves anything, now or after a restart.
+          rendererEvidenceMarkerWriteFailed = true
+          await ingestAnomalyOutbox.invalidateRendererEvidenceProtocol().catch(() => undefined)
+        }
+        throw error
+      }
+    },
+    clearRendererEvidencePending: async (input) => {
+      if (input === undefined) {
+        // Called only after a confirmed clean drain: the renderer held nothing,
+        // so an earlier failed marker write no longer leaves anything unknown.
+        await ingestAnomalyOutbox.clearRendererEvidencePending(null)
+        rendererEvidenceMarkerWriteFailed = false
+        return
+      }
+      const missionIds = input?.mission_ids
+      if (!Array.isArray(missionIds) || missionIds.length > 256
+        || missionIds.some((entry) => typeof entry !== 'string' || entry.trim() === '')) {
+        throw new Error('Renderer evidence pending clear request is invalid.')
+      }
+      await ingestAnomalyOutbox.clearRendererEvidencePending(missionIds)
+    },
+    establishRendererEvidenceProtocol: async () => {
+      if (rendererEvidenceMarkerWriteFailed) return
+      await ingestAnomalyOutbox.establishRendererEvidenceProtocol()
+    },
     getActiveMission: async () => getActiveMission(db),
     getRecoverableMission: async () => getActiveMission(db),
     runMarkerAttachmentIngest: async (missionId, writeAttachment, cleanupAttachment) =>
@@ -5217,7 +5273,7 @@ async function recordIngestEvidenceLoss(db, outbox, input) {
   ) {
     throw new Error('Renderer evidence-loss mission scope reason does not match mission state.')
   }
-  await outbox.markEvidenceLoss(missionId, input.reason)
+  await outbox.markEvidenceLoss(missionId, input.reason, input?.pending_marker_key)
   return getIngestEvidenceHealth(db, outbox, missionId)
 }
 

@@ -223,7 +223,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
-      'rejected-position evidence was lost during runtime shutdown',
+      'rejected-position evidence may have been lost when the app closed unexpectedly',
     )
 
     await page.getByTestId('mission-finalize-btn').click()

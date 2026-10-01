@@ -352,7 +352,7 @@ function formatEvidenceFailure(reason: string | null): string {
     case 'evidence_health_unavailable':
       return 'the evidence persistence service is unavailable'
     case 'renderer_pending_evidence_lost':
-      return 'rejected-position evidence was lost during runtime shutdown'
+      return 'rejected-position evidence may have been lost when the app closed unexpectedly'
     case 'renderer_evidence_pending':
       return 'rejected-position evidence is waiting to be saved'
     default:
