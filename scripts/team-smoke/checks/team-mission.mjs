@@ -23,7 +23,7 @@ import path from 'node:path'
 import { delay, launchApp } from '../lib/app.mjs'
 import {
   ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
-  missionPhase, placeMarker, resumeIfPrompted, startMission,
+  missionPhase, openMissionSection, placeMarker, resumeIfPrompted, startMission,
 } from '../lib/operator.mjs'
 import { expectProduct } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
@@ -104,6 +104,7 @@ export async function trackingStatus(page) {
 /** Adds a participant during the mission with an explicit history choice. */
 export async function addAfterStart(page, kind, label, historyFrom) {
   const t = (id) => page.getByTestId(id)
+  await openMissionSection(page, 'participants')
   await t('participant-add-kind').selectOption(kind)
   await delay(300)
   await t('participant-add-ref').selectOption({ label })
@@ -117,6 +118,7 @@ export async function waitForBackfill(page, budgetMs) {
   const started = Date.now()
   let statuses = []
   while (Date.now() - started < budgetMs) {
+    await openMissionSection(page, 'participants')
     statuses = await page.getByTestId('participant-backfill-status').allInnerTexts()
     if (statuses.length > 0 && statuses.every((status) => /complete|no earlier history requested/i.test(status))) {
       return { seconds: Math.round((Date.now() - started) / 1000), statuses }
@@ -176,6 +178,7 @@ async function deleteMarkerAt(page, { x, y }) {
 
 /** Starts, then ends, an outing with a label. */
 async function startOuting(page, label) {
+  await openMissionSection(page, 'outings')
   await page.getByTestId('outing-label-input').fill(label)
   await page.getByTestId('outing-start-btn').click()
   await delay(1500)
@@ -221,6 +224,7 @@ export default [
       await t('participant-group-picker').getByText('KMRT Hasty', { exact: true }).click()
       await t('participant-device-picker').getByText('Dog Handler', { exact: true }).click()
       await t('mission-start-btn').click()
+      await openMissionSection(app.page, 'participants')
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
       const missionStart = Date.parse(await app.page.evaluate(async () =>
@@ -447,6 +451,7 @@ export default [
       mock.setOffline(false)
       if (outageShown === '') findings.push('no visible warning during a 60 s provider outage')
       await delay(40_000)
+      await openMissionSection(app.page, 'outings')
       await t('outing-end-btn').click()
       await delay(1500)
 
@@ -509,6 +514,7 @@ export default [
       // team expects tracks there is an open question (DON-293); report the count.
       notes.push(`replay at start+24 h read ${replayRecords === null ? 'an unknown number of' : replayRecords[2]} records (open question DON-293)`)
 
+      await openMissionSection(app.page, 'outings')
       await t('outing-end-btn').click()
       await delay(1500)
       const until = Date.now()

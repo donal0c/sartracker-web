@@ -16,7 +16,7 @@ import { LOOKBACK_HOURS, startHistoryTraccar } from '../lib/history-traccar.mjs'
 import { LIVE_LAG_LIMIT_STEPS, waitForStoredIds, watchLiveRecording } from '../lib/live-recording.mjs'
 import { startMockTraccar } from '../lib/mock-traccar.mjs'
 import {
-  addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, resumeIfPrompted,
+  addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, resumeIfPrompted,
   startMission, startMissionWithLookback, togglePause,
 } from '../lib/operator.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
@@ -126,6 +126,7 @@ export function verifyLookbackFixes(mock, fixes, { missionStart, until, expected
 
 /** Reads each participant row's history status text. */
 async function participantHistoryStatuses(page) {
+  await openMissionSection(page, 'participants')
   return page.getByTestId('participant-backfill-status').allInnerTexts()
 }
 

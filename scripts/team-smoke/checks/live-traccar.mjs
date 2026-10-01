@@ -19,6 +19,7 @@ import path from 'node:path'
 
 import { parsePrivateTargetSelector } from '../../../build/breadcrumb-live-exact-proof-lib.js'
 import { delay, launchApp } from '../lib/app.mjs'
+import { openMissionSection } from '../lib/operator.mjs'
 import { NotTested, expectProduct } from '../lib/results.mjs'
 import { withStore } from '../lib/store.mjs'
 import { waitForBackfill } from './team-mission.mjs'
@@ -90,6 +91,7 @@ export default [
       await t('mission-name-input').fill(MISSION)
       await t('mission-offset-input').fill(String(ROLL_BACK_HOURS))
       await t('mission-start-btn').click()
+      await openMissionSection(app.page, 'participants')
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
       await t('participant-add-kind').selectOption('device')

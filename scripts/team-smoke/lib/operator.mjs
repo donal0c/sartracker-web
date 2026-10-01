@@ -90,8 +90,27 @@ export async function startMissionWithLookback(page, { name, offsetHours, device
     await picker.getByText(device, { exact: true }).click()
   }
   await t('mission-start-btn').click()
+  await openMissionSection(page, 'participants')
   await t('participant-management').waitFor({ timeout: 20_000 })
   await delay(1500)
+}
+
+/**
+ * Opens a Mission Control section (participants or outings) if it is
+ * collapsed. During a mission they collapse to a summary until Show is
+ * pressed; a section forced open by a warning is already open [DON-300].
+ *
+ * @param {import('playwright').Page} page
+ * @param {'participants' | 'outings'} name
+ */
+export async function openMissionSection(page, name) {
+  const section = page.getByTestId(`mission-${name}-section`)
+  await section.waitFor({ state: 'attached', timeout: 20_000 })
+  if (await section.getAttribute('data-open') !== 'false') return
+  await page.getByTestId(`mission-${name}-section-toggle`).click()
+  await page.waitForFunction((testId) =>
+    document.querySelector(`[data-testid="${testId}"]`)?.getAttribute('data-open') !== 'false',
+  `mission-${name}-section`, { timeout: 10_000 })
 }
 
 /**
@@ -103,6 +122,7 @@ export async function startMissionWithLookback(page, { name, offsetHours, device
  */
 export async function addParticipantAfterStart(page, device, historyFrom) {
   const t = byId(page)
+  await openMissionSection(page, 'participants')
   await t('participant-add-ref').selectOption({ label: device })
   await t(`participant-history-start-${historyFrom}`).check()
   await t('participant-add-btn').click()

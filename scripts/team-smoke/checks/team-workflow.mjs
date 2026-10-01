@@ -13,7 +13,7 @@
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
-import { closeWorkspace, connectProvider, waitForBasemapLabel } from '../lib/operator.mjs'
+import { closeWorkspace, connectProvider, openMissionSection, waitForBasemapLabel } from '../lib/operator.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { missionFixes } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
@@ -80,6 +80,7 @@ export default [
       await app.shot('start-default-group-ticked')
       if (!kmrtTicked) findings.push(`${TEAM_GROUP} was not pre-ticked at Start although it is the team default group`)
       await t('mission-start-btn').click()
+      await openMissionSection(app.page, 'participants')
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
       const missionStart = Date.parse(await app.page.evaluate(async () =>
