@@ -131,7 +131,8 @@ try {
   await page.getByTestId('gpx-import-issues').filter({ hasText: 'malformed-geometry.gpx' }).waitFor()
   await importSelected(undatedPath)
   await page.getByTestId('gpx-import-list').filter({ hasText: 'undated-late-name' }).waitFor()
-  assert.match(await page.getByTestId('gpx-import-panel').innerText(), /3 shown/i)
+  // DON-319: the summary counts listed and drawn tracks separately.
+  assert.match(await page.getByTestId('gpx-import-summary').innerText(), /3 listed · 3 on map/i)
   assert.equal(await page.getByTestId('gpx-import-status').innerText(), 'Imported 1 GPX file.')
 
   const duplicateBefore = await inspect({ strict: false })
