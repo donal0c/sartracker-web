@@ -21,11 +21,11 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 4a | GPX imports listed but not on the map (watched folder; team report) | DON-319 | Needs Eamonn's files; hypotheses on the ticket |
 | 5 | Unwritable profile exits silently | DON-285 | **Fixed 6dbe43d3 + ee32ac32** (pushed). Owed: box `unwritable-profile` + `duplicate-launch` on the AppImage |
 | 6 | Clean exit recorded as a crash; wording | DON-284 | **Fixed ee32ac32** (pushed; IPC re-read the running session's marker). Owed: box `tracking` SIGTERM row + window-X by hand |
-| 7 — **WAITING ON DONAL** | Restore a retired GPX track with truthful replay | DON-309 | Plan on the ticket. **Decision: schema 13 → 14 (no going back to 13.5 with the same profile)**; recommendation accept |
+| 7 | Restore a retired GPX track with truthful replay | DON-309 | 9f. Option A (event-derived intervals, no new table; archive readers accept 13+14). Decided 2026-10-01: only a deliberate import restores (watched scans don't); changed bytes = restore + revision; same path/alias only. Restore list → DON-323 (backlog) |
 | 8 | Default team group pre-ticked at Start | DON-296 | **Built 78b00506.** Mac packaged `team-workflow` passed (4,174 fixes exact). Owed: box run with `--map-package` |
 | 9 | Simplify the right-hand panel; Eamonn's doc | DON-297 | Eamonn's doc and call |
 | 10 | PCLinuxOS VM on the test box | DON-298 | Setup (box) |
-| 11 | Hidden-gap sweep | DON-299 | **Class 1 done a0b8643a** (recording cannot read stored view state). Classes 2–5: DON-315/316/317 (smoke additions, box) |
+| 11 | Hidden-gap sweep | DON-299 | Class 1 done a0b8643a. DON-315/316 smoke done 8ab542cf (packaged run owed); DON-317 item 5 done, **item 4 (lived-in profiles) open** |
 | 11a | Watched folder re-tries a retired GPX every rescan (unbounded identical issues; team report) | DON-320 | Implementation; relates to DON-309/306 |
 | 12 | Cosmetic items; merge the manual rewrite | DON-300, DON-301 | Items 1/2/7 done aa1ec7dc; 3-6, item 8 (decision) and DON-301 open |
 | 12a | Diagnostics breadcrumbs flooded by unchanged tracking_status_changed (team report) | DON-321 | Implementation |
