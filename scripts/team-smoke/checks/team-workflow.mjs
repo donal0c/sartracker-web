@@ -122,6 +122,13 @@ export default [
       if (missing.length > 0) findings.push(`KMRT members missing from Devices: ${missing.join(', ')}`)
       await app.shot('where-people-are')
 
+      // Replay must use the same offline Discovery map, not the online default [DON-314].
+      if (mapPackage !== undefined) {
+        const replay = await replayBasemap(app)
+        if (replay.mapId !== 'official_discovery_topo') findings.push(`Replay map is "${replay.mapId}", not Discovery Topo`)
+        if (replay.tileFailure !== null) findings.push(`Replay Discovery tiles did not load: "${replay.tileFailure}"`)
+      }
+
       // "F11 with Focus mode": Focus Mode here; F11 is a manual step.
       await t('focus-mode-toggle').click()
       await delay(1500)
@@ -150,6 +157,33 @@ export default [
     },
   },
 ]
+
+/**
+ * Opens Review and replays the current time. Returns the Replay map's basemap
+ * id and any basemap tile failure, with a screenshot taken before Review closes.
+ */
+async function replayBasemap(app) {
+  const page = app.page
+  await page.getByTestId('open-mission-review-workspace').click()
+  await page.getByRole('button', { name: 'Replay', exact: true }).click()
+  await page.getByTestId('mission-replay-seek').click()
+  const canvas = page.getByTestId('mission-replay-map-canvas')
+  await canvas.waitFor({ timeout: 60_000 })
+  await page.waitForFunction(() =>
+    document.querySelector('[data-testid="mission-replay-map-canvas"]')?.getAttribute('data-basemap-id'),
+  null, { timeout: 15_000 }).catch(() => {})
+  await canvas.locator('canvas').first().waitFor({ timeout: 15_000 }).catch(() => {})
+  // Tiles come from the local package; give them time to draw or to fail visibly.
+  await delay(8000)
+  const mapId = await canvas.getAttribute('data-basemap-id')
+  const failure = page.getByTestId('mission-replay-map').getByText('Basemap tiles could not be loaded', { exact: false })
+  const tileFailure = await failure.first().isVisible().catch(() => false)
+    ? await failure.first().innerText()
+    : null
+  await app.shot('replay-basemap')
+  await closeWorkspace(page)
+  return { mapId, tileFailure }
+}
 
 /** Imports the Discovery package through Settings (picker answered by the test hook). */
 async function importDiscovery(app) {

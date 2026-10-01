@@ -1,14 +1,25 @@
 import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ReplayMapView } from '../../src/features/mission-review/replay-map-view'
+import { BASEMAP_STORAGE_KEY } from '../../src/lib/map-preferences'
+import {
+  DEFAULT_APP_SETTINGS,
+  type AppSettings,
+  type OfficialMapPackageSettings,
+} from '../../src/features/settings/settings-types'
 
 const fake = vi.hoisted(() => ({
   handlers: new Map<string, (event: Record<string, unknown>) => void>(),
   setFilter: vi.fn(), queryRenderedFeatures: vi.fn(() => []),
+  createRasterStyle: vi.fn<(id: string) => { sources: Record<string, object> }>(() => ({ sources: { basemap: {} } })),
+  loadAppSettings: vi.fn<() => Promise<AppSettings>>(),
+  registerOfficialMapProtocol: vi.fn(() => () => undefined),
 }))
+vi.mock('../../src/infrastructure/settings-store/tauri-settings-store', () => ({ loadAppSettings: fake.loadAppSettings }))
+vi.mock('../../src/features/map/official-map-protocol', () => ({ registerOfficialMapProtocol: fake.registerOfficialMapProtocol }))
 vi.mock('../../src/features/markers/sync-marker-overlay', () => ({ ensureMarkerImages: async () => undefined }))
-vi.mock('../../src/features/map/map-style', () => ({ createRasterStyle: () => ({ sources: { basemap: {} } }) }))
+vi.mock('../../src/features/map/map-style', () => ({ createRasterStyle: fake.createRasterStyle }))
 vi.mock('maplibre-gl', () => ({ default: {
   Map: class {
     on(name: string, handler: (event: Record<string, unknown>) => void) { fake.handlers.set(name, handler) }
@@ -20,7 +31,26 @@ vi.mock('maplibre-gl', () => ({ default: {
   }, NavigationControl: class {},
 } }))
 let cleanup: (() => void) | undefined
+beforeEach(() => {
+  window.localStorage.clear()
+  fake.loadAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+})
 afterEach(() => { cleanup?.(); fake.handlers.clear(); vi.clearAllMocks() })
+
+/** Settings holding one Discovery package in the given verified state. */
+function settingsWithDiscovery(status: OfficialMapPackageSettings['status']): AppSettings {
+  return {
+    ...DEFAULT_APP_SETTINGS,
+    officialMaps: {
+      ...DEFAULT_APP_SETTINGS.officialMaps,
+      packages: [{
+        id: 'package-1', sourceType: 'mbtiles', mapId: 'official_discovery_topo',
+        packagePath: '/maps/discovery.mbtiles', status, bounds: null, minZoom: 6, maxZoom: 16,
+        tileCount: 100, tileFormat: 'png', createdAt: '', verifiedAt: '', message: '',
+      }],
+    },
+  }
+}
 
 /** Mounts the rendered view and completes its real style-ready state transition. */
 async function mount() {
@@ -73,4 +103,39 @@ it('uses one point filter and includes rendered symbols and labels in click insp
   expect(fake.queryRenderedFeatures).toHaveBeenCalledWith({ x: 10, y: 10 }, {
     layers: expect.arrayContaining(['review-marker-icons', 'review-labels']),
   })
+})
+
+it('replays over Discovery when the operator chose it and its offline package is ready [DON-314]', async () => {
+  window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'official_discovery_topo')
+  fake.loadAppSettings.mockResolvedValue(settingsWithDiscovery('ready'))
+
+  const host = await mount()
+
+  expect(fake.createRasterStyle).toHaveBeenCalledWith('official_discovery_topo')
+  expect(fake.createRasterStyle).not.toHaveBeenCalledWith('opentopomap')
+  expect(fake.registerOfficialMapProtocol).toHaveBeenCalled()
+  expect(host.querySelector('[data-testid="mission-replay-map-canvas"]')?.getAttribute('data-basemap-id'))
+    .toBe('official_discovery_topo')
+  expect(host.textContent).not.toContain('unavailable')
+})
+
+it('replays over the online default with the visible reason when the Discovery package is missing [DON-314]', async () => {
+  window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'official_discovery_topo')
+  fake.loadAppSettings.mockResolvedValue(settingsWithDiscovery('missing'))
+
+  const host = await mount()
+
+  expect(fake.createRasterStyle).toHaveBeenCalledWith('opentopomap')
+  expect(host.textContent).toContain('Discovery')
+  expect(host.textContent).toContain('its offline package cannot be found')
+  expect(window.localStorage.getItem(BASEMAP_STORAGE_KEY)).toBe('official_discovery_topo')
+})
+
+it('keeps an online basemap choice without waiting on map settings [DON-314]', async () => {
+  window.localStorage.setItem(BASEMAP_STORAGE_KEY, 'esri_topo')
+
+  await mount()
+
+  expect(fake.createRasterStyle).toHaveBeenCalledWith('esri_topo')
+  expect(fake.loadAppSettings).not.toHaveBeenCalled()
 })

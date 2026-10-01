@@ -46,4 +46,20 @@ describe('official map MapLibre protocol', () => {
       loadTile({ url: 'sartracker-official-map://tile/official_discovery_topo/12/1935/1344.png' }),
     ).rejects.toThrow('Electron official map bridge is not available.')
   })
+
+  it('keeps the protocol registered until the last map using it is removed [DON-314]', () => {
+    const addProtocol = vi.fn()
+    const removeProtocol = vi.fn()
+    const registry = { addProtocol, removeProtocol }
+
+    const unregisterLiveMap = registerOfficialMapProtocol(registry)
+    const unregisterReplayMap = registerOfficialMapProtocol(registry)
+    unregisterReplayMap()
+    unregisterReplayMap()
+
+    expect(removeProtocol).not.toHaveBeenCalled()
+    unregisterLiveMap()
+    expect(removeProtocol).toHaveBeenCalledOnce()
+    expect(addProtocol).toHaveBeenCalledOnce()
+  })
 })

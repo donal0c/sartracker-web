@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import maplibregl, { type GeoJSONSource } from 'maplibre-gl'
 import type { ReplayMapState } from './load-replay-map'
 import { createRasterStyle } from '../map/map-style'
-import { readStoredBasemap } from '../../lib/map-preferences'
 import { ensureMarkerImages } from '../markers/sync-marker-overlay'
+import { registerOfficialMapProtocol } from '../map/official-map-protocol'
+import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
+import { resolveReplayBasemap, type ReplayBasemap } from './resolve-replay-basemap'
 
 /** Associates recovery with the exact failed tile, never a neighbouring successful tile. */
 function sourceFailureKey(sourceId: string, event: unknown): string {
@@ -22,9 +24,17 @@ export function ReplayMapView({ evidence }: { readonly evidence: ReplayMapState 
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({})
   const [ready, setReady] = useState(false)
   const [hidden, setHidden] = useState<readonly string[]>([])
+  const [basemap, setBasemap] = useState<ReplayBasemap | null>(null)
+  useEffect(() => registerOfficialMapProtocol(maplibregl), [])
   useEffect(() => {
-    if (container.current === null) return
-    const style = createRasterStyle(readStoredBasemap())
+    let cancelled = false
+    void resolveReplayBasemap(async () => (await loadAppSettings()).officialMaps)
+      .then((resolved) => { if (!cancelled) setBasemap(resolved) })
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    if (container.current === null || basemap === null) return
+    const style = createRasterStyle(basemap.mapId)
     const basemapSources = new Set(Object.keys(style.sources))
     const map = new maplibregl.Map({ container: container.current, style, center: [-9.7, 52], zoom: 10, attributionControl: {} })
     const abort = new AbortController()
@@ -79,7 +89,7 @@ export function ReplayMapView({ evidence }: { readonly evidence: ReplayMapState 
       })
     })
     return () => { abort.abort(); mapRef.current = null; map.remove() }
-  }, [])
+  }, [basemap])
   useEffect(() => {
     const map = mapRef.current
     if (!ready || !map) return
@@ -113,8 +123,9 @@ export function ReplayMapView({ evidence }: { readonly evidence: ReplayMapState 
         {category === 'current' ? 'Current at selected time' : category === 'gpx' ? 'Dated GPX' : category === 'objects' ? 'Markers and drawings' : 'Breadcrumbs'}
       </label>)}
     </div>
+    {basemap?.notice ? <p role="status" className="text-amber-200" data-testid="replay-basemap-notice">{basemap.notice}</p> : null}
     {[...new Set(Object.values(errors))].map((message) => <p key={message} role="alert" className="text-amber-200">{message}</p>)}
-    <div ref={container} className="h-[28rem] w-full rounded-xl border border-stone-600" aria-label="Read-only selected mission evidence map" />
+    <div ref={container} className="h-[28rem] w-full rounded-xl border border-stone-600" aria-label="Read-only selected mission evidence map" data-basemap-id={basemap?.mapId} data-testid="mission-replay-map-canvas" />
     <p className="text-xs text-stone-300">Historical evidence only. Blue positions are last known at the selected time, not live locations. Purple dots have source GPX timestamps; undated GPX is static outing evidence outside precise replay. Click a point to inspect its identity and time.</p>
   </section>
 }
