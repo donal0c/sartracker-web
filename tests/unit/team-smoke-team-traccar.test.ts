@@ -143,3 +143,26 @@ describe('team-mission fix verification (1.2a)', () => {
     for (const fix of after) expect(mock.fixFor(fix.id)).toEqual(fix)
   })
 })
+
+describe('one blank roster for a group (DON-300 item 8)', () => {
+  type Device = { id: number, groupId: number }
+  type Position = { deviceId: number }
+
+  it('omits the group from exactly one device listing and its latest positions until the next listing', async () => {
+    const { mock, get } = await start()
+    const hasty = TEAM_DEVICES.filter((device) => device.groupId === 301).map((device) => device.id)
+    const listed = async () => ((await get('/api/devices')).body as Device[]).map((device) => device.id)
+    const latest = async () => ((await get('/api/positions')).body as Position[]).map((fix) => fix.deviceId)
+
+    mock.blankGroupForOneRoster(301)
+    expect(mock.rosterBlip()).toEqual({ blankListings: 0, fullListingsAfter: 0 })
+    expect(await listed()).not.toEqual(expect.arrayContaining([hasty[0]]))
+    expect(await latest()).not.toEqual(expect.arrayContaining([hasty[0]]))
+    expect(mock.rosterBlip()).toEqual({ blankListings: 1, fullListingsAfter: 0 })
+
+    expect(await listed()).toEqual(expect.arrayContaining(hasty))
+    expect(await latest()).toEqual(expect.arrayContaining(hasty))
+    await listed()
+    expect(mock.rosterBlip()).toEqual({ blankListings: 1, fullListingsAfter: 2 })
+  })
+})

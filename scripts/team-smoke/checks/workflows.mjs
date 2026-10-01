@@ -19,6 +19,7 @@ import {
   connectProvider,
   finishMission,
   placeMarker,
+  resumeIfPrompted,
   startMission,
 } from '../lib/operator.mjs'
 import { expectProduct } from '../lib/results.mjs'
@@ -37,6 +38,45 @@ async function writeGpx(file) {
     `<trkpt lat="${(51.97 + index * 0.0002).toFixed(6)}" lon="${(-9.7 + index * 0.0002).toFixed(6)}">`
       + `<time>${new Date(start + index * 60_000).toISOString()}</time></trkpt>`)
   await writeFile(file, `<?xml version="1.0"?><gpx version="1.1" creator="team-smoke"><trk><name>Smoke walk</name><trkseg>${points.join('')}</trkseg></trk></gpx>`)
+}
+
+/**
+ * Counts drawn segments of imported GPX tracks after centring on the smoke
+ * walk, so "on the map" means rendered, not only stored [DON-319]. A missing
+ * map handle is a tool error, not a product result.
+ */
+async function drawnGpxSegments(page) {
+  const count = () => page.evaluate(() => {
+    const map = window.__SARTRACKER_MAP__
+    if (map === undefined) throw new Error('The map handle is not available; GPX drawing cannot be checked.')
+    if (map.getLayer('mission-gpx-imports-line') === undefined) return 0
+    return map.queryRenderedFeatures({ layers: ['mission-gpx-imports-line'] }).length
+  })
+  await page.evaluate(() => window.__SARTRACKER_MAP__?.jumpTo({ center: [-9.6971, 51.9729], zoom: 14 }))
+  let drawn = 0
+  for (let attempt = 0; attempt < 10 && drawn === 0; attempt += 1) {
+    await delay(1000)
+    drawn = await count()
+  }
+  return drawn
+}
+
+/** Switches to any other available basemap; returns the new menu label. */
+async function switchBasemap(page) {
+  const toggle = page.getByTestId('basemap-menu-toggle')
+  const before = (await toggle.innerText()).replace(/\s+/gu, ' ')
+  await toggle.click()
+  await delay(400)
+  const ids = await page.locator('[data-testid^="basemap-btn-"]').evaluateAll((nodes) => nodes.map((node) => ({
+    id: node.getAttribute('data-testid'), active: node.className.includes('bg-amber-300'), enabled: !node.disabled,
+  })))
+  const other = ids.find((entry) => !entry.active && entry.enabled)
+  if (other === undefined) throw new Error(`No second basemap to switch to: ${JSON.stringify(ids)}.`)
+  await page.getByTestId(other.id).click()
+  await delay(3000)
+  const after = (await toggle.innerText()).replace(/\s+/gu, ' ')
+  if (after === before) throw new Error(`The basemap stayed "${before}" after choosing ${other.id}.`)
+  return after
 }
 
 /** Lists files under a directory with their size, newest first. */
@@ -121,7 +161,7 @@ export default [
       await writeFile(photo, PHOTO)
       await mkdir(path.dirname(gpx), { recursive: true })
       await writeGpx(gpx)
-      const app = await launchApp(ctx, { profile, label: 'markers-gpx' })
+      let app = await launchApp(ctx, { profile, label: 'markers-gpx' })
       await startMission(app.page, 'Markers Smoke', [])
       await placeMarker(app.page, { name: 'Smoke IPP', x: 600, y: 400 })
       await placeMarker(app.page, { name: 'Rucksack with photo', x: 380, y: 300, type: 'clue', attachment: photo })
@@ -134,7 +174,35 @@ export default [
       await app.page.getByTestId('sidebar-tab-tools').click().catch(() => {})
       await delay(1500)
       await app.shot('markers-gpx')
+
+      // DON-319: the imported line is drawn after import, after a basemap
+      // switch and after a relaunch; hidden in Layers, the panel says so and
+      // "Show on map" draws it again.
+      const findings = []
+      const importId = imported?.imports?.[0]?.id
+      if (await drawnGpxSegments(app.page) === 0) findings.push('the imported GPX track was not drawn on the map (DON-319)')
+      const basemap = await switchBasemap(app.page)
+      if (await drawnGpxSegments(app.page) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
       await app.stop()
+      app = await launchApp(ctx, { profile, label: 'markers-gpx-relaunch' })
+      await resumeIfPrompted(app.page, 15_000)
+      if (await drawnGpxSegments(app.page) === 0) findings.push('the GPX track was not drawn after a relaunch (DON-319)')
+      await app.page.getByTestId('sidebar-tab-layers').click()
+      await app.page.getByTestId('layer-visibility-group-gpx-tracks').uncheck()
+      const hiddenDrawn = await drawnGpxSegments(app.page)
+      await app.page.getByTestId('sidebar-tab-tools').click()
+      await delay(1500)
+      const summary = await app.page.getByTestId('gpx-import-summary').innerText().catch(() => '')
+      const trackState = await app.page.getByTestId(`gpx-map-visibility-${importId}`).innerText().catch(() => '')
+      await app.shot('gpx-hidden-hint')
+      if (hiddenDrawn !== 0) findings.push('hiding GPX Tracks in Layers left the track drawn')
+      if (!/hidden in Layers/iu.test(summary) || !/hidden on map/iu.test(trackState)) {
+        findings.push(`a GPX track hidden in Layers was not described as hidden: summary "${summary}", track "${trackState}" (DON-319)`)
+      }
+      await app.page.getByTestId(`gpx-show-on-map-${importId}`).click()
+      if (await drawnGpxSegments(app.page) === 0) findings.push('"Show on map" did not draw the hidden GPX track again (DON-319)')
+      await app.stop()
+      expectProduct(findings.length === 0, `${findings.join('; ')}.`)
       const markers = withStore(profile, (db) => db.prepare('SELECT name FROM markers').all().map((row) => row.name))
       expectProduct(markers.includes('Smoke IPP') && markers.includes('Rucksack with photo'), `Stored markers: ${markers.join(', ')}.`)
       const photoHash = createHash('sha256').update(PHOTO).digest('hex')
@@ -150,7 +218,8 @@ export default [
       expectProduct(attachmentMatch, 'No byte-identical copy of the attached photo was stored in the profile.')
       expectProduct(imported?.imports?.length === 1 && imported.failures?.length === 0,
         `GPX import returned ${JSON.stringify(imported).slice(0, 200)}.`)
-      return `2 markers stored; photo attachment stored byte-identical; GPX (30 timed points) imported via the app's import bridge. Native file picker: check by hand.`
+      return `2 markers stored; photo attachment stored byte-identical; GPX (30 timed points) imported via the app's import bridge, `
+        + 'drawn after import, a basemap switch and a relaunch; hidden in Layers it was described as hidden and "Show on map" drew it again. Native file picker: check by hand.'
     },
   },
   {

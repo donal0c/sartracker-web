@@ -75,6 +75,12 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
   let offline = false
   /** Held-back fixes by id; the value is the upload (server) time, or null while held. */
   const heldFixes = new Map()
+  /**
+   * One blank roster (DON-300 item 8): `armed` blanks the next device listing;
+   * `blanking` hides the group from latest positions until the next listing.
+   */
+  const blip = { groupId: null, armed: false, blanking: false, blankListings: 0, fullListingsAfter: 0 }
+  const blipHides = (device) => blip.blanking && device.groupId === blip.groupId
 
   /** Fix times up to and including T0, per device kind. */
   const historyTimes = (device) => {
@@ -157,7 +163,15 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
       return json(200, TEAM_GROUPS.map((group) => ({ id: group.id, name: group.name, groupId: 0 })))
     }
     if (url.pathname === '/api/devices') {
-      return json(200, TEAM_DEVICES.map((device) => {
+      if (blip.armed) {
+        blip.armed = false
+        blip.blanking = true
+        blip.blankListings += 1
+      } else if (blip.groupId !== null) {
+        blip.blanking = false
+        if (blip.blankListings > 0) blip.fullListingsAfter += 1
+      }
+      return json(200, TEAM_DEVICES.filter((device) => !blipHides(device)).map((device) => {
         const fix = latest(device)
         return {
           id: device.id, name: device.name, uniqueId: `team-${device.id}`,
@@ -169,7 +183,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     }
     if (url.pathname === '/api/positions') {
       const deviceId = url.searchParams.get('deviceId')
-      if (deviceId === null) return json(200, TEAM_DEVICES.map(latest))
+      if (deviceId === null) return json(200, TEAM_DEVICES.filter((device) => !blipHides(device)).map(latest))
       const from = Date.parse(url.searchParams.get('from') ?? '1970-01-01T00:00:00Z')
       const to = Date.parse(url.searchParams.get('to') ?? new Date(now()).toISOString())
       return json(200, fixesBetween(Number(deviceId), from, Math.min(to, now())))
@@ -207,6 +221,18 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
       const held = fixesBetween(deviceId, from, to).map((fix) => fix.id)
       for (const id of held) heldFixes.set(id, null)
       return held
+    },
+    /**
+     * The next device listing omits the group, as can happen when Traccar
+     * briefly reports no devices for it; latest positions omit it too until
+     * the following listing. The group's history stays served.
+     */
+    blankGroupForOneRoster(groupId) {
+      Object.assign(blip, { groupId, armed: true, blanking: false, blankListings: 0, fullListingsAfter: 0 })
+    },
+    /** How many listings were blanked, and how many full listings followed. */
+    rosterBlip() {
+      return { blankListings: blip.blankListings, fullListingsAfter: blip.fullListingsAfter }
     },
     /** Uploads every held fix now: it becomes visible with serverTime = now. */
     releaseHeld() {

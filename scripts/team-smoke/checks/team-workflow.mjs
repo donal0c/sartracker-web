@@ -14,7 +14,7 @@ import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
 import { closeWorkspace, connectProvider, waitForBasemapLabel } from '../lib/operator.mjs'
-import { expectProduct } from '../lib/results.mjs'
+import { expectProduct, NotTested } from '../lib/results.mjs'
 import { missionFixes } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
 import { placeCasualty, trackingStatus, verifyTeamFixes, waitForBackfill } from './team-mission.mjs'
@@ -41,6 +41,8 @@ export default [
     async run(ctx) {
       const findings = []
       const notes = []
+      /** Steps whose evidence is missing: NOT TESTED unless a product finding wins. */
+      const notTested = []
       const mock = await startTeamTraccar()
       ctx.cleanups.push(() => mock.close())
       const profile = path.join(ctx.runDir, 'profile')
@@ -125,6 +127,29 @@ export default [
       if (missing.length > 0) findings.push(`KMRT members missing from Devices: ${missing.join(', ')}`)
       await app.shot('where-people-are')
 
+      // DON-300 item 8: Traccar briefly lists no KMRT devices for one roster.
+      // That must not record anyone as "left" or post notices to acknowledge;
+      // the exact per-device comparison at the end proves no gap either.
+      const leftEvents = () => app.page.evaluate(async () => {
+        const store = window.sartrackerElectron.missionStore
+        const mission = await store.getActiveMission()
+        return (await store.listGroupMembershipEvents(mission.id)).filter((event) => event.change === 'left').length
+      })
+      const leftBefore = await leftEvents()
+      mock.blankGroupForOneRoster(groupId)
+      const blipStarted = Date.now()
+      while (mock.rosterBlip().fullListingsAfter < 2 && Date.now() - blipStarted < 180_000) await delay(5000)
+      const blip = mock.rosterBlip()
+      if (blip.blankListings !== 1 || blip.fullListingsAfter < 2) {
+        notTested.push(`the app did not fetch a blank roster and two full ones within 180 s (${JSON.stringify(blip)}), so the one-blank-roster step proves nothing`)
+      }
+      await delay(2000)
+      const leftAfter = await leftEvents()
+      const notices = await t('participant-membership-notice').allInnerTexts().catch(() => [])
+      await app.shot('after-blank-roster')
+      if (leftAfter !== leftBefore) findings.push(`one blank KMRT roster recorded ${leftAfter - leftBefore} "left" events (DON-300 item 8)`)
+      if (notices.some((notice) => /\bleft\b/iu.test(notice))) findings.push(`one blank KMRT roster posted a membership notice: "${notices.join(' / ').slice(0, 160)}" (DON-300 item 8)`)
+
       // Replay must use the same offline Discovery map, not the online default [DON-314].
       if (mapPackage !== undefined) {
         const replay = await replayBasemap(app)
@@ -155,7 +180,8 @@ export default [
       await app.stop()
       const total = Object.values(perDevice).reduce((sum, entry) => sum + entry.stored, 0)
       expectProduct(findings.length === 0, findings.join('; '))
-      return `SAR-QA-025 replay: ${total} KMRT fixes equal the provider from the ${ROLL_BACK_HOURS} h mission start; ${notes.join('; ')}; `
+      if (notTested.length > 0) throw new NotTested(`${notTested.join('; ')}. Other steps passed: ${total} KMRT fixes exact.`)
+      return `SAR-QA-025 replay: one blank KMRT roster recorded no "left" and no notice; ${total} KMRT fixes equal the provider from the ${ROLL_BACK_HOURS} h mission start; ${notes.join('; ')}; `
         + `coordinates converted; casualty stored; Focus Mode; OpenTopoMap and satellite selected; tracking "${status.slice(0, 80)}".`
     },
   },
