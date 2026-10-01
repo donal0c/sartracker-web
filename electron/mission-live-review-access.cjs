@@ -1,5 +1,6 @@
 'use strict'
 
+const { prepareCached } = require('./sqlite-statement-cache.cjs')
 const {
   readArchiveCleanupGuard,
   readCompletedArchiveCleanupJournalProof,
@@ -522,24 +523,24 @@ function readMissionLiveReviewStorageState(database, missionId) {
       'Mission live-store Review identity is invalid.',
     )
   }
-  if (database.prepare('SELECT 1 FROM missions WHERE id = ?').get(missionId) === undefined) {
+  if (prepareCached(database, 'SELECT 1 FROM missions WHERE id = ?').get(missionId) === undefined) {
     throw createAccessError(
       'MISSION_REVIEW_MISSION_NOT_FOUND',
       `Mission not found: ${missionId}`,
     )
   }
-  const journal = database.prepare(`SELECT * FROM mission_cleanup_journal
+  const journal = prepareCached(database, `SELECT * FROM mission_cleanup_journal
     WHERE mission_id = ?`).get(missionId)
   // Older or corrupt snapshots without the complete v2 custody boundary fail
   // closed as cleanup-in-progress; only a known correction restore is live.
-  const hasMissionStatus = database.prepare('PRAGMA table_info(missions)').all()
+  const hasMissionStatus = prepareCached(database, 'PRAGMA table_info(missions)').all()
     .some((column) => column?.name === 'status')
   const mission = hasMissionStatus
-    ? database.prepare('SELECT status FROM missions WHERE id = ?').get(missionId)
+    ? prepareCached(database, 'SELECT status FROM missions WHERE id = ?').get(missionId)
     : null
   let correctionRecovery
   try {
-    correctionRecovery = database.prepare(`SELECT value FROM metadata
+    correctionRecovery = prepareCached(database, `SELECT value FROM metadata
       WHERE key = 'archive_correction_attachment_recovery_failure'`).get()
   } catch {
     correctionRecovery = undefined

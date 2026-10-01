@@ -109,3 +109,64 @@ describe('mission live Review access gate [DON-253]', () => {
     }
   })
 })
+
+describe('mission write fence statement reuse [DON-310]', () => {
+  it('prepares each live-state statement once per database across repeated writes', () => {
+    const database = createDatabase()
+    try {
+      const prepare = database.prepare.bind(database)
+      const prepared: string[] = []
+      database.prepare = (sql: string) => {
+        prepared.push(sql)
+        return prepare(sql)
+      }
+
+      for (let write = 0; write < 50; write += 1) {
+        expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('live')
+      }
+
+      expect(prepared.length).toBeGreaterThan(0)
+      expect(new Set(prepared).size).toBe(prepared.length)
+    } finally {
+      database.close()
+    }
+  })
+
+  it('still sees cleanup and recovery state written after a cached read', () => {
+    const database = createDatabase()
+    try {
+      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('live')
+      database.prepare(`INSERT INTO mission_cleanup_journal (mission_id, state)
+        VALUES ('mission-a', 'in_progress')`).run()
+      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('cleanup_in_progress')
+
+      database.prepare("DELETE FROM mission_cleanup_journal").run()
+      database.prepare("UPDATE missions SET status = 'finished' WHERE id = 'mission-a'").run()
+      database.prepare(`INSERT INTO metadata (key, value)
+        VALUES ('archive_correction_attachment_recovery_failure', '{}')`).run()
+      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('recovery_required')
+    } finally {
+      database.close()
+    }
+  })
+
+  it('still sees a schema change made after a cached read', () => {
+    const database = new Database(':memory:')
+    try {
+      database.exec(`
+        CREATE TABLE missions (id TEXT PRIMARY KEY);
+        CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE mission_cleanup_journal (mission_id TEXT PRIMARY KEY, state TEXT NOT NULL);
+        INSERT INTO missions (id) VALUES ('mission-a');
+        INSERT INTO metadata (key, value)
+          VALUES ('archive_correction_attachment_recovery_failure', '{}');
+      `)
+      // Without a status column the recovery marker cannot apply.
+      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('live')
+      database.exec("ALTER TABLE missions ADD COLUMN status TEXT NOT NULL DEFAULT 'finished'")
+      expect(readMissionLiveReviewStorageState(database, 'mission-a')).toBe('recovery_required')
+    } finally {
+      database.close()
+    }
+  })
+})

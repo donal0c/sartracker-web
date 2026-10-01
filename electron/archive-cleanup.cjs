@@ -1,6 +1,7 @@
 'use strict'
 
 const { createHash } = require('node:crypto')
+const { prepareCached } = require('./sqlite-statement-cache.cjs')
 
 const {
   createArchiveTableSelection,
@@ -1173,7 +1174,7 @@ function readArchiveCleanupGuard(db, missionId) {
       'Mission cleanup guard input is invalid.',
     )
   }
-  const row = db.prepare('SELECT value FROM metadata WHERE key = ?')
+  const row = prepareCached(db, 'SELECT value FROM metadata WHERE key = ?')
     .get(cleanupGuardKey(missionId))
   if (row === undefined) return null
   const guardJson = row.value
