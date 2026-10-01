@@ -45,8 +45,9 @@ Eamonn: Outings explanation on Donal's call; his layout doc feeds DON-297.
 Box (shared, ask Donal first): smoke tool, 13.4 upgrade profile, 960k fixture,
 live fixtures in `~/sartracker-live-fixtures`; old folders cleaned 1 Oct.
 
-**Waiting on Donal (Claude raises these):** DON-296 default KMRT group ·
-DON-284 wording · DON-288 fallback · DON-302 retire the old live script.
+**Decided 1 Oct (on the tickets):** DON-296 default group pre-ticked ·
+DON-284 shutdown wording · DON-288 software-rendering button · DON-302 retire.
+**Waiting on Donal:** nothing open.
 **Ask the team:** DON-293.
 
 ## Pointers

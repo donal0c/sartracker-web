@@ -16,17 +16,17 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | **Fixed e018c128** (restore when package ready, visible notice otherwise). Waiting: team-smoke with the real package at the next candidate |
 | 3a — **NEXT** | Move mission-store SQLite off the Electron main thread (soak stalls; 2 s main block opening a 960k store) | DON-313 | Plan first (worker behind the IPC contract), then tests-first; packaged SQLite/IPC/worker smoke |
 | 3b | Replay ignores the Discovery package (always online map) | DON-314 | Tests first; reuse DON-304's resolver |
-| 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Fallback wording decision, then fix |
+| 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Decided 1 Oct: visible message + operator "Restart with software rendering" button (remembered). Implement |
 | 5 | Unwritable profile exits silently | DON-285 | Implementation |
-| 6 | Clean exit recorded as a crash, plus the "was lost" wording | DON-284 | Donal wording decision, then fix |
+| 6 | Clean exit recorded as a crash, plus the "was lost" wording | DON-284 | Wording decided 1 Oct (on the ticket). Implement |
 | 7 | Restore a retired GPX track with truthful replay | DON-309 | Migration plus replay/archive changes |
-| 8 | Default team group pre-ticked at Start | DON-296 | **Donal decision** |
+| 8 | Default team group pre-ticked at Start | DON-296 | Decided 1 Oct: default-group setting, pre-ticked at Start, untickable. Implement |
 | 9 | Simplify the right-hand panel; Eamonn's layout doc; Outings panel clarity | DON-297 | Eamonn's doc and call, then a design proposal |
 | 10 | PCLinuxOS VM on the test box; smoke the AppImage there | DON-298 | Setup |
 | 11 | Hidden-gap sweep: persisted legacy state, mid-mission controls, checks during failures | DON-299 | Implementation |
 | 12 | Cosmetic items from the manual pass; merge the manual rewrite | DON-300, DON-301 | Implementation, review |
 | 13 | Replay of backfilled history (question not yet sent) | DON-293 | Ask the team |
-| 14 | Retire or rewrite the obsolete live-exact smoke | DON-302 | Donal OK to retire |
+| 14 | Retire or rewrite the obsolete live-exact smoke | DON-302 | OK to retire given 1 Oct. Implement |
 | 15 | Harvey and Hiker maps | DON-303 | Maps last |
 
 Next-candidate evidence owed (Claude tracks): DON-311 packaged CI tracking soak
