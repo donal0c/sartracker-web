@@ -128,27 +128,43 @@ export default [
       await app.shot('where-people-are')
 
       // DON-300 item 8: Traccar briefly lists no KMRT devices for one roster.
-      // That must not record anyone as "left" or post notices to acknowledge;
-      // the exact per-device comparison at the end proves no gap either.
+      // Agreed behaviour: no "left" is recorded; the only notices are "still
+      // tracking them until the next roster confirms it", then "devices are
+      // back ... nothing changed". Seeing the first proves the blank reached
+      // the app. Notices are sampled throughout, so transient ones count too.
       const leftEvents = () => app.page.evaluate(async () => {
         const store = window.sartrackerElectron.missionStore
         const mission = await store.getActiveMission()
         return (await store.listGroupMembershipEvents(mission.id)).filter((event) => event.change === 'left').length
       })
+      const visibleNotices = () => t('participant-membership-notice').allInnerTexts().catch(() => [])
+      await t('sidebar-tab-tracking').click().catch(() => {})
+      const noticesBefore = new Set(await visibleNotices())
+      const seenNotices = new Set()
       const leftBefore = await leftEvents()
       mock.blankGroupForOneRoster(groupId)
       const blipStarted = Date.now()
-      while (mock.rosterBlip().fullListingsAfter < 2 && Date.now() - blipStarted < 180_000) await delay(5000)
-      const blip = mock.rosterBlip()
-      if (blip.blankListings !== 1 || blip.fullListingsAfter < 2) {
-        notTested.push(`the app did not fetch a blank roster and two full ones within 180 s (${JSON.stringify(blip)}), so the one-blank-roster step proves nothing`)
+      let settledSamples = 0
+      while (settledSamples < 3 && Date.now() - blipStarted < 180_000) {
+        await delay(2000)
+        for (const notice of await visibleNotices()) if (!noticesBefore.has(notice)) seenNotices.add(notice)
+        if (mock.rosterBlip().fullListingsAfter >= 2) settledSamples += 1
       }
-      await delay(2000)
+      const blip = mock.rosterBlip()
       const leftAfter = await leftEvents()
-      const notices = await t('participant-membership-notice').allInnerTexts().catch(() => [])
+      const finalNotices = await visibleNotices()
       await app.shot('after-blank-roster')
+      const stillTracking = /missing from the tracking server's roster; SAR Tracker is still tracking/u
+      const backAgain = /devices are back on the tracking server's roster; nothing changed/u
+      const unexpected = [...seenNotices].filter((notice) => !stillTracking.test(notice) && !backAgain.test(notice))
       if (leftAfter !== leftBefore) findings.push(`one blank KMRT roster recorded ${leftAfter - leftBefore} "left" events (DON-300 item 8)`)
-      if (notices.some((notice) => /\bleft\b/iu.test(notice))) findings.push(`one blank KMRT roster posted a membership notice: "${notices.join(' / ').slice(0, 160)}" (DON-300 item 8)`)
+      if (unexpected.length > 0) findings.push(`one blank KMRT roster posted unexpected notices: "${unexpected.join(' / ').slice(0, 200)}" (DON-300 item 8)`)
+      if (blip.blankListings !== 1 || blip.fullListingsAfter < 2 || ![...seenNotices].some((notice) => stillTracking.test(notice))) {
+        notTested.push(`the blank roster did not visibly reach the app within 180 s (${JSON.stringify(blip)}, notices seen: ${[...seenNotices].length}), so the one-blank-roster step proves nothing`)
+      } else if (!finalNotices.some((notice) => backAgain.test(notice)) || finalNotices.some((notice) => stillTracking.test(notice))) {
+        findings.push(`after the KMRT roster came back, the notices did not say nothing changed: "${finalNotices.join(' / ').slice(0, 200)}" (DON-300 item 8)`)
+      }
+      await app.page.getByRole('button', { name: 'Acknowledge membership notices' }).click().catch(() => {})
 
       // Replay must use the same offline Discovery map, not the online default [DON-314].
       if (mapPackage !== undefined) {

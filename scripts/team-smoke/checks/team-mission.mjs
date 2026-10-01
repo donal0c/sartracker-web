@@ -16,6 +16,7 @@
  * what the provider holds for each device from its own start.
  */
 
+import { realpathSync } from 'node:fs'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -332,9 +333,24 @@ export default [
         const store = window.sartrackerElectron.missionStore
         const mission = await store.getActiveMission()
         const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-        const shows = async (at) => JSON.stringify(await store.readMissionReplay({
-          missionId: mission.id, selectedTime: new Date(at).toISOString(), timezone: 'Europe/Dublin', trackLimit: 500, objectLimit: 100,
-        }, `smoke-don-309-${at}`)).includes(importId)
+        // GPX only: a device filter naming no device drops every Traccar fix
+        // (GPX is filtered by outing), so thousands of older fixes cannot push
+        // the track past the first page; later pages are followed anyway.
+        const shows = async (at) => {
+          const query = {
+            missionId: mission.id, selectedTime: new Date(at).toISOString(), timezone: 'Europe/Dublin',
+            trackLimit: 500, objectLimit: 100, deviceIds: ['smoke-no-such-device'],
+          }
+          let page = await store.readMissionReplay(query, `smoke-don-309-${at}`)
+          const matches = (rows) => (rows ?? []).some((row) => row.track_id === importId && row.source_type === 'gpx_point')
+          let found = matches(page.tracks)
+          for (let pages = 1; !found && page.nextCursor !== null && pages < 20; pages += 1) {
+            page = await store.readMissionReplayTrackChunk({ ...query, cursor: page.nextCursor }, `smoke-don-309-${at}-${pages}`)
+            found = matches(page.tracks)
+          }
+          if (!found && page.nextCursor !== null) throw new Error('Replay still had pages after 20; the DON-309 step cannot decide.')
+          return found
+        }
         const beforeRetire = Date.now()
         await pause(3000)
         await store.deleteGpxImport(importId)
@@ -385,8 +401,16 @@ export default [
       if (rescans.after !== rescans.before || rescans.results.some((result) => (result?.failures?.length ?? 0) !== 0)) {
         findings.push(`watched-folder rescans of a retired GPX file added import issues (${rescans.before} → ${rescans.after}; DON-320): ${JSON.stringify(rescans.results).slice(0, 200)}`)
       }
-      if (rescans.results.some((result) => (result?.imports ?? []).some((entry) => entry?.id === retireTarget))) {
-        findings.push('a watched-folder rescan restored a retired GPX track; only a deliberate import may (DON-309)')
+      // Persisted state, not only the returned ids: the track stays retired
+      // and nothing active stands in for its file.
+      const afterRescans = withStore(profile, (db) => ({
+        target: db.prepare('SELECT retired_at FROM gpx_track_imports WHERE id = ?').get(retireTarget),
+        activeForFile: db.prepare(`SELECT COUNT(*) AS count FROM gpx_track_imports
+          WHERE retired_at IS NULL AND id != ? AND source_path IN (?, ?)`).get(retireTarget, timedGpx, realpathSync(timedGpx)).count,
+      }))
+      if (rescans.results.some((result) => (result?.imports ?? []).some((entry) => entry?.id === retireTarget))
+        || afterRescans.target?.retired_at == null || afterRescans.activeForFile !== 0) {
+        findings.push(`a watched-folder rescan restored or replaced a retired GPX track; only a deliberate import may (DON-309): ${JSON.stringify(afterRescans)}`)
       }
       // DON-322: a malformed (non-retired) GPX in the watched folder reports
       // once, not on every rescan.
