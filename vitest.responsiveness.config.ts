@@ -16,6 +16,7 @@ export default defineConfig({
       'tests/unit/electron-archive-registry.test.ts',
       'tests/unit/electron-cleanup-live-write-contention.test.ts',
       'tests/unit/electron-coverage-ledger.test.ts',
+      'tests/unit/electron-history-piece-responsiveness.test.ts',
       'tests/unit/electron-mission-evidence-versioning.test.ts',
       'tests/unit/electron-mission-review-read-query-runner.test.ts',
       'tests/unit/electron-search-operations-page.test.ts',

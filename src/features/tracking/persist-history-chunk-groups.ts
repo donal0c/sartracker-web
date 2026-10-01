@@ -2,9 +2,14 @@ import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryChunkPersistenceResult,
 } from './polling-manager'
+import { HISTORY_PIECE_ROW_BUDGET, persistHistoryChunkInPieces } from './split-history-chunk'
 
-/** Bounds grouped rows while retaining any oversized individual chunk whole. */
-export const HISTORY_CHUNK_GROUP_ROW_BUDGET = 1024
+/**
+ * Bounds the fixes written in one mission-store call, which is one synchronous
+ * transaction on the Electron main thread. An oversized chunk is written in
+ * bounded pieces instead [DON-313].
+ */
+export const HISTORY_CHUNK_GROUP_ROW_BUDGET = HISTORY_PIECE_ROW_BUDGET
 
 type ChunkEntry = {
   readonly input: TrackingHistoryChunkPersistenceInput
@@ -49,6 +54,23 @@ export async function persistHistoryChunkGroups(
 
   for (const [groupIndex, group] of groups.entries()) {
     if (groupIndex > 0) await options.yieldBetweenGroups()
+    const oversized = group.length === 1 && group[0]!.input.positions.length > HISTORY_CHUNK_GROUP_ROW_BUDGET
+    if (oversized) {
+      const entry = group[0]!
+      try {
+        const result = await persistHistoryChunkInPieces(
+          entry.input,
+          async (piece) => options.persistChunk !== undefined
+            ? options.persistChunk(piece)
+            : options.persistGroup([piece]),
+          options.yieldBetweenGroups,
+        )
+        results[entry.index] = acknowledge(entry, result)
+      } catch (reason) {
+        results[entry.index] = { status: 'rejected', reason }
+      }
+      continue
+    }
     let groupFailure: { readonly reason: unknown } | undefined
     try {
       await options.persistGroup(group.map(({ input }) => input))

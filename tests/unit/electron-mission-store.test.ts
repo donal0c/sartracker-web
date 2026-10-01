@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
 import { persistHistoryChunkGroups } from '../../src/features/tracking/persist-history-chunk-groups'
+import { splitHistoryChunk } from '../../src/features/tracking/split-history-chunk'
 import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
 
 const require = createRequire(import.meta.url)
@@ -2793,6 +2794,51 @@ describe('electron mission store', () => {
     expect((await store.listTrackingHistoryCheckpoints(mission.id))[0]?.reconciled_until).toBe('2026-08-08T03:00:00.000Z')
   })
 
+  it('chains bounded history pieces truthfully through failures and converges on retry [DON-313]', async () => {
+    store = await createStore()
+    const mission = await store.createMission({ name: 'Piecewise History Mission', start_time: '2026-08-08T00:00:00.000Z' })
+    await store.upsertDevice({ mission_id: mission.id, device_id: 'walker-1', name: 'Walker', color: '#00AAFF', status: 'online' })
+    const start = Date.parse('2026-08-08T00:00:00.000Z')
+    const chunk: TrackingHistoryChunkPersistenceInput = {
+      phase: 'initial', expectedMissionId: mission.id, deviceId: 'walker-1',
+      historyFrom: '2026-08-08T00:00:00.000Z', reconciledUntil: '2026-08-08T02:00:00.000Z',
+      positions: Array.from({ length: 1_000 }, (_, index) => ({
+        id: `fix-${index}`, device_id: 'walker-1', lat: 52 + index * 1e-6, lon: -9, altitude: null, speed: null,
+        battery: null, accuracy: null, timestamp: new Date(start + index * 1_000).toISOString(), source: null,
+        data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false,
+      })),
+    }
+    const pieces = splitHistoryChunk(chunk)
+    expect(pieces.length).toBe(4)
+    /** Writes one piece exactly as the tracking runtime does. */
+    const write = (piece: TrackingHistoryChunkPersistenceInput) => store!.persistTrackingPositionsBulk({
+      mission_id: mission.id,
+      positions: piece.positions.map((position) => ({
+        source_position_id: position.id, device_id: position.device_id, lat: position.lat, lon: position.lon,
+        timestamp: position.timestamp, timestamp_source: 'fix' as const,
+      })),
+      checkpoints: [{
+        device_id: piece.deviceId, history_from: piece.historyFrom,
+        ...(piece.reconciledFrom === undefined ? {} : { reconciled_from: piece.reconciledFrom }),
+        reconciled_until: piece.reconciledUntil,
+      }],
+    })
+    const cursor = async () => (await store!.listTrackingHistoryCheckpoints(mission.id))[0]?.reconciled_until
+
+    // Pieces 0 and 1 commit; piece 2 "fails"; piece 3 arrives out of order.
+    await write(pieces[0]!)
+    expect(await cursor()).toBe(pieces[0]!.positions.at(-1)!.timestamp)
+    await write(pieces[1]!)
+    await write(pieces[3]!)
+    // The non-contiguous piece stores its fixes but cannot claim the gap.
+    expect(await cursor()).toBe(pieces[1]!.positions.at(-1)!.timestamp)
+
+    // Retrying the whole chunk converges, with no duplicate fixes.
+    for (const piece of pieces) await write(piece)
+    expect(await cursor()).toBe('2026-08-08T02:00:00.000Z')
+    await expect(store.countPositions(mission.id, 'walker-1')).resolves.toBe(1_000)
+  })
+
   it('retains contiguous earlier-prefix progress without claiming an unfilled suffix', async () => {
     store = await createStore()
     const mission = await store.createMission({
@@ -2921,8 +2967,9 @@ describe('electron mission store', () => {
     const inputs: readonly TrackingHistoryChunkPersistenceInput[] = ['prefix', 'suffix'].map((deviceId) => ({
       phase: 'initial', expectedMissionId: mission.id, deviceId, historyFrom,
       reconciledUntil: deviceId === 'prefix' ? reconciledUntil : '2026-08-07T23:00:00.000Z',
-      // Each complete 600-row chunk is below the production 1,024-row group budget;
-      // together they require two admissions without splitting either checkpoint.
+      // Each 600-row chunk exceeds the 256-row budget: the well-formed prefix is
+      // written in pieces, the malformed suffix stays whole and is rejected
+      // atomically [DON-313].
       positions: Array.from({ length: 600 }, (_, index) => ({
         id: `${deviceId}-${index}`, device_id: deviceId, lat: 52.0599, lon: -9.5045,
         timestamp: new Date(Date.parse(historyFrom) + (index + 1) * 1_000).toISOString(),
@@ -2954,7 +3001,7 @@ describe('electron mission store', () => {
         message: expect.stringMatching(/checkpoint.*before.*history start/iu),
       }) })
       expect(acknowledged).toEqual([0])
-      expect(inserted).toEqual([600])
+      expect(inserted).toEqual([256, 256, 88])
 
       await store.prepareClose()
       store.close()
@@ -2974,7 +3021,7 @@ describe('electron mission store', () => {
       const retry = await persistHistoryChunkGroups({ ...options, inputs: corrected })
       expect(retry.map((result) => result.status)).toEqual(['fulfilled', 'fulfilled'])
       expect(acknowledged).toEqual([0, 1])
-      expect(inserted).toEqual([0, 600])
+      expect(inserted).toEqual([0, 0, 0, 256, 256, 88])
       await store.prepareClose()
       store.close()
       store = createElectronMissionStore({ userDataPath: userDataPath! })

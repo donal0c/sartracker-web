@@ -1882,6 +1882,146 @@ describe('polling manager', () => {
     poller.stop()
   })
 
+  it('writes a large history window to the mission store in bounded pieces [DON-313]', async () => {
+    const missionStartedAt = new Date('2026-04-06T08:00:00.000Z')
+    const currentTime = new Date('2026-04-06T14:00:00.000Z')
+    let participantHistoryStart = '2026-04-06T12:00:00.000Z'
+    const windowStart = Date.parse('2026-04-06T10:00:00.000Z')
+    const dense = Array.from({ length: 600 }, (_, index) => ({
+      ...NORMALIZED_POSITIONS[0]!, id: `dense-${index}`, device_id: '1',
+      timestamp: new Date(windowStart + index * 1_000).toISOString(),
+    }))
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockImplementation(async (_deviceId: string, from: Date, to: Date) =>
+        to.getTime() - from.getTime() > 5 * 60 * 1000 ? dense : []),
+    })
+    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: true })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getInitialHistoryCheckpoints: async () => ({
+        '1': { historyFrom: '2026-04-06T12:00:00.000Z', reconciledUntil: currentTime.toISOString() },
+      }),
+      getBreadcrumbDeviceIds: () => ['1'],
+      getParticipantHistoryStarts: () => ({ '1': participantHistoryStart }),
+      persistHistoryChunk,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    participantHistoryStart = '2026-04-06T10:00:00.000Z'
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    const written = persistHistoryChunk.mock.calls.map(([input]) => input.positions.length)
+    expect(written.reduce((sum, count) => sum + count, 0)).toBeGreaterThanOrEqual(600)
+    expect(Math.max(...written)).toBeLessThanOrEqual(256)
+
+    poller.stop()
+  })
+
+  it('writes a large incremental poll to the mission store in bounded pieces [DON-313]', async () => {
+    const missionStartedAt = new Date('2026-04-06T08:00:00.000Z')
+    const currentTime = new Date('2026-04-06T14:00:00.000Z')
+    const burst = Array.from({ length: 300 }, (_, index) => ({
+      ...NORMALIZED_POSITIONS[0]!, id: `burst-${index}`, device_id: '1',
+      timestamp: new Date(currentTime.getTime() - 290_000 + index * 900).toISOString(),
+    }))
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      // A burst after an outage arrives in the short live window.
+      getBreadcrumbs: vi.fn().mockImplementation(async (_deviceId: string, from: Date, to: Date) =>
+        to.getTime() - from.getTime() <= 10 * 60 * 1000 ? burst : []),
+    })
+    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: true })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getInitialHistoryCheckpoints: async () => ({
+        '1': { historyFrom: missionStartedAt.toISOString(), reconciledUntil: currentTime.toISOString() },
+      }),
+      getBreadcrumbDeviceIds: () => ['1'],
+      persistHistoryChunk,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    const incremental = persistHistoryChunk.mock.calls.map(([input]) => input).filter((input) => input.phase === 'incremental')
+    expect(incremental.reduce((sum, input) => sum + input.positions.length, 0)).toBeGreaterThanOrEqual(300)
+    expect(Math.max(...incremental.map((input) => input.positions.length))).toBeLessThanOrEqual(256)
+
+    poller.stop()
+  })
+
+  it('refreshes the trail when a live burst fails after storing its first piece [DON-313]', async () => {
+    const missionStartedAt = new Date('2026-04-06T08:00:00.000Z')
+    const currentTime = new Date('2026-04-06T14:00:00.000Z')
+    const burst = Array.from({ length: 300 }, (_, index) => ({
+      ...NORMALIZED_POSITIONS[0]!, id: `burst-${index}`, device_id: '1',
+      timestamp: new Date(currentTime.getTime() - 290_000 + index * 900).toISOString(),
+    }))
+    const getCanonicalBreadcrumbs = vi.fn().mockResolvedValue({ positions: [], complete: true })
+    const client = createClient({
+      getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
+      getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
+      getBreadcrumbs: vi.fn().mockImplementation(async (_deviceId: string, from: Date, to: Date) =>
+        to.getTime() - from.getTime() <= 10 * 60 * 1000 ? burst : []),
+    })
+    const persistHistoryChunk = vi.fn().mockImplementation(async (input: { phase: string }) => {
+      if (input.phase !== 'incremental') return { changed: false }
+      const incrementalCalls = persistHistoryChunk.mock.calls.filter(([call]) => call.phase === 'incremental').length
+      if (incrementalCalls === 2) throw new Error('disk unavailable')
+      return { changed: true }
+    })
+    const poller = createPollingManager(client, {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => missionStartedAt,
+      getInitialBreadcrumbs: async () => [],
+      getCanonicalBreadcrumbs,
+      getInitialHistoryCheckpoints: async () => ({
+        '1': { historyFrom: missionStartedAt.toISOString(), reconciledUntil: currentTime.toISOString() },
+      }),
+      getBreadcrumbDeviceIds: () => ['1'],
+      persistHistoryChunk,
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => currentTime,
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    // The second incremental piece failed after the first stored new fixes.
+    const failedPieceOrder = persistHistoryChunk.mock.invocationCallOrder[
+      persistHistoryChunk.mock.calls.findIndex(([input], index) => input.phase === 'incremental'
+        && persistHistoryChunk.mock.calls.slice(0, index + 1).filter(([call]) => call.phase === 'incremental').length === 2)
+    ]!
+    expect(failedPieceOrder).toBeDefined()
+    // A canonical refresh follows it, so the stored fixes reach the trail.
+    expect(getCanonicalBreadcrumbs.mock.invocationCallOrder.some((order) => order > failedPieceOrder)).toBe(true)
+
+    poller.stop()
+  })
+
   it('admits complete history groups separately and joins their original mission fence on stop', async () => {
     const startedAt = new Date('2026-04-06T00:00:00.000Z')
     const currentTime = new Date('2026-04-06T02:00:00.000Z')
@@ -1904,8 +2044,9 @@ describe('polling manager', () => {
     const client = createClient({
       getDevices: vi.fn().mockResolvedValue(devices),
       getCurrentPositions: vi.fn().mockResolvedValue([]),
+      // Four chunks fill one 256-row group; the other two form the second [DON-313].
       getBreadcrumbs: vi.fn().mockImplementation(async (deviceId: string) =>
-        Array.from({ length: 225 }, (_, index) => ({
+        Array.from({ length: 56 }, (_, index) => ({
           ...NORMALIZED_BREADCRUMBS[0]!,
           id: `${deviceId}-${index}`, device_id: deviceId,
           timestamp: '2026-04-06T01:00:00.000Z',

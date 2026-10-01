@@ -211,3 +211,24 @@ it('rejects asynchronous callbacks and rolls back a thenable returned by a synch
     expect(db.pragma('busy_timeout', { simple: true })).toBe(5000)
   } finally { await writer.close(); db.close() }
 })
+
+it('lets timers and IPC run between queued writes instead of chaining them in one task [DON-313]', async () => {
+  const db = new Database(':memory:')
+  const writer = createResponsiveMissionWriter(db)
+  try {
+    const order: string[] = []
+    let tick: Promise<void> | undefined
+    // Three writes admitted together, as parallel IPC calls are. The first
+    // schedules a task; it must run before the next queued write starts.
+    const writes = Array.from({ length: 3 }, (_, index) => writer.run(() => {
+      order.push(`write-${index}`)
+      if (index === 0) tick = new Promise<void>((resolve) => setImmediate(() => { order.push('tick'); resolve() }))
+    }))
+    await Promise.all(writes)
+    await tick
+    expect(order.indexOf('tick')).toBeGreaterThan(order.indexOf('write-0'))
+    expect(order.indexOf('tick')).toBeLessThan(order.indexOf('write-2'))
+    // Admission order is unchanged.
+    expect(order.filter((entry) => entry !== 'tick')).toEqual(['write-0', 'write-1', 'write-2'])
+  } finally { await writer.close(); db.close() }
+})

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { persistHistoryChunkGroups } from '../../src/features/tracking/persist-history-chunk-groups'
+import { splitHistoryChunk } from '../../src/features/tracking/split-history-chunk'
 import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
 
 /** Creates complete chunks whose object identity also identifies their checkpoint. */
@@ -11,7 +12,7 @@ function chunk(deviceId: string, rows: number): TrackingHistoryChunkPersistenceI
     positions: Array.from({ length: rows }, (_, index) => ({
       id: `${deviceId}-${index}`, device_id: deviceId, lat: 53, lon: -7,
       altitude: null, speed: null, battery: null, accuracy: null,
-      timestamp: '2026-04-06T01:00:00.000Z', source: null,
+      timestamp: new Date(Date.parse('2026-04-06T00:00:00.000Z') + index * 1000).toISOString(), source: null,
       data_origin: 'live', cache_age_seconds: null, device_cache_stale: false,
     })),
   }
@@ -25,8 +26,8 @@ function deferred() {
 }
 
 describe('persistHistoryChunkGroups', () => {
-  it('admits eight complete chunks as two 900-row groups, acknowledging before the between-group yield', async () => {
-    const inputs = Array.from({ length: 8 }, (_, index) => chunk(String(index), 225))
+  it('admits eight complete chunks as two 224-row groups, acknowledging before the between-group yield [DON-313]', async () => {
+    const inputs = Array.from({ length: 8 }, (_, index) => chunk(String(index), 56))
     const first = deferred()
     const yieldGate = deferred()
     const onAcknowledged = vi.fn()
@@ -49,8 +50,8 @@ describe('persistHistoryChunkGroups', () => {
     expect(yieldBetweenGroups).toHaveBeenCalledOnce()
   })
 
-  it('keeps four inclusive two-hour medium-rate fixture chunks in one transaction', async () => {
-    const inputs = Array.from({ length: 4 }, (_, index) => chunk(String(index + 9), 241))
+  it('keeps four small chunks within the row budget in one transaction [DON-313]', async () => {
+    const inputs = Array.from({ length: 4 }, (_, index) => chunk(String(index + 9), 60))
     const persistGroup = vi.fn().mockResolvedValue(undefined)
     const onAcknowledged = vi.fn()
     const yieldBetweenGroups = vi.fn().mockResolvedValue(undefined)
@@ -61,15 +62,34 @@ describe('persistHistoryChunkGroups', () => {
     expect(yieldBetweenGroups).not.toHaveBeenCalled()
   })
 
-  it('retains empty checkpoints and an oversized singleton without splitting or reordering', async () => {
-    const inputs = [chunk('empty-first', 0), chunk('large', 1025), chunk('empty-last', 0), chunk('last', 1)]
+  it('persists an oversized chunk in bounded pieces, in order, acknowledging it once [DON-313]', async () => {
+    const inputs = [chunk('empty-first', 0), chunk('large', 600), chunk('empty-last', 0), chunk('last', 1)]
+    const pieces = splitHistoryChunk(inputs[1]!)
+    expect(pieces).toHaveLength(3)
     const persistGroup = vi.fn().mockResolvedValue(undefined)
     const onAcknowledged = vi.fn()
     const yieldBetweenGroups = vi.fn().mockResolvedValue(undefined)
     await persistHistoryChunkGroups({ inputs, persistGroup, onAcknowledged, yieldBetweenGroups })
-    expect(persistGroup.mock.calls).toEqual([[[inputs[0]]], [[inputs[1]]], [inputs.slice(2)]])
-    expect(onAcknowledged.mock.calls).toEqual(inputs.map((input, index) => [input, index, null]))
-    expect(yieldBetweenGroups).toHaveBeenCalledTimes(2)
+    expect(persistGroup.mock.calls).toEqual([
+      [[inputs[0]]], ...pieces.map((piece) => [[piece]]), [inputs.slice(2)],
+    ])
+    expect(onAcknowledged.mock.calls).toEqual([
+      [inputs[0], 0, null], [inputs[1], 1, { changed: false }], [inputs[2], 2, null], [inputs[3], 3, null],
+    ])
+    // A yield between the groups and between the pieces of the large chunk.
+    expect(yieldBetweenGroups).toHaveBeenCalledTimes(4)
+  })
+
+  it('reports an oversized chunk failed when one piece fails, keeping the stored pieces [DON-313]', async () => {
+    const inputs = [chunk('large', 600)]
+    const pieces = splitHistoryChunk(inputs[0]!)
+    const failure = new Error('disk unavailable')
+    const persistGroup = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure)
+    const onAcknowledged = vi.fn()
+    await expect(persistHistoryChunkGroups({ inputs, persistGroup, onAcknowledged,
+      yieldBetweenGroups: async () => undefined })).resolves.toEqual([{ status: 'rejected', reason: failure }])
+    expect(persistGroup.mock.calls).toEqual([[[pieces[0]]], [[pieces[1]]]])
+    expect(onAcknowledged).not.toHaveBeenCalled()
   })
 
   it('does no work for no chunks and persists an all-empty wave once', async () => {
@@ -87,7 +107,7 @@ describe('persistHistoryChunkGroups', () => {
   })
 
   it('falls back in parallel only within the failed group and retains results by original index', async () => {
-    const inputs = [chunk('a', 900), chunk('b', 450), chunk('c', 450), chunk('d', 225)]
+    const inputs = [chunk('a', 225), chunk('b', 112), chunk('c', 112), chunk('d', 56)]
     const firstFallback = deferred()
     const failure = new Error('one chunk rejected')
     const persistGroup = vi.fn().mockResolvedValueOnce(undefined)
@@ -113,14 +133,14 @@ describe('persistHistoryChunkGroups', () => {
   })
 
   it('uses singleton batch fallback only for a failed multi-chunk group without a singular hook', async () => {
-    const inputs = [chunk('a', 450), chunk('b', 450), chunk('c', 1025)]
+    const inputs = [chunk('a', 112), chunk('b', 112), chunk('c', 257)]
     const failure = new Error('singleton rejected')
     const persistGroup = vi.fn().mockRejectedValueOnce(new Error('group rejected'))
       .mockResolvedValueOnce(undefined).mockRejectedValueOnce(failure).mockRejectedValueOnce(failure)
     const onAcknowledged = vi.fn()
     const results = await persistHistoryChunkGroups({ inputs, persistGroup, onAcknowledged,
       yieldBetweenGroups: async () => undefined })
-    expect(persistGroup.mock.calls).toEqual([[inputs.slice(0, 2)], [[inputs[0]]], [[inputs[1]]], [[inputs[2]]]])
+    expect(persistGroup.mock.calls).toEqual([[inputs.slice(0, 2)], [[inputs[0]]], [[inputs[1]]], [[splitHistoryChunk(inputs[2]!)[0]]]])
     expect(results).toEqual([{ status: 'fulfilled', value: undefined },
       { status: 'rejected', reason: failure }, { status: 'rejected', reason: failure }])
     expect(onAcknowledged).toHaveBeenCalledExactlyOnceWith(inputs[0], 0, null)

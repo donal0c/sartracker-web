@@ -67,7 +67,12 @@ function createResponsiveMissionWriter(database) {
       if (closing || signal?.aborted) return Promise.reject(createCancellation())
       if (fault !== null) return Promise.reject(fault)
       Atomics.add(pending, 0, 1)
-      const operation = tail.then(() => execute(callback, signal))
+      // Each write is its own synchronous transaction on the main thread.
+      // Yield one task first, so writes queued together (for example six
+      // parallel history pieces) let timers, input and IPC run between them
+      // instead of running back-to-back as one long block. Order and
+      // atomicity are unchanged [DON-313].
+      const operation = tail.then(yieldToEventLoop).then(() => execute(callback, signal))
       const completion = operation.finally(() => { Atomics.sub(pending, 0, 1) })
       tail = completion.catch(() => undefined)
       return completion
@@ -81,6 +86,22 @@ function createResponsiveMissionWriter(database) {
     get pendingCount() { return Atomics.load(pending, 0) },
     /** Shared only with trusted background workers, never with the renderer. */
     pendingBuffer,
+  })
+}
+
+/**
+ * Resolves on a later event-loop task. A MessageChannel round trip is a real
+ * task boundary in Node and Electron that test fake timers never intercept,
+ * so a suite using fake timers cannot stall the writer.
+ */
+function yieldToEventLoop() {
+  return new Promise((resolve) => {
+    const { port1, port2 } = new MessageChannel()
+    port1.onmessage = () => {
+      port1.close()
+      resolve()
+    }
+    port2.postMessage(null)
   })
 }
 

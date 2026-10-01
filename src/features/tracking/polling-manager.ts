@@ -15,6 +15,7 @@ import {
 } from './breadcrumb-history-reconciler'
 import { annotateTrackingSnapshotHealth } from './tracking-snapshot-health'
 import { persistHistoryChunkGroups } from './persist-history-chunk-groups'
+import { historyFailureChangedStore, persistHistoryChunkInPieces } from './split-history-chunk'
 import type {
   TrackingBreadcrumbWindowSummary,
   TrackingPollLedgerEntry,
@@ -258,6 +259,11 @@ export function createPollingManager(
   const now = options.now ?? (() => new Date())
   const monotonicNow = options.monotonicNow ?? (() => performance.now())
   const scheduleTimeout = options.setTimeout ?? globalThis.setTimeout.bind(globalThis)
+  /**
+   * Pieces of one chunk need no timer between them: each awaits its own
+   * mission-store call, so the main process is free between pieces [DON-313].
+   */
+  const continueWithNextPiece = async (): Promise<void> => undefined
   const clearScheduledTimeout = options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis)
   const maxBackoffMs = options.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS
   const pollIntervalMs = normalizePollingIntervalMs(
@@ -367,6 +373,14 @@ export function createPollingManager(
     }
   }
 
+  /**
+   * A chunk that failed after an earlier piece stored new fixes may be retried
+   * as unchanged, so refresh the trail from the store now [DON-313].
+   */
+  const refreshAfterPartialHistoryFailure = (reason: unknown): void => {
+    if (isHistoryReconciliationCurrent() && historyFailureChangedStore(reason)) requestCanonicalization()
+  }
+
   const acceptPersistedHistoryChunk = (
     chunk: BreadcrumbHistoryChunk,
     persistedDirectly: boolean,
@@ -438,21 +452,26 @@ export function createPollingManager(
       const input = createHistoryPersistenceInput(chunk)
       let persistedDirectly = false
       let persistenceResult: TrackingHistoryChunkPersistenceResult | null = null
-      if (options.persistHistoryChunk !== undefined) {
-        persistenceResult = await runMissionEvidencePersistence(
-          input.expectedMissionId,
-          () => options.persistHistoryChunk!(input),
-        )
-        persistedDirectly = true
-      } else if (
-        chunk.phase === 'initial' &&
-        options.persistHistoryChunks !== undefined
-      ) {
-        await runMissionEvidencePersistence(
-          input.expectedMissionId,
-          () => options.persistHistoryChunks!([input]),
-        )
-        persistedDirectly = true
+      try {
+        if (options.persistHistoryChunk !== undefined) {
+          persistenceResult = await runMissionEvidencePersistence(
+            input.expectedMissionId,
+            () => persistHistoryChunkInPieces(input, options.persistHistoryChunk!, continueWithNextPiece),
+          )
+          persistedDirectly = true
+        } else if (
+          chunk.phase === 'initial' &&
+          options.persistHistoryChunks !== undefined
+        ) {
+          await runMissionEvidencePersistence(
+            input.expectedMissionId,
+            () => persistHistoryChunkInPieces(input, (piece) => options.persistHistoryChunks!([piece]), continueWithNextPiece),
+          )
+          persistedDirectly = true
+        }
+      } catch (reason) {
+        refreshAfterPartialHistoryFailure(reason)
+        throw reason
       }
       acceptPersistedHistoryChunk(
         chunk,
@@ -467,7 +486,7 @@ export function createPollingManager(
       const inputs = chunks.map(createHistoryPersistenceInput)
       if (options.persistHistoryChunks !== undefined) {
         try {
-          return await runMissionEvidencePersistence(
+          const groupResults = await runMissionEvidencePersistence(
             inputs[0]?.expectedMissionId ?? null,
             () => persistHistoryChunkGroups({
               inputs,
@@ -486,6 +505,10 @@ export function createPollingManager(
               }),
             }),
           )
+          groupResults.forEach((result) => {
+            if (result.status === 'rejected') refreshAfterPartialHistoryFailure(result.reason)
+          })
+          return groupResults
         } catch (reason) {
           // A closed wave fence must not reopen through reconciler fallback.
           return chunks.map(() => ({ status: 'rejected' as const, reason }))
@@ -495,8 +518,11 @@ export function createPollingManager(
         const results = await Promise.all(inputs.map((input) =>
           runMissionEvidencePersistence(
             input.expectedMissionId,
-            () => options.persistHistoryChunk!(input),
-          )))
+            () => persistHistoryChunkInPieces(input, options.persistHistoryChunk!, continueWithNextPiece),
+          ).catch((reason: unknown) => {
+            refreshAfterPartialHistoryFailure(reason)
+            throw reason
+          })))
         if (!isHistoryReconciliationCurrent()) {
           return
         }
@@ -1865,11 +1891,15 @@ export function createPollingManager(
         )
         const breadcrumbs = result.accepted
         if (options.persistHistoryChunk !== undefined && request.historyResetKey !== null && initialFrom !== null) {
-          await runMissionEvidencePersistence(request.historyResetKey, () => options.persistHistoryChunk!({
+          await runMissionEvidencePersistence(request.historyResetKey, () => persistHistoryChunkInPieces({
             phase: 'incremental', expectedMissionId: request.historyResetKey, deviceId: device.device_id,
             historyFrom: initialFrom.toISOString(), reconciledFrom: fetchFrom.toISOString(),
             reconciledUntil: fetchUntil.toISOString(), positions: breadcrumbs,
-          }))
+          }, options.persistHistoryChunk!, continueWithNextPiece)).catch((reason: unknown) => {
+            // Fixes stored before the failure may fall out of the next live window.
+            refreshAfterPartialHistoryFailure(reason)
+            throw reason
+          })
         }
         const newestTimestamp = getCursorTimestampFromBatch(
           breadcrumbs,
