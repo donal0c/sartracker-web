@@ -19,13 +19,11 @@ Release gate: [checklist](../docs/release-checklist.md).
   (e3831c9d, f97c3707, 0a20c3b5, pushed). Full suite 6,353 pass. Mac soak
   launch 2 now passes; launch 1 startup catch-up still over 200 ms under VM
   contention (240-450% CPU), so a quiet-machine or box soak is owed.
-- CI: 706a4666 green. Run 36908282541 (0e8553b3): packaged C09 failed on the
-  stale "3 shown" GPX text (fixed 951ac7af). The legacy-recovery 226 ms gate
-  from 36904008594 must be rechecked on the next run.
-- **Local, unpushed (push after 36908282541 ends):** 6767a3c1 + 3c81eaf8 +
-  71c64d4a (DON-322; the last two must go together: 3c81eaf8 alone breaks
-  Archive & Lock), 8ab542cf (DON-315/316 live-recording smoke, Codex clean),
-  951ac7af.
+- CI: run 36913908137 (c34ecf22) packaged checks PASS (C09 fixed; the
+  226 ms legacy-recovery outlier did not recur); correctness pending.
+- **Local, unpushed:** fbd50397 (DON-309 smoke), 502a8495 + 61e31752
+  (DON-300 item 8 blank-roster and DON-319 drawn-line smoke; Codex clean).
+  Push with 9f's DON-309 commit after its full suite + Codex.
 
 ## Verification limits
 
@@ -41,8 +39,9 @@ Release gate: [checklist](../docs/release-checklist.md).
 ## Who is doing what (1 Oct late; coordinator owns this file)
 
 - **Coordinator:** handoff, workplan, all pushes, Mac soaks, team-smoke.
-  Next: DON-317 item 4 (lived-in profiles), DON-300 item 8 + DON-319 smoke
-  steps, then the packaged run of `controls`/`lifecycle`/`outage`.
+  Next: DON-317 item 4 (lived-in profiles); then the first packaged run of
+  `controls`/`lifecycle`/`outage`/`markers-gpx`/`team-workflow`/
+  `team-mission` (all changed tonight, none run yet).
 - **Session 9f** (commits locally; coordinator pushes): DON-309 option A
   (event-derived retired intervals, schema 14, archive readers accept 13+14)
   implemented, running archive suites. Owns mission-store.cjs, main.cjs,
