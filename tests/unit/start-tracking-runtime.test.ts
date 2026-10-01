@@ -3296,6 +3296,83 @@ describe('startTrackingRuntime', () => {
     stopReplacement()
   })
 
+  it('records a tracking status or snapshot breadcrumb only when it says something new [DON-321]', async () => {
+    const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
+    let nowMs = Date.parse('2026-10-01T16:00:00.000Z')
+    let pollerHooks:
+      | {
+          onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
+          onStatusChange: (status: TrackingConnectionStatus) => void
+        }
+      | undefined
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: {
+        read: vi.fn().mockResolvedValue(null),
+        write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json'),
+      },
+      missionStore: createMissionStoreStub({
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+        listPositions: vi.fn().mockResolvedValue([]),
+      }),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      recordDiagnosticEvent,
+      now: () => new Date(nowMs),
+    })
+    const online: TrackingConnectionStatus = {
+      mode: 'online', consecutiveFailures: 0, recovered: false,
+      lastSuccessAt: '2026-10-01T16:00:00.000Z', warning: null,
+    }
+    const eventsNamed = (name: string) =>
+      recordDiagnosticEvent.mock.calls.filter(([event]) => event.event === name)
+
+    // Eamonn's 13.5 report: three identical online updates per 15 s poll.
+    for (let poll = 0; poll < 10; poll += 1) {
+      pollerHooks?.onStatusChange({ ...online, lastSuccessAt: new Date(nowMs + poll * 15_000).toISOString() })
+    }
+    expect(eventsNamed('tracking_status_changed')).toHaveLength(1)
+    pollerHooks?.onStatusChange({ ...online, mode: 'offline', consecutiveFailures: 1, warning: 'down' })
+    pollerHooks?.onStatusChange(online)
+    expect(eventsNamed('tracking_status_changed')).toHaveLength(3)
+    expect(eventsNamed('tracking_status_changed')[1]?.[0].fields).toMatchObject({ repeatsSuppressed: 9 })
+
+    // Warning text changing while a warning stays shown is a new problem.
+    pollerHooks?.onStatusChange({ ...online, warning: 'Loading breadcrumb history' })
+    pollerHooks?.onStatusChange({ ...online, warning: 'BREADCRUMB HISTORY REFRESH FAILED' })
+    expect(eventsNamed('tracking_status_changed')).toHaveLength(5)
+    pollerHooks?.onStatusChange(online)
+    // A long outage: failures 1..100 give breadcrumbs at 1, 2, 4, 8, 16, 32, 64.
+    const beforeOutage = eventsNamed('tracking_status_changed').length
+    for (let failures = 1; failures <= 100; failures += 1) {
+      pollerHooks?.onStatusChange({ ...online, mode: 'offline', consecutiveFailures: failures, warning: 'down' })
+    }
+    expect(eventsNamed('tracking_status_changed').length - beforeOutage).toBe(7)
+    pollerHooks?.onStatusChange({ ...online, recovered: true })
+    expect(eventsNamed('tracking_status_changed').at(-1)?.[0].fields).toMatchObject({ recovered: true, repeatsSuppressed: 36 })
+
+    for (let poll = 0; poll < 5; poll += 1) await pollerHooks?.onSnapshot(SNAPSHOT)
+    expect(eventsNamed('tracking_snapshot_applied')).toHaveLength(1)
+    await pollerHooks?.onSnapshot({ ...SNAPSHOT, positions: [] })
+    expect(eventsNamed('tracking_snapshot_applied')).toHaveLength(2)
+    expect(eventsNamed('tracking_snapshot_applied')[1]?.[0].fields).toMatchObject({ repeatsSuppressed: 4 })
+    // Only the growing breadcrumb count changed: no new breadcrumb.
+    await pollerHooks?.onSnapshot({ ...SNAPSHOT, positions: [], breadcrumbs: [...SNAPSHOT.breadcrumbs, ...SNAPSHOT.breadcrumbs] })
+    expect(eventsNamed('tracking_snapshot_applied')).toHaveLength(2)
+    nowMs += 10 * 60_000
+    await pollerHooks?.onSnapshot({ ...SNAPSHOT, positions: [] })
+    expect(eventsNamed('tracking_snapshot_applied')).toHaveLength(3)
+    // A clock moved backwards does not stall the heartbeat.
+    nowMs -= 60 * 60_000
+    await pollerHooks?.onSnapshot({ ...SNAPSHOT, positions: [] })
+    expect(eventsNamed('tracking_snapshot_applied')).toHaveLength(4)
+  })
+
   it('records diagnostic breadcrumbs for tracking status and snapshot summaries [DON-226]', async () => {
     const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
     let pollerHooks:

@@ -141,6 +141,12 @@ type PersistedPositionKeyCache = {
 const MAX_RESTART_BREADCRUMBS_PER_DEVICE = 5_000
 const DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS = 5_000
 const MAX_TRUSTED_OPERATIONAL_SCOPE_AGE_MS = 30_000
+const SNAPSHOT_DIAGNOSTIC_HEARTBEAT_MS = 10 * 60_000
+const GROWING_SNAPSHOT_DIAGNOSTIC_FIELDS = new Set([
+  'breadcrumbCount',
+  'retainedBreadcrumbCount',
+  'observedBreadcrumbCount',
+])
 const TRACKING_CACHE_MISSION_WARNING =
   'Tracking cache could not be matched to this mission; waiting for fresh current positions.'
 
@@ -387,6 +393,14 @@ export async function startTrackingRuntime(
   const logger = dependencies.logger ?? DEFAULT_TRACKING_RUNTIME_LOGGER
   let persistedPositionKeyCache: PersistedPositionKeyCache | null = null
   let latestTrackingStatus: TrackingConnectionStatus | null = null
+  // Routine breadcrumbs are recorded only when they say something new, so a
+  // long mission cannot push lifecycle and evidence events out of the report.
+  let lastStatusDiagnosticKey: string | null = null
+  let lastSnapshotDiagnostic: { readonly key: string; readonly atMs: number } | null = null
+  // Repeats not recorded since the last breadcrumb of that kind; the next one
+  // carries the count so the report shows the thinning.
+  let suppressedStatusDiagnostics = 0
+  let suppressedSnapshotDiagnostics = 0
   let breadcrumbTransferProgress: NonNullable<TrackingConnectionStatus['savedHistoryTransfer']> | null = null
   const retirementFailures = new Map<TrackingRuntimePoller, unknown>()
   let trackingCacheWarningActive = false
@@ -1011,16 +1025,32 @@ export async function startTrackingRuntime(
     onStatusChange: (status) => {
       latestTrackingStatus = status
       dependencies.applyStatus(decorateTrackingStatus(status))
+      const fields = {
+        mode: status.mode,
+        consecutiveFailures: status.consecutiveFailures,
+        recovered: status.recovered,
+        hasWarning: status.warning !== null,
+      }
+      // The warning text identifies a changed problem; a long outage is
+      // recorded at 1, 2, 4, 8… failures rather than on every retry.
+      const statusKey = JSON.stringify([
+        status.mode,
+        failureCountBucket(status.consecutiveFailures),
+        status.recovered,
+        status.warning,
+      ])
+      if (statusKey === lastStatusDiagnosticKey) {
+        suppressedStatusDiagnostics += 1
+        return
+      }
+      lastStatusDiagnosticKey = statusKey
+      const repeatsSuppressed = suppressedStatusDiagnostics
+      suppressedStatusDiagnostics = 0
       void dependencies.recordDiagnosticEvent?.({
         level: status.mode === 'online' ? 'info' : 'warn',
         category: 'tracking',
         event: 'tracking_status_changed',
-        fields: {
-          mode: status.mode,
-          consecutiveFailures: status.consecutiveFailures,
-          recovered: status.recovered,
-          hasWarning: status.warning !== null,
-        },
+        fields: repeatsSuppressed > 0 ? { ...fields, repeatsSuppressed } : fields,
       })
     },
     onPollDiagnostic: (entry) => {
@@ -1259,11 +1289,35 @@ export async function startTrackingRuntime(
     dependencies.applySnapshot(currentTransportFreshness.decorate(snapshot))
     refreshTrackingStatus()
     scheduleParticipantBackfill()
+    recordSnapshotDiagnostic(snapshot)
+  }
+
+  /** Records a snapshot summary when it changes, else at most every heartbeat interval. */
+  function recordSnapshotDiagnostic(snapshot: TrackingSnapshot): void {
+    const fields = buildTrackingSnapshotDiagnosticFields(snapshot)
+    // Breadcrumb counts grow with every fix, so they ride on the heartbeat
+    // rather than forcing a breadcrumb per poll on a busy mission.
+    const key = JSON.stringify(Object.entries(fields)
+      .filter(([name]) => !GROWING_SNAPSHOT_DIAGNOSTIC_FIELDS.has(name)))
+    const atMs = now().getTime()
+    // A clock moved backwards counts as elapsed, so the heartbeat never stalls.
+    if (
+      lastSnapshotDiagnostic !== null &&
+      lastSnapshotDiagnostic.key === key &&
+      atMs >= lastSnapshotDiagnostic.atMs &&
+      atMs - lastSnapshotDiagnostic.atMs < SNAPSHOT_DIAGNOSTIC_HEARTBEAT_MS
+    ) {
+      suppressedSnapshotDiagnostics += 1
+      return
+    }
+    lastSnapshotDiagnostic = { key, atMs }
+    const repeatsSuppressed = suppressedSnapshotDiagnostics
+    suppressedSnapshotDiagnostics = 0
     void dependencies.recordDiagnosticEvent?.({
       level: 'info',
       category: 'tracking',
       event: 'tracking_snapshot_applied',
-      fields: buildTrackingSnapshotDiagnosticFields(snapshot),
+      fields: repeatsSuppressed > 0 ? { ...fields, repeatsSuppressed } : fields,
     })
   }
 
@@ -2278,6 +2332,11 @@ function getTrackingCacheIdentityToken(value: object): number {
   nextTrackingCacheIdentityToken += 1
   trackingCacheIdentityTokens.set(value, nextToken)
   return nextToken
+}
+
+/** Groups consecutive failures by power of two so an outage logs O(log n) breadcrumbs. */
+function failureCountBucket(consecutiveFailures: number): number {
+  return consecutiveFailures <= 0 ? 0 : Math.floor(Math.log2(consecutiveFailures)) + 1
 }
 
 function buildTrackingSnapshotDiagnosticFields(

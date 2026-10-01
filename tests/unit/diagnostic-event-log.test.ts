@@ -13,6 +13,38 @@ describe('diagnostic event log', () => {
     Reflect.deleteProperty(window, 'sartrackerElectron')
   })
 
+  it('keeps lifecycle and import breadcrumbs when routine tracking events fill the log [DON-321]', async () => {
+    await recordDiagnosticEvent({
+      ts: '2026-10-01T09:00:00.000Z', level: 'warn', category: 'runtime', event: 'app_shutdown_slow',
+    })
+    await recordDiagnosticEvent({
+      ts: '2026-10-01T09:00:01.000Z', level: 'info', category: 'gpx', event: 'gpx_import_finished',
+    })
+    await recordDiagnosticEvent({
+      ts: '2026-10-01T09:00:02.000Z', level: 'warn', category: 'tracking', event: 'tracking_mission_persistence_failed',
+    })
+    await recordDiagnosticEvent({
+      ts: '2026-10-01T09:00:03.000Z', level: 'info', category: 'tracking', event: 'tracking_mission_persistence_recovered',
+    })
+    for (let index = 0; index < 600; index += 1) {
+      await recordDiagnosticEvent({
+        ts: new Date(Date.parse('2026-10-01T09:01:00.000Z') + index * 15_000).toISOString(),
+        level: 'info', category: 'tracking', event: 'tracking_snapshot_applied',
+      })
+    }
+
+    const events = readDiagnosticEvents()
+    expect(events).toHaveLength(500)
+    expect(events.slice(0, 4).map((event) => event.event)).toEqual([
+      'app_shutdown_slow',
+      'gpx_import_finished',
+      'tracking_mission_persistence_failed',
+      'tracking_mission_persistence_recovered',
+    ])
+    expect(events.at(-1)?.ts).toBe(new Date(Date.parse('2026-10-01T09:01:00.000Z') + 599 * 15_000).toISOString())
+    expect(formatDiagnosticEvents(events)).toContain('routine tracking events dropped to keep older events: 104')
+  })
+
   it('stores sanitized map/tracking breadcrumbs without precise coordinates, secrets, or private paths', async () => {
     await recordDiagnosticEvent({
       ts: '2026-06-22T15:00:00.000Z',

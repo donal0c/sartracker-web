@@ -2,6 +2,7 @@ import type { SupportBundleTimeFrame } from '../../types/electron-bridge'
 import { isElectronRuntimeAvailable } from '../../lib/desktop-runtime'
 
 const DIAGNOSTIC_EVENTS_STORAGE_KEY = 'sartracker:diagnostic-events'
+const EVICTED_ROUTINE_EVENTS_STORAGE_KEY = 'sartracker:diagnostic-events-evicted-routine'
 const MAX_DIAGNOSTIC_EVENTS = 500
 const MAX_STRUCTURED_DIAGNOSTIC_BYTES = 32 * 1024
 const MAX_STRUCTURED_DIAGNOSTIC_DEPTH = 12
@@ -106,6 +107,7 @@ export function clearDiagnosticEvents(): void {
     return
   }
   window.sessionStorage.removeItem(DIAGNOSTIC_EVENTS_STORAGE_KEY)
+  window.sessionStorage.removeItem(EVICTED_ROUTINE_EVENTS_STORAGE_KEY)
 }
 
 /**
@@ -118,6 +120,10 @@ export function formatDiagnosticEvents(
   const scopedEvents = filterDiagnosticEventsByTimeFrame(events, timeFrame)
     .map((event) => sanitizeDiagnosticEvent(event))
   const lines = ['[diagnostic-breadcrumbs]', `event count: ${scopedEvents.length}`]
+  const evictedRoutine = readEvictedRoutineDiagnosticCount()
+  if (evictedRoutine > 0) {
+    lines.push(`routine tracking events dropped to keep older events: ${evictedRoutine}`)
+  }
   if (scopedEvents.length === 0) {
     lines.push('no diagnostic breadcrumbs recorded')
     return lines.join('\n')
@@ -157,13 +163,61 @@ function writeBrowserDiagnosticEvent(event: DiagnosticEvent): void {
     return
   }
 
-  const current = readDiagnosticEvents()
-  const next = [...current, event].slice(-MAX_DIAGNOSTIC_EVENTS)
+  const { kept: next, evictedRoutine } = trimDiagnosticEvents([...readDiagnosticEvents(), event])
   try {
+    if (evictedRoutine > 0) {
+      window.sessionStorage.setItem(
+        EVICTED_ROUTINE_EVENTS_STORAGE_KEY,
+        String(readEvictedRoutineDiagnosticCount() + evictedRoutine),
+      )
+    }
     window.sessionStorage.setItem(DIAGNOSTIC_EVENTS_STORAGE_KEY, JSON.stringify(next))
   } catch {
     // Storage quota or private-mode failures must never block operator actions.
   }
+}
+
+/**
+ * Bounds the log, evicting the oldest routine tracking breadcrumb first so a
+ * long mission cannot push lifecycle, evidence or import events out of a report.
+ */
+function trimDiagnosticEvents(events: readonly DiagnosticEvent[]): {
+  readonly kept: readonly DiagnosticEvent[]
+  readonly evictedRoutine: number
+} {
+  const excess = events.length - MAX_DIAGNOSTIC_EVENTS
+  if (excess <= 0) return { kept: events, evictedRoutine: 0 }
+  const evicted = new Set<number>()
+  for (let index = 0; index < events.length && evicted.size < excess; index += 1) {
+    if (isRoutineTrackingEvent(events[index]!)) evicted.add(index)
+  }
+  const evictedRoutine = evicted.size
+  for (let index = 0; index < events.length && evicted.size < excess; index += 1) {
+    evicted.add(index)
+  }
+  return { kept: events.filter((_, index) => !evicted.has(index)), evictedRoutine }
+}
+
+/** Counts routine breadcrumbs dropped this session, so a report shows it was thinned. */
+function readEvictedRoutineDiagnosticCount(): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const count = Number(window.sessionStorage.getItem(EVICTED_ROUTINE_EVENTS_STORAGE_KEY) ?? 0)
+    return Number.isSafeInteger(count) && count > 0 ? count : 0
+  } catch {
+    return 0
+  }
+}
+
+/**
+ * Routine = the per-poll tracking summaries. Recoveries and every other event
+ * keep their place, so a failure is never left without its recovery.
+ */
+const ROUTINE_TRACKING_EVENTS = new Set(['tracking_status_changed', 'tracking_snapshot_applied'])
+
+function isRoutineTrackingEvent(event: DiagnosticEvent): boolean {
+  return event.category === 'tracking' && event.level === 'info' &&
+    ROUTINE_TRACKING_EVENTS.has(event.event)
 }
 
 function sanitizeDiagnosticEvent(input: DiagnosticEventInput): DiagnosticEvent {
