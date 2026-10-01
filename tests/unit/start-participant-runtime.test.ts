@@ -101,22 +101,30 @@ describe('startParticipantRuntime [DON-271]', () => {
       device('device-2', 'group-1'),
     ], '2026-08-23T11:00:00.000Z')
 
+    // A join is recorded at once; a leave waits for a second complete roster
+    // and is dated at that confirming roster [DON-300].
     expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
       mission_id: 'mission-1',
-      events: [
-        {
-          mission_team_id: 'team-1',
-          traccar_device_id: 'device-1',
-          change: 'left',
-          observed_at: '2026-08-23T11:00:00.000Z',
-        },
-        {
-          mission_team_id: 'team-1',
-          traccar_device_id: 'device-2',
-          change: 'member',
-          observed_at: '2026-08-23T11:00:00.000Z',
-        },
-      ],
+      events: [{
+        mission_team_id: 'team-1',
+        traccar_device_id: 'device-2',
+        change: 'member',
+        observed_at: '2026-08-23T11:00:00.000Z',
+      }],
+    })
+
+    await runtime.applyRoster([
+      device('device-2', 'group-1'),
+    ], '2026-08-23T11:01:00.000Z')
+
+    expect(store.recordGroupMembershipEvents).toHaveBeenLastCalledWith({
+      mission_id: 'mission-1',
+      events: [{
+        mission_team_id: 'team-1',
+        traccar_device_id: 'device-1',
+        change: 'left',
+        observed_at: '2026-08-23T11:01:00.000Z',
+      }],
     })
   })
 
@@ -163,6 +171,12 @@ describe('startParticipantRuntime [DON-271]', () => {
       '2026-08-23T11:01:00.000Z',
       { complete: true },
     )
+    // The first complete roster starts the absence; the next confirms it [DON-300].
+    await runtime.applyRoster(
+      acceptedRoster,
+      '2026-08-23T11:02:00.000Z',
+      { complete: true },
+    )
 
     expect(store.recordGroupMembershipEvents).toHaveBeenNthCalledWith(2, {
       mission_id: 'mission-1',
@@ -170,7 +184,7 @@ describe('startParticipantRuntime [DON-271]', () => {
         mission_team_id: 'team-1',
         traccar_device_id: 'device-1',
         change: 'left',
-        observed_at: '2026-08-23T11:01:00.000Z',
+        observed_at: '2026-08-23T11:02:00.000Z',
       }],
     })
   })
@@ -252,6 +266,8 @@ describe('startParticipantRuntime [DON-271]', () => {
     })
     await runtime.refreshMission('mission-1')
 
+    // The first absence is held; the second complete roster writes the leave [DON-300].
+    await runtime.applyRoster([], '2026-08-23T10:59:00.000Z')
     const older = runtime.applyRoster([], '2026-08-23T11:00:00.000Z')
     await vi.waitFor(() => expect(store.recordGroupMembershipEvents).toHaveBeenCalledTimes(1))
     const newer = runtime.applyRoster(
@@ -543,20 +559,23 @@ describe('startParticipantRuntime [DON-271]', () => {
       '2026-08-23T11:10:00.000Z',
     )
 
+    // The newer roster is retained: b joins at 11:05, and a's absence first
+    // seen at 11:05 is confirmed and dated at 11:10 [DON-300].
     expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
       mission_id: 'mission-1',
-      events: expect.arrayContaining([
-        expect.objectContaining({
-          traccar_device_id: 'device-a',
-          change: 'left',
-          observed_at: '2026-08-23T11:05:00.000Z',
-        }),
-        expect.objectContaining({
-          traccar_device_id: 'device-b',
-          change: 'member',
-          observed_at: '2026-08-23T11:05:00.000Z',
-        }),
-      ]),
+      events: expect.arrayContaining([expect.objectContaining({
+        traccar_device_id: 'device-b',
+        change: 'member',
+        observed_at: '2026-08-23T11:05:00.000Z',
+      })]),
+    })
+    expect(store.recordGroupMembershipEvents).toHaveBeenCalledWith({
+      mission_id: 'mission-1',
+      events: expect.arrayContaining([expect.objectContaining({
+        traccar_device_id: 'device-a',
+        change: 'left',
+        observed_at: '2026-08-23T11:10:00.000Z',
+      })]),
     })
   })
 

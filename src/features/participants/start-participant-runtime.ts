@@ -119,6 +119,12 @@ export async function startParticipantRuntime(
   let autoTickedGroupId: string | null = null
   let draftTouched = false
   let groupsObserved = false
+  // A member missing from one complete roster may be a provider glitch; it
+  // leaves only when the next complete roster agrees, dated at that
+  // confirming roster (Donal, 1 Oct) [DON-300]. Key: team id + device id.
+  const pendingAbsences = new Map<string, string>()
+  // The visible "still tracking" notice per team while its whole group is held.
+  const pendingGroupNotices = new Map<string, string>()
   let membershipNotices: readonly string[] = []
   let loading = false
   let saving = false
@@ -157,6 +163,8 @@ export async function startParticipantRuntime(
         membershipFinishFence = null
         hydrationBlockedRosterObservations = []
         fencedRosterObservations = []
+        pendingAbsences.clear()
+        pendingGroupNotices.clear()
         membershipWriteError = null
         saving = false
         participants = []
@@ -452,6 +460,8 @@ export async function startParticipantRuntime(
         if (membershipFinishFence === fence) {
           fence.status = 'finished'
           discardFencedRosterObservations(fence)
+          // Only this mission's holds: another mission may be active by now.
+          clearHeldAbsences()
         }
         return result
       } finally {
@@ -591,13 +601,16 @@ export async function startParticipantRuntime(
     const retryRequired = membershipWriteError !== null
     const missionNeedsReconciliation =
       activeMissionId !== null && lastReconciledMissionGeneration !== missionGeneration
+    // An unchanged roster still confirms (or clears) a pending absence.
+    const absenceAwaitingConfirmation = pendingAbsences.size > 0
     if (
       !forceReconciliation &&
       !rosterChanged &&
       !completenessChanged &&
       !readErrorCleared &&
       !retryRequired &&
-      !missionNeedsReconciliation
+      !missionNeedsReconciliation &&
+      !absenceAwaitingConfirmation
     ) return
     updateAvailableRoster(devices, complete)
     const missionId = activeMissionId
@@ -683,18 +696,19 @@ export async function startParticipantRuntime(
           }
         }
         pendingRosterObservations.shift()
-        const changes = collectMembershipChanges(
+        const noticesBefore = membershipNotices
+        const changes = confirmAbsences(collectMembershipChanges(
           participants,
           membershipEvents,
           observation.devices,
           observation.observedAt,
           observation.complete,
-        )
+        ), observation)
         if (changes.length === 0) {
           const recoveredFromWriteError = membershipWriteError !== null
           membershipWriteError = null
           lastReconciledMissionGeneration = observation.missionGeneration
-          if (recoveredFromWriteError) publishRuntime()
+          if (recoveredFromWriteError || membershipNotices !== noticesBefore) publishRuntime()
           resolveRosterWaiters(observation.version)
           continue
         }
@@ -719,6 +733,104 @@ export async function startParticipantRuntime(
         void drainRosterReconciliation()
       }
     }
+  }
+
+  /**
+   * Holds each "left" until a second complete roster confirms the absence;
+   * the leave is dated at the confirming roster, never back-dated. Any
+   * positive sighting, even in an incomplete roster, cancels a held absence.
+   * A whole group going missing shows one "still tracking" notice, replaced
+   * when the absence resolves [DON-300].
+   */
+  function confirmAbsences(
+    changes: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[],
+    observation: {
+      readonly observedAt: string
+      readonly complete: boolean
+      readonly devices: readonly NormalizedTrackingDevice[]
+    },
+  ): readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[] {
+    const keyOf = (teamId: string, deviceId: string) => `${teamId}\u0000${deviceId}`
+    const groupOfTeam = (teamId: string) =>
+      participants.find((participant) => participant.mission_team_id === teamId)?.traccar_group_id ?? null
+    const seenInGroup = new Set(observation.devices.flatMap((device) =>
+      device.group_id === null || device.group_id === undefined ? [] : [`${device.group_id}\u0000${device.device_id}`]))
+    for (const key of [...pendingAbsences.keys()]) {
+      const [teamId, deviceId] = key.split('\u0000') as [string, string]
+      if (seenInGroup.has(`${groupOfTeam(teamId)}\u0000${deviceId}`)) pendingAbsences.delete(key)
+    }
+    let kept: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[] = changes
+    const confirmedTeams = new Set<string>()
+    if (observation.complete) {
+      const absentNow = new Set(changes.filter((change) => change.change === 'left')
+        .map((change) => keyOf(change.mission_team_id, change.traccar_device_id)))
+      for (const key of [...pendingAbsences.keys()]) {
+        if (!absentNow.has(key)) pendingAbsences.delete(key)
+      }
+      const next: Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[] = []
+      const newlyMissingByTeam = new Map<string, number>()
+      for (const change of changes) {
+        if (change.change !== 'left') {
+          next.push(change)
+          continue
+        }
+        const key = keyOf(change.mission_team_id, change.traccar_device_id)
+        const firstAbsence = pendingAbsences.get(key)
+        if (firstAbsence !== undefined && firstAbsence < observation.observedAt) {
+          next.push(change)
+          pendingAbsences.delete(key)
+          confirmedTeams.add(change.mission_team_id)
+        } else if (firstAbsence === undefined) {
+          pendingAbsences.set(key, observation.observedAt)
+          newlyMissingByTeam.set(change.mission_team_id, (newlyMissingByTeam.get(change.mission_team_id) ?? 0) + 1)
+        }
+      }
+      kept = next
+      for (const [teamId, missing] of newlyMissingByTeam) {
+        if (missing < 2 || missing !== currentMemberCount(membershipEvents, teamId)) continue
+        const notice = `All ${missing} devices in ${teamNameOf(teamId)} are missing from the tracking server's roster; SAR Tracker is still tracking them until the next roster confirms it.`
+        pendingGroupNotices.set(teamId, notice)
+        membershipNotices = [...membershipNotices, notice]
+      }
+    }
+    for (const [teamId, notice] of [...pendingGroupNotices]) {
+      const held = [...pendingAbsences.keys()].filter((key) => key.startsWith(`${teamId}\u0000`)).length
+      if (held > 0) {
+        // Some members came back: describe only the remaining absence.
+        const updated = `${held} device${held === 1 ? '' : 's'} in ${teamNameOf(teamId)} ${held === 1 ? 'is' : 'are'} missing from the tracking server's roster; SAR Tracker is still tracking ${held === 1 ? 'it' : 'them'} until the next roster confirms it.`
+        if (updated !== notice) {
+          pendingGroupNotices.set(teamId, updated)
+          membershipNotices = [...membershipNotices.filter((candidate) => candidate !== notice), updated]
+        }
+        continue
+      }
+      pendingGroupNotices.delete(teamId)
+      membershipNotices = membershipNotices.filter((candidate) => candidate !== notice)
+      // A confirmed leave gets its own notice when the write lands.
+      if (!confirmedTeams.has(teamId)) {
+        membershipNotices = [...membershipNotices,
+          `All ${teamNameOf(teamId)} devices are back on the tracking server's roster; nothing changed.`]
+      }
+    }
+    return kept
+  }
+
+  /**
+   * A finished mission accepts no further rosters, so an unconfirmed hold can
+   * never resolve. Drop it and its provisional notice; no leave is invented.
+   */
+  function clearHeldAbsences(): void {
+    const provisional = new Set(pendingGroupNotices.values())
+    pendingAbsences.clear()
+    pendingGroupNotices.clear()
+    if (provisional.size === 0) return
+    membershipNotices = membershipNotices.filter((notice) => !provisional.has(notice))
+    publishRuntime()
+  }
+
+  /** The coordinator-facing name of a mission team. */
+  function teamNameOf(teamId: string): string {
+    return participants.find((participant) => participant.mission_team_id === teamId)?.team_name ?? 'selected group'
   }
 
   /** Waits until every roster observation accepted before the finish fence has settled. */
@@ -758,7 +870,7 @@ export async function startParticipantRuntime(
         membershipEvents = [...membershipEvents, ...inserted]
         membershipNotices = [
           ...membershipNotices,
-          ...inserted.map((event) => membershipNotice(event, participants)),
+          ...collapseMembershipNotices(inserted, participants),
         ]
       } else {
         const reloadedEvents = await dependencies.participantStore
@@ -1009,6 +1121,40 @@ function incompleteRosterSelectionError(): Error {
   return new Error(
     'Traccar roster is incomplete. Group selection is unavailable until a complete roster is received; individual device selection remains available.',
   )
+}
+
+/** Counts devices whose latest membership event for the team is "member". */
+function currentMemberCount(events: readonly GroupMembershipEvent[], teamId: string): number {
+  const latest = new Map<string, GroupMembershipEvent>()
+  for (const event of events) {
+    if (event.mission_team_id !== teamId) continue
+    const previous = latest.get(event.traccar_device_id)
+    if (previous === undefined || event.observed_at > previous.observed_at
+      || (event.observed_at === previous.observed_at && event.sequence > previous.sequence)) {
+      latest.set(event.traccar_device_id, event)
+    }
+  }
+  return [...latest.values()].filter((event) => event.change === 'member').length
+}
+
+/** One notice per team and direction when several devices change together [DON-300]. */
+function collapseMembershipNotices(
+  events: readonly GroupMembershipEvent[],
+  participants: readonly MissionParticipant[],
+): readonly string[] {
+  const groups = new Map<string, GroupMembershipEvent[]>()
+  for (const event of events) {
+    const key = `${event.mission_team_id}\u0000${event.change}`
+    groups.set(key, [...(groups.get(key) ?? []), event])
+  }
+  return [...groups.values()].map((group) => {
+    if (group.length === 1) return membershipNotice(group[0]!, participants)
+    const first = group[0]!
+    const teamName = participants.find((participant) => participant.mission_team_id === first.mission_team_id)?.team_name ?? 'selected group'
+    const direction = first.change === 'member' ? 'joined' : 'left'
+    const from = group.map((event) => event.observed_at).sort()[0]
+    return `${group.length} devices ${direction} ${teamName} (${group.map((event) => event.traccar_device_id).join(', ')}); mission participation changed from ${from}. No earlier evidence was invented.`
+  })
 }
 
 function membershipNotice(

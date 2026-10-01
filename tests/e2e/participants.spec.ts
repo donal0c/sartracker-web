@@ -170,15 +170,20 @@ test.describe('mission participants [DON-271]', () => {
       '1/1 required group members',
     )
 
-    await page.evaluate(async () => {
-      await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
-        groups: [{ group_id: '101', name: 'Hill Team renamed server-side', parent_group_id: null }],
-        devices: [{
-          device_id: '2', name: 'Bravo Team', status: 'online', last_seen: new Date().toISOString(),
-          unique_id: 'bravo-2', category: null, group_id: '101',
-        }],
+    // A leave needs a second complete roster to confirm it [DON-300], so the
+    // changed roster is observed twice; the join is recorded at once.
+    for (let observation = 0; observation < 2; observation += 1) {
+      await page.evaluate(async () => {
+        await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
+          groups: [{ group_id: '101', name: 'Hill Team renamed server-side', parent_group_id: null }],
+          devices: [{
+            device_id: '2', name: 'Bravo Team', status: 'online', last_seen: new Date().toISOString(),
+            unique_id: 'bravo-2', category: null, group_id: '101',
+          }],
+        })
       })
-    })
+      await page.waitForTimeout(50)
+    }
 
     await expect(page.getByTestId('participant-membership-notice')).toHaveCount(2)
     await expect(page.getByTestId('participant-membership-notice').last()).toContainText(
