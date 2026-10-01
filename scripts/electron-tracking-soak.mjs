@@ -80,6 +80,7 @@ import {
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
   shouldReadCheckpointPositionCount,
+  countDurablePositionsReadOnly,
 } from '../build/electron-tracking-soak-lib.js'
 import {
   buildTrackingSoakExpectedPositionTruthEvidence,
@@ -277,6 +278,7 @@ async function main() {
         launch: activeLaunch,
         mockServer,
         missionId,
+        databasePath,
         targetBatch: checkpoint,
         expectedPositions: expectedPositionsAt(options.profile, checkpoint),
         timeoutMs: options.timeoutMs,
@@ -386,6 +388,7 @@ async function main() {
       launch: activeLaunch,
       mockServer,
       missionId,
+      databasePath,
       targetBatch: options.profile.actualBatches,
       expectedPositions: options.profile.expectedPositionRows,
       timeoutMs: options.timeoutMs,
@@ -2745,11 +2748,7 @@ async function waitForCheckpoint(input) {
       completedBatches: mockState.completedBatches,
       targetBatch: input.targetBatch,
     })) {
-      const positionRows = await input.launch.page.evaluate(
-        async ({ missionId }) =>
-          window.sartrackerElectron?.missionStore.countPositions(missionId) ?? 0,
-        { missionId: input.missionId },
-      )
+      const positionRows = countDurablePositionsReadOnly(Database, input.databasePath, input.missionId)
       if (positionRows >= input.expectedPositions) return
     }
     await delay(50)
@@ -4289,24 +4288,23 @@ async function readGrowthCheckpoint(input) {
     async ({ missionId }) => {
       const missionStore = window.sartrackerElectron?.missionStore
       if (missionStore === undefined) throw new Error('Electron mission-store bridge is unavailable.')
-      const [positionRows, events] = await Promise.all([
-        missionStore.countPositions(missionId),
-        missionStore.listMissionEvents(missionId),
-      ])
+      const events = await missionStore.listMissionEvents(missionId)
       return {
-        positionRows,
         redundantEventRows: events.filter((event) =>
           event.event_type === 'device_updated' || event.event_type === 'position_recorded').length,
       }
     },
     { missionId: input.missionId },
   )
+  // Counted off the app's main thread, which the soak measures [DON-313].
+  const positionRows = countDurablePositionsReadOnly(
+    Database, path.join(input.userDataDir, 'mission-store.sqlite'), input.missionId)
   const mainDatabaseBytes = await fileBytes(path.join(input.userDataDir, 'mission-store.sqlite'))
   const walBytes = await fileBytes(path.join(input.userDataDir, 'mission-store.sqlite-wal'))
   return {
     equivalentProductionPolls: input.equivalentProductionPolls,
     databaseBytes: mainDatabaseBytes + walBytes,
-    positionRows: counts.positionRows,
+    positionRows,
     redundantEventRows: counts.redundantEventRows,
   }
 }

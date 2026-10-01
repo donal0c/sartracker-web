@@ -15,6 +15,10 @@ const Database = require('better-sqlite3')
 const { encodeReplayTrackCursor } = require('../electron/mission-replay-query.cjs')
 const FIXTURE_MISSION_ID = 'fixture-mission-000000000001'
 const MAIN_DISPATCH_HARD_GATE_MS = 200
+// The first launch after an upgrade runs the one-time DON-282 coverage repair,
+// a scan of each unfenced mission's positions. It runs once, before the
+// window opens, so it has its own budget; later opens use the 200 ms gate.
+const UPGRADE_REPAIR_OPEN_GATE_MS = 3_000
 const REPLAY_SEEK_GATE_MS = 1_000
 // The 2m preset is an explicit renderer-rejection/headroom probe, not the normal mission envelope.
 const HEADROOM_REPLAY_SEEK_GATE_MS = 2_000
@@ -58,6 +62,16 @@ async function main() {
     const gpxPath = path.join(runRoot, 'qualification.gpx')
     const gpxPointCount = 50_000
     await writeFile(gpxPath, qualificationGpx(gpxPointCount), 'utf8')
+    // First launch after an upgrade: the generated fixture, like a store from
+    // 13.4 or earlier, has no coverage fence, so this open runs the one-time
+    // repair and writes the fence exactly as a real upgrade does [DON-313].
+    const upgradeRepairStarted = performance.now()
+    const upgradeStore = createElectronMissionStore({ userDataPath, readAdminRoster: async () => [] })
+    const upgradeRepairOpenMs = performance.now() - upgradeRepairStarted
+    await upgradeStore.prepareClose()
+    upgradeStore.close()
+
+    // Every later launch opens the repaired store: the 200 ms gate applies.
     let heartbeat = startEventLoopHeartbeat()
     const initialOpenStarted = performance.now()
     let store = createElectronMissionStore({ userDataPath, readAdminRoster: async () => [] })
@@ -186,6 +200,7 @@ async function main() {
         liveReadDuringReplay: summarizeRead(liveReadDuringReplay),
         eventLoopMaxGapMs: round(eventLoopMaxGapMs),
         initialOpenMs: round(initialOpenMs),
+        upgradeRepairOpenMs: round(upgradeRepairOpenMs),
         restart: {
           openMs: round(restartOpenMs),
           replaySeekMs: round(replayAfterRestart.durationMs),
@@ -193,10 +208,12 @@ async function main() {
         },
         gates: {
           mainDispatchHardGateMs: MAIN_DISPATCH_HARD_GATE_MS,
+          upgradeRepairOpenGateMs: UPGRADE_REPAIR_OPEN_GATE_MS,
           replaySeekGateMs,
           passed: importDispatchMs < MAIN_DISPATCH_HARD_GATE_MS
             && replayDispatchMs < MAIN_DISPATCH_HARD_GATE_MS
             && initialOpenMs < MAIN_DISPATCH_HARD_GATE_MS
+            && upgradeRepairOpenMs < UPGRADE_REPAIR_OPEN_GATE_MS
             && restartOpenMs < MAIN_DISPATCH_HARD_GATE_MS
             && replaySeekMs <= replaySeekGateMs
             && latePageReplay.durationMs <= replaySeekGateMs

@@ -22,6 +22,7 @@ import {
   readWebGlRendererInfoFromDocument,
   validateFinalLineTotalAudit,
   shouldReadCheckpointPositionCount,
+  countDurablePositionsReadOnly,
 } from '../../build/electron-tracking-soak-lib.js'
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
 
@@ -1273,5 +1274,31 @@ describe('tracking soak checkpoint drain [DON-310]', () => {
     expect(shouldReadCheckpointPositionCount({ completedBatches: 239, targetBatch: 240 })).toBe(false)
     expect(shouldReadCheckpointPositionCount({ completedBatches: 240, targetBatch: 240 })).toBe(true)
     expect(shouldReadCheckpointPositionCount({ completedBatches: 241, targetBatch: 240 })).toBe(true)
+  })
+})
+
+describe('tracking soak counts durable rows off the app main thread [DON-313]', () => {
+  it('reads committed positions through its own read-only connection', async () => {
+    const { createRequire } = await import('node:module')
+    const Database = createRequire(import.meta.url)('better-sqlite3')
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'soak-readonly-count-'))
+    const databasePath = path.join(directory, 'mission-store.sqlite')
+    const writer = new Database(databasePath)
+    try {
+      writer.pragma('journal_mode = WAL')
+      writer.exec('CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT NOT NULL)')
+      const insert = writer.prepare('INSERT INTO positions (id, mission_id) VALUES (?, ?)')
+      for (let index = 0; index < 5; index += 1) insert.run(`a-${index}`, 'mission-a')
+      insert.run('b-0', 'mission-b')
+
+      // The app keeps its writer open in WAL mode while the soak counts.
+      expect(countDurablePositionsReadOnly(Database, databasePath, 'mission-a')).toBe(5)
+      insert.run('a-5', 'mission-a')
+      expect(countDurablePositionsReadOnly(Database, databasePath, 'mission-a')).toBe(6)
+      expect(() => countDurablePositionsReadOnly(Database, path.join(directory, 'missing.sqlite'), 'mission-a')).toThrow()
+    } finally {
+      writer.close()
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })

@@ -1080,6 +1080,23 @@ export function classifyOperatorInteraction(input) {
 }
 
 /**
+ * Counts a mission's durable positions through the soak's own read-only
+ * SQLite connection. Asking the app instead runs a full COUNT on its main
+ * thread (~150 ms at 700k rows), loading the very loop the soak measures
+ * [DON-313]. WAL lets this reader see committed rows without blocking writes.
+ */
+export function countDurablePositionsReadOnly(Database, databasePath, missionId) {
+  const database = new Database(databasePath, { readonly: true, fileMustExist: true })
+  try {
+    database.pragma('query_only = ON')
+    const row = database.prepare('SELECT COUNT(*) AS count FROM positions WHERE mission_id = ?').get(missionId)
+    return Number(row?.count ?? 0)
+  } finally {
+    database.close()
+  }
+}
+
+/**
  * Gates the checkpoint drain's durable COUNT on the mock's own batch counter.
  * The COUNT is a synchronous SQLite scan on the app's main thread, so polling
  * it every 50 ms for the whole run loaded the loop the soak measures [DON-310].
