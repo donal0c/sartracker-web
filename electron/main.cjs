@@ -21,7 +21,12 @@ const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { applyGpuRenderingPreference, relaunchWithSoftwareRendering } = require('./gpu-rendering-preference.cjs')
-const { checkProfileWritable, describeUnwritableProfile } = require('./profile-writability.cjs')
+const {
+  TEMPORARY_PROFILE_PREFIX,
+  checkProfileWritable,
+  describeUnwritableProfile,
+  removeStaleTemporaryProfiles,
+} = require('./profile-writability.cjs')
 const {
   registerBreadcrumbQueryIpcHandlers,
   registerExactBreadcrumbDotQueryIpcHandlers,
@@ -260,12 +265,9 @@ const unwritableProfile = (() => {
   const result = checkProfileWritable(launchUserDataPath)
   if (result.writable) return null
   const profile = { userDataPath: launchUserDataPath, code: result.code, blocked: false }
+  removeStaleTemporaryProfiles(os.tmpdir(), Date.now())
   try {
-    const temporaryPath = fs.mkdtempSync(path.join(os.tmpdir(), 'sartracker-unwritable-profile-'))
-    app.setPath('userData', temporaryPath)
-    process.once('exit', () => {
-      try { fs.rmSync(temporaryPath, { recursive: true, force: true }) } catch { /* best effort */ }
-    })
+    app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), TEMPORARY_PROFILE_PREFIX)))
   } catch {
     // No temporary profile either (for example the disk is full): Chromium
     // cannot show a window, so use the native error box and stop here.
@@ -929,6 +931,7 @@ function registerIpcHandlers(
   crashLog,
   runtimeLog,
   archiveReviewSessionManager,
+  previousSessionEndedUncleanly,
 ) {
   ipcMain.handle(TRACCAR_REQUEST_CHANNEL, createTraccarHttpRequestHandler(settingsStore))
   ipcMain.handle(LOAD_SETTINGS_CHANNEL, (event) => {
@@ -976,12 +979,12 @@ function registerIpcHandlers(
   })
   ipcMain.handle(READ_CRASH_RECOVERY_STATE_CHANNEL, async (event) => {
     validateIpcSender(event)
-    const [uncleanShutdown, recentCrashes] = await Promise.all([
-      crashLog.hadUncleanShutdown(),
-      crashLog.readRecent(1),
-    ])
+    // Answer for the previous session, captured before this session wrote its
+    // own start marker; re-reading now would report every running session
+    // as a crash, including after a clean quit [DON-284].
+    const recentCrashes = await crashLog.readRecent(1)
     return {
-      uncleanShutdown,
+      uncleanShutdown: previousSessionEndedUncleanly === true,
       lastCrash: recentCrashes[recentCrashes.length - 1] ?? null,
     }
   })
@@ -1805,6 +1808,7 @@ async function startElectronApp(startupWatchdog) {
     crashLog,
     runtimeLog,
     archiveReviewSessionManager,
+    previousSessionEndedUncleanly,
   )
   await createWindow(
     crashLog,

@@ -44,4 +44,37 @@ function describeUnwritableProfile(userDataPath, code) {
   }
 }
 
-module.exports = { checkProfileWritable, describeUnwritableProfile }
+const TEMPORARY_PROFILE_PREFIX = 'sartracker-unwritable-profile-'
+const STALE_TEMPORARY_PROFILE_MS = 60 * 60_000
+
+/**
+ * Removes this user's temporary profiles left by earlier unwritable-profile
+ * launches. Electron's exit skips Node exit handlers, so cleanup happens on
+ * the next such launch. Only real directories with the exact prefix, owned by
+ * this user and older than an hour are removed; symlinks are never followed.
+ */
+function removeStaleTemporaryProfiles(temporaryRoot, nowMs, fsImpl = fs) {
+  let entries
+  try { entries = fsImpl.readdirSync(temporaryRoot) } catch { return }
+  const uid = typeof process.getuid === 'function' ? process.getuid() : null
+  for (const name of entries) {
+    if (!name.startsWith(TEMPORARY_PROFILE_PREFIX)) continue
+    const candidate = path.join(temporaryRoot, name)
+    try {
+      const stats = fsImpl.lstatSync(candidate)
+      if (!stats.isDirectory() || stats.isSymbolicLink()) continue
+      if (uid !== null && stats.uid !== uid) continue
+      if (nowMs - stats.mtimeMs < STALE_TEMPORARY_PROFILE_MS) continue
+      fsImpl.rmSync(candidate, { recursive: true, force: true })
+    } catch {
+      // Best effort: a folder that cannot be removed is left for the next launch.
+    }
+  }
+}
+
+module.exports = {
+  TEMPORARY_PROFILE_PREFIX,
+  checkProfileWritable,
+  describeUnwritableProfile,
+  removeStaleTemporaryProfiles,
+}

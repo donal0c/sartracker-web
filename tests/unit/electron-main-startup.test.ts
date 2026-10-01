@@ -178,6 +178,34 @@ describe('Electron main startup', () => {
     expect(electronMock.BrowserWindow.mock.calls[0]?.[0].webPreferences.backgroundThrottling).toBe(false)
   })
 
+  it.each([
+    { previous: 'a clean quit', activeSession: false, expected: false },
+    { previous: 'a crash or power loss', activeSession: true, expected: true },
+  ])('reports $previous as the previous session, not the running one [DON-284]', async ({ activeSession, expected }) => {
+    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
+    const crashDir = path.join(testUserDataPath, 'crashes')
+    mkdirSync(crashDir, { recursive: true })
+    writeFileSync(path.join(crashDir, 'last-clean-exit'), '2026-10-01T10:00:00.000Z')
+    if (activeSession) writeFileSync(path.join(crashDir, 'active-session'), '2026-10-01T11:00:00.000Z')
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+    const handler = electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:read-crash-recovery-state',
+    )?.[1]
+    const sender = electronMock.BrowserWindow.mock.results[0]?.value.webContents
+
+    // This session's own start marker exists now; it must not count as a crash.
+    expect(readdirSync(crashDir)).toContain('active-session')
+    await expect(handler({ sender, senderFrame: { url: 'http://localhost:5173/' } }))
+      .resolves.toMatchObject({ uncleanShutdown: expected })
+  })
+
   it('rejects oversized mission creation payloads at the direct main IPC boundary', async () => {
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
     const electronMock = createElectronMock(vi.fn(), undefined, true)
@@ -1878,11 +1906,21 @@ describe('Electron main startup', () => {
     const setPath = vi.fn()
     Object.assign(electronMock.app, { setPath })
     const createElectronMissionStore = vi.fn()
+    // Keep the temporary profile inside this test's own folder.
+    const temporaryProfile = path.join(testUserDataPath, 'temporary-profile')
+    vi.spyOn(require('node:fs'), 'mkdtempSync').mockImplementation(() => {
+      mkdirSync(temporaryProfile, { recursive: true })
+      return temporaryProfile
+    })
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
       if (request === 'electron') return electronMock
       if (request === './profile-writability.cjs') {
         const actual = originalLoad(request, parent, isMain)
-        return { ...actual, checkProfileWritable: () => ({ writable: false, code: 'EACCES' }) }
+        return {
+          ...actual,
+          checkProfileWritable: () => ({ writable: false, code: 'EACCES' }),
+          removeStaleTemporaryProfiles: vi.fn(),
+        }
       }
       if (request === './mission-store.cjs') return { createElectronMissionStore }
       return originalLoad(request, parent, isMain)
@@ -1897,7 +1935,7 @@ describe('Electron main startup', () => {
     expectStartupFailureWindow(electronMock, expect.stringContaining(testUserDataPath))
     // Chromium needs a writable profile even to show the message; the team's
     // profile itself is left untouched.
-    expect(setPath).toHaveBeenCalledWith('userData', expect.not.stringContaining(testUserDataPath))
+    expect(setPath).toHaveBeenCalledWith('userData', temporaryProfile)
     expect(electronMock.app.requestSingleInstanceLock).toHaveBeenCalled()
     expect(createElectronMissionStore).not.toHaveBeenCalled()
     expect(electronMock.app.relaunch).not.toHaveBeenCalled()
@@ -1909,7 +1947,11 @@ describe('Electron main startup', () => {
       if (request === 'electron') return electronMock
       if (request === './profile-writability.cjs') {
         const actual = originalLoad(request, parent, isMain)
-        return { ...actual, checkProfileWritable: () => ({ writable: false, code: 'ENOSPC' }) }
+        return {
+          ...actual,
+          checkProfileWritable: () => ({ writable: false, code: 'ENOSPC' }),
+          removeStaleTemporaryProfiles: vi.fn(),
+        }
       }
       return originalLoad(request, parent, isMain)
     }) as typeof Module._load

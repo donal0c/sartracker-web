@@ -73,11 +73,15 @@ export function DiagnosticsWorkspace() {
                 Unexpected Shutdown Detected
               </p>
               <p className="mt-2 text-sm text-amber-100">
-                The app closed unexpectedly last time
+                SAR Tracker did not close normally last time. Saved mission data is intact; anything
+                still being written in the last moments may be missing. Check the most recent trails
+                and notes.
+              </p>
+              <p className="mt-2 text-xs text-amber-200/80">
                 {crashRecovery.lastCrash !== null
-                  ? ` (${crashRecovery.lastCrash.summary})`
+                  ? `Most recent recorded fault: ${crashRecovery.lastCrash.summary}. `
                   : ''}
-                . Export a support bundle to help us investigate.
+                Export a support bundle to help us investigate.
               </p>
               <button
                 className="sar-button mt-3 px-4 py-2 text-sm font-semibold disabled:opacity-50"
