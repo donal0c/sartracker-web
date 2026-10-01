@@ -18,6 +18,8 @@ import { join } from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { openMissionSections } from '../helpers/mission-sections'
+
 const OUT_DIR = join(process.cwd(), 'public', 'manual', 'assets')
 
 test.skip(process.env.MANUAL_CAPTURE !== '1', 'set MANUAL_CAPTURE=1 to regenerate manual screenshots')
@@ -263,7 +265,11 @@ test.describe('manual screenshots: running a mission', () => {
     await shot(page, 'app-shell')
 
     await withTallWindow(page, async () => {
+      // During a mission Participants and Outings fold to one line [DON-300].
       await shot(page, 'mission-control-active', page.getByTestId('mission-control-dock'))
+      await openMissionSections(page, ['participants'])
+      await shot(page, 'mission-participants-open', page.getByTestId('mission-control-dock'))
+      await page.getByTestId('mission-participants-section-toggle').click()
       await shot(page, 'tracking-tab', page.getByTestId('sidebar-tab-content'))
       await page.getByTestId('sidebar-tab-layers').click()
       await shot(page, 'layers-tab', page.getByTestId('sidebar-tab-content'))
@@ -356,10 +362,12 @@ test.describe('manual screenshots: warnings, outings, history, pause', () => {
 
     // Outings.
     await withTallWindow(page, async () => {
+      await openMissionSections(page, ['outings'])
       await page.getByTestId('outing-label-input').fill('Morning search')
       await page.getByTestId('outing-start-btn').click()
       await page.getByTestId('outing-controls-section').scrollIntoViewIfNeeded()
       await shot(page, 'outings', page.getByTestId('outing-controls-section'))
+      await page.getByTestId('mission-outings-section-toggle').click()
     })
 
     // Mission history coverage in the Layers tab.
@@ -406,8 +414,10 @@ test.describe('manual screenshots: review, replay and search passes', () => {
   test('docked review, replay, search passes', async ({ page }) => {
     await openHarness(page)
     await startDemoMission(page)
+    await openMissionSections(page, ['outings'])
     await page.getByTestId('outing-label-input').fill('Morning search')
     await page.getByTestId('outing-start-btn').click()
+    await page.getByTestId('mission-outings-section-toggle').click()
     await page.evaluate(async () => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
         sourcePath: '/tracks/team-alpha-descent.gpx',

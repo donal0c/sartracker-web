@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from './helpers/mission-sections'
 
 test.describe('mission participants [DON-271]', () => {
   test.beforeEach(async ({ page }) => {
@@ -42,6 +43,8 @@ test.describe('mission participants [DON-271]', () => {
 
     await page.getByTestId('mission-name-input').fill('Default Group Mission')
     await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-participants-section-summary')).toContainText('1 group')
+    await openMissionSections(page, ['participants'])
     await expect(page.getByTestId('participant-active-list')).toContainText('Hill Team')
   })
 

@@ -525,12 +525,13 @@
               <tr><td><strong>Top bar</strong></td><td>Mission name, chip and start time; <strong>Elapsed</strong> and <strong>Active</strong> (search) timers; device count; <strong>Online / FIX / STALE</strong>; <strong>System status</strong>; and the buttons <strong>Diagnostics</strong>, <strong>Focus Mode</strong>, <strong>Settings</strong>, <strong>Weather</strong> and <strong>Help</strong> (this manual, in a new tab). On screens narrower than about 1640 pixels they show short labels: <strong>DIAG</strong>, <strong>FOCUS</strong>, <strong>SET</strong>, <strong>WX</strong> and <strong>HELP</strong>.</td></tr>
               <tr><td><strong>Tracking strip</strong></td><td>Whether positions are arriving, and when the last one did. The <strong>Theme</strong> button on the right switches Standard and High contrast.</td></tr>
               <tr><td><strong>Map</strong></td><td>Top left: <strong>Maps</strong> (which map) and <strong>Map Tools</strong> (draw, measure). Bottom: scale, and the position under the cursor in <strong>DD</strong>, <strong>Irish Grid</strong> and <strong>DMS</strong>, with a <strong>Convert</strong> button.</td></tr>
-              <tr><td><strong>Right side</strong></td><td><strong>Mission Control</strong> at the top (start, pause, finish, people, outings). Below it three tabs: <strong>Tracking</strong>, <strong>Tools</strong> and <strong>Layers</strong>.</td></tr>
+              <tr><td><strong>Right side</strong></td><td><strong>Mission Control</strong> at the top (start, pause, finish, people, outings; during a mission people and outings fold to one line). Below it three tabs: <strong>Tracking</strong>, <strong>Tools</strong> and <strong>Layers</strong>.</td></tr>
             </tbody>
           </table>
           <div class="note">
-            On a 900-pixel-tall window the right side is tight: Mission Control and the tab area
-            each scroll on their own. Scroll inside the panel you want, or use
+            During a mission, <strong>Participants</strong> and <strong>Outings</strong> fold to one
+            line each so the tab area keeps its room; press <strong>Show</strong> to open one. If the
+            right side is still tight, Mission Control and the tab area each scroll on their own, or use
             <a href="#display">Focus Mode or Minimize</a> to give the map more room.
           </div>
         </section>
@@ -572,11 +573,27 @@
 
           <h3 id="mission-people">Add or remove a team during the mission</h3>
           <figure class="screenshot narrow">
-            <img src="assets/mission-control-active.png" alt="Mission Control during an active mission: participants, History from choices, Pause and Finish, and Outings" />
-            <figcaption>Mission Control while active. Participants and their history status, the add-a-team form, Pause / Finish, and Outings.</figcaption>
+            <img src="assets/mission-control-active.png" alt="Mission Control during an active mission: timers, Pause and Finish, and one-line Participants and Outings summaries with Show buttons" />
+            <figcaption>Mission Control while active. Timers and Pause / Finish always show; Participants and Outings fold to one line.</figcaption>
+          </figure>
+          <p>
+            During a mission, <strong>Participants</strong> and <strong>Outings</strong> show a
+            one-line summary, such as <em>1 group, 1 device · history complete</em>. Press
+            <strong>Show</strong> to open a section and <strong>Hide</strong> to fold it again.
+            <strong>A section that needs you stays open by itself</strong> and its button reads
+            <strong>Needs attention</strong>: nobody selected, history still loading or failing, an
+            older roster to resolve, a membership notice to acknowledge, a tracking scope warning, or
+            a participant or outing error. That includes history for a team you have removed, because
+            Finish still waits for it. It folds only once the problem is cleared. A mistake in a form
+            you are filling in does not hold the section open, but folding never discards it or
+            what you were typing: press <strong>Show</strong> and it is still there.
+          </p>
+          <figure class="screenshot narrow">
+            <img src="assets/mission-participants-open.png" alt="Mission Control with Participants opened: participant rows, the add-a-team form and History from choices" />
+            <figcaption>Participants opened with Show: who is selected, their history status, and the add-a-team form.</figcaption>
           </figure>
           <ol>
-            <li>In <strong>Participants</strong>, choose <strong>Individual device</strong> or <strong>Traccar group</strong>, then pick one from the list.</li>
+            <li>In <strong>Participants</strong> (press <strong>Show</strong> first), choose <strong>Individual device</strong> or <strong>Traccar group</strong>, then pick one from the list.</li>
             <li>Choose <strong>History from</strong>. There is no default, and <strong>Add participant</strong> stays greyed out until you choose:
               <ul>
                 <li><strong>Mission start</strong>: brings in their track back to the mission start.</li>
@@ -621,7 +638,7 @@
             starts or ends one for you.
           </p>
           <ul>
-            <li>Type a name and press <strong>Start outing</strong>. Press <strong>End now</strong> when the period ends. <strong>Edit</strong> changes the boundaries; it never changes recorded positions.</li>
+            <li>During a mission press <strong>Show</strong> on <strong>Outings</strong> first. Type a name and press <strong>Start outing</strong>. Press <strong>End now</strong> when the period ends. <strong>Edit</strong> changes the boundaries; it never changes recorded positions.</li>
             <li>Outings can cross midnight but cannot overlap.</li>
             <li>With no outing running, new positions are kept as <strong>Unassigned</strong>. That is normal and not an error.</li>
             <li>Pausing the mission does not end the outing.</li>

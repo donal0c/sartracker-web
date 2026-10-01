@@ -11,6 +11,7 @@ import { createRequire } from 'node:module'
 import { _electron as electron } from 'playwright'
 import { extractFile } from '@electron/asar'
 import { MAX_GPX_SOURCE_BYTES, readBoundedGpxSource } from '../electron/gpx-source-reader.cjs'
+import { openMissionSection } from './mission-sections.mjs'
 
 const executablePath = path.resolve(process.argv[2] ?? '')
 assert.ok(process.argv[2], 'Pass the packaged Electron executable path.')
@@ -108,6 +109,7 @@ try {
   await page.getByTestId('app-title').waitFor({ timeout: 30_000 })
   await page.getByTestId('mission-name-input').fill('Packaged GPX fidelity')
   await page.getByTestId('mission-start-btn').click()
+  await openMissionSection(page, 'outings')
   await page.getByTestId('outing-label-input').fill('Import race outing')
   await page.getByTestId('outing-start-btn').click()
   await page.getByTestId('active-outing-label').waitFor()

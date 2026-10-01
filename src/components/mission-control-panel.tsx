@@ -8,6 +8,11 @@ import {
   OutingControlsSection,
 } from './outing-controls-section'
 import { ParticipantControlsSection } from './participant-controls-section'
+import { MissionSectionDisclosure } from './mission-section-disclosure'
+import {
+  useOutingSectionSummary,
+  useParticipantSectionSummary,
+} from '../features/mission/use-mission-section-summaries'
 import { InlineDecisionDialog } from './inline-decision-dialog'
 import { MAX_MISSION_NAME_BYTES } from '../lib/mission-name'
 
@@ -115,6 +120,11 @@ export function MissionControlPanel({
   useLayoutEffect(() => { onDecisionOpenChange?.(decisionOpen) }, [decisionOpen, onDecisionOpenChange])
 
   const phasePresentation = selectMissionPhasePresentation(phase)
+  // Option C (Donal, 1 Oct 2026): fold Participants and Outings to one line
+  // while a mission is running or paused [DON-300].
+  const sectionsCollapsible = phase === 'active' || phase === 'paused'
+  const participantSection = useParticipantSectionSummary()
+  const outingSection = useOutingSectionSummary()
   const canMinimizeToMast =
     phase === 'active' &&
     currentMission !== null &&
@@ -129,16 +139,18 @@ export function MissionControlPanel({
 
   return (
     <section
-      className={`sar-panel p-4 text-sm ${phasePresentation.paused ? 'ring-2 ring-red-500/80' : ''}`}
+      className={`sar-panel ${sectionsCollapsible ? 'p-3' : 'p-4'} text-sm ${phasePresentation.paused ? 'ring-2 ring-red-500/80' : ''}`}
       data-mission-phase={phase}
       data-testid="mission-control"
     >
-      <div className="sar-mission-header mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
+      <div className={`sar-mission-header flex items-center justify-between border-b border-[var(--sar-line)] ${sectionsCollapsible ? 'mb-3 pb-2' : 'mb-4 pb-3'}`}>
         <div>
           <span className="sar-section-label text-amber-300">Mission Control</span>
-          <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
-            lifecycle and timing
-          </p>
+          {sectionsCollapsible ? null : (
+            <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
+              lifecycle and timing
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -232,18 +244,18 @@ export function MissionControlPanel({
         </div>
       ) : null}
 
-      <div className="space-y-4">
-        {/* Primary Telemetry */}
+      <div className={sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
+        {/* Primary Telemetry; compact during a mission (also shown in the mast) [DON-300] */}
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="sar-readout p-3">
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
-            <p className="mt-1 font-mono text-[26px] font-black leading-none text-stone-100" data-testid="mission-elapsed">
+            <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className="sar-readout p-3">
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
-            <p className="mt-1 font-mono text-[26px] font-black leading-none text-emerald-400" data-testid="mission-active-search">
+            <p className={`mt-1 font-mono font-black leading-none text-emerald-400 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
             </p>
           </div>
@@ -302,8 +314,6 @@ export function MissionControlPanel({
           </div>
         ) : null}
 
-        {phase !== 'idle' ? <ParticipantControlsSection phase={phase} /> : null}
-
         {/* Status Messages */}
         <div className="empty:hidden">
           {startError !== null ? <p className="border border-rose-400/24 bg-rose-400/10 p-2 text-xs text-rose-400">{startError}</p> : null}
@@ -353,7 +363,29 @@ export function MissionControlPanel({
           </div>
         </div>
 
-        {(currentMission !== null || governanceMission !== null) ? <OutingControlsSection /> : null}
+        {/* During a mission Pause/Finish sit above the sections, so a section
+            held open by a warning can never push them out of view [DON-300]. */}
+        {phase !== 'idle' ? (
+          <MissionSectionDisclosure
+            collapsible={sectionsCollapsible}
+            section={participantSection}
+            testId="mission-participants-section"
+            title="Participants"
+          >
+            <ParticipantControlsSection phase={phase} />
+          </MissionSectionDisclosure>
+        ) : null}
+
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled ? (
+          <MissionSectionDisclosure
+            collapsible={sectionsCollapsible}
+            section={outingSection}
+            testId="mission-outings-section"
+            title="Outings"
+          >
+            <OutingControlsSection />
+          </MissionSectionDisclosure>
+        ) : null}
 
         {phase === 'idle' && governanceMission !== null ? (
           <div

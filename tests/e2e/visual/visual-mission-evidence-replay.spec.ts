@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from '../helpers/mission-sections'
 
 import { navigateToHarness, startMission } from './helpers/test-setup'
 import { captureElementAndRegister } from './helpers/verification-manifest'
@@ -74,6 +75,7 @@ Report PASS or FAIL for each item and overall.`,
   test('repeated passes remain visibly coordinator-declared', async ({ page }) => {
     await navigateToHarness(page, { missionModel: true })
     await startMission(page, 'Repeated Pass Mission')
+    await openMissionSections(page, ['outings'])
     await page.getByTestId('outing-label-input').fill('Operational period 1')
     await page.getByTestId('outing-start-btn').click()
     await page.getByTestId('drawing-toolbar-expand').click()

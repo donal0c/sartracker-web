@@ -87,6 +87,7 @@ import {
   startTrackingSoakMockServer,
 } from '../build/electron-tracking-soak-mock-server.js'
 import { runCompetingOperationProbe } from './qualification/competing-operation-probe.mjs'
+import { openMissionSection } from './mission-sections.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -1205,6 +1206,7 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   )
   await waitForActiveMission(launch.page, 30_000)
   if (missionModelEnabled) {
+    await openMissionSection(launch.page, 'participants')
     await launch.page.waitForFunction(
       (expectedCount) => {
         const activeList = document.querySelector('[data-testid="participant-active-list"]')

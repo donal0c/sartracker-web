@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { openMissionSections } from './helpers/mission-sections'
+
 test.describe('BCP-03 explicit outings [DON-270]', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/?missionHarness=1&missionModel=1')
@@ -8,6 +10,8 @@ test.describe('BCP-03 explicit outings [DON-270]', () => {
     await page.getByTestId('mission-name-input').fill('Outing Model Test')
     await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
+    // Outings fold to one line during a mission; open it as an operator would [DON-300].
+    await openMissionSections(page, ['outings'])
     await expect(page.getByTestId('outing-controls-section')).toBeVisible()
   })
 

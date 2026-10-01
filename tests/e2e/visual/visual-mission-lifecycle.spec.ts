@@ -13,6 +13,7 @@
  * or active search timers display incorrectly, teams may miscalculate search windows.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionSections } from '../helpers/mission-sections'
 import {
   navigateToHarness,
   startMission,
@@ -99,6 +100,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   test('outing section states the no-active boundary explicitly', async ({ page }) => {
     await navigateToHarness(page, { missionModel: true })
     await startMission(page, 'Outing Notice Test')
+    await openMissionSections(page, ['outings'])
     const section = page.getByTestId('outing-controls-section')
     await expect(section).toBeVisible()
     await expect(page.getByTestId('outing-no-active-notice')).toContainText('Unassigned')
@@ -125,6 +127,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   test('outing summary keeps Unassigned separate from explicit periods', async ({ page }) => {
     await navigateToHarness(page, { missionModel: true })
     await startMission(page, 'Outing Summary Test')
+    await openMissionSections(page, ['outings'])
     await page.getByTestId('outing-label-input').fill('Night deployment')
     await page.getByTestId('outing-start-btn').click()
     await expect(page.getByTestId('active-outing-label')).toContainText('Night deployment')

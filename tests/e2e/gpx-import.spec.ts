@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from './helpers/mission-sections'
 import { readFileSync } from 'node:fs'
 import { captureAndRegister } from './visual/helpers/verification-manifest'
 
@@ -11,6 +12,7 @@ test.describe('M22 GPX import parity', () => {
     await page.waitForSelector('canvas', { timeout: 15000 })
     await page.getByTestId('mission-name-input').fill('GPX Mission')
     await page.getByTestId('mission-start-btn').click()
+    await openMissionSections(page, ['outings'])
     await expect(page.getByTestId('mission-control')).toContainText('active')
     await page.getByTestId('sidebar-tab-tools').click()
     await expect(page.getByTestId('gpx-import-panel')).toBeVisible()

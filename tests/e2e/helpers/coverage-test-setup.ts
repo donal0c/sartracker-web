@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
+import { openMissionSections } from './mission-sections'
+
 /** Creates the deterministic participant, outing, and Unassigned coverage scenario. */
 export async function seedCoverageMission(page: Page): Promise<void> {
   await page.goto('/?missionHarness=1&missionModel=1&coverage=1')
@@ -36,6 +38,7 @@ export async function seedCoverageMission(page: Page): Promise<void> {
   await completeParticipantBackfill(page)
 
   await injectCoverageSnapshot(page, 'unassigned', -60)
+  await openMissionSections(page, ['outings'])
   await page.getByTestId('outing-label-input').fill('Ridge sweep')
   await page.getByTestId('outing-start-btn').click()
   await expect(page.getByTestId('active-outing-label')).toContainText('Ridge sweep')

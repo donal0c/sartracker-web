@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from './helpers/mission-sections'
 
 test('recovers an expired Search Operations page and records without resetting Review [DON-279]', async ({ page }) => {
   await page.goto('/?missionHarness=1&missionModel=1')
   await page.getByTestId('mission-name-input').fill('Train D Review recovery')
   await page.getByTestId('mission-start-btn').click()
+  await openMissionSections(page, ['outings'])
   await page.getByTestId('outing-label-input').fill('Recovery outing')
   await page.getByTestId('outing-start-btn').click()
   await page.evaluate(async () => {

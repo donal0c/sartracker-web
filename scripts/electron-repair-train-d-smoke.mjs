@@ -34,6 +34,7 @@ import {
   remainingSmokeTime,
   runBounded,
 } from '../build/electron-repair-train-d-smoke-lib.js'
+import { openMissionSection } from './mission-sections.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -684,6 +685,8 @@ async function runAud08({ launch, provider, evidenceDir }) {
     (snapshot) => snapshot.checkpoints.some((checkpoint) => checkpoint.traccar_device_id === HELD_DEVICE_ID && checkpoint.completed === 1),
     'automatic provider backfill for original member A',
   )
+  // Participants folds once history is complete; open it as an operator would [DON-300].
+  await openMissionSection(page, 'participants')
   const initialScreenshot = path.join(evidenceDir, 'aud08-initial-backfill-complete.png')
   await boundedPageScreenshot(page, { path: initialScreenshot, fullPage: true }, 'AUD-08 initial screenshot')
   launch.screenshots.push(initialScreenshot)
@@ -767,6 +770,7 @@ async function runAud08({ launch, provider, evidenceDir }) {
   assert.equal(heldCheckpoint?.completed, 0)
   assert.equal(successfulCheckpoint?.completed, 1)
 
+  await openMissionSection(page, 'participants')
   await waitForValue(
     () => page.getByTestId('participant-backfill-status').innerText(),
     (text) => text.includes('pending / retrying for 1/2 required group members'),

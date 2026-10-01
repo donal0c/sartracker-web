@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from './helpers/mission-sections'
 
 import { formatDublinDateTimeLocal } from '../../src/features/mission-review/dublin-local-time'
 
@@ -9,6 +10,7 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
     await page.waitForSelector('canvas', { timeout: 15_000 })
     await page.getByTestId('mission-name-input').fill('Search Pass Evidence')
     await page.getByTestId('mission-start-btn').click()
+    await openMissionSections(page, ['outings'])
     await page.getByTestId('outing-label-input').fill('Operational period 1')
     await page.getByTestId('outing-start-btn').click()
 

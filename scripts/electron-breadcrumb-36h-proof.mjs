@@ -50,6 +50,7 @@ import {
   startBreadcrumb36HourMockTraccarServer,
 } from '../build/breadcrumb-36h-mock-traccar.js'
 import { hasBreadcrumbReconciliationWarning } from '../build/release-smoke-lib.js'
+import { openMissionSection } from './mission-sections.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -157,6 +158,7 @@ async function main() {
     await launch.page.getByTestId('mission-start-btn').click({ force: true })
     mission = await waitForActiveMission(launch.page, 10_000)
     if (selectedParticipantCount !== null) {
+      await openMissionSection(launch.page, 'participants')
       await launch.page.waitForFunction((expected) =>
         document.querySelector('[data-testid="participant-active-list"]')?.children.length === expected,
       selectedParticipantCount, { timeout: 10_000 })

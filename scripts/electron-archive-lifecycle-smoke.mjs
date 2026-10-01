@@ -41,6 +41,7 @@ import {
 } from '../build/electron-archive-lifecycle-liveness-mock-traccar.js'
 import { startRenderTraceDiagnostics } from '../build/electron-render-trace-diagnostics.js'
 import { startArchiveLaunch } from './qualification/archive-launch.mjs'
+import { openMissionSection } from './mission-sections.mjs'
 
 const require = createRequire(import.meta.url)
 const { readCleanupFailureDiagnosticFromMessage } = require(
@@ -1416,6 +1417,7 @@ async function startLivenessMission(page, expectedDeviceId) {
   await page.getByTestId('mission-start-btn').click({ force: true })
   const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
   if (missionModelEnabled) {
+    await openMissionSection(page, 'participants')
     await waitForExactLivenessParticipant(
       page,
       mission.id,
@@ -1444,6 +1446,7 @@ async function resumeLivenessMission(
     expectedMissionId,
   )
   if (participantScopeRequired) {
+    await openMissionSection(page, 'participants')
     await waitForExactLivenessParticipant(
       page,
       mission.id,
