@@ -2371,6 +2371,13 @@ sh "$COLLECTOR" --screenshot</code></pre>
             extra window before operational use and export a support bundle after the app is stable.
           </p>
           <p>
+            If SAR Tracker cannot write to its data folder (for example the folder belongs to another user,
+            was copied with the wrong owner, or the disk is full), it shows a
+            <strong>SAR Tracker could not start</strong> window naming the folder and what to check, then
+            closes. Nothing in the folder is changed. Fix the permission or free space, then start the app
+            again.
+          </p>
+          <p>
             SAR Tracker stores the Traccar password or token in an app-owned credential file in its own
             data folder, not in the operating-system keyring. This keeps tracking startup predictable on
             trusted team machines: the app does not depend on the Linux login keyring being unlocked to

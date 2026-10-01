@@ -1873,6 +1873,60 @@ describe('Electron main startup', () => {
     ])
   })
 
+  it('explains an unwritable profile instead of exiting silently as a duplicate launch [DON-285]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const setPath = vi.fn()
+    Object.assign(electronMock.app, { setPath })
+    const createElectronMissionStore = vi.fn()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './profile-writability.cjs') {
+        const actual = originalLoad(request, parent, isMain)
+        return { ...actual, checkProfileWritable: () => ({ writable: false, code: 'EACCES' }) }
+      }
+      if (request === './mission-store.cjs') return { createElectronMissionStore }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    await vi.waitFor(() => {
+      expectStartupFailureWindow(electronMock, expect.stringContaining('cannot write to its data folder'))
+      expect(startupProcessExit).toHaveBeenCalledWith(1)
+    })
+    expectStartupFailureWindow(electronMock, expect.stringContaining(testUserDataPath))
+    // Chromium needs a writable profile even to show the message; the team's
+    // profile itself is left untouched.
+    expect(setPath).toHaveBeenCalledWith('userData', expect.not.stringContaining(testUserDataPath))
+    expect(electronMock.app.requestSingleInstanceLock).toHaveBeenCalled()
+    expect(createElectronMissionStore).not.toHaveBeenCalled()
+    expect(electronMock.app.relaunch).not.toHaveBeenCalled()
+  })
+
+  it('still explains an unwritable profile when no temporary folder can be made either [DON-285]', () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, false)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './profile-writability.cjs') {
+        const actual = originalLoad(request, parent, isMain)
+        return { ...actual, checkProfileWritable: () => ({ writable: false, code: 'ENOSPC' }) }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+    vi.spyOn(require('node:fs'), 'mkdtempSync').mockImplementation(() => {
+      throw Object.assign(new Error('no space'), { code: 'ENOSPC' })
+    })
+
+    require('../../electron/main.cjs')
+
+    expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+      'SAR Tracker cannot start',
+      expect.stringMatching(/disk is full/iu),
+    )
+    expect(electronMock.app.exit).toHaveBeenCalledWith(1)
+    expect(electronMock.app.requestSingleInstanceLock).not.toHaveBeenCalled()
+  })
+
   it('refuses an incompatible mission-store schema without entering a relaunch loop [DON-260]', async () => {
     const startupError = new Error(
       'Cannot open mission store created by newer mission store schema 6; this build supports schema 5.',
@@ -2176,8 +2230,9 @@ describe('Electron main startup', () => {
       'SAR Tracker could not start',
       expect.stringMatching(/could not open its operational data safely/iu),
     )
-    // Only the read-only, pre-ready GPU preference lookup touches the profile
-    // path [DON-288]; no application log is created before readiness.
+    // Before ready, the profile path is looked up once for the GPU preference
+    // [DON-288] and the writability probe [DON-285], which removes its probe
+    // file; no application log is created before readiness.
     expect(electronMock.app.getPath.mock.calls).toEqual([['userData']])
     expect(readdirSync(testUserDataPath)).toEqual([])
   })

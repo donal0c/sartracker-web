@@ -10,6 +10,8 @@ const {
   utilityProcess,
 } = require('electron')
 const path = require('node:path')
+const fs = require('node:fs')
+const os = require('node:os')
 const { monitorEventLoopDelay } = require('node:perf_hooks')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 
@@ -19,6 +21,7 @@ const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { applyGpuRenderingPreference, relaunchWithSoftwareRendering } = require('./gpu-rendering-preference.cjs')
+const { checkProfileWritable, describeUnwritableProfile } = require('./profile-writability.cjs')
 const {
   registerBreadcrumbQueryIpcHandlers,
   registerExactBreadcrumbDotQueryIpcHandlers,
@@ -246,7 +249,33 @@ if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== ''
 
 // Chromium reads GPU switches only before ready, so the operator's remembered
 // software-rendering choice is applied here and logged once logs exist [DON-288].
-const gpuRenderingPreference = applyGpuRenderingPreference(app, app.getPath('userData'))
+const launchUserDataPath = app.getPath('userData')
+const gpuRenderingPreference = applyGpuRenderingPreference(app, launchUserDataPath)
+
+// An unwritable profile makes Chromium's single-instance lock fail, which used
+// to look like a duplicate launch and exit silently [DON-285]. Check first; if
+// it is unwritable, run the failure window from a temporary profile so the
+// team's profile is never touched, and explain what to do.
+const unwritableProfile = (() => {
+  const result = checkProfileWritable(launchUserDataPath)
+  if (result.writable) return null
+  const profile = { userDataPath: launchUserDataPath, code: result.code, blocked: false }
+  try {
+    const temporaryPath = fs.mkdtempSync(path.join(os.tmpdir(), 'sartracker-unwritable-profile-'))
+    app.setPath('userData', temporaryPath)
+    process.once('exit', () => {
+      try { fs.rmSync(temporaryPath, { recursive: true, force: true }) } catch { /* best effort */ }
+    })
+  } catch {
+    // No temporary profile either (for example the disk is full): Chromium
+    // cannot show a window, so use the native error box and stop here.
+    const description = describeUnwritableProfile(launchUserDataPath, result.code)
+    try { dialog.showErrorBox(description.title, description.message) } catch { /* exit code still reports it */ }
+    profile.blocked = true
+    app.exit(1)
+  }
+  return profile
+})()
 
 const electronRuntimeContext = {
   crashLog: null,
@@ -280,9 +309,9 @@ const QUIT_WRITER_UNREAPED_NOTICE = Object.freeze({
 
 configureLinuxSecretStorage()
 
-const ownsSingleInstanceLock = app.requestSingleInstanceLock()
+const ownsSingleInstanceLock = unwritableProfile?.blocked !== true && app.requestSingleInstanceLock()
 if (!ownsSingleInstanceLock) {
-  app.quit()
+  if (unwritableProfile?.blocked !== true) app.quit()
 } else {
   app.on('second-instance', () => {
     // A held process has no usable window to focus; repeat why it is open.
@@ -1351,6 +1380,10 @@ if (ownsSingleInstanceLock) {
       const startupWatchdog = createStartupWatchdog({
         timeoutMs: C01_STARTUP_RESPONSE_TIMEOUT_MS,
       })
+      if (unwritableProfile !== null) {
+        startupWatchdog.dispose()
+        throw createUnwritableProfileError(unwritableProfile)
+      }
       return startElectronApp(startupWatchdog)
         .finally(() => startupWatchdog.dispose())
     })
@@ -1513,7 +1546,19 @@ function startupFailureLogFields(error) {
   if (error instanceof Error && error.code === 'ERR_SARTRACKER_NON_REGULAR_FILE') {
     fields.code = error.code
   }
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_PROFILE_UNWRITABLE') {
+    fields.code = error.code
+  }
   return fields
+}
+
+/** Carries the operator explanation for an unwritable profile into the startup fault path. */
+function createUnwritableProfileError({ userDataPath, code }) {
+  const description = describeUnwritableProfile(userDataPath, code)
+  return Object.assign(new Error(`Profile folder is not writable (${code}).`), {
+    code: 'ERR_SARTRACKER_PROFILE_UNWRITABLE',
+    operatorMessage: description.message,
+  })
 }
 
 /**
@@ -1521,6 +1566,9 @@ function startupFailureLogFields(error) {
  * assuming that startup diagnostics or crash records were writable.
  */
 function startupFailureOperatorMessage(error) {
+  if (error instanceof Error && error.code === 'ERR_SARTRACKER_PROFILE_UNWRITABLE') {
+    return error.operatorMessage
+  }
   if (error instanceof StartupTimeoutError) {
     return `SAR Tracker could not finish starting: the step "${error.stage}" was still in progress after ${Math.ceil(error.timeoutMs / 1_000)} seconds. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
   }
