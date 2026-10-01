@@ -28,6 +28,7 @@ import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runti
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
+import { MapErrorBoundary } from './components/map-error-boundary'
 import { formatMissionDuration } from './features/mission/mission-timers'
 import { useMissionTimer } from './features/mission/use-mission-timer'
 import {
@@ -171,7 +172,9 @@ function App() {
               </div>
             }
           >
-            <MapView />
+            <MapErrorBoundary>
+              <MapView />
+            </MapErrorBoundary>
           </Suspense>
         </section>
 

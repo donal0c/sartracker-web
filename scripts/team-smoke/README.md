@@ -21,10 +21,12 @@ node scripts/team-smoke/run.mjs \
 
 - Tests the installed `.deb` by default; pass `--app <file>` (and
   `--app-arg --no-sandbox` for an AppImage) to test something else.
-- If Chromium blocklists the machine's GPU the app shows a blank window (no
-  WebGL). The repo's other packaged smokes pass `--app-arg --ignore-gpu-blocklist`;
-  do the same and say so in the release note. Launch args are recorded in
-  `results.json`.
+- If Chromium blocklists the machine's GPU, WebGL is unavailable. Since DON-288
+  the app shows a message and a **Restart with software rendering** button
+  (remembered per profile) instead of a blank map. The repo's other packaged
+  smokes pass `--app-arg --ignore-gpu-blocklist`; do the same and say so in the
+  release note. `no-gpu-flag` drops that flag and drives the button path.
+  Launch args are recorded in `results.json`.
 - `offline-map` imports `--map-package` through Settings with the network
   blocked. The native picker is answered by the app's test-only
   `SARTRACKER_ELECTRON_TEST_OFFICIAL_MAP_PACKAGE_PATH` hook; import and

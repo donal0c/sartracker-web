@@ -54,6 +54,7 @@ async function startChild(ctx, { profile, label, port, env = {} }) {
 /**
  * @typedef {Object} RunningApp
  * @property {number} pid main process id
+ * @property {number} port DevTools port; an app relaunch reuses it
  * @property {import('playwright').Page} page
  * @property {Promise<number | null>} exited resolves with the exit code
  * @property {() => boolean} alive
@@ -82,6 +83,7 @@ export async function launchApp(ctx, { profile, label, waitForShell = true, env 
   /** @type {RunningApp} */
   const handle = {
     pid: child.pid,
+    port,
     page: /** @type {any} */ (null),
     exited,
     alive: () => running,

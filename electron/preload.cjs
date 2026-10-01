@@ -21,6 +21,8 @@ const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
+const READ_GPU_RENDERING_STATE_CHANNEL = 'sartracker:gpu:read-rendering-state'
+const RESTART_WITH_SOFTWARE_RENDERING_CHANNEL = 'sartracker:gpu:restart-with-software-rendering'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 const CHECK_OFFICIAL_MAP_VIEW_CHANNEL = 'sartracker:check-official-map-view'
 const OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL = 'sartracker:official-map-packages-changed'
@@ -1315,6 +1317,12 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   fetchOfficialMapTile(url) {
     return ipcRenderer.invoke(FETCH_OFFICIAL_MAP_TILE_CHANNEL, url)
+  },
+  readGpuRenderingState() {
+    return ipcRenderer.invoke(READ_GPU_RENDERING_STATE_CHANNEL)
+  },
+  restartWithSoftwareRendering() {
+    return ipcRenderer.invoke(RESTART_WITH_SOFTWARE_RENDERING_CHANNEL)
   },
   checkOfficialMapView(input) {
     return ipcRenderer.invoke(CHECK_OFFICIAL_MAP_VIEW_CHANNEL, input)

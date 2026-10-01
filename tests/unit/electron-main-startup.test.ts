@@ -1,7 +1,7 @@
 import Module from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
@@ -64,6 +64,35 @@ describe('Electron main startup', () => {
     require('../../electron/main.cjs')
 
     expect(appendSwitch).toHaveBeenCalledWith('password-store', 'gnome-libsecret')
+  })
+
+  it('applies the remembered software-rendering choice before Electron is ready [DON-288]', () => {
+    mkdirSync(testUserDataPath, { recursive: true })
+    writeFileSync(
+      path.join(testUserDataPath, 'gpu-rendering-preference.json'),
+      JSON.stringify({ version: 1, softwareRendering: true, chosenAt: '2026-10-01T12:00:00.000Z' }),
+    )
+    const appendSwitch = vi.fn()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return createElectronMock(appendSwitch)
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    expect(appendSwitch).toHaveBeenCalledWith('ignore-gpu-blocklist')
+  })
+
+  it('leaves the GPU blocklist in force when software rendering was never chosen [DON-288]', () => {
+    const appendSwitch = vi.fn()
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return createElectronMock(appendSwitch)
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+
+    expect(appendSwitch).not.toHaveBeenCalledWith('ignore-gpu-blocklist')
   })
 
   it('installs the opt-in network block for packaged offline validation', async () => {
@@ -2147,7 +2176,10 @@ describe('Electron main startup', () => {
       'SAR Tracker could not start',
       expect.stringMatching(/could not open its operational data safely/iu),
     )
-    expect(electronMock.app.getPath).not.toHaveBeenCalled()
+    // Only the read-only, pre-ready GPU preference lookup touches the profile
+    // path [DON-288]; no application log is created before readiness.
+    expect(electronMock.app.getPath.mock.calls).toEqual([['userData']])
+    expect(readdirSync(testUserDataPath)).toEqual([])
   })
 
   it('opens the normal window after a 3.5-second readiness delay without a post-shell timeout', async () => {

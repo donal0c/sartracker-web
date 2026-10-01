@@ -8,6 +8,7 @@ import { DrawingToolbar } from './drawing-toolbar'
 import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
 import { MapDegradedAlert } from './map-degraded-alert'
 import { MapScaleReadout } from './map-scale-readout'
+import { MapRendererUnavailable } from './map-renderer-unavailable'
 import { LeafletFallbackMapView } from './leaflet-fallback-map-view'
 import { getMapRendererMode } from '../features/map/map-renderer-mode'
 import { useFocusModeStore } from '../features/focus-mode/focus-mode-store'
@@ -44,6 +45,7 @@ function MapLibreMapView() {
     hoverCoordinate,
     mapHealth,
     mapRef,
+    rendererFailure,
   } = useMapController()
   const offlineMapReadiness = useOfflineMapReadiness(activeBasemapId)
   const { coverage, checkCurrentViewCoverage } = useOfflineMapCoverage(
@@ -53,6 +55,10 @@ function MapLibreMapView() {
   const officialView = useOfficialMapViewQualification(activeBasemapId, mapRef)
   const fieldReadiness = useFieldReadinessChecklist(activeBasemapId, mapRef, officialView.qualification)
   const catalogueGroups = useOfficialMapCatalogueGroups()
+
+  if (rendererFailure !== null) {
+    return <MapRendererUnavailable reason={rendererFailure} />
+  }
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-stone-950">

@@ -21,6 +21,7 @@ type MapController = {
   readonly hoverCoordinate: HoverCoordinate
   readonly mapHealth: MapHealth
   readonly mapRef: RefObject<maplibregl.Map | null>
+  readonly rendererFailure: string | null
   readonly handleBasemapChange: (nextBasemapId: RenderableMapId) => void
 }
 
@@ -86,6 +87,7 @@ export function useMapController(): MapController {
         : { startupMapNotice: mapInstance.startupMapNotice }),
     },
     mapRef: mapInstance.mapRef,
+    rendererFailure: mapInstance.rendererFailure,
     handleBasemapChange: mapInstance.handleBasemapChange,
   }
 }

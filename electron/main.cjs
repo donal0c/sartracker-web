@@ -18,6 +18,7 @@ let startupWindowReady = false
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
+const { applyGpuRenderingPreference, relaunchWithSoftwareRendering } = require('./gpu-rendering-preference.cjs')
 const {
   registerBreadcrumbQueryIpcHandlers,
   registerExactBreadcrumbDotQueryIpcHandlers,
@@ -90,6 +91,8 @@ const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
+const READ_GPU_RENDERING_STATE_CHANNEL = 'sartracker:gpu:read-rendering-state'
+const RESTART_WITH_SOFTWARE_RENDERING_CHANNEL = 'sartracker:gpu:restart-with-software-rendering'
 const FETCH_OFFICIAL_MAP_TILE_CHANNEL = 'sartracker:fetch-official-map-tile'
 const CHECK_OFFICIAL_MAP_VIEW_CHANNEL = 'sartracker:check-official-map-view'
 const OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL = 'sartracker:official-map-packages-changed'
@@ -240,6 +243,10 @@ const validationUserDataPath = process.env.SARTRACKER_ELECTRON_USER_DATA_PATH
 if (validationUserDataPath !== undefined && validationUserDataPath.trim() !== '') {
   app.setPath('userData', path.resolve(validationUserDataPath))
 }
+
+// Chromium reads GPU switches only before ready, so the operator's remembered
+// software-rendering choice is applied here and logged once logs exist [DON-288].
+const gpuRenderingPreference = applyGpuRenderingPreference(app, app.getPath('userData'))
 
 const electronRuntimeContext = {
   crashLog: null,
@@ -998,6 +1005,19 @@ function registerIpcHandlers(
     }
     return fileSystem.ingestMarkerAttachment(input, missionStore)
   })
+  ipcMain.handle(READ_GPU_RENDERING_STATE_CHANNEL, (event) => {
+    validateIpcSender(event)
+    return gpuRenderingPreference
+  })
+  ipcMain.handle(RESTART_WITH_SOFTWARE_RENDERING_CHANNEL, async (event) => {
+    validateIpcSender(event)
+    await runtimeLog.append({
+      level: 'warn',
+      event: 'gpu_software_rendering_chosen',
+      fields: { previouslyEnabled: gpuRenderingPreference.softwareRendering },
+    })
+    relaunchWithSoftwareRendering(app, app.getPath('userData'), new Date().toISOString())
+  })
   ipcMain.handle(OPEN_EXTERNAL_PATH_CHANNEL, (event, inputPath) => {
     validateIpcSender(event)
     return fileSystem.openExternalPath(inputPath)
@@ -1541,6 +1561,16 @@ async function startElectronApp(startupWatchdog) {
     'startup evidence writer initialization',
     () => startupEvidenceService.ready,
   )
+  if (gpuRenderingPreference.softwareRendering || gpuRenderingPreference.problem !== null) {
+    void runtimeLog.append({
+      level: gpuRenderingPreference.problem === null ? 'info' : 'warn',
+      event: 'gpu_rendering_preference',
+      fields: {
+        softwareRendering: gpuRenderingPreference.softwareRendering,
+        problem: gpuRenderingPreference.problem,
+      },
+    }).catch(() => undefined)
+  }
   const storageDiagnostics = createStorageDiagnostics({
     userDataPath,
     runtimeLog,

@@ -48,6 +48,8 @@ export type MapInstanceController = {
   readonly mapReadyVersion: number
   /** Why a stored official map could not be restored at startup, until the operator picks a map. */
   readonly startupMapNotice: string | null
+  /** Why the map renderer could not start (for example WebGL unavailable); null when it started. */
+  readonly rendererFailure: string | null
   readonly handleBasemapChange: (nextBasemapId: RenderableMapId) => void
 }
 
@@ -76,6 +78,7 @@ export function useMapInstance(): MapInstanceController {
   const [styleRetryVersion, setStyleRetryVersion] = useState(0)
   const [hoverCoordinate, setHoverCoordinate] = useState<HoverCoordinate>(EMPTY_HOVER_COORDINATE)
   const [startupMapNotice, setStartupMapNotice] = useState<string | null>(null)
+  const [rendererFailure, setRendererFailure] = useState<string | null>(null)
   const [mapHealth, setMapHealth] = useState<MapHealth>(() =>
     createLoadingMapHealth(getRenderableMapLabel(initialBasemapId)),
   )
@@ -175,13 +178,29 @@ export function useMapInstance(): MapInstanceController {
       return
     }
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: initialStyleRef.current,
-      center: [...MAP_CENTER],
-      zoom: MAP_DEFAULT_ZOOM,
-      maxBounds: IRELAND_MAX_BOUNDS,
-    })
+    let map: maplibregl.Map
+    try {
+      map = new maplibregl.Map({
+        container: containerRef.current,
+        style: initialStyleRef.current,
+        center: [...MAP_CENTER],
+        zoom: MAP_DEFAULT_ZOOM,
+        maxBounds: IRELAND_MAX_BOUNDS,
+      })
+    } catch (error) {
+      // MapLibre throws here when WebGL is unavailable or the GPU is
+      // blocklisted. Uncaught, it would unmount the whole shell [DON-288].
+      const reason = error instanceof Error ? error.message : String(error)
+      // Reported from a task, like other renderer events, not during the effect body.
+      queueMicrotask(() => setRendererFailure(reason))
+      void recordDiagnosticEvent({
+        level: 'error',
+        category: 'map',
+        event: 'map_renderer_unavailable',
+        fields: { reason: reason.slice(0, 500) },
+      })
+      return
+    }
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.on('load', () => {
@@ -305,6 +324,7 @@ export function useMapInstance(): MapInstanceController {
     mapRef,
     mapReadyVersion,
     startupMapNotice,
+    rendererFailure,
     handleBasemapChange,
   }
 }
