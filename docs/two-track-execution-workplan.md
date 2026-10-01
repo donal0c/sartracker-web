@@ -1,6 +1,6 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-10-01. This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
+Updated 2026-10-01 (evening). This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
 
 ## Next release (13.6) — ordered queue, 1 October (Claude tracks these)
 
@@ -10,29 +10,32 @@ Claude keeps the list current; Donal does not need to remember any of it.
 
 | Order | Item | Ticket | Needs |
 | --- | --- | --- | --- |
-| 1 | Initial history catch-up can starve live trail polling (all 8 shared transport slots) | DON-311 | **Fixed 86b8384a** (6 of 8 slots for backfill, live first). Waiting: CI soak, then box `team-mission` backfill time |
-| 2 | Main-thread stalls of 280–520 ms in the normal-profile soak (pre-existing; data exact) | DON-310 | Attributed; harness fix f86777ca, A 2473beca, B f247773f (no measurable gain). Measurement ticket, closes with DON-313 |
-| 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac (renderer ~1.3 GB) | DON-312 | Heap attribution; check the box evidence |
-| 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | **Fixed e018c128** (restore when package ready, visible notice otherwise). Waiting: team-smoke with the real package at the next candidate |
-| 3a — **NEXT** | Move mission-store SQLite off the Electron main thread (soak stalls; 2 s main block opening a 960k store) | DON-313 | Plan first (worker behind the IPC contract), then tests-first; packaged SQLite/IPC/worker smoke |
-| 3b | Replay ignores the Discovery package (always online map) | DON-314 | Tests first; reuse DON-304's resolver |
-| 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Decided 1 Oct: visible message + operator "Restart with software rendering" button (remembered). Implement |
-| 5 | Unwritable profile exits silently | DON-285 | Implementation |
-| 6 | Clean exit recorded as a crash, plus the "was lost" wording | DON-284 | Wording decided 1 Oct (on the ticket). Implement |
-| 7 | Restore a retired GPX track with truthful replay | DON-309 | Migration plus replay/archive changes |
-| 8 | Default team group pre-ticked at Start | DON-296 | Decided 1 Oct: default-group setting, pre-ticked at Start, untickable. Implement |
-| 9 | Simplify the right-hand panel; Eamonn's layout doc; Outings panel clarity | DON-297 | Eamonn's doc and call, then a design proposal |
-| 10 | PCLinuxOS VM on the test box; smoke the AppImage there | DON-298 | Setup |
-| 11 | Hidden-gap sweep: persisted legacy state, mid-mission controls, checks during failures | DON-299 | Implementation |
-| 12 | Cosmetic items from the manual pass; merge the manual rewrite | DON-300, DON-301 | Implementation, review |
-| 13 | Replay of backfilled history (question not yet sent) | DON-293 | Ask the team |
-| 14 | Retire or rewrite the obsolete live-exact smoke | DON-302 | OK to retire given 1 Oct. Implement |
+| 1 | Initial history catch-up can starve live trail polling | DON-311 | **Fixed 86b8384a.** Waiting: CI soak, then box `team-mission` backfill time |
+| 2 | Main-thread stalls in the normal-profile soak (measurement) | DON-310 | Closes with DON-313 |
+| 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac | DON-312 | Heap attribution; check the box evidence |
+| 3 | Discovery remembered as the map across restarts | DON-304 | **Fixed e018c128.** Waiting: team-smoke with the real package |
+| 3a — **WAITING ON DONAL** | Soak stalls / 960k open block | DON-313 | Attributed 1 Oct: single long `addPositionsBulk` transactions (not back-to-back writes); the 960k "open" is the one-time DON-282 coverage repair (reopen 10–17 ms). **Plan on the ticket: bounded sub-transactions with a real yield, not a worker; plus the 960k fixture decision.** Donal to approve before code |
+| 3b | Replay ignores the Discovery package | DON-314 | **Fixed e73e5734** (pushed). Owed: `team-workflow` Replay step with the real package |
+| 4 | Visible failure when WebGL is unavailable | DON-288 | **Fixed 3f98a23f** (pushed). Owed: box `no-gpu-flag` (button → map draws via llvmpipe) |
+| 5 | Unwritable profile exits silently | DON-285 | **Fixed 6dbe43d3 + ee32ac32** (pushed). Owed: box `unwritable-profile` + `duplicate-launch` on the AppImage |
+| 6 | Clean exit recorded as a crash; wording | DON-284 | **Fixed ee32ac32** (pushed; IPC re-read the running session's marker). Owed: box `tracking` SIGTERM row + window-X by hand |
+| 7 — **WAITING ON DONAL** | Restore a retired GPX track with truthful replay | DON-309 | Plan on the ticket. **Decision: schema 13 → 14 (no going back to 13.5 with the same profile)**; recommendation accept |
+| 8 | Default team group pre-ticked at Start | DON-296 | **Built 78b00506.** Mac packaged `team-workflow` passed (4,174 fixes exact). Owed: box run with `--map-package` |
+| 9 | Simplify the right-hand panel; Eamonn's doc | DON-297 | Eamonn's doc and call |
+| 10 | PCLinuxOS VM on the test box | DON-298 | Setup (box) |
+| 11 | Hidden-gap sweep | DON-299 | **Class 1 done a0b8643a** (recording cannot read stored view state). Classes 2–5: DON-315/316/317 (smoke additions, box) |
+| 12 | Cosmetic items; merge the manual rewrite | DON-300, DON-301 | **NEXT** |
+| 13 | Replay of backfilled history (question not yet sent) | DON-293 | Ask the team (parked) |
+| 14 | Retire the obsolete live-exact smoke | DON-302 | **Done a6731ece** |
 | 15 | Harvey and Hiker maps | DON-303 | Maps last |
 
 Next-candidate evidence owed (Claude tracks): DON-311 packaged CI tracking soak
 (from the release run; dispatched validation stops at the 960k step) and the
-team-smoke `team-mission` backfill time; DON-304 team-smoke `team-workflow` and
-`offline-map` with the real Discovery package; DON-312 check the box soak
+team-smoke `team-mission` backfill time; DON-304/DON-314/DON-296 team-smoke
+`team-workflow` (now with Replay over Discovery and the default group) and
+`offline-map` with the real Discovery package; DON-288 `no-gpu-flag` without the
+flag (button path); DON-285 `unwritable-profile` + `duplicate-launch`; DON-284
+`tracking` SIGTERM row and window-X close by hand; DON-312 check the box soak
 evidence for the memory budget. All need the box, only when Donal frees it.
 
 Release carry-overs: repeat the native file-picker hand check on the next

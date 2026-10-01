@@ -1,54 +1,50 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-01. Issue order (13.6 queue): [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-01 (evening). Issue order (13.6 queue): [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md).
 
 ## Status
 
 - **beta.13.5 published 1 Oct 2026** (controlled team beta, not for live
   incidents): tag fac5adcf, release run 36784213719, AppImage `3847d36d…94e0`,
-  .deb `012ec1fe…2e61`; fresh public download matches. Six owner-approved
-  exceptions (DON-284/285/288/299/304/310 + native picker) in the note.
-- beta.13.4 superseded.
+  .deb `012ec1fe…2e61`. Six owner-approved exceptions in the note.
+- 13.6 work on master since then: DON-311, DON-304, DON-310 A+B (morning);
+  DON-314 e73e5734, DON-288 3f98a23f, DON-285 6dbe43d3, DON-284 + DON-285
+  follow-up ee32ac32 (pushed); DON-296 78b00506, DON-302 a6731ece,
+  DON-299 class 1 a0b8643a (committed; push after CI 36880796648 finishes).
+  Each was Codex-reviewed and its findings were fixed.
 
 ## Verification limits
 
-- Live Traccar is verified for one approved device (4,431/4,431 incl. 2,463
-  late uploads); everything else on the box uses synthetic providers, not field
-  acceptance. PCLinuxOS (the team's OS) is untested (DON-298).
-- The box sleeps when idle. For a long run, open a Terminal so Donal types the
-  sudo password for a temporary `systemd-inhibit` (see 13.5's `c6/install.sh`).
+- Live Traccar is verified for one approved device; everything else on the
+  box uses synthetic providers. PCLinuxOS is untested (DON-298).
+- Mac packaged checks today: `no-gpu-flag` mechanics (WebGL forced off, so no
+  map after restart), `unwritable-profile` + `duplicate-launch` PASS, SIGTERM
+  clean / SIGKILL unclean, `team-workflow` automated parts passed (4,174 fixes
+  exact). The box must repeat them on the AppImage.
+- The box sleeps when idle; open a Terminal for Donal's sudo password for
+  `systemd-inhibit` on long runs.
 
-## Next action — 13.6 queue
+## Waiting on Donal
 
-- **DON-311 fixed** (86b8384a): backfill holds at most 6 of 8 history slots,
-  live trails admitted first; reconciler batch matches (catch-up +32% at
-  200 ms latency, not 2x). Open: CI soak and box `team-mission` backfill
-  time at the next release candidate (dispatched CI stops at the 960k step).
-- **DON-310**: Mac GPU soak still stalls (291/479 ms), so not llvmpipe.
-  Donal chose A+B (done: 2473beca, f247773f); no measurable gain, so route
-  C is open as **DON-313** (SQLite off the main thread).
-  The CI 960k replay step fails on the same cause (2 s open), which also
-  stops dispatched validation before the CI soak.
-- **DON-312** (new): soak exceeds the 2 GB memory budget on the Mac.
-- **DON-304 fixed** (e018c128): Discovery restored after restart when its
-  package is ready, visible notice otherwise; team-smoke with the real
-  package at the next candidate. Follow-up DON-314 (Replay map).
-- **Next: DON-313** in a fresh session. Its Linear comments hold the Mac
-  evidence paths, repro/profiling commands and the first step (prove long
-  tasks vs back-to-back writes). Plan to Donal before coding. Then DON-314,
-  DON-288, ... per the [workplan](../docs/two-track-execution-workplan.md).
-- Evidence owed at the next candidate (box): see the workplan's list under
-  the 13.6 queue.
-- Mac evidence: `tmp/don-310-mac-soak/` (local, gitignored).
-Eamonn: Outings explanation on Donal's call; his layout doc feeds DON-297.
-Box (shared, ask Donal first): smoke tool, 13.4 upgrade profile, 960k fixture,
-live fixtures in `~/sartracker-live-fixtures`; old folders cleaned 1 Oct.
+- **DON-313:** attribution done; plan on the ticket. Recommended: bounded
+  sub-transactions with a real yield (not a worker). Also decide whether the
+  960k CI fixture carries the DON-282 fence (steady-state open) with a
+  separate one-time-repair row.
+- **DON-309:** schema 13 → 14 for retire/restore intervals (no going back to
+  13.5 with the same profile). Recommended: accept.
 
-**Decided 1 Oct (on the tickets):** DON-296 default group pre-ticked ·
-DON-284 shutdown wording · DON-288 software-rendering button · DON-302 retire.
-**Waiting on Donal:** nothing open.
-**Ask the team:** DON-293.
+## Next action
+
+- Push the three local commits once CI 36880796648 completes (a push cancels
+  it).
+- Then DON-300/301 (cosmetic items, manual rewrite merge), then DON-315/316/317
+  (DON-299 smoke classes). Skip DON-297 (Eamonn's doc), DON-298 (box),
+  DON-293 (parked).
+- Evidence owed at the next candidate: see the workplan list under the 13.6
+  queue.
+- Local evidence: `tmp/don-313-attribution/` (profiles, 960k fixture,
+  benchmarks), `tmp/don-310-mac-soak/`.
 
 ## Pointers
 
