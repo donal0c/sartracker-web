@@ -98,14 +98,18 @@ export async function startMissionWithLookback(page, { name, offsetHours, device
 /**
  * Opens a Mission Control section (participants or outings) if it is
  * collapsed. During a mission they collapse to a summary until Show is
- * pressed; a section forced open by a warning is already open [DON-300].
+ * pressed; a section forced open by a warning is already open, and outside
+ * an active or paused mission there is no wrapper at all [DON-300].
  *
  * @param {import('playwright').Page} page
  * @param {'participants' | 'outings'} name
  */
 export async function openMissionSection(page, name) {
   const section = page.getByTestId(`mission-${name}-section`)
-  await section.waitFor({ state: 'attached', timeout: 20_000 })
+  // The wrapper exists only while a mission is active or paused; give a
+  // just-started mission a moment, then treat "no wrapper" as open.
+  await section.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {})
+  if (await section.count() === 0) return
   if (await section.getAttribute('data-open') !== 'false') return
   await page.getByTestId(`mission-${name}-section-toggle`).click()
   await page.waitForFunction((testId) =>
