@@ -204,3 +204,21 @@ export async function archiveMission(page) {
 export async function bodyText(page) {
   return (await page.locator('body').innerText()).replace(/\s+/gu, ' ')
 }
+
+/** Switches to any other available basemap; returns the new menu label. */
+export async function switchBasemap(page) {
+  const toggle = page.getByTestId('basemap-menu-toggle')
+  const before = (await toggle.innerText()).replace(/\s+/gu, ' ')
+  await toggle.click()
+  await delay(400)
+  const ids = await page.locator('[data-testid^="basemap-btn-"]').evaluateAll((nodes) => nodes.map((node) => ({
+    id: node.getAttribute('data-testid'), active: node.className.includes('bg-amber-300'), enabled: !node.disabled,
+  })))
+  const other = ids.find((entry) => !entry.active && entry.enabled)
+  if (other === undefined) throw new Error(`No second basemap to switch to: ${JSON.stringify(ids)}.`)
+  await page.getByTestId(other.id).click()
+  await delay(3000)
+  const after = (await toggle.innerText()).replace(/\s+/gu, ' ')
+  if (after === before) throw new Error(`The basemap stayed "${before}" after choosing ${other.id}.`)
+  return after
+}

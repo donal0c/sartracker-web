@@ -14,6 +14,7 @@ import path from 'node:path'
 import { delay, launchApp } from '../lib/app.mjs'
 import { LOOKBACK_HOURS, startHistoryTraccar } from '../lib/history-traccar.mjs'
 import { LIVE_LAG_LIMIT_STEPS, waitForStoredIds, watchLiveRecording } from '../lib/live-recording.mjs'
+import { seedLivedInProfile } from '../lib/lived-in.mjs'
 import { startMockTraccar } from '../lib/mock-traccar.mjs'
 import {
   addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, resumeIfPrompted,
@@ -205,10 +206,12 @@ async function lookbackPhase(ctx) {
 }
 
 /** Starts a mock, the app and a mission with participants. */
-async function trackedMission(ctx, label, name, profileName = 'profile') {
+async function trackedMission(ctx, label, name, profileName = 'profile', { livedIn = false } = {}) {
   const mock = await startMockTraccar()
   ctx.cleanups.push(() => mock.close())
   const profile = path.join(ctx.runDir, profileName)
+  // DON-317: tracking and lifecycle also run on a lived-in profile.
+  const seeded = livedIn ? await seedLivedInProfile(ctx, profile, { providerUrl: mock.url }) : 'fresh profile'
   const app = await launchApp(ctx, { profile, label })
   await connectProvider(app.page, mock.url)
   await startMission(app.page, name, PARTICIPANTS)
@@ -218,7 +221,7 @@ async function trackedMission(ctx, label, name, profileName = 'profile') {
     return { missionStart: mission?.start_time, participants: await store.listMissionParticipants(mission.id) }
   })
   const firstExpectedByDevice = participantFirstIndices(mock, setup.missionStart, setup.participants)
-  return { mock, profile, app, firstExpectedByDevice }
+  return { mock, profile, app, firstExpectedByDevice, seeded }
 }
 
 /**
@@ -311,13 +314,13 @@ export default [
     id: 'tracking',
     async run(ctx) {
       const name = 'Tracking Exactness Smoke'
-      const { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'tracking', name)
+      const { mock, profile, app, firstExpectedByDevice, seeded } = await trackedMission(ctx, 'tracking', name, 'profile', { livedIn: true })
       await delay(90_000)
       await app.shot('tracking')
       await app.stop()
       const result = verifyFixes(mock, missionFixes(profile, name), { firstExpectedByDevice })
       const lookback = await lookbackPhase(ctx)
-      return `${result.fixes} stored fixes, 0 differ from provider coordinates/time; walkers contiguous `
+      return `On a ${seeded}: ${result.fixes} stored fixes, 0 differ from provider coordinates/time; walkers contiguous `
         + `(${JSON.stringify(result.perDevice)}). ${lookback}`
     },
   },
@@ -357,7 +360,7 @@ export default [
     async run(ctx) {
       const name = 'Lifecycle Smoke'
       const findings = []
-      let { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'lifecycle-1', name)
+      let { mock, profile, app, firstExpectedByDevice, seeded } = await trackedMission(ctx, 'lifecycle-1', name, 'profile', { livedIn: true })
       // Walkers must record live after each relaunch, not only be backfilled
       // at the end. The first poll after a launch is the grace period [DON-316].
       const requireLive = async (label, durationMs) => {
@@ -419,7 +422,7 @@ export default [
       const summary = `pause, SIGKILL, renderer crash and graceful quit; ${result.fixes} fixes, walkers gap-free `
         + `${JSON.stringify(result.perDevice)}`
       expectProduct(findings.length === 0, `${findings.join('; ')}. Data: ${summary}.`)
-      return `${summary}; walkers recorded live after start and after each relaunch; pause state preserved; graceful quit not reported as a crash; evidence health stayed healthy after each. Window X close: check by hand.`
+      return `On a ${seeded}: ${summary}; walkers recorded live after start and after each relaunch; pause state preserved; graceful quit not reported as a crash; evidence health stayed healthy after each. Window X close: check by hand.`
     },
   },
   {

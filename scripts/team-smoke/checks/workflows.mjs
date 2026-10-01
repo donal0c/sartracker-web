@@ -21,8 +21,10 @@ import {
   placeMarker,
   resumeIfPrompted,
   startMission,
+  switchBasemap,
 } from '../lib/operator.mjs'
 import { expectProduct } from '../lib/results.mjs'
+import { seedLivedInProfile } from '../lib/lived-in.mjs'
 import { withStore } from '../lib/store.mjs'
 
 /** A 2x2 PNG used as a marker photo. */
@@ -59,24 +61,6 @@ async function drawnGpxSegments(page) {
     drawn = await count()
   }
   return drawn
-}
-
-/** Switches to any other available basemap; returns the new menu label. */
-async function switchBasemap(page) {
-  const toggle = page.getByTestId('basemap-menu-toggle')
-  const before = (await toggle.innerText()).replace(/\s+/gu, ' ')
-  await toggle.click()
-  await delay(400)
-  const ids = await page.locator('[data-testid^="basemap-btn-"]').evaluateAll((nodes) => nodes.map((node) => ({
-    id: node.getAttribute('data-testid'), active: node.className.includes('bg-amber-300'), enabled: !node.disabled,
-  })))
-  const other = ids.find((entry) => !entry.active && entry.enabled)
-  if (other === undefined) throw new Error(`No second basemap to switch to: ${JSON.stringify(ids)}.`)
-  await page.getByTestId(other.id).click()
-  await delay(3000)
-  const after = (await toggle.innerText()).replace(/\s+/gu, ' ')
-  if (after === before) throw new Error(`The basemap stayed "${before}" after choosing ${other.id}.`)
-  return after
 }
 
 /** Lists files under a directory with their size, newest first. */
@@ -161,6 +145,7 @@ export default [
       await writeFile(photo, PHOTO)
       await mkdir(path.dirname(gpx), { recursive: true })
       await writeGpx(gpx)
+      const livedIn = await seedLivedInProfile(ctx, profile)
       let app = await launchApp(ctx, { profile, label: 'markers-gpx' })
       await startMission(app.page, 'Markers Smoke', [])
       await placeMarker(app.page, { name: 'Smoke IPP', x: 600, y: 400 })
@@ -218,7 +203,7 @@ export default [
       expectProduct(attachmentMatch, 'No byte-identical copy of the attached photo was stored in the profile.')
       expectProduct(imported?.imports?.length === 1 && imported.failures?.length === 0,
         `GPX import returned ${JSON.stringify(imported).slice(0, 200)}.`)
-      return `2 markers stored; photo attachment stored byte-identical; GPX (30 timed points) imported via the app's import bridge, `
+      return `On a ${livedIn}: 2 markers stored; photo attachment stored byte-identical; GPX (30 timed points) imported via the app's import bridge, `
         + 'drawn after import, a basemap switch and a relaunch; hidden in Layers it was described as hidden and "Show on map" drew it again. Native file picker: check by hand.'
     },
   },
@@ -229,7 +214,9 @@ export default [
     async run(ctx) {
       const mock = await startMockTraccar()
       ctx.cleanups.push(() => mock.close())
-      const app = await launchApp(ctx, { profile: path.join(ctx.runDir, 'profile'), label: 'replay-basemaps' })
+      const profile = path.join(ctx.runDir, 'profile')
+      const livedIn = await seedLivedInProfile(ctx, profile, { providerUrl: mock.url })
+      const app = await launchApp(ctx, { profile, label: 'replay-basemaps' })
       const t = (id) => app.page.getByTestId(id)
       await connectProvider(app.page, mock.url)
       await startMission(app.page, 'Replay Smoke', ['Walker Alpha', 'Walker Bravo'])
@@ -264,7 +251,7 @@ export default [
         await app.shot(`basemap-${name.replace(/ /gu, '-')}`)
       }
       await app.stop()
-      return `Replay reconstructed state 1 min back; live mission stayed ${phase}; basemaps ${basemaps.join(', ')} selected (review screenshots for tiles).`
+      return `On a ${livedIn}: replay reconstructed state 1 min back; live mission stayed ${phase}; basemaps ${basemaps.join(', ')} selected (review screenshots for tiles).`
     },
   },
   {
