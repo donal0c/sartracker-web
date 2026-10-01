@@ -10,9 +10,13 @@ Release gate: [checklist](../docs/release-checklist.md).
   .deb `012ec1fe…2e61`. Six owner-approved exceptions in the note.
 - 13.6 work on master since then: DON-311, DON-304, DON-310 A+B (morning);
   DON-314 e73e5734, DON-288 3f98a23f, DON-285 6dbe43d3, DON-284 + DON-285
-  follow-up ee32ac32 (pushed); DON-296 78b00506, DON-302 a6731ece,
-  DON-299 class 1 a0b8643a (committed; push after CI 36880796648 finishes).
-  Each was Codex-reviewed and its findings were fixed.
+  follow-up ee32ac32, DON-296 78b00506, DON-302 a6731ece, DON-299 class 1
+  a0b8643a, DON-300 items 1/2/7 aa1ec7dc (all pushed). Each was
+  Codex-reviewed and its findings were fixed.
+- CI 36880796648 (ee32ac32) failed one timing test (fatal fence vs the 10 s
+  startup watchdog; passes locally). Hardened in e4dfdd5c (local, not
+  pushed). CI 36883863760 on aa1ec7dc is running: if green, push e4dfdd5c.
+  If that test fails again, investigate before anything else.
 
 ## Verification limits
 
@@ -33,12 +37,14 @@ Release gate: [checklist](../docs/release-checklist.md).
   separate one-time-repair row.
 - **DON-309:** schema 13 → 14 for retire/restore intervals (no going back to
   13.5 with the same profile). Recommended: accept.
+- **DON-300 item 8:** when a complete roster omits a group's devices, every
+  member gets a durable "left" (tracking gap). Recommended: confirm absence
+  over two consecutive complete rosters, one group-level notice.
 
 ## Next action
 
-- Push the three local commits once CI 36880796648 completes (a push cancels
-  it).
-- Then DON-300/301 (cosmetic items, manual rewrite merge), then DON-315/316/317
+- Then DON-300 items 3-6 (layout at 1440x900), DON-301 (manual rewrite
+  merge; conflicts with today's manual edits), then DON-315/316/317
   (DON-299 smoke classes). Skip DON-297 (Eamonn's doc), DON-298 (box),
   DON-293 (parked).
 - Evidence owed at the next candidate: see the workplan list under the 13.6
