@@ -19,16 +19,24 @@ Release gate: [checklist](../docs/release-checklist.md).
 - The box sleeps when idle. For a long run, open a Terminal so Donal types the
   sudo password for a temporary `systemd-inhibit` (see 13.5's `c6/install.sh`).
 
-## Next action — start 13.6 with DON-311
+## Next action — 13.6 queue
 
-13.5 is out and the team note went to Eamonn (1 Oct). Work the 13.6 queue in the
-[workplan](../docs/two-track-execution-workplan.md) top-down, starting with
-DON-311 (initial catch-up can starve live trails), then DON-310 (soak stalls).
+- **DON-311 fixed** (86b8384a): backfill holds at most 6 of 8 history slots,
+  live trails admitted first; reconciler batch matches (catch-up +32% at
+  200 ms latency, not 2x). Open: CI soak (run 36857306378), box `team-mission`
+  backfill time at the next candidate.
+- **DON-310**: Mac GPU soak still stalls (281/387 ms after the harness COUNT
+  fix f86777ca), so not llvmpipe. Cause: synchronous SQLite writes on the
+  main thread under ~120x compressed load. Awaiting Donal's route (A cache
+  write-fence statements, B production sweep ratio in the soak, C worker).
+- **DON-312** (new): soak exceeds the 2 GB memory budget on the Mac.
+- Then DON-304, DON-288, ... per the [workplan](../docs/two-track-execution-workplan.md).
+- Mac evidence: `tmp/don-310-mac-soak/` (local, gitignored).
 Eamonn: Outings explanation on Donal's call; his layout doc feeds DON-297.
 Box (shared, ask Donal first): smoke tool, 13.4 upgrade profile, 960k fixture,
 live fixtures in `~/sartracker-live-fixtures`; old folders cleaned 1 Oct.
 
-**Waiting on Donal (Claude raises these):** DON-296 default KMRT group ·
+**Waiting on Donal (Claude raises these):** DON-310 route · DON-296 default KMRT group ·
 DON-284 wording · DON-288 fallback · DON-302 retire the old live script.
 **Ask the team:** DON-293.
 

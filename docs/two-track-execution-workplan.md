@@ -1,6 +1,6 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-09-30. This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
+Updated 2026-10-01. This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
 
 ## Next release (13.6) — ordered queue, 1 October (Claude tracks these)
 
@@ -10,8 +10,9 @@ Claude keeps the list current; Donal does not need to remember any of it.
 
 | Order | Item | Ticket | Needs |
 | --- | --- | --- | --- |
-| 1 | Initial history catch-up can starve live trail polling (all 8 shared transport slots) | DON-311 | Tests first (see DON-305's live-polling test) |
-| 2 | Main-thread stalls of 400–670 ms in the normal-profile soak (pre-existing; data exact) | DON-310 | Attribute the stalls, then fix; re-test on a GPU machine |
+| 1 | Initial history catch-up can starve live trail polling (all 8 shared transport slots) | DON-311 | **Fixed 86b8384a** (6 of 8 slots for backfill, live first). Waiting: CI soak, then box `team-mission` backfill time |
+| 2 | Main-thread stalls of 400–670 ms in the normal-profile soak (pre-existing; data exact) | DON-310 | Mac GPU run still stalls (not llvmpipe). Attributed: harness COUNT polling (fixed f86777ca) + synchronous SQLite writes on the main thread. **Donal decision:** fix route A/B/C |
+| 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac (renderer ~1.3 GB) | DON-312 | Heap attribution; check the box evidence |
 | 3 | Discovery remembered as the map across restarts (team ask; offline safety) | DON-304 | Tests first |
 | 4 | Visible failure when WebGL is unavailable or GPU-blocklisted | DON-288 | Fallback wording decision, then fix |
 | 5 | Unwritable profile exits silently | DON-285 | Implementation |
