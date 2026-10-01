@@ -218,6 +218,12 @@ const BREADCRUMB_RECENT_WINDOW_MAX_MS = 2 * 60 * 60 * 1000
 const HISTORY_PUBLISH_DELAY_MS = 100
 const HISTORY_PERSISTENCE_BATCH_LIMIT = 5_000
 const HISTORY_TRANSPORT_MAX_CONCURRENCY = 8
+// Reconciler history (initial catch-up and sweep together) may hold at most
+// this many slots, so live trails always have the rest [DON-311].
+const HISTORY_TRANSPORT_BACKGROUND_MAX_CONCURRENCY = 6
+
+/** Live trail polling is admitted ahead of reconciler backfill. */
+type HistoryTransportPriority = 'live' | 'background'
 
 const DEFAULT_LOGGER: PollingManagerLogger = {
   warn: (message, context) => {
@@ -314,7 +320,11 @@ export function createPollingManager(
   let settleCurrentPositionForStop: (() => void) | null = null
   let historyTransportAbortController = new AbortController()
   let activeHistoryTransportCount = 0
-  const historyTransportWaiters: (() => void)[] = []
+  let activeBackgroundHistoryTransportCount = 0
+  const historyTransportWaiters: Record<HistoryTransportPriority, (() => void)[]> = {
+    live: [],
+    background: [],
+  }
   const historyEvidenceOperations = new Set<Promise<BreadcrumbNormalizationResult>>()
   const historyPersistenceOperations = new Set<Promise<unknown>>()
 
@@ -418,6 +428,7 @@ export function createPollingManager(
         from,
         to,
         expectedHistoryResetKey,
+        'background',
       )).accepted
     },
     onChunk: async (chunk) => {
@@ -551,6 +562,9 @@ export function createPollingManager(
     ...(options.historyAntiEntropyIntervalMs === undefined
       ? {}
       : { antiEntropyIntervalMs: options.historyAntiEntropyIntervalMs }),
+    // Batches match the reconciler's transport share; a larger batch would
+    // wait a whole extra round for the slots reserved for live trails.
+    maxConcurrency: HISTORY_TRANSPORT_BACKGROUND_MAX_CONCURRENCY,
     shouldContinue: isHistoryReconciliationCurrent,
     logger,
     setTimeout: scheduleTimeout,
@@ -824,34 +838,70 @@ export function createPollingManager(
     }
   }
 
-  /** Shares one bounded transport budget across incremental and reconciler history. */
-  async function acquireHistoryTransport(signal: AbortSignal): Promise<() => void> {
+  /** Whether a request of this priority may take a transport slot now. */
+  function canAdmitHistoryTransport(priority: HistoryTransportPriority): boolean {
+    return activeHistoryTransportCount < HISTORY_TRANSPORT_MAX_CONCURRENCY && (
+      priority === 'live' ||
+      activeBackgroundHistoryTransportCount < HISTORY_TRANSPORT_BACKGROUND_MAX_CONCURRENCY
+    )
+  }
+
+  /** Hands freed slots to waiting live requests first, then to backfill. */
+  function admitHistoryTransportWaiters(): void {
+    for (const priority of ['live', 'background'] as const) {
+      const waiters = historyTransportWaiters[priority]
+      while (waiters.length > 0 && canAdmitHistoryTransport(priority)) {
+        waiters.shift()!()
+      }
+    }
+  }
+
+  /**
+   * Shares one bounded transport budget across incremental and reconciler
+   * history. Reconciler requests never take the last slots, so a slow or
+   * stalled backfill cannot freeze live trails [DON-305, DON-311].
+   */
+  async function acquireHistoryTransport(
+    signal: AbortSignal,
+    priority: HistoryTransportPriority,
+  ): Promise<() => void> {
     signal.throwIfAborted()
-    if (activeHistoryTransportCount >= HISTORY_TRANSPORT_MAX_CONCURRENCY) {
+    const waiters = historyTransportWaiters[priority]
+    if (waiters.length > 0 || !canAdmitHistoryTransport(priority)) {
       await new Promise<void>((resolve, reject) => {
         const admit = () => {
           signal.removeEventListener('abort', abort)
+          // Counted on admission so a later waiter cannot take the same slot.
+          activeHistoryTransportCount += 1
+          if (priority === 'background') activeBackgroundHistoryTransportCount += 1
           resolve()
         }
         const abort = () => {
-          const waiterIndex = historyTransportWaiters.indexOf(admit)
-          if (waiterIndex >= 0) historyTransportWaiters.splice(waiterIndex, 1)
+          const waiterIndex = waiters.indexOf(admit)
+          if (waiterIndex >= 0) waiters.splice(waiterIndex, 1)
           reject(signal.reason ?? new DOMException('History request aborted.', 'AbortError'))
         }
-        historyTransportWaiters.push(admit)
+        waiters.push(admit)
         signal.addEventListener('abort', abort, { once: true })
         if (signal.aborted) abort()
       })
+    } else {
+      activeHistoryTransportCount += 1
+      if (priority === 'background') activeBackgroundHistoryTransportCount += 1
     }
-    signal.throwIfAborted()
-    activeHistoryTransportCount += 1
     let released = false
-    return () => {
+    const release = () => {
       if (released) return
       released = true
       activeHistoryTransportCount -= 1
-      historyTransportWaiters.shift()?.()
+      if (priority === 'background') activeBackgroundHistoryTransportCount -= 1
+      admitHistoryTransportWaiters()
     }
+    if (signal.aborted) {
+      release()
+      signal.throwIfAborted()
+    }
+    return release
   }
 
   /** Fetches exact history plus structured rejection evidence for one source response. */
@@ -860,6 +910,7 @@ export function createPollingManager(
     from: Date,
     to: Date,
     expectedHistoryResetKey: string | null,
+    priority: HistoryTransportPriority,
   ): Promise<BreadcrumbNormalizationResult> {
     const signal = historyTransportAbortController.signal
     const operation = (async (): Promise<BreadcrumbNormalizationResult> => {
@@ -874,7 +925,7 @@ export function createPollingManager(
         if (expectedHistoryResetKey !== null && observation.missionId === null) {
           throw new Error('Mission history evidence scope closed before transport admission.')
         }
-        releaseTransport = await acquireHistoryTransport(signal)
+        releaseTransport = await acquireHistoryTransport(signal, priority)
         const historyFrom = options.getInitialBreadcrumbFrom?.()
         if (observation.missionId !== null && historyFrom !== null && historyFrom !== undefined) {
           await options.persistHistoryRequest?.({ expectedMissionId: observation.missionId, deviceId,
@@ -1810,6 +1861,7 @@ export function createPollingManager(
           fetchFrom,
           fetchUntil,
           request.historyResetKey,
+          'live',
         )
         const breadcrumbs = result.accepted
         if (options.persistHistoryChunk !== undefined && request.historyResetKey !== null && initialFrom !== null) {

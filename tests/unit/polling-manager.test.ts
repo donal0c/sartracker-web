@@ -1885,7 +1885,8 @@ describe('polling manager', () => {
   it('admits complete history groups separately and joins their original mission fence on stop', async () => {
     const startedAt = new Date('2026-04-06T00:00:00.000Z')
     const currentTime = new Date('2026-04-06T02:00:00.000Z')
-    const devices = Array.from({ length: 8 }, (_, index) => ({
+    // One initial wave is six devices, the reconciler's transport share [DON-311].
+    const devices = Array.from({ length: 6 }, (_, index) => ({
       ...NORMALIZED_DEVICES[0]!, device_id: `group-device-${index}`,
     }))
     const first = createDeferred<void>()
@@ -1936,12 +1937,12 @@ describe('polling manager', () => {
     first.resolve()
     await vi.advanceTimersByTimeAsync(10)
     expect(persistHistoryChunks).toHaveBeenCalledTimes(2)
-    expect(persistHistoryChunks.mock.calls[1]![0]).toHaveLength(4)
+    expect(persistHistoryChunks.mock.calls[1]![0]).toHaveLength(2)
     expect(waveObservations.some((token) => observations.has(token))).toBe(true)
     expect(stopped).toBe(false)
     expect(persistHistoryChunks.mock.calls.flatMap(([inputs]) => inputs).map(
       (input) => input.expectedMissionId,
-    )).toEqual(Array(8).fill('original-mission'))
+    )).toEqual(Array(6).fill('original-mission'))
     second.resolve()
     await vi.advanceTimersByTimeAsync(10)
     await stop
@@ -2774,6 +2775,140 @@ describe('polling manager', () => {
 
     expect(liveRequestsDuringSweep).toBeGreaterThanOrEqual(devices.length)
     poller.stop()
+  })
+
+  it('keeps live breadcrumb polling flowing while the initial catch-up holds its requests [DON-311]', async () => {
+    const devices = Array.from({ length: 12 }, (_, index) => ({
+      ...NORMALIZED_DEVICES[0]!,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    let liveRequests = 0
+    let stalledBackfillRequests = 0
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date, signal?: AbortSignal) => {
+          // Backfill windows to a stalled server return only when cancelled.
+          if (to.getTime() - from.getTime() > 5 * 60 * 1000) {
+            stalledBackfillRequests += 1
+            return new Promise((_resolve, reject) => {
+              signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+            })
+          }
+          liveRequests += 1
+          return []
+        },
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T20:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    liveRequests = 0
+    await vi.advanceTimersByTimeAsync(2 * 30_000)
+
+    expect(liveRequests).toBeGreaterThanOrEqual(devices.length)
+    expect(stalledBackfillRequests).toBe(6)
+    await poller.stop()
+  })
+
+  it('finishes a 48 h whole-team catch-up from a slow server in batches that fit its transport share [DON-311]', async () => {
+    const devices = Array.from({ length: 30 }, (_, index) => ({
+      ...NORMALIZED_DEVICES[0]!,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    const startedAtMs = Date.now()
+    let backfillResponses = 0
+    let finishedAfterMs: number | null = null
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          if (to.getTime() - from.getTime() > 5 * 60 * 1000) {
+            backfillResponses += 1
+            if (backfillResponses === 30 * 24) finishedAfterMs = Date.now() - startedAtMs
+          }
+          return []
+        },
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-04T20:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T20:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    // 720 two-hour windows at 200 ms over six slots is 24 s plus live polls.
+    // All eight slots took 18.8 s; batches of eight over six slots took 37 s.
+    expect(finishedAfterMs).not.toBeNull()
+    expect(finishedAfterMs!).toBeLessThanOrEqual(26_000)
+    const stopped = poller.stop()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await stopped
+  })
+
+  it('stops cleanly while the initial catch-up holds its share of the transport [DON-311]', async () => {
+    const devices = Array.from({ length: 12 }, (_, index) => ({
+      ...NORMALIZED_DEVICES[0]!,
+      device_id: String(index + 1),
+      name: `Tracker ${index + 1}`,
+    }))
+    let cancelledBackfillRequests = 0
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue(devices),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        (_deviceId: string, from: Date, to: Date, signal?: AbortSignal) => {
+          if (to.getTime() - from.getTime() <= 5 * 60 * 1000) return Promise.resolve([])
+          return new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => {
+              cancelledBackfillRequests += 1
+              reject(signal.reason)
+            }, { once: true })
+          })
+        },
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange: vi.fn(),
+      now: () => new Date('2026-04-06T20:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(31_000)
+    const stopped = poller.stop()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    await expect(stopped).resolves.toBeUndefined()
+    expect(cancelledBackfillRequests).toBe(6)
   })
 
   it('does not canonicalize history that failed durable persistence', async () => {
