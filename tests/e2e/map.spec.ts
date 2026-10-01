@@ -419,14 +419,16 @@ test.describe('M2 map shell', () => {
     await expect.poll(() => warningRegion.evaluate(
       (element) => element.scrollTop + element.clientHeight >= element.scrollHeight - 1,
     )).toBe(true)
-    const finalWarningFullyVisible = await warningRegion.evaluate((element) => {
+    // Polled like the scroll checks above: the region can still be settling
+    // its last layout when the scroll first reaches the end (CI flake,
+    // run 36883863760).
+    await expect.poll(() => warningRegion.evaluate((element) => {
       const warning = element.querySelector('[data-testid="map-overlay-warning-layout-fixture-coordinate-target"]')
       if (!(warning instanceof HTMLElement)) return false
       const warningRect = warning.getBoundingClientRect()
       const regionRect = element.getBoundingClientRect()
       return warningRect.top >= regionRect.top && warningRect.bottom <= regionRect.bottom
-    })
-    expect(finalWarningFullyVisible).toBe(true)
+    })).toBe(true)
     await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-bottom.png' })
   })
 
