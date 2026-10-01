@@ -7,6 +7,10 @@ import type { GpxImportOperationResult } from '../features/gpx/start-gpx-runtime
 import { isTauriRuntimeAvailable } from '../lib/tauri-runtime'
 import { isElectronRuntimeAvailable } from '../lib/desktop-runtime'
 import { ColorPaletteInput } from './color-palette-input'
+import { describeGpxMapVisibility, type GpxMapVisibility } from '../features/gpx/gpx-map-visibility'
+import { useLayerCatalogStore } from '../features/layers/layer-catalog-store'
+import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
+import { revealGpxImportOnMap } from '../features/layers/layer-visibility-service'
 
 const gpxImportSource = createDesktopGpxImportSource()
 
@@ -18,6 +22,8 @@ export function GpxImportPanel() {
   const imports = useGpxStore((state) => state.imports)
   const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
+  const gpxGroupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
+  const hiddenGpxImportIds = useLayerVisibilityStore((state) => state.hiddenGpxImportIds)
   const importIssues = useGpxStore((state) => state.importIssues)
   const importPageNumber = useGpxStore((state) => state.importPageNumber)
   const hasMoreImports = useGpxStore((state) => state.hasMoreImports)
@@ -27,14 +33,24 @@ export function GpxImportPanel() {
   const importing = useGpxStore((state) => state.importing)
   const error = useGpxStore((state) => state.error)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  // Tracks shown on the map whose "shown" choice could not be saved yet.
+  const [unsavedReveals, setUnsavedReveals] = useState<ReadonlySet<string>>(new Set())
   const [assignmentActor, setAssignmentActor] = useState('')
   const statusRequest = useRef(0)
 
   const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
   const importSummary = useMemo(
-    () => `${imports.length}${hasMoreImports ? '+' : ''} shown · page ${importPageNumber} · ${watchedDirectories.length} watched`,
-    [hasMoreImports, importPageNumber, imports.length, watchedDirectories.length],
+    () => {
+      // Counts what is drawn, not what is listed: "5 shown" used to appear
+      // while every track was hidden in Layers [DON-319].
+      const onMap = imports.filter((entry) =>
+        describeGpxMapVisibility(entry.id, gpxGroupVisibility, hiddenGpxImportIds) === 'on_map').length
+      const hidden = imports.length - onMap
+      const paging = hasMoreImports || importPageNumber > 1 ? ` · page ${importPageNumber}` : ''
+      return `${imports.length}${hasMoreImports ? '+' : ''} listed · ${onMap} on map${hidden > 0 ? `, ${hidden} hidden in Layers` : ''}${paging} · ${watchedDirectories.length} watched`
+    },
+    [gpxGroupVisibility, hasMoreImports, hiddenGpxImportIds, importPageNumber, imports, watchedDirectories.length],
   )
 
   return (
@@ -42,18 +58,17 @@ export function GpxImportPanel() {
       className="rounded-2xl border border-stone-800/60 bg-stone-950/30 p-4 text-sm"
       data-testid="gpx-import-panel"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[13px] font-semibold uppercase tracking-wider text-stone-300">
-            GPX Tracks
-          </h3>
-          <p className="mt-1 text-xs text-stone-300">
-            Import files, ingest folders, and watch operational refresh paths.
-          </p>
-        </div>
-        <span className="rounded-full border border-stone-700 bg-stone-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-stone-300">
+      <div>
+        <h3 className="text-[13px] font-semibold uppercase tracking-wider text-stone-300">
+          GPX Tracks
+        </h3>
+        <p className="mt-1 text-xs text-stone-300">
+          Import files, ingest folders, and watch operational refresh paths.
+        </p>
+        {/* A plain line: as a pill it wrapped onto three lines at 1440 px [DON-319]. */}
+        <p className="mt-2 text-[11px] font-semibold text-stone-200" data-testid="gpx-import-summary">
           {importSummary}
-        </span>
+        </p>
       </div>
 
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
@@ -171,6 +186,9 @@ export function GpxImportPanel() {
             onOutingChange: (outingId: string) => void handleAssignOuting(entry.id, outingId),
             actionLabel: 'Retire',
             onAction: () => void handleDeleteImport(entry.id, entry.display_name),
+            mapVisibility: describeGpxMapVisibility(entry.id, gpxGroupVisibility, hiddenGpxImportIds),
+            onShowOnMap: () => showOnMap(entry.id),
+            visibilityUnsaved: unsavedReveals.has(entry.id),
           }))}
           testId="gpx-import-list"
           title="Imported Tracks"
@@ -208,6 +226,46 @@ export function GpxImportPanel() {
     </section>
   )
 
+  /** Shows one track on the map at once and saves the choice; a failed save is said, never hidden [DON-319]. */
+  function showOnMap(importId: string): void {
+    const catalog = useLayerCatalogStore.getState()
+    void revealGpxImportOnMap(catalog.root, catalog.controller, importId, useLayerVisibilityStore.getState())
+      .then(() => {
+        setUnsavedReveals((current) => {
+          if (!current.has(importId)) return current
+          const next = new Set(current)
+          next.delete(importId)
+          return next
+        })
+      }, (error: unknown) => {
+        setUnsavedReveals((current) => new Set(current).add(importId))
+        setStatusMessage(`Track shown on the map, but that choice could not be saved: ${toErrorMessage(error)}. It may be hidden again after a restart; use Save again on the track.`)
+      })
+  }
+
+  /**
+   * A coordinator who imports a track expects to see it (Donal, 1 Oct). Only
+   * tracks that are new to this panel are shown; an existing track the
+   * operator hid stays hidden when a rescan returns it unchanged [DON-319].
+   */
+  function showImportedTracks(result: GpxImportOperationResult, startedAt: string): GpxImportOperationResult {
+    const deliberatelyHidden = new Set(useLayerVisibilityStore.getState().hiddenGpxImportIds)
+    for (const imported of result.imports) {
+      // Created by this operation (stored after it started), judged
+      // mission-wide rather than by the listed page. A track the operator
+      // hid is never re-shown, even one imported moments ago.
+      if (imported.imported_at === undefined || imported.imported_at < startedAt) continue
+      if (deliberatelyHidden.has(imported.id)) continue
+      showOnMap(imported.id)
+    }
+    return result
+  }
+
+  /** When an import operation starts; the store stamps new tracks after this. */
+  function operationStart(): string {
+    return new Date().toISOString()
+  }
+
   async function handleImportFiles(): Promise<void> {
     if (controller === null) {
       return
@@ -222,9 +280,10 @@ export function GpxImportPanel() {
         setStatusForRequest(request, describeImportResult({ outcome: 'stale', imports: [] }, 'GPX import'))
         return
       }
-      const result = isElectronRuntimeAvailable()
+      const startedAt = operationStart()
+      const result = showImportedTracks(isElectronRuntimeAvailable()
         ? await controller.importPaths(paths)
-        : await importFilesForMission(paths, missionAtRequest)
+        : await importFilesForMission(paths, missionAtRequest), startedAt)
       setStatusForRequest(request, describeImportResult(result, 'GPX import'))
     } catch (error) {
       setStatusForRequest(request, `GPX import failed: ${toErrorMessage(error)}`)
@@ -246,6 +305,7 @@ export function GpxImportPanel() {
         return
       }
       let result: GpxImportOperationResult
+      const startedAt = operationStart()
       if (isElectronRuntimeAvailable() && gpxImportSource.listDirectoryPaths !== undefined) {
         result = await importPathsForMission(await gpxImportSource.listDirectoryPaths(directoryPath), missionAtRequest)
       } else {
@@ -254,6 +314,7 @@ export function GpxImportPanel() {
           ? { outcome: 'stale', imports: [] }
           : await controller.importFiles(files)
       }
+      showImportedTracks(result, startedAt)
       setStatusForRequest(request, describeImportResult(result, `GPX folder ${directoryPath}`))
     } catch (error) {
       setStatusForRequest(request, `GPX folder import failed: ${toErrorMessage(error)}`)
@@ -274,7 +335,8 @@ export function GpxImportPanel() {
         setStatusForRequest(request, describeImportResult({ outcome: 'stale', imports: [] }, `Watching ${directoryPath}`))
         return
       }
-      const result = await controller.addWatchedDirectory(directoryPath)
+      const startedAt = operationStart()
+      const result = showImportedTracks(await controller.addWatchedDirectory(directoryPath), startedAt)
       setStatusForRequest(request, describeImportResult(result, `Watching ${directoryPath}`))
     } catch (error) {
       setStatusForRequest(request, `Watch folder failed: ${toErrorMessage(error)}`)
@@ -288,7 +350,8 @@ export function GpxImportPanel() {
 
     const request = ++statusRequest.current
     try {
-      const result = await controller.rescanWatchedDirectories()
+      const startedAt = operationStart()
+      const result = showImportedTracks(await controller.rescanWatchedDirectories(), startedAt)
       setStatusForRequest(request, describeImportResult(result, 'Rescan'))
     } catch (error) {
       setStatusForRequest(request, `Rescan failed: ${toErrorMessage(error)}`)
@@ -416,6 +479,9 @@ function PanelList(props: {
     readonly onOutingChange?: (outingId: string) => void
     readonly actionLabel: string
     readonly onAction: () => void
+    readonly mapVisibility?: GpxMapVisibility
+    readonly onShowOnMap?: () => void
+    readonly visibilityUnsaved?: boolean
   }[]
 }) {
   return (
@@ -446,6 +512,39 @@ function PanelList(props: {
                   {item.actionLabel}
                 </button>
               </div>
+              {item.mapVisibility !== undefined ? (
+                <div className="flex items-center justify-between gap-3 text-[11px]" data-testid={`gpx-map-visibility-${item.id}`}>
+                  {item.mapVisibility === 'on_map' && item.visibilityUnsaved === true ? (
+                    <>
+                      <span className="font-semibold text-amber-200">On map, but not saved (may be hidden after a restart)</span>
+                      <button
+                        className="rounded-lg border border-amber-300/60 bg-stone-800 px-2 py-1 font-semibold text-amber-100"
+                        data-testid={`gpx-save-visibility-${item.id}`}
+                        onClick={item.onShowOnMap}
+                        type="button"
+                      >
+                        Save again
+                      </button>
+                    </>
+                  ) : item.mapVisibility === 'on_map' ? (
+                    <span className="text-stone-300">On map</span>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-amber-200">
+                        Hidden on map ({item.mapVisibility === 'group_hidden' ? 'GPX Tracks is off in Layers' : 'this track is off in Layers'})
+                      </span>
+                      <button
+                        className="rounded-lg border border-amber-300/60 bg-stone-800 px-2 py-1 font-semibold text-amber-100"
+                        data-testid={`gpx-show-on-map-${item.id}`}
+                        onClick={item.onShowOnMap}
+                        type="button"
+                      >
+                        Show on map
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : null}
               {item.color !== undefined && item.onColorChange !== undefined ? (
                 <ColorPaletteInput
                   label="Track colour"

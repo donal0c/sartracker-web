@@ -27,14 +27,14 @@ test.describe('M22 GPX import parity', () => {
     })
     await expect(page.getByTestId('gpx-import-list')).toContainText('before')
     await expect(page.getByTestId('gpx-import-list')).toContainText('after')
-    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 shown')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 listed · 2 on map')
     await expect(page.getByTestId('gpx-import-error')).toContainText('malformed.gpx')
     await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
     await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
       testId: 'repair-train-b-partial-batch', testName: 'Malformed file does not hide valid imports', area: 'layers', severity: 'critical',
-      verificationPrompt: 'Verify the GPX panel: 1. Count says 2 shown. 2. Both before and after tracks appear. 3. An error names malformed.gpx. 4. Import control no longer says Importing. Browser controls may be disabled.',
+      verificationPrompt: 'Verify the GPX panel: 1. Count says 2 listed · 2 on map. 2. Both before and after tracks appear. 3. An error names malformed.gpx. 4. Import control no longer says Importing. Browser controls may be disabled.',
       playwrightAssertions: ['Valid files before and after malformed source remain visible', 'Failed filename visible', 'Batch settles'],
     })
   })
@@ -68,7 +68,7 @@ test.describe('M22 GPX import parity', () => {
     })
 
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
-    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 shown')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
     const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
       ?.readState().gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null)
     expect(importId).not.toBeNull()
@@ -109,6 +109,45 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('mission-review-workspace')).toContainText('/tracks/alpha.gpx')
   })
 
+  test('says a track is hidden on the map and shows it again from the GPX panel [DON-319]', async ({ page }) => {
+    await page.evaluate(async () => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.importGpxFiles([{
+        sourcePath: '/tracks/tomies.gpx', fileName: 'tomies.gpx',
+        contents: `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="playwright"><trk><trkseg>
+          <trkpt lat="52.0000" lon="-9.7000"></trkpt><trkpt lat="52.0100" lon="-9.7100"></trkpt></trkseg></trk></gpx>`,
+      }])
+    })
+    const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
+      ?.readState().gpxImports.find((entry) => entry.display_name === 'tomies')?.id ?? null)
+    expect(importId).not.toBeNull()
+    // Look at the track, so "rendered" means drawn on screen.
+    await page.evaluate(() => (window as Window & { __SARTRACKER_MAP__?: {
+      jumpTo: (options: { center: [number, number]; zoom: number }) => void
+    } }).__SARTRACKER_MAP__?.jumpTo({ center: [-9.705, 52.005], zoom: 13 }))
+    const drawnSegments = () => page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: {
+        getLayer: (id: string) => unknown
+        queryRenderedFeatures: (options: { layers: string[] }) => unknown[]
+      } }).__SARTRACKER_MAP__
+      if (map?.getLayer('mission-gpx-imports-line') === undefined) return 0
+      return map.queryRenderedFeatures({ layers: ['mission-gpx-imports-line'] }).length
+    })
+    await expect.poll(drawnSegments, { timeout: 10_000 }).toBeGreaterThan(0)
+
+    // The operator (or an older saved layer state) turns GPX Tracks off in Layers.
+    await page.getByTestId('sidebar-tab-layers').click()
+    await page.getByTestId('layer-visibility-group-gpx-tracks').click()
+    await expect.poll(drawnSegments, { timeout: 10_000 }).toBe(0)
+
+    await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 0 on map, 1 hidden in Layers')
+    await expect(page.getByTestId(`gpx-map-visibility-${importId}`)).toContainText('Hidden on map')
+
+    await page.getByTestId(`gpx-show-on-map-${importId}`).click()
+    await expect.poll(drawnSegments, { timeout: 10_000 }).toBeGreaterThan(0)
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
+  })
+
   test('keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10]', async ({ page }) => {
     const source = readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
       .replace('>Ridge party<', '><![CDATA[Ridge party]]><')
@@ -134,14 +173,14 @@ test.describe('M22 GPX import parity', () => {
       await gate.pendingGpxImport
     })
     await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
-    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 shown')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
     const geometry = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().gpxImports[0].geometry_json)
     expect(JSON.parse(geometry)).toEqual({ type: 'MultiLineString', coordinates: [[[-9.7, 52], [-9.701, 52.001]]] })
     await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
       testId: 'repair-train-b-gpx-settlement', testName: 'GPX import settles after End Outing', area: 'layers', severity: 'critical',
-      verificationPrompt: 'Verify the visible GPX panel: 1. Its count says 1 shown. 2. The import control says Import Files, not Importing. 3. The imported track fidelity is visible. 4. There is no import error banner. Browser-only controls may correctly be disabled.',
+      verificationPrompt: 'Verify the visible GPX panel: 1. Its count says 1 listed · 1 on map. 2. The import control says Import Files, not Importing. 3. The imported track fidelity is visible. 4. There is no import error banner. Browser-only controls may correctly be disabled.',
       playwrightAssertions: ['Outing ended during held import', 'Import settled', 'One import shown', 'Geometry contains exactly two canonical source points'],
     })
   })
@@ -180,13 +219,13 @@ test.describe('M22 GPX import parity', () => {
       ])
     }, contents)
     await expect(page.getByTestId('gpx-import-list')).toContainText('second')
-    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 shown')
+    await expect(page.getByTestId('gpx-import-panel')).toContainText('2 listed · 2 on map')
     await expect(page.getByTestId('gpx-import-error')).toHaveCount(0)
     await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
       testId: 'repair-train-b-admission-recovery', testName: 'Competing import retry succeeds', area: 'layers', severity: 'critical',
-      verificationPrompt: 'Verify the GPX panel: 1. No red import error remains. 2. Import Files is visible rather than Importing. 3. The count is 2 shown and both first and second tracks are visible.',
+      verificationPrompt: 'Verify the GPX panel: 1. No red import error remains. 2. Import Files is visible rather than Importing. 3. The count is 2 listed · 2 on map and both first and second tracks are visible.',
       playwrightAssertions: ['Competing request visibly refused while busy', 'Temporary error clears at settlement', 'Retry imports second file successfully'],
     })
   })

@@ -58,7 +58,8 @@ export type GpxImportFileInput = {
   readonly bytesBase64?: string
 }
 
-export type GpxImportResult = Pick<GpxTrackImport, 'id'>
+/** Store records carry imported_at, which tells a newly created track from an existing one [DON-319]. */
+export type GpxImportResult = Pick<GpxTrackImport, 'id'> & { readonly imported_at?: string }
 
 type PathImportSource = { readonly skipRetiredSources: boolean }
 

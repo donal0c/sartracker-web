@@ -6,6 +6,8 @@ import type {
 import {
   GPX_TRACKS_GROUP_NODE_ID,
   getDrawingLayerNodeId,
+  getGpxImportFeatureNodeId,
+  getGpxImportLayerNodeId,
   getHelicopterLayerNodeId,
   getMarkerLayerNodeId,
   HELICOPTERS_GROUP_NODE_ID,
@@ -90,6 +92,27 @@ export function revealMapToolLayerForOperation(
   const nodeIds = [MAP_TOOLS_GROUP_NODE_ID, childLayerNodeId]
   applyVisibilityForNodeIds(root, nodeIds, true, store)
   void controller?.setNodeVisibilities(nodeIds, true)
+}
+
+/**
+ * Shows one imported GPX track on the map at once (group, layer and feature),
+ * then saves that choice like the Map Tools reveal (DON-118). The group node
+ * always exists. Track nodes are saved only when Layers lists them: a track
+ * that is not listed (just imported, or on another page) has no saved hide,
+ * so it is visible by default. The promise rejects if saving fails, so the
+ * caller can say so instead of silently claiming success [DON-319].
+ */
+export async function revealGpxImportOnMap(
+  root: LayerCatalogRootNode,
+  controller: LayerCatalogController | null,
+  importId: string,
+  store: LayerVisibilityStoreAdapter,
+): Promise<void> {
+  const trackNodeIds = [getGpxImportLayerNodeId(importId), getGpxImportFeatureNodeId(importId)]
+  applyVisibilityForNodeIds(root, [GPX_TRACKS_GROUP_NODE_ID, ...trackNodeIds], true, store)
+  if (controller === null) return
+  const listed = trackNodeIds.filter((nodeId) => findCatalogNode(root, nodeId) !== null)
+  await controller.setNodeVisibilities([GPX_TRACKS_GROUP_NODE_ID, ...listed], true)
 }
 
 /**
