@@ -46,7 +46,8 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
 
   it('keeps mock and mission paused until latest-page parity survives each restart', () => {
     const checkpointStart = source.indexOf('for (const checkpoint of options.profile.restartCheckpoints)')
-    const finalStart = source.lastIndexOf('await waitForCheckpoint({', source.indexOf('expectedPositions: options.profile.expectedPositionRows'))
+    // The final checkpoint wait runs inside the opt-in allocation profile [DON-324].
+    const finalStart = source.indexOf('activeLaunch.rendererDrainAllocation = await withRendererAllocationProfile(')
     const checkpointSource = source.slice(checkpointStart, finalStart)
 
     expect(source).toContain('pauseCheckpoints: exactSoakPauseCheckpoints')

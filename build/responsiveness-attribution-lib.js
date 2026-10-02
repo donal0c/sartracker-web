@@ -16,6 +16,18 @@ export function installRealmResponsivenessProbe(root = globalThis) {
   let wallStoppedAtMs = null
   const gcEvents = []
   let droppedGcCount = 0
+  // Stalls of 200 ms or more keep their own context, oldest first: the rings
+  // below keep only the latest events, which evicted the startup minute where
+  // most stalls were on the box soak (2 Oct 2026) [DON-313].
+  const stalls = []
+  let droppedStallCount = 0
+  const stallGcWindowMs = 1000
+  const inStallWindow = (stall, startMs, durationMs) =>
+    startMs < stall.endMs && startMs + durationMs > stall.startMs - stallGcWindowMs
+  const anchorGc = (stall, gc) => {
+    if (stall.gc.length < 32) stall.gc.push(gc)
+    else stall.droppedGcCount += 1
+  }
   let gcStatus = 'unavailable'
   let gcObserver
   try {
@@ -23,8 +35,13 @@ export function installRealmResponsivenessProbe(root = globalThis) {
     if (hooks?.PerformanceObserver) {
       gcObserver = new hooks.PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
+          const gc = { startMs: entry.startTime, durationMs: entry.duration }
           if (gcEvents.length === 256) { gcEvents.shift(); droppedGcCount++ }
-          gcEvents.push({ startMs: entry.startTime, durationMs: entry.duration })
+          gcEvents.push(gc)
+          // A GC can be delivered after the stall it caused was measured.
+          for (let index = stalls.length - 1; index >= 0 && index >= stalls.length - 8; index--) {
+            if (inStallWindow(stalls[index], gc.startMs, gc.durationMs)) anchorGc(stalls[index], gc)
+          }
         }
       })
       gcObserver.observe({ entryTypes: ['gc'] })
@@ -41,13 +58,23 @@ export function installRealmResponsivenessProbe(root = globalThis) {
     maximumGapMs = Math.max(maximumGapMs, gapMs)
     if (gapMs >= 200) over200Count += 1
     if (gapMs >= 100) {
-      if (events.length === 512) { events.shift(); droppedEventCount += 1 }
-      events.push({
+      const event = {
         startMs: previous, endMs, gapMs,
         processCpuMs: currentCpu && previousCpu
           ? ((currentCpu.user - previousCpu.user) + (currentCpu.system - previousCpu.system)) / 1000
           : null,
-      })
+      }
+      if (events.length === 512) { events.shift(); droppedEventCount += 1 }
+      events.push(event)
+      if (gapMs >= 200) {
+        if (stalls.length < 1024) {
+          const stall = { ...event, gc: [], droppedGcCount: 0 }
+          for (const gc of gcEvents) if (inStallWindow(stall, gc.startMs, gc.durationMs)) anchorGc(stall, gc)
+          stalls.push(stall)
+        } else {
+          droppedStallCount += 1
+        }
+      }
     }
     previous = endMs
     previousCpu = currentCpu
@@ -67,6 +94,7 @@ export function installRealmResponsivenessProbe(root = globalThis) {
         startedAtMs, stoppedAtMs, wallStartedAtMs, wallStoppedAtMs, intervalMs: 50, samples,
         maximumGapMs, over200Count, droppedEventCount, events,
         gc: { status: gcStatus, events: gcEvents, droppedEventCount: droppedGcCount },
+        stalls, droppedStallCount,
       }
     },
   }
@@ -134,8 +162,21 @@ export function installPointerAttribution(root, allowed) {
   }
 }
 
-/** Retains allowlisted storage phase timestamps; these are wall-clock observations, not monotonic causality. */
-export function extractStoragePhaseAttribution(contents) {
+/**
+ * Retains allowlisted storage phase timestamps; these are wall-clock
+ * observations, not monotonic causality. Besides the latest 512, every event
+ * whose interval overlaps a stall window (wall clock) is kept with that stall,
+ * so a long run cannot evict the context of an early stall [DON-313].
+ *
+ * @param {string} contents runtime log
+ * @param {{stallWindows?: {startWallMs: number, endWallMs: number}[]}} [options]
+ */
+export function extractStoragePhaseAttribution(contents, { stallWindows = [] } = {}) {
+  const anchored = stallWindows.slice(0, 1024).map(window => ({
+    startWallMs: window.startWallMs, endWallMs: window.endWallMs, droppedEventCount: 0, events: [],
+  }))
+  // A completion is logged when the phase ends, possibly just after the stall.
+  const completionSlackMs = 500
   const events = []
   let droppedEventCount = 0
   const allowed = new Set(['storage_backup_requested', 'storage_backup_started', 'storage_backup_copied',
@@ -146,12 +187,44 @@ export function extractStoragePhaseAttribution(contents) {
     if (!allowed.has(entry?.event)) continue
     const wallMs = Date.parse(entry.ts)
     if (!Number.isFinite(wallMs)) continue
+    const finite = (value) => (Number.isFinite(value) ? value : null)
+    const event = { event: entry.event, wallMs,
+      durationMs: finite(entry.durationMs),
+      phaseDurationMs: finite(entry.phaseDurationMs),
+      totalDurationMs: finite(entry.totalDurationMs),
+      elapsedDurationMs: finite(entry.elapsedDurationMs) }
     if (events.length === 512) { events.shift(); droppedEventCount++ }
-    events.push({ event: entry.event, wallMs,
-      durationMs: Number.isFinite(entry.durationMs) ? entry.durationMs : null,
-      elapsedDurationMs: Number.isFinite(entry.elapsedDurationMs) ? entry.elapsedDurationMs : null })
+    events.push(event)
+    // Backup phases log the time since the previous phase; completions log
+    // the total since the request.
+    const startedWallMs = wallMs - (event.durationMs ?? event.phaseDurationMs ?? event.totalDurationMs ?? 0)
+    for (const window of anchored) {
+      if (startedWallMs < window.endWallMs + completionSlackMs && wallMs > window.startWallMs) {
+        if (window.events.length < 64) window.events.push(event)
+        else window.droppedEventCount += 1
+      }
+    }
   }
-  return { clock: 'runtime-log-wall-clock', events, droppedEventCount }
+  return {
+    clock: 'runtime-log-wall-clock', events, droppedEventCount,
+    ...(stallWindows.length === 0 ? {} : { stallAnchored: anchored, droppedStallWindowCount: Math.max(0, stallWindows.length - 1024) }),
+  }
+}
+
+/**
+ * Turns each launch's main-realm stalls into wall-clock windows, the clock the
+ * runtime log's storage phases use [DON-313].
+ *
+ * @param {({main?: {startedAtMs: number, wallStartedAtMs: number, stalls?: {startMs: number, endMs: number}[]}} | undefined)[]} attributions
+ * @returns {{startWallMs: number, endWallMs: number}[]}
+ */
+export function mainStallWallWindows(attributions) {
+  return attributions.flatMap((attribution) => {
+    const main = attribution?.main
+    if (!main || !Number.isFinite(main.startedAtMs) || !Number.isFinite(main.wallStartedAtMs) || !Array.isArray(main.stalls)) return []
+    const offset = main.wallStartedAtMs - main.startedAtMs
+    return main.stalls.map(stall => ({ startWallMs: stall.startMs + offset, endWallMs: stall.endMs + offset }))
+  })
 }
 
 /** Rejects missing mandatory channels; optional or evicted causal context never proves absence. */

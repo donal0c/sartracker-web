@@ -284,6 +284,12 @@ export function parseTrackingSoakArgs(argv) {
       case '--main-stall-threshold-ms':
         parsed.mainStallThresholdMs = Number(nextValue())
         break
+      case '--profile-main-startup-ms':
+        parsed.profileMainStartupMs = Number(nextValue())
+        break
+      case '--profile-renderer-drain':
+        parsed.profileRendererDrain = true
+        break
       case '--':
         parsed.extraArgs.push(...argv.slice(index + 1))
         index = argv.length
@@ -337,6 +343,10 @@ export function parseTrackingSoakArgs(argv) {
       200,
       '--main-stall-threshold-ms',
     ),
+    // Diagnostic profiles are opt-in: a profiler can lengthen the very stalls
+    // it explains, so a comparison run uses the same setting on both sides [DON-313].
+    profileMainStartupMs: profileWindowMs(parsed.profileMainStartupMs),
+    profileRendererDrain: parsed.profileRendererDrain === true,
     extraArgs: parsed.extraArgs,
   }
 }
@@ -1169,6 +1179,15 @@ function positiveNumber(value, fallback, flag) {
     throw new Error(`${flag} must be a positive number.`)
   }
   return resolved
+}
+
+/** Validates the optional main-startup CPU profile window (0 = off). */
+function profileWindowMs(value) {
+  if (value === undefined) return 0
+  if (!Number.isInteger(value) || value < 1_000 || value > 900_000) {
+    throw new Error('--profile-main-startup-ms must be an integer between 1000 and 900000 ms.')
+  }
+  return value
 }
 
 function boundedInteger(value, fallback, minimum, maximum, flag) {

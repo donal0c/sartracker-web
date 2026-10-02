@@ -185,6 +185,14 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     ).toMatch(/two stable.*Line.*SQLite.*independent source/iu)
   })
 
+  it('profiles only when asked: main CPU over startup, renderer allocation over a drain [DON-313]', () => {
+    expect(parseTrackingSoakArgs(['--app', '/tmp/app'])).toMatchObject({ profileMainStartupMs: 0, profileRendererDrain: false })
+    expect(parseTrackingSoakArgs(['--app', '/tmp/app', '--profile-main-startup-ms', '180000', '--profile-renderer-drain']))
+      .toMatchObject({ profileMainStartupMs: 180_000, profileRendererDrain: true })
+    expect(() => parseTrackingSoakArgs(['--app', '/tmp/app', '--profile-main-startup-ms', '500'])).toThrow('--profile-main-startup-ms')
+    expect(() => parseTrackingSoakArgs(['--app', '/tmp/app', '--profile-main-startup-ms', '99999999'])).toThrow('--profile-main-startup-ms')
+  })
+
   it('uses a garbage-collection-safe default cadence for full packaged profiles', () => {
     expect(parseTrackingSoakArgs(['--app', '/tmp/app', '--profile', 'extended']).pollIntervalMs).toBe(250)
     expect(parseTrackingSoakArgs(['--app', '/tmp/app']).mainStallThresholdMs).toBe(200)
@@ -313,6 +321,8 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
       timeoutMs: 60_000,
       freezeThresholdMs: 1_000,
       mainStallThresholdMs: 200,
+      profileMainStartupMs: 0,
+      profileRendererDrain: false,
       extraArgs: ['--ozone-platform=x11'],
     })
   })

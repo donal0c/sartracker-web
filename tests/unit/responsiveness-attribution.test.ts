@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { installRealmResponsivenessProbe, validateAttributionEvidence } from '../../build/responsiveness-attribution-lib.js'
+import { extractStoragePhaseAttribution, installRealmResponsivenessProbe, mainStallWallWindows, validateAttributionEvidence } from '../../build/responsiveness-attribution-lib.js'
 import { attachInspectorAttribution, startResponsivenessAttribution } from '../../build/responsiveness-attribution-node.js'
 
 describe('responsiveness attribution [DON-254]', () => {
@@ -86,5 +86,113 @@ describe('responsiveness attribution [DON-254]', () => {
     expect(probe.stop().over200Count).toBe(1)
     expect(probe.stop().over200Count).toBe(1)
     expect(clears).toBe(1)
+  })
+})
+
+/**
+ * DON-313 / DON-324: the box soak (2 Oct 2026) had 39 of 47 main stalls in the
+ * first minute, but the count-bounded rings had evicted that minute's GC and
+ * storage context by the end. Stalls of 200 ms or more now keep their own
+ * context, so a long run cannot evict it.
+ */
+describe('stall-anchored attribution [DON-313]', () => {
+  /** A realm whose clock, timer and GC observer the test drives. */
+  function drivenRealm() {
+    let now = 0
+    let tick = () => {}
+    let emitGc: (entries: { startTime: number, duration: number }[]) => void = () => {}
+    class PerformanceObserver {
+      constructor(callback: (list: { getEntries: () => unknown[] }) => void) {
+        emitGc = (entries) => callback({ getEntries: () => entries })
+      }
+      observe() {}
+      disconnect() {}
+    }
+    const root = {
+      performance: { now: () => now, timeOrigin: 0 },
+      setInterval: (callback: () => void) => { tick = callback; return 1 },
+      clearInterval: () => {},
+      process: { getBuiltinModule: () => ({ PerformanceObserver }) },
+    }
+    return {
+      probe: installRealmResponsivenessProbe(root),
+      advance: (ms: number) => { now += ms; tick() },
+      gc: (startTime: number, duration: number) => emitGc([{ startTime, duration }]),
+      now: () => now,
+    }
+  }
+
+  it('keeps an early stall and its GC after the rings have evicted them', () => {
+    const realm = drivenRealm()
+    realm.advance(50)
+    realm.gc(100, 40) // delivered before the stall is seen
+    realm.advance(300) // stall 50..350
+    realm.gc(330, 15) // delivered after the stall, inside it
+    for (let index = 0; index < 600; index++) { realm.gc(realm.now(), 1); realm.advance(120) }
+    const result = realm.probe.stop()
+    expect(result.droppedEventCount).toBeGreaterThan(0)
+    expect(result.gc.droppedEventCount).toBeGreaterThan(0)
+    expect(result.stalls[0]).toMatchObject({ startMs: 50, endMs: 350, gapMs: 300 })
+    expect(result.stalls[0].gc).toEqual([{ startMs: 100, durationMs: 40 }, { startMs: 330, durationMs: 15 }])
+    expect(result.droppedStallCount).toBe(0)
+  })
+
+  it('bounds the stall list and says how many it dropped', () => {
+    const realm = drivenRealm()
+    for (let index = 0; index < 1100; index++) realm.advance(250)
+    const result = realm.probe.stop()
+    expect(result.stalls).toHaveLength(1024)
+    expect(result.droppedStallCount).toBe(76)
+    // The earliest stalls are the ones kept: they are where startup trouble is.
+    expect(result.stalls[0].startMs).toBe(0)
+  })
+
+  it('maps each launch main stall onto the wall clock the runtime log uses', () => {
+    const main = { startedAtMs: 1_000, wallStartedAtMs: 1_790_940_775_000, stalls: [{ startMs: 19_000, endMs: 19_300 }] }
+    expect(mainStallWallWindows([{ main }, undefined, { collected: false }])).toEqual([
+      { startWallMs: 1_790_940_793_000, endWallMs: 1_790_940_793_300 },
+    ])
+  })
+
+  it('keeps storage phases around each stall after the ring has evicted them', () => {
+    const line = (event: string, atMs: number, durationMs: number) =>
+      JSON.stringify({ event, ts: new Date(atMs).toISOString(), durationMs })
+    const base = Date.parse('2026-10-02T11:33:00.000Z')
+    const lines = [
+      line('storage_tracking_positions_completed', base + 1_000, 240),
+      line('storage_tracking_positions_completed', base + 9_000, 5),
+      ...Array.from({ length: 600 }, (_, index) => line('storage_tracking_positions_completed', base + 60_000 + index * 100, 3)),
+    ]
+    const result = extractStoragePhaseAttribution(lines.join('\n'), {
+      stallWindows: [{ startWallMs: base + 800, endWallMs: base + 1_100 }],
+    })
+    expect(result.droppedEventCount).toBeGreaterThan(0)
+    expect(result.stallAnchored).toEqual([{
+      startWallMs: base + 800, endWallMs: base + 1_100, droppedEventCount: 0,
+      events: [{
+        event: 'storage_tracking_positions_completed', wallMs: base + 1_000, durationMs: 240,
+        phaseDurationMs: null, totalDurationMs: null, elapsedDurationMs: null,
+      }],
+    }])
+  })
+
+  it('anchors a backup by its logged phase or total duration, and counts what a full window drops (Codex)', () => {
+    const base = Date.parse('2026-10-02T11:33:00.000Z')
+    const at = (ms: number) => new Date(base + ms).toISOString()
+    const lines = [
+      // A 2 s copy phase ending 1.5 s after a 500–1000 ms stall.
+      JSON.stringify({ event: 'storage_backup_copied', ts: at(2_500), phaseDurationMs: 2_000, elapsedDurationMs: 2_100 }),
+      JSON.stringify({ event: 'storage_backup_completed', ts: at(3_000), totalDurationMs: 2_600 }),
+      ...Array.from({ length: 70 }, (_, index) =>
+        JSON.stringify({ event: 'storage_tracking_positions_completed', ts: at(20_000 + index), durationMs: 5 })),
+    ]
+    const result = extractStoragePhaseAttribution(lines.join('\n'), {
+      stallWindows: [{ startWallMs: base + 500, endWallMs: base + 1_000 }, { startWallMs: base + 20_000, endWallMs: base + 20_100 }],
+    })
+    expect(result.stallAnchored?.[0]?.events.map((event: { event: string }) => event.event))
+      .toEqual(['storage_backup_copied', 'storage_backup_completed'])
+    // 69 of the 70 overlap (one ends exactly at the window start): 64 kept, 5 counted.
+    expect(result.stallAnchored?.[1]).toMatchObject({ droppedEventCount: 5 })
+    expect(result.stallAnchored?.[1]?.events).toHaveLength(64)
   })
 })

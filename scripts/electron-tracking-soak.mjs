@@ -31,7 +31,8 @@ import {
   startResponsivenessAttribution,
   unavailableAttribution,
 } from '../build/responsiveness-attribution-node.js'
-import { extractStoragePhaseAttribution } from '../build/responsiveness-attribution-lib.js'
+import { extractStoragePhaseAttribution, mainStallWallWindows } from '../build/responsiveness-attribution-lib.js'
+import { runTimedProfile, summarizeCpuProfile, summarizeSamplingHeapProfile, withDeadline } from '../build/electron-tracking-soak-profile-lib.js'
 import { SOAK_INTERACTION_TARGETS } from '../build/soak-interaction-targets.js'
 
 import { summarizeResponsiveness } from '../build/electron-map-freeze-probe-lib.js'
@@ -393,17 +394,21 @@ async function main() {
       }
     }
 
-    await waitForCheckpoint({
-      launch: activeLaunch,
-      mockServer,
-      missionId,
-      databasePath,
-      targetBatch: options.profile.actualBatches,
-      expectedPositions: options.profile.expectedPositionRows,
-      timeoutMs: options.timeoutMs,
-      progress: exactFailureProgress,
-      sleepGuard,
-    })
+    activeLaunch.rendererDrainAllocation = await withRendererAllocationProfile(
+      activeLaunch,
+      options.profileRendererDrain,
+      () => waitForCheckpoint({
+        launch: activeLaunch,
+        mockServer,
+        missionId,
+        databasePath,
+        targetBatch: options.profile.actualBatches,
+        expectedPositions: options.profile.expectedPositionRows,
+        timeoutMs: options.timeoutMs,
+        progress: exactFailureProgress,
+        sleepGuard,
+      }),
+    )
     await recordCheckpointHeap(activeLaunch, options.profile.actualBatches)
     while (archiveCycleCursor < archiveCycleMissions.length) {
       archiveCycleEntries.push(await runArchiveCycleWhileTracking(
@@ -583,7 +588,10 @@ async function main() {
     const runtimeLogBytes = await combinedLogBytes(userDataDir)
     const runtimeContents = await readCombinedRuntimeLog(userDataDir)
     const runtimeTiming = parseTrackingSoakRuntimeLog(runtimeContents)
-    const storagePhaseAttribution = extractStoragePhaseAttribution(runtimeContents)
+    // Keep the storage phases around every main stall, not only the latest [DON-313].
+    const storagePhaseAttribution = extractStoragePhaseAttribution(runtimeContents, {
+      stallWindows: mainStallWallWindows(launches.map((launch) => launch.attributionEvidence)),
+    })
     const growth = buildTrackingGrowthEvidence(growthCheckpoints)
     const supportBundleBytes = Buffer.byteLength(supportBundle, 'utf8')
     const mainStats = summarizeResponsiveness(
@@ -889,6 +897,9 @@ async function main() {
         mainHeartbeatFailures: launch.mainHeartbeatFailures,
         mainEventLoopEvidence: launch.mainEventLoopEvidence,
         attribution: launch.attributionEvidence ?? unavailableAttribution('not-collected'),
+        // Opt-in diagnostic profiles [DON-313, DON-324]; null when not requested.
+        mainStartupProfile: launch.mainStartupProfileSummary ?? null,
+        rendererDrainAllocation: launch.rendererDrainAllocation ?? null,
         rendererCrashes: launch.rendererCrashes,
         processMemory: createProcessMemoryReport(launch.processMemory),
         operatorClickAuditTail: launch.operatorClickAuditTail,
@@ -1070,9 +1081,13 @@ async function launchPackagedApp(options, userDataDir, number) {
       mainPid: appProcess.pid,
       requireFrames: true,
     })
+    const mainStartupProfile = startMainStartupProfile(mainInspector, options.profileMainStartupMs)
 
     return {
       number,
+      evidenceDir: options.evidenceDir,
+      mainStartupProfile,
+      mainStartupProfileSummary: null,
       appProcess,
       browser,
       page,
@@ -4051,8 +4066,117 @@ async function collectLaunchAttribution(launch) {
     if (!evidence.collected) {
       console.warn(`[tracking-soak] attribution launch=${launch.number} collected=false reason=${evidence.reason}`)
     }
+    launch.mainStartupProfileSummary = await finishMainStartupProfile(launch)
   })()
   await launch.attributionCollectionPromise
+}
+
+/**
+ * Starts an opt-in CPU profile of the main process over its first
+ * `durationMs`, where the box soak's stalls clustered [DON-313].
+ */
+function startMainStartupProfile(mainInspector, durationMs) {
+  if (!(durationMs > 0)) return null
+  const abort = new AbortController()
+  const promise = runTimedProfile({
+    send: (method, params) => mainInspector.send(method, params, method === 'Profiler.stop' ? 60_000 : 5_000),
+    start: ['Profiler.enable', ['Profiler.setSamplingInterval', { interval: 1_000 }], 'Profiler.start'],
+    stop: 'Profiler.stop',
+    durationMs,
+    signal: abort.signal,
+  })
+  return { abort, promise }
+}
+
+/**
+ * Stops the main startup profile (if still running), keeps the raw profile and
+ * returns its summary. Never throws: a profiling problem is reported as
+ * unavailable and must not stop the launch from closing.
+ */
+async function finishMainStartupProfile(launch) {
+  if (launch.mainStartupProfile === null || launch.mainStartupProfile === undefined) return null
+  try {
+    launch.mainStartupProfile.abort.abort()
+    const outcome = await launch.mainStartupProfile.promise
+    if (!outcome.ok || outcome.profile === undefined) {
+      return { available: false, reason: outcome.ok ? 'no profile returned' : outcome.reason }
+    }
+    return await saveProfile(launch, `main-startup-cpu-launch-${launch.number}.cpuprofile`, outcome.profile, summarizeCpuProfile)
+  } catch (error) {
+    return { available: false, reason: describeError(error) }
+  }
+}
+
+/** Writes a raw profile and returns its summary, or why it could not. */
+async function saveProfile(launch, file, profile, summarize) {
+  try {
+    await writeJson(path.join(launch.evidenceDir, file), profile)
+    return { available: true, file, ...summarize(profile) }
+  } catch (error) {
+    return { available: false, reason: `profile could not be saved: ${describeError(error)}` }
+  }
+}
+
+/** A short error description for diagnostic evidence. */
+function describeError(error) {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Runs `wait` under an opt-in renderer sampling heap profile that keeps
+ * collected objects too, so it names the functions behind allocation churn
+ * rather than only what survives [DON-324]. Every profiler command is bounded,
+ * the result is kept on the launch even if `wait` fails, and `wait`'s own
+ * error is what propagates.
+ */
+async function withRendererAllocationProfile(launch, enabled, wait) {
+  if (!enabled) {
+    await wait()
+    return null
+  }
+  const session = launch.rendererSession
+  if (session === null || session === undefined) {
+    launch.rendererDrainAllocation = { available: false, reason: 'renderer CDP session unavailable' }
+    await wait()
+    return launch.rendererDrainAllocation
+  }
+  let startAttempted = false
+  try {
+    await withDeadline(session.send('HeapProfiler.enable'), 5_000, 'HeapProfiler.enable')
+    startAttempted = true
+    await withDeadline(session.send('HeapProfiler.startSampling', {
+      samplingInterval: 65_536,
+      includeObjectsCollectedByMajorGC: true,
+      includeObjectsCollectedByMinorGC: true,
+    }), 5_000, 'HeapProfiler.startSampling')
+  } catch (error) {
+    // A start that timed out here may still succeed late; CDP runs a session's
+    // commands in order, so a stop sent now lands after it and no sampler is
+    // left running through the measured wait.
+    if (startAttempted) {
+      await withDeadline(session.send('HeapProfiler.stopSampling'), 10_000, 'HeapProfiler.stopSampling').catch(() => undefined)
+    }
+    launch.rendererDrainAllocation = { available: false, reason: `profiling could not start: ${describeError(error)}` }
+    await wait()
+    return launch.rendererDrainAllocation
+  }
+  try {
+    await wait()
+  } finally {
+    launch.rendererDrainAllocation = await stopRendererAllocationProfile(launch, session)
+  }
+  return launch.rendererDrainAllocation
+}
+
+/** Stops renderer sampling and saves the profile; never throws. */
+async function stopRendererAllocationProfile(launch, session) {
+  try {
+    const result = await withDeadline(session.send('HeapProfiler.stopSampling'), 60_000, 'HeapProfiler.stopSampling')
+    if (result?.profile === undefined) return { available: false, reason: 'no profile returned' }
+    return await saveProfile(launch, `renderer-drain-allocation-launch-${launch.number}.heapprofile`, result.profile, summarizeSamplingHeapProfile)
+  } catch (error) {
+    return { available: false, reason: describeError(error) }
+  }
 }
 
 async function sampleProcessMemory(launch, context = {}) {
@@ -4552,7 +4676,30 @@ async function connectMainInspector(port, appProcess) {
       request.resolve(message.result)
     }
   })
+  /** Sends one raw CDP command (used for diagnostic profiling) [DON-313]. */
+  const send = (method, params = {}, timeoutMs = 5_000) => new Promise((resolve, reject) => {
+    if (closed || socket.readyState !== 1) {
+      reject(new Error('Electron main inspector is unavailable.'))
+      return
+    }
+    requestId += 1
+    const id = requestId
+    const timeout = setTimeout(() => {
+      if (!pending.has(id)) return
+      pending.delete(id)
+      reject(new Error(`Electron main inspector ${method} timed out.`))
+    }, timeoutMs)
+    pending.set(id, { resolve, reject, timeout })
+    try {
+      socket.send(JSON.stringify({ id, method, params }))
+    } catch {
+      clearTimeout(timeout)
+      pending.delete(id)
+      reject(new Error('Electron main inspector is unavailable.'))
+    }
+  })
   return {
+    send,
     evaluate: (expression, { awaitPromise = false } = {}) => new Promise((resolve, reject) => {
       if (closed || socket.readyState !== 1) {
         reject(new Error('Electron main inspector is unavailable.'))
