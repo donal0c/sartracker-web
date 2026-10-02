@@ -10,10 +10,10 @@ Claude keeps the list current; Donal does not need to remember any of it.
 
 | Order | Item | Ticket | Needs |
 | --- | --- | --- | --- |
-| 0 — **NEXT (team report, Urgent)** | False "EVIDENCE HEALTH CRITICAL — rejected-position evidence was lost" blocks Finish/Archive while diagnostics show nothing pending (Eamonn, PCLinuxOS, 1 Oct) | DON-318 | Support bundle requested from Eamonn; decision for Donal on the ticket (no loss marker when provably nothing pending; wording). Tests first. Related: DON-284 slow quit |
+| 0 — team report, Urgent | False "EVIDENCE HEALTH CRITICAL — rejected-position evidence was lost" blocks Finish/Archive while diagnostics show nothing pending (Eamonn, PCLinuxOS, 1 Oct) | DON-318 | **Fixed 277ec895** (Donal: per-mission pending marker, "may have been lost", residual window accepted; Codex 4 rounds). Owed: box `lifecycle` (also PCLinuxOS); Eamonn's bundle to confirm the path |
 | 1 | Initial history catch-up can starve live trail polling | DON-311 | **Fixed 86b8384a.** Waiting: CI soak, then box `team-mission` backfill time |
 | 2 | Main-thread stalls in the normal-profile soak (measurement) | DON-310 | Closes with DON-313 |
-| 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac | DON-312 | 9f after DON-300 5-6: read-only heap attribution from existing evidence |
+| 2a | Normal-profile soak exceeds the 2 GB memory budget on the Mac | DON-312 | Attribution done; **step 1 heap/state sampler 3e257710**. Step 2: soak run on a quiet machine or the box |
 | 3 | Discovery remembered as the map across restarts | DON-304 | **Fixed e018c128.** Waiting: team-smoke with the real package |
 | 3a | Soak stalls / 960k open block | DON-313 | **Implemented e3831c9d/f97c3707/0a20c3b5** (bounded pieces, writer yield, 960k upgrade row, harness counts off main). Launch 2 passes; launch 1 owed on a quiet machine or the box |
 | 3b | Replay ignores the Discovery package | DON-314 | **Fixed e73e5734** (pushed). Owed: `team-workflow` Replay step with the real package |
