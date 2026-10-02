@@ -20,7 +20,11 @@ import { chromium } from 'playwright'
 import { delay, launchApp } from '../lib/app.mjs'
 import { startMockTraccar } from '../lib/mock-traccar.mjs'
 import { archiveMission, bodyText, connectProvider, finishMission, resumeIfPrompted, startMission } from '../lib/operator.mjs'
+import { describeMapNotDrawn, waitForMapDrawn } from '../lib/map-ready.mjs'
 import { expectProduct } from '../lib/results.mjs'
+
+/** How long a map may take to load its style and tiles; software rendering is slow. */
+const MAP_DRAW_TIMEOUT_MS = 120_000
 
 export default [
   {
@@ -92,15 +96,18 @@ export default [
       const state = await app.page.evaluate(() => {
         const probe = document.createElement('canvas')
         const webgl = Boolean(probe.getContext('webgl2') ?? probe.getContext('webgl'))
-        const mapCanvas = document.querySelector('.maplibregl-canvas') !== null
-        return { webgl, mapCanvas }
+        return { webgl }
       })
-      await app.shot('no-gpu-flag')
       if (state.webgl) {
+        // A canvas exists before anything is drawn; wait for style and tiles.
+        const drawn = await waitForMapDrawn(app.page, { timeoutMs: MAP_DRAW_TIMEOUT_MS })
+        await app.shot('no-gpu-flag')
         await app.stop()
-        expectProduct(state.mapCanvas, 'WebGL is available without the flag but no map canvas was drawn.')
-        return 'WebGL available without the workaround flag; map canvas present.'
+        expectProduct(drawn.ready,
+          `WebGL is available without the flag but ${describeMapNotDrawn(drawn.state, MAP_DRAW_TIMEOUT_MS)}.`)
+        return `WebGL available without the workaround flag; map loaded after ${Math.round(drawn.waitedMs / 1000)} s (${tileSummary(drawn.state)}).`
       }
+      await app.shot('no-gpu-flag')
 
       // WebGL unavailable: the operator must see why and be offered the restart [DON-288].
       const panel = app.page.getByTestId('map-renderer-unavailable')
@@ -114,6 +121,9 @@ export default [
       }
       // app.relaunch() reuses the launch arguments, including the DevTools port.
       // From the click on, the replacement app is always stopped and its exit verified.
+      // The runner runs cleanups even when the check times out [DON-288].
+      ctx.cleanups.push(() => stopListenerOnPort(app.port))
+      let softwareDraw = ''
       try {
         await button.click()
         const exitCode = await Promise.race([app.exited, delay(60_000).then(() => 'timeout')])
@@ -121,17 +131,25 @@ export default [
         const stored = JSON.parse(await readFile(path.join(profile, 'gpu-rendering-preference.json'), 'utf8').catch(() => 'null'))
         expectProduct(stored?.softwareRendering === true, 'The software-rendering choice was not remembered in the profile.')
         const page = await connectRelaunched(app.port)
-        const drawn = await page.locator('.maplibregl-canvas').first()
-          .waitFor({ timeout: 30_000 }).then(() => true, () => false)
+        // Software rendering is slow (about a minute on the test box): wait for
+        // style and tiles, not just the canvas, before the picture [DON-288].
+        const drawn = await waitForMapDrawn(page, { timeoutMs: MAP_DRAW_TIMEOUT_MS })
         await page.screenshot({ path: path.join(ctx.runDir, 'no-gpu-flag-after-restart.png') })
-        expectProduct(drawn, 'After Restart with software rendering the map still did not draw.')
+        expectProduct(drawn.ready,
+          `After Restart with software rendering ${describeMapNotDrawn(drawn.state, MAP_DRAW_TIMEOUT_MS)}.`)
+        softwareDraw = `${Math.round(drawn.waitedMs / 1000)} s (${tileSummary(drawn.state)})`
       } finally {
         await stopListenerOnPort(app.port)
       }
-      return 'WebGL unavailable without the flag; the operator saw the message, Restart with software rendering relaunched the app, the map drew, and the choice was remembered.'
+      return `WebGL unavailable without the flag; the operator saw the message, Restart with software rendering relaunched the app, the map loaded after ${softwareDraw}, and the choice was remembered.`
     },
   },
 ]
+
+/** Tile counts for evidence, e.g. "12 tiles loaded, 0 errored". */
+function tileSummary(state) {
+  return `${state.tiles.loaded} tiles loaded, ${state.tiles.errored} errored`
+}
 
 /** Connects to the app that relaunched itself on the same DevTools port and returns its window. */
 async function connectRelaunched(port) {
