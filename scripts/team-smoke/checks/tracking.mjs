@@ -232,7 +232,7 @@ async function trackedMission(ctx, label, name, profileName = 'profile', { lived
  * going while it is set, not only after it is undone (DON-299 class 2)
  * [DON-315].
  */
-function midMissionControls(page) {
+export function midMissionControls(page) {
   const t = (id) => page.getByTestId(id)
   const layerToggle = (nodeTestId) => ({
     async press() {
@@ -250,13 +250,20 @@ function midMissionControls(page) {
     { label: 'the breadcrumbs layer was hidden', ...layerToggle('layer-tracking-breadcrumbs') },
     { label: 'the whole Tracking group was hidden', ...layerToggle('group-tracking') },
     {
+      // The toggle is rendered in the mast, the focus sidebar and the
+      // collapsed-rail strip; press the one the operator can see.
       label: 'Focus Mode was on',
-      press: () => t('focus-mode-toggle').click(),
-      undo: () => t('focus-mode-toggle').click(),
+      press: () => t('focus-mode-toggle').filter({ visible: true }).first().click(),
+      undo: () => t('focus-mode-toggle').filter({ visible: true }).first().click(),
     },
     {
+      // The Devices button is on the Tracking tab; the layer controls above
+      // leave Layers selected (box run 3d, 2 Oct 2026).
       label: 'the Devices workspace was open',
-      press: () => t('open-devices-workspace').click(),
+      async press() {
+        await t('sidebar-tab-tracking').click()
+        await t('open-devices-workspace').click()
+      },
       undo: () => closeWorkspace(page),
     },
     {
