@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMissionStore } from '../features/mission/mission-store'
 
 import { FocusModeToggle } from './focus-mode-toggle'
@@ -35,6 +35,16 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
   const setActiveTab = focusModeActive ? setFocusTab : setNormalTab
   const prefix = focusModeActive ? 'focus-sidebar' : 'sidebar'
   const phase = useMissionStore((state) => state.phase)
+  const missionDockRef = useRef<HTMLDivElement>(null)
+  // Entering an active or paused mission rebuilds Mission Control; start it
+  // from the top so the state, timers and Pause/Finish are in view, not
+  // wherever the operator scrolled to reach Start. Finishing is left alone:
+  // its dialog may still be open lower down [DON-300].
+  useEffect(() => {
+    if ((phase === 'active' || phase === 'paused') && missionDockRef.current !== null) {
+      missionDockRef.current.scrollTop = 0
+    }
+  }, [phase])
 
   return (
     <aside
@@ -80,6 +90,7 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
       <div
         className={`min-h-0 max-h-[53vh] flex-shrink overflow-y-auto border-b border-[var(--sar-line)] px-5 pb-4 pt-4 ${focusModeActive ? 'sar-mission-dock-focus' : ''}`}
         data-testid={focusModeActive ? 'focus-mode-mission-dock' : 'mission-control-dock'}
+        ref={missionDockRef}
         style={{ display: minimized ? 'none' : undefined, maxHeight: phase === 'paused' ? 'none' : undefined }}
       >
         <MissionControlPanel minimized={minimized} onMinimizedChange={onMinimizedChange} onActionErrorChange={onActionErrorChange} onDecisionOpenChange={onDecisionOpenChange} />

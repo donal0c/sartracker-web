@@ -99,7 +99,7 @@ describe('mission section summaries [DON-300]', () => {
     expect(describeOutingSection({ activeOutingLabel: 'Morning search', error: null }))
       .toEqual({ summary: 'Active: Morning search', attention: [] })
     expect(describeOutingSection({ activeOutingLabel: null, error: null }))
-      .toEqual({ summary: 'No active outing · new fixes are Unassigned', attention: [] })
+      .toEqual({ summary: 'No outing · fixes Unassigned', attention: [] })
     expect(describeOutingSection({ activeOutingLabel: null, error: 'Outing store unavailable.' }).attention)
       .toEqual(['outing error'])
   })

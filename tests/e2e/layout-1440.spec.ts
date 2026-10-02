@@ -118,13 +118,12 @@ test('gives the Tracking, Tools and Layers body room during a calm mission [DON-
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-attention', '')
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'false')
   await expect(page.getByTestId('mission-participants-section-summary')).toHaveText('1 device · history complete')
-  await expect(page.getByTestId('mission-outings-section-summary')).toContainText('No active outing')
+  await expect(page.getByTestId('mission-outings-section-summary')).toHaveText('No outing · fixes Unassigned')
   const body = await page.getByTestId('sidebar-tab-content').boundingBox()
   // 188 px before option C. The browser copy also shows its ~35 px
   // "Browser testing mode" banner, which the desktop app does not.
   expect(body?.height ?? 0).toBeGreaterThanOrEqual(300)
-  expect(await fullyShown(page.getByTestId('mission-pause-resume-btn'))).toBe(true)
-  expect(await fullyShown(page.getByTestId('mission-finish-btn'))).toBe(true)
+  await expectControlsInView(page)
 })
 
 test('opens a folded section on request and keeps adding a participant possible [DON-300]', async ({ page }) => {
@@ -154,14 +153,65 @@ test('folding a section keeps an unfinished entry and its error [DON-300]', asyn
   await expect(page.getByTestId('participant-add-error')).toBeVisible()
 })
 
+/** Header state, both timers and Pause/Finish are always in view during a mission [DON-300]. */
+async function expectControlsInView(page: import('@playwright/test').Page): Promise<void> {
+  for (const testId of ['mission-elapsed', 'mission-active-search', 'mission-pause-resume-btn', 'mission-finish-btn']) {
+    expect(await fullyShown(page.getByTestId(testId)), `${testId} fully shown`).toBe(true)
+  }
+  expect(await fullyShown(page.getByTestId('mission-control-dock').getByTestId('mission-phase-chip')), 'phase chip fully shown').toBe(true)
+}
+
+/** True when a summary line takes one text line, whatever the platform fonts. */
+async function singleLine(locator: import('@playwright/test').Locator): Promise<boolean> {
+  return locator.evaluate((element) => {
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight)
+    return element.getBoundingClientRect().height < lineHeight * 1.5
+  })
+}
+
+test('keeps every folded summary to one line, even for a long outing name [DON-300]', async ({ page }) => {
+  // Linux CI fonts wrapped the old "No active outing · new fixes are
+  // Unassigned" onto two lines and cost the tab body 10 px.
+  await startMission(page, pickCharlie)
+  await completeHistory(page)
+  // Unassigned stays in view while folded, in full: not cut off by the ellipsis.
+  const outingSummary = page.getByTestId('mission-outings-section-summary')
+  await expect(outingSummary).toHaveText('No outing · fixes Unassigned')
+  expect(await outingSummary.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  expect(await singleLine(page.getByTestId('mission-participants-section-summary'))).toBe(true)
+  expect(await singleLine(outingSummary)).toBe(true)
+  const toggle = page.getByTestId('mission-outings-section-toggle')
+  await toggle.click()
+  const label = "Night search of the Hag's Glen and the Devil's Ladder approaches"
+  await page.getByTestId('outing-label-input').fill(label)
+  await page.getByTestId('outing-start-btn').click()
+  await toggle.click()
+  const summary = page.getByTestId('mission-outings-section-summary')
+  await expect(summary).toHaveAttribute('title', `Active: ${label}`)
+  expect(await singleLine(summary)).toBe(true)
+})
+
+test('shows Pause and Finish from the top after Start, even when setup was scrolled [DON-300]', async ({ page }) => {
+  // CI flake: the operator (or Playwright) scrolled Mission Control down to
+  // reach Start, and the dock stayed scrolled with Pause/Finish cut off.
+  await seedRoster(page)
+  await page.getByTestId('mission-name-input').fill('Layout mission')
+  await page.getByTestId('mission-offset-input').fill('0')
+  const dock = page.getByTestId('mission-control-dock')
+  await dock.evaluate((element) => { element.scrollTop = element.scrollHeight })
+  expect(await dock.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  await page.getByTestId('mission-start-btn').click()
+  await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')
+  await expectControlsInView(page)
+})
+
 test.describe('a warning keeps Participants open, with Pause and Finish still in view [DON-300]', () => {
   test('nobody selected', async ({ page }) => {
     await startMission(page, async () => undefined)
     const section = page.getByTestId('mission-participants-section')
     await expect(section).toHaveAttribute('data-forced', 'true')
     await expect(page.getByTestId('mission-participants-section-toggle')).toContainText('Needs attention')
-    expect(await fullyShown(page.getByTestId('mission-pause-resume-btn'))).toBe(true)
-    expect(await fullyShown(page.getByTestId('mission-finish-btn'))).toBe(true)
+    await expectControlsInView(page)
   })
 
   test('history still loading', async ({ page }) => {
@@ -170,7 +220,6 @@ test.describe('a warning keeps Participants open, with Pause and Finish still in
     }, '2')
     await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')
     await expect(page.getByTestId('participant-backfill-status').first()).toContainText('pending')
-    expect(await fullyShown(page.getByTestId('mission-pause-resume-btn'))).toBe(true)
-    expect(await fullyShown(page.getByTestId('mission-finish-btn'))).toBe(true)
+    await expectControlsInView(page)
   })
 })

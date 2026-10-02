@@ -40,7 +40,8 @@ export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
       >
         <span className="min-w-0">
           <span className="block text-[10px] font-bold uppercase leading-tight tracking-[0.1em] text-amber-300">{props.title}</span>
-          <span className="block text-xs leading-snug text-stone-200" data-testid={`${props.testId}-summary`}>
+          {/* One line on every platform; the full text stays in the tooltip. */}
+          <span className="block truncate text-xs leading-snug text-stone-200" data-testid={`${props.testId}-summary`} title={props.section.summary}>
             {props.section.summary}
           </span>
         </span>

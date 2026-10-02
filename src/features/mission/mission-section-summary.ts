@@ -65,7 +65,7 @@ export function describeOutingSection(input: {
     summary: input.loading === true && input.activeOutingLabel === null
       ? 'Loading outings…'
       : input.activeOutingLabel === null
-      ? 'No active outing · new fixes are Unassigned'
+      ? 'No outing · fixes Unassigned'
       : `Active: ${input.activeOutingLabel}`,
     attention: input.error === null ? [] : ['outing error'],
   }
