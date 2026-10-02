@@ -25,6 +25,7 @@ import {
   ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
   missionPhase, openMissionSection, placeMarker, resumeIfPrompted, startMission,
 } from '../lib/operator.mjs'
+import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
 import { expectProduct } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
@@ -210,6 +211,7 @@ export default [
       const [timedGpx, untimedGpx] = await writeGpxFiles(path.join(profile, 'gpx-inbox'))
 
       // A lived-in profile: yesterday's training mission, finished.
+      const sessionStartedAt = Date.now()
       let app = await launchApp(ctx, { profile, label: 'team-1-previous-mission' })
       await connectProvider(app.page, mock.url)
       await startMission(app.page, 'Yesterday Training', [])
@@ -223,6 +225,7 @@ export default [
       await t('mission-offset-input').fill(String(LOOKBACK_HOURS))
       await t('participant-group-picker').getByText('KMRT Hasty', { exact: true }).click()
       await t('participant-device-picker').getByText('Dog Handler', { exact: true }).click()
+      const missionStartPressedAt = Date.now()
       await t('mission-start-btn').click()
       await openMissionSection(app.page, 'participants')
       await t('participant-management').waitFor({ timeout: 20_000 })
@@ -464,6 +467,18 @@ export default [
         `${heldIds.length - lateStoredCount}/${heldIds.length} fixes that ${lateWalker.name}'s phone uploaded late (fix times 5 h to 1 h old) `
           + `were not all stored within ${LATE_UPLOAD_BUDGET_MS / 60_000} min (complete after ${lateSeconds ?? 'never'} s; DON-305).`)
       notes.push(`${heldIds.length} late-uploaded fixes (5 h to 1 h old) all stored ${lateSeconds} s after upload (sampled every 5 s)`)
+
+      // DON-321: after this long session of steady polling, the report the team
+      // exports still holds the events from before Start, and routine tracking
+      // breadcrumbs are thinned instead of filling the log.
+      const diagnosticsReport = await exportDiagnosticsReport(app.page, profile)
+      const diagnostics = assessDiagnosticsReport(parseDiagnosticsReport(diagnosticsReport.text), {
+        sessionStartedAt,
+        missionStartedAt: missionStartPressedAt,
+      })
+      expectProduct(diagnostics.problems.length === 0,
+        `Diagnostics report ${diagnosticsReport.name} after a long session: ${diagnostics.problems.join(' ')} (${diagnostics.summary}; DON-321).`)
+      notes.push(`diagnostics report kept the pre-Start events (${diagnostics.summary})`)
 
       // Overnight: quit, stay closed, relaunch next day and resume.
       await app.stop('SIGTERM')
