@@ -1,8 +1,15 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-10-01 (evening). This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
+Updated 2026-10-02 (evening). This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
 
-## Next release (13.6) — ordered queue, 1 October (Claude tracks these)
+## 13.6 published 2 Oct 2026
+
+beta.13.6 published 2 Oct 2026 (tag 01c43873, release run 37011458608), with
+one owner-approved exception: installed soak limits (DON-312/313, 13.7). Next
+queue (13.7): DON-312/313 A/B soak with coverage off, DON-328, DON-325, DON-326,
+DON-327, DON-329, DON-298 (PCLinuxOS). Waiting on Eamonn for DON-318/319 files.
+
+## 13.6 queue (shipped) — 1 October
 
 beta.13.5 was published on 1 Oct 2026 (tag fac5adcf). This is the queue for the
 next release, safety and fail-visible issues first. Each item has a ticket.
