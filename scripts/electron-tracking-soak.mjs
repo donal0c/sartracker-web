@@ -88,6 +88,12 @@ import {
 } from '../build/electron-tracking-soak-mock-server.js'
 import { runCompetingOperationProbe } from './qualification/competing-operation-probe.mjs'
 import { openMissionSection } from './mission-sections.mjs'
+import {
+  readHeapAndStateSample,
+  readRendererTrackingStateCounts,
+  scheduleEvidenceHeapSample,
+  summarizeHeapSamples,
+} from '../build/electron-tracking-soak-memory-lib.js'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -95,6 +101,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const runtimeLogRelativePath = path.join('logs', 'runtime.log')
 const PROCESS_MEMORY_SAMPLE_INTERVAL_MS = 250
 const PROCESS_MEMORY_EVIDENCE_INTERVAL_MS = 5_000
+const HEAP_SAMPLE_TIMEOUT_MS = 2_000
 const EXACT_PAGE_ACTION_TIMEOUT_MS = 5_000
 let exactDotRequestSequence = 0
 
@@ -286,6 +293,7 @@ async function main() {
         progress: exactFailureProgress,
         sleepGuard,
       })
+      await recordCheckpointHeap(activeLaunch, checkpoint)
       let exactDotBeforeRestart = null
       if (exactSoakRequired) {
         exactFailureProgress.phase = 'checkpoint_latest'
@@ -396,6 +404,7 @@ async function main() {
       progress: exactFailureProgress,
       sleepGuard,
     })
+    await recordCheckpointHeap(activeLaunch, options.profile.actualBatches)
     while (archiveCycleCursor < archiveCycleMissions.length) {
       archiveCycleEntries.push(await runArchiveCycleWhileTracking(
         activeLaunch.page,
@@ -648,6 +657,12 @@ async function main() {
           ...sample,
         })),
       ),
+      checkpointHeapSamples: launches.flatMap((launch) =>
+        launch.processMemory.checkpointHeapSamples.map((sample) => ({
+          launchNumber: launch.number,
+          ...sample,
+        })),
+      ),
     }
     const rendererCrashes = launches.reduce((sum, launch) => sum + launch.rendererCrashes, 0)
     const webGlRendererAttestation = buildWebGlRendererAttestation({
@@ -813,6 +828,10 @@ async function main() {
         process: {
           maximumResidentBytes: processMemory.maximumProcessTreeResidentBytes,
           sampleCount: processMemory.samples,
+          heap: summarizeHeapSamples([
+            ...processMemory.phaseSamples,
+            ...processMemory.checkpointHeapSamples,
+          ]),
         },
         ...(fieldFixtureEvidence === null ? {} : { fieldFixture: fieldFixtureEvidence }),
         ...(fieldFixtureLoadEvidence === null ? {} : { fieldFixtureLoad: fieldFixtureLoadEvidence }),
@@ -1026,6 +1045,8 @@ async function launchPackagedApp(options, userDataDir, number) {
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${remoteDebuggingPort}`)
     const context = browser.contexts()[0]
     const page = context.pages()[0] ?? (await context.waitForEvent('page'))
+    // Heap evidence only [DON-312]; a missing session is recorded per sample.
+    const rendererSession = await attachRendererHeapSession(context, page)
     const rendererLifecycle = createRendererLifecycleEvidence(
       browser,
       context,
@@ -1056,6 +1077,7 @@ async function launchPackagedApp(options, userDataDir, number) {
       browser,
       page,
       mainInspector,
+      rendererSession,
       mainHeartbeat,
       attribution,
       attributionEvidence: unavailableAttribution('not-collected'),
@@ -1072,6 +1094,7 @@ async function launchPackagedApp(options, userDataDir, number) {
         maximumProcessTreeResidentBytes: 0,
         maximumSample: null,
         evidenceSamples: [],
+        checkpointHeapSamples: [],
         lastSampleAtMs: 0,
         lastEvidenceAtMs: 0,
       },
@@ -3931,6 +3954,8 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
       2_000,
     )
     await collectLaunchAttribution(launch)
+    // Keep the last heap reading: collect it while the app is still up.
+    await runCleanupStep(() => launch.heapSampleInFlight, 2_500)
     let gracefulFailure
     let exitEvidence
     try {
@@ -3947,6 +3972,7 @@ async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
       })
     }
     await runCleanupStep(() => launch.mainInspector.close(), 250)
+    await runCleanupStep(() => launch.rendererSession?.detach(), 250)
     await runCleanupStep(() => launch.browser.close(), 2_000)
     launch.shutdownEvidence = exitEvidence
     if (gracefulFailure !== undefined) throw gracefulFailure
@@ -4040,12 +4066,81 @@ async function sampleProcessMemory(launch, context = {}) {
   launch.processMemory.lastSampleAtMs = sampledAtMs
   const memory = await readProcessTreeResidentMemory(launch.appProcess.pid)
   if (memory === null) return null
-  return recordProcessMemorySample(
+  const sample = recordProcessMemorySample(
     launch,
     memory,
     context,
     sampledAtMs,
   )
+  // Heap and retained tracking state ride on the 5 s evidence samples only,
+  // so the extra renderer work stays off the 250 ms RSS cadence [DON-312].
+  // One read in flight at most, never awaited here: it must not delay the
+  // checkpoint loop or the RSS cadence.
+  if (launch.processMemory.evidenceSamples.at(-1) === sample) {
+    scheduleEvidenceHeapSample(launch, sample, () => sampleHeapAndState(launch))
+  }
+  return sample
+}
+
+/**
+ * Bounded renderer CDP attach for heap evidence [DON-312]. A hang or refusal
+ * leaves the session null, which each heap sample records as unavailable.
+ */
+async function attachRendererHeapSession(context, page) {
+  let timer
+  let timedOut = false
+  const attaching = context.newCDPSession(page)
+  try {
+    return await Promise.race([
+      attaching,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true
+          resolve(null)
+        }, 5_000)
+      }),
+    ])
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+    // A session that arrives after the timeout is nobody's; let it go.
+    if (timedOut) {
+      void attaching.then((session) => session.detach()).catch(() => undefined)
+    }
+  }
+}
+
+/**
+ * Labelled heap observation at a checkpoint boundary: after the drain, before
+ * the exact traversal or restart, outside any timed action [DON-312].
+ */
+async function recordCheckpointHeap(launch, completedBatch) {
+  await launch.heapSampleInFlight
+  launch.processMemory.checkpointHeapSamples.push({
+    observedAt: new Date().toISOString(),
+    phase: 'checkpoint',
+    completedBatch,
+    heap: await sampleHeapAndState(launch),
+  })
+}
+
+/** Reads main heap, renderer heap and renderer tracking-state counts [DON-312]. */
+function sampleHeapAndState(launch) {
+  return readHeapAndStateSample({
+    readMainMemoryUsage: async () => {
+      const evaluation = await launch.mainInspector.evaluate('process.memoryUsage()')
+      return evaluation?.result?.value
+    },
+    readRendererHeapUsage: async () => {
+      if (launch.rendererSession === null || launch.rendererSession === undefined) {
+        throw new Error('renderer CDP session unavailable')
+      }
+      return launch.rendererSession.send('Runtime.getHeapUsage')
+    },
+    readRendererStateCounts: () => launch.page.evaluate(readRendererTrackingStateCounts),
+    timeoutMs: HEAP_SAMPLE_TIMEOUT_MS,
+  })
 }
 
 /** Records one process-tree RSS observation into bounded launch evidence. */
@@ -4141,6 +4236,11 @@ async function readDarwinProcessList() {
 function createProcessMemoryReport(processMemory) {
   return {
     samples: processMemory.samples,
+    heap: summarizeHeapSamples([
+      ...processMemory.evidenceSamples,
+      ...processMemory.checkpointHeapSamples,
+    ]),
+    checkpointHeapSamples: processMemory.checkpointHeapSamples,
     maximumProcessTreeResidentBytes:
       processMemory.maximumProcessTreeResidentBytes,
     maximumSample: processMemory.maximumSample,
