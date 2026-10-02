@@ -135,7 +135,10 @@ export default [
   {
     check: 'Markers, attachments and GPX import',
     id: 'markers-gpx',
-    manualSteps: ['Import through the native file picker and verify all 30 GPX points and the marker attachment are shown.'],
+    manualSteps: [
+      'Import through the native file picker and verify all 30 GPX points and the marker attachment are shown.',
+      'Check the GPX track is drawn straight after Import Files and after a watched-folder scan, without a relaunch (the smoke imports through the store bridge, so it checks the draw only after a relaunch) [DON-319].',
+    ],
     async run(ctx) {
       const profile = path.join(ctx.runDir, 'profile')
       const photo = path.join(ctx.runDir, 'evidence-photo.png')
@@ -156,22 +159,27 @@ export default [
         return store.importGpxEvidencePaths({ missionId: mission.id, paths: [file] })
       }, gpx)
       await delay(3000)
-      await app.page.getByTestId('sidebar-tab-tools').click().catch(() => {})
-      await delay(1500)
       await app.shot('markers-gpx')
+      expectProduct(imported?.imports?.length === 1 && imported.failures?.length === 0,
+        `GPX import returned ${JSON.stringify(imported).slice(0, 200)}.`)
 
-      // DON-319: the imported line is drawn after import, after a basemap
-      // switch and after a relaunch; hidden in Layers, the panel says so and
-      // "Show on map" draws it again.
+      // DON-319: the store bridge bypasses the renderer's GPX runtime, which is
+      // what refreshes the panel and map after Import Files or a watched-folder
+      // scan (no dialog override exists to drive those). So the draw is
+      // checked from a relaunch, which loads what the store holds: drawn,
+      // drawn after a basemap switch, hidden in Layers described as hidden,
+      // and "Show on map" draws it again. The in-session draw is a hand check.
       const findings = []
       const importId = imported?.imports?.[0]?.id
-      if (await drawnGpxSegments(app.page) === 0) findings.push('the imported GPX track was not drawn on the map (DON-319)')
-      const basemap = await switchBasemap(app.page)
-      if (await drawnGpxSegments(app.page) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
       await app.stop()
       app = await launchApp(ctx, { profile, label: 'markers-gpx-relaunch' })
       await resumeIfPrompted(app.page, 15_000)
-      if (await drawnGpxSegments(app.page) === 0) findings.push('the GPX track was not drawn after a relaunch (DON-319)')
+      await app.page.getByTestId('sidebar-tab-tools').click().catch(() => {})
+      await delay(1500)
+      await app.shot('markers-gpx-relaunch')
+      if (await drawnGpxSegments(app.page) === 0) findings.push('the imported GPX track was not drawn after a relaunch (DON-319)')
+      const basemap = await switchBasemap(app.page)
+      if (await drawnGpxSegments(app.page) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
       await app.page.getByTestId('sidebar-tab-layers').click()
       await app.page.getByTestId('layer-visibility-group-gpx-tracks').uncheck()
       const hiddenDrawn = await drawnGpxSegments(app.page)
@@ -201,10 +209,9 @@ export default [
         }
       }
       expectProduct(attachmentMatch, 'No byte-identical copy of the attached photo was stored in the profile.')
-      expectProduct(imported?.imports?.length === 1 && imported.failures?.length === 0,
-        `GPX import returned ${JSON.stringify(imported).slice(0, 200)}.`)
       return `On a ${livedIn}: 2 markers stored; photo attachment stored byte-identical; GPX (30 timed points) imported via the app's import bridge, `
-        + 'drawn after import, a basemap switch and a relaunch; hidden in Layers it was described as hidden and "Show on map" drew it again. Native file picker: check by hand.'
+        + 'drawn after a relaunch and after a basemap switch; hidden in Layers it was described as hidden and "Show on map" drew it again. '
+        + 'Not automated: the draw straight after Import Files or a watched-folder scan (the bridge import bypasses the renderer\'s GPX runtime) and the native file picker; check both by hand.'
     },
   },
   {

@@ -145,6 +145,12 @@ describe('team smoke incomplete evidence', () => {
       expect(table).not.toContain('| PASS |')
     }
   })
+  it('leaves the in-session GPX draw after Import Files to a hand check [DON-319]', () => {
+    // The smoke imports through the store bridge, which bypasses the renderer's
+    // GPX runtime; only a relaunch shows what the store holds (box run 4a).
+    const check = workflows.find(entry => entry.id === 'markers-gpx')
+    expect(check?.manualSteps?.join(' ')).toMatch(/drawn straight after Import Files.*watched-folder/iu)
+  })
   it('allows a fully automated completed check to pass', () => {
     expect(completedCheck({ id: 'fully-automated' }, 'Exact comparison succeeded')).toEqual({
       result: 'PASS', evidence: 'Exact comparison succeeded',
