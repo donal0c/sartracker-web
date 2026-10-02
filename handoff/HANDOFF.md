@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-02 (morning). Issue order (13.6 queue): [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-02 (afternoon). Issue order (13.6 queue): [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md).
 
 ## Status
@@ -25,10 +25,19 @@ Release gate: [checklist](../docs/release-checklist.md).
   layout (wrapped summary, scroll offset); fixed c5fe9772, CI 36975711300
   green. 2 Oct: DON-312 step 1 sampler 3e257710, DON-321 smoke d6399660.
 - Linear audited 2 Oct: fixed-with-evidence-owed issues are In Review.
-- **None of tonight's team-smoke changes have run packaged yet** (controls,
-  lifecycle, outage, markers-gpx, replay-basemaps, team-workflow,
-  team-mission): first run when Docker/the box is free. Ordered box plan
-  (~4.5 h): `tmp/box-run-plan/plan.md`.
+- **Box pre-tag run, 2 Oct** (13.6 code, version still says 13.5; evidence in
+  `~/sartracker-13.6-smoke/` on the box). Build fc731f1e: custody, DON-285,
+  DON-288, lifecycle, tracking, outage, controls, upgrade 13.5->14, archive,
+  coordinates, settings, crash-archive, offline-map, replay-basemaps, 960k
+  open all PASS (some after a test-tool fix). **Block found: DON-300 item 8**
+  (one roster fetch counted twice -> false leave, lost fixes) -> fixed
+  3b6d9272; DON-321 burst fixed 1421c326. Rebuilt e7a7a0f8 (CI 37001809472
+  green): team-workflow (item 8 PASS), team-mission, tracking, lifecycle,
+  outage re-run clean. Hand checks done: picker + watched-folder draw,
+  window X, F11. Soak (old build): data exact; stalls 295/358 ms and 2.22 GB
+  -> DON-312/313 stay 13.7 (9f plan on tickets).
+- **Next:** Donal's go to tag 13.6 (version bump); then identity rows +
+  short smoke on the tagged artifact; note draft `docs/releases/beta.13.6.md`.
 
 ## Verification limits
 
@@ -45,8 +54,7 @@ Release gate: [checklist](../docs/release-checklist.md).
 
 - **Coordinator:** handoff, workplan, all pushes, Mac soaks, team-smoke.
   Next: first packaged run of tonight's smoke changes (needs Docker/box).
-- **Session 9f** (commits locally; coordinator pushes): standing by; 13.6
-  draft note at `docs/releases/beta.13.6.md` (local). Owns mission-store.cjs, main.cjs,
+- **Session 9f** (commits locally; coordinator pushes): standing by. Owns mission-store.cjs, main.cjs,
   preload.cjs, GPX runtime, `public/manual/index.html`.
 - Rules: announce files before editing; one heavy run at a time.
 - **When Donal frees Docker:** package once; Mac soak 3x (DON-313) and the
