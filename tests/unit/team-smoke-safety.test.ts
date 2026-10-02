@@ -173,6 +173,8 @@ describe('team-smoke lookback verification [DON-291]', () => {
       const earlier = stored(11, missionStart - 1000)[0]!
       expect(() => verifyLookbackFixes(mock, [earlier, ...exact], options)).toThrow(/predate mission start/)
       expect(() => verifyLookbackFixes(mock, exact.slice(1), options)).toThrow(/missing/)
+      // A Set of ids hid duplicate rows from the per-device count (box run 3b, 2 Oct 2026).
+      expect(() => verifyLookbackFixes(mock, [...exact, exact[0]!], options)).toThrow(/stored more than once/)
       expect(() => verifyLookbackFixes(mock, [...exact, ...stored(13)], options)).toThrow(/never selected/)
       expect(() => verifyLookbackFixes(mock, [{ ...exact[0]!, lat: exact[0]!.lat + 0.001 }, ...exact.slice(1)], options))
         .toThrow(/differ/)

@@ -107,6 +107,8 @@ export function verifyLookbackFixes(mock, fixes, { missionStart, until, expected
   })
   expectProduct(mismatches.length === 0,
     `${mismatches.length}/${fixes.length} stored lookback fixes differ from the provider (e.g. ${mismatches.slice(0, 3).map((fix) => fix.sourcePositionId).join(', ')}).`)
+  const repeated = fixes.length - new Set(fixes.map((fix) => fix.sourcePositionId)).size
+  expectProduct(repeated === 0, `${repeated} provider fix(es) stored more than once in the mission.`)
   const early = fixes.filter((fix) => fix.time < missionStart)
   expectProduct(early.length === 0, `${early.length} stored fixes predate mission start ${new Date(missionStart).toISOString()}.`)
   const deviceOf = (fix) => Math.floor(fix.sourcePositionId / 1_000_000)
