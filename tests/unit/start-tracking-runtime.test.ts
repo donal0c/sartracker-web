@@ -3296,6 +3296,56 @@ describe('startTrackingRuntime', () => {
     stopReplacement()
   })
 
+  it('records one status breadcrumb for a history catch-up whose device list shrinks [DON-321]', async () => {
+    // Box run 5c (2 Oct 2026): 20 identical-looking tracking_status_changed
+    // rows in 11 s pushed the share to 74%. The warning named the devices
+    // still reconciling; each one finishing changed the text, so each counted
+    // as new, while the breadcrumb logged only hasWarning.
+    const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
+    let pollerHooks: { onStatusChange: (status: TrackingConnectionStatus) => void } | undefined
+    await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockImplementation((_client, hooks) => {
+        pollerHooks = hooks
+        return { start: vi.fn(), stop: vi.fn() }
+      }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn().mockResolvedValue('/tmp/tracking-cache.json') },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      recordDiagnosticEvent,
+    })
+    const online: TrackingConnectionStatus = {
+      mode: 'online', consecutiveFailures: 0, recovered: false,
+      lastSuccessAt: '2026-10-02T10:00:48.000Z', warning: null,
+    }
+    const statusEvents = () => recordDiagnosticEvent.mock.calls
+      .filter(([event]) => event.event === 'tracking_status_changed').map(([event]) => event)
+    const names = Array.from({ length: 20 }, (_, index) => `Walker ${index + 1}`)
+
+    for (let done = 0; done < names.length; done += 1) {
+      pollerHooks?.onStatusChange({
+        ...online,
+        warning: `Breadcrumb history is reconciling for ${names.slice(done).join(', ')}; current fixes remain live.`,
+      })
+    }
+    expect(statusEvents()).toHaveLength(1)
+    // The breadcrumb says which problem it is, without naming anyone.
+    expect(statusEvents()[0]?.fields).toMatchObject({
+      hasWarning: true,
+      warning: 'history_reconciling',
+    })
+    expect(JSON.stringify(statusEvents())).not.toContain('Walker')
+
+    // A different problem is still new, as is the warning clearing.
+    pollerHooks?.onStatusChange({ ...online, warning: 'Breadcrumb history incomplete for Walker 3; retrying while current fixes remain live.' })
+    pollerHooks?.onStatusChange(online)
+    expect(statusEvents()).toHaveLength(3)
+    expect(statusEvents()[2]?.fields).toMatchObject({ hasWarning: false })
+    expect(statusEvents()[2]?.fields).not.toHaveProperty('warning')
+  })
+
   it('records a tracking status or snapshot breadcrumb only when it says something new [DON-321]', async () => {
     const recordDiagnosticEvent = vi.fn().mockResolvedValue(undefined)
     let nowMs = Date.parse('2026-10-01T16:00:00.000Z')
@@ -3437,6 +3487,8 @@ describe('startTrackingRuntime', () => {
         consecutiveFailures: 2,
         recovered: false,
         hasWarning: true,
+        warning: 'unclassified',
+        warningDigest: expect.stringMatching(/^[0-9a-f]{8}$/u),
       },
     })
     expect(recordDiagnosticEvent).toHaveBeenCalledWith({

@@ -55,6 +55,7 @@ import {
   filterCanonicalFixTimeEvidencePositions,
   filterCanonicalFixTimeEvidenceSnapshot,
 } from './canonical-fix-time-evidence'
+import { describeTrackingWarningForDiagnostics } from './tracking-status-diagnostics'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -1025,19 +1026,23 @@ export async function startTrackingRuntime(
     onStatusChange: (status) => {
       latestTrackingStatus = status
       dependencies.applyStatus(decorateTrackingStatus(status))
+      // The warning's fixed problem identifiers mark a changed problem, so a
+      // shrinking device list during catch-up is one problem and no names
+      // reach the report [DON-321]. A long outage is recorded at 1, 2, 4, 8…
+      // failures rather than on every retry.
+      const warning = describeTrackingWarningForDiagnostics(status.warning)
       const fields = {
         mode: status.mode,
         consecutiveFailures: status.consecutiveFailures,
         recovered: status.recovered,
         hasWarning: status.warning !== null,
+        ...(warning ?? {}),
       }
-      // The warning text identifies a changed problem; a long outage is
-      // recorded at 1, 2, 4, 8… failures rather than on every retry.
       const statusKey = JSON.stringify([
         status.mode,
         failureCountBucket(status.consecutiveFailures),
         status.recovered,
-        status.warning,
+        warning,
       ])
       if (statusKey === lastStatusDiagnosticKey) {
         suppressedStatusDiagnostics += 1
