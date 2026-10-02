@@ -18,8 +18,16 @@ import { NotTested } from './results.mjs'
 
 /** The renderer keeps at most this many breadcrumbs. */
 export const DIAGNOSTIC_LOG_CAPACITY = 500
-/** tracking_status_changed may be at most this share of the breadcrumbs (13.5: 71%). */
+/**
+ * tracking_status_changed may be at most this share of the breadcrumbs once
+ * the log is under pressure (13.5: 71% of a full log). Provisional: in a quiet
+ * session ordinary status changes are naturally most of a short log (box run
+ * 5c, 2 Oct 2026), so it applies only from SHARE_BOUND_FROM_EVENTS or once
+ * routine events were dropped.
+ */
 export const MAX_STATUS_SHARE = 0.5
+/** The share bound applies from this many breadcrumbs (half the log). */
+export const SHARE_BOUND_FROM_EVENTS = 250
 /** ...and at most this many in one session (13.5: about three per 15 s poll). */
 export const MAX_STATUS_EVENTS = 40
 
@@ -97,11 +105,23 @@ export function assessDiagnosticsReport(parsed, { sessionStartedAt, missionStart
   if (!earlyMarker) {
     problems.push('The marker saved before the mission started is missing from the breadcrumbs.')
   }
-  const statusCount = events.filter((event) => event.event === 'tracking_status_changed').length
+  const statusEvents = events.filter((event) => event.event === 'tracking_status_changed')
+  const statusCount = statusEvents.length
   const share = events.length === 0 ? 0 : statusCount / events.length
-  if (statusCount > MAX_STATUS_EVENTS || share > MAX_STATUS_SHARE) {
+  const underPressure = events.length >= SHARE_BOUND_FROM_EVENTS || parsed.droppedRoutine !== null
+  if (statusCount > MAX_STATUS_EVENTS || (underPressure && share > MAX_STATUS_SHARE)) {
     problems.push(`tracking_status_changed is ${statusCount} of ${events.length} breadcrumbs (${Math.round(share * 100)}%); `
-      + `the limit is ${MAX_STATUS_EVENTS} and ${Math.round(MAX_STATUS_SHARE * 100)}%.`)
+      + `the limit is ${MAX_STATUS_EVENTS}${underPressure ? ` and ${Math.round(MAX_STATUS_SHARE * 100)}%` : ''}.`)
+  }
+  // The app records a status breadcrumb only when what it logs changes, so two
+  // in a row with the same logged fields are a repeat that escaped suppression,
+  // at any log size (the 5c catch-up burst) [DON-321]. Once routine events
+  // were evicted, rows that look adjacent may not have been, so no verdict.
+  const repeats = parsed.droppedRoutine !== null ? [] : statusEvents.filter((event, index) => index > 0
+    && sameLoggedFields(event.fields, statusEvents[index - 1].fields))
+  if (repeats.length > 0) {
+    problems.push(`${repeats.length} tracking_status_changed breadcrumb(s) repeat the previous one with identical logged fields `
+      + `(first at ${repeats[0].ts}); repeats should be suppressed.`)
   }
   const suppressed = events.filter((event) => Number(event.fields?.repeatsSuppressed) > 0).length
   if (suppressed === 0) {
@@ -120,6 +140,21 @@ export function assessDiagnosticsReport(parsed, { sessionStartedAt, missionStart
       + `(${Math.round(share * 100)}%); ${suppressed} record suppressed repeats`
       + `${parsed.droppedRoutine === null ? '' : `; ${parsed.droppedRoutine} routine dropped`}`,
   }
+}
+
+/**
+ * Compares two status breadcrumbs' logged fields, ignoring the suppressed
+ * repeat count (which says how many identical updates came before).
+ *
+ * @param {Record<string, unknown> | undefined} a
+ * @param {Record<string, unknown> | undefined} b
+ * @returns {boolean}
+ */
+function sameLoggedFields(a = {}, b = {}) {
+  const logged = (fields) => JSON.stringify(Object.entries(fields)
+    .filter(([key]) => key !== 'repeatsSuppressed')
+    .sort(([left], [right]) => left.localeCompare(right)))
+  return logged(a) === logged(b)
 }
 
 /**

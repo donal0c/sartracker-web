@@ -120,6 +120,37 @@ describe('assessDiagnosticsReport [DON-321]', () => {
     expect(problems).toContainEqual(expect.stringContaining('could not be read'))
   })
 
+  it('applies the share bound only when the log is under pressure, not in a quiet session (box run 5c)', () => {
+    // A quiet session: ordinary status changes are most of a short log. The
+    // 50% bound came from 13.5's full 500-event log and is provisional.
+    const quiet = [
+      status(0.5, { mode: 'idle' }), marker(2), status(5.5, { mode: 'online' }),
+      status(8, { mode: 'offline', consecutiveFailures: 1 }), status(9, { mode: 'offline', consecutiveFailures: 2 }),
+      status(10, { mode: 'online', recovered: true, repeatsSuppressed: 6 }), snapshot(11),
+    ]
+    expect(assessDiagnosticsReport(parseDiagnosticsReport(report(quiet)), options).problems).toEqual([])
+    // Under pressure (250+ events) the share bound still applies.
+    const busy = [...quiet, ...Array.from({ length: 300 }, (_, index) =>
+      status(12 + index / 60, { mode: index % 2 === 0 ? 'online' : 'offline', repeatsSuppressed: 1 }))]
+    expect(assessDiagnosticsReport(parseDiagnosticsReport(report(busy)), options).problems)
+      .toContainEqual(expect.stringContaining('tracking_status_changed is'))
+  })
+
+  it('fails two consecutive status breadcrumbs with identical logged fields, at any log size (box run 5c)', () => {
+    const burst = [...healthy(), status(18, { hasWarning: true }), snapshot(18.2), status(18.5, { hasWarning: true, repeatsSuppressed: 3 })]
+    const problems = assessDiagnosticsReport(parseDiagnosticsReport(report(burst)), options).problems
+    expect(problems).toContainEqual(expect.stringContaining('identical logged fields'))
+    // Different fields (here the problem named) are a real change.
+    const changed = [...healthy(), status(18, { hasWarning: true, warning: 'history_loading' }),
+      status(18.5, { hasWarning: true, warning: 'history_reconciling' })]
+    expect(assessDiagnosticsReport(parseDiagnosticsReport(report(changed)), options).problems).toEqual([])
+    // Once routine events were evicted, rows that look adjacent may not have
+    // been (an online between two offlines dropped): no repeat verdict.
+    const evicted = [...healthy(), status(18, { mode: 'offline', consecutiveFailures: 1 }),
+      status(19, { mode: 'offline', consecutiveFailures: 1 })]
+    expect(assessDiagnosticsReport(parseDiagnosticsReport(report(evicted, { dropped: 40 })), options).problems).toEqual([])
+  })
+
   it('fails when the report has no breadcrumb section at all', () => {
     expect(assessDiagnosticsReport(parseDiagnosticsReport('[tracking]\n'), options).problems)
       .toEqual(['The diagnostics report has no [diagnostic-breadcrumbs] section.'])
