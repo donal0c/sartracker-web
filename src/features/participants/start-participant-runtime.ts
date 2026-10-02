@@ -61,7 +61,7 @@ export type ParticipantRuntimeController = {
   readonly applyRoster: (
     devices: readonly NormalizedTrackingDevice[],
     observedAt?: string,
-    options?: { readonly complete: boolean },
+    options?: RosterObservationOptions,
   ) => Promise<void>
   readonly applyGroups: (groups: readonly NormalizedTraccarGroup[]) => void
   readonly reportRosterError: (message: string | null) => void
@@ -122,7 +122,9 @@ export async function startParticipantRuntime(
   // A member missing from one complete roster may be a provider glitch; it
   // leaves only when the next complete roster agrees, dated at that
   // confirming roster (Donal, 1 Oct) [DON-300]. Key: team id + device id.
-  const pendingAbsences = new Map<string, string>()
+  // A repeat delivery of the roster fetch that started a hold never confirms
+  // it: one poll hands one fetch to several snapshots (box run 5a, 2 Oct).
+  const pendingAbsences = new Map<string, { readonly observedAt: string, readonly rosterObservationId: string | null }>()
   // The visible "still tracking" notice per team while its whole group is held.
   const pendingGroupNotices = new Map<string, string>()
   let membershipNotices: readonly string[] = []
@@ -254,13 +256,14 @@ export async function startParticipantRuntime(
             devices: [...devices],
             observedAt,
             complete: options.complete,
+            rosterObservationId: options.rosterObservationId ?? null,
           })
         }
         return
       }
       inFlightRosterApplicationCount += 1
       try {
-        await applyRosterObservation(devices, observedAt, options.complete)
+        await applyRosterObservation(devices, observedAt, options.complete, false, options.rosterObservationId ?? null)
       } finally {
         inFlightRosterApplicationCount -= 1
         notifyRosterReconciliationWaiters()
@@ -556,6 +559,7 @@ export async function startParticipantRuntime(
     observedAt: string,
     complete: boolean,
     forceReconciliation = false,
+    rosterObservationId: string | null = null,
   ): Promise<void> {
     const missionIdBeforeRefresh = activeMissionId
     if (error !== null && missionIdBeforeRefresh !== null) {
@@ -568,6 +572,7 @@ export async function startParticipantRuntime(
           devices: [...devices],
           observedAt,
           complete,
+          rosterObservationId,
         })
         return
       }
@@ -583,9 +588,11 @@ export async function startParticipantRuntime(
         observation.devices,
         observation.observedAt,
         observation.complete,
+        false,
+        observation.rosterObservationId,
       )
     }
-    await acceptRosterObservation(devices, observedAt, complete, forceReconciliation)
+    await acceptRosterObservation(devices, observedAt, complete, forceReconciliation, rosterObservationId)
   }
 
   /** Publishes and queues one roster observation after participant scope is available. */
@@ -594,6 +601,7 @@ export async function startParticipantRuntime(
     observedAt: string,
     complete: boolean,
     forceReconciliation = false,
+    rosterObservationId: string | null = null,
   ): Promise<void> {
     const rosterChanged = !areRostersEquivalent(availableDevices, devices)
     const completenessChanged = complete !== availableRosterComplete
@@ -623,6 +631,7 @@ export async function startParticipantRuntime(
       devices: [...availableDevices],
       observedAt,
       complete,
+      rosterObservationId,
     })
     await new Promise<void>((resolve) => {
       rosterWaiters.push({ version, resolve })
@@ -649,6 +658,7 @@ export async function startParticipantRuntime(
         observation.observedAt,
         observation.complete,
         true,
+        observation.rosterObservationId,
       )
     }
   }
@@ -748,6 +758,7 @@ export async function startParticipantRuntime(
       readonly observedAt: string
       readonly complete: boolean
       readonly devices: readonly NormalizedTrackingDevice[]
+      readonly rosterObservationId: string | null
     },
   ): readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[] {
     const keyOf = (teamId: string, deviceId: string) => `${teamId}\u0000${deviceId}`
@@ -776,12 +787,15 @@ export async function startParticipantRuntime(
         }
         const key = keyOf(change.mission_team_id, change.traccar_device_id)
         const firstAbsence = pendingAbsences.get(key)
-        if (firstAbsence !== undefined && firstAbsence < observation.observedAt) {
+        const sameFetch = firstAbsence !== undefined &&
+          firstAbsence.rosterObservationId !== null &&
+          firstAbsence.rosterObservationId === observation.rosterObservationId
+        if (firstAbsence !== undefined && !sameFetch && firstAbsence.observedAt < observation.observedAt) {
           next.push(change)
           pendingAbsences.delete(key)
           confirmedTeams.add(change.mission_team_id)
         } else if (firstAbsence === undefined) {
-          pendingAbsences.set(key, observation.observedAt)
+          pendingAbsences.set(key, { observedAt: observation.observedAt, rosterObservationId: observation.rosterObservationId })
           newlyMissingByTeam.set(change.mission_team_id, (newlyMissingByTeam.get(change.mission_team_id) ?? 0) + 1)
         }
       }
@@ -992,6 +1006,16 @@ type RosterObservation = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly observedAt: string
   readonly complete: boolean
+  readonly rosterObservationId: string | null
+}
+
+/**
+ * How a roster was observed. `rosterObservationId` names the provider fetch
+ * it came from; the same fetch delivered again is not a second roster.
+ */
+export type RosterObservationOptions = {
+  readonly complete: boolean
+  readonly rosterObservationId?: string
 }
 
 type PendingMembershipWrite = {
@@ -1006,6 +1030,7 @@ type FencedRosterObservation = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly observedAt: string
   readonly complete: boolean
+  readonly rosterObservationId: string | null
 }
 
 type MembershipFinishFence = {

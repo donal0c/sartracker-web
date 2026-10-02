@@ -602,6 +602,8 @@ describe('polling manager', () => {
     expect(onSnapshot.mock.calls[0]?.[1]).toEqual({
       historyResetKey: null,
       missionEvidenceId: null,
+      // An authoritative roster names the fetch it came from [DON-300].
+      rosterObservationId: 'roster-1',
     })
 
     persistedBreadcrumbs.resolve(NORMALIZED_BREADCRUMBS)

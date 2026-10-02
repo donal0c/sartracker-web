@@ -349,7 +349,7 @@ export type StartTrackingRuntimeDependencies = {
   ) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly TrackingSnapshot['devices'][number][],
-    options?: { readonly complete: boolean },
+    options?: { readonly complete: boolean, readonly rosterObservationId?: string },
   ) => void | Promise<void>
   readonly applyParticipantGroups?: (
     groups: readonly NormalizedTraccarGroup[],
@@ -2054,9 +2054,13 @@ export async function startTrackingRuntime(
         readParticipationScopeStatus() === 'ready')
     ) return
     try {
+      // The fetch id lets the participant runtime tell a repeat delivery of
+      // one roster from a second roster (DON-300 item 8, box run 5a).
       const update = context?.participantRosterAuthoritative === false
         ? dependencies.applyParticipantRoster?.(devices, { complete: false })
-        : dependencies.applyParticipantRoster?.(devices)
+        : context?.rosterObservationId === undefined
+          ? dependencies.applyParticipantRoster?.(devices)
+          : dependencies.applyParticipantRoster?.(devices, { complete: true, rosterObservationId: context.rosterObservationId })
       void Promise.resolve(update).catch((error) => {
         logger.warn('Participant roster reconciliation failed.', error)
       })

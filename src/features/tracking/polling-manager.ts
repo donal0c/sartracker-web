@@ -174,6 +174,12 @@ export type TrackingSnapshotContext = {
   readonly suppressTrackingCache?: boolean
   /** False for idle, unavailable, or partially normalized roster observations. */
   readonly participantRosterAuthoritative?: boolean
+  /**
+   * The roster fetch an authoritative snapshot carries. One fetch reaches
+   * several snapshots (current positions, history), and a repeat is not a
+   * second roster (DON-300 item 8, box run 5a).
+   */
+  readonly rosterObservationId?: string
 }
 
 export type BreadcrumbHistoryCheckpointSeed = {
@@ -298,6 +304,14 @@ export function createPollingManager(
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   let latestDevices: readonly NormalizedTrackingDevice[] = []
   let latestParticipantRosterAuthoritative = false
+  // Which roster fetch each published device list came from. A list replayed
+  // later (fallback, pause, history) keeps its own fetch, so a repeat is never
+  // taken for a second roster (DON-300 item 8, box run 5a).
+  const rosterFetchByDevices = new WeakMap<
+    readonly NormalizedTrackingDevice[],
+    { readonly rosterObservationId: string, readonly complete: boolean }
+  >()
+  let rosterFetchSequence = 0
   let latestRosterWarning: string | null = null
   let rosterRefreshInFlight: Promise<DeviceRosterNormalizationResult> | null = null
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
@@ -692,9 +706,7 @@ export function createPollingManager(
         {
           historyResetKey,
           missionEvidenceId: null,
-          ...(latestParticipantRosterAuthoritative
-            ? {}
-            : { participantRosterAuthoritative: false }),
+          ...rosterAuthorityContext(snapshot.devices, latestParticipantRosterAuthoritative),
         },
       )
       completedSuccessfully = true
@@ -787,9 +799,7 @@ export function createPollingManager(
       missionEvidenceId: rawBreadcrumbsForPersistence.length === 0
         ? null
         : historyObservation === null ? activeHistoryResetKey : historyObservation.missionId,
-      ...(latestParticipantRosterAuthoritative
-        ? {}
-        : { participantRosterAuthoritative: false }),
+      ...rosterAuthorityContext(publishedSnapshot.devices, latestParticipantRosterAuthoritative),
     }
     const publication = Promise.resolve().then(() => options.onSnapshot(
       annotateTrackingSnapshotHealth(publishedSnapshot, {
@@ -1001,12 +1011,32 @@ export function createPollingManager(
     authenticated = true
   }
 
+  /**
+   * Snapshot context for the device list a snapshot carries: authoritative
+   * only when the current roster is and the list came from a complete fetch,
+   * named by that fetch; otherwise explicitly not authoritative.
+   */
+  function rosterAuthorityContext(
+    devices: readonly NormalizedTrackingDevice[],
+    authoritative: boolean,
+  ): Pick<TrackingSnapshotContext, 'participantRosterAuthoritative' | 'rosterObservationId'> {
+    const fetch = rosterFetchByDevices.get(devices)
+    if (!authoritative || fetch === undefined || !fetch.complete) return { participantRosterAuthoritative: false }
+    return { rosterObservationId: fetch.rosterObservationId }
+  }
+
   /** Reuses one detached roster request so slow metadata cannot accumulate. */
   function getRosterRefresh(): Promise<DeviceRosterNormalizationResult> {
     if (rosterRefreshInFlight !== null) return rosterRefreshInFlight
-    const request = client.getDevicesWithReport?.() ?? client.getDevices().then(
+    const rosterObservationId = `roster-${++rosterFetchSequence}`
+    const request = (client.getDevicesWithReport?.() ?? client.getDevices().then(
       (accepted) => ({ accepted, complete: true }),
-    )
+    )).then((result): DeviceRosterNormalizationResult => {
+      // A fresh list per fetch, so the fetch it came from is unambiguous.
+      const accepted = [...result.accepted]
+      rosterFetchByDevices.set(accepted, { rosterObservationId, complete: result.complete })
+      return { ...result, accepted }
+    })
     rosterRefreshInFlight = request
     void request.then((result) => {
       if (!running || stopping) return
@@ -1081,9 +1111,7 @@ export function createPollingManager(
             {
               historyResetKey: pollHistoryResetKey,
               missionEvidenceId: null,
-              ...(latestParticipantRosterAuthoritative
-                ? {}
-                : { participantRosterAuthoritative: false }),
+              ...rosterAuthorityContext(lastGoodSnapshot.devices, latestParticipantRosterAuthoritative),
             },
           )
         } else if (pollingMode === 'idle') {
@@ -1238,9 +1266,7 @@ export function createPollingManager(
       const snapshotContext = {
         historyResetKey: pollHistoryResetKey,
         missionEvidenceId: missionObservation.missionId,
-        ...(currentPositionResult.rosterComplete
-          ? {}
-          : { participantRosterAuthoritative: false as const }),
+        ...rosterAuthorityContext(devices, currentPositionResult.rosterComplete),
       }
       let currentFixPublishedAtMs = monotonicNow()
       if (options.onCurrentSnapshot === undefined) {
@@ -1358,9 +1384,7 @@ export function createPollingManager(
             {
               historyResetKey: pollHistoryResetKey,
               missionEvidenceId: null,
-              ...(latestParticipantRosterAuthoritative
-                ? {}
-                : { participantRosterAuthoritative: false }),
+              ...rosterAuthorityContext(lastGoodSnapshot.devices, latestParticipantRosterAuthoritative),
             },
           )).catch((fallbackError) => {
             logger.warn('Tracking fallback snapshot publication failed.', {
@@ -1500,9 +1524,7 @@ export function createPollingManager(
         {
           historyResetKey: request.historyResetKey,
           missionEvidenceId: null,
-          ...(latestParticipantRosterAuthoritative
-            ? {}
-            : { participantRosterAuthoritative: false }),
+          ...rosterAuthorityContext(seededSnapshot.devices, latestParticipantRosterAuthoritative),
         },
       )
     }
@@ -1591,9 +1613,7 @@ export function createPollingManager(
           {
             historyResetKey: request.historyResetKey,
             missionEvidenceId: historyObservation.missionId,
-            ...(latestParticipantRosterAuthoritative
-              ? {}
-              : { participantRosterAuthoritative: false }),
+            ...rosterAuthorityContext(rawSnapshot.devices, latestParticipantRosterAuthoritative),
           },
         )
       } finally {
@@ -1708,9 +1728,7 @@ export function createPollingManager(
         {
           historyResetKey: activeHistoryResetKey,
           missionEvidenceId: null,
-          ...(latestParticipantRosterAuthoritative
-            ? {}
-            : { participantRosterAuthoritative: false }),
+          ...rosterAuthorityContext(lastGoodSnapshot.devices, latestParticipantRosterAuthoritative),
         },
       )
     } else if (pollingMode === 'idle') {

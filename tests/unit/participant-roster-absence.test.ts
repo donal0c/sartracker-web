@@ -66,6 +66,23 @@ describe('a group member leaves only when two complete rosters agree [DON-300]',
     expect(left(recorded)).toEqual([])
   })
 
+  it('does not confirm an absence from the same roster fetch delivered twice (box run 5a, 2 Oct 2026)', async () => {
+    // One poll hands one /api/devices fetch to the runtime on its current and
+    // its history snapshot. A single blank listing then recorded 8 "left"
+    // events and lost each walker's fix inside the false leave.
+    const { runtime, recorded } = await activeRuntime()
+
+    await runtime.applyRoster([], '2026-10-01T11:01:00.000Z', { complete: true, rosterObservationId: 'fetch-2' })
+    await runtime.applyRoster([], '2026-10-01T11:01:00.050Z', { complete: true, rosterObservationId: 'fetch-2' })
+    expect(left(recorded)).toEqual([])
+
+    await runtime.applyRoster([], '2026-10-01T11:01:30.000Z', { complete: true, rosterObservationId: 'fetch-3' })
+    expect(left(recorded)).toEqual([
+      expect.objectContaining({ traccar_device_id: 'device-1', observed_at: '2026-10-01T11:01:30.000Z' }),
+      expect.objectContaining({ traccar_device_id: 'device-2', observed_at: '2026-10-01T11:01:30.000Z' }),
+    ])
+  })
+
   it('records the leave at the confirming roster once a second complete roster agrees', async () => {
     const { runtime, recorded } = await activeRuntime()
 

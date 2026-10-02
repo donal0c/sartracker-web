@@ -132,7 +132,7 @@ type CreateManagedRuntimeServicesDependencies = {
     ) => () => void
     readonly applyParticipantRoster?: (
       devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
-      options?: { readonly complete: boolean },
+      options?: { readonly complete: boolean, readonly rosterObservationId?: string },
     ) => void | Promise<void>
     readonly applyParticipantGroups?: (
       groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
@@ -209,7 +209,7 @@ type CreateManagedRuntimeServicesDependencies = {
   ) => () => void
   readonly applyParticipantRoster?: (
     devices: readonly import('../tracking/tracking-types').NormalizedTrackingDevice[],
-    options?: { readonly complete: boolean },
+    options?: { readonly complete: boolean, readonly rosterObservationId?: string },
   ) => void | Promise<void>
   readonly applyParticipantGroups?: (
     groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
