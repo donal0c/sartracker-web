@@ -22,16 +22,24 @@ export const MOCK_DEVICES = Object.freeze([
 ])
 
 /**
+ * A vehicle on a road, served only when `roadVehicle` is set: every fix is
+ * about 50 m from the last (5 m/s every 10 s), well above the 20 m a breadcrumb
+ * trail needs to treat consecutive fixes as separate points [DON-328].
+ */
+export const ROAD_DEVICE = Object.freeze({ id: 5, name: 'Road Echo', mode: 'walk', lat: 51.95, lon: -9.72, dLat: 0.0004, dLon: 0.0003 })
+
+/**
  * Starts the mock on 127.0.0.1.
  *
  * `holdDevice` models one phone losing signal: that device serves nothing
  * newer while the others stay live; `releaseDevice` uploads the held stretch
  * with its original fix times, as a phone does when signal returns [DON-316].
  *
- * @param {{port?: number, now?: () => number}} [options]
+ * @param {{port?: number, now?: () => number, roadVehicle?: boolean}} [options]
  * @returns {Promise<{url: string, startMs: number, fixFor: (sourcePositionId: number) => {deviceId: number, latitude: number, longitude: number, fixTime: string} | null, latestIndex: () => number, latestIndexFor: (deviceId: number) => number, holdDevice: (deviceId: number) => void, releaseDevice: (deviceId: number) => void, setOffline: (offline: boolean) => void, close: () => Promise<void>}>}
  */
-export async function startMockTraccar({ port = 0, now = Date.now } = {}) {
+export async function startMockTraccar({ port = 0, now = Date.now, roadVehicle = false } = {}) {
+  const devices = roadVehicle ? [...MOCK_DEVICES, ROAD_DEVICE] : MOCK_DEVICES
   const startMs = now()
   let offline = false
   /** Device id → last index served while its phone has no signal. */
@@ -79,7 +87,7 @@ export async function startMockTraccar({ port = 0, now = Date.now } = {}) {
     if (url.pathname === '/api/server') return json(200, { version: '6.0-mock' })
     if (url.pathname === '/api/groups') return json(200, [{ id: 101, name: 'Mock Team', groupId: 0 }])
     if (url.pathname === '/api/devices') {
-      return json(200, MOCK_DEVICES.map((device) => ({
+      return json(200, devices.map((device) => ({
         id: device.id,
         name: device.name,
         uniqueId: `mock-${device.id}`,
@@ -94,8 +102,8 @@ export async function startMockTraccar({ port = 0, now = Date.now } = {}) {
     }
     if (url.pathname === '/api/positions') {
       const deviceId = url.searchParams.get('deviceId')
-      if (deviceId === null) return json(200, MOCK_DEVICES.map(latestFor))
-      const device = MOCK_DEVICES.find((candidate) => candidate.id === Number(deviceId))
+      if (deviceId === null) return json(200, devices.map(latestFor))
+      const device = devices.find((candidate) => candidate.id === Number(deviceId))
       if (device === undefined) return json(200, [])
       const from = Date.parse(url.searchParams.get('from') ?? '1970-01-01T00:00:00Z')
       const to = Date.parse(url.searchParams.get('to') ?? new Date(now()).toISOString())
@@ -122,7 +130,7 @@ export async function startMockTraccar({ port = 0, now = Date.now } = {}) {
     startMs,
     latestIndex,
     latestIndexFor(deviceId) {
-      const device = MOCK_DEVICES.find((candidate) => candidate.id === deviceId)
+      const device = devices.find((candidate) => candidate.id === deviceId)
       if (device === undefined) throw new Error(`Mock device ${deviceId} does not exist.`)
       return servedIndex(device)
     },
@@ -140,7 +148,7 @@ export async function startMockTraccar({ port = 0, now = Date.now } = {}) {
       offline = value
     },
     fixFor(sourcePositionId) {
-      const device = MOCK_DEVICES.find((candidate) => candidate.id === Math.floor(sourcePositionId / 1_000_000))
+      const device = devices.find((candidate) => candidate.id === Math.floor(sourcePositionId / 1_000_000))
       return device === undefined ? null : fixAt(device, sourcePositionId % 1_000_000)
     },
     close: () => new Promise((resolve) => server.close(() => resolve())),

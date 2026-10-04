@@ -13,11 +13,14 @@
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
-import { closeWorkspace, connectProvider, openMissionSection, waitForBasemapLabel } from '../lib/operator.mjs'
+import {
+  closeWorkspace, connectProvider, finishMission, openMissionSection, startMission, waitForBasemapLabel,
+} from '../lib/operator.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
+import { isRetryableStoreRead } from '../lib/live-recording.mjs'
 import { missionFixes } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
-import { placeCasualty, trackingStatus, verifyTeamFixes, waitForBackfill } from './team-mission.mjs'
+import { addAfterStart, placeCasualty, trackingStatus, verifyTeamFixes, waitForBackfill } from './team-mission.mjs'
 
 const MISSION = 'KMRT Workflow Smoke'
 const TEAM_GROUP = 'KMRT Hasty'
@@ -25,11 +28,109 @@ const HOUR = 3_600_000
 const ROLL_BACK_HOURS = 48
 const BACKFILL_BUDGET_MS = 15 * 60_000
 const VERIFY_TIMEOUT_MS = 5 * 60_000
+const GROUP_LIST_TIMEOUT_MS = 45_000
+const GROUP_RECORDING_TIMEOUT_MS = 150_000
+/** DON-330: a group created in Traccar after SAR Tracker started. */
+const NEW_GROUP = { id: 305, name: 'Miscellaneous' }
+const NEW_GROUP_DEVICE = { id: 3051, name: 'Misc Alpha', lat: 51.93, lon: -9.7 }
+/** A second new group, created mid-mission, so Add group has something genuinely new to find. */
+const LATE_GROUP = { id: 306, name: 'Search Support' }
+const LATE_GROUP_DEVICE = { id: 3061, name: 'Support Bravo', lat: 51.92, lon: -9.69 }
 
 const groupId = TEAM_GROUPS.find((group) => group.name === TEAM_GROUP).id
 const kmrt = TEAM_DEVICES.filter((entry) => entry.groupId === groupId)
 
 export default [
+  {
+    // DON-330: Traccar groups created after startup are offered without a restart.
+    check: 'Team mission scenario',
+    id: 'team-group-refresh',
+    timeoutMs: 15 * 60_000,
+    async run(ctx) {
+      const mock = await startTeamTraccar({ groupIds: [groupId] })
+      ctx.cleanups.push(() => mock.close())
+      const profile = path.join(ctx.runDir, 'profile')
+      const app = await launchApp(ctx, { profile, label: 'group-refresh' })
+      const t = (id) => app.page.getByTestId(id)
+      await connectProvider(app.page, mock.url)
+
+      // The server starts with KMRT only, and SAR Tracker has read it.
+      const listsGroup = (name) => t('participant-group-picker').getByText(name, { exact: true }).first()
+        .waitFor({ timeout: GROUP_LIST_TIMEOUT_MS }).then(() => true, () => false)
+      expectProduct(await listsGroup(TEAM_GROUP), `Mission setup did not list ${TEAM_GROUP} within ${GROUP_LIST_TIMEOUT_MS / 1000} s of connecting; the group-refresh check cannot start.`)
+      expectProduct(await t('participant-group-picker').getByText(NEW_GROUP.name, { exact: true }).count() === 0,
+        `${NEW_GROUP.name} was listed before it existed in Traccar.`)
+
+      // A team member creates the group in Traccar while SAR Tracker stays open.
+      mock.addGroup(NEW_GROUP, [NEW_GROUP_DEVICE])
+
+      // Opening mission setup again (a finished mission returns to it) must list it.
+      await startMission(app.page, 'Setup Refresh Probe', [])
+      await finishMission(app.page)
+      const setupLists = await listsGroup(NEW_GROUP.name)
+      await app.shot('group-refresh-setup')
+      expectProduct(setupLists,
+        `${NEW_GROUP.name} was created in Traccar after SAR Tracker started, but mission setup still does not list it after ${GROUP_LIST_TIMEOUT_MS / 1000} s; volunteers would have to restart the app (DON-330).`)
+
+      // Start with KMRT only, then check it is recording.
+      await t('mission-name-input').fill('Group Refresh Smoke')
+      await t('participant-group-picker').getByText(TEAM_GROUP, { exact: true }).first().click()
+      await t('mission-start-btn').click()
+      await openMissionSection(app.page, 'participants')
+      await t('participant-management').waitFor({ timeout: 20_000 })
+      const kmrtIds = kmrt.map((entry) => entry.id)
+      const kmrtRecording = await waitForFixes(profile, 'Group Refresh Smoke', () => kmrtIds, Date.now(), GROUP_RECORDING_TIMEOUT_MS)
+      expectProduct(kmrtRecording, `${TEAM_GROUP} recorded no fixes within ${GROUP_RECORDING_TIMEOUT_MS / 1000} s of Start, before any group was added; the check cannot continue.`)
+
+      // Another group appears mid-mission; opening Add group must list both.
+      mock.addGroup(LATE_GROUP, [LATE_GROUP_DEVICE])
+      await openMissionSection(app.page, 'participants')
+      await t('participant-add-kind').selectOption('group')
+      const choices = t('participant-add-ref')
+      const addListed = async (name) => {
+        const deadline = Date.now() + GROUP_LIST_TIMEOUT_MS
+        while (Date.now() < deadline) {
+          if ((await choices.locator('option').allInnerTexts()).some((text) => text.includes(name))) return true
+          await delay(1000)
+        }
+        return false
+      }
+      const addListsNew = await addListed(NEW_GROUP.name)
+      const addListsLate = await addListed(LATE_GROUP.name)
+      await app.shot('group-refresh-add-group')
+      expectProduct(addListsNew, `${NEW_GROUP.name} is missing from Add group during the mission although it exists in Traccar (DON-330).`)
+      expectProduct(addListsLate, `${LATE_GROUP.name} was created in Traccar while the mission ran, but Add group does not list it after ${GROUP_LIST_TIMEOUT_MS / 1000} s (DON-330).`)
+      const enrolled = () => app.page.evaluate(async () => {
+        const store = window.sartrackerElectron.missionStore
+        const mission = await store.getActiveMission()
+        return (await store.listMissionParticipants(mission.id)).filter((entry) => entry.removed_at === null).map((entry) => entry.kind)
+      })
+      const beforeAdd = await enrolled()
+      expectProduct(beforeAdd.length === 1,
+        `Listing the new groups in Add group changed the mission's participants (${JSON.stringify(beforeAdd)}); nothing may be enrolled until the group is chosen (DON-330).`)
+
+      // Explicitly add Miscellaneous only.
+      const addedAt = Date.now()
+      await addAfterStart(app.page, 'group', NEW_GROUP.name, 'now')
+      const afterAdd = await enrolled()
+      expectProduct(afterAdd.length === 2 && afterAdd.every((kind) => kind === 'group'),
+        `After adding ${NEW_GROUP.name} the mission should hold two groups (${TEAM_GROUP} and ${NEW_GROUP.name}); it holds ${JSON.stringify(afterAdd)}.`)
+      const miscRecording = await waitForFixes(profile, 'Group Refresh Smoke', () => [NEW_GROUP_DEVICE.id], addedAt, GROUP_RECORDING_TIMEOUT_MS)
+      expectProduct(miscRecording, `${NEW_GROUP.name}'s device ${NEW_GROUP_DEVICE.name} recorded nothing within ${GROUP_RECORDING_TIMEOUT_MS / 1000} s of the group being added.`)
+      const kmrtKeptRecording = await waitForFixes(profile, 'Group Refresh Smoke', () => kmrtIds, addedAt, GROUP_RECORDING_TIMEOUT_MS)
+      await app.shot('group-refresh-added')
+      expectProduct(kmrtKeptRecording,
+        `${TEAM_GROUP} stopped recording after ${NEW_GROUP.name} was added: no new fix in ${GROUP_RECORDING_TIMEOUT_MS / 1000} s (DON-330).`)
+      const stored = missionFixes(profile, 'Group Refresh Smoke')
+      const devicesStored = new Set(stored.map((fix) => Math.floor(fix.sourcePositionId / 1_000_000)))
+      const unexpected = [...devicesStored].filter((id) => !kmrtIds.includes(id) && id !== NEW_GROUP_DEVICE.id)
+      await app.stop()
+      expectProduct(unexpected.length === 0,
+        `Adding ${NEW_GROUP.name} also recorded devices that were never added: ${unexpected.join(', ')} (${LATE_GROUP_DEVICE.name} is ${LATE_GROUP_DEVICE.id}) (DON-330).`)
+      return `Groups created in Traccar after launch: ${NEW_GROUP.name} listed by mission setup without a restart; both it and ${LATE_GROUP.name} (created mid-mission) listed by Add group; `
+        + `adding ${NEW_GROUP.name} enrolled only its device (${NEW_GROUP_DEVICE.name}) while ${TEAM_GROUP} kept recording.`
+    },
+  },
   {
     check: 'Team mission scenario',
     id: 'team-workflow',
@@ -279,4 +380,26 @@ async function selectBasemap(app, name) {
   await delay(4000)
   const label = (await toggle.innerText()).replace(/\s+/gu, ' ')
   expectProduct(label.includes(name), `Selecting ${name} left the basemap as ${label}.`)
+}
+
+/**
+ * Waits until the stored mission holds a fix from every device `devicesFn`
+ * names with fix time after `sinceMs`, or the time is up. A store the app
+ * holds busy for a moment is read again.
+ */
+async function waitForFixes(profile, missionName, devicesFn, sinceMs, timeoutMs) {
+  const wanted = devicesFn()
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const seen = new Set(missionFixes(profile, missionName)
+        .filter((fix) => fix.time > sinceMs).map((fix) => Math.floor(fix.sourcePositionId / 1_000_000)))
+      // A group counts as recording once any one of its devices has a new fix; all of KMRT's walkers are not required.
+      if (wanted.some((id) => seen.has(id))) return true
+    } catch (error) {
+      if (!isRetryableStoreRead(error)) throw error
+    }
+    await delay(5000)
+  }
+  return false
 }

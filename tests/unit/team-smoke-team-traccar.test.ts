@@ -166,3 +166,31 @@ describe('one blank roster for a group (DON-300 item 8)', () => {
     expect(mock.rosterBlip()).toEqual({ blankListings: 1, fullListingsAfter: 2 })
   })
 })
+
+describe('a group created while the app runs (DON-330)', () => {
+  type Group = { id: number, name: string }
+  type Device = { id: number, name: string, groupId: number }
+
+  it('can start with KMRT only and then serve a new group, its device, history and live fixes', async () => {
+    let now = Date.parse('2026-10-04T12:00:00.000Z')
+    const mock = await startTeamTraccar({ now: () => now, groupIds: [301] })
+    mocks.push(mock)
+    const get = async (path: string) => (await fetch(`${mock.url}${path}`)).json() as Promise<unknown>
+
+    expect((await get('/api/groups') as Group[]).map((group) => group.name)).toEqual(['KMRT Hasty'])
+    const before = await get('/api/devices') as Device[]
+    expect(before.length).toBeGreaterThan(0)
+    expect(before.every((device) => device.groupId === 301)).toBe(true)
+
+    mock.addGroup({ id: 305, name: 'Miscellaneous' }, [{ id: 3051, name: 'Misc Alpha', lat: 51.93, lon: -9.7 }])
+
+    expect((await get('/api/groups') as Group[]).map((group) => group.name)).toEqual(['KMRT Hasty', 'Miscellaneous'])
+    const after = await get('/api/devices') as Device[]
+    expect(after.filter((device) => device.groupId === 305)).toEqual([expect.objectContaining({ id: 3051, name: 'Misc Alpha' })])
+    expect(after.length).toBe(before.length + 1)
+    now += 60_000
+    const fixes = await get(`/api/positions?deviceId=3051&from=${new Date(now - 10 * 60_000).toISOString()}`) as { id: number }[]
+    expect(fixes.length).toBeGreaterThan(0)
+    expect(fixes.every((fix) => mock.fixFor(fix.id) !== null)).toBe(true)
+  })
+})

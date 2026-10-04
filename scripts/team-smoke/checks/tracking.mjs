@@ -15,7 +15,8 @@ import { delay, launchApp } from '../lib/app.mjs'
 import { LOOKBACK_HOURS, startHistoryTraccar } from '../lib/history-traccar.mjs'
 import { LIVE_LAG_LIMIT_STEPS, waitForStoredIds, watchLiveRecording } from '../lib/live-recording.mjs'
 import { seedLivedInProfile } from '../lib/lived-in.mjs'
-import { startMockTraccar } from '../lib/mock-traccar.mjs'
+import { markerBehindFindings, readMarkerFixes, requireRoadSpeedFixes } from '../lib/marker-fix.mjs'
+import { ROAD_DEVICE, startMockTraccar } from '../lib/mock-traccar.mjs'
 import {
   addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, resumeIfPrompted,
   startMission, startMissionWithLookback, togglePause,
@@ -27,6 +28,8 @@ const WALKERS = ['Walker Alpha', 'Walker Bravo']
 const PARTICIPANTS = [...WALKERS, 'Stationary Charlie']
 /** Mock device ids of the walkers. */
 const WALKERS_IDS = [1, 2]
+/** Provider device id to display name, for volunteer-readable findings. */
+const MOCK_NAMES = [[1, 'Walker Alpha'], [2, 'Walker Bravo'], [3, 'Stationary Charlie']]
 
 /**
  * Compares stored fixes with the provider and, for walking devices, requires
@@ -208,8 +211,8 @@ async function lookbackPhase(ctx) {
 }
 
 /** Starts a mock, the app and a mission with participants. */
-async function trackedMission(ctx, label, name, profileName = 'profile', { livedIn = false } = {}) {
-  const mock = await startMockTraccar()
+async function trackedMission(ctx, label, name, profileName = 'profile', { livedIn = false, roadVehicle = false } = {}) {
+  const mock = await startMockTraccar({ roadVehicle })
   ctx.cleanups.push(() => mock.close())
   const profile = path.join(ctx.runDir, profileName)
   // DON-317: tracking and lifecycle also run on a lived-in profile.
@@ -224,6 +227,37 @@ async function trackedMission(ctx, label, name, profileName = 'profile', { lived
   })
   const firstExpectedByDevice = participantFirstIndices(mock, setup.missionStart, setup.participants)
   return { mock, profile, app, firstExpectedByDevice, seeded }
+}
+
+/**
+ * DON-328: after a history refresh no marker may sit behind the end of its
+ * trail. A road-speed vehicle (fixes about 50 m apart) is added with history
+ * from mission start, which refreshes its history; once that is complete every
+ * participant's marker, read from the map, must show its newest stored fix to
+ * within one poll interval.
+ */
+async function markerAtNewestFix(app, mock, profile, name) {
+  await addParticipantAfterStart(app.page, ROAD_DEVICE.name, 'mission')
+  const refreshedBy = Date.now() + 120_000
+  let statuses = []
+  while (Date.now() < refreshedBy) {
+    statuses = await participantHistoryStatuses(app.page)
+    if (statuses.length > 0 && statuses.every((status) => /complete|no earlier history requested/i.test(status))) break
+    await delay(5000)
+  }
+  expectProduct(statuses.every((status) => /complete|no earlier history requested/i.test(status)),
+    `History refresh for the road-speed vehicle did not complete within 120 s: ${JSON.stringify(statuses)}.`)
+  // Let several polls pass so the trail and the marker have both moved on.
+  await delay(75_000)
+  const stored = missionFixes(profile, name)
+  const markers = await app.page.evaluate(readMarkerFixes)
+  await app.shot('marker-newest-fix')
+  if (markers === null) throw new NotTested('The map\'s tracking markers could not be read (map not exposed or source changed); the marker check proves nothing.')
+  requireRoadSpeedFixes(stored, ROAD_DEVICE.id)
+  const names = Object.fromEntries([...MOCK_NAMES, [ROAD_DEVICE.id, ROAD_DEVICE.name]])
+  const findings = markerBehindFindings(markers, stored, { names })
+  expectProduct(findings.length === 0, `${findings.join('; ')} (DON-328).`)
+  return `${markers.length} markers each within 30 s of their newest stored fix, including a road-speed vehicle (about 50 m between fixes) after its history refresh`
 }
 
 /**
@@ -323,14 +357,15 @@ export default [
     id: 'tracking',
     async run(ctx) {
       const name = 'Tracking Exactness Smoke'
-      const { mock, profile, app, firstExpectedByDevice, seeded } = await trackedMission(ctx, 'tracking', name, 'profile', { livedIn: true })
+      const { mock, profile, app, firstExpectedByDevice, seeded } = await trackedMission(ctx, 'tracking', name, 'profile', { livedIn: true, roadVehicle: true })
       await delay(90_000)
       await app.shot('tracking')
+      const marker = await markerAtNewestFix(app, mock, profile, name)
       await app.stop()
       const result = verifyFixes(mock, missionFixes(profile, name), { firstExpectedByDevice })
       const lookback = await lookbackPhase(ctx)
       return `On a ${seeded}: ${result.fixes} stored fixes, 0 differ from provider coordinates/time; walkers contiguous `
-        + `(${JSON.stringify(result.perDevice)}). ${lookback}`
+        + `(${JSON.stringify(result.perDevice)}). ${marker}. ${lookback}`
     },
   },
   {

@@ -67,9 +67,15 @@ function team(groupId, label, kinds, lat, lon) {
 /**
  * Starts the mock on 127.0.0.1.
  *
- * @param {{now?: () => number}} [options] clock, injectable for tests
+ * `groupIds` limits the provider to those groups and their devices (ungrouped
+ * devices are dropped); `addGroup` then creates a group while the app runs
+ * [DON-330].
+ *
+ * @param {{now?: () => number, groupIds?: readonly number[]}} [options] clock, injectable for tests
  */
-export async function startTeamTraccar({ now = Date.now } = {}) {
+export async function startTeamTraccar({ now = Date.now, groupIds } = {}) {
+  const groups = TEAM_GROUPS.filter((group) => groupIds === undefined || groupIds.includes(group.id))
+  const devices = TEAM_DEVICES.filter((device) => groupIds === undefined || groupIds.includes(device.groupId))
   const t0 = Math.floor(now() / 1000) * 1000
   const historyStart = t0 - HISTORY_HOURS * HOUR
   let offline = false
@@ -91,7 +97,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     for (let time = t0; time >= historyStart; time -= step) if (time <= end) times.push(time)
     return times.reverse()
   }
-  const historyByDevice = new Map(TEAM_DEVICES.map((device) => [device.id, historyTimes(device)]))
+  const historyByDevice = new Map(devices.map((device) => [device.id, historyTimes(device)]))
   const liveStep = (device) => device.kind === 'walk' ? WALK_LIVE_STEP_MS
     : device.kind === 'still' ? HEARTBEAT_MS : null
 
@@ -128,7 +134,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     const time = t0 + (index - history.length + 1) * step
     return time <= now() ? time : null
   }
-  const deviceById = (id) => TEAM_DEVICES.find((device) => device.id === id)
+  const deviceById = (id) => devices.find((device) => device.id === id)
 
   /** Every fix the provider holds for the device with fix time in [from, to]. */
   const fixesBetween = (deviceId, from, to) => {
@@ -160,7 +166,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     if (offline) return json(503, { error: 'synthetic outage' })
     if (url.pathname === '/api/server') return json(200, { version: '6.0-mock' })
     if (url.pathname === '/api/groups') {
-      return json(200, TEAM_GROUPS.map((group) => ({ id: group.id, name: group.name, groupId: 0 })))
+      return json(200, groups.map((group) => ({ id: group.id, name: group.name, groupId: 0 })))
     }
     if (url.pathname === '/api/devices') {
       if (blip.armed) {
@@ -171,7 +177,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
         blip.blanking = false
         if (blip.blankListings > 0) blip.fullListingsAfter += 1
       }
-      return json(200, TEAM_DEVICES.filter((device) => !blipHides(device)).map((device) => {
+      return json(200, devices.filter((device) => !blipHides(device)).map((device) => {
         const fix = latest(device)
         return {
           id: device.id, name: device.name, uniqueId: `team-${device.id}`,
@@ -183,7 +189,7 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     }
     if (url.pathname === '/api/positions') {
       const deviceId = url.searchParams.get('deviceId')
-      if (deviceId === null) return json(200, TEAM_DEVICES.filter((device) => !blipHides(device)).map(latest))
+      if (deviceId === null) return json(200, devices.filter((device) => !blipHides(device)).map(latest))
       const from = Date.parse(url.searchParams.get('from') ?? '1970-01-01T00:00:00Z')
       const to = Date.parse(url.searchParams.get('to') ?? new Date(now()).toISOString())
       return json(200, fixesBetween(Number(deviceId), from, Math.min(to, now())))
@@ -233,6 +239,19 @@ export async function startTeamTraccar({ now = Date.now } = {}) {
     /** How many listings were blanked, and how many full listings followed. */
     rosterBlip() {
       return { blankListings: blip.blankListings, fullListingsAfter: blip.fullListingsAfter }
+    },
+    /**
+     * Creates a Traccar group with `deviceSpecs` while the app is running, as a
+     * team member does in Traccar after SAR Tracker has started [DON-330].
+     * Each spec is `{id, name, lat, lon}`; devices walk and record live.
+     */
+    addGroup(group, deviceSpecs) {
+      groups.push({ id: group.id, name: group.name })
+      for (const spec of deviceSpecs) {
+        const device = Object.freeze({ id: spec.id, name: spec.name, groupId: group.id, kind: 'walk', lat: spec.lat, lon: spec.lon })
+        devices.push(device)
+        historyByDevice.set(device.id, historyTimes(device))
+      }
     },
     /** Uploads every held fix now: it becomes visible with serverTime = now. */
     releaseHeld() {
