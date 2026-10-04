@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-03 after reconciling Linear and GitHub. Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-04 (13.7 work under way). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -16,10 +16,15 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 ## Next action
 
-1. Confirm whether the team was told 13.6 is out; record completion or keep it
-   as Donal's next action. Ask Donal before deleting box/Mac temp evidence
-   (keep box evidence until the team reports on 13.6).
-2. 13.7: DON-312/313 A/B soak (coverage off) with 9f; DON-328 (Seán).
+1. 13.7 landed on master (not released): DON-330 group refresh c8cfbf35,
+   DON-328 marker at newest fix 9ec0011c (Donal approved 4 Oct; stale flag kept
+   from the position). Both owe packaged smoke on the 13.7 candidate; smoke
+   steps in progress (Sonnet worktree, coordinator reviews).
+2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
+   rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
+   309, 317 — name them on the 13.7 candidate run.
+3. Blocked on Donal/box: DON-312/313 A/B soak; team told 13.6 is out?;
+   DON-247/240 gate relationship; DON-296 decision.
 
 ## Verification limits
 

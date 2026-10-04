@@ -1,6 +1,6 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-10-03 after reconciling current Linear and GitHub state. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
+Updated 2026-10-04. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
 
 ## 13.6 published 2 Oct 2026
 
@@ -21,7 +21,8 @@ exact artifact with that known issue; this is not operational acceptance.
    on 13.5; stale discovery was reproduced in released-source browser tests
    for both 13.5 and 13.6. Preserve selections and existing participants; prove
    explicit addition and recording in the packaged workflow. Donal requested
-   this early in 13.7 on 3 October; evidence and acceptance are on the issue.
+   this early in 13.7 on 3 October. **Fixed c8cfbf35 (4 Oct)**; packaged
+   smoke on the 13.7 candidate owed.
 3. **DON-318 (Urgent):** the false evidence-loss block fix is in 13.6. Finish
    the AppImage lifecycle run on the box and PCLinuxOS coverage through DON-298,
    and obtain Eamonn's support bundle to identify the original trigger. Keep
@@ -32,7 +33,8 @@ exact artifact with that known issue; this is not operational acceptance.
    Layers screenshot, and support bundle to classify the original report.
 5. **DON-328:** fix the display-only case where a breadcrumb briefly runs ahead
    of the current-position marker. Donal targeted this for 13.7; it corrects
-   within one poll and does not lose data.
+   within one poll and does not lose data. **Fixed 9ec0011c (4 Oct, Donal
+   approved newest-fix rule)**; packaged `tracking` check owed.
 6. Recheck the coordinated smoke gaps DON-299 and DON-315/316/317, plus
    DON-325/326/327/329 and the PCLinuxOS setup in DON-298, against the exact
    13.7 scope. Do not make them release gates from age or title alone.
