@@ -463,6 +463,55 @@ describe('startTrackingRuntime', () => {
     expect(applyParticipantRoster).toHaveBeenCalledTimes(1)
   })
 
+  it('offers a fenced Traccar catalogue source that re-reads groups and devices on demand [DON-330]', async () => {
+    type CatalogueSource = () => Promise<{
+      readonly groups: readonly unknown[]
+      readonly devices: readonly unknown[]
+      readonly rosterComplete: boolean
+    } | null>
+    let registered: CatalogueSource | null = null
+    const unregister = vi.fn()
+    const groups = [{ group_id: '101', name: 'KMRT', parent_group_id: null }]
+    const client = {
+      authenticate: vi.fn().mockResolvedValue(undefined),
+      getDevices: vi.fn().mockResolvedValue(SNAPSHOT.devices),
+      getGroups: vi.fn().mockImplementation(async () => groups),
+      getCurrentPositions: vi.fn().mockResolvedValue(SNAPSHOT.positions),
+    }
+    const stop = await startTrackingRuntime({
+      config: { baseUrl: 'http://test:8082' },
+      createClient: vi.fn().mockReturnValue(client),
+      createPoller: vi.fn().mockImplementation(() => ({ start: vi.fn(), stop: vi.fn() })),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+      missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(),
+      applyStatus: vi.fn(),
+      missionModelEnabled: true,
+      applyParticipantRoster: vi.fn(),
+      applyParticipantGroups: vi.fn(),
+      registerParticipantCatalogueSource: (source: CatalogueSource | null) => {
+        registered = source
+        return unregister
+      },
+    } as Parameters<typeof startTrackingRuntime>[0])
+    expect(registered).not.toBeNull()
+    const source = registered as unknown as CatalogueSource
+
+    groups.push({ group_id: '102', name: 'Miscellaneous', parent_group_id: null })
+    const fresh = await source()
+    expect(fresh?.groups).toEqual(groups)
+    expect(fresh?.devices).toEqual(SNAPSHOT.devices)
+    expect(fresh?.rosterComplete).toBe(true)
+
+    const pendingGroups = createDeferred<readonly unknown[]>()
+    client.getGroups.mockImplementationOnce(() => pendingGroups.promise)
+    const inFlight = source()
+    await stop()
+    pendingGroups.resolve(groups)
+    expect(await inFlight).toBeNull()
+    expect(unregister).toHaveBeenCalled()
+  })
+
   it('uses an empty incomplete roster observation to retry failed participant hydration', async () => {
     setActiveMission()
     const applyParticipantRoster = vi.fn()

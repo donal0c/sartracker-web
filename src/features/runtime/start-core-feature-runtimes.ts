@@ -37,6 +37,7 @@ import {
 import {
   applyParticipantController,
   applyParticipantRuntime,
+  useParticipantStore,
 } from '../participants/participant-store'
 import {
   hasParticipantStoreBoundary,
@@ -219,6 +220,7 @@ export async function startCoreFeatureRuntimes(
       ? await startParticipant({
           participantStore: options.missionStore,
           applyRuntime: applyParticipantRuntime,
+          readCatalogueSource: () => useParticipantStore.getState().catalogueSource,
         })
       : null
   if (participantRuntimeController !== null) {

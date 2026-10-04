@@ -21,6 +21,7 @@ import type {
   TrackingSnapshot,
 } from './tracking-types'
 import type { ParticipationScope } from '../participants/participation-scope'
+import type { ParticipantCatalogueSource } from '../participants/participant-catalogue'
 import {
   createTrackingPositionCoordinateKey,
 } from './tracking-position-identity'
@@ -356,6 +357,13 @@ export type StartTrackingRuntimeDependencies = {
     groups: readonly NormalizedTraccarGroup[],
   ) => void | Promise<void>
   readonly applyParticipantRosterError?: (message: string | null) => void
+  /**
+   * Registers the on-demand Traccar catalogue reader used when mission setup
+   * or Add group opens [DON-330]. Returns the function that unregisters it.
+   */
+  readonly registerParticipantCatalogueSource?: (
+    source: ParticipantCatalogueSource,
+  ) => () => void
   /** Test-only override for the bounded participant-scope admission deadline. */
   readonly participantScopeReadyTimeoutMs?: number
   readonly now?: () => Date
@@ -603,6 +611,24 @@ export async function startTrackingRuntime(
   let pollerGeneration = 0
   const retiringPollers = new Map<TrackingRuntimePoller, Promise<void>>()
   const initialClient = client
+  let unregisterCatalogueSource: () => void = () => undefined
+  /** Replaces the registered catalogue reader with one bound to the current client. */
+  function registerCatalogueSourceForCurrentClient(): void {
+    unregisterCatalogueSource()
+    unregisterCatalogueSource = () => undefined
+    const sourceClient = client
+    if (dependencies.missionModelEnabled !== true || sourceClient === null) return
+    const register = dependencies.registerParticipantCatalogueSource
+    if (register === undefined) return
+    unregisterCatalogueSource = register(async () => {
+      const isCurrent = (): boolean => acceptingRuntimeUpdates &&
+        runtimeGeneration === activeTrackingRuntimeGeneration && client === sourceClient
+      if (!isCurrent()) return null
+      const discovery = await fetchParticipantCatalogue(sourceClient)
+      return isCurrent() ? discovery : null
+    })
+  }
+  registerCatalogueSourceForCurrentClient()
   if (dependencies.missionModelEnabled === true) {
     void preloadParticipantDiscovery(
       client,
@@ -1185,6 +1211,7 @@ export async function startTrackingRuntime(
       clearBreadcrumbTransferStatus()
       if (clearActiveBreadcrumbTransferStatus === clearBreadcrumbTransferStatus) clearActiveBreadcrumbTransferStatus = null
       acceptingRuntimeUpdates = false
+      unregisterCatalogueSource()
       cacheReadActive = false
       for (const cancel of participantScopeWaiters) cancel()
       pendingMissionCache = null
@@ -1262,6 +1289,7 @@ export async function startTrackingRuntime(
       pollerGeneration++
     }
     poller = candidate
+    registerCatalogueSourceForCurrentClient()
     for (const failed of retirementFailures.keys()) retirePoller(failed)
     retirePoller(previous)
     latestTrackingStatus = {
@@ -2120,6 +2148,29 @@ async function preloadParticipantDiscovery(
       )
     }
   }
+}
+
+/**
+ * Reads the authorised groups and devices once, without publishing or
+ * enrolling anything. Throws a volunteer-readable error when it cannot.
+ */
+async function fetchParticipantCatalogue(client: unknown): Promise<{
+  readonly groups: readonly NormalizedTraccarGroup[]
+  readonly devices: readonly NormalizedTrackingDevice[]
+  readonly rosterComplete: boolean
+}> {
+  if (!isParticipantRosterClient(client)) {
+    throw new Error('The tracking client cannot read the Traccar groups.')
+  }
+  await client.authenticate()
+  const [roster, groups] = await Promise.all([
+    client.getDevicesWithReport?.() ?? client.getDevices().then((accepted) => ({
+      accepted,
+      complete: true,
+    })),
+    client.getGroups(),
+  ])
+  return { groups, devices: roster.accepted, rosterComplete: roster.complete }
 }
 
 function isParticipantRosterClient(client: unknown): client is ParticipantRosterClient {

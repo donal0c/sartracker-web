@@ -11,6 +11,7 @@ import type {
   NormalizedTraccarGroup,
 } from '../tracking/tracking-types'
 import { assessParticipantEnvelope } from './participant-envelope'
+import type { ParticipantCatalogueSource } from './participant-catalogue'
 import type { ParticipantRuntimeState } from './participant-store'
 import { createParticipationScope } from './participation-scope'
 
@@ -47,6 +48,8 @@ type StartParticipantRuntimeDependencies = {
   readonly participantStore: ParticipantStoreBoundary
   readonly applyRuntime: (runtime: ParticipantRuntimeState) => void
   readonly now?: () => Date
+  /** Reads the live Traccar catalogue source, or null when tracking has none. */
+  readonly readCatalogueSource?: () => ParticipantCatalogueSource | null
 }
 
 /** The groups and devices ticked in the pre-start picker. */
@@ -65,6 +68,14 @@ export type ParticipantRuntimeController = {
   ) => Promise<void>
   readonly applyGroups: (groups: readonly NormalizedTraccarGroup[]) => void
   readonly reportRosterError: (message: string | null) => void
+  /**
+   * Re-reads the authorised Traccar groups (and, before a mission exists,
+   * devices) so a group added on the server becomes selectable. It only
+   * refreshes choices: it never enrols anyone or changes the draft, the
+   * participants or their windows. Failure and staleness are published as
+   * `catalogueError`; a stale answer is discarded.
+   */
+  readonly refreshCatalogue: () => Promise<void>
   readonly toggleDraftDevice: (deviceId: string) => void
   readonly toggleDraftGroup: (groupId: string) => void
   readonly clearDraft: () => void
@@ -133,6 +144,9 @@ export async function startParticipantRuntime(
   let rosterReadError: string | null = null
   let membershipWriteError: string | null = null
   let error: string | null = null
+  let catalogueRefreshing = false
+  let catalogueError: string | null = null
+  let catalogueRefreshToken = 0
   let refreshToken = 0
   let backfillRefreshToken = 0
   let missionGeneration = 0
@@ -158,6 +172,7 @@ export async function startParticipantRuntime(
       const previousMissionId = activeMissionId
       const missionChanged = activeMissionId !== missionId
       if (missionChanged) {
+        invalidateCatalogueRefresh()
         missionGeneration += 1
         selectionGeneration += 1
         lastReconciledMissionGeneration = -1
@@ -279,6 +294,52 @@ export async function startParticipantRuntime(
       rosterReadError = message
       publishRuntime()
     },
+    refreshCatalogue: async () => {
+      const token = ++catalogueRefreshToken
+      const operationMissionGeneration = missionGeneration
+      const source = dependencies.readCatalogueSource?.() ?? null
+      if (source === null) {
+        catalogueRefreshing = false
+        catalogueError = 'Traccar groups cannot be refreshed because tracking is not connected. The groups already listed are unchanged. Check the tracking connection, then retry.'
+        publishRuntime()
+        return
+      }
+      catalogueRefreshing = true
+      catalogueError = null
+      publishRuntime()
+      /** True while no newer refresh, mission change or connection change has superseded this one. */
+      const isCurrent = (): boolean => token === catalogueRefreshToken &&
+        missionGeneration === operationMissionGeneration
+      try {
+        const catalogue = await source()
+        if (!isCurrent()) return
+        if (catalogue === null || (dependencies.readCatalogueSource?.() ?? null) !== source) {
+          catalogueRefreshing = false
+          catalogueError = 'The tracking connection changed while groups were loading, so the answer was discarded. The groups already listed are unchanged. Retry.'
+          publishRuntime()
+          return
+        }
+        availableGroups = [...catalogue.groups]
+        groupsObserved = true
+        applyDefaultGroupToDraft()
+        // Before a mission exists the roster is only a catalogue, so it can be
+        // refreshed with the groups. In a running mission the poll owns the
+        // roster and its durable membership reconciliation; a group-list
+        // refresh must not reconcile or enrol anyone on its own.
+        if (activeMissionId === null) {
+          await controller.applyRoster(catalogue.devices, undefined, { complete: catalogue.rosterComplete })
+          if (!isCurrent()) return
+        }
+        catalogueRefreshing = false
+        catalogueError = null
+        publishRuntime()
+      } catch (refreshError) {
+        if (!isCurrent()) return
+        catalogueRefreshing = false
+        catalogueError = `Traccar groups could not be refreshed. The groups already listed are unchanged. Retry. (${toErrorMessage(refreshError)})`
+        publishRuntime()
+      }
+    },
     toggleDraftDevice: (deviceId) => {
       const device = availableDevices.find((candidate) => candidate.device_id === deviceId)
       if (
@@ -325,6 +386,7 @@ export async function startParticipantRuntime(
       }
       const operationGeneration = ++selectionGeneration
       if (activeMissionId !== missionId) {
+        invalidateCatalogueRefresh()
         missionGeneration += 1
         lastReconciledMissionGeneration = -1
         pendingMembershipWrite = null
@@ -549,8 +611,16 @@ export async function startParticipantRuntime(
       loading,
       saving,
       rosterError: currentRosterError(),
+      catalogueRefreshing,
+      catalogueError,
       error,
     })
+  }
+
+  /** Abandons any catalogue refresh in flight; its answer will be discarded. */
+  function invalidateCatalogueRefresh(): void {
+    catalogueRefreshToken += 1
+    catalogueRefreshing = false
   }
 
   /** Applies one accepted roster observation without crossing the finish cutoff again. */

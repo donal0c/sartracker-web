@@ -26,7 +26,7 @@ import { recordTrackingPollLedgerEntry } from '../diagnostics/tracking-poll-ledg
 import { startExactBreadcrumbDotRuntime } from '../tracking/start-exact-breadcrumb-dot-runtime'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { applyCurrentPositionRejections } from '../tracking/ingest-health-store'
-import { useParticipantStore } from '../participants/participant-store'
+import { registerParticipantCatalogueSource, useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
 import { startCoverageRuntime } from '../tracking/start-coverage-runtime'
 
@@ -181,6 +181,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>
         useParticipantStore.getState().controller?.reportRosterError(message),
+      registerParticipantCatalogueSource,
       notifyParticipantBackfillChange: async (missionId) => {
         if (useMissionStore.getState().currentMission?.id !== missionId) return
         await useParticipantStore.getState().controller?.refreshBackfillCheckpoints(missionId)

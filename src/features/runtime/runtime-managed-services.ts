@@ -138,6 +138,9 @@ type CreateManagedRuntimeServicesDependencies = {
       groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
     ) => void | Promise<void>
     readonly applyParticipantRosterError?: (message: string | null) => void
+    readonly registerParticipantCatalogueSource?: (
+      source: import('../participants/participant-catalogue').ParticipantCatalogueSource,
+    ) => () => void
   }) => Promise<() => void>
   readonly createClient: (config: NonNullable<RuntimeBootstrapSettings['trackingConfig']>) => unknown
   readonly createPoller: (
@@ -215,6 +218,9 @@ type CreateManagedRuntimeServicesDependencies = {
     groups: readonly import('../tracking/tracking-types').NormalizedTraccarGroup[],
   ) => void | Promise<void>
   readonly applyParticipantRosterError?: (message: string | null) => void
+  readonly registerParticipantCatalogueSource?: (
+    source: import('../participants/participant-catalogue').ParticipantCatalogueSource,
+  ) => () => void
 }
 
 /**
@@ -312,6 +318,9 @@ export async function createManagedRuntimeServices(
       ...(dependencies.applyParticipantRosterError === undefined
         ? {}
         : { applyParticipantRosterError: dependencies.applyParticipantRosterError }),
+      ...(dependencies.registerParticipantCatalogueSource === undefined
+        ? {}
+        : { registerParticipantCatalogueSource: dependencies.registerParticipantCatalogueSource }),
       ...(dependencies.notifyDurablePositionChange === undefined
         ? {}
         : { notifyDurablePositionChange: dependencies.notifyDurablePositionChange }),

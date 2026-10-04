@@ -17,6 +17,7 @@ import {
   EMPTY_PARTICIPATION_SCOPE,
   type ParticipationScope,
 } from './participation-scope'
+import type { ParticipantCatalogueSource } from './participant-catalogue'
 import type { ParticipantRuntimeController } from './start-participant-runtime'
 
 export type ParticipantRuntimeState = {
@@ -38,11 +39,17 @@ export type ParticipantRuntimeState = {
   readonly loading: boolean
   readonly saving: boolean
   readonly rosterError: string | null
+  /** True while a Traccar group/device catalogue refresh is in flight [DON-330]. */
+  readonly catalogueRefreshing: boolean
+  /** Why the last catalogue refresh failed; null when it succeeded or none ran. */
+  readonly catalogueError: string | null
   readonly error: string | null
 }
 
 type ParticipantStoreState = ParticipantRuntimeState & {
   readonly controller: ParticipantRuntimeController | null
+  /** The live Traccar catalogue reader, registered by the tracking runtime. */
+  readonly catalogueSource: ParticipantCatalogueSource | null
   readonly applyRuntime: (runtime: ParticipantRuntimeState) => void
   readonly applyController: (controller: ParticipantRuntimeController) => void
 }
@@ -64,12 +71,15 @@ const EMPTY_PARTICIPANT_RUNTIME: ParticipantRuntimeState = {
   loading: false,
   saving: false,
   rosterError: null,
+  catalogueRefreshing: false,
+  catalogueError: null,
   error: null,
 }
 
 export const useParticipantStore = create<ParticipantStoreState>((set) => ({
   ...EMPTY_PARTICIPANT_RUNTIME,
   controller: null,
+  catalogueSource: null,
   applyRuntime: (runtime) => set(runtime),
   applyController: (controller) => set({ controller }),
 }))
@@ -84,4 +94,20 @@ export function applyParticipantController(controller: ParticipantRuntimeControl
   useParticipantStore.setState(controller === null
     ? { ...EMPTY_PARTICIPANT_RUNTIME, controller: null }
     : { controller })
+}
+
+/**
+ * Registers the live Traccar catalogue reader and returns its unregister
+ * function. Unregistering clears the reader only if it is still the current
+ * one, so a replaced connection cannot remove its successor.
+ */
+export function registerParticipantCatalogueSource(
+  source: ParticipantCatalogueSource,
+): () => void {
+  useParticipantStore.setState({ catalogueSource: source })
+  return () => {
+    if (useParticipantStore.getState().catalogueSource === source) {
+      useParticipantStore.setState({ catalogueSource: null })
+    }
+  }
 }

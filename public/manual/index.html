@@ -547,7 +547,11 @@
           <ul>
             <li><strong>Mission name</strong>: required. Use plain words, for example the place and date.</li>
             <li><strong>Start offset (hours)</strong>: backdates the start when the search began before you opened the app. Maximum 48 hours.</li>
-            <li><strong>Mission participants</strong>: tick the <strong>groups</strong> and <strong>devices</strong> that are part of this search. A group covers everyone in it; their own boxes are locked and say <em>included by selected group</em>.</li>
+            <li><strong>Mission participants</strong>: tick the <strong>groups</strong> and <strong>devices</strong> that are part of this search. A group covers everyone in it; their own boxes are locked and say <em>included by selected group</em>.
+              Each time this step opens, SAR Tracker re-reads the groups from Traccar, so a group created since you
+              started the app appears without a restart. While it reads you see <em>Refreshing Traccar groups…</em>. If the
+              read fails, a message with a <strong>Retry</strong> button appears and the groups already listed stay as they were.
+              Refreshing never ticks anyone for you.</li>
           </ul>
           <p>
             <strong>Team default group.</strong> In <strong>Settings → Mission Defaults → Team default
@@ -593,7 +597,9 @@
             <figcaption>Participants opened with Show: who is selected, their history status, and the add-a-team form.</figcaption>
           </figure>
           <ol>
-            <li>In <strong>Participants</strong> (press <strong>Show</strong> first), choose <strong>Individual device</strong> or <strong>Traccar group</strong>, then pick one from the list.</li>
+            <li>In <strong>Participants</strong> (press <strong>Show</strong> first), choose <strong>Individual device</strong> or <strong>Traccar group</strong>, then pick one from the list.
+              Choosing <strong>Traccar group</strong> re-reads the groups from Traccar first, so a newly created group is listed
+              (a failed read shows a message and <strong>Retry</strong>; nothing is added until you press <strong>Add participant</strong>).</li>
             <li>Choose <strong>History from</strong>. There is no default, and <strong>Add participant</strong> stays greyed out until you choose:
               <ul>
                 <li><strong>Mission start</strong>: brings in their track back to the mission start.</li>

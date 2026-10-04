@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useMissionStore } from '../features/mission/mission-store'
 import { isMissionModelEnabled } from '../features/runtime/mission-model-flag'
@@ -34,6 +34,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
   const defaultGroupId = useParticipantStore((state) => state.defaultGroupId)
   const defaultGroupMissing = useParticipantStore((state) => state.defaultGroupMissing)
   const error = useParticipantStore((state) => state.error)
+  const catalogueRefreshing = useParticipantStore((state) => state.catalogueRefreshing)
+  const catalogueError = useParticipantStore((state) => state.catalogueError)
   const [addKind, setAddKind] = useState<'device' | 'group'>('device')
   const [addRef, setAddRef] = useState('')
   const [effectiveFrom, setEffectiveFrom] = useState('')
@@ -45,6 +47,12 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
     () => participants.filter((participant) => participant.removed_at === null),
     [participants],
   )
+
+  // Mission setup opening re-reads the Traccar groups, so a group created
+  // since startup is selectable without restarting [DON-330].
+  useEffect(() => {
+    if (phase === 'idle' && controller !== null) void controller.refreshCatalogue()
+  }, [phase, controller])
 
   if (!isMissionModelEnabled()) return null
 
@@ -72,6 +80,11 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
           </span>
         </div>
 
+        <CatalogueRefreshStatus
+          error={catalogueError}
+          onRetry={() => void controller?.refreshCatalogue()}
+          refreshing={catalogueRefreshing}
+        />
         {selection.rosterError !== null ? (
           <p className="sar-inline-alert p-2 text-xs text-amber-200" data-testid="participant-roster-error">
             {selection.rosterError}
@@ -229,12 +242,24 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
 
       <div className="grid gap-2 border-t border-[var(--sar-line)] pt-3 sm:grid-cols-2">
         <select className="sar-input px-2 py-2 text-xs" data-testid="participant-add-kind" onChange={(event) => {
-          setAddKind(event.target.value as 'device' | 'group')
+          const nextKind = event.target.value as 'device' | 'group'
+          setAddKind(nextKind)
           setAddRef('')
+          // Opening Add group re-reads the Traccar groups [DON-330].
+          if (nextKind === 'group') void controller?.refreshCatalogue()
         }} value={addKind}>
           <option value="device">Individual device</option>
           <option value="group">Traccar group</option>
         </select>
+        {addKind === 'group' ? (
+          <div className="sm:col-span-2">
+            <CatalogueRefreshStatus
+              error={catalogueError}
+              onRetry={() => void controller?.refreshCatalogue()}
+              refreshing={catalogueRefreshing}
+            />
+          </div>
+        ) : null}
         <select className="sar-input px-2 py-2 text-xs" data-testid="participant-add-ref" onChange={(event) => setAddRef(event.target.value)} value={addRef}>
           <option value="">Choose…</option>
           {(addKind === 'device' ? availableDevices : availableGroups).map((item) => {
@@ -302,6 +327,32 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
       </div>
     </section>
   )
+}
+
+/** Shows that the Traccar groups are being re-read, or why that failed, with Retry. */
+function CatalogueRefreshStatus(props: {
+  readonly refreshing: boolean
+  readonly error: string | null
+  readonly onRetry: () => void
+}) {
+  if (props.error !== null) {
+    return (
+      <div className="sar-inline-alert flex items-start justify-between gap-2 p-2 text-xs text-amber-200" data-testid="participant-catalogue-error" role="alert">
+        <span>{props.error}</span>
+        <button className="sar-button shrink-0 px-2 py-1 text-xs" data-testid="participant-catalogue-retry" onClick={props.onRetry} type="button">
+          Retry
+        </button>
+      </div>
+    )
+  }
+  if (props.refreshing) {
+    return (
+      <p className="text-[11px] text-stone-300" data-testid="participant-catalogue-loading" role="status">
+        Refreshing Traccar groups…
+      </p>
+    )
+  }
+  return null
 }
 
 function formatGroupBackfillStatus(participant: {

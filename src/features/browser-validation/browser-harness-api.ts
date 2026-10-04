@@ -19,7 +19,7 @@ import {
   readBrowserHarnessState,
   resetBrowserHarnessStore,
 } from './browser-harness-store'
-import { useParticipantStore } from '../participants/participant-store'
+import { registerParticipantCatalogueSource, useParticipantStore } from '../participants/participant-store'
 import { applyIngestEvidenceHealth } from '../tracking/ingest-health-store'
 import { EMPTY_INGEST_EVIDENCE_HEALTH } from '../../domain/tracking-ingest-evidence'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
@@ -29,7 +29,19 @@ import type {
   NormalizedTraccarGroup,
 } from '../tracking/tracking-types'
 
+type BrowserHarnessCatalogueServer =
+  | {
+      readonly groups: readonly NormalizedTraccarGroup[]
+      readonly devices: readonly NormalizedTrackingDevice[]
+    }
+  | { readonly error: string }
+
 type BrowserHarnessApi = {
+  /**
+   * Sets what the fake Traccar server reports to the next group-catalogue
+   * refresh [DON-330]. Until called, a refresh echoes the current choices.
+   */
+  readonly setParticipantCatalogueServer: (server: BrowserHarnessCatalogueServer) => Promise<void>
   readonly setParticipantDiscovery: (input: {
     readonly devices: readonly NormalizedTrackingDevice[]
     readonly groups: readonly NormalizedTraccarGroup[]
@@ -86,8 +98,24 @@ export function installBrowserHarnessApi(): void {
   }
 
   const operationalPositionRetention = createOperationalPositionRetention()
+  let catalogueServer: BrowserHarnessCatalogueServer | null = null
+  registerParticipantCatalogueSource(async () => {
+    if (catalogueServer === null) {
+      const current = useParticipantStore.getState()
+      return {
+        groups: current.availableGroups,
+        devices: current.availableDevices,
+        rosterComplete: true,
+      }
+    }
+    if ('error' in catalogueServer) throw new Error(catalogueServer.error)
+    return { groups: catalogueServer.groups, devices: catalogueServer.devices, rosterComplete: true }
+  })
 
   window.__SARTRACKER_BROWSER_HARNESS__ = {
+    setParticipantCatalogueServer: async (server) => {
+      catalogueServer = server
+    },
     setParticipantDiscovery: async ({ devices, groups }) => {
       const controller = useParticipantStore.getState().controller
       if (controller === null) {

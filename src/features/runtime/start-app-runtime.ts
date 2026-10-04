@@ -62,7 +62,7 @@ import {
   stopRuntimeServices,
 } from './runtime-managed-services'
 import { startCoreFeatureRuntimes } from './start-core-feature-runtimes'
-import { useParticipantStore } from '../participants/participant-store'
+import { registerParticipantCatalogueSource, useParticipantStore } from '../participants/participant-store'
 import { resolveParticipantMissionId } from '../participants/participant-mission-context'
 import { isMissionModelEnabled } from './mission-model-flag'
 import { setMissionReviewMissionStore } from '../mission-review/mission-review-runtime-context'
@@ -506,6 +506,7 @@ export async function startAppRuntime(
         useParticipantStore.getState().controller?.applyGroups(groups),
       applyParticipantRosterError: (message) =>
         useParticipantStore.getState().controller?.reportRosterError(message),
+      registerParticipantCatalogueSource,
       notifyParticipantBackfillChange: async (missionId) => {
         if (resolveParticipantMissionId(useMissionStore.getState()) !== missionId) return
         await coreFeatureRuntimes.participantRuntimeController?.refreshBackfillCheckpoints(missionId)
