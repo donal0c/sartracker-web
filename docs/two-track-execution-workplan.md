@@ -1,19 +1,54 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-10-02 (evening). This is the single active queue, replacing the accumulated pre-publication queue. Historical decisions and evidence are preserved in [the previous workplan](../handoff/archive/2026-09-28-pre-reset-workplan.md). Linear owns issue detail; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity.
+Updated 2026-10-03 after reconciling current Linear and GitHub state. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
 
 ## 13.6 published 2 Oct 2026
 
-beta.13.6 published 2 Oct 2026 (tag 01c43873, release run 37011458608), with
-one owner-approved exception: installed soak limits (DON-312/313, 13.7). Next
-queue (13.7): DON-312/313 A/B soak with coverage off, DON-328, DON-325, DON-326,
-DON-327, DON-329, DON-298 (PCLinuxOS). Waiting on Eamonn for DON-318/319 files.
+beta.13.6 was published 2 Oct 2026 for controlled team testing (tag 01c43873,
+release run 37011458608). The installed .deb stored all 691,224 positions
+exactly, but the soak exceeded its limits: main-loop maxima 329/516 ms and
+2.27 GB peak process memory against a 2 GB budget. Donal approved shipping this
+exact artifact with that known issue; this is not operational acceptance.
 
-## 13.6 queue (shipped) — 1 October
+## Next candidate — beta.13.7
 
-beta.13.5 was published on 1 Oct 2026 (tag fac5adcf). This is the queue for the
-next release, safety and fail-visible issues first. Each item has a ticket.
-Claude keeps the list current; Donal does not need to remember any of it.
+1. **DON-312/313:** run the planned A/B normal-profile soak with coverage off,
+   then use the measurements to set the smallest justified follow-up. The
+   renderer-side 256-position write splitting and yielding are already in
+   beta.13.6; a worker-thread rewrite is not the agreed default.
+2. **[DON-330](https://linear.app/donal-oc/issue/DON-330/refresh-traccar-group-choices-so-newly-added-teams-appear-without) (High):** refresh Traccar group/device choices at mission setup and Add group
+   so newly added outside teams appear without restarting. Seán reported this
+   on 13.5; stale discovery was reproduced in released-source browser tests
+   for both 13.5 and 13.6. Preserve selections and existing participants; prove
+   explicit addition and recording in the packaged workflow. Donal requested
+   this early in 13.7 on 3 October; evidence and acceptance are on the issue.
+3. **DON-318 (Urgent):** the false evidence-loss block fix is in 13.6. Finish
+   the AppImage lifecycle run on the box and PCLinuxOS coverage through DON-298,
+   and obtain Eamonn's support bundle to identify the original trigger. Keep
+   the issue open until that evidence is reviewed.
+4. **DON-319:** the fail-visible GPX visibility fix and corrected packaged
+   smoke step are in 13.6. The failed pre-tag draw assertion was a smoke-tool
+   escape, not a confirmed product failure. Get Eamonn's actual GPX file,
+   Layers screenshot, and support bundle to classify the original report.
+5. **DON-328:** fix the display-only case where a breadcrumb briefly runs ahead
+   of the current-position marker. Donal targeted this for 13.7; it corrects
+   within one poll and does not lose data.
+6. Recheck the coordinated smoke gaps DON-299 and DON-315/316/317, plus
+   DON-325/326/327/329 and the PCLinuxOS setup in DON-298, against the exact
+   13.7 scope. Do not make them release gates from age or title alone.
+7. Use **DON-290** and the checklist above for the exact CI-built candidate.
+
+**Separate field acceptance:** DON-247 remains urgent/in progress for the
+original-machine long-mission scenario. Its current relationship to the 13.7
+release gate is not recorded; resolve that explicitly before either treating
+it as a blocker or closing it. Compare its acceptance evidence with DON-151
+before consolidating either issue.
+
+## Historical queue that led into beta.13.6 — captured 1 October
+
+This records the work that led into beta.13.5 and beta.13.6. It is retained for
+history; the beta.13.7 queue above is the only current release order. Linear
+remains the live source for ticket status and current evidence.
 
 | Order | Item | Ticket | Needs |
 | --- | --- | --- | --- |
@@ -40,7 +75,7 @@ Claude keeps the list current; Donal does not need to remember any of it.
 | 14 | Retire the obsolete live-exact smoke | DON-302 | **Done a6731ece** |
 | 15 | Harvey and Hiker maps | DON-303 | Maps last |
 
-Next-candidate evidence owed (Claude tracks): DON-311 packaged CI tracking soak
+Pre-release evidence notes captured on 1 October: DON-311 packaged CI tracking soak
 (from the release run; dispatched validation stops at the 960k step) and the
 team-smoke `team-mission` backfill time; DON-304/DON-314/DON-296 team-smoke
 `team-workflow` (now with Replay over Discovery and the default group) and
@@ -55,9 +90,16 @@ Release carry-overs: repeat the native file-picker hand check on the next
 candidate; run the installed normal-profile soak again (now about 20 min on
 the box) and compare with DON-310's baseline.
 
-## Locked queue — Donal's working plan, 28 September
+## Historical workplan snapshot — 28 September (superseded)
 
-**NEXT: 1.2a — realistic team-mission smoke scenario and retro register of team reports (Donal, 29 Sep). 1.2 / DON-283 implemented (bc34425e), awaiting Codex review, CI and Ubuntu lifecycle row. DON-291 DONE (not released).**
+Everything below this heading through the historical checkpoint records the
+28 September reset plan and 1 October pre-release work. It is preserved for
+decision and evidence history, not a second active queue: its beta.13.4/13.5
+references, R-item statuses, ownership rules, and `NEXT` markers were superseded
+by beta.13.6 and the beta.13.7 queue at the top of this file. Do not resume from
+the old `1.2a` or `R02` cursor without a fresh decision.
+
+At capture, the next item was 1.2a (realistic team-mission smoke and report register); DON-283 was awaiting review and qualification. That cursor is historical.
 
 Coordinator priority decision, 28 September: investigate Eamonn's missing initial
 history before the next numbered fix because it affects current team testing.
@@ -102,18 +144,15 @@ Audit working notes: `tmp/test-gap-audit/` (local, gitignored).
 
 ### The handover loop
 
-On **“what's next?”**, Codex reads this cursor and current evidence, then writes
-one bounded temporary prompt for the next numbered item. Claude investigates,
-challenges the proposed approach, implements and tests. Codex reviews, verifies
-the relevant runtime boundary, integrates and updates Linear plus this cursor.
-Only then does the cursor advance. A grouped item is split into named subparts
-inside its existing number when necessary; it is not handed over as a giant batch.
-No product work starts merely because an automated watch finishes.
+For current routing, follow the repository's `AGENTS.md` and the active queue at
+the top of this file. Codex owns the requested slice and may use native Codex
+delegation for bounded work. Do not route work to Claude or Agent Mail unless
+Donal explicitly asks or a deliberately selected high-risk review warrants it.
+Keep one product change and one owner of the Ubuntu runtime active at a time.
 
-Codex may reconcile evidence and prepare missing team questions while Claude
-implements; only one product change and one owner of the Ubuntu test runtime.
-Team questions reuse existing answers and ask for operational choices, not
-developer diagnostics. Sending email still requires Donal's instruction.
+Reconcile evidence before advancing a queue item. Team questions reuse existing
+answers and ask for operational choices, not developer diagnostics. Sending
+email still requires Donal's instruction.
 
 ### New feedback and explicit exceptions
 
@@ -159,12 +198,12 @@ The team has beta.13.4 for controlled testing. Its existing-area Discovery impor
 
 Mapping logistics remain open for discussion with the team. Donal estimates most work is within perhaps 20×20 or 40×40 km in Kerry, with occasional larger or distant operations. This is a planning hypothesis, not confirmed coverage. Owning national maps does not require installing national detail on every laptop, and files stored on disk are distinct from tiles loaded into memory. Do not estimate tile counts/size without chosen bounds and zoom/detail. Existing maps let other testing continue; no new mapping work is a prerequisite to stages 1–5.
 
-The plan was created on 2026-09-28 with Donal's clarification that CLAUDE.md and the post-mortem cleanup come first. Stage 1 was then executed the same day (see its result note). Rows below are queued work, not claims of completion or blanket approval for destructive actions.
+The plan was created on 2026-09-28 with Donal's clarification that CLAUDE.md and the post-mortem cleanup come first. Stage 1 was then executed the same day (see its result note). The rows below preserve that sequence and evidence; they are not current Linear statuses or blanket approval for destructive actions.
 
-## How we will use this ledger
+## Historical operating model (28 September snapshot)
 
-- **Execution partnership (Donal):** Claude Code, using Opus 5.5, is the primary implementer. Codex supplies one temporary prompt per bounded chunk, coordinates dependencies and independently validates the result before advancing. Claude researches and challenges Codex's recommendations, chooses implementation/test details and explains justified changes. The first prompt groups P01–P05 as the foundation reset; later chunks are scoped from what is learned. Explicit user requirements and safety/authority boundaries still apply.
-- Follow the locked numbered queue above. Name the next item, owner, expected visible result and relevant tests before starting. Keep one product slice and one independent process/evidence slice active at a time.
+- **Execution partnership:** Donal owns prioritization and product decisions. Codex works the authorized slice, uses native Codex delegation when useful, and verifies evidence before advancing. Follow `AGENTS.md` for tool and reviewer authorization; this historical queue does not authorize another agent or external action.
+- At that time, the coordinator followed the numbered queue in this historical snapshot. For current order use the beta.13.7 queue at the top; for current process/tool rules follow `AGENTS.md`.
 - Status vocabulary: **NEXT**, **QUEUED**, **DECISION**, **PARKED**, **ACTIVE**, **DONE**, **DEFERRED**. DONE needs an evidence link; DEFERRED needs an explicit decision, reason and revisit trigger. A missing team answer blocks only dependent work.
 - Coordinator owns this queue, deduplication and integration. Assign an actual implementation owner on activation. One owner operates the shared Ubuntu install/profile and performance workloads; independent source work can proceed elsewhere.
 - Keep scope bounded. A new finding gets a named disposition; it does not silently expand the active patch or restart every check.
@@ -322,7 +361,7 @@ Audit coverage: 13 confirmed Astra groups already repaired; AUD-12 → T07; nine
 6. Update the relevant issue, operator manual/screenshots, this row and handoff after proof. Close only the claim actually established.
 7. Never use “all backlog cleared” to conceal unanswered requirements. Every residual is done, superseded with evidence, or explicitly deferred with an owner/revisit trigger.
 
-## Current checkpoint
+## Historical checkpoint — 28 September (superseded)
 
 - **Done:** Claude's foundation changes and Codex corrections pushed through be5fc69f; P05 live dispositions applied. Corrected-tool rehearsal on unchanged 13.4 passes exact tracking and outage/backfill, and truthfully fails lifecycle for DON-283/284. Mixed manual rows remain NOT TESTED.
 - **Foundation complete:** [CI 36445372627](https://github.com/donal0c/sartracker-web/actions/runs/36445372627) passed on be5fc69f: 592 files / 6,197 tests passed / 10 skipped; 225 Chromium preflight tests passed; targeted browser, WAR-02B, package build and packaged checks passed. Later working-tree product edits are not covered. Product fixes are not included in this reset.

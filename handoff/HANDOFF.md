@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-02 (night). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-03 after reconciling Linear and GitHub. Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -16,8 +16,9 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 ## Next action
 
-1. Tell the team 13.6 is out (Donal). Ask Donal before deleting box/Mac
-   temp evidence (keep box evidence until the team reports on 13.6).
+1. Confirm whether the team was told 13.6 is out; record completion or keep it
+   as Donal's next action. Ask Donal before deleting box/Mac temp evidence
+   (keep box evidence until the team reports on 13.6).
 2. 13.7: DON-312/313 A/B soak (coverage off) with 9f; DON-328 (Seán).
 
 ## Verification limits

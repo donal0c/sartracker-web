@@ -1,14 +1,19 @@
 # Electron Beta Handoff And Discovery Map Loading
 
-> Current desktop handoff runbook for SAR Tracker Electron. This supersedes the
-> older Tauri beta release instructions for the operational desktop lane.
+> **Archived 2026-10-02. Historical handoff only. For current releases use the
+> [release checklist](../release-checklist.md), [ordered workplan](../two-track-execution-workplan.md),
+> and [current handoff](../../handoff/HANDOFF.md).**
+
+> Historical desktop handoff runbook for SAR Tracker Electron. During its
+> active period it superseded the older Tauri beta release instructions for
+> the operational desktop lane.
 >
 > **Linear:** `DON-142`
-> **Current state:** GitHub prerelease internal validation drop, not a stable field release
+> **State when archived:** GitHub prerelease internal validation drop, not a stable field release
 
-## Current Answer
+## Answer at archive time
 
-For the immediate team handoff, the last **published** Electron prerelease is:
+At that time, the last **published** Electron prerelease was:
 
 ```text
 https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
@@ -17,8 +22,8 @@ https://github.com/donal0c/sartracker-web/releases/tag/electron-v0.1.0-beta.7
 `electron-v0.1.0-beta.7` (DON-177 app-owned local credential storage + DON-176
 docked Review + the DON-175 keyring guard) was **published on 2026-06-16** after
 GitHub Actions run `27601812958` and the full deep Ubuntu on-device smoke both
-passed (see "Latest Ubuntu Release-Asset Smoke" below). It supersedes
-`electron-v0.1.0-beta.5` as the current team artifact. beta.7 also supersedes the
+passed (see "Latest Ubuntu Release-Asset Smoke" below). It superseded
+`electron-v0.1.0-beta.5` as the team artifact at that time. beta.7 also superseded the
 unpublished `electron-v0.1.0-beta.6` (DON-175-only hotfix), whose draft + tag
 were deleted — there is no need to install beta.6.
 
@@ -47,7 +52,7 @@ Do not attach private Discovery map packages, MapGenie credentials, source USB
 contents, raw diagnostics with local paths, or private map screenshots to a
 public GitHub release.
 
-## Immediate Handoff Channel
+## Historical Handoff Channel
 
 Until `DON-141` proves Windows, treat this as an internal validation drop:
 
@@ -80,7 +85,7 @@ npm ci
 npm run electron:dist:linux
 ```
 
-Current Ubuntu builder used for the DON-115/DON-142 validation:
+Ubuntu builder used at the time for the DON-115/DON-142 validation:
 
 ```text
 donal@192.168.18.31:~/sartracker-don115-validation/repo
@@ -104,7 +109,7 @@ Before any tester receives an Electron artifact:
    credentials, source URLs, or licensed data.
 7. Record whether Windows remains unverified.
 
-## Next Candidate Smoke Focus
+## Historical Next Candidate Smoke Focus
 
 For `electron-v0.1.0-beta.5`, the Ubuntu smoke should prove the new release
 artifact, not only local source:
@@ -125,11 +130,11 @@ artifact, not only local source:
 10. Retest the Saturday breadcrumb scenario and the separate DON-151 launch /
    panning slowdown if the needed tracking history/test data is available.
 
-## Latest Ubuntu Release-Asset Smoke (beta.7 — local credential storage + docked Review)
+## Latest at the time: Ubuntu Release-Asset Smoke (beta.7 — local credential storage + docked Review)
 
 `electron-v0.1.0-beta.7` (DON-177 app-owned local credential storage, DON-176
 docked Review, DON-175 keyring guard) is built, deep-smoked, and **published**
-(2026-06-16) — the current team prerelease.
+(2026-06-16) — the team prerelease at that time.
 
 - CI: `.github/workflows/electron-release.yml` run `27601812958` — success.
 - Artifact: `sartracker-electron-validation_0.1.0-beta.7_linux_x86_64.AppImage`,
@@ -258,7 +263,7 @@ Evidence directory on Ubuntu:
 
 These are the operator-facing steps for the team.
 
-The current beta does **not** import raw Discovery raster/source files as map
+The beta at that time did **not** import raw Discovery raster/source files as map
 packages. The team must receive the prepared MBTiles package separately through
 a private channel.
 

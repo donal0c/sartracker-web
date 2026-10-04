@@ -1,22 +1,26 @@
 # SAR Tracker Desktop Beta Releases
 
+> **Archived 2026-10-02. Historical reference only; the status and paths below
+> are not current release instructions. Use the [active release checklist](../../release-checklist.md),
+> [ordered workplan](../../two-track-execution-workplan.md), and
+> [current handoff](../../../handoff/HANDOFF.md).**
+
 This directory holds the source-controlled record of desktop beta releases we
 share with the team. Hosted Vercel iteration has its own change cadence; this
 folder is exclusively for the desktop operational lane.
 
-> **Current status:** Electron is the production desktop shell. The current
-> release pipeline is `.github/workflows/electron-release.yml`, triggered by an
-> `electron-v*` tag. The old Tauri `release.yml` has been **removed** (DON-143)
-> so it can never be mistaken for the live path; its history is recoverable from
-> git if ever needed. Use `docs/electron-beta-handoff.md` for the active
-> Electron app + Discovery map loading process.
+> **Status when archived:** Electron was the production desktop shell and
+> `.github/workflows/electron-release.yml` was the active pipeline. The old
+> Tauri `release.yml` had been removed (DON-143). For current release steps,
+> follow the active checklist and handoff linked above; the former Electron
+> handoff is retained at [electron-beta-handoff.md](../electron-beta-handoff.md).
 
 ## Purpose
 
 - Give every beta a written, dated record so testers know what they have and
   what to test.
-- Make beta cuts repeatable. A future agent should be able to produce a beta
-  by following the template here without inventing the process.
+- Preserve the release template and process used for these historical beta
+  cuts. Use the active release checklist for future releases.
 - Keep evidence (verification reports, smoke notes, CI run links) close to
   the release note so that incidents can be traced after the fact.
 - Preserve regression provenance: the field report, affected builds, causal
@@ -24,10 +28,10 @@ folder is exclusively for the desktop operational lane.
   uncertainty stay on the linked Linear issue and are summarized in the
   release note.
 
-## Current Electron Release Path (DON-143)
+## Historical Electron Release Path (DON-143)
 
-The live release pipeline is `.github/workflows/electron-release.yml`. It is
-triggered by an `electron-v*` tag push (or manual `workflow_dispatch`) and:
+At archive time, the release pipeline was `.github/workflows/electron-release.yml`.
+It was triggered by an `electron-v*` tag push (or manual `workflow_dispatch`) and:
 
 - refuses to continue unless release notes exist and the tag matches
   `package.json#version`;

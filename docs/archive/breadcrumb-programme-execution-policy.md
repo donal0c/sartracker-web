@@ -1,5 +1,10 @@
 # Breadcrumb And Mission-History Programme Execution Policy
 
+> **Archived 2026-10-02 after the programme PRs merged. This policy is retained
+> as programme history, not a current delegation or release instruction. Use
+> the [current workplan](../two-track-execution-workplan.md), [release checklist](../release-checklist.md),
+> and [handoff](../../handoff/HANDOFF.md) for current work.**
+
 Date: 2026-08-22
 
 Status: **Locked for execution.** This document records the BCP-00 delivery,

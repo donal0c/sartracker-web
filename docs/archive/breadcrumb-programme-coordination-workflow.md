@@ -1,5 +1,10 @@
 # Breadcrumb Programme Coordination Workflow
 
+> **Archived 2026-10-02 after the programme PRs merged. This records the old
+> programme workflow; it is not an active execution queue. Use the [current
+> workplan](../two-track-execution-workplan.md), [release checklist](../release-checklist.md),
+> and [handoff](../../handoff/HANDOFF.md) for current work.**
+
 Date: 2026-08-22
 
 Status: **Locked by Donal for the Breadcrumb and Mission-History Programme.**

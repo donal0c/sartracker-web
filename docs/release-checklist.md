@@ -30,6 +30,28 @@ clock and under half a day of Donal's attention.
    then the same without `--dry-run`.
 5. Update `handoff/HANDOFF.md` and the Linear release issue.
 
+## Post-test cleanup
+
+Ubuntu qualification profiles can contain several full copies of a multi-
+gigabyte mission database. After each run is classified and its result recorded:
+
+1. Retain the fail-closed summary, checksums, sanitized logs, screenshots, and
+   the small evidence needed to reproduce the verdict.
+2. If a failed run still needs forensic analysis, retain its profile until the
+   cause is classified and the necessary bounded evidence is extracted.
+3. Confirm no AppImage, Electron, mock-server, or proof process is using the
+   run directory.
+4. Remove only that run's throwaway `user-data` databases, backup databases,
+   abandoned `.tmp-*` copies, and other duplicated full-profile data.
+5. Remove superseded candidate directories only after the succeeding candidate
+   is qualified or the useful evidence has been mirrored into the release record.
+6. Record `df -h` before and after cleanup and note any intentionally retained
+   large fixture or profile.
+
+Never remove the operator's real `~/.config/sartracker-web` profile, private map
+assets, the candidate currently being qualified, or reusable canonical fixtures.
+Do not remove a failure profile before its cause and evidence needs are settled.
+
 ## Severity, decided in advance
 
 - **Block** — data loss, wrong coordinates or mission state, silent failure in a
