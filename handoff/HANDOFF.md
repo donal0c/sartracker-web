@@ -18,8 +18,12 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 1. 13.7 landed on master (not released): DON-330 group refresh c8cfbf35,
    DON-328 marker at newest fix 9ec0011c (Donal approved 4 Oct; stale flag kept
-   from the position). Both owe packaged smoke on the 13.7 candidate; smoke
-   steps in progress (Sonnet worktree, coordinator reviews).
+   from the position; list/readout follow-up 18580e93), DON-327 warning codes
+   7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
+   team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
+   DON-325 raised to High: coverage-revision-moved storm is the DON-312
+   suspect; measure in the A/B (coverage-off build:
+   VITE_SARTRACKER_COVERAGE=0 npm run electron:pack on the box).
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
    rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
    309, 317 — name them on the 13.7 candidate run.
