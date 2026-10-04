@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'geojson'
 
+import { selectNewestKnownFixes } from './newest-known-fix'
 import { createTrailSegments } from './trail-segmentation'
 import { createDeviceColor } from './tracking-color'
 import {
@@ -115,7 +116,8 @@ export function createTrackingFeatureCollectionDataKey(
 }
 
 /**
- * Creates GeoJSON point features for the current tracked device positions.
+ * Creates GeoJSON point features at each device's newest known fix (current position or
+ * breadcrumb), so the marker is never behind the end of its trail.
  */
 export function createDeviceFeatureCollection(
   snapshot: TrackingSnapshot,
@@ -126,7 +128,10 @@ export function createDeviceFeatureCollection(
     snapshot.devices.map((device) => [device.device_id, device.name] as const),
   )
 
-  const features: GeoJsonPointFeature[] = snapshot.positions.map((position) => ({
+  const features: GeoJsonPointFeature[] = selectNewestKnownFixes(
+    snapshot.positions,
+    snapshot.breadcrumbs,
+  ).map((position) => ({
     type: 'Feature',
     id: `device:${position.device_id}`,
     geometry: {
