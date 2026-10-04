@@ -23,8 +23,9 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
    rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
    309, 317 — name them on the 13.7 candidate run.
-3. Blocked on Donal/box: DON-312/313 A/B soak; team told 13.6 is out?;
-   DON-247/240 gate relationship; DON-296 decision.
+3. Team told 13.6 is out (Donal, 4 Oct). DON-296 was decided 1 Oct and
+   shipped in 13.6 (78b00506). Waiting: box for DON-312/313 A/B soak and the
+   new smoke steps' first packaged run; DON-247/240 gate call.
 
 ## Verification limits
 
