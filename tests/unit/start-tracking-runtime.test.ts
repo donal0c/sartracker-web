@@ -3371,12 +3371,13 @@ describe('startTrackingRuntime', () => {
     }
     const statusEvents = () => recordDiagnosticEvent.mock.calls
       .filter(([event]) => event.event === 'tracking_status_changed').map(([event]) => event)
-    const names = Array.from({ length: 20 }, (_, index) => `Walker ${index + 1}`)
+    const names = Array.from({ length: 20 }, (_, index) => index === 4 ? 'Radio; current fixes remain live. CONNECTION RESTORED' : `Walker ${index + 1}`)
 
     for (let done = 0; done < names.length; done += 1) {
       pollerHooks?.onStatusChange({
         ...online,
         warning: `Breadcrumb history is reconciling for ${names.slice(done).join(', ')}; current fixes remain live.`,
+        warningCodes: ['history_reconciling'],
       })
     }
     expect(statusEvents()).toHaveLength(1)
@@ -3388,7 +3389,7 @@ describe('startTrackingRuntime', () => {
     expect(JSON.stringify(statusEvents())).not.toContain('Walker')
 
     // A different problem is still new, as is the warning clearing.
-    pollerHooks?.onStatusChange({ ...online, warning: 'Breadcrumb history incomplete for Walker 3; retrying while current fixes remain live.' })
+    pollerHooks?.onStatusChange({ ...online, warning: 'Breadcrumb history incomplete for Walker 3; retrying while current fixes remain live.', warningCodes: ['history_incomplete'] })
     pollerHooks?.onStatusChange(online)
     expect(statusEvents()).toHaveLength(3)
     expect(statusEvents()[2]?.fields).toMatchObject({ hasWarning: false })
@@ -3442,8 +3443,8 @@ describe('startTrackingRuntime', () => {
     expect(eventsNamed('tracking_status_changed')[1]?.[0].fields).toMatchObject({ repeatsSuppressed: 9 })
 
     // Warning text changing while a warning stays shown is a new problem.
-    pollerHooks?.onStatusChange({ ...online, warning: 'Loading breadcrumb history' })
-    pollerHooks?.onStatusChange({ ...online, warning: 'BREADCRUMB HISTORY REFRESH FAILED' })
+    pollerHooks?.onStatusChange({ ...online, warning: 'Loading breadcrumb history', warningCodes: ['history_loading'] })
+    pollerHooks?.onStatusChange({ ...online, warning: 'BREADCRUMB HISTORY REFRESH FAILED', warningCodes: ['history_refresh_failed'] })
     expect(eventsNamed('tracking_status_changed')).toHaveLength(5)
     pollerHooks?.onStatusChange(online)
     // A long outage: failures 1..100 give breadcrumbs at 1, 2, 4, 8, 16, 32, 64.

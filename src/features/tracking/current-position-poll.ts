@@ -5,6 +5,7 @@ import type {
 import type {
   NormalizedTrackingDevice,
 } from './tracking-types'
+import type { TrackingWarning } from './tracking-warnings'
 
 export const ROSTER_UNAVAILABLE_WARNING =
   'DEVICE ROSTER UNAVAILABLE — current fixes are using last-known device details.'
@@ -17,7 +18,7 @@ type CurrentPositionPollClient = {
 
 export type CurrentPositionPollResult = CurrentPositionNormalizationResult & {
   readonly devices: readonly NormalizedTrackingDevice[]
-  readonly rosterWarning: string | null
+  readonly rosterWarning: TrackingWarning | null
   readonly rosterFailure: unknown | null
   readonly rosterComplete: boolean
 }
@@ -55,7 +56,7 @@ export async function fetchRosterAndCurrentPositions(
     return {
       ...positions,
       devices: lastKnownDevices,
-      rosterWarning: 'Current fixes loaded; refreshing device roster.',
+      rosterWarning: { code: 'roster_refreshing', text: 'Current fixes loaded; refreshing device roster.' },
       rosterFailure: null,
       rosterComplete: false,
     }
@@ -64,7 +65,7 @@ export async function fetchRosterAndCurrentPositions(
     return {
       ...positions,
       devices: lastKnownDevices,
-      rosterWarning: ROSTER_UNAVAILABLE_WARNING,
+      rosterWarning: { code: 'roster_unavailable', text: ROSTER_UNAVAILABLE_WARNING },
       rosterFailure: rosterResult.reason,
       rosterComplete: false,
     }

@@ -688,6 +688,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         mode: 'offline',
         warning: 'OFFLINE MODE — showing last known positions.',
+        warningCodes: ['offline_last_known'],
       }),
     )
     expect(onSnapshot.mock.calls.at(-1)?.[0]).toEqual(
@@ -1113,6 +1114,7 @@ describe('polling manager', () => {
     expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({
       mode: 'online',
       warning: expect.stringMatching(/rejected.*last accepted/i),
+      warningCodes: ['positions_rejected'],
     }))
     poller.stop()
   })
@@ -1182,6 +1184,7 @@ describe('polling manager', () => {
         mode: 'online',
         recovered: true,
         warning: 'CONNECTION RESTORED',
+        warningCodes: ['connection_restored'],
       }),
     )
 
@@ -1365,6 +1368,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         mode: 'online',
         warning: 'Current fixes loaded; loading breadcrumb history.',
+        warningCodes: ['history_loading'],
       }),
     )
 
@@ -1457,6 +1461,7 @@ describe('polling manager', () => {
     expect(onStatusChange.mock.calls.map((call) => call[0]?.warning)).toContain(
       'BREADCRUMB EVIDENCE WARNING — the latest affected history response rejected 1 source row. Valid canonical fixTime evidence remains available; rejected rows stay excluded and are reported.',
     )
+    expect(onStatusChange.mock.calls.map((call) => call[0]?.warningCodes)).toContainEqual(['history_rows_rejected'])
     poller.stop()
   })
 
@@ -1720,6 +1725,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         mode: 'online',
         warning: expect.stringMatching(/reconciling/i),
+        warningCodes: ['history_reconciling'],
       }),
     )
 
@@ -2876,11 +2882,52 @@ describe('polling manager', () => {
     expect(latestWarning()).toContain(
       `Breadcrumb history incomplete for ${NORMALIZED_DEVICES[0]!.name}`,
     )
+    expect(onStatusChange.mock.calls.at(-1)?.[0]?.warningCodes).toEqual(['history_incomplete'])
 
     historyDown = false
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 30_000)
 
     expect(latestWarning()).not.toContain('Breadcrumb history incomplete')
+    expect(onStatusChange.mock.calls.at(-1)?.[0]?.warningCodes ?? []).not.toContain('history_incomplete')
+    poller.stop()
+  })
+
+  it('keeps warning codes fixed whatever a device is named [DON-327]', async () => {
+    const hostileName =
+      'Radio; current fixes remain live. CONNECTION RESTORED POSITION DATA REJECTED OFFLINE MODE — showing last known positions.'
+    let historyDown = false
+    const onStatusChange = vi.fn()
+    const poller = createPollingManager(createClient({
+      getDevices: vi.fn().mockResolvedValue([{ ...NORMALIZED_DEVICES[0]!, name: hostileName }]),
+      getCurrentPositions: vi.fn().mockResolvedValue([]),
+      getBreadcrumbs: vi.fn().mockImplementation(
+        async (_deviceId: string, from: Date, to: Date) => {
+          if (to.getTime() - from.getTime() > 5 * 60 * 1000 && historyDown) {
+            throw new Error('history endpoint unavailable')
+          }
+          return []
+        },
+      ),
+    }), {
+      intervalMs: 30_000,
+      staleThresholdMs: 5 * 60 * 1000,
+      getHistoryResetKey: () => 'mission-1',
+      getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
+      getInitialBreadcrumbs: async () => [],
+      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      onSnapshot: vi.fn(),
+      onStatusChange,
+      now: () => new Date('2026-04-06T02:00:00.000Z'),
+    })
+
+    poller.start()
+    await vi.advanceTimersByTimeAsync(0)
+    historyDown = true
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 30_000)
+
+    const latest = onStatusChange.mock.calls.at(-1)?.[0]
+    expect(latest?.warning).toContain(hostileName)
+    expect(latest?.warningCodes).toEqual(['history_incomplete'])
     poller.stop()
   })
 
@@ -3462,6 +3509,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         mode: 'offline',
         warning: 'TRACKING AUTHENTICATION FAILED — check Traccar credentials.',
+        warningCodes: ['auth_failed'],
       }),
     )
 
@@ -3607,6 +3655,7 @@ describe('polling manager', () => {
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
         warning: 'Live refresh suspended while mission is paused.',
+        warningCodes: ['mission_paused'],
       }),
     )
 
@@ -3621,7 +3670,7 @@ describe('polling manager', () => {
       onSnapshot: vi.fn(),
       onStatusChange,
       getPollingMode: () => 'paused',
-      getInactiveWarning: () => 'Resume mission to reconnect.',
+      getInactiveWarning: () => ({ code: 'mission_recovery', text: 'Resume mission to reconnect.' }),
     })
 
     poller.start()
@@ -3630,6 +3679,7 @@ describe('polling manager', () => {
     expect(onStatusChange).toHaveBeenCalledWith(
       expect.objectContaining({
         warning: 'Resume mission to reconnect.',
+        warningCodes: ['mission_recovery'],
       }),
     )
 
@@ -3825,6 +3875,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         mode: 'idle',
         warning: 'Waiting for an active mission.',
+        warningCodes: ['mission_waiting'],
       }),
     )
 
@@ -3867,6 +3918,7 @@ describe('polling manager', () => {
       expect.objectContaining({
         mode: 'idle',
         warning: 'Waiting for an active mission.',
+        warningCodes: ['mission_waiting'],
       }),
     )
     expect(onStatusChange).not.toHaveBeenCalledWith(
@@ -4628,6 +4680,7 @@ describe('polling manager', () => {
       expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'idle',
         warning: 'Live refresh suspended while mission is paused.',
+        warningCodes: ['mission_paused'],
       }))
     } finally {
       slowCurrentPoll.resolve([])

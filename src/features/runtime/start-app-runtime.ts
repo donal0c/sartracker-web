@@ -385,7 +385,7 @@ export async function startAppRuntime(
           },
           getInactiveWarning: () =>
             useMissionStore.getState().phase === 'recovery'
-              ? RECOVERY_TRACKING_WARNING
+              ? { code: 'mission_recovery', text: RECOVERY_TRACKING_WARNING }
               : null,
           getHistoryResetKey: () => useMissionStore.getState().currentMission?.id ?? null,
           ...(rejectionEvidenceDelivery === null

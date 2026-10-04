@@ -1,4 +1,6 @@
-export type TrackingDeviceStatus = 'online' | 'offline' | 'unknown'
+import type { TrackingWarningCode } from './tracking-warnings'
+
+export type TrackingDeviceStatus ='online' | 'offline' | 'unknown'
 
 export type TrackingDataOrigin = 'live' | 'cache'
 
@@ -78,6 +80,8 @@ export type TrackingConnectionStatus = {
   readonly recovered: boolean
   readonly lastSuccessAt: string | null
   readonly warning: string | null
+  /** Problem codes for `warning`, assigned where each warning is built; a warning without codes is reported as unclassified [DON-327]. */
+  readonly warningCodes?: readonly TrackingWarningCode[]
   readonly savedHistoryTransfer?: {
     readonly missionId: string
     readonly state: 'loading' | 'complete' | 'failed'

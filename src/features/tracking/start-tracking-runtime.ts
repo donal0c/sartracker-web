@@ -57,6 +57,7 @@ import {
   filterCanonicalFixTimeEvidenceSnapshot,
 } from './canonical-fix-time-evidence'
 import { describeTrackingWarningForDiagnostics } from './tracking-status-diagnostics'
+import { appendTrackingWarnings } from './tracking-warnings'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -472,6 +473,7 @@ export async function startTrackingRuntime(
       recovered: false,
       lastSuccessAt: null,
       warning: dependencies.idleWarning ?? 'Tracking is not configured.',
+      warningCodes: ['tracking_not_configured'],
     })
 
     return async () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
@@ -1056,7 +1058,7 @@ export async function startTrackingRuntime(
       // shrinking device list during catch-up is one problem and no names
       // reach the report [DON-321]. A long outage is recorded at 1, 2, 4, 8…
       // failures rather than on every retry.
-      const warning = describeTrackingWarningForDiagnostics(status.warning)
+      const warning = describeTrackingWarningForDiagnostics(status)
       const fields = {
         mode: status.mode,
         consecutiveFailures: status.consecutiveFailures,
@@ -1297,6 +1299,7 @@ export async function startTrackingRuntime(
       lastSuccessAt: latestTrackingStatus?.lastSuccessAt ?? null,
       warning: nextClient === null ? (next.idleWarning ?? 'Tracking is not configured.')
         : 'Reconnecting tracking — retained positions are last known until a fresh response arrives.',
+      warningCodes: [nextClient === null ? 'tracking_not_configured' : 'tracking_reconnecting'],
     }
     dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
     try {
@@ -1309,7 +1312,8 @@ export async function startTrackingRuntime(
     } catch (error) {
       cacheReadActive = false
       latestTrackingStatus = { ...latestTrackingStatus, mode: 'offline', consecutiveFailures: 1,
-        warning: 'Tracking could not reconnect. Retry Reconnect and check the provider settings.' }
+        warning: 'Tracking could not reconnect. Retry Reconnect and check the provider settings.',
+        warningCodes: ['tracking_reconnect_failed'] }
       dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
       throw error
     }
@@ -1773,30 +1777,43 @@ export async function startTrackingRuntime(
   function decorateTrackingStatus(
     status: TrackingConnectionStatus,
   ): TrackingConnectionStatus {
-    const warnings = [
-      status.warning,
+    const scopeWarning = participantScopeWarning()
+    const combined = appendTrackingWarnings(
+      status,
       retirementFailures.size === 0 ? null
-        : 'TRACKING REPLACEMENT EVIDENCE UNSETTLED — current polling may continue, but previous evidence custody has not completed. Check diagnostics.',
+        : {
+            code: 'evidence_custody_unsettled',
+            text: 'TRACKING REPLACEMENT EVIDENCE UNSETTLED — current polling may continue, but previous evidence custody has not completed. Check diagnostics.',
+          },
       droppedPersistedBreadcrumbCount > 0
-        ? formatDroppedPersistedBreadcrumbWarning(
-            droppedPersistedBreadcrumbCount,
-          )
+        ? {
+            code: 'persisted_breadcrumbs_dropped',
+            text: formatDroppedPersistedBreadcrumbWarning(droppedPersistedBreadcrumbCount),
+          }
         : null,
       trackingCacheWarningActive
-        ? 'TRACKING FALLBACK CACHE UPDATE FAILED — live fixes remain visible, but the last-known tracking view may be unavailable after restart while Traccar is offline.'
+        ? {
+            code: 'cache_update_failed',
+            text: 'TRACKING FALLBACK CACHE UPDATE FAILED — live fixes remain visible, but the last-known tracking view may be unavailable after restart while Traccar is offline.',
+          }
         : null,
-      trackingCacheMissionWarningActive ? TRACKING_CACHE_MISSION_WARNING : null,
+      trackingCacheMissionWarningActive
+        ? { code: 'cache_mission_mismatch', text: TRACKING_CACHE_MISSION_WARNING } : null,
       trackingCacheReadWarningActive
-        ? 'Tracking cache could not be read; waiting for fresh current positions.' : null,
-      cachedOperationalDataWarning,
+        ? { code: 'cache_unreadable', text: 'Tracking cache could not be read; waiting for fresh current positions.' } : null,
+      cachedOperationalDataWarning === null ? null
+        : { code: 'cached_operational_data', text: cachedOperationalDataWarning },
       missionPersistenceWarningActive
-        ? 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.'
+        ? {
+            code: 'mission_storage_failed',
+            text: 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.',
+          }
         : null,
-      participantScopeWarning(),
-    ].filter((warning): warning is string => warning !== null)
+      scopeWarning === null ? null : { code: 'participant_scope', text: scopeWarning },
+    )
     return {
       ...status,
-      warning: warnings.length === 0 ? null : warnings.join(' '),
+      ...combined,
       ...(breadcrumbTransferProgress === null ? {} : { savedHistoryTransfer: breadcrumbTransferProgress }),
     }
   }
