@@ -5,6 +5,7 @@ import {
   type CurrentPositionIngestHealthSummary,
 } from './ingest-health'
 import type { DeviceStationaryAttention } from './stationary-attention-store'
+import { selectNewestKnownFixes } from './newest-known-fix'
 import { formatOperatorLocalTimestamp } from './operator-time'
 
 export type DeviceWorkspaceRow = {
@@ -57,7 +58,10 @@ export function buildDeviceWorkspaceRows(
   connectionMode: TrackingConnectionStatus['mode'] = 'online',
 ): readonly DeviceWorkspaceRow[] {
   const latestPositionByDevice = new Map(
-    snapshot.positions.map((position) => [position.device_id, position] as const),
+    // Same newest-known-fix choice as the map marker, so list and marker never disagree.
+    selectNewestKnownFixes(snapshot.positions, snapshot.breadcrumbs).map(
+      (position) => [position.device_id, position] as const,
+    ),
   )
   const unconfirmedCurrentDeviceIds = new Set(snapshot.unconfirmedCurrentDeviceIds)
 

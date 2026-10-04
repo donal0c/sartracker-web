@@ -6,6 +6,7 @@ import {
   filterDeviceWorkspaceRows,
   resolveVisibleDeviceSelection,
 } from '../../src/features/tracking/device-workspace-model'
+import { formatOperatorLocalTimestamp } from '../../src/features/tracking/operator-time'
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 
 const SNAPSHOT: TrackingSnapshot = {
@@ -202,5 +203,40 @@ describe('device workspace model', () => {
     expect(resolveVisibleDeviceSelection(hiddenRows, 'alpha')).toBe('bravo')
     expect(resolveVisibleDeviceSelection(hiddenRows, 'bravo')).toBe('bravo')
     expect(resolveVisibleDeviceSelection(noFixRows, 'alpha')).toBeNull()
+  })
+})
+
+describe('buildDeviceWorkspaceRows newest known fix [DON-328]', () => {
+  it('shows the newer breadcrumb location and time while keeping position-derived stale and cache flags', () => {
+    const base = SNAPSHOT.positions[1]!
+    const snapshot: TrackingSnapshot = {
+      ...SNAPSHOT,
+      breadcrumbs: [
+        {
+          ...base,
+          id: 'crumb-newer',
+          lat: 52.5,
+          lon: -9.9,
+          timestamp: '2026-04-10T16:45:00.000Z',
+          data_origin: 'live',
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        },
+      ],
+    }
+
+    const bravo = buildDeviceWorkspaceRows(snapshot, []).find((row) => row.deviceId === 'bravo')!
+
+    expect(bravo.latitude).toBe(52.5)
+    expect(bravo.longitude).toBe(-9.9)
+    expect(bravo.fixTimeDisplay).toBe(formatOperatorLocalTimestamp('2026-04-10T16:45:00.000Z'))
+    expect(bravo.stale).toBe(true)
+    expect(bravo.dataOrigin).toBe('cache')
+    expect(bravo.sourceDisplay).toBe('Stale')
+  })
+
+  it('keeps the current position when no breadcrumb is newer', () => {
+    const alpha = buildDeviceWorkspaceRows(SNAPSHOT, []).find((row) => row.deviceId === 'alpha')!
+    expect(alpha.latitude).toBe(52)
   })
 })
