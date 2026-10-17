@@ -18,7 +18,8 @@ exact artifact with that known issue; this is not operational acceptance.
    automatic refreshes; quiet full-profile renderer/claim recovery PASS. Fixed
    soak still FAILS 2 GiB / 200 ms budgets (2,217,132,032 bytes; 226 ms), while
    all 691,224 fixes match exactly and integrity is `ok`. Keep DON-312/313 open;
-   exact-commit Linux CI and Linux budget evidence are owed. See
+   Linux CI PASS on 3caaae49 (run39021107552); installed Linux budget evidence
+   remains owed. This documentation-only closeout reuses that tested ancestor. See
    [local report](../handoff/archive/2026-10-17-don325-don329-local-validation.md).
    The renderer-side 256-position write splitting and yielding are already in
    beta.13.6; a worker-thread rewrite is not the agreed default.

@@ -29,7 +29,9 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    and separate full-profile quiet coverage recovery PASS. See
    [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
    Implementation da069fe6 is in [draft PR #56](https://github.com/donal0c/sartracker-web/pull/56).
-   Its Checks tab owns current exact-head Linux CI results. DON-325/329 are
+   Linux CI [39021107552](https://github.com/donal0c/sartracker-web/actions/runs/39021107552)
+   PASS on 3caaae49: 6,621 correctness / 253 Chromium tests and packaged checks.
+   This later handoff update changes docs only and reuses that proof. DON-325/329 are
    In Review; next is PR review and installed Ubuntu qualification when available.
    No merge or release qualification.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS

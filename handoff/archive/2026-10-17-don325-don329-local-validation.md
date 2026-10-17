@@ -202,3 +202,32 @@ store/worker rewrite was performed. After local validation, implementation commi
 is the authoritative current exact-head Linux CI record; those results are
 separate from this local evidence. Installed Ubuntu checks remain owed.
 DON-325/329 are In Review; DON-312/313 remain open.
+
+## Linux CI closeout
+
+[Run 39021107552](https://github.com/donal0c/sartracker-web/actions/runs/39021107552)
+completed successfully on exact source `3caaae49292a98bc3f1370be09cbf39da88b46c6`,
+tree `982906aa1f1ec890de9553f802e2cfab64c60fae`. All four jobs passed.
+The correctness log records 629 suites, 6,621 tests passed and 10 skipped;
+full Chromium records 253 passed and 9 skipped with fail-on-flaky enabled.
+Targeted browser, property/mutation, lint/build and packaged checks also passed.
+The earlier run39021059271 was superseded by the documentation push; its
+cancellation-related final gate failure is not a product failure or rerun flake.
+
+Package source binding was clean. AppImage SHA-256 is
+`2afabbbe172ec4bdb2ea37dbdb60609193000ae17635044d46ef3874316c3fc0`;
+Debian package SHA-256 is
+`ce7693420394ee22911702ce04b7dbdaa876ba7e0db79c9bb87360ed72f74ab7`.
+AppImage, Debian and unpacked app share ASAR SHA-256
+`993b1979467275b0b4ee5d719c7d1c5353188707263c21c884bee0b8c106857d`.
+Downloaded source/package/native receipts and job logs were inspected, as was
+the rendered AppImage capture. Native coverage passed 24 real preload calls,
+live-write snapshot/claim fencing, physical-exit cancellation and exit 0 without
+forced cleanup. AppImage graceful window close passed.
+
+The 19 candidate producer checks completed but explicitly report
+`qualificationExecuted:false` and `releaseEligible:false`. Strict responsiveness,
+long soak, installed Ubuntu and operational acceptance remain separate and owed;
+the Mac performance failures above remain open. Local CI evidence is under
+`tmp/don325-linux-ci/`. This documentation-only closeout reuses the tested
+ancestor after confirming executable inputs are unchanged, per the testing cadence.
