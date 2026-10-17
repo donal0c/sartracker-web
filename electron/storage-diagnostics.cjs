@@ -57,6 +57,8 @@ function createStorageDiagnostics(options) {
     recordTrackingBatch,
     recordInsertedPositions,
     recordEventLoopSummary,
+    recordBackupTemporaryCleanup,
+    recordBackupShutdownTimeout,
     readSupportSnapshot,
     statePath,
   }
@@ -363,6 +365,28 @@ function createStorageDiagnostics(options) {
       event: 'storage_main_event_loop_summary',
       fields: summary,
     })
+  }
+
+  /** Records identity-free removed/preserved counts and incomplete startup sweeps. */
+  async function recordBackupTemporaryCleanup(input) {
+    await appendDurable({
+      level: input.failedFileCount > 0 || input.preservedSetCount > 0 || input.skippedRoot || input.sweepFailed ? 'warn' : 'info',
+      event: 'storage_backup_temporary_cleanup',
+      fields: {
+        removedFileCount: nonNegativeInteger(input.removedFileCount),
+        removedBytes: nonNegativeInteger(input.removedBytes),
+        preservedSetCount: nonNegativeInteger(input.preservedSetCount),
+        failedFileCount: nonNegativeInteger(input.failedFileCount),
+        skippedRoot: input.skippedRoot === true,
+        sweepFailed: input.sweepFailed === true,
+      },
+    })
+  }
+
+  /** Records the bounded quit refusal; the admitted backup continues to completion. */
+  async function recordBackupShutdownTimeout(input) {
+    await appendDurable({ level: 'error', event: 'storage_backup_shutdown_wait_timed_out',
+      fields: { pendingBackupCount: nonNegativeInteger(input.pendingBackupCount) } })
   }
 
   /** Returns a fresh safe snapshot for support bundle export. */

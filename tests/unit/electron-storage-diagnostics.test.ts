@@ -111,6 +111,15 @@ type StorageDiagnostics = {
     readonly positionTelemetryEventCount: number
   }) => Promise<void>
   readonly readSupportSnapshot: () => Promise<StorageDiagnosticsSnapshot>
+  readonly recordBackupTemporaryCleanup: (input: {
+    readonly removedFileCount: number
+    readonly removedBytes: number
+    readonly preservedSetCount: number
+    readonly failedFileCount: number
+    readonly skippedRoot: boolean
+    readonly sweepFailed?: boolean
+  }) => Promise<void>
+  readonly recordBackupShutdownTimeout: (input: { readonly pendingBackupCount: number }) => Promise<void>
 }
 
 describe('Electron storage diagnostics [DON-244]', () => {
@@ -122,6 +131,33 @@ describe('Electron storage diagnostics [DON-244]', () => {
       await rm(userDataPath, { recursive: true, force: true })
       userDataPath = null
     }
+  })
+
+  it('records cleanup counts and bounded shutdown refusal without operational identity [DON-329]', async () => {
+    const harness = await createHarness()
+    await harness.diagnostics.recordBackupTemporaryCleanup({
+      removedFileCount: 3, removedBytes: 600_000, preservedSetCount: 1,
+      failedFileCount: 0, skippedRoot: false,
+    })
+    await harness.diagnostics.recordBackupShutdownTimeout({ pendingBackupCount: 2 })
+    expect(harness.entries).toEqual([
+      { level: 'warn', event: 'storage_backup_temporary_cleanup', fields: {
+        removedFileCount: 3, removedBytes: 600_000, preservedSetCount: 1,
+        failedFileCount: 0, skippedRoot: false, sweepFailed: false,
+      } },
+      { level: 'error', event: 'storage_backup_shutdown_wait_timed_out', fields: { pendingBackupCount: 2 } },
+    ])
+    expect(JSON.stringify(harness.entries)).not.toContain(userDataPath)
+  })
+
+  it('retains a durable warning when a cleanup scan could not finish [DON-329]', async () => {
+    const harness = await createHarness()
+    await harness.diagnostics.recordBackupTemporaryCleanup({
+      removedFileCount: 0, removedBytes: 0, preservedSetCount: 0,
+      failedFileCount: 0, skippedRoot: false, sweepFailed: true,
+    })
+    expect(harness.entries).toEqual([expect.objectContaining({ level: 'warn',
+      fields: expect.objectContaining({ sweepFailed: true }) })])
   })
 
   it('rejects a non-regular checkpoint before a read can wait on a FIFO', async () => {

@@ -2,6 +2,47 @@ import { expect, test, type Page } from '@playwright/test'
 import { seedCoverageMission } from './helpers/coverage-test-setup'
 
 test.describe('complete mission-history coverage [DON-275]', () => {
+  test('coalesces new saved fixes and verifies Complete after ingest goes quiet [DON-325]', async ({ page }, testInfo) => {
+    await page.clock.install()
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await seedCoverageMission(page)
+    const panel = page.getByTestId('coverage-status-panel')
+    await expect(panel).toContainText('All mission history shown')
+    await page.evaluate(async () => {
+      const [{ getBrowserHarnessStore }, { useCoverageStore }] = await Promise.all([
+        import('/src/features/browser-validation/browser-harness-store.ts'),
+        import('/src/features/tracking/coverage-store.ts'),
+      ])
+      const store = getBrowserHarnessStore()
+      const { controller, state } = useCoverageStore.getState()
+      if (controller === null || state.status !== 'complete') throw new Error('Expected attested initial coverage.')
+      const original = store.readCoverageManifest
+      sessionStorage.setItem('don325-manifest-reads', '0')
+      Object.defineProperty(store, 'readCoverageManifest', { configurable: true, value: async (missionId: string) => {
+        sessionStorage.setItem('don325-manifest-reads', String(Number(sessionStorage.getItem('don325-manifest-reads')) + 1))
+        return original(missionId)
+      } })
+      for (let index = 1; index <= 20; index += 1) {
+        await store.addPositionsBulk({ mission_id: state.missionId, positions: [{
+          source_position_id: `don325-new-${index}`, device_id: 'alpha',
+          lat: 52.011 + index * 0.0001, lon: -9.741,
+          timestamp: new Date(Date.now() + index * 1000).toISOString(), timestamp_source: 'fix',
+        }] })
+        await controller.notifyChanged(state.missionId, state.changeSeq + index)
+      }
+    })
+    await expect(page.getByTestId('coverage-partial')).toBeVisible()
+    await expect(panel).not.toContainText('All mission history shown')
+    expect(await page.evaluate(() => sessionStorage.getItem('don325-manifest-reads'))).toBe('0')
+    await panel.screenshot({ path: testInfo.outputPath('coverage-background-partial.png') })
+
+    await page.clock.fastForward(30_001)
+
+    await expect(panel).toContainText('All mission history shown')
+    expect(await page.evaluate(() => sessionStorage.getItem('don325-manifest-reads'))).toBe('2')
+    await panel.screenshot({ path: testInfo.outputPath('coverage-background-complete.png') })
+  })
+
   test('a moving coverage revision stays partial and recovers with Retry [DON-254]', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await seedCoverageMission(page)

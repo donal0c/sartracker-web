@@ -289,6 +289,7 @@ async function safeFileSize(filePath) {
 module.exports = {
   BACKUP_STAGES,
   STATE_FILE_NAME,
+  TEMPORARY_BACKUP_PATTERN,
   createEmptyMissionState,
   createEmptyState,
   duration,

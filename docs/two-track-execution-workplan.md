@@ -1,6 +1,6 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-10-04. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
+Updated 2026-10-17. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
 
 ## 13.6 published 2 Oct 2026
 
@@ -12,9 +12,15 @@ exact artifact with that known issue; this is not operational acceptance.
 
 ## Next candidate — beta.13.7
 
-1. **DON-312/313:** run the planned A/B normal-profile soak with coverage off,
-   then use the measurements to set the smallest justified follow-up. The
-   renderer-side 256-position write splitting and yielding are already in
+1. **DON-312/313:** local macOS A/B completed 17 Oct on unchanged source, actual
+   32-device normal profile. Coverage materially contributed to memory/stalls.
+   **DON-325 implemented locally:** typed expected-stale results and bounded
+   automatic refreshes; quiet full-profile renderer/claim recovery PASS. Fixed
+   soak still FAILS 2 GiB / 200 ms budgets (2,217,132,032 bytes; 226 ms), while
+   all 691,224 fixes match exactly and integrity is `ok`. Keep DON-312/313 open;
+   exact-commit Linux CI and Linux budget evidence are owed. See
+   [local report](../handoff/archive/2026-10-17-don325-don329-local-validation.md).
+   The renderer-side 256-position write splitting and yielding are already in
    beta.13.6; a worker-thread rewrite is not the agreed default.
 2. **[DON-330](https://linear.app/donal-oc/issue/DON-330/refresh-traccar-group-choices-so-newly-added-teams-appear-without) (High):** refresh Traccar group/device choices at mission setup and Add group
    so newly added outside teams appear without restarting. Seán reported this
@@ -38,6 +44,11 @@ exact artifact with that known issue; this is not operational acceptance.
 6. Recheck the coordinated smoke gaps DON-299 and DON-315/316/317, plus
    DON-325/326/327/329 and the PCLinuxOS setup in DON-298, against the exact
    13.7 scope. Do not make them release gates from age or title alone.
+   **DON-329 implemented locally (17 Oct):** synchronous backup admission fence,
+   bounded shutdown join through audit/completion, close guard and safe bounded
+   startup temp cleanup. Both packaged Mac quits during active copies PASS;
+   held real-SQLite tests cover timeout/refusal and retry. Linux proof remains
+   separate. DON-325/329 await coordinated PR/CI review, not regression closure.
 7. Use **DON-290** and the checklist above for the exact CI-built candidate.
 
 **Separate field acceptance:** DON-247 remains urgent/in progress for the

@@ -3,6 +3,8 @@ import type {
   CoverageClaim,
   CoverageManifest,
   CoverageManifestChunk,
+  CoverageReadResult,
+  CoverageStaleResult,
   CoverageTileCatalog,
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
@@ -22,6 +24,7 @@ import type {
 } from './coverage-tile-protocol'
 
 export const COVERAGE_CHUNK_PAGE_LIMIT = 10_000
+const AUTOMATIC_REFRESH_COOLDOWN_MS = 30_000
 const AUTOMATIC_RENDERER_RETRY_DELAY_MS = 250
 
 export type CoverageDelivery = Readonly<Record<string, number>>
@@ -40,6 +43,7 @@ export type CoverageState =
       readonly deliveredFixCount: number
       readonly totalFixCount: number
       readonly lastErrorClass?: CoverageErrorClass | null
+      readonly retryableStaleCount?: number
       readonly blockers?: readonly string[]
       readonly updatedAt?: string
       readonly message?: string
@@ -63,7 +67,7 @@ type CoverageChunkPayload = {
 
 export type CoverageController = {
   readonly updateContext: (context: CoverageContext) => Promise<void>
-  readonly refresh: () => Promise<void>
+  readonly refresh: (options?: { readonly automatic: boolean }) => Promise<void>
   readonly notifyChanged: (missionId: string, changeSeq: number) => Promise<void>
   readonly notifyCatalogApplied: (
     catalog: CoverageTileCatalog,
@@ -93,11 +97,12 @@ export type CoverageRendererActivation = {
  * SQLite build metadata. It never treats a built row as rendered geometry.
  */
 export function createCoverageController(input: {
+  readonly monotonicNow?: () => number
   readonly readManifest: (
     missionId: string,
     requestId: string,
     signal: AbortSignal,
-  ) => Promise<CoverageManifest>
+  ) => Promise<CoverageReadResult<CoverageManifest>>
   readonly readChunk: (
     query: {
       readonly missionId: string
@@ -126,12 +131,13 @@ export function createCoverageController(input: {
     readonly chunks: readonly CoverageManifestChunk[]
     readonly requestId: string
     readonly signal: AbortSignal
-  }) => Promise<CoverageTileCatalog>
+  }) => Promise<CoverageReadResult<CoverageTileCatalog>>
   readonly activateCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
   readonly finalizeCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
   readonly discardCatalog?: (catalog: CoverageTileCatalog) => Promise<void>
   readonly publish: (state: CoverageState) => void
 }): CoverageController {
+  const monotonicNow = input.monotonicNow ?? (() => performance.now())
   let state: CoverageState = { status: 'inactive' }
   let context: NormalizedCoverageContext = normalizeContext({
     missionId: null,
@@ -144,6 +150,10 @@ export function createCoverageController(input: {
   let requestSequence = 0
   let activeController: AbortController | null = null
   let refreshRequested = false
+  let automaticRefreshRequested = false
+  let automaticRefreshTimer: ReturnType<typeof globalThis.setTimeout> | null = null
+  let lastLoadFinishedAtMs = Number.NEGATIVE_INFINITY
+  let retryableStaleCount = 0
   let lastErrorClass: CoverageErrorClass | null = null
   let finalizedCatalog: CoverageTileCatalog | null = null
   let finalizedRendererFailureSources: readonly CoverageRendererFailureSource[] = []
@@ -174,6 +184,7 @@ export function createCoverageController(input: {
   const publish = (next: CoverageState): void => {
     if (next.status === 'inactive') {
       lastErrorClass = null
+      retryableStaleCount = 0
       state = next
     } else {
       if (next.lastErrorClass !== undefined && next.lastErrorClass !== null) {
@@ -185,16 +196,56 @@ export function createCoverageController(input: {
       const filterPending = appliedSelectionKeySet !== expectedSelectionKeySet(next.manifest, context)
       if (filterPending) blockers.add('renderer_filter_pending')
       else blockers.delete('renderer_filter_pending')
+      const priorObservedSequence = state.status !== 'inactive' &&
+        state.missionId === next.missionId && state.rendererGeneration === next.rendererGeneration
+        ? state.latestObservedChangeSeq
+        : 0
+      const latestObservedChangeSeq = Math.max(next.latestObservedChangeSeq, priorObservedSequence)
       state = {
         ...next,
-        status: (rendererDetached || filterPending) && next.status === 'complete'
+        latestObservedChangeSeq,
+        status: (rendererDetached || filterPending || next.changeSeq < latestObservedChangeSeq) &&
+          next.status === 'complete'
           ? 'partial'
           : next.status,
         blockers: [...blockers],
         lastErrorClass,
+        retryableStaleCount,
       }
     }
     input.publish(state)
+  }
+
+  /** Drops background work when an operator action or ownership boundary supersedes it. */
+  const clearAutomaticRefresh = (): void => {
+    if (automaticRefreshTimer !== null) globalThis.clearTimeout(automaticRefreshTimer)
+    automaticRefreshTimer = null
+    automaticRefreshRequested = false
+  }
+
+  /** Leaves a full quiet interval after each completed load, including slow or stale reads. */
+  const scheduleAutomaticRefresh = (): void => {
+    if (!automaticRefreshRequested || automaticRefreshTimer !== null ||
+      activeController !== null || stopped || context.missionId === null) return
+    const delay = Math.max(0, lastLoadFinishedAtMs + AUTOMATIC_REFRESH_COOLDOWN_MS - monotonicNow())
+    automaticRefreshTimer = globalThis.setTimeout(() => {
+      automaticRefreshTimer = null
+      if (!automaticRefreshRequested || stopped || context.missionId === null) return
+      automaticRefreshRequested = false
+      void runLoad(true)
+    }, delay)
+  }
+
+  /** Retains prior geometry as Partial; an observed sequence is never delivery proof. */
+  const publishStaleResult = (result?: CoverageStaleResult): void => {
+    if (state.status === 'inactive') return
+    retryableStaleCount = Math.min(Number.MAX_SAFE_INTEGER, retryableStaleCount + 1)
+    automaticRefreshRequested = true
+    publish({
+      ...withFinalizedCatalog(asPartialState(state), finalizedCatalog),
+      latestObservedChangeSeq: Math.max(state.latestObservedChangeSeq, result?.changeSeq ?? 0),
+      lastErrorClass: 'chunk_stale',
+    })
   }
 
   /** Completes controller teardown after any irreversible handoff has settled. */
@@ -204,6 +255,7 @@ export function createCoverageController(input: {
     activeController = null
     operationGeneration += 1
     refreshRequested = false
+    clearAutomaticRefresh()
     cancelRequested = false
     finalizedCatalog = null
     finalizedRendererFailureSources = []
@@ -236,6 +288,7 @@ export function createCoverageController(input: {
     bypassOpenOutingCooldown = false,
   ): Promise<void> => {
     if (stopped || context.missionId === null) return
+    clearAutomaticRefresh()
     rendererFailureDuringFinalization = null
     rendererDetachedCompleteCatalog = null
     activeController?.abort()
@@ -269,12 +322,17 @@ export function createCoverageController(input: {
     try {
       await releasePendingCatalogPredecessor()
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
-      const manifest = await input.readManifest(
+      const manifestResult = await input.readManifest(
         missionId,
         nextRequestId('manifest'),
         controller.signal,
       )
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+      if (isCoverageStaleResult(manifestResult)) {
+        publishStaleResult(manifestResult)
+        return
+      }
+      const manifest = manifestResult
       const selected = selectChunks(manifest, context)
       const delivered = retainUnchangedDeliveries(
         priorManifest,
@@ -319,6 +377,11 @@ export function createCoverageController(input: {
             requestId: nextRequestId('catalog'),
             signal: controller.signal,
           })
+          if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+          if (isCoverageStaleResult(deliveredCatalog)) {
+            publishStaleResult(deliveredCatalog)
+            return
+          }
           activeCatalog = {
             ...deliveredCatalog,
             requiresFreshRendererSources: recoveryEpochAtLoad !== null,
@@ -368,12 +431,17 @@ export function createCoverageController(input: {
           rendererRecoverySupersededFailureKeys = null
           automaticRendererRecoveryAvailable = true
         }
-        activeManifest = await input.readManifest(
+        const refreshedManifest = await input.readManifest(
           missionId,
           nextRequestId('manifest'),
           controller.signal,
         )
         if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+        if (isCoverageStaleResult(refreshedManifest)) {
+          publishStaleResult(refreshedManifest)
+          return
+        }
+        activeManifest = refreshedManifest
         activeSelected = selectChunks(activeManifest, context)
       } else {
         for (const descriptor of scheduler.order(
@@ -440,6 +508,7 @@ export function createCoverageController(input: {
         !refreshRequested &&
         claim.changeSeq === finalSequence &&
         claimCoversSelection(claim.chunkRevisions, activeSelected, delivered)
+      if (complete) automaticRefreshRequested = false
       publish(createActiveState({
         status: deferredRendererFailure !== null
           ? 'error'
@@ -467,11 +536,9 @@ export function createCoverageController(input: {
         return
       }
       if (classifyCoverageError(error) === 'chunk_stale') {
-        // A newer revision is normal during tracking. Keep existing coverage
-        // partial; the next change notification or explicit Retry resumes it.
-        publish({ ...withFinalizedCatalog(asPartialState(state), finalizedCatalog),
-          lastErrorClass: 'chunk_stale',
-        })
+        // Older adapters may still reject expected races. Keep their safe
+        // Partial behavior and use the same bounded automatic retry.
+        publishStaleResult()
         return
       }
       publish({
@@ -485,15 +552,19 @@ export function createCoverageController(input: {
         settleStoppedState()
       } else if (activeController === controller) {
         activeController = null
+        lastLoadFinishedAtMs = monotonicNow()
         if (cancelRequested) {
           cancelRequested = false
           refreshRequested = false
+          clearAutomaticRefresh()
           if (state.status !== 'inactive') {
             publish(withFinalizedCatalog(asPartialState(state), finalizedCatalog))
           }
         } else if (refreshRequested && !stopped && context.missionId !== null) {
           refreshRequested = false
           void runLoad(true)
+        } else {
+          scheduleAutomaticRefresh()
         }
       }
       resolveLoadCompletion()
@@ -502,6 +573,7 @@ export function createCoverageController(input: {
   }
 
   const requestRefresh = async (): Promise<void> => {
+    clearAutomaticRefresh()
     if (activeController !== null) {
       refreshRequested = true
       return
@@ -553,6 +625,7 @@ export function createCoverageController(input: {
 
   const publishRendererUnavailable = (message: string): void => {
     if (state.status === 'inactive') return
+    clearAutomaticRefresh()
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     const error = new Error(message)
@@ -791,6 +864,9 @@ export function createCoverageController(input: {
     rendererDetachedCompleteCatalog = null
     activeController?.abort()
     if (identityChanged) lastErrorClass = null
+    if (identityChanged) retryableStaleCount = 0
+    if (identityChanged) lastLoadFinishedAtMs = Number.NEGATIVE_INFINITY
+    clearAutomaticRefresh()
     if (identityChanged) finalizedCatalog = null
     if (identityChanged) finalizedRendererFailureSources = []
     if (identityChanged) rendererDetached = false
@@ -828,7 +904,12 @@ export function createCoverageController(input: {
       if (stopped || updateSequence !== contextUpdateSequence) return
       await applyDesiredContext(false)
     },
-    refresh: requestRefresh,
+    refresh: async (options) => {
+      if (options?.automatic !== true) return requestRefresh()
+      if (activeController !== null) return
+      automaticRefreshRequested = true
+      scheduleAutomaticRefresh()
+    },
     notifyChanged: async (missionId, changeSeq) => {
       if (
         stopped ||
@@ -843,7 +924,8 @@ export function createCoverageController(input: {
         status: 'partial',
         latestObservedChangeSeq: changeSeq,
       })
-      await requestRefresh()
+      automaticRefreshRequested = true
+      scheduleAutomaticRefresh()
     },
     notifyCatalogApplied,
     notifySelectionApplied: async (selectedKeys) => {
@@ -943,6 +1025,7 @@ export function createCoverageController(input: {
       contextUpdateSequence += 1
       rendererDetachedCompleteCatalog = null
       refreshRequested = false
+      clearAutomaticRefresh()
       if (catalogFinalization !== null) {
         cancelRequested = true
         if (state.status !== 'inactive') publish(asPartialState(state))
@@ -966,6 +1049,7 @@ export function createCoverageController(input: {
       stopped = true
       contextUpdateSequence += 1
       refreshRequested = false
+      clearAutomaticRefresh()
       if (catalogFinalization !== null) {
         stopRequestedDuringFinalization = true
         return
@@ -1124,4 +1208,11 @@ function normalizeContext(context: CoverageContext): NormalizedCoverageContext {
 
 function isAbortError(error: unknown): boolean {
   return isCoverageCancellation(error)
+}
+
+/** Separates an expected revision race from inventory and catalog payloads. */
+function isCoverageStaleResult<T extends object>(
+  result: CoverageReadResult<T>,
+): result is CoverageStaleResult {
+  return 'kind' in result && result.kind === 'stale'
 }

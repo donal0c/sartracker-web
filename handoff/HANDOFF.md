@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-04 (13.7 work under way). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-17 (13.7 work under way; local DON-325/329 changes). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -21,14 +21,19 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    from the position; list/readout follow-up 18580e93), DON-327 warning codes
    7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
    team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
-   DON-325 raised to High: coverage-revision-moved storm is the DON-312
-   suspect; measure in the A/B (coverage-off build:
-   VITE_SARTRACKER_COVERAGE=0 npm run electron:pack on the box).
+   DON-325/329 now implemented locally: bounded automatic coverage refreshes,
+   typed stale results, backup shutdown ownership and bounded orphan cleanup.
+   Mac A/B confirmed a material coverage contribution; the fixed normal soak
+   still FAILS memory (2,217,132,032 bytes) and independent main-loop (226 ms)
+   budgets. Exact 691,224 fixes/integrity PASS; both native backup-overlap quits
+   and separate full-profile quiet coverage recovery PASS. See
+   [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
+   Next: reviewed draft PR and exact-commit Linux CI; no release qualification.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
    rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
    309, 317 — name them on the 13.7 candidate run.
 3. Team told 13.6 is out (Donal, 4 Oct). DON-296 was decided 1 Oct and
-   shipped in 13.6 (78b00506). Waiting: box for DON-312/313 A/B soak and the
+   shipped in 13.6 (78b00506). Waiting: box for DON-312/313 Linux A/B soak and the
    new smoke steps' first packaged run; DON-247/240 gate call.
 
 ## Verification limits
@@ -36,13 +41,17 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 - Live Traccar: one approved device; other box checks use synthetic
   providers. PCLinuxOS untested (DON-298). Window X is a hand check on Linux.
 - The box sleeps when idle; long runs need Donal's sudo for `systemd-inhibit`.
+- 17 Oct: focused/source/browser/native correctness evidence is local macOS,
+  synthetic 32-device normal profile. Full correctness: 6,601 pass / 27 skip /
+  3 obsolete assertions, then affected-suite reruns green. Chromium 8 and visual
+  8 PASS; lint/build/native runtime PASS. DON-312/313 budgets remain failed.
 
 ## Who is doing what
 
-- **Coordinator:** release, box, handoff, workplan, all pushes.
-- **Session 9f** (commits locally; coordinator pushes): paused until the
-  coordinator messages it. Owns mission-store.cjs, main.cjs, preload.cjs, GPX
-  runtime, `public/manual/index.html`. 13.7 lead: DON-312/313 A/B soak.
+- **Coordinator:** Linear, review, PR, release, box and all pushes.
+- **GPT-6.1 Sol:** local DON-325/329 implementation and verification on master;
+  intended local commit only. Fable supplied design opinions; final code review
+  hit quota. Coordinator direct review found no actionable defect.
 - Rules: announce files before editing; one heavy run at a time.
 
 ## Waiting on others

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   CoverageChunkKey,
@@ -12,7 +12,10 @@ const KEY: CoverageChunkKey = {
 }
 
 describe('coverage claim revocation [DON-276]', () => {
+  afterEach(() => vi.useRealTimers())
+
   it('revokes Complete immediately without discarding unchanged delivery', async () => {
+    vi.useFakeTimers()
     const manifests = [manifest(1), manifest(2)]
     const claims = [claim(1), claim(2)]
     const controller = createCoverageController({
@@ -30,13 +33,15 @@ describe('coverage claim revocation [DON-276]', () => {
 
     const refresh = controller.notifyChanged('mission-1', 2)
     expect(controller.getState()).toMatchObject({
-      status: 'loading',
+      status: 'partial',
       latestObservedChangeSeq: 2,
       deliveredFixCount: 1,
     })
     await refresh
+    await vi.advanceTimersByTimeAsync(30_000)
 
     expect(controller.getState()).toMatchObject({ status: 'complete', changeSeq: 2 })
+    controller.stop()
   })
 
   it('catches a missed notification on the bounded refresh path', async () => {

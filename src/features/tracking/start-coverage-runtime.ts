@@ -1,7 +1,4 @@
 import type {
-  CoverageClaim,
-  CoverageManifest,
-  CoverageTileCatalog,
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { isCoverageEnabled } from '../runtime/coverage-flag'
@@ -62,13 +59,13 @@ export function startCoverageRuntime(
       requestId,
       () => missionStore.readCoverageManifest(missionId, requestId),
       missionStore.cancelCoverageQuery,
-    ) as Promise<CoverageManifest>,
+    ),
     readClaim: (query, requestId, signal) => runCancelable(
       signal,
       requestId,
       () => missionStore.readCoverageClaim(query, requestId),
       missionStore.cancelCoverageQuery,
-    ) as Promise<CoverageClaim>,
+    ),
     readCompletenessBlockers: readRendererEvidenceBlockers,
     deliverSelection: ({ missionId, chunks, requestId, signal }) => runCancelable(
       signal,
@@ -81,7 +78,7 @@ export function startCoverageRuntime(
         })),
       }, requestId),
       missionStore.cancelCoverageQuery,
-    ) as Promise<CoverageTileCatalog>,
+    ),
     activateCatalog: async (catalog) => {
       if (catalog.activationId === undefined) return
       await missionStore.activateCoverageTileCatalog({
@@ -142,10 +139,11 @@ export function startCoverageRuntime(
   })
   const subscribeIngestEvidenceHealth = options.subscribeIngestEvidenceHealth ??
     ((listener: () => void) => {
-      let prior = useIngestHealthStore.getState().evidenceHealth
-      return useIngestHealthStore.subscribe((next) => {
-        if (next.evidenceHealth === prior) return
-        prior = next.evidenceHealth
+      let prior = readRendererEvidenceBlockers()[0] ?? null
+      return useIngestHealthStore.subscribe(() => {
+        const next = readRendererEvidenceBlockers()[0] ?? null
+        if (next === prior) return
+        prior = next
         listener()
       })
     })
@@ -158,7 +156,7 @@ export function startCoverageRuntime(
       return () => clearInterval(handle)
     })
   const cancelPeriodicRefresh = schedulePeriodicRefresh(() => {
-    void controller.refresh()
+    void controller.refresh({ automatic: true })
   }, COVERAGE_REFRESH_INTERVAL_MS)
   updateMission()
 

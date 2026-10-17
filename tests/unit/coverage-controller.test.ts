@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   CoverageChunkKey,
@@ -17,15 +17,223 @@ const KEY_C: CoverageChunkKey = {
   device_id: 'device-c', period_kind: 'outing', period_id: 'outing-2',
 }
 
+afterEach(() => vi.useRealTimers())
+
 describe('coverage controller [DON-276]', () => {
+  it('coalesces sustained tracking changes while immediately revoking Complete [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    let currentChangeSeq = 1
+    harness.readManifest.mockImplementation(async () =>
+      manifest(currentChangeSeq, [[KEY_A, currentChangeSeq]]))
+    harness.readClaim.mockImplementation(async () => ({
+      changeSeq: currentChangeSeq, databaseReady: true, blockers: [],
+      chunkRevisions: [{ key: KEY_A, contentRev: currentChangeSeq }],
+    }))
+
+    for (let changeSeq = 2; changeSeq <= 101; changeSeq += 1) {
+      currentChangeSeq = changeSeq
+      const changed = harness.controller.notifyChanged('mission-1', changeSeq)
+      await changed
+    }
+
+    expect(harness.readManifest).toHaveBeenCalledTimes(1)
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', latestObservedChangeSeq: 101, changeSeq: 1,
+    })
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(harness.readManifest).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(harness.readManifest).toHaveBeenCalledTimes(2)
+    expect(harness.readChunk.mock.calls.map(call => call[0].expectedContentRev)).toEqual([1, 101])
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', changeSeq: 101, latestObservedChangeSeq: 101,
+    })
+    harness.controller.stop()
+  })
+
+  it('revokes Complete synchronously before deferred automatic work [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    const changed = harness.controller.notifyChanged('mission-1', 2)
+    try {
+      expect(harness.controller.getState()).toMatchObject({ status: 'partial', latestObservedChangeSeq: 2 })
+      expect(harness.readManifest).toHaveBeenCalledTimes(1)
+    } finally {
+      await changed
+      harness.controller.stop()
+    }
+  })
+
+  it('keeps the automatic cadence when the wall clock moves backwards [DON-325]', async () => {
+    vi.useFakeTimers()
+    let elapsedMs = 0
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]), { monotonicNow: () => elapsedMs })
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    vi.setSystemTime(new Date('2000-01-01T00:00:00.000Z'))
+    harness.readManifest.mockResolvedValue(manifest(2, [[KEY_A, 2]]))
+    harness.readClaim.mockResolvedValue({ changeSeq: 2, databaseReady: true, blockers: [],
+      chunkRevisions: [{ key: KEY_A, contentRev: 2 }] })
+
+    await harness.controller.notifyChanged('mission-1', 2)
+    elapsedMs = 30_000
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(harness.readManifest).toHaveBeenCalledTimes(2)
+    expect(harness.controller.getState()).toMatchObject({ status: 'complete', changeSeq: 2 })
+    harness.controller.stop()
+  })
+
+  it('keeps a typed moved revision partial and recovers from fresh evidence [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    harness.readManifest.mockResolvedValueOnce({
+      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: 2,
+    })
+
+    await harness.controller.refresh()
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', lastErrorClass: 'chunk_stale', deliveredFixCount: 1,
+      latestObservedChangeSeq: 2, retryableStaleCount: 1,
+    })
+    harness.readManifest.mockResolvedValue(manifest(2, [[KEY_A, 2]]))
+    harness.readClaim.mockResolvedValue({
+      changeSeq: 2, databaseReady: true, blockers: [],
+      chunkRevisions: [{ key: KEY_A, contentRev: 2 }],
+    })
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'complete', changeSeq: 2, retryableStaleCount: 1,
+    })
+    await harness.controller.updateContext({ missionId: 'mission-2', rendererGeneration: 'r1' })
+    expect(harness.controller.getState()).toMatchObject({ missionId: 'mission-2', retryableStaleCount: 0 })
+    harness.controller.stop()
+  })
+
+  it('does not activate or claim a catalog returned as typed stale [DON-325]', async () => {
+    const readClaim = vi.fn()
+    const activateCatalog = vi.fn()
+    const controller = createCoverageController({
+      readManifest: vi.fn().mockResolvedValue(manifest(1, [[KEY_A, 1]])),
+      readChunk: vi.fn(), readClaim, applyChunk: vi.fn(), activateCatalog,
+      deliverSelection: vi.fn().mockResolvedValue({
+        kind: 'stale', reason: 'coverage_revision_moved', changeSeq: 2,
+      }),
+      publish: vi.fn(),
+    })
+
+    await controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    expect(controller.getState()).toMatchObject({
+      status: 'partial', lastErrorClass: 'chunk_stale', tileCatalog: null,
+      latestObservedChangeSeq: 2, retryableStaleCount: 1,
+    })
+    expect(readClaim).not.toHaveBeenCalled()
+    expect(activateCatalog).not.toHaveBeenCalled()
+    controller.stop()
+  })
+
+  it('never restores Complete from an automatic claim overtaken by newer writes [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    harness.readManifest.mockResolvedValue(manifest(2, [[KEY_A, 2]]))
+    let releaseClaim: (() => void) | undefined
+    harness.readClaim.mockImplementationOnce(async () => {
+      await new Promise<void>(resolve => { releaseClaim = resolve })
+      return { changeSeq: 2, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: 2 }] }
+    })
+    await harness.controller.notifyChanged('mission-1', 2)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(harness.readClaim).toHaveBeenCalledTimes(2)
+    await harness.controller.notifyChanged('mission-1', 3)
+
+    releaseClaim?.()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'partial', latestObservedChangeSeq: 3, changeSeq: 2,
+    })
+    harness.controller.stop()
+  })
+
+  it('waits a full cadence after a long load and ignores periodic refresh while active [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    let releaseManifest: (() => void) | undefined
+    harness.readManifest.mockImplementationOnce(async () => {
+      await new Promise<void>(resolve => { releaseManifest = resolve })
+      return manifest(1, [[KEY_A, 1]])
+    })
+    const initial = harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await vi.advanceTimersByTimeAsync(0)
+    await harness.controller.notifyChanged('mission-1', 2)
+    await harness.controller.refresh({ automatic: true })
+    await vi.advanceTimersByTimeAsync(60_000)
+    releaseManifest?.()
+    await initial
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(harness.readManifest).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(harness.readManifest).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(harness.readManifest).toHaveBeenCalledTimes(2)
+    harness.controller.stop()
+  })
+
+  it.each(['cancel', 'stop', 'mission-switch'] as const)(
+    'drops queued tracking refresh on %s [DON-325]', async (action) => {
+      vi.useFakeTimers()
+      const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+      await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+      await harness.controller.notifyChanged('mission-1', 2)
+      if (action === 'mission-switch') {
+        await harness.controller.updateContext({ missionId: 'mission-2', rendererGeneration: 'r1' })
+      } else harness.controller[action]()
+      const readsAfterBoundary = harness.readManifest.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(harness.readManifest).toHaveBeenCalledTimes(readsAfterBoundary)
+      expect(harness.controller.getState()).toMatchObject(action === 'stop'
+        ? { status: 'inactive' }
+        : action === 'mission-switch' ? { missionId: 'mission-2' } : { status: 'partial' })
+      harness.controller.stop()
+    },
+  )
+
+  it('lets an explicit refresh immediately replace queued automatic work [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await harness.controller.notifyChanged('mission-1', 2)
+    const beforeRefresh = harness.readManifest.mock.calls.length
+
+    await harness.controller.refresh()
+    expect(harness.readManifest).toHaveBeenCalledTimes(beforeRefresh + 1)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(harness.readManifest).toHaveBeenCalledTimes(beforeRefresh + 1)
+    harness.controller.stop()
+  })
+
   it('keeps a moved revision partial and retries on the next coverage notification without an error loop [DON-254]', async () => {
+    vi.useFakeTimers()
     const harness = createHarness(manifest(1, [[KEY_A, 1]]))
     harness.readManifest.mockRejectedValueOnce(new Error('coverage-revision-moved: current inventory changed'))
     await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
     expect(harness.controller.getState()).toMatchObject({ status: 'partial', lastErrorClass: 'chunk_stale' })
     expect(harness.readManifest).toHaveBeenCalledTimes(1)
     await harness.controller.notifyChanged('mission-1', 1)
+    await vi.advanceTimersByTimeAsync(30_000)
     expect(harness.controller.getState()).toMatchObject({ status: 'complete' })
+    harness.controller.stop()
   })
 
   it('attests delivery only after applying every selected chunk and a fresh claim', async () => {
@@ -227,6 +435,7 @@ describe('coverage controller [DON-276]', () => {
   })
 
   it('coalesces a higher sequence behind active historical delivery instead of restarting it', async () => {
+    vi.useFakeTimers()
     let releaseSecond: (() => void) | undefined
     const harness = createHarness(manifest(1, [[KEY_A, 1], [KEY_B, 1]]))
     harness.readChunk.mockImplementation(async ({ key, expectedContentRev }) => {
@@ -258,10 +467,13 @@ describe('coverage controller [DON-276]', () => {
     expect(harness.readManifest).toHaveBeenCalledTimes(1)
     releaseSecond?.()
     await initialLoad
+    expect(harness.controller.getState()).toMatchObject({ status: 'partial', latestObservedChangeSeq: 2 })
+    await vi.advanceTimersByTimeAsync(30_000)
     await vi.waitFor(() => expect(harness.controller.getState()).toMatchObject({
       status: 'complete', changeSeq: 2,
     }))
     expect(harness.applyChunk).toHaveBeenCalledTimes(2)
+    harness.controller.stop()
   })
 
   it('attests Candidate B delivery from the active tile catalog without renderer GeoJSON pages', async () => {
@@ -500,6 +712,7 @@ describe('coverage controller [DON-276]', () => {
   })
 
   it('does not let an older in-flight claim overwrite a newer sequence revocation', async () => {
+    vi.useFakeTimers()
     let releaseFirstClaim: (() => void) | undefined
     const publish = vi.fn()
     const readManifest = vi.fn()
@@ -531,6 +744,8 @@ describe('coverage controller [DON-276]', () => {
     const publicationsAfterRevocation = publish.mock.calls.length
     releaseFirstClaim?.()
     await load
+    expect(controller.getState()).toMatchObject({ status: 'partial', latestObservedChangeSeq: 2 })
+    await vi.advanceTimersByTimeAsync(30_000)
     await vi.waitFor(() => expect(controller.getState()).toMatchObject({
       status: 'complete', changeSeq: 2,
     }))
@@ -539,6 +754,7 @@ describe('coverage controller [DON-276]', () => {
       .map(([published]) => published)
       .some((published) => published.status === 'complete' && published.changeSeq === 1))
       .toBe(false)
+    controller.stop()
   })
 
   it('cannot claim Complete when renderer catalog activation fails', async () => {
@@ -2557,7 +2773,7 @@ describe('coverage controller [DON-276]', () => {
   })
 })
 
-function createHarness(initialManifest: CoverageManifest) {
+function createHarness(initialManifest: CoverageManifest, options: { readonly monotonicNow?: () => number } = {}) {
   const readManifest = vi.fn().mockResolvedValue(initialManifest)
   const readChunk = vi.fn().mockImplementation(async ({ key, expectedContentRev }) =>
     page(key, expectedContentRev))
@@ -2570,6 +2786,7 @@ function createHarness(initialManifest: CoverageManifest) {
   const applyChunk = vi.fn().mockResolvedValue(undefined)
   const publish = vi.fn()
   const controller = createCoverageController({
+    monotonicNow: options.monotonicNow ?? (() => Date.now()),
     readManifest,
     readChunk,
     readClaim,

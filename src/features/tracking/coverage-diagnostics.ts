@@ -19,6 +19,7 @@ export type CoverageDiagnostics = {
   readonly lastBuildDurationMs: number | null
   readonly deliveryMapSize: number
   readonly lastErrorClass: CoverageErrorClass | null
+  readonly retryableStaleCount: number
 }
 
 /** Returns the bounded, identity-free coverage fields allowed in support reports. */
@@ -47,6 +48,7 @@ export function summarizeCoverageDiagnostics(input: {
     lastBuildDurationMs: storage.lastBuildDurationMs,
     deliveryMapSize: Object.keys(input.state.delivered).length,
     lastErrorClass: input.state.lastErrorClass ?? null,
+    retryableStaleCount: input.state.retryableStaleCount ?? 0,
   }
 }
 
