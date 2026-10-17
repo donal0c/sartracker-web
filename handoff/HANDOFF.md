@@ -35,10 +35,13 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    **DON-312 renderer churn fix (branch `don-312-renderer-churn`):** no Date
    per breadcrumb in the newest-fix scan; allocation-free haversine for
    stationary attention. Same Mac soak: peak 1,821,671,424 bytes (memory PASS),
-   drain allocation 49.8 → 39.2 GB, data exact. Main-loop still FAILS
-   (233/203 ms, startup catch-up, renderer change can't help) → DON-313 next:
-   profile main startup (`--profile-main-startup-ms`), then per-task worker
-   isolates as the main-RSS suspect. See
+   drain allocation 49.8 → 39.2 GB, data exact. Main-loop still FAILED
+   (233/203 ms). **DON-313 (PR #58, draft, stacked on #57):** restart snapshots
+   persist in 256-fix pieces. 3 serial soaks: memory under budget in all
+   (1.86–2.07 GB), startup stalls ≤178 ms, but 1/3 PASS: mid-run stalls
+   245/339 ms remain, one blocked with ~no CPU (likely sync I/O). Next: time
+   SQLite commits/checkpoints on main (Mac); Ubuntu PSI attribution when the
+   box is free. See
    [churn note](archive/2026-10-17-don312-renderer-churn.md).
    Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
