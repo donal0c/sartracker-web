@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-17 (DON-312 renderer churn fix in PR; PR #56 merged; residuals DON-331–335). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-17 (PRs #57–#59 merged: DON-312 memory, DON-313 pieces, one-step backup). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -32,16 +32,14 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    memory (2,217,132,032 bytes) and main-loop (226 ms) budgets; data and
    integrity PASS. See
    [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
-   **DON-312 renderer churn fix (branch `don-312-renderer-churn`):** no Date
-   per breadcrumb in the newest-fix scan; allocation-free haversine for
-   stationary attention. Same Mac soak: peak 1,821,671,424 bytes (memory PASS),
-   drain allocation 49.8 → 39.2 GB, data exact. Main-loop still FAILED
-   (233/203 ms). **DON-313 (PR #58, draft, stacked on #57):** restart snapshots
-   persist in 256-fix pieces. 3 serial soaks: memory under budget in all
-   (1.86–2.07 GB), startup stalls ≤178 ms, but 1/3 PASS: mid-run stalls
-   245/339 ms remain, one blocked with ~no CPU (likely sync I/O). Next: time
-   SQLite commits/checkpoints on main (Mac); Ubuntu PSI attribution when the
-   box is free. See
+   **Merged 17 Oct (master 0f579dc7):** #57 renderer churn (DON-312), #58
+   256-fix restart-snapshot pieces, #59 one-step backup mirror (restarts under
+   live writes made a ~1 s copy take 249 s; may explain DON-240). Mac soaks:
+   memory 11/11 under budget (1.82–2.07 GB), backups 0.9–1.5 s, data exact;
+   main loop 2/5 PASS. Every remaining stall >145 ms is one writer
+   transaction: startup piece bodies 87–147 ms, mid-run WAL auto-checkpoint
+   commits 78–138 ms. Next: piece budget 128; off-main checkpoint design for
+   Donal. Linear auto-closed DON-312/313/240 on merge; reopened. See
    [churn note](archive/2026-10-17-don312-renderer-churn.md).
    Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
