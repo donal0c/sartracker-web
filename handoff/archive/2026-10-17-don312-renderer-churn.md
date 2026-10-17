@@ -51,3 +51,29 @@ a distribution; installed Ubuntu budget evidence remains owed.
 - Chromium: stationary-attention, devices-workspace, map, full-mission-flow,
   participants, focus-mode, map-idle-redraw, v1-regression — 57/57 passed.
 - Lint and `tsc --noEmit` clean on changed files.
+
+## DON-313 follow-up: bounded snapshot pieces (branch `don-313-snapshot-pieces`)
+
+Main CPU profile of the first 30 s (attribution only; profiler inflates timing):
+~18 s of main-thread time in `responsive-mission-writer` → `addPositionsBulk`,
+mostly native statement `run`. Long bursts came from `persistTrackingSnapshot`:
+after a restart the key cache is empty, so one snapshot sent every unseen fix in
+one unbounded `persistTrackingPositionsBulk` call (one transaction). Fix: pieces
+of 256 (`HISTORY_PIECE_ROW_BUDGET`), keys cached only after all succeed, failed
+piece → existing evidence-loss path and full retry. Electron path only; the
+legacy browser `addPositionsBulk` branch is unchanged (DON-200 test).
+
+Three serial soaks, ASAR `fe51beaa…5852` (run 1 with renderer drain sampling):
+
+| Run | Peak RSS | Main-loop L1 / L2 | IPC main max | Verdict |
+|---|---:|---:|---:|---|
+| 1 | 2,068,905,984 | 161 / 179 ms | 166 ms | PASS |
+| 2 | 1,855,635,456 | 178 / 245 ms | 278 ms | FAIL |
+| 3 | 1,986,363,392 | 339 / 192 ms | 806 ms | FAIL |
+
+All runs: 691,224 positions exact, integrity ok, memory under budget. Startup
+catch-up stalls are now ≤178 ms in every run. Remaining stalls are mid-run and of
+two kinds: blocked (run 3 L1 339 ms gap with 6 ms process CPU — synchronous
+I/O such as a FULL-sync commit/checkpoint, or host pause) and busy (run 2 L2
+245 ms). macOS has no pressure/schedstat counters (null), so blocked-stall
+cause needs the Ubuntu box (PSI). Not yet a distribution-backed pass.
