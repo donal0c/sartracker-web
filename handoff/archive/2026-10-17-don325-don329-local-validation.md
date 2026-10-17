@@ -4,6 +4,11 @@ Source baseline: `a9a4750d826ea316d19ea03c415356a8970348f8`, macOS arm64.
 This is synthetic development evidence; later sections record Linux CI separately.
 Ubuntu soak budgets, release qualification and operational acceptance are not established.
 
+**Current disposition (17 October):** review repairs and the map-warning follow-up
+passed final Linux CI on `f8bf5888`. PR #56 is ready, open and unmerged; the normal
+merge was rejected by repository policy. The final closeout below supersedes
+earlier pending-CI/draft wording, which is retained as chronological history.
+
 ## Unchanged-source coverage A/B
 
 Two immutable local packages differ only by `VITE_SARTRACKER_COVERAGE=1` versus
@@ -332,3 +337,44 @@ generated-version edit was restored byte-for-byte after the build. This shared
 renderer change does not modify SQLite or the native lifecycle boundary;
 earlier native receipts retain their stated source binding, and new Linux CI
 must validate the follow-up package. No new soak or installed-Ubuntu claim.
+
+## Final Linux evidence and merge handoff — 17 October
+
+[Run 39036124595](https://github.com/donal0c/sartracker-web/actions/runs/39036124595)
+passed all four jobs on exact clean head
+`f8bf5888142e1622632f5801c2f7f10aa097ce83`, tree
+`39da6f550d6c8a02d486cc02115f3a7377ae7e6a`. Correctness: 629 suites,
+6,628 passed / 10 skipped (1,222.75 seconds). Full Chromium: 254 passed /
+9 skipped (14.3 minutes), with fail-on-flaky enabled. The targeted map suite
+also passed with retries disabled. Logs and uploaded receipts were inspected.
+
+Linux package/native checks passed: 24 actual preload calls, snapshot fencing,
+cancellation after physical worker exit, exit 0 without forced cleanup, AppImage
+launch/render and graceful close. Captures were inspected. Package identities:
+
+- AppImage SHA-256: `5caa170532a7346bb5acc4d82a06a9592c3a40141db614f99ad1145362a0a33f`.
+- Debian SHA-256: `3c862b71c8bd60a896a3197d812aaf787693aabdab53643ebf67c48dc7b305fc`.
+- Shared ASAR SHA-256: `35aa8073d71e62d76297b2324981c7f95372239240e6ad57a24ee56fd04fbddf`.
+
+The 19 producer cases remain development checks, explicitly
+`qualificationExecuted:false` and `releaseEligible:false`. Seven cases were not
+run. Installed Ubuntu, actual quit-during-finalize UI, strict/long-soak,
+release and operational acceptance are not established. DON-312/313 still fail
+the measured Mac memory/timing budgets. Failed run 39032048967 is retained;
+run 39036076099 on `4bd90da0` was superseded/cancelled, not counted as a pass.
+Evidence is retained under `tmp/don325-review/map-linux-*`; the GitHub run is
+the shared evidence reference. Later documentation-only changes reuse this
+tested ancestor after verifying executable/test/config inputs are unchanged.
+
+Donal requested merge. PR #56 was marked ready, but the ordinary exact-head
+merge attempt was rejected by the **Protect master - Donal only** ruleset
+(22878337, update restriction). No administrator override or rule modification
+was used. The PR remains open; DON-325/329 remain In Review. The next action is
+the outstanding override decision and verified merge, not another code/test loop.
+
+Open follow-ups stay on their existing issues rather than being silently closed:
+DON-329 owns the failed-quit session lifecycle decision (full service recovery
+versus requiring exit/restart), slow-backup timeout wording and installed quit
+proof. DON-325 retains persistent-stale escalation policy and defensive validation
+of malformed change sequences. Temporary journal cleanup remains a DON-329
+follow-up. No arbitrary retry cap, lifecycle reset or deadline change is implied.

@@ -14,7 +14,7 @@ exact artifact with that known issue; this is not operational acceptance.
 
 1. **DON-312/313:** local macOS A/B completed 17 Oct on unchanged source, actual
    32-device normal profile. Coverage materially contributed to memory/stalls.
-   **DON-325 implemented locally:** typed expected-stale results and bounded
+   **DON-325 implemented in PR #56:** typed expected-stale results and bounded
    automatic refreshes; quiet full-profile renderer/claim recovery PASS. Fixed
    soak still FAILS 2 GiB / 200 ms budgets (2,217,132,032 bytes; 226 ms), while
    all 691,224 fixes match exactly and integrity is `ok`. Keep DON-312/313 open;
@@ -24,8 +24,12 @@ exact artifact with that known issue; this is not operational acceptance.
    correctness/package jobs but failed an older map-warning race. A narrow
    DON-264 follow-up preserves application failure against late tile errors;
    deterministic browser regression, 34 affected flows, 34 focused tests,
-   fresh 6,611-test correctness and lint/build pass. PR Checks records the
-   follow-up's exact-head Linux result, separately from the failed run above.
+   fresh 6,611-test correctness and lint/build pass. Final Linux run
+   [39036124595](https://github.com/donal0c/sartracker-web/actions/runs/39036124595)
+   passed all four jobs on `f8bf5888`: 6,628 correctness tests (10 skipped),
+   254 Chromium tests (9 skipped), package/native and AppImage checks.
+   Later documentation-only commits reuse that tested ancestor with unchanged
+   executable/test inputs. The failed run above remains part of the record.
    Installed Linux budget evidence remains owed. See
    [local report](../handoff/archive/2026-10-17-don325-don329-local-validation.md).
    The renderer-side 256-position write splitting and yielding are already in
@@ -52,15 +56,20 @@ exact artifact with that known issue; this is not operational acceptance.
 6. Recheck the coordinated smoke gaps DON-299 and DON-315/316/317, plus
    DON-325/326/327/329 and the PCLinuxOS setup in DON-298, against the exact
    13.7 scope. Do not make them release gates from age or title alone.
-   **DON-329 implemented locally (17 Oct):** synchronous backup admission fence,
+   **DON-329 implemented in PR #56 (17 Oct):** synchronous backup admission fence,
    bounded shutdown join through audit/completion, close guard and safe bounded
    startup temp cleanup. Both packaged Mac quits during active copies PASS;
    held real-SQLite tests cover timeout/refusal and retry. Review repair adds
    recognized cancellation, preserved finalization recovery and no false failure
    audit. Failed-quit session recovery is a separate unresolved lifecycle policy;
    resetting backups alone is unsafe. DON-325/329 remain In Review in
-   [draft PR #56](https://github.com/donal0c/sartracker-web/pull/56), whose Checks
-   tab owns current exact-head CI results; neither regression is closed.
+   [PR #56](https://github.com/donal0c/sartracker-web/pull/56), now ready rather
+   than draft. Donal requested merge; the normal attempt was blocked by the
+   **Protect master - Donal only** rule. No administrator override was used;
+   resolve that decision before merging. Neither regression is closed.
+   DON-329 retains failed-quit lifecycle/timeout wording and actual installed
+   quit-during-finalize checks. DON-325 retains persistent-stale escalation;
+   minor journal cleanup and malformed-sequence validation remain follow-ups.
 7. Use **DON-290** and the checklist above for the exact CI-built candidate.
 
 **Separate field acceptance:** DON-247 remains urgent/in progress for the

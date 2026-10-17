@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-17 (13.7 work under way; DON-325/329 draft PR). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-17 (DON-325/329 verified; PR #56 ready, merge blocked by repository policy). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -21,24 +21,24 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    from the position; list/readout follow-up 18580e93), DON-327 warning codes
    7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
    team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
-   DON-325/329 now implemented locally: bounded automatic coverage refreshes,
+   DON-325/329 implemented in PR #56: bounded automatic coverage refreshes,
    typed stale results, backup shutdown ownership and bounded orphan cleanup.
-   Mac A/B confirmed a material coverage contribution; the fixed normal soak
-   still FAILS memory (2,217,132,032 bytes) and independent main-loop (226 ms)
-   budgets. Exact 691,224 fixes/integrity PASS; both native backup-overlap quits
-   and separate full-profile quiet coverage recovery PASS. See
+   Mac A/B confirmed a coverage contribution; the fixed soak still FAILS memory
+   (2,217,132,032 bytes) and main-loop (226 ms) budgets. All 691,224 fixes and
+   integrity PASS; backup-overlap quits and quiet coverage recovery PASS. See
    [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
-   [Draft PR #56](https://github.com/donal0c/sartracker-web/pull/56) remains In Review.
-   Donal's review exposed finalize/shutdown cancellation and coverage-error masking
-   gaps despite earlier green CI. Both are repaired; 6,611 local tests, Chromium
-   9/9, lint/build/package and packaged-store race controls PASS. Linux39032048967
-   passed correctness/package checks but exposed an older map-warning race:
-   late tile errors replaced the actionable application failure. Narrow repair
-   passes the deterministic regression, 34 browser flows, 34 focused tests,
-   full 6,611-test correctness run and lint/build. PR Checks owns the current
-   Linux result; earlier native receipts precede this map repair.
-   Failed-quit session recovery needs a separate lifecycle decision: resetting
-   backups alone cannot reopen other closed services. No merge or qualification.
+   [PR #56](https://github.com/donal0c/sartracker-web/pull/56) is ready (not draft);
+   DON-325/329 remain In Review. Donal requested merge, but the normal attempt
+   was rejected by **Protect master - Donal only**. No override was used.
+   Next: resolve the administrator-override decision, then verify the merge.
+   Both review blockers and the CI-discovered map-warning race are repaired.
+   [Linux run 39036124595](https://github.com/donal0c/sartracker-web/actions/runs/39036124595)
+   passed all four jobs on `f8bf5888`: 629 suites / 6,628 tests (10 skipped),
+   Chromium 254 passed (9 skipped), package/native checks and AppImage launch/
+   graceful close. Receipts and captures inspected. Later documentation-only
+   updates reuse this tested ancestor; executable/test inputs are unchanged.
+   Failed-quit session recovery still needs a lifecycle decision; resetting
+   backups alone is unsafe. No merge, release or qualification is recorded.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
    rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
    309, 317 — name them on the 13.7 candidate run.
@@ -57,18 +57,16 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 ## Who is doing what
 
-- **Coordinator:** Linear, review, PR, release, box and all pushes.
-- **GPT-6.1 Sol:** finalize repair and focused checks; independent coverage review
-  found the periodic-poll variant, now fixed. Coordinator owns final verification
-  and PR updates. Earlier clean review is superseded by Donal's findings.
-  Fable supplied design opinions; final code review hit quota.
-- Rules: announce files before editing; one heavy run at a time.
+- **Coordinator:** Linear, PR, merge decision and next candidate verification.
+- Implementation and verification are complete for this PR. No worker or test
+  run remains active. Sol's independent review found the repaired periodic-poll
+  variant. Fable supplied design opinions; final code review hit quota.
 
 ## Waiting on others
 
 - Eamonn: support bundle, Layers screenshot, Tomies Wood GPX (DON-319 cause,
   DON-318 trigger).
-- 13.7 queue: DON-312/313, DON-328 (Seán), DON-325/326/327/329, DON-298.
+- Box unavailable today: installed Ubuntu and DON-312/313 budget checks wait.
 
 ## Pointers
 
