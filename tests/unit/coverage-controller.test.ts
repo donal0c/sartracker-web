@@ -824,6 +824,79 @@ describe('coverage controller [DON-276]', () => {
     })
   })
 
+  it.each(['activation', 'displayed'] as const)(
+    'preserves a renderer error during live changes and promptly recovers after %s failure [DON-325]',
+    async (phase) => {
+      vi.useFakeTimers()
+      let sequence = 1
+      const readManifest = vi.fn(async () => manifest(sequence, [[KEY_A, sequence]]))
+      const readClaim = vi.fn(async () => ({
+        changeSeq: sequence, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: KEY_A, contentRev: sequence }],
+      }))
+      const deliverSelection = vi.fn(async () => ({
+        missionId: 'mission-1',
+        periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: `recovery-${sequence}` }],
+        delivered: [{ key: KEY_A, contentRev: sequence }],
+      }))
+      const controller = createCoverageController({
+        readManifest, readClaim, deliverSelection,
+        readChunk: vi.fn(), applyChunk: vi.fn(), publish: vi.fn(),
+      })
+      try {
+        const initialLoad = controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+        await vi.advanceTimersByTimeAsync(0)
+        const initial = controller.getState()
+        if (initial.status === 'inactive' || initial.tileCatalog === null) throw new Error('Expected staged catalog.')
+        if (phase === 'displayed') {
+          await controller.notifyCatalogApplied(initial.tileCatalog)
+          await initialLoad
+          expect(controller.getState().status).toBe('complete')
+        }
+        controller.notifyRendererFailure({
+          missionId: 'mission-1', periodKey: 'outing\u0000outing-1', revisionDigest: 'recovery-1',
+          message: 'Coverage tile could not be decoded.',
+        })
+        await initialLoad
+        sequence = 2
+        await controller.notifyChanged('mission-1', sequence)
+        // A periodic poll can coincide with the live-fix notification.
+        await controller.refresh({ automatic: true })
+        expect(controller.getState()).toMatchObject({
+          status: 'error', latestObservedChangeSeq: 2, deliveredFixCount: 0,
+          message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
+        })
+        await vi.advanceTimersByTimeAsync(249)
+        expect(controller.getState().status).toBe('error')
+        expect(deliverSelection).toHaveBeenCalledTimes(1)
+        await vi.advanceTimersByTimeAsync(1)
+        expect(deliverSelection).toHaveBeenCalledTimes(2)
+        const recovery = controller.getState()
+        if (recovery.status === 'inactive' || recovery.tileCatalog === null) throw new Error('Expected recovery catalog.')
+        expect(recovery.tileCatalog.requiresFreshRendererSources).toBe(true)
+        await controller.notifyCatalogApplied(recovery.tileCatalog)
+        await vi.advanceTimersByTimeAsync(0)
+        expect(controller.getState()).toMatchObject({
+          status: 'complete', changeSeq: 2, latestObservedChangeSeq: 2, deliveredFixCount: 1,
+        })
+      } finally {
+        controller.stop()
+      }
+    },
+  )
+
+  it('keeps a genuine load error visible when a newer revision arrives [DON-325]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    harness.readManifest.mockRejectedValueOnce(new Error('Coverage manifest worker timed out.'))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    await harness.controller.notifyChanged('mission-1', 2)
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error', lastErrorClass: 'timeout', latestObservedChangeSeq: 2,
+    })
+    harness.controller.stop()
+  })
+
   it('automatically retries one transient renderer activation failure after the failed load settles', async () => {
     const initial = manifest(1, [[KEY_A, 1]])
     const deliverSelection = vi.fn(async () => {

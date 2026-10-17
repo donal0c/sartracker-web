@@ -227,6 +227,8 @@ export function createCoverageController(input: {
   const scheduleAutomaticRefresh = (): void => {
     if (!automaticRefreshRequested || automaticRefreshTimer !== null ||
       activeController !== null || stopped || context.missionId === null) return
+    // The dedicated renderer retry owns fresh-source recovery after a failure.
+    if (state.status === 'error' && rendererRecoveryEpoch !== null) return
     const delay = Math.max(0, lastLoadFinishedAtMs + AUTOMATIC_REFRESH_COOLDOWN_MS - monotonicNow())
     automaticRefreshTimer = globalThis.setTimeout(() => {
       automaticRefreshTimer = null
@@ -921,9 +923,14 @@ export function createCoverageController(input: {
       rendererDetachedCompleteCatalog = null
       publish({
         ...state,
-        status: 'partial',
+        // New evidence revokes Complete but cannot clear a display/load failure
+        // or disqualify the renderer's separate prompt recovery attempt.
+        status: state.status === 'error' ? 'error' : 'partial',
         latestObservedChangeSeq: changeSeq,
       })
+      // Error recovery owns its retry timing and fresh renderer sources.
+      // A live fix is not evidence that the failed display/load recovered.
+      if (state.status === 'error') return
       automaticRefreshRequested = true
       scheduleAutomaticRefresh()
     },

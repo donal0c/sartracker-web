@@ -18,8 +18,10 @@ exact artifact with that known issue; this is not operational acceptance.
    automatic refreshes; quiet full-profile renderer/claim recovery PASS. Fixed
    soak still FAILS 2 GiB / 200 ms budgets (2,217,132,032 bytes; 226 ms), while
    all 691,224 fixes match exactly and integrity is `ok`. Keep DON-312/313 open;
-   Linux CI PASS on 3caaae49 (run39021107552); installed Linux budget evidence
-   remains owed. This documentation-only closeout reuses that tested ancestor. See
+   Earlier Linux CI passed, but PR review exposed coverage-error masking and a
+   finalize/shutdown race. Repairs pass 6,611 local tests, Chromium9/9,
+   lint/build/package and packaged-store race controls; new exact-head CI owed.
+   Installed Linux budget evidence remains owed. See
    [local report](../handoff/archive/2026-10-17-don325-don329-local-validation.md).
    The renderer-side 256-position write splitting and yielding are already in
    beta.13.6; a worker-thread rewrite is not the agreed default.
@@ -48,8 +50,10 @@ exact artifact with that known issue; this is not operational acceptance.
    **DON-329 implemented locally (17 Oct):** synchronous backup admission fence,
    bounded shutdown join through audit/completion, close guard and safe bounded
    startup temp cleanup. Both packaged Mac quits during active copies PASS;
-   held real-SQLite tests cover timeout/refusal and retry. Linux proof remains
-   separate. DON-325/329 are In Review in
+   held real-SQLite tests cover timeout/refusal and retry. Review repair adds
+   recognized cancellation, preserved finalization recovery and no false failure
+   audit. Failed-quit session recovery is a separate unresolved lifecycle policy;
+   resetting backups alone is unsafe. DON-325/329 remain In Review in
    [draft PR #56](https://github.com/donal0c/sartracker-web/pull/56), whose Checks
    tab owns current exact-head CI results; neither regression is closed.
 7. Use **DON-290** and the checklist above for the exact CI-built candidate.

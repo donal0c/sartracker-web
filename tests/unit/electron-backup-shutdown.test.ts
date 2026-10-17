@@ -6,13 +6,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
+const fileSystem = require('node:fs/promises') as typeof import('node:fs/promises')
 type DiagnosticOperation = { readonly id: string; readonly type: 'backup'; readonly requestedAtMs: number }
 type Store = {
   readonly createMission: (input: { readonly name: string }) => Promise<{ readonly id: string }>
+  readonly finishMission: (missionId: string) => Promise<unknown>
+  readonly getMission: (missionId: string) => Promise<{ readonly status: string }>
+  readonly getIngestEvidenceHealth: (missionId: string) => Promise<unknown>
+  readonly finalizeMission: (missionId: string) => Promise<{ readonly mission: { readonly status: string } }>
+  readonly createMissionArchive: (missionId: string) => Promise<unknown>
   readonly syncBackup: (trigger?: string) => Promise<string>
   readonly prepareClose: () => Promise<void>
   readonly close: () => void
-  readonly listMissionEvents: (missionId: string) => Promise<readonly { readonly event_type: string }[]>
+  readonly listMissionEvents: (missionId: string) => Promise<readonly {
+    readonly event_type: string
+    readonly details_json: string | null
+  }[]>
 }
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (options: {
@@ -20,6 +29,8 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly gpxShutdownJoinTimeoutMs?: number
     readonly storageDiagnostics: ReturnType<typeof diagnostics>
     readonly backupFaultInjection?: { readonly afterTemporaryBackup: boolean }
+    readonly finalizeMissionFaultInjection?: { readonly afterArchiveSucceededEvent: boolean }
+    readonly readArchiveFile?: (archivePath: string) => Promise<Buffer>
   }) => Store
 }
 let directory: string | undefined
@@ -28,6 +39,7 @@ const releases: (() => void)[] = []
 
 afterEach(async () => {
   releases.splice(0).forEach(release => release())
+  vi.restoreAllMocks()
   await store?.prepareClose()
   store?.close()
   store = undefined
@@ -94,8 +106,111 @@ describe('backup shutdown ownership [DON-329]', () => {
       held.resolve()
       await backup
     }
+    await expect(store.syncBackup('manual')).rejects.toMatchObject({
+      name: 'AbortError', code: 'BACKUP_SHUTDOWN_CANCELLED',
+    })
     await expect(store.prepareClose()).resolves.toBeUndefined()
     expect(telemetry.completed).toHaveBeenCalledOnce()
+  })
+
+  it.each(['finalize', 'direct archive'] as const)(
+    'treats shutdown during %s evidence admission as cancellation without false archive failure', async (kind) => {
+      const telemetry = diagnostics()
+      directory = await mkdtemp(path.join(tmpdir(), 'sartracker-archive-admission-quit-'))
+      store = createElectronMissionStore({ userDataPath: directory, storageDiagnostics: telemetry })
+      const mission = await store.createMission({ name: 'Synthetic archive admission race' })
+      await store.finishMission(mission.id)
+      await store.getIngestEvidenceHealth(mission.id)
+      const gate = holdNextOutboxDirectoryRead(directory)
+      const archive = kind === 'finalize'
+        ? store.finalizeMission(mission.id)
+        : store.createMissionArchive(mission.id)
+      const archiveOutcome = archive.catch((error: unknown) => error)
+      await gate.reached
+      const closing = store.prepareClose().then(() => null, (error: unknown) => error)
+      gate.release()
+
+      expect(await archiveOutcome).toMatchObject({
+        name: 'AbortError',
+        code: kind === 'finalize' ? 'ARCHIVE_CANCELLED' : 'BACKUP_SHUTDOWN_CANCELLED',
+      })
+      expect(await closing).toBeNull()
+      expect(telemetry.requested).not.toHaveBeenCalled()
+      const eventTypes = (await store.listMissionEvents(mission.id)).map(event => event.event_type)
+      expect(eventTypes).not.toContain('mission_archive_failed')
+      if (kind === 'finalize') expect(eventTypes).not.toContain('mission_finalize_requested')
+      expect(readFinalizationFence(directory, mission.id)).toBeUndefined()
+      expect(await store.getMission(mission.id)).toMatchObject({ status: 'finished' })
+    },
+  )
+
+  it('preserves an existing finalization recovery fence when shutdown refuses its replacement backup', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-finalize-recovery-quit-'))
+    store = createElectronMissionStore({ userDataPath: directory, storageDiagnostics: diagnostics(),
+      finalizeMissionFaultInjection: { afterArchiveSucceededEvent: true } })
+    const mission = await store.createMission({ name: 'Synthetic protected finalization retry' })
+    await store.finishMission(mission.id)
+    await expect(store.finalizeMission(mission.id)).rejects.toThrow(/Injected finalize interruption/)
+    const fence = readFinalizationFence(directory, mission.id)
+    expect(fence).toBeDefined()
+    await store.prepareClose()
+    store.close()
+    store = undefined
+
+    const reached = deferred()
+    const held = deferred()
+    releases.push(held.resolve)
+    let rejectedArchive: string | undefined
+    const telemetry = diagnostics()
+    store = createElectronMissionStore({ userDataPath: directory, storageDiagnostics: telemetry,
+      readArchiveFile: async (archivePath) => {
+        rejectedArchive = archivePath
+        reached.resolve()
+        await held.promise
+        return readFile(archivePath)
+      } })
+    const retry = store.finalizeMission(mission.id).catch((error: unknown) => error)
+    await reached.promise
+    expect(readFinalizationFence(directory, mission.id)).toEqual(fence)
+    const closing = store.prepareClose().then(() => null, (error: unknown) => error)
+    if (rejectedArchive === undefined) throw new Error('Expected the recoverable archive read.')
+    await rm(rejectedArchive)
+    held.resolve()
+
+    expect(await retry).toMatchObject({ name: 'AbortError', code: 'BACKUP_SHUTDOWN_CANCELLED' })
+    expect(await closing).toBeNull()
+    expect(readFinalizationFence(directory, mission.id)).toEqual(fence)
+    expect((await store.listMissionEvents(mission.id)).map(event => event.event_type))
+      .not.toContain('mission_archive_failed')
+    expect(telemetry.requested).not.toHaveBeenCalled()
+    store.close()
+    store = createElectronMissionStore({ userDataPath: directory, storageDiagnostics: diagnostics() })
+    await expect(store.finalizeMission(mission.id)).resolves.toMatchObject({ mission: { status: 'finalized' } })
+    expect(readFinalizationFence(directory, mission.id)).toBeUndefined()
+  })
+
+  it('still audits and surfaces an admitted finalization backup failure during shutdown', async () => {
+    const reached = deferred()
+    const held = deferred()
+    releases.push(held.resolve)
+    const telemetry = diagnostics()
+    telemetry.requested.mockImplementation(async () => { reached.resolve(); await held.promise })
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-finalize-backup-failure-quit-'))
+    store = createElectronMissionStore({ userDataPath: directory, storageDiagnostics: telemetry,
+      backupFaultInjection: { afterTemporaryBackup: true } })
+    const mission = await store.createMission({ name: 'Synthetic admitted finalization backup failure' })
+    await store.finishMission(mission.id)
+    const finalization = store.finalizeMission(mission.id).catch((error: unknown) => error)
+    await reached.promise
+    const closing = store.prepareClose().then(() => null, (error: unknown) => error)
+    held.resolve()
+
+    expect(await finalization).toBeInstanceOf(Error)
+    expect(await closing).toMatchObject({ message: 'Injected backup interruption after temporary backup.' })
+    expect((await store.listMissionEvents(mission.id)).filter(event => event.event_type === 'mission_archive_failed'))
+      .toHaveLength(1)
+    expect(readFinalizationFence(directory, mission.id)).toBeUndefined()
+    expect(telemetry.failed).toHaveBeenCalledOnce()
   })
 
   it('settles a failed admitted backup and preserves its failure diagnostic before close', async () => {
@@ -216,6 +331,32 @@ function deferred() {
   let resolve: () => void = () => undefined
   const promise = new Promise<void>(done => { resolve = done })
   return { promise, resolve }
+}
+
+/** Pauses the real evidence queue after archive admission, without a production hook. */
+function holdNextOutboxDirectoryRead(userDataPath: string) {
+  const reached = deferred()
+  const held = deferred()
+  releases.push(held.resolve)
+  const original = fileSystem.readdir.bind(fileSystem)
+  let intercepted = false
+  vi.spyOn(fileSystem, 'readdir').mockImplementation(async (...args) => {
+    if (!intercepted && args[0] === path.join(userDataPath, 'ingest-anomaly-outbox')) {
+      intercepted = true
+      reached.resolve()
+      await held.promise
+    }
+    return original(...args)
+  })
+  return { reached: reached.promise, release: held.resolve }
+}
+
+/** Observes the durable fence through a separate real SQLite connection. */
+function readFinalizationFence(userDataPath: string, missionId: string): unknown {
+  const database = new Database(path.join(userDataPath, 'mission-store.sqlite'), { readonly: true })
+  try {
+    return database.prepare('SELECT requested_at FROM mission_finalization_fences WHERE mission_id = ?').get(missionId)
+  } finally { database.close() }
 }
 
 /** Supplies only bounded diagnostics; backup and audit writes remain real. */

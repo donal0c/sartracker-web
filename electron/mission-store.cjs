@@ -1522,6 +1522,8 @@ function createElectronMissionStore(options) {
         missionId,
         'finalization',
         async () => {
+          // Evidence admission can await filesystem work after the earlier check.
+          if (controller.signal.aborted) throw createArchiveCancellationError()
           const result = custody === undefined
             ? await finalizeMission(
               db,
@@ -5637,7 +5639,7 @@ function createBackupCoordinator(
       void safeStorageDiagnostic(() => storageDiagnostics?.recordBackupShutdownTimeout?.({ pendingBackupCount: pendingCount }))
     },
     syncBackup: async (trigger = 'unknown') => {
-      if (closing) throw new Error('Mission store is shutting down; a new backup cannot start.')
+      if (closing) throw createBackupShutdownCancellationError()
       const operation = createStorageDiagnosticOperation(storageDiagnostics)
       queueDepth += 1
       pendingCount += 1
@@ -5660,6 +5662,19 @@ function createBackupCoordinator(
       })
     },
   }
+}
+
+/** A refused admission is expected shutdown cancellation, never a failed copy. */
+function createBackupShutdownCancellationError() {
+  const error = new Error('Mission store is shutting down; a new backup cannot start.')
+  error.name = 'AbortError'
+  error.code = 'BACKUP_SHUTDOWN_CANCELLED'
+  return error
+}
+
+/** Keeps genuine admitted-copy failures visible even when shutdown also starts. */
+function isBackupShutdownCancellation(error) {
+  return error?.name === 'AbortError' && error?.code === 'BACKUP_SHUTDOWN_CANCELLED'
 }
 
 async function syncBackup(
@@ -6028,7 +6043,7 @@ async function createMissionArchive(
     db.transaction(() => {
       const deleted = db.prepare(`DELETE FROM mission_finalization_fences
         WHERE mission_id = ? AND requested_at = ?`).run(missionId, requestedAt)
-      if (deleted.changes > 0) {
+      if (deleted.changes > 0 && !isBackupShutdownCancellation(error)) {
         appendEvent(db, missionId, 'mission_archive_failed', {
           resulting_status: getMission(db, missionId).status,
           archive_kind: archiveEventContext.archive_kind ?? 'direct',
@@ -6608,6 +6623,8 @@ async function finalizeMission(
         archiveFaultInjection,
       )
     } catch (error) {
+      // This fence is a durable retry boundary; no backup/archive was admitted.
+      if (isBackupShutdownCancellation(error)) throw error
       db.transaction(() => {
         appendEvent(db, missionId, 'mission_archive_failed', {
           resulting_status: 'finished',

@@ -1,8 +1,8 @@
 # DON-325 / DON-329 — local validation, 17 October 2026
 
 Source baseline: `a9a4750d826ea316d19ea03c415356a8970348f8`, macOS arm64.
-This is local synthetic development evidence. Linux CI, Ubuntu soak budgets,
-release qualification and operational acceptance are separate and not established.
+This is synthetic development evidence; later sections record Linux CI separately.
+Ubuntu soak budgets, release qualification and operational acceptance are not established.
 
 ## Unchanged-source coverage A/B
 
@@ -231,3 +231,61 @@ long soak, installed Ubuntu and operational acceptance remain separate and owed;
 the Mac performance failures above remain open. Local CI evidence is under
 `tmp/don325-linux-ci/`. This documentation-only closeout reuses the tested
 ancestor after confirming executable inputs are unchanged, per the testing cadence.
+
+## PR review repair — 17 October
+
+Donal's code review found two real gaps despite the earlier green CI and parent
+review. That earlier readiness judgment is superseded. The review itself was
+read-only; the reproductions below were run subsequently on `913fa342` plus the
+repair. The initial review against unrelated checkout documentation was discarded.
+
+DON-329: four real-SQLite regressions failed before the repair. Backup admission
+refusal now has `AbortError` / `BACKUP_SHUTDOWN_CANCELLED`. Finalization checks
+cancellation again after asynchronous evidence admission. A refused replacement
+backup preserves an existing finalization fence and creates no false
+`mission_archive_failed`; reopening and retrying completes finalization. Direct
+archive cancellation releases only its own temporary fence without a failure
+audit. A genuine admitted backup failure still records exactly one failure and
+rejects shutdown even when cancellation arrives concurrently. The backup suite
+then passed all 14 tests.
+
+DON-325: three regressions reproduced live-change notifications replacing error
+with Partial. Notifications now retain the error/message and latest observed
+revision. Dedicated renderer recovery keeps ownership of its retry and fresh
+sources. A further activation test exposed an immediate background reload;
+Sol's independent review found the periodic-poll variant, also reproduced red.
+The central automatic scheduler now respects renderer recovery ownership. Tests
+cover activation and already-displayed failures, a coincident automatic poll,
+error at 249 ms, fresh-source recovery at 250 ms, and Complete only after a fresh
+claim for the latest revision. Genuine load errors remain visible too.
+
+The final focused run passed 7 suites / 111 tests. Affected Chromium passed 9/9;
+the new flow saves a real browser-harness fix during a renderer failure, observes
+the error, then verifies prompt recovery to Complete. Both captures were inspected.
+The first full-suite attempt was deliberately stopped to add the periodic-poll
+regression; it is not recorded as a pass. Logs, source hashes/patch and native
+fixture are retained under `tmp/don325-review/`.
+
+The stable full local correctness run passed 629 suites / 6,611 tests, with 27
+skipped (634.15 s). Lint, TypeScript/Vite, bundle budgets and macOS package passed.
+The immutable review package ASAR is
+`1075e19b914c3703647fcc2594743d11011dca6e251bc7fdca4d2fcfac1ebe52`.
+Its source hashes match the retained dirty-source manifest and tested patch;
+the unrelated generated-version bytes were restored exactly. Packaged native
+runtime passed 24 actual preload calls, existing snapshot/cancellation checks,
+and four injected real-SQLite store controls: late finalize admission, direct
+archive admission, protected finalization cancellation plus reopen/retry, and
+genuine admitted failure. The cancellation cases had zero false archive-failed
+audits; the genuine failure had one and still rejected shutdown. Receipt and
+capture were inspected. This is packaged-store `prepareClose` proof, not a real
+quit-during-finalize UI scenario, slow-backup deadline proof or field acceptance.
+New exact-head Linux CI is required after publication; the PR Checks tab records
+that result without substituting earlier CI for this executable repair.
+
+The failed-quit observation is confirmed but not solved by resetting a backup
+flag: shutdown also permanently closes the writer, outbox and other services.
+The safe policy for resuming work versus requiring exit/restart after refused
+quit needs a separate lifecycle decision on DON-329. Backup timeout wording,
+persistent-stale escalation, journal cleanup and stale-result validation remain
+follow-ups, not fixes claimed by this repair. No shutdown deadline or performance
+budget was relaxed, and no Ubuntu or operational proof is added.
