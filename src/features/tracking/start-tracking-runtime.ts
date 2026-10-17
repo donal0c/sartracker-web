@@ -2,6 +2,7 @@ import { createDeviceColor } from './tracking-color'
 import { createRuntimeCleanup } from '../runtime/runtime-cleanup'
 import { createCurrentTransportFreshness } from './current-transport-freshness'
 import { mergeDeferredTrackingCache } from './merge-deferred-tracking-cache'
+import { HISTORY_PIECE_ROW_BUDGET } from './split-history-chunk'
 import {
   limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
@@ -2605,13 +2606,21 @@ async function persistTrackingSnapshot(
     return nextPositionKeyCache
   }
 
+  // Each Electron store call is one synchronous SQLite transaction on the main
+  // thread. After a restart the key cache is empty, so one snapshot can carry
+  // thousands of unseen fixes; write them in bounded pieces so no single
+  // transaction holds the main loop. Pieces carry no checkpoint, inserts are
+  // idempotent, and keys are cached only after every piece succeeds, so a
+  // failed piece is retried in full by the next snapshot [DON-313].
   if (missionStore.persistTrackingPositionsBulk !== undefined) {
-    const persisted = await missionStore.persistTrackingPositionsBulk({
-      mission_id: activeMission.id,
-      positions: newPositions,
-      checkpoints: [],
-    })
-    notifyDurablePositionChange?.(persisted.changedPositionCount)
+    for (let start = 0; start < newPositions.length; start += HISTORY_PIECE_ROW_BUDGET) {
+      const persisted = await missionStore.persistTrackingPositionsBulk({
+        mission_id: activeMission.id,
+        positions: newPositions.slice(start, start + HISTORY_PIECE_ROW_BUDGET),
+        checkpoints: [],
+      })
+      notifyDurablePositionChange?.(persisted.changedPositionCount)
+    }
   } else if (missionStore.addPositionsBulk !== undefined) {
     const persisted = await missionStore.addPositionsBulk({
       mission_id: activeMission.id,
