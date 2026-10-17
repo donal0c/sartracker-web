@@ -35,8 +35,8 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    passed correctness/package checks but exposed an older map-warning race:
    late tile errors replaced the actionable application failure. Narrow repair
    passes the deterministic regression, 34 browser flows, 34 focused tests,
-   full 6,611-test correctness run and lint/build. Fresh CI remains owed;
-   Checks owns the current result. Prior native receipts precede this map repair.
+   full 6,611-test correctness run and lint/build. PR Checks owns the current
+   Linux result; earlier native receipts precede this map repair.
    Failed-quit session recovery needs a separate lifecycle decision: resetting
    backups alone cannot reopen other closed services. No merge or qualification.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS

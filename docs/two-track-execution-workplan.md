@@ -24,7 +24,8 @@ exact artifact with that known issue; this is not operational acceptance.
    correctness/package jobs but failed an older map-warning race. A narrow
    DON-264 follow-up preserves application failure against late tile errors;
    deterministic browser regression, 34 affected flows, 34 focused tests,
-   fresh 6,611-test correctness and lint/build pass. New exact-head CI remains owed.
+   fresh 6,611-test correctness and lint/build pass. PR Checks records the
+   follow-up's exact-head Linux result, separately from the failed run above.
    Installed Linux budget evidence remains owed. See
    [local report](../handoff/archive/2026-10-17-don325-don329-local-validation.md).
    The renderer-side 256-position write splitting and yielding are already in
