@@ -3096,6 +3096,110 @@ describe('startTrackingRuntime', () => {
     expect(addPositionsBulk).not.toHaveBeenCalled()
   })
 
+  describe('snapshot persistence pieces [DON-313]', () => {
+    /** A restart-sized snapshot: 1,000 breadcrumbs the empty key cache has never seen. */
+    function createLargeSnapshot(): TrackingSnapshot {
+      const template = SNAPSHOT.breadcrumbs[0]!
+      const breadcrumbs = Array.from({ length: 1_000 }, (_, index) => ({
+        ...template,
+        id: `traccar-large-${index}`,
+        lat: template.lat + index * 1e-6,
+        timestamp: new Date(Date.parse('2026-04-06T08:00:00.000Z') + index * 1_000).toISOString(),
+      }))
+      return { ...SNAPSHOT, breadcrumbs, rawBreadcrumbsForPersistence: breadcrumbs }
+    }
+
+    /** Starts a runtime whose only store write port is the given acknowledgement-only bulk writer. */
+    async function startWithBulkWriter(
+      persistTrackingPositionsBulk: ReturnType<typeof vi.fn>,
+      recordMissionEvidenceLoss?: ReturnType<typeof vi.fn>,
+    ) {
+      let pollerHooks:
+        | { onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void> }
+        | undefined
+      await startTrackingRuntime({
+        config: { baseUrl: 'http://test:8082' },
+        createClient: vi.fn().mockReturnValue({}),
+        createPoller: vi.fn().mockImplementation((_client, hooks) => {
+          pollerHooks = hooks
+          return { start: vi.fn(), stop: vi.fn() }
+        }),
+        cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+        missionStore: createMissionStoreStub({
+          getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+          persistTrackingPositionsBulk,
+        }),
+        applySnapshot: vi.fn(),
+        applyStatus: vi.fn(),
+        writeCache: false,
+        ...(recordMissionEvidenceLoss === undefined ? {} : { recordMissionEvidenceLoss }),
+      })
+      return (snapshot: TrackingSnapshot) => pollerHooks?.onSnapshot(snapshot, { historyResetKey: 'mission-1' })
+    }
+
+    it('writes a large unseen snapshot in store calls of at most 256 fixes, in order', async () => {
+      const persistTrackingPositionsBulk = vi.fn().mockImplementation(async (input: { positions: readonly unknown[] }) => ({
+        changedPositionCount: input.positions.length,
+        insertedPositionCount: input.positions.length,
+        skippedAmbiguousLegacyAdoptionCount: 0,
+      }))
+      const deliver = await startWithBulkWriter(persistTrackingPositionsBulk)
+      const snapshot = createLargeSnapshot()
+
+      const expectedIds = [...snapshot.breadcrumbs, ...snapshot.positions].map((position) => position.id)
+
+      await deliver(snapshot)
+
+      const persistedIds = () => persistTrackingPositionsBulk.mock.calls.flatMap(([input]) =>
+        (input as { positions: readonly { source_position_id: string }[] }).positions.map(
+          (position) => position.source_position_id,
+        ))
+      await vi.waitFor(() => expect(persistedIds()).toHaveLength(expectedIds.length))
+      const calls = persistTrackingPositionsBulk.mock.calls.map(([input]) => input as {
+        positions: readonly { source_position_id: string }[]
+        checkpoints: readonly unknown[]
+      })
+      expect(calls.length).toBeGreaterThan(1)
+      for (const call of calls) {
+        expect(call.positions.length).toBeLessThanOrEqual(256)
+        expect(call.checkpoints).toEqual([])
+      }
+      expect(persistedIds()).toEqual(expectedIds)
+    })
+
+    it('caches no fix from a snapshot whose later piece fails, so the next snapshot retries all of it', async () => {
+      let call = 0
+      const persistTrackingPositionsBulk = vi.fn().mockImplementation(async (input: { positions: readonly unknown[] }) => {
+        call += 1
+        if (call === 2) throw new Error('disk busy')
+        return {
+          changedPositionCount: input.positions.length,
+          insertedPositionCount: input.positions.length,
+          skippedAmbiguousLegacyAdoptionCount: 0,
+        }
+      })
+      const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
+      const deliver = await startWithBulkWriter(persistTrackingPositionsBulk, recordMissionEvidenceLoss)
+      const snapshot = createLargeSnapshot()
+
+      const expectedIds = [...snapshot.breadcrumbs, ...snapshot.positions].map((position) => position.id)
+      const persistedIds = () => persistTrackingPositionsBulk.mock.calls.flatMap(([input]) =>
+        (input as { positions: readonly { source_position_id: string }[] }).positions.map(
+          (position) => position.source_position_id,
+        ))
+
+      await deliver(snapshot)
+      await vi.waitFor(() => expect(persistTrackingPositionsBulk).toHaveBeenCalledTimes(2))
+      // The unstored remainder is real evidence loss until a retry lands, exactly as for a failed whole batch.
+      await vi.waitFor(() => expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce())
+      persistTrackingPositionsBulk.mockClear()
+      await deliver(snapshot)
+
+      await vi.waitFor(() => expect(persistedIds()).toHaveLength(expectedIds.length))
+      expect(persistedIds()).toEqual(expectedIds)
+    })
+  })
+
   it('forwards a sourced fix to storage when only its exact legacy fallback is cached [DON-260]', async () => {
     const addPositionsBulk = vi.fn().mockResolvedValue([])
     let pollerHooks:
