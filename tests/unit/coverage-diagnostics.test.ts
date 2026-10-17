@@ -38,6 +38,7 @@ describe('coverage diagnostics [DON-276]', () => {
         deliveredFixCount: 4,
         totalFixCount: 10,
         lastErrorClass: 'timeout',
+        retryableStaleCount: 7,
         message: 'Coverage tile worker failed at /Users/donal/secret and 52.123,-9.456',
       },
     })
@@ -53,6 +54,7 @@ describe('coverage diagnostics [DON-276]', () => {
       lastBuildDurationMs: 240,
       deliveryMapSize: 2,
       lastErrorClass: 'timeout',
+      retryableStaleCount: 7,
     })
     expect(JSON.stringify(diagnostics)).not.toContain('private-device')
     expect(JSON.stringify(diagnostics)).not.toContain('/Users')

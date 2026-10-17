@@ -318,6 +318,7 @@ function formatCoverageDiagnostics(
     `last build duration ms: ${diagnostics.lastBuildDurationMs ?? 'none'}`,
     `delivery map size: ${diagnostics.deliveryMapSize}`,
     `last error class: ${diagnostics.lastErrorClass ?? 'none'}`,
+    `retryable revision races: ${diagnostics.retryableStaleCount}`,
   ]
 }
 

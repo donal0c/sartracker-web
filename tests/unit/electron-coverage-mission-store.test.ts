@@ -319,7 +319,9 @@ describe('Electron coverage mission-store orchestration', () => {
       },
     })
     const mission = await seedMission(store)
-    await expect(store.readCoverageManifest(mission.id, 'changed-structure')).rejects.toThrow('coverage-revision-moved:')
+    await expect(store.readCoverageManifest(mission.id, 'changed-structure')).resolves.toMatchObject({
+      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: expect.any(Number),
+    })
     const current = await store.readCoverageManifest(mission.id, 'new-structure')
     expect(current.chunks.map(chunk => chunk.key.period_kind).sort()).toEqual(['outing', 'unassigned'])
   })
@@ -585,7 +587,9 @@ describe('Electron coverage mission-store orchestration', () => {
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
       chunks: secondChunks,
-    }, 'real-worker-stale-sync')).rejects.toThrow(/revision/i)
+    }, 'real-worker-stale-sync')).resolves.toMatchObject({
+      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: expect.any(Number),
+    })
     const thirdManifest = await store.readCoverageManifest(mission.id, 'real-worker-manifest-3')
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
@@ -1279,7 +1283,9 @@ describe('Electron coverage mission-store orchestration', () => {
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev + 1 }],
-    }, 'stale-catalog')).rejects.toThrow(/current.*revision/i)
+    }, 'stale-catalog')).resolves.toMatchObject({
+      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: manifest.changeSeq,
+    })
     expect(syncCatalog).not.toHaveBeenCalled()
 
     syncCatalog.mockResolvedValue({
@@ -1438,7 +1444,9 @@ describe('Electron coverage mission-store orchestration', () => {
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
-    }, 'tiles-race')).rejects.toThrow(/chunk-stale/i)
+    }, 'tiles-race')).resolves.toMatchObject({
+      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: expect.any(Number),
+    })
     expect(discardCatalog).toHaveBeenCalledWith({
       stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
     })

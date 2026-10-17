@@ -83,7 +83,7 @@ test('a never-loaded target expires and cannot reappear when the map recovers [A
   expect(await page.evaluate(() => window.__SARTRACKER_MAP__!.getLayer('coordinate-target-dot') === undefined)).toBe(true)
 })
 
-test('basemap application failure stays visible until the operator chooses another map', async ({ page }) => {
+test('basemap application failure stays visible until the operator chooses another map', async ({ page }, testInfo) => {
   await page.route('https://**/*', (route) => route.abort())
   await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
@@ -99,14 +99,29 @@ test('basemap application failure stays visible until the operator chooses anoth
   await page.getByTestId('basemap-menu-toggle').click()
   await page.getByTestId('basemap-btn-esri_topo').click()
   await expect(page.getByTestId('map-health-degraded')).toContainText('Choose another basemap')
-  await page.evaluate(() => window.__SARTRACKER_MAP__!.fire('idle'))
+  await page.evaluate(() => {
+    const map = window.__SARTRACKER_MAP__!
+    // Requests from the previous style may finish after setStyle has failed.
+    // Exercise that ordering directly instead of depending on network timing.
+    for (let index = 0; index < 5; index += 1) {
+      map.fire('error', { tile: {}, error: new Error('Late tile request failed') })
+    }
+    map.fire('idle')
+  })
   await expect(page.getByTestId('map-health-degraded')).toContainText('Choose another basemap')
+  await page.screenshot({ path: testInfo.outputPath('basemap-failure-survives-late-tiles.png') })
   await page.getByTestId('basemap-menu-toggle').click()
   await page.getByTestId('basemap-btn-esri_topo').click()
   await expect.poll(() => page.evaluate(() =>
     Object.keys(window.__SARTRACKER_MAP__!.getStyle().sources).some((id) => id.includes('esri_topo')),
   )).toBe(true)
   await expect(page.getByTestId('map-health-degraded').filter({ hasText: 'Choose another basemap' })).toBeHidden()
+  await page.evaluate(() => {
+    for (let index = 0; index < 5; index += 1) {
+      window.__SARTRACKER_MAP__!.fire('error', { tile: {}, error: new Error('New style tile request failed') })
+    }
+  })
+  await expect(page.getByTestId('map-health-degraded')).toContainText('Some tiles failed to load')
 })
 
 test('latest repeated Go To survives delayed style loading and renders at the requested coordinate [AUD-06]', async ({ page }, testInfo) => {

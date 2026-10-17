@@ -72,6 +72,15 @@ export type OutingFixSummary = {
 
 export type CoveragePeriodKind = 'outing' | 'unassigned'
 
+/** A normal revision race carries no inventory or delivery attestation. */
+export type CoverageStaleResult = {
+  readonly kind: 'stale'
+  readonly reason: 'coverage_revision_moved'
+  readonly changeSeq: number
+}
+
+export type CoverageReadResult<T> = T | CoverageStaleResult
+
 export type CoverageChunkKey = {
   readonly device_id: string
   readonly period_kind: CoveragePeriodKind
@@ -1138,7 +1147,7 @@ export type MissionStore = {
   readonly readCoverageManifest?: (
     missionId: string,
     requestId?: string,
-  ) => Promise<CoverageManifest>
+  ) => Promise<CoverageReadResult<CoverageManifest>>
   readonly readCoverageChunk?: (
     input: {
       readonly missionId: string
@@ -1166,7 +1175,7 @@ export type MissionStore = {
       }[]
     },
     requestId?: string,
-  ) => Promise<CoverageTileCatalog>
+  ) => Promise<CoverageReadResult<CoverageTileCatalog>>
   readonly activateCoverageTileCatalog?: (input: {
     readonly activationId: string
   }) => Promise<boolean>

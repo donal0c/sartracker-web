@@ -233,6 +233,9 @@ export function useMapInstance(): MapInstanceController {
       if (!isTileErrorEvent(event)) {
         return
       }
+      // Late requests from the previous style must not replace the actionable
+      // application failure. An operator map choice clears this latch.
+      if (styleFailureRef.current !== null) return
       const decision = tileHealthTrackerRef.current.recordError(Date.now())
       if (decision === 'degrade') {
         setMapHealth(

@@ -80,7 +80,7 @@ describe('diagnostics model', () => {
         pendingChunkCount: 1, staleChunkCount: 2, freshChunkCount: 7,
         pendingInvalidationCount: 1,
         lastEnumerationDurationMs: 81, lastBuildDurationMs: 240,
-        deliveryMapSize: 6, lastErrorClass: 'timeout',
+        deliveryMapSize: 6, lastErrorClass: 'timeout', retryableStaleCount: 7,
       },
     })
 

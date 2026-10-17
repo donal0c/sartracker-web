@@ -24,6 +24,7 @@ const {
 const { runMissionReplayInWorker } = require('./mission-replay-runner.cjs')
 const { runSearchOperationPageInWorker } = require('./search-operations-page-runner.cjs')
 const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
+const { cleanupBackupTemporaryFiles } = require('./backup-temporary-cleanup.cjs')
 const { runGpxEvidenceImportInWorker } = require('./gpx-evidence-import-runner.cjs')
 const {
   startLegacyEvidenceBackfillWorker,
@@ -356,10 +357,17 @@ function normalizeAuthorizedCoverageCatalogInput(database, value) {
       descriptor.key.period_id,
     )
     if (row === undefined || row.content_rev !== descriptor.contentRev) {
-      throw new Error('coverage-revision-moved: Coverage catalog chunk does not match its current revision.')
+      throw createCoverageRevisionMovedError('Coverage catalog chunk does not match its current revision.')
     }
   }
   return normalized
+}
+
+/** Brands an expected revision race separately from authority or attestation failures. */
+function createCoverageRevisionMovedError(message) {
+  const error = new Error(`coverage-revision-moved: ${message}`)
+  error.code = 'coverage-revision-moved'
+  return error
 }
 
 /** Copies exact query-worker summaries into a main-owned, revision-bound oracle. */
@@ -1514,6 +1522,8 @@ function createElectronMissionStore(options) {
         missionId,
         'finalization',
         async () => {
+          // Evidence admission can await filesystem work after the earlier check.
+          if (controller.signal.aborted) throw createArchiveCancellationError()
           const result = custody === undefined
             ? await finalizeMission(
               db,
@@ -1971,6 +1981,7 @@ function createElectronMissionStore(options) {
   return {
     prepareClose: async () => {
       coverageShutdownRequested = true
+      const backupsSettled = backupCoordinator.prepareClose()
       const breadcrumbSessionsSettled = breadcrumbSessions.shutdown()
       for (const controller of activeBreadcrumbQueryControllers) controller.abort()
       const responsiveWritesSettled = responsiveWriter.close()
@@ -1993,6 +2004,7 @@ function createElectronMissionStore(options) {
         activeQuery.controller.abort()
       }
       const shutdownTasks = active.map((entry) => entry.quiesced)
+      shutdownTasks.push(backupsSettled)
       // Queued watched-folder scans refuse once shutdown is requested; join the
       // running one, including its preflight reads, before the database closes.
       shutdownTasks.push(watchedGpxScanTail)
@@ -2047,13 +2059,17 @@ function createElectronMissionStore(options) {
       }
       if (shutdownTasks.length === 0) return
       let timeout
+      let shutdownDeadlineExceeded = false
       try {
         const results = await Promise.race([
           Promise.allSettled(shutdownTasks),
           new Promise((_, reject) => {
-            timeout = setTimeout(() => reject(new Error(
-              'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
-            )), gpxShutdownJoinTimeoutMs)
+            timeout = setTimeout(() => {
+              shutdownDeadlineExceeded = true
+              reject(new Error(
+                'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
+              ))
+            }, gpxShutdownJoinTimeoutMs)
           }),
         ])
         const unexpected = results.find((result) => result.status === 'rejected'
@@ -2061,11 +2077,17 @@ function createElectronMissionStore(options) {
           && result.reason?.code !== 'ARCHIVE_CANCELLED'
           && result.reason?.code !== 'ARCHIVE_CLEANUP_CANCELLED')
         if (unexpected !== undefined) throw unexpected.reason
+      } catch (error) {
+        if (shutdownDeadlineExceeded && backupCoordinator.pendingCount > 0) backupCoordinator.reportShutdownTimeout()
+        throw error
       } finally {
         clearTimeout(timeout)
       }
     },
     close: () => {
+      if (backupCoordinator.pendingCount > 0) {
+        throw new Error('Cannot close the mission store while backups are pending; call prepareClose first.')
+      }
       if (breadcrumbSessions.activeCount > 0 || activeBreadcrumbQueryControllers.size > 0) {
         throw new Error('Cannot close the mission store while breadcrumb transfers are active; call prepareClose first.')
       }
@@ -2103,6 +2125,7 @@ function createElectronMissionStore(options) {
         throw new Error('Cannot close the mission store while archive custody recovery is active; call prepareClose first.')
       }
       storeClosed = true
+      backupCoordinator.close()
       void responsiveWriter.close()
       archiveRegistryReconciliationController?.abort()
       if (gpxReceiptRecoveryTimer !== null) {
@@ -2293,8 +2316,8 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
-    readCoverageManifest: async (missionId, requestId) => executeCoverageRequest(
-      requestId,
+    readCoverageManifest: async (missionId, requestId) => executeCoverageRevisionRequest(
+      missionId, requestId,
       async (signal) => {
         assertCoveragePublicationAvailable(missionId)
         const coverageMission = db.prepare(`SELECT change_seq, enumerated
@@ -2336,7 +2359,7 @@ function createElectronMissionStore(options) {
           ? manifest
           : await runCoverageWorker({ kind: 'manifest', missionId }, signal, false)
         if (!coverageSnapshotInventoryMatches(missionId, currentManifest, 'manifest')) {
-          throw new Error('coverage-revision-moved: Coverage inventory changed while loading history. Retry to read the new inventory.')
+          throw createCoverageRevisionMovedError('Coverage inventory changed while loading history. Retry to read the new inventory.')
         }
         coverageManifestBuildEvidenceByMission.set(
           missionId,
@@ -2426,8 +2449,8 @@ function createElectronMissionStore(options) {
       await activeQuery.completion.catch(() => undefined)
       return true
     },
-    syncCoverageTileCatalog: async (input, requestId) => executeCoverageRequest(
-      requestId,
+    syncCoverageTileCatalog: async (input, requestId) => executeCoverageRevisionRequest(
+      input?.missionId, requestId,
       async (signal) => {
         const normalizedInput = normalizeAuthorizedCoverageCatalogInput(db, input)
         const exactBuildSummaries = readCoverageManifestBuildEvidence(
@@ -3372,6 +3395,23 @@ function createElectronMissionStore(options) {
       const workerExited = operation.workerExited ?? operation
       void Promise.resolve(workerExited).then(releaseWorkerSlot, releaseWorkerSlot)
       return operation
+    })
+  }
+
+  /** Returns only branded, expected revision races without rejecting the IPC call. */
+  function executeCoverageRevisionRequest(missionId, requestId, execute) {
+    return executeCoverageRequest(requestId, async (signal) => {
+      try {
+        return await execute(signal)
+      } catch (error) {
+        if (signal.aborted) throw createCoverageRequestAbortError()
+        if (error?.code !== 'coverage-revision-moved' && error?.code !== 'chunk-stale') throw error
+        return {
+          kind: 'stale',
+          reason: 'coverage_revision_moved',
+          changeSeq: readCoverageChangeSequence(missionId),
+        }
+      }
     })
   }
 
@@ -5564,25 +5604,52 @@ function createBackupCoordinator(
   faultInjection,
   storageDiagnostics,
 ) {
-  let backupTail = Promise.resolve()
+  // Store construction has already opened/migrated the primary. Gate all new
+  // copy execution on the startup sweep so it cannot unlink a live copy.
+  let backupTail = cleanupBackupTemporaryFiles(path.dirname(databasePath)).then(async (result) => {
+    if (result.removedFileCount > 0 || result.preservedSetCount > 0 ||
+      result.failedFileCount > 0 || result.skippedRoot) {
+      await safeStorageDiagnostic(() => storageDiagnostics?.recordBackupTemporaryCleanup?.(result))
+    }
+  }).catch(async () => {
+    await safeStorageDiagnostic(() => storageDiagnostics?.recordBackupTemporaryCleanup?.({
+      removedFileCount: 0, removedBytes: 0, preservedSetCount: 0,
+      failedFileCount: 0, skippedRoot: false, sweepFailed: true,
+    }))
+    console.warn('Backup temporary-file cleanup could not finish; remaining files were preserved.')
+  })
   let queueDepth = 0
+  let pendingCount = 0
+  let closing = false
 
   const enqueue = (task) => {
-    const run = backupTail.then(task, task)
+    const run = backupTail.then(task, task).finally(() => { pendingCount -= 1 })
     backupTail = run.catch(() => {})
     return run
   }
 
   return {
+    get pendingCount() { return pendingCount },
+    prepareClose: () => {
+      closing = true
+      return backupTail
+    },
+    close: () => { closing = true },
+    reportShutdownTimeout: () => {
+      void safeStorageDiagnostic(() => storageDiagnostics?.recordBackupShutdownTimeout?.({ pendingBackupCount: pendingCount }))
+    },
     syncBackup: async (trigger = 'unknown') => {
+      if (closing) throw createBackupShutdownCancellationError()
       const operation = createStorageDiagnosticOperation(storageDiagnostics)
       queueDepth += 1
-      await safeStorageDiagnostic(() =>
+      pendingCount += 1
+      const requested = safeStorageDiagnostic(() =>
         operation === null
           ? undefined
           : storageDiagnostics.requested(operation, { queueDepth, trigger }),
       )
       return enqueue(async () => {
+        await requested
         queueDepth = Math.max(0, queueDepth - 1)
         return syncBackup(
           db,
@@ -5595,6 +5662,19 @@ function createBackupCoordinator(
       })
     },
   }
+}
+
+/** A refused admission is expected shutdown cancellation, never a failed copy. */
+function createBackupShutdownCancellationError() {
+  const error = new Error('Mission store is shutting down; a new backup cannot start.')
+  error.name = 'AbortError'
+  error.code = 'BACKUP_SHUTDOWN_CANCELLED'
+  return error
+}
+
+/** Keeps genuine admitted-copy failures visible even when shutdown also starts. */
+function isBackupShutdownCancellation(error) {
+  return error?.name === 'AbortError' && error?.code === 'BACKUP_SHUTDOWN_CANCELLED'
 }
 
 async function syncBackup(
@@ -5640,6 +5720,13 @@ async function syncBackup(
     await safeStorageDiagnostic(() =>
       operation === null ? undefined : storageDiagnostics.phase(operation, stage),
     )
+    const activeMission = getActiveMission(db)
+    if (activeMission !== null) {
+      appendEvent(db, activeMission.id, 'mission_backup_synced', { backup_path: backupPath })
+    }
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.completed(operation),
+    )
   } catch (error) {
     await safeStorageDiagnostic(() =>
       operation === null
@@ -5653,13 +5740,6 @@ async function syncBackup(
     throw error
   }
 
-  const activeMission = getActiveMission(db)
-  if (activeMission !== null) {
-    appendEvent(db, activeMission.id, 'mission_backup_synced', { backup_path: backupPath })
-  }
-  await safeStorageDiagnostic(() =>
-    operation === null ? undefined : storageDiagnostics.completed(operation),
-  )
   return backupPath
 }
 
@@ -5963,7 +6043,7 @@ async function createMissionArchive(
     db.transaction(() => {
       const deleted = db.prepare(`DELETE FROM mission_finalization_fences
         WHERE mission_id = ? AND requested_at = ?`).run(missionId, requestedAt)
-      if (deleted.changes > 0) {
+      if (deleted.changes > 0 && !isBackupShutdownCancellation(error)) {
         appendEvent(db, missionId, 'mission_archive_failed', {
           resulting_status: getMission(db, missionId).status,
           archive_kind: archiveEventContext.archive_kind ?? 'direct',
@@ -6543,6 +6623,8 @@ async function finalizeMission(
         archiveFaultInjection,
       )
     } catch (error) {
+      // This fence is a durable retry boundary; no backup/archive was admitted.
+      if (isBackupShutdownCancellation(error)) throw error
       db.transaction(() => {
         appendEvent(db, missionId, 'mission_archive_failed', {
           resulting_status: 'finished',

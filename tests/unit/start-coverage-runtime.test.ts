@@ -10,13 +10,16 @@ import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-
 import { startCoverageRuntime } from '../../src/features/tracking/start-coverage-runtime'
 
 afterEach(() => {
+  useCoverageStore.getState().controller?.stop()
   useMissionStore.setState(useMissionStore.getInitialState())
   useCoverageStore.setState(useCoverageStore.getInitialState())
   useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+  vi.useRealTimers()
 })
 
 describe('coverage runtime wiring [DON-276]', () => {
   it('uses Candidate B catalog delivery and revokes on the coordinate-free change event', async () => {
+    vi.useFakeTimers()
     let changeSeq = 1
     let changedListener: ((event: { missionId: string; changeSeq: number }) => void) | undefined
     const readCoverageManifest = vi.fn(async () => manifest(changeSeq))
@@ -67,6 +70,7 @@ describe('coverage runtime wiring [DON-276]', () => {
     changeSeq = 2
     changedListener?.({ missionId: 'mission-1', changeSeq: 2 })
     expect(useCoverageStore.getState().state.status).not.toBe('complete')
+    await vi.advanceTimersByTimeAsync(30_000)
     await acknowledgePendingCatalog()
     await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({
       status: 'complete', changeSeq: 2,
@@ -74,6 +78,44 @@ describe('coverage runtime wiring [DON-276]', () => {
 
     stop()
     expect(useCoverageStore.getState().state).toEqual({ status: 'inactive' })
+  })
+
+  it('does not reload coverage for unchanged healthy evidence objects [DON-325]', async () => {
+    const missionStore = {
+      readCoverageManifest: vi.fn(async () => manifest(1)),
+      syncCoverageTileCatalog: vi.fn(async () => ({
+        activationId: 'stage-1',
+        periods: [{ periodKey: 'unassigned\u0000', revisionDigest: 'rev-1' }],
+        delivered: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      activateCoverageTileCatalog: vi.fn(async () => true),
+      finalizeCoverageTileCatalog: vi.fn(async () => true),
+      discardCoverageTileCatalog: vi.fn(async () => true),
+      readCoverageClaim: vi.fn(async () => ({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      cancelCoverageQuery: vi.fn(async () => true),
+    }
+    useMissionStore.setState({ currentMission: mission(), phase: 'active' })
+    const stop = startCoverageRuntime(missionStore, {
+      enabled: true, rendererGeneration: 'renderer-1',
+      subscribeCoverageChanged: () => () => undefined,
+      schedulePeriodicRefresh: () => () => undefined,
+    })
+    await acknowledgePendingCatalog()
+    await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
+    const reads = missionStore.readCoverageManifest.mock.calls.length
+
+    useIngestHealthStore.getState().applyEvidenceHealth({
+      ...useIngestHealthStore.getState().evidenceHealth,
+    })
+
+    expect(useCoverageStore.getState().state.status).toBe('complete')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(missionStore.readCoverageManifest).toHaveBeenCalledTimes(reads)
+    stop()
   })
 
   it('revokes Complete immediately when ingest evidence health changes', async () => {

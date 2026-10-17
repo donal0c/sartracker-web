@@ -173,11 +173,14 @@ it.each(['devices', 'single-devices', 'positions', 'one-position', 'positions-bu
           void cancellation.catch(() => undefined)
         }, 50)
       }
-      const outcome = await pending.then(() => ({ error: null }), (error: unknown) => ({ error }))
+      const outcome = await pending.then(value => ({ value, error: null }),
+        (error: unknown) => ({ value: undefined, error }))
       maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, performance.now() - previousBeat)
       clearInterval(heartbeat)
       heartbeat = undefined
-      if (kind === 'coverage-stale') expect(outcome.error).toMatchObject({ code: 'chunk-stale' })
+      if (kind === 'coverage-stale') expect(outcome).toMatchObject({
+        error: null, value: { kind: 'stale', reason: 'coverage_revision_moved' },
+      })
       else if (kind === 'conflict-position') expect(outcome.error).toMatchObject({ message: expect.stringMatching(/owned by device tracker/) })
       else if (kind === 'finished-devices') expect(outcome.error).toMatchObject({ message: expect.stringMatching(/finished|writ|finaliz/i) })
       else if (kind === 'cancel-coverage' || kind === 'shutdown-coverage') {

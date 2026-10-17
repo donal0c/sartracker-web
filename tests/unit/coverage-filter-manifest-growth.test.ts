@@ -16,13 +16,16 @@ import { startCoverageRuntime } from '../../src/features/tracking/start-coverage
 
 describe('coverage filters across manifest growth [DON-275]', () => {
   afterEach(() => {
+    useCoverageStore.getState().controller?.stop()
     useMissionStore.setState(useMissionStore.getInitialState())
     useCoverageStore.setState(useCoverageStore.getInitialState())
     useCoverageFilterStore.setState(useCoverageFilterStore.getInitialState())
     useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+    vi.useRealTimers()
   })
 
   it('keeps newly created visible outing chunks inside the claim scope', async () => {
+    vi.useFakeTimers()
     let outings: CoverageManifest['outings'] = []
     let outingRev = 1
     let outingBuiltRev: number | null = 1
@@ -146,6 +149,8 @@ describe('coverage filters across manifest growth [DON-275]', () => {
     }]
     changeSeq = 2
     changedListener?.({ missionId: 'mission-1', changeSeq })
+    expect(useCoverageStore.getState().state.status).toBe('partial')
+    await vi.advanceTimersByTimeAsync(30_000)
     await settleCoverageRuntime()
     await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({
       status: 'complete',
@@ -157,20 +162,23 @@ describe('coverage filters across manifest growth [DON-275]', () => {
     outingBuiltRev = 1
     changeSeq = 3
     changedListener?.({ missionId: 'mission-1', changeSeq })
-    await settleCoverageRuntime()
-    await vi.waitFor(() => expect(useCoverageStore.getState().state.changeSeq).toBe(3))
-
     expect(useCoverageStore.getState().state).toMatchObject({
-      status: 'partial',
-      blockers: expect.arrayContaining(['chunk_not_fresh']),
+      status: 'partial', changeSeq: 2, latestObservedChangeSeq: 3,
     })
+    expect(syncedBatches).toHaveLength(syncCountAfterOuting)
+    expect(outingBuiltRev).toBe(1)
+    await vi.advanceTimersByTimeAsync(30_000)
+    await settleCoverageRuntime()
+    await vi.waitFor(() => expect(useCoverageStore.getState().state).toMatchObject({
+      status: 'complete', changeSeq: 3,
+    }))
     expect(seenClaims.at(-1)).toContainEqual({
       device_id: 'device-2',
       period_kind: 'outing',
       period_id: 'outing-1',
     })
-    expect(syncedBatches).toHaveLength(syncCountAfterOuting)
-    expect(outingBuiltRev).toBe(1)
+    expect(syncedBatches).toHaveLength(syncCountAfterOuting + 1)
+    expect(outingBuiltRev).toBe(2)
     stop()
   })
 })
@@ -187,7 +195,7 @@ async function settleCoverageRuntime(): Promise<void> {
     await after.controller?.notifySelectionApplied(
       selectCoverageChunkKeys(manifest, useCoverageFilterStore.getState()),
     ).catch(() => undefined)
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await vi.advanceTimersByTimeAsync(5)
   }
 }
 
