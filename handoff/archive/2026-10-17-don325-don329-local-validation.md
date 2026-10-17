@@ -289,3 +289,46 @@ quit needs a separate lifecycle decision on DON-329. Backup timeout wording,
 persistent-stale escalation, journal cleanup and stale-result validation remain
 follow-ups, not fixes claimed by this repair. No shutdown deadline or performance
 budget was relaxed, and no Ubuntu or operational proof is added.
+
+## CI map-warning follow-up — 17 October
+
+Review repair `8738080036ced2256fe3e380ef2406f0fbdfe3cc` passed Linux package
+and packaged-runtime jobs in run39032048967. Correctness passed 629 suites /
+6,628 tests (10 skipped), but full Chromium failed: 253 passed, 9 skipped,
+one failed. The existing basemap-application warning test failed all three
+attempts after its first warning assertion passed. The actionable
+“Choose another basemap” warning became “Some tiles failed to load”.
+This run is retained as a failure, not reclassified as a successful retry.
+
+Both the owning hook and test were byte-identical to pre-PR base `a9a4750d`.
+The idle callback already respects a latched application failure, but late tile
+errors did not. An unmodified local run passed; explicitly firing five late
+tile errors after the application failure reproduced the exact CI failure.
+The narrow repair gives the application failure priority until operator map
+choice clears the latch. The existing browser regression now forces that
+ordering, checks the visible warning, retries the same map, then verifies that
+ordinary tile-degradation warnings work again. No assertions or timeouts were
+weakened. This follows the existing DON-264/PR30 recovery contract; Sol's
+independent read of the causal path and final narrow diff found no remaining
+actionable concern. Evidence is under `tmp/don325-review/map-ci-*`.
+
+The failed run's package was source-bound to clean `87380800`, tree
+`fe8ea13b462ff655ff7293d0edae38205c6173f9`. AppImage SHA-256:
+`8eadb860351d16a3e4db5447ed5eeb0c392a7ee5ba9ab1370f19c4fb1c547888`;
+ASAR SHA-256:
+`99006a3b11e64a6f0f8bedf30617c20b1a1711ef5ad9db1fc977fdbf6d6be09f`.
+Downloaded native receipt passed 24 real preload calls, physical-exit
+cancellation and clean exit. AppImage capture and graceful-close proof were
+inspected. The 19 producer cases remain development checks with
+`qualificationExecuted:false`; skipped long-soak/archive qualification is not
+a pass. These artifacts precede the map-warning repair.
+
+Final local map follow-up validation: five focused suites / 34 tests passed;
+all 34 affected Chromium map/navigation/coverage flows passed (1.3 min), with
+the persistent-warning capture inspected. The fresh full source run passed
+629 suites / 6,611 tests, 27 skipped (650.01 s); lint, TypeScript/Vite and
+bundle budgets passed. Source/test hashes remained stable and the unrelated
+generated-version edit was restored byte-for-byte after the build. This shared
+renderer change does not modify SQLite or the native lifecycle boundary;
+earlier native receipts retain their stated source binding, and new Linux CI
+must validate the follow-up package. No new soak or installed-Ubuntu claim.

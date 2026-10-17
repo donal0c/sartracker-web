@@ -20,7 +20,11 @@ exact artifact with that known issue; this is not operational acceptance.
    all 691,224 fixes match exactly and integrity is `ok`. Keep DON-312/313 open;
    Earlier Linux CI passed, but PR review exposed coverage-error masking and a
    finalize/shutdown race. Repairs pass 6,611 local tests, Chromium9/9,
-   lint/build/package and packaged-store race controls; new exact-head CI owed.
+   lint/build/package and packaged-store race controls. Linux39032048967 passed
+   correctness/package jobs but failed an older map-warning race. A narrow
+   DON-264 follow-up preserves application failure against late tile errors;
+   deterministic browser regression, 34 affected flows, 34 focused tests,
+   fresh 6,611-test correctness and lint/build pass. New exact-head CI remains owed.
    Installed Linux budget evidence remains owed. See
    [local report](../handoff/archive/2026-10-17-don325-don329-local-validation.md).
    The renderer-side 256-position write splitting and yielding are already in
