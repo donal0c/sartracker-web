@@ -1,4 +1,4 @@
-import { distance, point } from '@turf/turf'
+import { haversineDistanceMetres } from '../../lib/haversine-distance'
 
 import { createTrackingPositionIdentityKey } from './tracking-position-identity'
 import type { NormalizedTrackingPosition } from './tracking-types'
@@ -144,9 +144,9 @@ function episodeEvaluation(episode: Episode | null, count: number, config: Stati
     : { state: 'none' }
 }
 
-/** Measures separation without changing either accepted source fix. */
+/** Measures separation without changing either accepted source fix, and without allocating. */
 function displacement(left: NormalizedTrackingPosition, right: NormalizedTrackingPosition): number {
-  return distance(point([left.lon, left.lat]), point([right.lon, right.lat]), { units: 'meters' })
+  return haversineDistanceMetres(left.lat, left.lon, right.lat, right.lon)
 }
 
 /** Replaces corrupt or unsafe persisted values with the reviewed hypotheses. */

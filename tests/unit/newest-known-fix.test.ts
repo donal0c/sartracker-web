@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { selectNewestKnownFixes } from '../../src/features/tracking/newest-known-fix'
 import { createDeviceFeatureCollection } from '../../src/features/tracking/tracking-geojson'
@@ -89,6 +89,48 @@ describe('selectNewestKnownFixes', () => {
     const p1 = fix('p1', '2026-10-02T10:00:00.000Z')
     const b2 = fix('b2', '2026-10-02T12:00:00.000Z', { device_id: '2' })
     expect(selectNewestKnownFixes([p1], [b2])).toEqual([p1])
+  })
+})
+
+describe('selectNewestKnownFixes allocation [DON-312]', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('scans breadcrumb history without constructing a Date per fix', () => {
+    const breadcrumbs = Array.from({ length: 2_048 }, (_, index) =>
+      fix(`b${index}`, new Date(Date.UTC(2026, 9, 2, 10, 0, index)).toISOString(), {
+        device_id: String(index % 32),
+      }),
+    )
+    const positions = Array.from({ length: 32 }, (_, index) =>
+      fix(`p${index}`, '2026-10-02T10:00:00.000Z', { device_id: String(index) }),
+    )
+    let constructed = 0
+    const RealDate = Date
+    vi.stubGlobal(
+      'Date',
+      new Proxy(RealDate, {
+        construct(target, args: ConstructorParameters<DateConstructor>) {
+          constructed += 1
+          return new target(...args)
+        },
+      }),
+    )
+
+    const result = selectNewestKnownFixes(positions, breadcrumbs)
+
+    expect(constructed).toBe(0)
+    expect(result.map((chosen) => chosen.id)).toEqual(
+      Array.from({ length: 32 }, (_, index) => `b${2_016 + index}`),
+    )
+  })
+
+  it('keeps the first breadcrumb among equal newest timestamps', () => {
+    const position = fix('p1', '2026-10-02T10:00:00.000Z')
+    const first = fix('b1', '2026-10-02T10:00:30.000Z', { lat: 52.2 })
+    const second = fix('b2', '2026-10-02T10:00:30.000Z', { lat: 52.3 })
+    expect(selectNewestKnownFixes([position], [first, second])[0]?.id).toBe('b1')
   })
 })
 

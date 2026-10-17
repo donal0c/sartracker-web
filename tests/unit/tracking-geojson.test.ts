@@ -565,7 +565,11 @@ describe('tracking geojson', () => {
         DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
       )
 
-      expect(parseSpy).toHaveBeenCalledTimes(parseCallsAfterFirstBuild)
+      // Only the changed current position may be parsed; breadcrumb history is reused
+      // (the marker's newest-known-fix choice parses the position time) [DON-312].
+      expect(parseSpy.mock.calls.slice(parseCallsAfterFirstBuild).map(([value]) => value)).toEqual(
+        secondSnapshot.positions.map((position) => position.timestamp),
+      )
     } finally {
       parseSpy.mockRestore()
     }

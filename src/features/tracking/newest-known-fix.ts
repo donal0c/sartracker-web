@@ -1,18 +1,23 @@
 import type { NormalizedTrackingPosition } from './tracking-types'
 
 /**
- * Returns true when a fix has finite, in-range WGS84 coordinates and a parseable timestamp.
+ * Returns the fix time in epoch milliseconds when the fix has finite, in-range WGS84
+ * coordinates and a parseable timestamp, otherwise null. Parses once and builds no Date,
+ * because this runs over the whole breadcrumb history [DON-312].
  */
-function isUsableFix(fix: NormalizedTrackingPosition): boolean {
-  return (
-    Number.isFinite(fix.lat) &&
-    Number.isFinite(fix.lon) &&
-    fix.lat >= -90 &&
-    fix.lat <= 90 &&
-    fix.lon >= -180 &&
-    fix.lon <= 180 &&
-    Number.isFinite(new Date(fix.timestamp).getTime())
-  )
+function usableFixTimeMs(fix: NormalizedTrackingPosition): number | null {
+  if (
+    !Number.isFinite(fix.lat) ||
+    !Number.isFinite(fix.lon) ||
+    fix.lat < -90 ||
+    fix.lat > 90 ||
+    fix.lon < -180 ||
+    fix.lon > 180
+  ) {
+    return null
+  }
+  const ms = Date.parse(fix.timestamp)
+  return Number.isFinite(ms) ? ms : null
 }
 
 type NewestBreadcrumb = { readonly fix: NormalizedTrackingPosition; readonly ms: number }
@@ -35,10 +40,10 @@ function getNewestBreadcrumbByDevice(
   }
   const index = new Map<string, NewestBreadcrumb>()
   for (const breadcrumb of breadcrumbs) {
-    if (!isUsableFix(breadcrumb)) {
+    const ms = usableFixTimeMs(breadcrumb)
+    if (ms === null) {
       continue
     }
-    const ms = new Date(breadcrumb.timestamp).getTime()
     const existing = index.get(breadcrumb.device_id)
     if (existing === undefined || ms > existing.ms) {
       index.set(breadcrumb.device_id, { fix: breadcrumb, ms })
@@ -72,12 +77,13 @@ export function selectNewestKnownFixes(
   const selected: NormalizedTrackingPosition[] = []
   for (const position of positions) {
     const breadcrumb = newestBreadcrumbByDevice.get(position.device_id)
-    if (!isUsableFix(position)) {
+    const positionMs = usableFixTimeMs(position)
+    if (positionMs === null) {
       selected.push(breadcrumb === undefined ? position : withPositionHealth(breadcrumb.fix, position))
       continue
     }
     selected.push(
-      breadcrumb !== undefined && breadcrumb.ms > new Date(position.timestamp).getTime()
+      breadcrumb !== undefined && breadcrumb.ms > positionMs
         ? withPositionHealth(breadcrumb.fix, position)
         : position,
     )

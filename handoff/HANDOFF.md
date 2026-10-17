@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-17 (PR #56 merged 8a88acb0; DON-325/329 Done, residuals DON-331–335). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-17 (DON-312 renderer churn fix in PR; PR #56 merged; residuals DON-331–335). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -30,8 +30,16 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    coverage escalation, DON-335 journal cleanup/malformed-sequence validation.
    Mac A/B confirmed a coverage contribution, but the fixed soak still FAILS
    memory (2,217,132,032 bytes) and main-loop (226 ms) budgets; data and
-   integrity PASS. DON-312/313 stay open. See
+   integrity PASS. See
    [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
+   **DON-312 renderer churn fix (branch `don-312-renderer-churn`):** no Date
+   per breadcrumb in the newest-fix scan; allocation-free haversine for
+   stationary attention. Same Mac soak: peak 1,821,671,424 bytes (memory PASS),
+   drain allocation 49.8 → 39.2 GB, data exact. Main-loop still FAILS
+   (233/203 ms, startup catch-up, renderer change can't help) → DON-313 next:
+   profile main startup (`--profile-main-startup-ms`), then per-task worker
+   isolates as the main-RSS suspect. See
+   [churn note](archive/2026-10-17-don312-renderer-churn.md).
    Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
    rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
@@ -55,6 +63,9 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
   test run active.
 - **Donal decisions pending:** DON-331 refused-quit policy; whether DON-247 is
   a 13.7 gate.
+- **Maps (M01–M03) next after the team talk:** Donal meets the team week of
+  19 Oct. Hold the M01 area-workflow questions until then, then pivot straight
+  to DON-144/76/7. Until then: close out 13.7 (DON-312/313 first).
 
 ## Waiting on others
 
