@@ -195,7 +195,10 @@ It exited 0 without forced cleanup. Report, harness hash and inspected captures:
 `tmp/don325-fixed/quiet-recovery/`; source script:
 `tmp/don325-fixed/native-quiet-recovery.mjs`.
 
-No Ubuntu access, external provider writes, push, release, threshold change or automatic
-store/worker rewrite was performed. Fresh exact-commit Linux CI and packaged
-Linux checks remain owed. Parent coordinates Linear and the draft PR; DON-312
-must remain open.
+No Ubuntu access, external provider writes, release, threshold change or automatic
+store/worker rewrite was performed. After local validation, implementation commit
+`da069fe62a9ebdc633a3461b215868a6640652ae` was published in
+[draft PR #56](https://github.com/donal0c/sartracker-web/pull/56). Its Checks tab
+is the authoritative current exact-head Linux CI record; those results are
+separate from this local evidence. Installed Ubuntu checks remain owed.
+DON-325/329 are In Review; DON-312/313 remain open.

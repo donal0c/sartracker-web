@@ -48,7 +48,9 @@ exact artifact with that known issue; this is not operational acceptance.
    bounded shutdown join through audit/completion, close guard and safe bounded
    startup temp cleanup. Both packaged Mac quits during active copies PASS;
    held real-SQLite tests cover timeout/refusal and retry. Linux proof remains
-   separate. DON-325/329 await coordinated PR/CI review, not regression closure.
+   separate. DON-325/329 are In Review in
+   [draft PR #56](https://github.com/donal0c/sartracker-web/pull/56), whose Checks
+   tab owns current exact-head CI results; neither regression is closed.
 7. Use **DON-290** and the checklist above for the exact CI-built candidate.
 
 **Separate field acceptance:** DON-247 remains urgent/in progress for the
