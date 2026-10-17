@@ -62,14 +62,11 @@ exact artifact with that known issue; this is not operational acceptance.
    held real-SQLite tests cover timeout/refusal and retry. Review repair adds
    recognized cancellation, preserved finalization recovery and no false failure
    audit. Failed-quit session recovery is a separate unresolved lifecycle policy;
-   resetting backups alone is unsafe. DON-325/329 remain In Review in
-   [PR #56](https://github.com/donal0c/sartracker-web/pull/56), now ready rather
-   than draft. Donal requested merge; the normal attempt was blocked by the
-   **Protect master - Donal only** rule. No administrator override was used;
-   resolve that decision before merging. Neither regression is closed.
-   DON-329 retains failed-quit lifecycle/timeout wording and actual installed
-   quit-during-finalize checks. DON-325 retains persistent-stale escalation;
-   minor journal cleanup and malformed-sequence validation remain follow-ups.
+   resetting backups alone is unsafe. **PR #56 merged 17 Oct (8a88acb0);**
+   DON-325/329 Done for implemented scope. Residuals: DON-331 refused-quit
+   lifecycle decision, DON-332 installed Ubuntu quit-during-finalize smoke,
+   DON-333 timeout wording, DON-334 persistent-stale coverage escalation,
+   DON-335 journal cleanup/malformed-sequence validation.
 7. Use **DON-290** and the checklist above for the exact CI-built candidate.
 
 **Separate field acceptance:** DON-247 remains urgent/in progress for the

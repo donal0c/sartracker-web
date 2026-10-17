@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-17 (DON-325/329 verified; PR #56 ready, merge blocked by repository policy). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-17 (PR #56 merged 8a88acb0; DON-325/329 Done, residuals DON-331–335). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -21,24 +21,18 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    from the position; list/readout follow-up 18580e93), DON-327 warning codes
    7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
    team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
-   DON-325/329 implemented in PR #56: bounded automatic coverage refreshes,
-   typed stale results, backup shutdown ownership and bounded orphan cleanup.
-   Mac A/B confirmed a coverage contribution; the fixed soak still FAILS memory
-   (2,217,132,032 bytes) and main-loop (226 ms) budgets. All 691,224 fixes and
-   integrity PASS; backup-overlap quits and quiet coverage recovery PASS. See
+   DON-325/329 **merged in PR #56 (8a88acb0, Donal, 17 Oct)**: bounded
+   automatic coverage refreshes, typed stale results, backup shutdown ownership
+   and bounded orphan cleanup. Linux run 39036124595 passed all four jobs on
+   `f8bf5888`. Linear auto-closed both on merge; residuals are split out:
+   DON-331 refused-quit lifecycle decision (Donal), DON-332 installed Ubuntu
+   quit-during-finalize smoke, DON-333 timeout wording, DON-334 persistent-stale
+   coverage escalation, DON-335 journal cleanup/malformed-sequence validation.
+   Mac A/B confirmed a coverage contribution, but the fixed soak still FAILS
+   memory (2,217,132,032 bytes) and main-loop (226 ms) budgets; data and
+   integrity PASS. DON-312/313 stay open. See
    [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
-   [PR #56](https://github.com/donal0c/sartracker-web/pull/56) is ready (not draft);
-   DON-325/329 remain In Review. Donal requested merge, but the normal attempt
-   was rejected by **Protect master - Donal only**. No override was used.
-   Next: resolve the administrator-override decision, then verify the merge.
-   Both review blockers and the CI-discovered map-warning race are repaired.
-   [Linux run 39036124595](https://github.com/donal0c/sartracker-web/actions/runs/39036124595)
-   passed all four jobs on `f8bf5888`: 629 suites / 6,628 tests (10 skipped),
-   Chromium 254 passed (9 skipped), package/native checks and AppImage launch/
-   graceful close. Receipts and captures inspected. Later documentation-only
-   updates reuse this tested ancestor; executable/test inputs are unchanged.
-   Failed-quit session recovery still needs a lifecycle decision; resetting
-   backups alone is unsafe. No merge, release or qualification is recorded.
+   Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
 2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
    rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
    309, 317 — name them on the 13.7 candidate run.
@@ -57,10 +51,10 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 ## Who is doing what
 
-- **Coordinator:** Linear, PR, merge decision and next candidate verification.
-- Implementation and verification are complete for this PR. No worker or test
-  run remains active. Sol's independent review found the repaired periodic-poll
-  variant. Fable supplied design opinions; final code review hit quota.
+- **Coordinator (Claude):** Linear, 13.7 candidate verification. No worker or
+  test run active.
+- **Donal decisions pending:** DON-331 refused-quit policy; whether DON-247 is
+  a 13.7 gate.
 
 ## Waiting on others
 
