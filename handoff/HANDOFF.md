@@ -38,9 +38,10 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    commits/launch at 100–185 ms (tiny bodies; sync cost suspected, measure
    on box) and a rare 2.17 s blocked stall (33 ms CPU). 128-fix budget
    dropped. **DON-336** (log rotated in ~20 s, bundle read last 1,000 lines):
-   branch `don-336-log-retention` aggregates tracking writes to one summary
-   per minute, logs writes ≥100 ms as `storage_slow_write` warnings, and the
-   bundle keeps up to 500 earlier warn/error entries; 2 h load regression.
+   fixed by PR #61 (merged f3fe38a5, Done): one tracking summary per minute,
+   writes ≥100 ms logged as `storage_slow_write`, bundle keeps up to 500
+   earlier warn/error entries. Packaged soak: whole run in 128 KB, every
+   stall ≥150 ms matched a slow write, commit 85–90% of each (sync cost).
    Linear DON-312/313/240 reopened. See
    [churn note](archive/2026-10-17-don312-renderer-churn.md).
    Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
