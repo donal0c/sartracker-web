@@ -1687,7 +1687,8 @@ async function startElectronApp(startupWatchdog) {
         : 'unavailable',
     loadSettings: settingsStore.loadAppSettings,
     readRecentCrashes: () => crashLog.readRecent(10),
-    readRecentLog: () => runtimeLog.readRecent(1000),
+    // Recent tail plus earlier warnings, so a fault minutes ago survives tracking load [DON-336].
+    readRecentLog: () => runtimeLog.readSupportEntries({ recentLimit: 1000, warningLimit: 500 }),
     readStorageDiagnostics: () => storageDiagnostics.readSupportSnapshot(),
   })
   const missionStore = await startupWatchdog.run(

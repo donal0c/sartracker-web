@@ -13,6 +13,7 @@ type StartupEvidenceService = {
     readonly append: (input: Record<string, unknown>) => Promise<void>
     readonly appendDurable: (input: Record<string, unknown>) => Promise<void>
     readonly readRecent: (limit?: number) => Promise<readonly unknown[]>
+    readonly readSupportEntries: (options?: Record<string, unknown>) => Promise<readonly unknown[]>
   }
   readonly crashLog: {
     readonly record: (input: Record<string, unknown>) => Promise<void>
@@ -53,6 +54,25 @@ describe('Electron startup evidence service', () => {
     ])
     expect(utility.child.kill).not.toHaveBeenCalled()
     expect(utility.exited).toBe(true)
+  })
+
+  it('routes the support-bundle runtime read to the utility process [DON-336]', async () => {
+    const utility = createUtilityProcess()
+    const service = createStartupEvidenceService({
+      enabled: true,
+      userDataPath: '/profile',
+      utilityProcess: { fork: vi.fn(() => utility.child) },
+      workerPath: '/app/electron/startup-evidence-worker.cjs',
+      killProcess: vi.fn(),
+    }) as StartupEvidenceService
+
+    await service.ready
+    await service.runtimeLog.readSupportEntries({ recentLimit: 1000, warningLimit: 500 })
+    await service.close({ timeoutMs: 100 })
+
+    expect(utility.messages).toContainEqual({
+      id: 1, type: 'runtime.readSupportEntries', input: { recentLimit: 1000, warningLimit: 500 },
+    })
   })
 
   it('terminates and reaps a utility process when a write remains pending', async () => {

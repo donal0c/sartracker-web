@@ -2,9 +2,24 @@
 
 const BUSY_RETRY_LIMIT = 240
 const BUSY_RETRY_DELAY_MS = 25
+const DEFAULT_SLOW_TRANSACTION_MS = 100
 
-/** Creates an ordered owner for short atomic writes that must not sleep inside SQLite. */
-function createResponsiveMissionWriter(database) {
+/**
+ * Creates an ordered owner for short atomic writes that must not sleep inside SQLite.
+ *
+ * @param {object} database better-sqlite3 main connection.
+ * @param {object} [options]
+ * @param {(input: { totalMs: number, bodyMs: number, commitMs: number }) => void} [options.onSlowTransaction]
+ *   Receives any transaction that held the main thread for at least
+ *   `slowTransactionMs`, split into body and commit time, so a stall can be
+ *   attributed from the support report [DON-313].
+ * @param {number} [options.slowTransactionMs]
+ * @param {() => number} [options.now] Monotonic milliseconds.
+ */
+function createResponsiveMissionWriter(database, options = {}) {
+  const onSlowTransaction = options.onSlowTransaction ?? null
+  const slowTransactionMs = options.slowTransactionMs ?? DEFAULT_SLOW_TRANSACTION_MS
+  const now = options.now ?? (() => performance.now())
   let closing = false
   let tail = Promise.resolve()
   const pendingBuffer = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
@@ -14,8 +29,10 @@ function createResponsiveMissionWriter(database) {
   /** Executes only one fully rolled-back synchronous transaction per attempt. */
   async function execute(callback, signal) {
     if (fault !== null) throw fault
+    let bodyEndMs = 0
     const transaction = database.transaction(() => {
       const result = callback()
+      bodyEndMs = now()
       if (result !== null && typeof result === 'object' && typeof result.then === 'function') {
         throw new Error('Mission write callbacks must be synchronous.')
       }
@@ -33,7 +50,10 @@ function createResponsiveMissionWriter(database) {
       let retryError
       database.pragma('busy_timeout = 0')
       try {
-        return transaction.immediate()
+        const startMs = now()
+        const result = transaction.immediate()
+        reportIfSlow(startMs, bodyEndMs, now())
+        return result
       } catch (error) {
         if (database.inTransaction) {
           try {
@@ -56,6 +76,17 @@ function createResponsiveMissionWriter(database) {
       if (retryError !== undefined) await waitForRetry(signal)
     }
     throw new Error('Mission write retry budget exhausted.')
+  }
+
+  /** Reports a committed transaction that held the main thread too long; never fails the write. */
+  function reportIfSlow(startMs, bodyEndMs, endMs) {
+    const totalMs = endMs - startMs
+    if (onSlowTransaction === null || totalMs < slowTransactionMs) return
+    try {
+      onSlowTransaction({ totalMs, bodyMs: bodyEndMs - startMs, commitMs: endMs - bodyEndMs })
+    } catch {
+      // Diagnostics must never turn a committed write into a reported failure.
+    }
   }
 
   return Object.freeze({

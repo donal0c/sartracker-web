@@ -1259,7 +1259,8 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
     const evidence = parseTrackingSoakRuntimeLog([
       '{"event":"storage_backup_completed","totalDurationMs":24,"databaseBytes":4096}',
       'malformed line',
-      '{"event":"storage_tracking_positions_completed","durationMs":19,"insertedPositionCount":1440}',
+      '{"event":"storage_tracking_summary","windowMs":60000,"positionWriteCount":120,"insertedPositionCount":1440,"maxPositionWriteMs":19,"totalPositionWriteMs":600}',
+      '{"event":"storage_slow_write","totalMs":150,"bodyMs":30,"commitMs":120}',
       '{"event":"storage_backup_completed","totalDurationMs":31,"databaseBytes":2654208}',
     ].join('\n'))
 
@@ -1268,8 +1269,11 @@ describe('Electron packaged tracking soak helpers [DON-246]', () => {
         { totalDurationMs: 24, databaseBytes: 4_096 },
         { totalDurationMs: 31, databaseBytes: 2_654_208 },
       ],
-      trackingPositionBatches: [
-        { durationMs: 19, insertedPositionCount: 1_440 },
+      trackingSummaries: [
+        { windowMs: 60_000, positionWriteCount: 120, insertedPositionCount: 1_440, maxPositionWriteMs: 19 },
+      ],
+      slowWrites: [
+        { totalMs: 150, bodyMs: 30, commitMs: 120 },
       ],
       backupDurationTrendMs: 7,
     })

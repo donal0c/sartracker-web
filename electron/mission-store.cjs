@@ -607,7 +607,11 @@ function createElectronMissionStore(options) {
   db.pragma('synchronous = FULL')
   db.pragma('foreign_keys = ON')
   const migrationState = migrate(db, archiveDirectory)
-  const responsiveWriter = createResponsiveMissionWriter(db)
+  const responsiveWriter = createResponsiveMissionWriter(db, {
+    onSlowTransaction: (input) => {
+      void safeStorageDiagnostic(() => storageDiagnostics?.recordSlowWrite?.(input))
+    },
+  })
   let storeClosed = false
   let archiveCorrectionAttachmentRecoveryFailure = null
   let archiveCorrectionAttachmentRecoveryShutdownRequested = false
@@ -2009,6 +2013,11 @@ function createElectronMissionStore(options) {
       // running one, including its preflight reads, before the database closes.
       shutdownTasks.push(watchedGpxScanTail)
       shutdownTasks.push(responsiveWritesSettled)
+      // Log the last partial tracking summary once no further write can add to it [DON-336].
+      shutdownTasks.push(responsiveWritesSettled.then(
+        () => safeStorageDiagnostic(() => storageDiagnostics?.flushTrackingSummary?.()),
+        () => undefined,
+      ))
       shutdownTasks.push(breadcrumbSessionsSettled)
       shutdownTasks.push(breadcrumbQueryTail)
       if (legacyArchiveRegistryBackfillActive !== null) {

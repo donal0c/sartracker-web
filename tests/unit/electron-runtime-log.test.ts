@@ -33,6 +33,10 @@ type RuntimeLog = {
     readonly fields?: Record<string, unknown>
   }) => Promise<void>
   readonly readRecent: (limit?: number) => Promise<readonly RuntimeLogEntry[]>
+  readonly readSupportEntries: (options?: {
+    readonly recentLimit?: number
+    readonly warningLimit?: number
+  }) => Promise<readonly RuntimeLogEntry[]>
   readonly logFilePath: string
 }
 
@@ -187,6 +191,42 @@ describe('electron runtime log', () => {
 
     expect(entries.map((entry) => entry.index)).toEqual([195, 196, 197, 198, 199])
     expect(parseSpy).toHaveBeenCalledTimes(5)
+  })
+
+  it('keeps earlier warnings and errors in the support read beyond the recent tail [DON-336]', async () => {
+    const log = await createLog({ maxBytes: 4_000 })
+    await log.append({ level: 'error', event: 'early_error', fields: { index: 0 } })
+    for (let index = 1; index <= 30; index += 1) {
+      await log.append({ level: 'info', event: 'tick', fields: { index } })
+    }
+    await log.append({ level: 'warn', event: 'middle_warning', fields: { index: 31 } })
+    for (let index = 32; index <= 60; index += 1) {
+      await log.append({ level: 'info', event: 'tick', fields: { index } })
+    }
+
+    const entries = await log.readSupportEntries({ recentLimit: 3, warningLimit: 10 })
+
+    // Chronological: retained warnings first, then the contiguous recent tail.
+    expect(entries.map((entry) => entry.index)).toEqual([0, 31, 58, 59, 60])
+    expect(entries.map((entry) => entry.event)).toEqual([
+      'early_error', 'middle_warning', 'tick', 'tick', 'tick',
+    ])
+  })
+
+  it('bounds the retained warnings to the most recent ones and never duplicates the tail [DON-336]', async () => {
+    const log = await createLog()
+    for (let index = 0; index < 8; index += 1) {
+      await log.append({ level: 'warn', event: 'repeat_warning', fields: { index } })
+    }
+
+    const entries = await log.readSupportEntries({ recentLimit: 2, warningLimit: 3 })
+
+    expect(entries.map((entry) => entry.index)).toEqual([3, 4, 5, 6, 7])
+  })
+
+  it('returns no support entries when no log file exists yet [DON-336]', async () => {
+    const log = await createLog()
+    await expect(log.readSupportEntries()).resolves.toEqual([])
   })
 
   it('returns an empty list when no log file exists yet', async () => {

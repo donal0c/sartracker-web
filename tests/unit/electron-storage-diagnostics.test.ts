@@ -109,6 +109,13 @@ type StorageDiagnostics = {
     readonly durationMs: number
     readonly insertedPositionCount: number
     readonly positionTelemetryEventCount: number
+    readonly skippedAmbiguousLegacyAdoptionCount?: number
+  }) => Promise<void>
+  readonly flushTrackingSummary: () => Promise<void>
+  readonly recordSlowWrite: (input: {
+    readonly totalMs: number
+    readonly bodyMs: number
+    readonly commitMs: number
   }) => Promise<void>
   readonly readSupportSnapshot: () => Promise<StorageDiagnosticsSnapshot>
   readonly recordBackupTemporaryCleanup: (input: {
@@ -148,6 +155,84 @@ describe('Electron storage diagnostics [DON-244]', () => {
       { level: 'error', event: 'storage_backup_shutdown_wait_timed_out', fields: { pendingBackupCount: 2 } },
     ])
     expect(JSON.stringify(harness.entries)).not.toContain(userDataPath)
+  })
+
+  it('folds per-write tracking facts into one summary entry per minute [DON-336]', async () => {
+    const harness = await createHarness()
+    for (let index = 0; index < 50; index += 1) {
+      await harness.diagnostics.recordTrackingBatch({
+        durationMs: 10 + index, deviceCount: 32, changedDeviceEventCount: 2,
+        observedAt: '2026-07-10T12:00:00.000Z',
+      })
+      await harness.diagnostics.recordInsertedPositions({
+        durationMs: 3, insertedPositionCount: 4, positionTelemetryEventCount: 0,
+        skippedAmbiguousLegacyAdoptionCount: 1,
+      })
+      harness.advance(1_000)
+    }
+    expect(harness.entries).toEqual([])
+
+    harness.advance(10_000)
+    await harness.diagnostics.recordInsertedPositions({
+      durationMs: 90, insertedPositionCount: 6, positionTelemetryEventCount: 0,
+    })
+
+    expect(harness.entries).toEqual([{ level: 'info', event: 'storage_tracking_summary', fields: {
+      windowMs: 60_000,
+      pollCount: 50,
+      maxPollMs: 59,
+      totalPollMs: 1_725,
+      peakDeviceCount: 32,
+      changedDeviceEventCount: 100,
+      positionWriteCount: 51,
+      insertedPositionCount: 206,
+      positionTelemetryEventCount: 0,
+      skippedAmbiguousLegacyAdoptionCount: 50,
+      maxPositionWriteMs: 90,
+      totalPositionWriteMs: 240,
+      cumulativeInsertedPositionCount: 206,
+      cumulativeObservedPollCount: 50,
+    } }])
+    // The checkpoint still carries every fact, so a crash between summaries loses no counts.
+    expect((await harness.diagnostics.readSupportSnapshot()).mission).toMatchObject({
+      observedPollCount: 50, insertedPositionCount: 206,
+    })
+  })
+
+  it('flushes a partial tracking window on demand and stays silent with nothing to report [DON-336]', async () => {
+    const harness = await createHarness()
+    await harness.diagnostics.flushTrackingSummary()
+    expect(harness.entries).toEqual([])
+
+    await harness.diagnostics.recordInsertedPositions({
+      durationMs: 7, insertedPositionCount: 3, positionTelemetryEventCount: 0,
+    })
+    harness.advance(4_000)
+    await harness.diagnostics.flushTrackingSummary()
+    await harness.diagnostics.flushTrackingSummary()
+
+    expect(harness.entries).toEqual([{ level: 'info', event: 'storage_tracking_summary',
+      fields: expect.objectContaining({ windowMs: 4_000, pollCount: 0, positionWriteCount: 1,
+        insertedPositionCount: 3, maxPositionWriteMs: 7 }) }])
+  })
+
+  it('records a slow write as a warning split into body and commit time [DON-336]', async () => {
+    const harness = await createHarness()
+    await harness.diagnostics.recordSlowWrite({ totalMs: 150.4, bodyMs: 30.2, commitMs: 120.2 })
+    expect(harness.entries).toEqual([
+      { level: 'warn', event: 'storage_slow_write', fields: { totalMs: 150, bodyMs: 30, commitMs: 120 } },
+    ])
+  })
+
+  it('caps slow-write entries per session so a pathological run cannot flood the log [DON-336]', async () => {
+    const harness = await createHarness()
+    for (let index = 0; index < 105; index += 1) {
+      await harness.diagnostics.recordSlowWrite({ totalMs: 120, bodyMs: 10, commitMs: 110 })
+    }
+    expect(harness.entries.filter((entry) => entry.event === 'storage_slow_write')).toHaveLength(100)
+    expect(harness.entries.filter((entry) => entry.event === 'storage_slow_write_suppressed')).toEqual([
+      { level: 'warn', event: 'storage_slow_write_suppressed', fields: { limit: 100 } },
+    ])
   })
 
   it('retains a durable warning when a cleanup scan could not finish [DON-329]', async () => {

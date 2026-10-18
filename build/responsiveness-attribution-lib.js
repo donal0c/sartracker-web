@@ -180,7 +180,7 @@ export function extractStoragePhaseAttribution(contents, { stallWindows = [] } =
   const events = []
   let droppedEventCount = 0
   const allowed = new Set(['storage_backup_requested', 'storage_backup_started', 'storage_backup_copied',
-    'storage_backup_sanity_check_started', 'storage_backup_completed', 'storage_tracking_positions_completed'])
+    'storage_backup_sanity_check_started', 'storage_backup_completed', 'storage_slow_write'])
   for (const line of String(contents).split('\n')) {
     let entry
     try { entry = JSON.parse(line) } catch { continue }
@@ -189,7 +189,8 @@ export function extractStoragePhaseAttribution(contents, { stallWindows = [] } =
     if (!Number.isFinite(wallMs)) continue
     const finite = (value) => (Number.isFinite(value) ? value : null)
     const event = { event: entry.event, wallMs,
-      durationMs: finite(entry.durationMs),
+      // A slow write logs its main-thread hold as totalMs [DON-336].
+      durationMs: finite(entry.durationMs ?? entry.totalMs),
       phaseDurationMs: finite(entry.phaseDurationMs),
       totalDurationMs: finite(entry.totalDurationMs),
       elapsedDurationMs: finite(entry.elapsedDurationMs) }
