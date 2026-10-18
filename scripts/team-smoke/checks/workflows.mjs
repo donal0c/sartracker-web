@@ -1,7 +1,7 @@
 /**
  * Operator workflows on the packaged app: coordinates, markers with
- * attachments, GPX import, replay and basemaps, the encrypted archive, and
- * settings/support-bundle privacy.
+ * attachments, GPX import, replay and basemaps, the encrypted archive (and a
+ * quit while it is being written), and settings/support-bundle privacy.
  */
 
 import { createHash } from 'node:crypto'
@@ -23,7 +23,8 @@ import {
   startMission,
   switchBasemap,
 } from '../lib/operator.mjs'
-import { expectProduct } from '../lib/results.mjs'
+import { finalizeQuitFindings, readFinalizeQuitState } from '../lib/finalize-quit.mjs'
+import { expectProduct, NotTested } from '../lib/results.mjs'
 import { seedLivedInProfile } from '../lib/lived-in.mjs'
 import { withStore } from '../lib/store.mjs'
 
@@ -61,6 +62,102 @@ async function drawnGpxSegments(page) {
     drawn = await count()
   }
   return drawn
+}
+
+// A graceful quit drains or cancels the archive; it must not hang the operator.
+const FINALIZE_QUIT_BUDGET_MS = 60_000
+
+/**
+ * Waits until the store shows the finalize was admitted (its fence, an archive
+ * row, or the finalized status), so the quit lands while it is in flight.
+ * Returns how long that took, or null when it never showed.
+ */
+async function waitForFinalizeAdmission(profile, missionName, timeoutMs = 15_000) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    const admitted = withStore(profile, (db) => {
+      const mission = db.prepare('SELECT id, status FROM missions WHERE name = ? ORDER BY rowid DESC LIMIT 1').get(missionName)
+      if (mission === undefined) return false
+      return mission.status === 'finalized'
+        || db.prepare('SELECT 1 FROM mission_finalization_fences WHERE mission_id = ?').get(mission.id) !== undefined
+        || db.prepare('SELECT 1 FROM mission_archives WHERE mission_id = ?').get(mission.id) !== undefined
+    })
+    if (admitted) return Date.now() - startedAt
+    await delay(25)
+  }
+  return null
+}
+
+/**
+ * One quit-during-finalize round on `profile` [DON-332]: finish a mission,
+ * press Archive & Lock, quit gracefully, then relaunch, retry if needed and
+ * reopen the archive. Returns the path taken and every finding.
+ */
+async function quitDuringFinalizeRound(ctx, profile, { label, waitForAdmission }) {
+  const mission = `Quit Finalize ${label}`
+  let app = await launchApp(ctx, { profile, label: `quit-finalize-${label}-1` })
+  await resumeIfPrompted(app.page, 5_000)
+  await startMission(app.page, mission, [])
+  await placeMarker(app.page, { name: `Quit IPP ${label}`, x: 600, y: 400 })
+  await finishMission(app.page)
+  await archiveMission(app.page)
+  let timing = 'quit on the click'
+  if (waitForAdmission) {
+    const admittedMs = await waitForFinalizeAdmission(profile, mission)
+    if (admittedMs === null) {
+      throw new NotTested('The finalize request never appeared in the store, so the quit could not be timed against it.')
+    }
+    timing = `quit ${admittedMs} ms after admission`
+  }
+  const quitAt = Date.now()
+  process.kill(app.pid, 'SIGTERM')
+  const exitCode = await Promise.race([app.exited, delay(FINALIZE_QUIT_BUDGET_MS).then(() => 'timeout')])
+  const quitMs = Date.now() - quitAt
+  await app.kill()
+  expectProduct(exitCode !== 'timeout',
+    `${label}: the app was still running ${FINALIZE_QUIT_BUDGET_MS / 1000} s after a graceful quit during finalize.`)
+  timing += `, exited in ${quitMs} ms`
+
+  const afterQuit = readFinalizeQuitState(profile, mission)
+  const interrupted = afterQuit.status === 'finished'
+  const findings = finalizeQuitFindings(afterQuit, 'after-quit')
+  if (exitCode !== 0) findings.push(`the graceful quit exited with code ${exitCode}`)
+
+  app = await launchApp(ctx, { profile, label: `quit-finalize-${label}-2-relaunch` })
+  const crashState = await app.page.evaluate(() => window.sartrackerElectron.readCrashRecoveryState())
+  if (crashState?.uncleanShutdown === true) findings.push('the graceful quit was recorded as an unexpected shutdown')
+  if (interrupted) {
+    await archiveMission(app.page)
+    const archived = await app.page.getByText(/Mission archived to/).first()
+      .waitFor({ timeout: 120_000 }).then(() => true, () => false)
+    await app.shot('retried')
+    if (!archived) findings.push(`the retried finalize did not complete: ${(await bodyText(app.page)).slice(0, 200)}`)
+  }
+  const archiveId = withStore(profile, (db) => db.prepare(
+    'SELECT a.id FROM mission_archives a JOIN missions m ON m.id = a.mission_id WHERE m.name = ? ORDER BY a.rowid DESC LIMIT 1',
+  ).get(mission)?.id)
+  if (archiveId === undefined) {
+    findings.push('no archive row was stored')
+  } else {
+    await app.page.getByTestId('open-mission-review-workspace').click()
+    await delay(1500)
+    await app.page.getByTestId(`archive-review-select-${archiveId}`).click({ timeout: 15_000 })
+    await app.page.getByTestId('archive-review-secret').fill(ARCHIVE_PASSPHRASE)
+    await app.page.getByTestId('archive-review-open').click()
+    const reopened = await app.page.getByTestId('mission-review-archive-banner')
+      .waitFor({ timeout: 60_000 }).then(() => true, () => false)
+    await app.shot('reopened')
+    if (!reopened) findings.push('the archive did not reopen with its passphrase')
+  }
+  await app.stop()
+  findings.push(...finalizeQuitFindings(readFinalizeQuitState(profile, mission), 'after-retry'))
+  return {
+    label,
+    interrupted,
+    path: interrupted ? 'left finished, retried to finalized' : 'finalized during shutdown',
+    timing,
+    findings,
+  }
 }
 
 /** Lists files under a directory with their size, newest first. */
@@ -295,6 +392,28 @@ export default [
       expectProduct(!wrongOpened, 'The archive opened with a wrong passphrase.')
       expectProduct(opened, 'The archive did not reopen with the correct passphrase after restart.')
       return 'Finished, archived with passphrase and recovery code, restarted, reopened read-only; wrong passphrase refused.'
+    },
+  },
+  {
+    check: 'Encrypted archive create and reopen',
+    id: 'quit-during-finalize',
+    async run(ctx) {
+      // The operator quits while Archive & Lock is running [DON-332]: once on
+      // the click itself and once just after the store admitted the finalize.
+      // Shutdown may let it finish or leave it to retry; either is safe only if
+      // the store, mirror and archive files say so.
+      const profile = path.join(ctx.runDir, 'profile')
+      const outcomes = []
+      for (const round of [{ label: 'on-click', waitForAdmission: false }, { label: 'after-admission', waitForAdmission: true }]) {
+        outcomes.push(await quitDuringFinalizeRound(ctx, profile, round))
+      }
+      const findings = outcomes.flatMap((outcome) => outcome.findings.map((finding) => `${outcome.label}: ${finding}`))
+      const summary = outcomes.map((outcome) => `${outcome.label} ${outcome.path} (${outcome.timing})`).join('; ')
+      expectProduct(findings.length === 0, `${findings.join('; ')}. Rounds: ${summary}.`)
+      const retried = outcomes.some((outcome) => outcome.interrupted) ? 'interrupted finalizes retried to finalized; ' : ''
+      return `Graceful quit during finalize, ${summary}: no false archive-failed audit, no custody recovery, `
+        + 'intact backup mirror and no backup temporaries after each quit; relaunch reported no crash; '
+        + `${retried}nothing left staged or fenced; each archive reopened with its passphrase.`
     },
   },
   {
