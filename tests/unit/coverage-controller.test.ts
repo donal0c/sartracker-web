@@ -115,6 +115,59 @@ describe('coverage controller [DON-276]', () => {
     harness.controller.stop()
   })
 
+  it('fails visibly on a malformed stale sequence and is not poisoned by it [DON-335]', async () => {
+    vi.useFakeTimers()
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+    expect(harness.controller.getState()).toMatchObject({ status: 'complete', changeSeq: 1 })
+    harness.readManifest.mockResolvedValueOnce({
+      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: Number.NaN,
+    })
+
+    await harness.controller.refresh()
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error', lastErrorClass: 'malformed_sequence', latestObservedChangeSeq: 1, retryableStaleCount: 0,
+      message: expect.stringContaining('temporarily unavailable'),
+    })
+    harness.readManifest.mockResolvedValue(manifest(2, [[KEY_A, 2]]))
+    harness.readClaim.mockResolvedValue({
+      changeSeq: 2, databaseReady: true, blockers: [],
+      chunkRevisions: [{ key: KEY_A, contentRev: 2 }],
+    })
+    await harness.controller.refresh()
+    expect(harness.controller.getState()).toMatchObject({ status: 'complete', changeSeq: 2, latestObservedChangeSeq: 2 })
+    harness.controller.stop()
+  })
+
+  it.each([
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['string', '3'],
+    ['unsafe', Number.MAX_SAFE_INTEGER + 1],
+  ])('refuses a manifest with a %s change sequence instead of trusting it [DON-335]', async (_label, changeSeq) => {
+    const harness = createHarness({ ...manifest(1, [[KEY_A, 1]]), changeSeq: changeSeq as number })
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', lastErrorClass: 'malformed_sequence' })
+    expect(harness.readClaim).not.toHaveBeenCalled()
+    harness.controller.stop()
+  })
+
+  it('refuses a claim with a malformed change sequence instead of leaving it silently partial [DON-335]', async () => {
+    const harness = createHarness(manifest(1, [[KEY_A, 1]]))
+    harness.readClaim.mockResolvedValue({
+      changeSeq: Number.NaN, databaseReady: true, blockers: [],
+      chunkRevisions: [{ key: KEY_A, contentRev: 1 }],
+    })
+    await harness.controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
+
+    expect(harness.controller.getState()).toMatchObject({
+      status: 'error', lastErrorClass: 'malformed_sequence', latestObservedChangeSeq: 1,
+    })
+    harness.controller.stop()
+  })
+
   it('does not activate or claim a catalog returned as typed stale [DON-325]', async () => {
     const readClaim = vi.fn()
     const activateCatalog = vi.fn()
