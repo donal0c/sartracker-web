@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-17 (PRs #57–#59 merged: DON-312 memory, DON-313 pieces, one-step backup). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-18 (DON-313 backfill pieces; checkpoint worker approved). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -21,33 +21,28 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    from the position; list/readout follow-up 18580e93), DON-327 warning codes
    7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
    team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
-   DON-325/329 **merged in PR #56 (8a88acb0, Donal, 17 Oct)**: bounded
-   automatic coverage refreshes, typed stale results, backup shutdown ownership
-   and bounded orphan cleanup. Linux run 39036124595 passed all four jobs on
-   `f8bf5888`. Linear auto-closed both on merge; residuals are split out:
-   DON-331 refused-quit lifecycle decision (Donal), DON-332 installed Ubuntu
-   quit-during-finalize smoke, DON-333 timeout wording, DON-334 persistent-stale
-   coverage escalation, DON-335 journal cleanup/malformed-sequence validation.
-   Mac A/B confirmed a coverage contribution, but the fixed soak still FAILS
-   memory (2,217,132,032 bytes) and main-loop (226 ms) budgets; data and
-   integrity PASS. See
-   [evidence and limits](archive/2026-10-17-don325-don329-local-validation.md).
+   DON-325/329 merged in PR #56 (8a88acb0, 17 Oct; Linux run 39036124595
+   green). Residuals: DON-331 (Donal decision), 332, 333, 334, 335. See
+   [evidence](archive/2026-10-17-don325-don329-local-validation.md).
    **Merged 17 Oct (master 0f579dc7):** #57 renderer churn (DON-312), #58
    256-fix restart-snapshot pieces, #59 one-step backup mirror (restarts under
    live writes made a ~1 s copy take 249 s; may explain DON-240). Mac soaks:
    memory 11/11 under budget (1.82–2.07 GB), backups 0.9–1.5 s, data exact;
-   main loop 2/5 PASS. Every remaining stall >145 ms is one writer
-   transaction: startup piece bodies 87–147 ms, mid-run WAL auto-checkpoint
-   commits 78–138 ms. Next: piece budget 128; off-main checkpoint design for
-   Donal. Linear auto-closed DON-312/313/240 on merge; reopened. See
+   main loop 2/5 PASS. **18 Oct probes** (see
+   [checkpoint design](../docs/don-313-off-main-checkpoint-design.md)):
+   startup stalls were participant backfill writing a 2 h window (≤7,200
+   fixes) in one transaction. Fixed in `don-313-backfill-pieces` (256-fix
+   pieces); 3 soaks: startup cluster gone, 2/3 PASS, data exact. Mid-run
+   stalls are the inline WAL checkpoint (A/B confirmed). Donal approved an
+   off-main checkpoint worker 18 Oct; building next. Unexplained: one 2.17 s
+   blocked stall (33 ms CPU) in 1/3 soaks. 128-fix budget tried and dropped.
+   Linear DON-312/313/240 reopened. See
    [churn note](archive/2026-10-17-don312-renderer-churn.md).
    Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
-2. Linear tidy 4 Oct: closed DON-321/315/316/288/285/284/304 (named 13.6 PASS
-   rows). Still In Review for want of a named check: DON-311, 314, 320, 322,
-   309, 317 — name them on the 13.7 candidate run.
-3. Team told 13.6 is out (Donal, 4 Oct). DON-296 was decided 1 Oct and
-   shipped in 13.6 (78b00506). Waiting: box for DON-312/313 Linux A/B soak and the
-   new smoke steps' first packaged run; DON-247/240 gate call.
+2. In Review until named on the 13.7 candidate run: DON-311, 314, 320, 322,
+   309, 317.
+3. Waiting: box for the DON-312/313 Linux soak and the new smoke steps' first
+   packaged run; DON-247/240 gate call.
 
 ## Verification limits
 

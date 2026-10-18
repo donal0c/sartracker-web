@@ -6,6 +6,7 @@ import type {
   BreadcrumbNormalizationResult,
 } from '../tracking/traccar-client'
 import type { CurrentPositionRejection } from '../tracking/ingest-health'
+import { HISTORY_PIECE_ROW_BUDGET } from '../tracking/split-history-chunk'
 
 const BACKFILL_CHUNK_MILLISECONDS = 2 * 60 * 60 * 1_000
 
@@ -80,25 +81,34 @@ export async function runParticipantBackfillPass(
     const timestamp = Date.parse(position.timestamp)
     return timestamp >= from.getTime() && timestamp <= to.getTime()
   })
-  await dependencies.persistChunk({
-    mission_id: checkpoint.mission_id,
-    positions: boundedPositions.map((position) => ({
-      source_position_id: position.id,
-      device_id: position.device_id,
-      lat: position.lat,
-      lon: position.lon,
-      altitude: position.altitude,
-      speed: position.speed,
-      battery: position.battery,
-      accuracy: position.accuracy,
-      source: position.source,
-      timestamp: position.timestamp,
-      timestamp_source: 'fix',
-      data_origin: position.data_origin,
-    })),
-    checkpoints: [],
-  })
-  throwIfAborted(dependencies.signal)
+  const positions: PersistTrackingHistoryBatchInput['positions'] = boundedPositions.map((position) => ({
+    source_position_id: position.id,
+    device_id: position.device_id,
+    lat: position.lat,
+    lon: position.lon,
+    altitude: position.altitude,
+    speed: position.speed,
+    battery: position.battery,
+    accuracy: position.accuracy,
+    source: position.source,
+    timestamp: position.timestamp,
+    timestamp_source: 'fix',
+    data_origin: position.data_origin,
+  }))
+  // A 1 Hz tracker fills the chunk with 7,200 fixes, and each store call is one
+  // synchronous SQLite transaction on the Electron main thread. Write bounded
+  // pieces instead. Inserts are idempotent and the checkpoint moves only after
+  // every piece is stored, so a failed piece retries the whole chunk [DON-313].
+  let start = 0
+  do {
+    await dependencies.persistChunk({
+      mission_id: checkpoint.mission_id,
+      positions: positions.slice(start, start + HISTORY_PIECE_ROW_BUDGET),
+      checkpoints: [],
+    })
+    throwIfAborted(dependencies.signal)
+    start += HISTORY_PIECE_ROW_BUDGET
+  } while (start < positions.length)
   await dependencies.updateCheckpoint(
     checkpointUpdate(checkpoint, to, to.getTime() === windowTo.getTime()),
   )

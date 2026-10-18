@@ -118,6 +118,54 @@ describe('participant backfill runtime [DON-271]', () => {
     expect(updateCheckpoint).not.toHaveBeenCalled()
   })
 
+  it('writes a full two-hour window in ordered store calls of at most 256 fixes [DON-313]', async () => {
+    // A 1 Hz tracker fills the two-hour chunk with 7,200 fixes. One store call
+    // is one synchronous SQLite transaction on the Electron main thread.
+    const accepted = oneHertzPositions('2026-08-23T00:00:01.000Z', 7_200)
+    const persistChunk = vi.fn().mockResolvedValue(undefined)
+    const updateCheckpoint = vi.fn().mockResolvedValue(undefined)
+
+    await runParticipantBackfillPass({
+      checkpoint: CHECKPOINT,
+      getBreadcrumbsWithReport: vi.fn().mockResolvedValue({ accepted, rejected: [] }),
+      persistChunk,
+      updateCheckpoint,
+    })
+
+    const calls = persistChunk.mock.calls.map(([input]) => input as {
+      positions: readonly { source_position_id: string }[]
+      checkpoints: readonly unknown[]
+    })
+    expect(calls).toHaveLength(Math.ceil(7_200 / 256))
+    for (const call of calls) {
+      expect(call.positions.length).toBeLessThanOrEqual(256)
+      expect(call.checkpoints).toEqual([])
+    }
+    expect(calls.flatMap((call) => call.positions.map((p) => p.source_position_id)))
+      .toEqual(accepted.map((p) => p.id))
+    expect(updateCheckpoint).toHaveBeenCalledOnce()
+    expect(updateCheckpoint.mock.invocationCallOrder[0])
+      .toBeGreaterThan(persistChunk.mock.invocationCallOrder.at(-1)!)
+  })
+
+  it('leaves the checkpoint unmoved when a later piece fails, so the whole chunk is retried [DON-313]', async () => {
+    const updateCheckpoint = vi.fn()
+    const persistChunk = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('disk busy'))
+    await expect(runParticipantBackfillPass({
+      checkpoint: CHECKPOINT,
+      getBreadcrumbsWithReport: vi.fn().mockResolvedValue({
+        accepted: oneHertzPositions('2026-08-23T00:00:01.000Z', 1_000),
+        rejected: [],
+      }),
+      persistChunk,
+      updateCheckpoint,
+    })).rejects.toThrow('disk busy')
+    expect(persistChunk).toHaveBeenCalledTimes(2)
+    expect(updateCheckpoint).not.toHaveBeenCalled()
+  })
+
   it('filters any provider rows outside the fixed chunk before persistence', async () => {
     const persistChunk = vi.fn().mockResolvedValue(undefined)
     await runParticipantBackfillPass({
@@ -141,6 +189,13 @@ describe('participant backfill runtime [DON-271]', () => {
     ])
   })
 })
+
+/** Creates consecutive one-second fixes starting at the given instant. */
+function oneHertzPositions(firstTimestamp: string, count: number) {
+  const first = Date.parse(firstTimestamp)
+  return Array.from({ length: count }, (_, index) =>
+    position(new Date(first + index * 1_000).toISOString()))
+}
 
 function position(timestamp: string) {
   return {
