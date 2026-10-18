@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-18 (PRs #60–#64 merged: DON-313 backfill, DON-336 logs, DON-332 smoke, DON-334/335 coverage). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-18 (PRs #60–#65 merged: DON-313 backfill, DON-336 logs, DON-332 smoke, DON-334/335 coverage, DON-331/333 refused quit). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -26,8 +26,10 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    (DON-332; Mac PASS, finalize completes during quit; In Review until the
    Linux candidate run); #63 escalates coverage stale ≥5 min/≥5 results to
    the map overlay warning + log (DON-334 Done); #64 refuses malformed
-   coverage sequences (DON-335 item 2; item 1 "journal cleanup" undefined,
-   asked). DON-333 waits on DON-331 (Claude recommends exit/restart). See
+   coverage sequences (DON-335 Done; item 1 undefined, closed). #65: refused
+   quit holds the session, shows a non-blocking notice and exits when the
+   work settles (DON-331 option B, DON-333 wording, Donal approved; Done).
+   DON-247 is not a 13.7 gate (Donal): Eamonn long Mint run after 13.7. See
    [evidence](archive/2026-10-17-don325-don329-local-validation.md).
    **Merged 17 Oct (master 0f579dc7):** #57 renderer churn (DON-312), #58
    256-fix restart-snapshot pieces, #59 one-step backup mirror (restarts under
@@ -69,8 +71,7 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 - **Coordinator (Claude):** Linear, 13.7 candidate verification. No worker or
   test run active.
-- **Donal decisions pending:** DON-331 refused-quit policy; whether DON-247 is
-  a 13.7 gate; what DON-335 "journal cleanup" means.
+- **Donal decisions pending:** none open from the 18 Oct residuals.
 - **Maps (M01–M03) next after the team talk:** Donal meets the team week of
   19 Oct. Hold the M01 area-workflow questions until then, then pivot straight
   to DON-144/76/7. Until then: close out 13.7 (DON-312/313 first).
