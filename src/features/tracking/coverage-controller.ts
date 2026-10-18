@@ -9,7 +9,12 @@ import type {
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
-import { classifyCoverageError, isCoverageCancellation, type CoverageErrorClass } from './coverage-diagnostics'
+import {
+  classifyCoverageError,
+  isCoverageCancellation,
+  requireCoverageSequence,
+  type CoverageErrorClass,
+} from './coverage-diagnostics'
 import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
 import { coverageChunkIdentity } from './coverage-identity'
@@ -241,6 +246,8 @@ export function createCoverageController(input: {
   /** Retains prior geometry as Partial; an observed sequence is never delivery proof. */
   const publishStaleResult = (result?: CoverageStaleResult): void => {
     if (state.status === 'inactive') return
+    // Throws before any state changes, so a malformed race cannot poison the observed sequence.
+    if (result !== undefined) requireCoverageSequence(result.changeSeq, 'stale result')
     retryableStaleCount = Math.min(Number.MAX_SAFE_INTEGER, retryableStaleCount + 1)
     automaticRefreshRequested = true
     publish({
@@ -335,6 +342,7 @@ export function createCoverageController(input: {
         return
       }
       const manifest = manifestResult
+      requireCoverageSequence(manifest.changeSeq, 'manifest')
       const selected = selectChunks(manifest, context)
       const delivered = retainUnchangedDeliveries(
         priorManifest,
@@ -443,6 +451,7 @@ export function createCoverageController(input: {
           publishStaleResult(refreshedManifest)
           return
         }
+        requireCoverageSequence(refreshedManifest.changeSeq, 'manifest')
         activeManifest = refreshedManifest
         activeSelected = selectChunks(activeManifest, context)
       } else {
@@ -494,6 +503,7 @@ export function createCoverageController(input: {
         controller.signal,
       )
       if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
+      requireCoverageSequence(claim.changeSeq, 'claim')
       const currentObservedSequence = state.status === 'inactive'
         ? claimSequence
         : state.latestObservedChangeSeq
