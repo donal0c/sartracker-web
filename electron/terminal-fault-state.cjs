@@ -17,6 +17,9 @@
  * - `relaunch-withheld`: relaunch was withheld; a quit may exit but must not
  *   mark the session clean.
  * - `writer-unreaped`: the process holds the lock and must not exit normally.
+ * - `shutdown-refused`: a quit could not finish in time; shutdown services are
+ *   already closed, so the session is never resumed. The process waits for the
+ *   remaining work and then completes the normal exit [DON-331].
  */
 function createTerminalFaultState() {
   let phase = 'none'
@@ -42,7 +45,7 @@ function createTerminalFaultState() {
     /** Withholds automatic relaunch without weakening an existing lock hold. */
     withholdRelaunch(nextNotice) {
       const frozenNotice = freezeNotice(nextNotice)
-      if (phase === 'writer-unreaped') return
+      if (phase === 'writer-unreaped' || phase === 'shutdown-refused') return
       phase = 'relaunch-withheld'
       notice = frozenNotice
     },
@@ -50,6 +53,16 @@ function createTerminalFaultState() {
     holdForUnreapedWriter(nextNotice) {
       const frozenNotice = freezeNotice(nextNotice)
       phase = 'writer-unreaped'
+      notice = frozenNotice
+    },
+    /**
+     * Holds a session whose quit was refused after its services closed. Only an
+     * ordinary session can enter it; a fault response or lock hold keeps its own.
+     */
+    holdForRefusedShutdown(nextNotice) {
+      const frozenNotice = freezeNotice(nextNotice)
+      if (phase !== 'none') return
+      phase = 'shutdown-refused'
       notice = frozenNotice
     },
     /** Returns the current phase for diagnostics and tests. */
@@ -60,9 +73,12 @@ function createTerminalFaultState() {
     get notice() {
       return notice
     },
-    /** True only while no terminal fault has been handled in this session. */
+    /**
+     * True while no terminal fault has been handled in this session. A refused
+     * shutdown qualifies because its deferred exit completes the normal close.
+     */
     allowsCleanExitMarker() {
-      return phase === 'none'
+      return phase === 'none' || phase === 'shutdown-refused'
     },
     /** True when an ordinary quit request must not start teardown at all. */
     blocksQuit() {
@@ -70,6 +86,7 @@ function createTerminalFaultState() {
         || phase === 'responding'
         || phase === 'relaunching'
         || phase === 'writer-unreaped'
+        || phase === 'shutdown-refused'
     },
   })
 }

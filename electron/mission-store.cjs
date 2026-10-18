@@ -613,6 +613,7 @@ function createElectronMissionStore(options) {
     },
   })
   let storeClosed = false
+  let shutdownSettled = Promise.resolve()
   let archiveCorrectionAttachmentRecoveryFailure = null
   let archiveCorrectionAttachmentRecoveryShutdownRequested = false
   let archiveCorrectionAttachmentRecoveryPromise = Promise.resolve()
@@ -2067,6 +2068,8 @@ function createElectronMissionStore(options) {
         }))
       }
       if (shutdownTasks.length === 0) return
+      // A refused quit keeps waiting on this so the app can still exit once the work ends [DON-331].
+      shutdownSettled = Promise.allSettled(shutdownTasks).then(() => undefined)
       let timeout
       let shutdownDeadlineExceeded = false
       try {
@@ -2075,9 +2078,7 @@ function createElectronMissionStore(options) {
           new Promise((_, reject) => {
             timeout = setTimeout(() => {
               shutdownDeadlineExceeded = true
-              reject(new Error(
-                'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
-              ))
+              reject(createShutdownRefusedError(backupCoordinator.pendingCount > 0))
             }, gpxShutdownJoinTimeoutMs)
           }),
         ])
@@ -2093,6 +2094,8 @@ function createElectronMissionStore(options) {
         clearTimeout(timeout)
       }
     },
+    /** Resolves once every task of the latest shutdown request has ended, however it ended. */
+    whenShutdownSettled: () => shutdownSettled,
     close: () => {
       if (backupCoordinator.pendingCount > 0) {
         throw new Error('Cannot close the mission store while backups are pending; call prepareClose first.')
@@ -5671,6 +5674,21 @@ function createBackupCoordinator(
       })
     },
   }
+}
+
+/**
+ * Shutdown did not finish within its deadline. The store stays open and the
+ * exit is not marked clean; `backupInProgress` tells the operator notice
+ * whether a mirror copy is what is still running [DON-331] [DON-333].
+ */
+function createShutdownRefusedError(backupInProgress) {
+  const error = new Error(
+    'A mission evidence worker did not exit within the safe shutdown deadline. The mission store remains open and the exit is not marked clean.',
+  )
+  error.name = 'ShutdownRefusedError'
+  error.code = 'SHUTDOWN_DEADLINE_EXCEEDED'
+  error.backupInProgress = backupInProgress
+  return error
 }
 
 /** A refused admission is expected shutdown cancellation, never a failed copy. */
