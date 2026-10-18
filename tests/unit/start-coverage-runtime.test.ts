@@ -4,6 +4,8 @@ import type {
   CoverageManifest,
   Mission,
 } from '../../src/infrastructure/mission-store/tauri-mission-store'
+import { useMapOverlayWarningStore } from '../../src/features/map/map-overlay-warning-store'
+import { readDiagnosticEvents } from '../../src/features/diagnostics/diagnostic-event-log'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
@@ -14,6 +16,7 @@ afterEach(() => {
   useMissionStore.setState(useMissionStore.getInitialState())
   useCoverageStore.setState(useCoverageStore.getInitialState())
   useIngestHealthStore.setState(useIngestHealthStore.getInitialState())
+  useMapOverlayWarningStore.setState(useMapOverlayWarningStore.getInitialState())
   vi.useRealTimers()
 })
 
@@ -169,6 +172,73 @@ describe('coverage runtime wiring [DON-276]', () => {
       status: 'partial',
       blockers: expect.arrayContaining(['renderer_evidence_pending']),
     })
+    stop()
+  })
+
+  it('raises a coverage map warning after five minutes of stale refreshes and clears it at Complete [DON-334]', async () => {
+    vi.useFakeTimers()
+    let stale = false
+    const readCoverageClaim = vi.fn(async () => {
+      if (stale) throw new Error('coverage-revision-moved: mission-1')
+      return {
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      }
+    })
+    const missionStore = {
+      readCoverageManifest: vi.fn(async () => manifest(1)),
+      syncCoverageTileCatalog: vi.fn(async () => ({
+        activationId: 'stage-1',
+        periods: [{ periodKey: 'unassigned\u0000', revisionDigest: 'rev-1' }],
+        delivered: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      activateCoverageTileCatalog: vi.fn(async () => true),
+      finalizeCoverageTileCatalog: vi.fn(async () => true),
+      discardCoverageTileCatalog: vi.fn(async () => true),
+      readCoverageClaim,
+      cancelCoverageQuery: vi.fn(async () => true),
+    }
+    let periodicRefresh: (() => void) | undefined
+    useMissionStore.setState({ currentMission: mission(), phase: 'active' })
+    const stop = startCoverageRuntime(missionStore, {
+      enabled: true, rendererGeneration: 'renderer-1',
+      subscribeCoverageChanged: () => () => undefined,
+      schedulePeriodicRefresh: (callback) => {
+        periodicRefresh = callback
+        return () => { periodicRefresh = undefined }
+      },
+    })
+    await acknowledgePendingCatalog()
+    await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
+
+    stale = true
+    const coverageWarning = () => useMapOverlayWarningStore.getState().warnings
+      .find((warning) => warning.registrationId === 'coverage-history')
+    for (let cycle = 0; cycle < 9; cycle += 1) {
+      periodicRefresh?.()
+      await vi.advanceTimersByTimeAsync(30_000)
+    }
+    expect(useCoverageStore.getState().state).toMatchObject({ status: 'partial', lastErrorClass: 'chunk_stale' })
+    expect(coverageWarning()).toBeUndefined()
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      periodicRefresh?.()
+      await vi.advanceTimersByTimeAsync(30_000)
+    }
+    expect(coverageWarning()).toMatchObject({ family: 'coverage', message: expect.stringContaining('Coverage overlay') })
+    expect(readDiagnosticEvents()).toContainEqual(expect.objectContaining({
+      level: 'warn', event: 'coverage_refresh_persistently_stale',
+    }))
+
+    stale = false
+    periodicRefresh?.()
+    await vi.advanceTimersByTimeAsync(30_000)
+    await acknowledgePendingCatalog()
+    await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
+    expect(coverageWarning()).toBeUndefined()
+    expect(readDiagnosticEvents()).toContainEqual(expect.objectContaining({
+      level: 'info', event: 'coverage_refresh_stale_recovered',
+    }))
     stop()
   })
 

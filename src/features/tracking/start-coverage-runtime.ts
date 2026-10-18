@@ -1,9 +1,13 @@
 import type {
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import { createMapOverlaySyncWarning } from '../../lib/map-health'
+import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
+import { useMapOverlayWarningStore } from '../map/map-overlay-warning-store'
 import { isCoverageEnabled } from '../runtime/coverage-flag'
 import { useMissionStore } from '../mission/mission-store'
 import { createCoverageController } from './coverage-controller'
+import { createCoverageStalenessMonitor } from './coverage-staleness-monitor'
 import { useIngestHealthStore } from './ingest-health-store'
 import {
   applyCoverageController,
@@ -53,6 +57,28 @@ export function startCoverageRuntime(
     throw new Error('Complete coverage storage is unavailable in this runtime.')
   }
   const rendererGeneration = options.rendererGeneration ?? createRendererGeneration()
+  const stalenessMonitor = createCoverageStalenessMonitor({
+    onPersistent: ({ staleForMs, staleResults }) => {
+      useMapOverlayWarningStore.getState().raiseWarning(
+        createMapOverlaySyncWarning('coverage-history', 'coverage'),
+      )
+      void recordDiagnosticEvent({
+        level: 'warn',
+        category: 'tracking',
+        event: 'coverage_refresh_persistently_stale',
+        fields: { staleForMs, staleResults },
+      })
+    },
+    onRecovered: ({ reason, staleForMs }) => {
+      useMapOverlayWarningStore.getState().clearWarning('coverage-history')
+      void recordDiagnosticEvent({
+        level: 'info',
+        category: 'tracking',
+        event: 'coverage_refresh_stale_recovered',
+        fields: { reason, staleForMs },
+      })
+    },
+  })
   const controller = createCoverageController({
     readManifest: (missionId, requestId, signal) => runCancelable(
       signal,
@@ -105,6 +131,7 @@ export function startCoverageRuntime(
     },
     publish: (state) => {
       applyCoverageState(state)
+      stalenessMonitor.observe(state)
       if (state.status !== 'inactive' && state.manifest !== null) {
         useCoverageFilterStore.getState().reconcile(state.missionId, state.manifest)
       }
@@ -167,6 +194,8 @@ export function startCoverageRuntime(
     unsubscribeCoverageRendererFailure()
     unsubscribeIngestEvidenceHealth()
     cancelPeriodicRefresh()
+    // Before the controller publishes inactive, so the log says why it ended.
+    stalenessMonitor.stop()
     controller.stop()
     useCoverageFilterStore.getState().resetMission(null)
     applyCoverageController(null)
