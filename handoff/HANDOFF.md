@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-18 (PR #60 merged; checkpoint worker dropped; DON-336 log retention). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-18 (PRs #60–#64 merged: DON-313 backfill, DON-336 logs, DON-332 smoke, DON-334/335 coverage). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -22,7 +22,12 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
    team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
    DON-325/329 merged in PR #56 (8a88acb0, 17 Oct; Linux run 39036124595
-   green). Residuals: DON-331 (Donal decision), 332, 333, 334, 335. See
+   green). Residuals 18 Oct: #62 adds team-smoke `quit-during-finalize`
+   (DON-332; Mac PASS, finalize completes during quit; In Review until the
+   Linux candidate run); #63 escalates coverage stale ≥5 min/≥5 results to
+   the map overlay warning + log (DON-334 Done); #64 refuses malformed
+   coverage sequences (DON-335 item 2; item 1 "journal cleanup" undefined,
+   asked). DON-333 waits on DON-331 (Claude recommends exit/restart). See
    [evidence](archive/2026-10-17-don325-don329-local-validation.md).
    **Merged 17 Oct (master 0f579dc7):** #57 renderer churn (DON-312), #58
    256-fix restart-snapshot pieces, #59 one-step backup mirror (restarts under
@@ -65,7 +70,7 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 - **Coordinator (Claude):** Linear, 13.7 candidate verification. No worker or
   test run active.
 - **Donal decisions pending:** DON-331 refused-quit policy; whether DON-247 is
-  a 13.7 gate.
+  a 13.7 gate; what DON-335 "journal cleanup" means.
 - **Maps (M01–M03) next after the team talk:** Donal meets the team week of
   19 Oct. Hold the M01 area-workflow questions until then, then pivot straight
   to DON-144/76/7. Until then: close out 13.7 (DON-312/313 first).
