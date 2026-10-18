@@ -4,7 +4,11 @@ import { afterEach, expect, it, vi } from 'vitest'
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
 const { createResponsiveMissionWriter } = require('../../electron/responsive-mission-writer.cjs') as {
-  createResponsiveMissionWriter: (database: unknown) => {
+  createResponsiveMissionWriter: (database: unknown, options?: {
+    onSlowTransaction?: (input: { totalMs: number; bodyMs: number; commitMs: number }) => void
+    slowTransactionMs?: number
+    now?: () => number
+  }) => {
     run: <T>(callback: () => T, options?: { signal?: AbortSignal }) => Promise<T>
     close: () => Promise<void>
     readonly pendingCount: number
@@ -230,5 +234,49 @@ it('lets timers and IPC run between queued writes instead of chaining them in on
     expect(order.indexOf('tick')).toBeLessThan(order.indexOf('write-2'))
     // Admission order is unchanged.
     expect(order.filter((entry) => entry !== 'tick')).toEqual(['write-0', 'write-1', 'write-2'])
+  } finally { await writer.close(); db.close() }
+})
+
+it('reports a slow transaction with its body and commit split so a stall names itself [DON-313]', async () => {
+  const db = new Database(':memory:')
+  db.exec('CREATE TABLE evidence (value TEXT)')
+  // Each call to the injected clock advances it; the writer reads it at the
+  // start, after the body, and after the commit.
+  const readings = [1_000, 1_030, 1_150]
+  const onSlowTransaction = vi.fn()
+  const writer = createResponsiveMissionWriter(db, {
+    onSlowTransaction, slowTransactionMs: 100, now: () => readings.shift() ?? 9_999,
+  })
+  try {
+    await writer.run(() => db.prepare("INSERT INTO evidence VALUES ('fix')").run())
+    expect(onSlowTransaction).toHaveBeenCalledExactlyOnceWith({ totalMs: 150, bodyMs: 30, commitMs: 120 })
+  } finally { await writer.close(); db.close() }
+})
+
+it('does not report a transaction under the slow-write threshold [DON-313]', async () => {
+  const db = new Database(':memory:')
+  const readings = [0, 10, 99]
+  const onSlowTransaction = vi.fn()
+  const writer = createResponsiveMissionWriter(db, {
+    onSlowTransaction, slowTransactionMs: 100, now: () => readings.shift() ?? 0,
+  })
+  try {
+    await writer.run(() => 'ok')
+    expect(onSlowTransaction).not.toHaveBeenCalled()
+  } finally { await writer.close(); db.close() }
+})
+
+it('keeps the commit when the slow-write reporter throws [DON-313]', async () => {
+  const db = new Database(':memory:')
+  db.exec('CREATE TABLE evidence (value TEXT)')
+  const readings = [0, 0, 500]
+  const writer = createResponsiveMissionWriter(db, {
+    onSlowTransaction: () => { throw new Error('diagnostics unavailable') },
+    slowTransactionMs: 100,
+    now: () => readings.shift() ?? 0,
+  })
+  try {
+    await expect(writer.run(() => db.prepare("INSERT INTO evidence VALUES ('fix')").run())).resolves.toBeDefined()
+    expect(db.prepare('SELECT COUNT(*) FROM evidence').pluck().get()).toBe(1)
   } finally { await writer.close(); db.close() }
 })

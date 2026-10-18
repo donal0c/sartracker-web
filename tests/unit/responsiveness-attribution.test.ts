@@ -155,13 +155,13 @@ describe('stall-anchored attribution [DON-313]', () => {
   })
 
   it('keeps storage phases around each stall after the ring has evicted them', () => {
-    const line = (event: string, atMs: number, durationMs: number) =>
-      JSON.stringify({ event, ts: new Date(atMs).toISOString(), durationMs })
+    const line = (event: string, atMs: number, totalMs: number) =>
+      JSON.stringify({ event, ts: new Date(atMs).toISOString(), totalMs, bodyMs: 1, commitMs: totalMs - 1 })
     const base = Date.parse('2026-10-02T11:33:00.000Z')
     const lines = [
-      line('storage_tracking_positions_completed', base + 1_000, 240),
-      line('storage_tracking_positions_completed', base + 9_000, 5),
-      ...Array.from({ length: 600 }, (_, index) => line('storage_tracking_positions_completed', base + 60_000 + index * 100, 3)),
+      line('storage_slow_write', base + 1_000, 240),
+      line('storage_slow_write', base + 9_000, 105),
+      ...Array.from({ length: 600 }, (_, index) => line('storage_slow_write', base + 60_000 + index * 100, 101)),
     ]
     const result = extractStoragePhaseAttribution(lines.join('\n'), {
       stallWindows: [{ startWallMs: base + 800, endWallMs: base + 1_100 }],
@@ -170,7 +170,7 @@ describe('stall-anchored attribution [DON-313]', () => {
     expect(result.stallAnchored).toEqual([{
       startWallMs: base + 800, endWallMs: base + 1_100, droppedEventCount: 0,
       events: [{
-        event: 'storage_tracking_positions_completed', wallMs: base + 1_000, durationMs: 240,
+        event: 'storage_slow_write', wallMs: base + 1_000, durationMs: 240,
         phaseDurationMs: null, totalDurationMs: null, elapsedDurationMs: null,
       }],
     }])
@@ -184,7 +184,7 @@ describe('stall-anchored attribution [DON-313]', () => {
       JSON.stringify({ event: 'storage_backup_copied', ts: at(2_500), phaseDurationMs: 2_000, elapsedDurationMs: 2_100 }),
       JSON.stringify({ event: 'storage_backup_completed', ts: at(3_000), totalDurationMs: 2_600 }),
       ...Array.from({ length: 70 }, (_, index) =>
-        JSON.stringify({ event: 'storage_tracking_positions_completed', ts: at(20_000 + index), durationMs: 5 })),
+        JSON.stringify({ event: 'storage_slow_write', ts: at(20_000 + index), totalMs: 5 })),
     ]
     const result = extractStoragePhaseAttribution(lines.join('\n'), {
       stallWindows: [{ startWallMs: base + 500, endWallMs: base + 1_000 }, { startWallMs: base + 20_000, endWallMs: base + 20_100 }],

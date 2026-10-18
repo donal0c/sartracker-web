@@ -1,6 +1,6 @@
 # DON-313 — Move the WAL checkpoint off the main thread
 
-Status: **approved by Donal, 18 Oct 2026** (recorded on DON-313). Cause confirmed by probe the same day; not a 13.7 gate on its own.
+Status: **dropped, 18 Oct 2026** (Donal). Approved and built the same day, but four probed variants (PASSIVE, RESTART, worker-only, hybrid with inline kept) gave no measurable gain over PR #60 alone; PASSIVE/RESTART let the WAL grow to 176–290 MB. The slow-write diagnostic moved to DON-336. Original approval: Donal, 18 Oct 2026 (DON-313).
 
 ## Problem
 

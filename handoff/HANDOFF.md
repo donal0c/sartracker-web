@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-18 (DON-313 backfill pieces; checkpoint worker approved). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-18 (PR #60 merged; checkpoint worker dropped; DON-336 log retention). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
 
@@ -31,11 +31,16 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
    main loop 2/5 PASS. **18 Oct probes** (see
    [checkpoint design](../docs/don-313-off-main-checkpoint-design.md)):
    startup stalls were participant backfill writing a 2 h window (≤7,200
-   fixes) in one transaction. Fixed in `don-313-backfill-pieces` (256-fix
-   pieces); 3 soaks: startup cluster gone, 2/3 PASS, data exact. Mid-run
-   stalls are the inline WAL checkpoint (A/B confirmed). Donal approved an
-   off-main checkpoint worker 18 Oct; building next. Unexplained: one 2.17 s
-   blocked stall (33 ms CPU) in 1/3 soaks. 128-fix budget tried and dropped.
+   fixes) in one transaction. Fixed by PR #60 (256-fix pieces, merged
+   de1a84ad); 3 soaks: startup cluster gone, 2/3 PASS, data exact. Off-main
+   WAL checkpoint worker built and probed in 4 variants: no gain over #60,
+   dropped (Donal 18 Oct; branch kept locally, uncommitted). Remaining: 30–40
+   commits/launch at 100–185 ms (tiny bodies; sync cost suspected, measure
+   on box) and a rare 2.17 s blocked stall (33 ms CPU). 128-fix budget
+   dropped. **DON-336** (log rotated in ~20 s, bundle read last 1,000 lines):
+   branch `don-336-log-retention` aggregates tracking writes to one summary
+   per minute, logs writes ≥100 ms as `storage_slow_write` warnings, and the
+   bundle keeps up to 500 earlier warn/error entries; 2 h load regression.
    Linear DON-312/313/240 reopened. See
    [churn note](archive/2026-10-17-don312-renderer-churn.md).
    Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
@@ -49,7 +54,8 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 - Live Traccar: one approved device; other box checks use synthetic
   providers. PCLinuxOS untested (DON-298). Window X is a hand check on Linux.
 - The box sleeps when idle; long runs need Donal's sudo for `systemd-inhibit`.
-- Review repair: 629 local suites / 6,611 pass / 27 skip. Synthetic packaged-store
+- DON-336 branch: 635 suites / 6,661 pass; 4 timing tests failed only at
+  load average 30 and passed on rerun (104/104). Earlier review repair: 629 / 6,611. Synthetic packaged-store
   cancellation/reopen checks pass; actual quit-during-finalize UI and installed
   Ubuntu remain unproven. DON-312/313 budgets remain failed.
 

@@ -37,6 +37,7 @@ type StorageDiagnosticsPort = {
     readonly positionTelemetryEventCount: number
     readonly skippedAmbiguousLegacyAdoptionCount: number
   }) => Promise<void>
+  readonly flushTrackingSummary?: () => Promise<void>
 }
 type BreadcrumbQueryManifest = {
   readonly version: number
@@ -1987,6 +1988,37 @@ describe('electron mission store', () => {
       }),
     ).rejects.toThrow(/timestamp/i)
     await expect(store.countPositions(mission.id)).resolves.toBe(0)
+  })
+
+  it('logs the final partial tracking summary after the last write settles in prepareClose [DON-336]', async () => {
+    const order: string[] = []
+    const storageDiagnostics: StorageDiagnosticsPort = {
+      createOperation: vi.fn(),
+      requested: vi.fn(),
+      started: vi.fn(),
+      phase: vi.fn(),
+      completed: vi.fn(),
+      failed: vi.fn(),
+      startMission: vi.fn(),
+      recordTrackingBatch: vi.fn(),
+      recordInsertedPositions: vi.fn(async () => { order.push('positions') }),
+      flushTrackingSummary: vi.fn(async () => { order.push('flush') }),
+    }
+    const local = await createStore({ storageDiagnostics })
+    const mission = await local.createMission({ name: 'Summary Flush Mission' })
+    await local.upsertDevice({
+      mission_id: mission.id, device_id: 'tracker-1', name: 'Tracker One', color: '#00AAFF', status: 'unknown',
+    })
+    await local.addPositionsBulk({ mission_id: mission.id, positions: [{
+      source_position_id: 'source-1', device_id: 'tracker-1', lat: 52.0599, lon: -9.5045,
+      timestamp: '2026-07-28T10:00:00.000Z',
+    }] })
+    expect(storageDiagnostics.flushTrackingSummary).not.toHaveBeenCalled()
+
+    await local.prepareClose()
+    local.close()
+
+    expect(order).toEqual(['positions', 'flush'])
   })
 
   it('keeps the first accepted source fix immutable and records one durable conflict [DON-268]', async () => {

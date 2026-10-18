@@ -7,6 +7,9 @@ const LOGS_DIR_NAME = 'logs'
 const LOG_FILE_NAME = 'runtime.log'
 const BACKUP_LOG_FILE_NAME = 'runtime.log.1'
 const DEFAULT_MAX_BYTES = 1_000_000
+const DEFAULT_SUPPORT_RECENT_LIMIT = 1000
+const DEFAULT_SUPPORT_WARNING_LIMIT = 500
+const RETAINED_SUPPORT_LEVELS = new Set(['warn', 'error'])
 
 /**
  * Creates a bounded, sanitized runtime event log for the Electron main process.
@@ -38,6 +41,7 @@ function createRuntimeLog(options) {
     append,
     appendDurable,
     readRecent,
+    readSupportEntries,
     logFilePath,
   }
 
@@ -107,6 +111,26 @@ function createRuntimeLog(options) {
     return parseLogLines([...backupLines, ...liveLines])
   }
 
+  /**
+   * Reads the entries a support bundle carries: the most recent `recentLimit` entries
+   * plus up to `warningLimit` earlier warn/error entries still on disk, in
+   * chronological order. A recent tail alone covers only seconds under tracking load,
+   * so an earlier fault would otherwise be missing from the bundle [DON-336].
+   */
+  async function readSupportEntries(options = {}) {
+    const recentLimit = boundedLimit(options.recentLimit, DEFAULT_SUPPORT_RECENT_LIMIT)
+    const warningLimit = boundedLimit(options.warningLimit, DEFAULT_SUPPORT_WARNING_LIMIT)
+    const entries = await readRecent()
+    const tailStart = Math.max(0, entries.length - recentLimit)
+    const earlierWarnings = entries
+      .slice(0, tailStart)
+      .filter((entry) => RETAINED_SUPPORT_LEVELS.has(entry?.level))
+    return [
+      ...(warningLimit === 0 ? [] : earlierWarnings.slice(-warningLimit)),
+      ...entries.slice(tailStart),
+    ]
+  }
+
   async function readLines(filePath) {
     try {
       const contents = await fs.readFile(filePath, 'utf8')
@@ -130,6 +154,10 @@ function createRuntimeLog(options) {
       throw error
     }
   }
+}
+
+function boundedLimit(value, fallback) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : fallback
 }
 
 function parseLogLines(lines) {

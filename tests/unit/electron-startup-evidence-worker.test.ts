@@ -88,6 +88,21 @@ describe('Electron startup evidence worker', () => {
       .toContain('startup_failure')
   })
 
+  it('serves the support read with retained warnings through the isolated helper [DON-336]', async () => {
+    port.emit('message', { data: { id: 0, type: 'initialize', userDataPath } })
+    await request({ id: 1, type: 'runtime.appendDurable', input: { level: 'error', event: 'early_fault' } })
+    for (let id = 2; id < 6; id += 1) {
+      await request({ id, type: 'runtime.appendDurable', input: { level: 'info', event: 'tick' } })
+    }
+
+    const reply = await request({
+      id: 6, type: 'runtime.readSupportEntries', input: { recentLimit: 1, warningLimit: 5 },
+    })
+
+    expect(reply).toMatchObject({ ok: true })
+    expect((reply.value as { event: string }[]).map((entry) => entry.event)).toEqual(['early_fault', 'tick'])
+  })
+
   it('propagates durable crash-write failures with their stable code', async () => {
     mkdirSync(path.join(userDataPath, 'crashes', 'crash-log.json'), { recursive: true })
     port.emit('message', { data: { id: 0, type: 'initialize', userDataPath } })

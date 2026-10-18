@@ -59,6 +59,12 @@ async function dispatch(message) {
       case 'runtime.readRecent':
         value = await runtimeLog.readRecent(message.input?.limit)
         break
+      case 'runtime.readSupportEntries':
+        value = await runtimeLog.readSupportEntries({
+          recentLimit: message.input?.recentLimit,
+          warningLimit: message.input?.warningLimit,
+        })
+        break
       case 'crash.record':
         value = await crashLog.record(message.input)
         break

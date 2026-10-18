@@ -23,6 +23,11 @@ const {
   writeStateAtomically,
 } = require('./storage-diagnostics-state.cjs')
 
+// Tracking writes arrive many times a second under load; logging each one rotated
+// the runtime log in ~20 s and evicted earlier warnings [DON-336].
+const TRACKING_SUMMARY_INTERVAL_MS = 60_000
+const SLOW_WRITE_LOG_LIMIT = 100
+
 /**
  * Creates the bounded, identity-free storage diagnostics checkpoint and event writer.
  *
@@ -41,6 +46,8 @@ function createStorageDiagnostics(options) {
   const validationMode = options.validationMode === true
   let state = createEmptyState()
   let writeChain = Promise.resolve()
+  let trackingWindow = null
+  let slowWriteCount = 0
 
   return {
     initialize,
@@ -56,6 +63,8 @@ function createStorageDiagnostics(options) {
     recordRestart,
     recordTrackingBatch,
     recordInsertedPositions,
+    flushTrackingSummary,
+    recordSlowWrite,
     recordEventLoopSummary,
     recordBackupTemporaryCleanup,
     recordBackupShutdownTimeout,
@@ -296,18 +305,14 @@ function createStorageDiagnostics(options) {
     }
     state = { ...state, mission: next }
     await persistState()
-    await appendDurable({
-      level: 'info',
-      event: 'storage_tracking_batch_completed',
-      fields: {
-        durationMs: duration(input.durationMs),
-        deviceCount: next.currentDeviceCount,
-        peakDeviceCount: next.peakDeviceCount,
-        changedDeviceEventCount: nonNegativeInteger(input.changedDeviceEventCount),
-        cumulativeChangedDeviceEventCount: next.changedDeviceEventCount,
-        observedPollCount,
-      },
-    })
+    const window = openTrackingWindow()
+    const pollMs = duration(input.durationMs)
+    window.pollCount += 1
+    window.maxPollMs = Math.max(window.maxPollMs, pollMs)
+    window.totalPollMs += pollMs
+    window.peakDeviceCount = Math.max(window.peakDeviceCount, next.currentDeviceCount)
+    window.changedDeviceEventCount += nonNegativeInteger(input.changedDeviceEventCount)
+    await flushTrackingSummaryIfDue()
   }
 
   /** Adds one position-write aggregate without logging any position content. */
@@ -327,18 +332,83 @@ function createStorageDiagnostics(options) {
       },
     }
     await persistState()
+    const window = openTrackingWindow()
+    const writeMs = duration(input.durationMs)
+    window.positionWriteCount += 1
+    window.insertedPositionCount += insertedPositionCount
+    window.positionTelemetryEventCount += positionTelemetryEventCount
+    window.skippedAmbiguousLegacyAdoptionCount += skippedAmbiguousLegacyAdoptionCount
+    window.maxPositionWriteMs = Math.max(window.maxPositionWriteMs, writeMs)
+    window.totalPositionWriteMs += writeMs
+    await flushTrackingSummaryIfDue()
+  }
+
+  /** Returns the open tracking aggregate, starting one at the first fact after a flush. */
+  function openTrackingWindow() {
+    if (trackingWindow === null) {
+      trackingWindow = {
+        startedAtMs: monotonicNow(),
+        pollCount: 0,
+        maxPollMs: 0,
+        totalPollMs: 0,
+        peakDeviceCount: 0,
+        changedDeviceEventCount: 0,
+        positionWriteCount: 0,
+        insertedPositionCount: 0,
+        positionTelemetryEventCount: 0,
+        skippedAmbiguousLegacyAdoptionCount: 0,
+        maxPositionWriteMs: 0,
+        totalPositionWriteMs: 0,
+      }
+    }
+    return trackingWindow
+  }
+
+  async function flushTrackingSummaryIfDue() {
+    if (trackingWindow !== null && monotonicNow() - trackingWindow.startedAtMs >= TRACKING_SUMMARY_INTERVAL_MS) {
+      await flushTrackingSummary()
+    }
+  }
+
+  /**
+   * Logs the open tracking aggregate as one entry and closes the window. Called once a
+   * minute by tracking writes themselves and at store shutdown for the final partial
+   * window; does nothing when no tracking fact arrived since the last flush.
+   */
+  async function flushTrackingSummary() {
+    if (trackingWindow === null) return
+    const { startedAtMs, ...totals } = trackingWindow
+    trackingWindow = null
     await appendDurable({
       level: 'info',
-      event: 'storage_tracking_positions_completed',
+      event: 'storage_tracking_summary',
       fields: {
-        durationMs: duration(input.durationMs),
-        insertedPositionCount,
-        positionTelemetryEventCount,
-        skippedAmbiguousLegacyAdoptionCount,
+        windowMs: duration(monotonicNow() - startedAtMs),
+        ...totals,
         cumulativeInsertedPositionCount: state.mission.insertedPositionCount,
-        cumulativePositionTelemetryEventCount: state.mission.positionTelemetryEventCount,
+        cumulativeObservedPollCount: state.mission.observedPollCount,
       },
     })
+  }
+
+  /**
+   * Records a writer transaction that held the main thread too long, split into body
+   * and commit, at most SLOW_WRITE_LOG_LIMIT times per session [DON-313] [DON-336].
+   */
+  async function recordSlowWrite(input) {
+    slowWriteCount += 1
+    if (slowWriteCount > SLOW_WRITE_LOG_LIMIT) {
+      if (slowWriteCount === SLOW_WRITE_LOG_LIMIT + 1) {
+        await appendDurable({ level: 'warn', event: 'storage_slow_write_suppressed',
+          fields: { limit: SLOW_WRITE_LOG_LIMIT } })
+      }
+      return
+    }
+    await appendDurable({ level: 'warn', event: 'storage_slow_write', fields: {
+      totalMs: duration(input.totalMs),
+      bodyMs: duration(input.bodyMs),
+      commitMs: duration(input.commitMs),
+    } })
   }
 
   /** Stores one bounded event-loop summary rather than per-sample telemetry. */

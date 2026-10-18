@@ -102,6 +102,7 @@ function createStartupEvidenceService(options) {
       append: (input) => call('runtime.append', input).catch(() => undefined),
       appendDurable: (input) => call('runtime.appendDurable', input),
       readRecent: (limit) => call('runtime.readRecent', { limit }),
+      readSupportEntries: (options) => call('runtime.readSupportEntries', options),
       logFilePath: path.join(options.userDataPath, 'logs', 'runtime.log'),
     }),
     crashLog: Object.freeze({
@@ -313,6 +314,7 @@ function createUnavailableService(userDataPath) {
       append: async () => undefined,
       appendDurable: reject,
       readRecent: reject,
+      readSupportEntries: reject,
       logFilePath: path.join(userDataPath, 'logs', 'runtime.log'),
     }),
     crashLog: Object.freeze({

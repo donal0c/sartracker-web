@@ -1140,10 +1140,11 @@ export function buildTrackingGrowthEvidence(checkpoints) {
   return { checkpoints: normalized, intervals }
 }
 
-/** Extracts bounded backup and position-write timings from JSONL runtime evidence. */
+/** Extracts bounded backup, tracking-summary and slow-write timings from JSONL runtime evidence. */
 export function parseTrackingSoakRuntimeLog(contents) {
   const backupCycles = []
-  const trackingPositionBatches = []
+  const trackingSummaries = []
+  const slowWrites = []
   for (const line of String(contents).split(/\r?\n/u)) {
     let entry
     try {
@@ -1156,16 +1157,25 @@ export function parseTrackingSoakRuntimeLog(contents) {
         totalDurationMs: Number(entry.totalDurationMs),
         databaseBytes: Number(entry.databaseBytes),
       })
-    } else if (entry?.event === 'storage_tracking_positions_completed') {
-      trackingPositionBatches.push({
-        durationMs: Number(entry.durationMs),
+    } else if (entry?.event === 'storage_tracking_summary') {
+      trackingSummaries.push({
+        windowMs: Number(entry.windowMs),
+        positionWriteCount: Number(entry.positionWriteCount),
         insertedPositionCount: Number(entry.insertedPositionCount),
+        maxPositionWriteMs: Number(entry.maxPositionWriteMs),
+      })
+    } else if (entry?.event === 'storage_slow_write') {
+      slowWrites.push({
+        totalMs: Number(entry.totalMs),
+        bodyMs: Number(entry.bodyMs),
+        commitMs: Number(entry.commitMs),
       })
     }
   }
   return {
     backupCycles,
-    trackingPositionBatches,
+    trackingSummaries,
+    slowWrites,
     backupDurationTrendMs:
       backupCycles.length < 2
         ? 0
