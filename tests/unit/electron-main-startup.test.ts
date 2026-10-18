@@ -829,6 +829,73 @@ describe('Electron main startup', () => {
     await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
   })
 
+  it('holds a refused quit, never reopens the session, and exits once the backup settles [DON-331]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    const realStore = require('../../electron/mission-store.cjs') as {
+      readonly createElectronMissionStore: (options: unknown) => Record<string, unknown> & {
+        readonly prepareClose: () => Promise<void>
+      }
+    }
+    let releaseSettle: (() => void) | undefined
+    const settled = new Promise<void>((resolve) => { releaseSettle = resolve })
+    const refusal = Object.assign(new Error('A mission evidence worker did not exit within the safe shutdown deadline.'), {
+      name: 'ShutdownRefusedError', code: 'SHUTDOWN_DEADLINE_EXCEEDED', backupInProgress: true,
+    })
+    const prepareClose = vi.fn()
+    const whenShutdownSettled = vi.fn(() => settled)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      if (request === './mission-store.cjs') {
+        return {
+          ...realStore,
+          createElectronMissionStore: (options: unknown) => {
+            const store = realStore.createElectronMissionStore(options)
+            prepareClose
+              .mockImplementationOnce(async () => {
+                await store.prepareClose()
+                throw refusal
+              })
+              .mockImplementation(() => store.prepareClose())
+            return { ...store, prepareClose, whenShutdownSettled }
+          },
+        }
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => {
+      expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+    })
+    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+    const handler = (eventName: string) => electronMock.app.on.mock.calls.find(([name]) => name === eventName)?.[1]
+
+    handler('before-quit')({ preventDefault: vi.fn() })
+
+    await vi.waitFor(() => expect(electronMock.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'SAR Tracker is finishing a backup',
+      message: expect.stringContaining('will close by itself'),
+    })))
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+    expect(whenShutdownSettled).toHaveBeenCalledOnce()
+
+    // A second quit or launch must not restart teardown or open a window on the closed session.
+    const windowsBefore = electronMock.BrowserWindow.mock.calls.length
+    handler('before-quit')({ preventDefault: vi.fn() })
+    handler('second-instance')()
+    await Promise.resolve()
+    expect(prepareClose).toHaveBeenCalledOnce()
+    // Each of them repeats why the app is still open.
+    expect(electronMock.dialog.showMessageBox).toHaveBeenCalledTimes(3)
+    expect(electronMock.BrowserWindow.mock.calls.length).toBe(windowsBefore)
+    expect(electronMock.app.exit).not.toHaveBeenCalled()
+
+    releaseSettle?.()
+    await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
+    expect(prepareClose).toHaveBeenCalledTimes(2)
+    expect(electronMock.dialog.showErrorBox).not.toHaveBeenCalled()
+  })
+
   it('quits immediately when another Electron instance already owns the app lock', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     electronMock.app.requestSingleInstanceLock.mockReturnValue(false)
@@ -3332,7 +3399,7 @@ function createElectronMock(
     },
     BrowserWindow,
     crashReporter: { start: vi.fn() },
-    dialog: { showErrorBox: vi.fn() },
+    dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 0 })) },
     ipcMain: { handle: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
     safeStorage: {
       decryptString: vi.fn(),

@@ -17,6 +17,7 @@ type Store = {
   readonly createMissionArchive: (missionId: string) => Promise<unknown>
   readonly syncBackup: (trigger?: string) => Promise<string>
   readonly prepareClose: () => Promise<void>
+  readonly whenShutdownSettled: () => Promise<void>
   readonly close: () => void
   readonly listMissionEvents: (missionId: string) => Promise<readonly {
     readonly event_type: string
@@ -111,6 +112,42 @@ describe('backup shutdown ownership [DON-329]', () => {
     })
     await expect(store.prepareClose()).resolves.toBeUndefined()
     expect(telemetry.completed).toHaveBeenCalledOnce()
+  })
+
+  it('refuses a timed-out shutdown with a typed backup reason and settles for a later exit [DON-331]', async () => {
+    const held = deferred()
+    const reached = deferred()
+    const telemetry = diagnostics()
+    telemetry.requested.mockImplementation(async () => { reached.resolve(); await held.promise })
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-refused-quit-'))
+    store = createElectronMissionStore({
+      userDataPath: directory, storageDiagnostics: telemetry, gpxShutdownJoinTimeoutMs: 15,
+    })
+    await store.createMission({ name: 'Synthetic refused quit' })
+    const backup = store.syncBackup('manual')
+    releases.push(held.resolve)
+    await reached.promise
+
+    await expect(store.prepareClose()).rejects.toMatchObject({
+      name: 'ShutdownRefusedError', code: 'SHUTDOWN_DEADLINE_EXCEEDED', backupInProgress: true,
+    })
+    let settled = false
+    const settling = store.whenShutdownSettled().then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 25))
+    expect(settled).toBe(false)
+
+    held.resolve()
+    await backup
+    await settling
+    await expect(store.prepareClose()).resolves.toBeUndefined()
+    expect(() => store!.close()).not.toThrow()
+    store = undefined
+  })
+
+  it('settles at once when no shutdown was ever started [DON-331]', async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'sartracker-refused-quit-idle-'))
+    store = createElectronMissionStore({ userDataPath: directory, storageDiagnostics: diagnostics() })
+    await expect(store.whenShutdownSettled()).resolves.toBeUndefined()
   })
 
   it.each(['finalize', 'direct archive'] as const)(

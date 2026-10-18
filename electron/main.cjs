@@ -310,6 +310,17 @@ const QUIT_WRITER_UNREAPED_NOTICE = Object.freeze({
   message: 'The diagnostic writer could not be confirmed stopped while SAR Tracker was closing. SAR Tracker has kept this process open to protect the profile. Do not launch another copy. Preserve the profile and contact support before forcing this process closed.',
 })
 
+// A refused quit has already closed the writer and other services, so the
+// session is never resumed; it finishes closing when the work ends [DON-331].
+const SHUTDOWN_BACKUP_IN_PROGRESS_NOTICE = Object.freeze({
+  title: 'SAR Tracker is finishing a backup',
+  message: 'A backup copy of the mission was still being written when SAR Tracker was asked to close. Mission data already recorded is safe. SAR Tracker will close by itself as soon as the copy finishes. Do not start SAR Tracker again until it has closed. If it is still running after 10 minutes, restart the computer; the mission will reopen normally.',
+})
+const SHUTDOWN_WORK_IN_PROGRESS_NOTICE = Object.freeze({
+  title: 'SAR Tracker is still closing',
+  message: 'A background task did not stop in time while SAR Tracker was closing. Mission data already recorded is safe. SAR Tracker will close by itself as soon as the task finishes. Do not start SAR Tracker again until it has closed. If it is still running after 10 minutes, restart the computer; the mission will reopen normally.',
+})
+
 configureLinuxSecretStorage()
 
 const ownsSingleInstanceLock = unwritableProfile?.blocked !== true && app.requestSingleInstanceLock()
@@ -636,6 +647,13 @@ function reportQuitEvidenceWriterStopFailure(runtimeLog) {
 function showTerminalFaultNotice() {
   const notice = terminalFaultState.notice
   if (notice === null) return
+  if (terminalFaultState.phase === 'shutdown-refused') {
+    // Non-blocking: the backup this hold waits for needs the main event loop.
+    void Promise.resolve()
+      .then(() => dialog.showMessageBox({ type: 'warning', title: notice.title, message: notice.message, buttons: ['OK'] }))
+      .catch(() => undefined)
+    return
+  }
   try {
     dialog.showErrorBox(notice.title, notice.message)
   } catch {
@@ -1914,7 +1932,7 @@ async function markCleanExitAndQuit(
       await rendererTeardownCoordinator.prepare(window, 'app_quit')
     }
     await rendererTeardownCoordinator.ensureUnexpectedRendererLossFenced()
-    await missionStore.prepareClose()
+    await prepareMissionStoreForExit(missionStore, runtimeLog)
     // Join correction/restore workers before the review manager sweeps their
     // session and staging inputs; otherwise shutdown can delete a live worker's
     // source bytes mid-read.
@@ -1934,8 +1952,40 @@ async function markCleanExitAndQuit(
     }
     app.exit(0)
   } catch (error) {
-    cleanExitInProgress = false
+    // A refused shutdown has closed services; never reopen the session for use.
+    if (terminalFaultState.phase !== 'shutdown-refused') cleanExitInProgress = false
     reportUnsafeRendererTeardown(error, runtimeLog)
+  }
+}
+
+/**
+ * Prepares the mission store to close. When shutdown misses its deadline the
+ * session is held (no second quit, fault relaunch or new window), the operator
+ * is told why it is still open, and the close is retried once the outstanding
+ * work has settled [DON-331] [DON-333].
+ */
+async function prepareMissionStoreForExit(missionStore, runtimeLog) {
+  for (;;) {
+    try {
+      await missionStore.prepareClose()
+      return
+    } catch (error) {
+      if (error?.code !== 'SHUTDOWN_DEADLINE_EXCEEDED' || typeof missionStore.whenShutdownSettled !== 'function') {
+        throw error
+      }
+      void runtimeLog?.append({
+        level: 'error',
+        event: 'app_quit_refused',
+        fields: { reason: error.backupInProgress === true ? 'backup_in_progress' : 'shutdown_deadline' },
+      })
+      if (terminalFaultState.phase !== 'shutdown-refused') {
+        terminalFaultState.holdForRefusedShutdown(error.backupInProgress === true
+          ? SHUTDOWN_BACKUP_IN_PROGRESS_NOTICE
+          : SHUTDOWN_WORK_IN_PROGRESS_NOTICE)
+        showTerminalFaultNotice()
+      }
+      await missionStore.whenShutdownSettled()
+    }
   }
 }
 
