@@ -13,6 +13,8 @@ export type MapOverlayFamily =
 export type MapOverlaySyncRegistrationId =
   | 'tracking'
   | 'coverage'
+  /** Mission history coverage that keeps refreshing stale without reaching Complete [DON-334]. */
+  | 'coverage-history'
   | 'markers'
   | 'drawings'
   | 'drawing-preview'

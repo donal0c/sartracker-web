@@ -845,6 +845,14 @@
             number is safer than a false 100%.
           </p>
           <p>
+            Under heavy tracking a check can lose the race with new positions and is retried every
+            30 seconds; that is normal. If the history still has not been verified after about five
+            minutes, a <strong>Coverage overlay may be missing or stale</strong> warning appears on the
+            map. It clears by itself once the history is verified. Until then, treat the violet lines as
+            possibly incomplete, check against your independent source, and export a support report if
+            it stays.
+          </p>
+          <p>
             New saved fixes make completeness unverified until the next check. Background checks
             pause for 30 seconds after the previous check finishes; <strong>Retry</strong> checks
             immediately. The loaded history stays visible and live position markers keep updating.
