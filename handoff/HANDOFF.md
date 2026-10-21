@@ -23,14 +23,22 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 ## Next action
 
-1. Tell the team 13.7 is out (Donal), with the two known issues.
-2. 13.8 candidates: DON-313 commit/sync stalls (reopened; box shows each stall
-   is a 150–232 ms commit with tiny body), DON-312 memory margin, DON-337
-   watch persistence (design choice: resume watch vs visible stopped notice)
-   plus its packaged smoke check.
-3. Maps (M01–M03) after Donal's team meeting this week: DON-144/76/7.
-4. In Review items named for 13.7 (DON-311, 314, 320, 322, 309, 317): their
-   areas passed on the 13.7 run; close each against its own acceptance.
+1. Donal: tell the team 13.7 is out, with its two known issues (brief freezes
+   under heavy load; re-add a watched GPX folder after every restart).
+2. Ask Donal how the team meeting (week of 19 Oct) went: maps (DON-144/76/7)
+   and any new reports change the 13.8 order.
+3. Then the [13.8 queue](../docs/two-track-execution-workplan.md): DON-313
+   commit stalls first, DON-312 memory margin, DON-337 (needs Donal's design
+   choice: resume the watch vs a visible stopped-watch notice).
+
+## Linear state (21 Oct)
+
+- Closed after the 13.7 run, with evidence comments: DON-330, 328, 327, 311,
+  314, 320, 322, 309, 317, 299, 296.
+- Open, waiting on evidence: DON-318/319 (Eamonn; PCLinuxOS via DON-298),
+  DON-151/247/240 (original-machine runs), DON-300 items 1–7, DON-310 (closes
+  with DON-313). Old June audit items DON-159–164 still In Review, untouched.
+- DON-290 (release-checklist issue) carries the 13.7 record; reuse it for 13.8.
 
 ## Verification limits
 
@@ -44,7 +52,7 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 
 ## Who is doing what
 
-- **Coordinator (Claude):** Linear, 13.8 queue. No worker or test run active.
+- **Coordinator (Claude):** 13.8 queue. No worker, agent or test run active.
 - **Box:** released 21 Oct; all app/tool processes stopped.
 
 ## Waiting on others

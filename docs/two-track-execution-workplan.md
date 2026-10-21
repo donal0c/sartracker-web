@@ -1,6 +1,35 @@
 # SAR Tracker — ordered delivery ledger
 
-Updated 2026-10-17. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
+Updated 2026-10-21. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
+
+## 13.7 published 21 Oct 2026
+
+beta.13.7 was published 21 Oct 2026 for controlled team testing (tag 981e17cd,
+release run 39563099270). Every check passed on the installed draft except the
+soak: all 691,224 positions exact, 25 main-loop gaps over 200 ms (max 353 ms,
+all disk commits late in launch 2), peak 2.147 GB, just inside 2 GiB. Donal
+approved shipping with that known issue. New finding DON-337 shipped as a known
+issue with a workaround. Record: [release note](releases/sartracker-electron-0.1.0-beta.13.7.md).
+
+## Next candidate — beta.13.8
+
+1. **DON-313 (High):** commit/sync stalls. On the box each stall >150 ms is a
+   150–232 ms commit with a tiny body, late in a long run. Measure sync mode,
+   commit cadence and batching first; change the smallest justified thing.
+   DON-310 closes with it.
+2. **DON-312:** memory has ~0.5 MB margin on the box (2.147 GB of 2 GiB);
+   confirm the Mac and box margins and decide whether more reduction is owed.
+3. **DON-337 (Medium):** watched GPX folders forgotten after restart. Donal to
+   choose: resume the watch per mission (with a visible "resumed" line) or show
+   a clear stopped-watch notice. Tests first, plus a packaged team-smoke step
+   (watch, relaunch, drop a new file).
+4. **Waiting on evidence, not code:** DON-318/319 (Eamonn's bundle, GPX,
+   screenshot; PCLinuxOS run via DON-298), DON-151/247/240 (original-machine
+   long-mission runs after 13.7), DON-300 items 1–7 (verify or split).
+5. **Maps track after the team meeting (week of 19 Oct):** DON-144, DON-76,
+   DON-7 (M01–M03). Hold M01 area-workflow questions until Donal reports back.
+6. Use **DON-290** and the checklist for the exact CI-built candidate. Make a
+   fresh upgrade profile with installed 13.7 for the upgrade check.
 
 ## 13.6 published 2 Oct 2026
 
@@ -10,7 +39,7 @@ exactly, but the soak exceeded its limits: main-loop maxima 329/516 ms and
 2.27 GB peak process memory against a 2 GB budget. Donal approved shipping this
 exact artifact with that known issue; this is not operational acceptance.
 
-## Next candidate — beta.13.7
+## Historical queue for beta.13.7 (completed 21 Oct; history only)
 
 1. **DON-312/313:** local macOS A/B completed 17 Oct on unchanged source, actual
    32-device normal profile. Coverage materially contributed to memory/stalls.
@@ -78,7 +107,7 @@ before consolidating either issue.
 ## Historical queue that led into beta.13.6 — captured 1 October
 
 This records the work that led into beta.13.5 and beta.13.6. It is retained for
-history; the beta.13.7 queue above is the only current release order. Linear
+history; the beta.13.8 queue at the top is the only current release order. Linear
 remains the live source for ticket status and current evidence.
 
 | Order | Item | Ticket | Needs |
@@ -234,7 +263,7 @@ The plan was created on 2026-09-28 with Donal's clarification that CLAUDE.md and
 ## Historical operating model (28 September snapshot)
 
 - **Execution partnership:** Donal owns prioritization and product decisions. Codex works the authorized slice, uses native Codex delegation when useful, and verifies evidence before advancing. Follow `AGENTS.md` for tool and reviewer authorization; this historical queue does not authorize another agent or external action.
-- At that time, the coordinator followed the numbered queue in this historical snapshot. For current order use the beta.13.7 queue at the top; for current process/tool rules follow `AGENTS.md`.
+- At that time, the coordinator followed the numbered queue in this historical snapshot. For current order use the beta.13.8 queue at the top; for current process/tool rules follow `AGENTS.md`.
 - Status vocabulary: **NEXT**, **QUEUED**, **DECISION**, **PARKED**, **ACTIVE**, **DONE**, **DEFERRED**. DONE needs an evidence link; DEFERRED needs an explicit decision, reason and revisit trigger. A missing team answer blocks only dependent work.
 - Coordinator owns this queue, deduplication and integration. Assign an actual implementation owner on activation. One owner operates the shared Ubuntu install/profile and performance workloads; independent source work can proceed elsewhere.
 - Keep scope bounded. A new finding gets a named disposition; it does not silently expand the active patch or restart every check.
