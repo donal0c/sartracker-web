@@ -1,86 +1,56 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-18 (PRs #60–#65 merged: DON-313 backfill, DON-336 logs, DON-332 smoke, DON-334/335 coverage, DON-331/333 refused quit). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-10-21 (beta.13.7 published). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
-[archive/handoff-20261002-pretag.md](archive/handoff-20261002-pretag.md).
+[archive/handoff-20261018-pre137.md](archive/handoff-20261018-pre137.md).
 
 ## Status
 
-- **beta.13.5 published 1 Oct 2026** (controlled team beta).
-- **beta.13.6 published 2 Oct 2026** (prerelease): tag 01c43873, run
-  37011458608, AppImage `38568d4f…0b0a`, .deb `907b1129…0010`. Every check
-  PASS on the installed draft (box) incl. live Traccar and 960k open; hand
-  checks (window X, F11, GPX picker/watch/rescan) by Donal. One exception
-  (Donal): installed soak limits, data exact; stalls 329/516 ms, 2.27 GB
-  [DON-312/313, 13.7]. Box evidence: `~/sartracker-13.6-smoke/out/f-*, g-*`.
+- **beta.13.7 published 21 Oct 2026** (prerelease): tag 981e17cd, run
+  39563099270 (attempt 1 failed one strict-timing test on a runner I/O stall,
+  376 ms write / 4 ms CPU; re-run green, no rebuild). AppImage `952b4c13…8d00`,
+  .deb `c06e486d…6cbe`. Every check PASS on the installed draft (box) incl.
+  new `team-group-refresh` (DON-330) and `quit-during-finalize` (DON-332), live
+  Traccar 7,983/7,983, upgrade from a 13.6-made profile, 960k open (2.4 s /
+  5.5 s). Hand checks by Donal: window X, F11, GPX picker/watch/rescan.
+- **One exception (Donal, 21 Oct): installed soak.** Data exact (691,224);
+  25 main-loop gaps >200 ms (max 353 ms), all low-CPU commits late in launch 2;
+  launch 1 clean. Peak 2.147 GB, within 2 GiB by ~0.5 MB. 13.6: 59 gaps, 516 ms,
+  2.27 GB. Note: [release note](../docs/releases/sartracker-electron-0.1.0-beta.13.7.md).
+- **New: DON-337** watched GPX folder forgotten after restart (not a 13.7
+  change). Shipped as known issue with workaround; fix in 13.8.
+- Box evidence: `~/sartracker-13.7-smoke/` (out/full, out/soak, large, hand).
 
 ## Next action
 
-1. 13.7 landed on master (not released): DON-330 group refresh c8cfbf35,
-   DON-328 marker at newest fix 9ec0011c (Donal approved 4 Oct; stale flag kept
-   from the position; list/readout follow-up 18580e93), DON-327 warning codes
-   7a5b2325. New smoke checks a648b22c PASS on a local macOS package (4 Oct:
-   team-group-refresh 82 s, tracking 305 s); Linux 13.7 candidate run owed.
-   DON-325/329 merged in PR #56 (8a88acb0, 17 Oct; Linux run 39036124595
-   green). Residuals 18 Oct: #62 adds team-smoke `quit-during-finalize`
-   (DON-332; Mac PASS, finalize completes during quit; In Review until the
-   Linux candidate run); #63 escalates coverage stale ≥5 min/≥5 results to
-   the map overlay warning + log (DON-334 Done); #64 refuses malformed
-   coverage sequences (DON-335 Done; item 1 undefined, closed). #65: refused
-   quit holds the session, shows a non-blocking notice and exits when the
-   work settles (DON-331 option B, DON-333 wording, Donal approved; Done).
-   DON-247 is not a 13.7 gate (Donal): Eamonn long Mint run after 13.7. See
-   [evidence](archive/2026-10-17-don325-don329-local-validation.md).
-   **Merged 17 Oct (master 0f579dc7):** #57 renderer churn (DON-312), #58
-   256-fix restart-snapshot pieces, #59 one-step backup mirror (restarts under
-   live writes made a ~1 s copy take 249 s; may explain DON-240). Mac soaks:
-   memory 11/11 under budget (1.82–2.07 GB), backups 0.9–1.5 s, data exact;
-   main loop 2/5 PASS. **18 Oct probes** (see
-   [checkpoint design](../docs/don-313-off-main-checkpoint-design.md)):
-   startup stalls were participant backfill writing a 2 h window (≤7,200
-   fixes) in one transaction. Fixed by PR #60 (256-fix pieces, merged
-   de1a84ad); 3 soaks: startup cluster gone, 2/3 PASS, data exact. Off-main
-   WAL checkpoint worker built and probed in 4 variants: no gain over #60,
-   dropped (Donal 18 Oct; branch kept locally, uncommitted). Remaining: 30–40
-   commits/launch at 100–185 ms (tiny bodies; sync cost suspected, measure
-   on box) and a rare 2.17 s blocked stall (33 ms CPU). 128-fix budget
-   dropped. **DON-336** (log rotated in ~20 s, bundle read last 1,000 lines):
-   fixed by PR #61 (merged f3fe38a5, Done): one tracking summary per minute,
-   writes ≥100 ms logged as `storage_slow_write`, bundle keeps up to 500
-   earlier warn/error entries. Packaged soak: whole run in 128 KB, every
-   stall ≥150 ms matched a slow write, commit 85–90% of each (sync cost).
-   Linear DON-312/313/240 reopened. See
-   [churn note](archive/2026-10-17-don312-renderer-churn.md).
-   Next: Linux 13.7 candidate run naming DON-330/328/327/264/332 checks.
-2. In Review until named on the 13.7 candidate run: DON-311, 314, 320, 322,
-   309, 317.
-3. Waiting: box for the DON-312/313 Linux soak and the new smoke steps' first
-   packaged run; DON-247/240 gate call.
+1. Tell the team 13.7 is out (Donal), with the two known issues.
+2. 13.8 candidates: DON-313 commit/sync stalls (reopened; box shows each stall
+   is a 150–232 ms commit with tiny body), DON-312 memory margin, DON-337
+   watch persistence (design choice: resume watch vs visible stopped notice)
+   plus its packaged smoke check.
+3. Maps (M01–M03) after Donal's team meeting this week: DON-144/76/7.
+4. In Review items named for 13.7 (DON-311, 314, 320, 322, 309, 317): their
+   areas passed on the 13.7 run; close each against its own acceptance.
 
 ## Verification limits
 
-- Live Traccar: one approved device; other box checks use synthetic
-  providers. PCLinuxOS untested (DON-298). Window X is a hand check on Linux.
-- The box sleeps when idle; long runs need Donal's sudo for `systemd-inhibit`.
-- DON-336 branch: 635 suites / 6,661 pass; 4 timing tests failed only at
-  load average 30 and passed on rerun (104/104). Earlier review repair: 629 / 6,611. Synthetic packaged-store
-  cancellation/reopen checks pass; actual quit-during-finalize UI and installed
-  Ubuntu remain unproven. DON-312/313 budgets remain failed.
+- Live Traccar: one approved device; other box checks use synthetic providers.
+  PCLinuxOS untested (DON-298). Window X is a hand check on Linux.
+- Box keep-awake: `sudo systemd-inhibit` launched over `ssh -t` dies when the
+  Terminal closes; the box's AC sleep setting is "nothing", which held for
+  this run. Use `systemd-run` if a longer run needs a guaranteed inhibit.
+- Hand-check helper scripts that import the tool's `lib/app.mjs` directly must
+  set `DISPLAY=:0` and `XAUTHORITY` themselves (only `run.mjs` does it).
 
 ## Who is doing what
 
-- **Coordinator (Claude):** Linear, 13.7 candidate verification. No worker or
-  test run active.
-- **Donal decisions pending:** none open from the 18 Oct residuals.
-- **Maps (M01–M03) next after the team talk:** Donal meets the team week of
-  19 Oct. Hold the M01 area-workflow questions until then, then pivot straight
-  to DON-144/76/7. Until then: close out 13.7 (DON-312/313 first).
+- **Coordinator (Claude):** Linear, 13.8 queue. No worker or test run active.
+- **Box:** released 21 Oct; all app/tool processes stopped.
 
 ## Waiting on others
 
 - Eamonn: support bundle, Layers screenshot, Tomies Wood GPX (DON-319 cause,
-  DON-318 trigger).
-- Box unavailable today: installed Ubuntu and DON-312/313 budget checks wait.
+  DON-318 trigger); long Mint run for DON-247 after 13.7.
 
 ## Pointers
 
