@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useDiagnosticsWorkspaceStore } from '../../features/diagnostics/diagnostics-workspace-store'
-import { useLayoutTrialStore } from '../../features/layout-trial/layout-trial-store'
 import { useLastConfirmedAt, type TrackingCondition, type TrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
 import { useMissionReviewWorkspaceStore } from '../../features/mission-review/mission-review-workspace-store'
 import { useMissionStore } from '../../features/mission/mission-store'
@@ -23,37 +22,6 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
   record: { happened: 'Part of the mission record could not be saved.', map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
   recovery: { happened: 'A mission was interrupted and has not been resumed.', map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
   disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
-}
-
-const VERSION_LABELS = [
-  { id: 'a', label: 'A', detail: 'Panel on the right' },
-  { id: 'b', label: 'B', detail: 'People on the left' },
-  { id: 'c', label: 'C', detail: 'Map first' },
-  { id: 'current', label: 'Today', detail: 'Current screen' },
-] as const
-
-/** Test-only strip for flipping between versions on the same mission. */
-export function LayoutTrialSwitcher() {
-  const enabled = useLayoutTrialStore((state) => state.enabled)
-  const choice = useLayoutTrialStore((state) => state.choice)
-  const setChoice = useLayoutTrialStore((state) => state.setChoice)
-  if (!enabled) return null
-  return (
-    <nav aria-label="Try a layout" className="trial-switcher" data-testid="layout-trial-switcher">
-      <span>Trying layouts (test only):</span>
-      {VERSION_LABELS.map((version) => (
-        <button
-          aria-pressed={choice === version.id}
-          data-testid={`layout-trial-${version.id}`}
-          key={version.id}
-          onClick={() => setChoice(version.id)}
-          type="button"
-        >
-          <strong>{version.label}</strong> {version.detail}
-        </button>
-      ))}
-    </nav>
-  )
 }
 
 /** The one line that says whether the map can be trusted; click for the detail. */
