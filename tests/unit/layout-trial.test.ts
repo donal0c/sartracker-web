@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import { parseLayoutTrialChoice, withLayoutTrialChoice } from '../../src/features/layout-trial/layout-trial-store'
 import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/layout-trial/people-model'
+import { describeTrackingHeadline } from '../../src/features/layout-trial/use-tracking-issues'
+import type { TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
 const NOW = Date.parse('2026-11-06T12:00:00.000Z')
@@ -26,6 +28,35 @@ describe('layout trial choice', () => {
 
   it('keeps other link parameters when switching', () => {
     expect(withLayoutTrialChoice('https://x.test/?missionHarness=1&layout=a', 'c')).toBe('https://x.test/?missionHarness=1&layout=c')
+  })
+})
+
+describe('tracking headline', () => {
+  const base = {
+    positions: [], ingestRejected: 0, evidenceState: 'healthy', evidenceLossAcknowledged: false, conflictCount: 0,
+    stationaryCount: 0, notedCount: 0, coverageStatus: 'complete', hiddenLocationCount: 0, allLocationsHidden: false,
+  }
+  const status = (overrides: Partial<TrackingConnectionStatus>): TrackingConnectionStatus => ({
+    mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null, ...overrides,
+  })
+
+  it('treats the runtime pause notice as a pause, never as a lost connection', () => {
+    const headline = describeTrackingHeadline({ ...base, phase: 'paused', status: status({ warning: 'Live refresh suspended while mission is paused.' }) })
+    expect(headline.condition).toBe('paused')
+    expect(headline.text).toBe('MISSION PAUSED')
+    expect(headline.issues).toEqual([])
+  })
+
+  it('still reports a real outage as lost, and a hidden location however it is', () => {
+    const headline = describeTrackingHeadline({ ...base, phase: 'active', hiddenLocationCount: 2, status: status({ mode: 'offline', warning: 'Traccar server is not answering.' }) })
+    expect(headline.condition).toBe('lost')
+    expect(headline.text).toContain("2 people's locations hidden")
+    expect(headline.text).not.toContain('Traccar server')
+  })
+
+  it('raises a failed mission record, and keeps a noted person listed', () => {
+    expect(describeTrackingHeadline({ ...base, phase: 'active', evidenceState: 'degraded', status: status({}) }).condition).toBe('record')
+    expect(describeTrackingHeadline({ ...base, phase: 'active', notedCount: 1, status: status({}) }).text).toBe('1 person not moving (noted)')
   })
 })
 
@@ -66,7 +97,7 @@ describe('people list', () => {
   })
 
   it('never reads as current while positions are not updating', () => {
-    const [person] = buildPeopleRows([row({})], NOW, false)
+    const [person] = buildPeopleRows([row({})], NOW, { live: false, lastConfirmedAt: null })
     expect(person?.statusText).toContain('Last known position')
     expect(person?.tone).toBe('attention')
   })
@@ -76,8 +107,10 @@ describe('people list', () => {
       row({ deviceId: '1', name: 'Aoife' }),
       row({ deviceId: '2', name: 'Zoe', stationaryAttention: true, attentionElapsedDisplay: '30 min without meaningful movement' }),
       row({ deviceId: '3', name: 'Brian', hasFix: false, latitude: null, longitude: null }),
-    ], NOW, false)
-    expect(selectExceptionsForMap(lost).map((person) => person.name)).toEqual(['Zoe', 'Brian'])
+      row({ deviceId: '4', name: 'Ciara', fixTime: '2026-11-06T11:30:00.000Z' }),
+    ], NOW, { live: false, lastConfirmedAt: '2026-11-06T11:55:00.000Z' })
+    expect(selectExceptionsForMap(lost).map((person) => person.name)).toEqual(['Zoe', 'Brian', 'Ciara'])
+    expect(lost.find((person) => person.name === 'Ciara')?.statusText).toContain('Already out of date when updates stopped')
   })
 
   it('keeps an acknowledged stationary warning visible until movement clears it', () => {

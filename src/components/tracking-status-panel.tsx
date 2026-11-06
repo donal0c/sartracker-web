@@ -254,7 +254,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       )}
 
-      {stationaryAttentionCount === 0 ? null : (
+      {stationaryAttentionCount === 0 || trial ? null : (
         <p
           className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
           data-testid="stationary-attention-summary"
@@ -270,6 +270,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         omittedOutingCount={omittedCoverageOutingCount}
         unassignedOmitted={unassignedCoverageOmitted}
         onInspectExactFixes={() => setBreadcrumbTrailMode('dots')}
+        {...(trial ? { inspectLabel: 'Show recorded positions' } : {})}
         onRetry={() => void coverageController?.resume()}
       />
 

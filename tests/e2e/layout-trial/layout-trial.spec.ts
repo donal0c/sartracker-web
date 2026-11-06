@@ -168,6 +168,7 @@ for (const version of ['a', 'b', 'c'] as const) {
       await expect(page.getByTestId('trial-tracking-headline')).not.toContainText('Traccar server')
       // The named call-outs add to the alarm rather than repeating it.
       await expect(page.getByTestId('trial-exceptions-more')).toHaveCount(0)
+      if (await page.getByTestId('trial-exceptions').count() > 0) await expect(page.getByTestId('trial-exception-3')).toContainText('Already out of date')
       await shot(page, `${version}-4-lost`)
       await page.getByTestId('trial-tracking-headline').click()
       await expect(page.getByTestId('trial-tracking-advice')).toContainText('internet connection')

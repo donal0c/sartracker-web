@@ -16,14 +16,14 @@ import { ThemeToggle } from '../theme-toggle'
 import { TrackingStatusPanel } from '../tracking-status-panel'
 
 const LAST_RECEIVED = 'The last positions received. They may not be where people are now.'
-const TRACKING_ADVICE: Record<TrackingCondition, { readonly map: string; readonly todo: string }> = {
-  ok: { map: 'The latest positions received.', todo: 'Nothing. Positions are coming in normally.' },
-  attention: { map: 'The latest positions received.', todo: 'Check the people or items listed above. Tracking itself is still running.' },
-  lost: { map: LAST_RECEIVED, todo: "Don't rely on the map until this clears. Check this computer's internet connection, then press Reconnect." },
-  paused: { map: LAST_RECEIVED, todo: 'Positions stopped because the mission is paused. Press Resume mission in the red bar to start them again.' },
-  record: { map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
-  recovery: { map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
-  disconnected: { map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
+const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; readonly map: string; readonly todo: string }> = {
+  ok: { happened: 'Positions are coming in normally.', map: 'The latest positions received.', todo: 'Nothing. Positions are coming in normally.' },
+  attention: { happened: 'Tracking is running, with something to check.', map: 'The latest positions received.', todo: 'Check the people or items listed above. Tracking itself is still running.' },
+  lost: { happened: 'New positions have stopped arriving.', map: LAST_RECEIVED, todo: "Don't rely on the map until this clears. Check this computer's internet connection, then press Reconnect." },
+  paused: { happened: 'The mission is paused, so positions are not updating.', map: LAST_RECEIVED, todo: 'Positions stopped because the mission is paused. Press Resume mission in the red bar to start them again.' },
+  record: { happened: 'Part of the mission record could not be saved.', map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
+  recovery: { happened: 'A mission was interrupted and has not been resumed.', map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
+  disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
 }
 
 const VERSION_LABELS = [
@@ -220,7 +220,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
       <div className="trial-panel-scroll">
         <dl className="trial-plain-lines">
           <dt>What has happened</dt>
-          <dd data-testid="trial-tracking-happened">{headline.issues.length === 0 ? 'Positions are coming in normally.' : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
+          <dd data-testid="trial-tracking-happened">{headline.issues.length === 0 ? advice.happened : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
           <dt>What the map is showing</dt>
           <dd>{advice.map} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
           <dt>What to do</dt>

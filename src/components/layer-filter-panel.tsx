@@ -292,7 +292,7 @@ function TreeNodeRow(props: {
           <span className="truncate font-medium">{props.trial === true && props.node.id === COVERAGE_GROUP_NODE_ID ? 'Earlier tracks' : props.node.displayLabel}</span>
         </button>
 
-        {props.trial === true && props.depth === 0 ? null : <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-300">
+        {props.trial === true && (props.depth === 0 || childCount === '0') ? null : <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-300">
           {childCount}
         </span>}
       </div>

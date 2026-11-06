@@ -20,6 +20,15 @@ export type PersonRow = {
 /** Urgency of a person whose only problem is the outage or pause everyone shares. */
 export const SHARED_OUTAGE_URGENCY = 3
 const NO_PROBLEM_URGENCY = 9
+/** Same five-minute line the app already treats as a stale device. */
+const OUT_OF_DATE_BEFORE_STOP_MS = 5 * 60_000
+
+export type PeopleLiveness = {
+  /** False while positions are not updating, so nothing reads as current. */
+  readonly live: boolean
+  /** When positions were last confirmed, to spot anyone already quiet before they stopped. */
+  readonly lastConfirmedAt: string | null
+}
 
 /** Words a volunteer can act on for how long ago a device last reported. */
 export function formatLastHeard(lastSeen: string | null, nowMs: number): string | null {
@@ -33,7 +42,7 @@ export function formatLastHeard(lastSeen: string | null, nowMs: number): string 
   return `${hours} hr ${minutes % 60} min ago`
 }
 
-function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): { readonly statusText: string; readonly tone: PersonTone; readonly urgency: number } {
+function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConfirmedAt }: PeopleLiveness): { readonly statusText: string; readonly tone: PersonTone; readonly urgency: number } {
   if (!row.hasFix) return { statusText: 'No position yet', tone: 'attention', urgency: 1 }
   // The age of the position being drawn, never of the last contact with the device.
   const age = formatLastHeard(row.fixTime, nowMs) ?? 'time unknown'
@@ -44,14 +53,17 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): 
     notes.push(`${row.attentionAcknowledged ? 'Not moving (noted)' : 'Not moving'} ${elapsed}`)
     if (row.stationaryAttentionUnreliable) notes.push('last position unconfirmed')
   }
-  if (!live || row.sourceDisplay === 'Last known') notes.push(`Last known position ${age}`)
+  const confirmedMs = lastConfirmedAt === null ? Number.NaN : Date.parse(lastConfirmedAt)
+  const fixMs = row.fixTime === null ? Number.NaN : Date.parse(row.fixTime)
+  const quietBeforeStop = !live && confirmedMs - fixMs > OUT_OF_DATE_BEFORE_STOP_MS
+  if (!live || row.sourceDisplay === 'Last known') notes.push(quietBeforeStop ? `Already out of date when updates stopped, position ${age}` : `Last known position ${age}`)
   else if (row.status === 'offline') notes.push(`Offline, position ${age}`)
   else if (row.status === 'unknown') notes.push(`Not confirmed, position ${age}`)
   else if (row.stale || row.sourceDisplay === 'Stale') notes.push(`Out of date, position ${age}`)
   if (row.fixTimeUnverified) notes.push('position time not verified')
   if (row.ingestWarning !== null) notes.push('bad position report rejected')
   if (notes.length > 0) {
-    const ownProblem = row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
+    const ownProblem = quietBeforeStop || row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
     const urgency = row.stationaryAttention ? (row.attentionAcknowledged ? 1 : 0) : ownProblem ? 2 : SHARED_OUTAGE_URGENCY
     return { statusText: notes.join(' · '), tone: 'attention', urgency }
   }
@@ -60,12 +72,15 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): 
 
 /**
  * Builds the People list: anyone needing a look comes first, then everyone by
- * name. Pass live=false while positions are not updating (for example paused),
- * so nothing below the alarm reads as current.
+ * name.
  */
-export function buildPeopleRows(rows: readonly DeviceWorkspaceRow[], nowMs: number, live = true): readonly PersonRow[] {
+export function buildPeopleRows(
+  rows: readonly DeviceWorkspaceRow[],
+  nowMs: number,
+  liveness: PeopleLiveness = { live: true, lastConfirmedAt: null },
+): readonly PersonRow[] {
   const people = rows.map((row) => {
-    const { statusText, tone, urgency } = describePerson(row, nowMs, live)
+    const { statusText, tone, urgency } = describePerson(row, nowMs, liveness)
     return {
       deviceId: row.deviceId,
       name: row.name,

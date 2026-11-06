@@ -34,6 +34,7 @@ export function usePeopleRows(): readonly PersonRow[] {
   const ingestHealth = useIngestHealthStore((state) => state.summary)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
   const phase = useMissionStore((state) => state.phase)
+  const lastConfirmedAt = useTrackingStore((state) => state.status.lastSuccessAt)
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   // "3 min ago" has to keep moving even when no new position arrives.
@@ -45,8 +46,8 @@ export function usePeopleRows(): readonly PersonRow[] {
   return useMemo(() => buildPeopleRows(
     buildDeviceWorkspaceRows(snapshot, hiddenDeviceIds, ingestHealth, attentionByDevice, mode),
     nowMs,
-    mode === 'online' && phase === 'active',
-  ), [attentionByDevice, hiddenDeviceIds, ingestHealth, mode, nowMs, phase, snapshot])
+    { live: mode === 'online' && phase === 'active', lastConfirmedAt },
+  ), [attentionByDevice, hiddenDeviceIds, ingestHealth, lastConfirmedAt, mode, nowMs, phase, snapshot])
 }
 
 /**
