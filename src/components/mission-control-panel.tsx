@@ -1,4 +1,4 @@
-import { lazy, Suspense, useLayoutEffect } from 'react'
+import { lazy, Suspense, useLayoutEffect, useState } from 'react'
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
@@ -43,6 +43,8 @@ type MissionControlPanelProps = {
   readonly onMinimizedChange?: (minimized: boolean) => void
   readonly onActionErrorChange?: (error: string | null) => void
   readonly onDecisionOpenChange?: (open: boolean) => void
+  /** Layout trial: plain words, clocks live in the top bar, Outings tucked away. */
+  readonly variant?: 'standard' | 'trial'
 }
 
 /**
@@ -53,7 +55,11 @@ export function MissionControlPanel({
   onMinimizedChange,
   onActionErrorChange,
   onDecisionOpenChange,
+  variant = 'standard',
 }: MissionControlPanelProps = {}) {
+  const trial = variant === 'trial'
+  // Trial only: the team asked for Pause not to be easy to hit by accident.
+  const [confirmingPause, setConfirmingPause] = useState(false)
   const {
     phase,
     currentMission,
@@ -145,15 +151,15 @@ export function MissionControlPanel({
     >
       <div className={`sar-mission-header flex items-center justify-between border-b border-[var(--sar-line)] ${sectionsCollapsible ? 'mb-3 pb-2' : 'mb-4 pb-3'}`}>
         <div>
-          <span className="sar-section-label text-amber-300">Mission Control</span>
-          {sectionsCollapsible ? null : (
+          <span className="sar-section-label text-amber-300">{trial ? (phase === 'idle' ? 'Start a mission' : 'Mission') : 'Mission Control'}</span>
+          {sectionsCollapsible || trial ? null : (
             <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
               lifecycle and timing
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
+          {trial ? null : <button
             className="sar-button px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em]"
             data-testid="open-mission-review-workspace"
             disabled={!canOpenReview}
@@ -161,7 +167,7 @@ export function MissionControlPanel({
             type="button"
           >
             Review
-          </button>
+          </button>}
           {canMinimizeToMast ? (
             <button
               aria-expanded="true"
@@ -173,7 +179,7 @@ export function MissionControlPanel({
               Minimize
             </button>
           ) : null}
-          {phase !== 'idle' && (
+          {phase !== 'idle' && !trial && (
             <div
               className={`h-2 w-2 rounded-full ${
                 phase === 'active'
@@ -191,7 +197,7 @@ export function MissionControlPanel({
             >
               {phasePresentation.statusLabel}
             </span>
-          ) : (
+          ) : trial ? null : (
             <span
               className={`font-semibold uppercase text-[11px] ${
                 phase === 'active'
@@ -244,16 +250,16 @@ export function MissionControlPanel({
         </div>
       ) : null}
 
-      <div className={sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
+      <div className={trial ? 'flex flex-col gap-2' : sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
         {/* Primary Telemetry; compact during a mission (also shown in the mast) [DON-300] */}
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={`grid gap-3 sm:grid-cols-2 ${trial ? (phase === 'idle' ? 'hidden' : 'sm:!grid-cols-1') : ''}`}>
           <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">{trial ? 'Since start' : 'Elapsed'}</p>
             <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'} ${trial ? 'hidden' : ''}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
             <p className={`mt-1 font-mono font-black leading-none text-emerald-400 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
@@ -278,7 +284,7 @@ export function MissionControlPanel({
                 id={MISSION_NAME_INPUT_ID}
                 maxLength={MAX_MISSION_NAME_BYTES}
                 onChange={(event) => setMissionName(event.target.value)}
-                placeholder="Search Operation Name"
+                placeholder={trial ? 'For example: Coomloughra search' : 'Search Operation Name'}
                 value={missionName}
               />
             </div>
@@ -288,8 +294,9 @@ export function MissionControlPanel({
                 className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
                 htmlFor={MISSION_OFFSET_INPUT_ID}
               >
-                Start Offset (Hours)
+                {trial ? 'Roll back time (hours)' : 'Start Offset (Hours)'}
               </label>
+              {trial ? <p className="mt-1 text-[13px] text-stone-300">If people were out before you opened this. Leave at 0 if not.</p> : null}
               <input
                 className="sar-input mt-2 w-full px-3 py-2 text-sm"
                 data-testid="mission-offset-input"
@@ -303,7 +310,7 @@ export function MissionControlPanel({
                 value={startOffsetHours}
               />
             </div>
-            <ParticipantControlsSection lookbackRequested={Number(startOffsetHours) > 0} phase={phase} />
+            <ParticipantControlsSection lookbackRequested={Number(startOffsetHours) > 0} phase={phase} variant={variant} />
           </div>
         ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">
@@ -327,7 +334,16 @@ export function MissionControlPanel({
         </div>
 
         {/* Tactical Actions */}
-        <div className="space-y-2">
+        <div className={`space-y-2 ${trial ? 'order-last border-t border-[var(--sar-line)] pt-3' : ''}`}>
+          {trial && confirmingPause ? (
+            <div className="border border-amber-300 p-3" data-testid="trial-pause-confirm" role="group" aria-label="Confirm pause">
+              <p className="text-[14px] font-bold">Pause the mission? Positions stop updating until you resume.</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button className="sar-button-focus px-3 py-2 text-[13px] font-bold" data-testid="trial-pause-confirm-yes" onClick={() => { setConfirmingPause(false); void pauseOrResume() }} type="button">Pause</button>
+                <button className="sar-button px-3 py-2 text-[13px] font-bold" data-testid="trial-pause-confirm-no" onClick={() => setConfirmingPause(false)} type="button">Keep going</button>
+              </div>
+            </div>
+          ) : null}
           <button
             className={`${phase === 'idle' ? 'sar-action-primary w-full px-4 py-3 text-[14px] font-black uppercase tracking-[0.12em] transition-all active:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale' : 'sr-only'}`}
             data-testid="mission-start-btn"
@@ -337,7 +353,7 @@ export function MissionControlPanel({
           >
             Start
           </button>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className={`grid gap-2 sm:grid-cols-2 ${trial && phase === 'idle' ? 'hidden' : ''}`}>
             <button
               className={`px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale ${
                 phasePresentation.paused
@@ -346,7 +362,10 @@ export function MissionControlPanel({
               }`}
               data-testid="mission-pause-resume-btn"
               disabled={!canPauseOrResume}
-              onClick={() => void pauseOrResume()}
+              onClick={() => {
+                if (trial && phase === 'active') setConfirmingPause(true)
+                else void pauseOrResume()
+              }}
               type="button"
             >
               {pauseResumeLabel}
@@ -370,13 +389,41 @@ export function MissionControlPanel({
             collapsible={sectionsCollapsible}
             section={participantSection}
             testId="mission-participants-section"
-            title="Participants"
+            title={trial ? 'People on this mission' : 'Participants'}
           >
             <ParticipantControlsSection phase={phase} />
           </MissionSectionDisclosure>
         ) : null}
 
-        {(currentMission !== null || governanceMission !== null) && outingSection.enabled ? (
+        {trial && phase !== 'idle' ? (
+          <button
+            className="sar-button w-full px-3 py-2 text-[13px] font-bold"
+            data-testid="open-mission-review-workspace"
+            disabled={!canOpenReview}
+            onClick={() => openReviewWorkspace()}
+            type="button"
+          >
+            Review and replay
+          </button>
+        ) : null}
+
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && trial ? (
+          <details className="text-[13px]" data-testid="trial-more-mission-options">
+            <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">More mission options</summary>
+            <div className="mt-2">
+              <MissionSectionDisclosure
+                collapsible={sectionsCollapsible}
+                section={outingSection}
+                testId="mission-outings-section"
+                title="Outings"
+              >
+                <OutingControlsSection />
+              </MissionSectionDisclosure>
+            </div>
+          </details>
+        ) : null}
+
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && !trial ? (
           <MissionSectionDisclosure
             collapsible={sectionsCollapsible}
             section={outingSection}

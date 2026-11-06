@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import { useMissionStore } from '../features/mission/mission-store'
 import { isMissionModelEnabled } from '../features/runtime/mission-model-flag'
@@ -18,10 +18,13 @@ type ParticipantControlsSectionProps = {
   readonly phase: 'idle' | 'active' | 'paused' | 'recovery'
   /** True when the operator has entered a start offset (lookback) on the start step. */
   readonly lookbackRequested?: boolean
+  /** Layout trial: plain words, with individual devices tucked behind the groups. */
+  readonly variant?: 'standard' | 'trial'
 }
 
 /** Renders explicit mission-start selection and append-only participant management. */
-export function ParticipantControlsSection({ phase, lookbackRequested = false }: ParticipantControlsSectionProps) {
+export function ParticipantControlsSection({ phase, lookbackRequested = false, variant = 'standard' }: ParticipantControlsSectionProps) {
+  const trial = variant === 'trial'
   const selection = useParticipantSelectionViewModel()
   const controller = useParticipantStore((state) => state.controller)
   const participants = useParticipantStore((state) => state.participants)
@@ -62,22 +65,23 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
   }
 
   if (phase === 'idle') {
+    const trialDefaultTicked = defaultGroupId !== null && selection.availableGroups.some((group) => group.groupId === defaultGroupId && group.selected)
     return (
       <section className="space-y-3 border-t border-[var(--sar-line)] pt-4" data-testid="participant-selection-step">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-amber-300">
-              Mission participants
+              {trial ? "Who's taking part" : 'Mission participants'}
             </p>
-            <p className="mt-1 text-xs leading-relaxed text-stone-300">
+            {trial ? null : <p className="mt-1 text-xs leading-relaxed text-stone-300">
               {defaultGroupId !== null && selection.availableGroups.some((group) => group.groupId === defaultGroupId && group.selected)
                 ? "Select the Traccar groups and individual devices taking part. Your team's default group is ticked; untick it if it is not taking part."
                 : 'Select the Traccar groups and individual devices taking part. Nothing is pre-selected.'}
-            </p>
+            </p>}
           </div>
-          <span className="sar-status-chip px-2 py-1 font-mono text-[11px]" data-testid="participant-selected-count">
+          {trial && trialDefaultTicked ? null : <span className="sar-status-chip px-2 py-1 font-mono text-[11px]" data-testid="participant-selected-count">
             {selection.selectedDeviceCount} selected
-          </span>
+          </span>}
         </div>
 
         <CatalogueRefreshStatus
@@ -106,7 +110,18 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
             Your team&apos;s default group (set in Settings) is not on the tracking server, so nothing was pre-ticked. Choose the groups taking part below.
           </p>
         ) : null}
-        <div className="grid gap-3 sm:grid-cols-2">
+        {trial && !trialDefaultTicked && defaultGroupId === null ? (
+          <p className="text-[13px] text-stone-300" data-testid="trial-no-default-group">
+            Tick your team below. To have it ticked each time, set your team&apos;s group in Settings.
+          </p>
+        ) : null}
+        {trial && trialDefaultTicked ? (
+          <p className="sar-readout p-2 text-[15px] font-semibold" data-testid="trial-default-group-summary">
+            ✓ {selection.availableGroups.filter((group) => group.selected).map((group) => group.name).join(', ')} ({selection.selectedDeviceCount} people)
+          </p>
+        ) : null}
+        <TrialFold fold={trial && trialDefaultTicked}>
+        <div className={trial ? 'space-y-3' : 'grid gap-3 sm:grid-cols-2'}>
           <ParticipantPickerList
             emptyText="No Traccar groups are available. Device-level selection remains available."
             heading="Groups"
@@ -119,28 +134,43 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
             }))}
             testId="participant-group-picker"
           />
-          <ParticipantPickerList
-            emptyText="No device roster is available. You may start with none and add participants after reconnecting."
-            heading="Devices"
-            items={selection.availableDevices.map((device) => ({
-              id: device.deviceId,
-              label: device.name,
-              detail: `${device.deviceId}${device.reportingNow ? ' · reporting now' : ''}${device.coveredBySelectedGroup ? ' · included by selected group' : ''}`,
-              selected: device.selected,
-              disabled: device.coveredBySelectedGroup,
-              onToggle: () => selection.toggleDevice(device.deviceId),
-            }))}
-            testId="participant-device-picker"
-          />
+          {(() => {
+            const devicePicker = <ParticipantPickerList
+              emptyText="No device roster is available. You may start with none and add participants after reconnecting."
+              heading="Devices"
+              items={selection.availableDevices.map((device) => ({
+                id: device.deviceId,
+                label: device.name,
+                detail: trial
+                  ? [device.reportingNow ? 'reporting now' : null, device.coveredBySelectedGroup ? 'in the group above' : null].filter(Boolean).join(' · ')
+                  : `${device.deviceId}${device.reportingNow ? ' · reporting now' : ''}${device.coveredBySelectedGroup ? ' · included by selected group' : ''}`,
+                selected: device.selected,
+                disabled: device.coveredBySelectedGroup,
+                onToggle: () => selection.toggleDevice(device.deviceId),
+              }))}
+              testId="participant-device-picker"
+            />
+            return trial ? (
+              <details data-testid="trial-pick-devices">
+                <summary className="cursor-pointer select-none py-1 text-[13px] font-semibold text-stone-200">Add one person at a time</summary>
+                <div className="mt-2">{devicePicker}</div>
+              </details>
+            ) : devicePicker
+          })()}
         </div>
+        </TrialFold>
         {lookbackRequested ? (
           <p className="sar-inline-alert p-2 text-xs text-amber-100" data-testid="participant-lookback-notice">
-            Start offset: Earlier history is only fetched for participants selected here before Start. A participant added after Start needs History from: Mission start to include it.
+            {trial
+              ? 'Roll back only brings in earlier tracks for people ticked here before Start.'
+              : 'Start offset: Earlier history is only fetched for participants selected here before Start. A participant added after Start needs History from: Mission start to include it.'}
           </p>
         ) : null}
         {selection.selectedDeviceCount === 0 ? (
           <p className="text-xs text-stone-300" data-testid="participant-none-selected-notice">
-            No participants selected. The mission may start, but reporting devices will remain outside mission evidence and off the operational map until a coordinator adds them.
+            {trial
+              ? 'Nobody ticked. You can still start, but nobody will show on the map until you add them.'
+              : 'No participants selected. The mission may start, but reporting devices will remain outside mission evidence and off the operational map until a coordinator adds them.'}
           </p>
         ) : null}
       </section>
@@ -326,6 +356,17 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false }:
         </button>
       </div>
     </section>
+  )
+}
+
+/** Tucks the pickers away once the team's default is ticked, without unmounting behaviour. */
+function TrialFold(props: { readonly fold: boolean; readonly children: ReactNode }) {
+  if (!props.fold) return props.children
+  return (
+    <details data-testid="trial-change-participants">
+      <summary className="cursor-pointer select-none py-1 text-[13px] font-semibold text-stone-200">Change who&apos;s taking part</summary>
+      <div className="mt-2">{props.children}</div>
+    </details>
   )
 }
 

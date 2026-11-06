@@ -49,6 +49,10 @@ import { APP_VERSION } from './lib/app-version'
 import { CompactMissionStrip } from './components/compact-mission-strip'
 import { PersistentTrackingHealth } from './components/persistent-tracking-health'
 import { ThemeToggle } from './components/theme-toggle'
+import { readTheme, THEME_KEY } from './lib/theme-preference'
+import { LayoutTrialSwitcher } from './components/layout-trial/trial-chrome'
+import { useTrialChrome } from './components/layout-trial/use-trial-chrome'
+import { selectLayoutTrialVersion, useLayoutTrialStore, type LayoutTrialVersion } from './features/layout-trial/layout-trial-store'
 import { useWorkspaceVisibility } from './features/mission/use-workspace-visibility'
 import { selectWorkspaceHideBlockedReason } from './features/mission/workspace-hide-blocked-reason'
 
@@ -68,6 +72,7 @@ const MapView = lazy(async () => {
 type RuntimeMode = 'electron' | 'hosted-browser'
 
 function App() {
+  const trialVersion = useLayoutTrialStore(selectLayoutTrialVersion)
   const status = useAppStore((state) => state.status)
   const focusModeActive = useFocusModeStore((state) => state.active)
   const settingsOpen = useSettingsWorkspaceStore((state) => state.open)
@@ -144,7 +149,8 @@ function App() {
       <MeasurementRuntimeBridge />
       <MissionReviewRuntimeBridge />
 
-      {focusModeActive ? null : (
+      <LayoutTrialSwitcher />
+      {trialVersion !== null ? null : focusModeActive ? null : (
         <CommandMast
           missionControlMinimized={missionControlMinimized}
           onOpenDiagnostics={openDiagnosticsWorkspace}
@@ -153,6 +159,16 @@ function App() {
           status={status}
         />
       )}
+      {trialVersion !== null ? (
+        <TrialLayout
+          actionError={missionActionError}
+          browserTestingMode={browserTestingMode}
+          decisionOpen={missionDecisionOpen}
+          onActionErrorChange={handleMissionActionError}
+          onDecisionOpenChange={setMissionDecisionOpen}
+          version={trialVersion}
+        />
+      ) : <>
       <div className="sar-awareness-strip">
         {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={workspace.restore} />}
         <PersistentTrackingHealth />
@@ -205,6 +221,8 @@ function App() {
         />
       </div>
 
+      </>}
+
       <DrawingDialog />
       <CoordinateConverterDialog />
       <DevicesWorkspace />
@@ -223,6 +241,58 @@ function App() {
 }
 
 export default App
+
+/** Trial screens: the same map and workspaces, with the chrome rearranged around them. */
+function TrialLayout(props: {
+  readonly version: LayoutTrialVersion
+  readonly browserTestingMode: boolean
+  readonly decisionOpen: boolean
+  readonly actionError: string | null
+  readonly onActionErrorChange: (error: string | null) => void
+  readonly onDecisionOpenChange: (open: boolean) => void
+}) {
+  const chrome = useTrialChrome({
+    version: props.version,
+    weather: <WeatherMenu />,
+    decisionOpen: props.decisionOpen,
+    actionError: props.actionError,
+    onActionErrorChange: props.onActionErrorChange,
+    onDecisionOpenChange: props.onDecisionOpenChange,
+  })
+
+  // Focus Mode is what the team used to get here, so it must not stack on top.
+  useEffect(() => { useFocusModeStore.getState().setActive?.(false) }, [])
+  useEffect(() => {
+    // Contrast is the default for the trial (raised by the team since May 2026).
+    // Stored as well, because the Contrast button re-applies the stored choice.
+    const previous = readTheme()
+    const store = (contrast: boolean) => {
+      try { window.localStorage.setItem(THEME_KEY, String(contrast)) } catch { /* display choice only */ }
+      document.documentElement.dataset.theme = contrast ? 'high-contrast' : 'standard'
+    }
+    store(true)
+    return () => store(previous)
+  }, [])
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-layout-trial={props.version} data-testid="layout-trial-root">
+      {chrome.top}
+      {/* focusModeActive=true keeps the autosave warning here now the old mast is gone. */}
+      <RuntimeSafetyBanner browserTestingMode={props.browserTestingMode} focusModeActive />
+      <div className="relative flex min-h-0 flex-1">
+        {chrome.side}
+        <section className={`relative flex-1 overflow-hidden ${chrome.slotSide === 'left' ? 'order-2' : '-order-1'}`}>
+          <Suspense fallback={<div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">Loading map shell...</div>}>
+            <MapErrorBoundary>
+              <MapView />
+            </MapErrorBoundary>
+          </Suspense>
+          {chrome.overMap}
+        </section>
+      </div>
+    </div>
+  )
+}
 
 /**
  * Blocks operator interaction until runtime startup either succeeds or fails visibly.

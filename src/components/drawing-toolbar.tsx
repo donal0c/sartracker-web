@@ -1,3 +1,4 @@
+import { selectLayoutTrialVersion, useLayoutTrialStore } from '../features/layout-trial/layout-trial-store'
 import { useState } from 'react'
 
 import { MarkerAtGridPanel } from './marker-at-grid-panel'
@@ -40,6 +41,8 @@ export function DrawingToolbar() {
   const layerCatalogController = useLayerCatalogStore((state) => state.controller)
   const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)
+  // The team asked three times for "Select" to go; it stays for today's screen until agreed.
+  const trial = useLayoutTrialStore(selectLayoutTrialVersion) !== null
 
   const disabled = controller === null || missionId === null || missionPhase === 'recovery'
   const activeDefinition =
@@ -84,7 +87,7 @@ export function DrawingToolbar() {
                 className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300"
                 data-testid="drawing-toolbar-active-mode"
               >
-                {disabled ? 'Mission required' : activeDefinition?.label ?? 'Select'}
+                {disabled ? 'Mission required' : activeDefinition?.label ?? (trial ? 'Open' : 'Select')}
               </p>
             </div>
           </button>
@@ -219,7 +222,7 @@ export function DrawingToolbar() {
             className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-50"
             data-testid="drawing-toolbar-active-mode"
           >
-            {activeDefinition?.label ?? 'Select'}
+            {activeDefinition?.label ?? (trial ? 'Open' : 'Select')}
           </span>
           <svg className="h-4 w-4 text-stone-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />

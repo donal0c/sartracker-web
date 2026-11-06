@@ -28,6 +28,8 @@ type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
   readonly onExactBreadcrumbDotsEarlier?: () => void
   readonly onExactBreadcrumbDotsLater?: () => void
+  /** Layout trial: only the warnings and history status; the plain summary sits above it. */
+  readonly variant?: 'standard' | 'trial'
 }
 
 /**
@@ -133,12 +135,14 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         ? 'sar-status-chip-alert'
         : 'sar-status-chip-neutral'
 
+  const trial = props.variant === 'trial'
+
   return (
     <div
-      className="sar-panel p-4 text-sm"
+      className={trial ? 'text-sm' : 'sar-panel p-4 text-sm'}
       data-testid="tracking-status"
     >
-      <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
+      {trial ? null : <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
         <div>
           <span className="sar-section-label text-amber-300">Tracking System</span>
           <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
@@ -160,9 +164,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           />
           <span className="font-bold uppercase text-[11px]">{modeLabel}</span>
         </div>
-      </div>
+      </div>}
 
-      <div className="mb-4 flex">
+      {trial ? null : <div className="mb-4 flex">
         <button
           className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
           aria-describedby={status.warning === null ? undefined : 'tracking-status-message'}
@@ -172,9 +176,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         >
           Open Devices
         </button>
-      </div>
+      </div>}
 
-      {status.warning === null ? null : (
+      {status.warning === null || trial ? null : (
         <TrackingStatusMessage tone={criticalTrustWarning ? 'critical' : 'warning'}>
           {status.warning}
         </TrackingStatusMessage>
@@ -309,7 +313,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       ) : null}
 
-      <div
+      {trial ? null : <><div
         className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100"
         data-testid="tracking-counters"
       >
@@ -343,7 +347,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
             Telemetry stream healthy
           </TrackingStatusMessage>
         ) : null}
-      </div>
+      </div></>}
     </div>
   )
 }
