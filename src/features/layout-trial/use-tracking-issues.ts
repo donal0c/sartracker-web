@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 
+import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { useMissionStore } from '../mission/mission-store'
 import { useCoverageStore } from '../tracking/coverage-store'
 import { useIngestHealthStore } from '../tracking/ingest-health-store'
@@ -9,7 +10,11 @@ import { useStationaryAttentionStore } from '../tracking/stationary-attention-st
 import { useTrackingStore } from '../tracking/tracking-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
 
+export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'disconnected' | 'attention'
+
 export type TrackingHeadline = {
+  /** The condition that decides the advice, so a pause is not told to check the internet. */
+  readonly condition: TrackingCondition
   readonly tone: 'ok' | 'warning' | 'alert' | 'neutral'
   readonly text: string
   /** Text for the full-width alarm, when it should say more than the headline. */
@@ -36,6 +41,8 @@ export function useTrackingHeadline(): TrackingHeadline {
   const notedCount = useStationaryAttentionStore((state) =>
     Object.values(state.byDevice).filter((attention) => attention.state === 'attention' && attention.acknowledged).length,
   )
+  const hiddenLocationCount = useLayerVisibilityStore((state) => state.hiddenDeviceIds.length)
+  const allLocationsHidden = useLayerVisibilityStore((state) => !state.groupVisibility.tracking)
   const coverage = selectCoverageStateForMission(useCoverageStore((state) => state.state), missionId)
 
   return useMemo(() => {
@@ -57,15 +64,21 @@ export function useTrackingHeadline(): TrackingHeadline {
     if (coverage.status === 'error') issues.push('Mission history could not be fully loaded')
     if (coverage.status === 'loading' || coverage.status === 'partial') issues.push('Mission history not complete yet')
 
-    // Every condition stays readable in the line; nothing hides behind "+ more".
+    // A filtered map must never be mistaken for everyone's whereabouts.
+    if (allLocationsHidden) issues.push('All locations hidden on the map')
+    else if (hiddenLocationCount > 0) issues.push(`${hiddenLocationCount} ${hiddenLocationCount === 1 ? "person's location" : "people's locations"} hidden on the map`)
+
+    // Short conditions stay in the bar and may wrap; the server's own sentence goes in Tracking.
+    const conditions = issues.filter((issue) => issue !== status.warning).join(' · ')
+    const prefixed = (lead: string) => (conditions === '' ? lead : `${lead} · ${conditions}`)
     const summary = issues.join(' · ')
     const critical = status.mode === 'offline' || isCriticalTrackingTrustWarning(status.warning)
-    if (critical) return { tone: 'alert', text: `TRACKING LOST${summary === '' ? '' : ` · ${summary}`}`, alarm: 'TRACKING LOST: positions on the map may not be current', issues }
-    if (phase === 'paused') return { tone: 'alert', text: `MISSION PAUSED${summary === '' ? '' : ` · ${summary}`}`, alarm: 'MISSION PAUSED: positions are not updating', issues }
-    if (evidenceFailed) return { tone: 'alert', text: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
-    if (phase === 'recovery') return { tone: 'warning', text: 'Mission needs resuming: tracking not live', issues }
-    if (status.mode !== 'online') return { tone: 'neutral', text: 'Tracking not connected', issues }
-    if (issues.length > 0) return { tone: 'warning', text: summary, issues }
-    return { tone: health.tone === 'success' ? 'ok' : 'warning', text: 'Tracking OK', issues }
-  }, [coverage.status, evidence.acknowledgedLoss, evidence.conflictCount, evidence.state, ingest.totalRejected, notedCount, phase, positions, stationaryCount, status])
+    if (critical) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), alarm: 'TRACKING LOST: positions on the map may not be current', issues }
+    if (phase === 'paused') return { condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), alarm: 'MISSION PAUSED: positions are not updating', issues }
+    if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
+    if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', issues }
+    if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', issues }
+    if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, issues }
+    return { condition: 'ok', tone: health.tone === 'success' ? 'ok' : 'warning', text: 'Tracking OK', issues }
+  }, [allLocationsHidden, coverage.status, evidence.acknowledgedLoss, evidence.conflictCount, evidence.state, hiddenLocationCount, ingest.totalRejected, notedCount, phase, positions, stationaryCount, status])
 }

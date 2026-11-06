@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { parseLayoutTrialChoice, withLayoutTrialChoice } from '../../src/features/layout-trial/layout-trial-store'
-import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard } from '../../src/features/layout-trial/people-model'
+import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/layout-trial/people-model'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
 const NOW = Date.parse('2026-11-06T12:00:00.000Z')
@@ -69,6 +69,15 @@ describe('people list', () => {
     const [person] = buildPeopleRows([row({})], NOW, false)
     expect(person?.statusText).toContain('Last known position')
     expect(person?.tone).toBe('attention')
+  })
+
+  it('names own problems on the map, not the outage the alarm already shouts about', () => {
+    const lost = buildPeopleRows([
+      row({ deviceId: '1', name: 'Aoife' }),
+      row({ deviceId: '2', name: 'Zoe', stationaryAttention: true, attentionElapsedDisplay: '30 min without meaningful movement' }),
+      row({ deviceId: '3', name: 'Brian', hasFix: false, latitude: null, longitude: null }),
+    ], NOW, false)
+    expect(selectExceptionsForMap(lost).map((person) => person.name)).toEqual(['Zoe', 'Brian'])
   })
 
   it('keeps an acknowledged stationary warning visible until movement clears it', () => {

@@ -218,12 +218,12 @@ export function DrawingToolbar() {
           type="button"
         >
           <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Map Tools</span>
-          <span
+          {trial && activeDefinition === undefined ? null : <span
             className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-50"
             data-testid="drawing-toolbar-active-mode"
           >
-            {activeDefinition?.label ?? (trial ? 'Open' : 'Select')}
-          </span>
+            {activeDefinition?.label ?? 'Select'}
+          </span>}
           <svg className="h-4 w-4 text-stone-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path d="M19 9l-7 7-7-7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>

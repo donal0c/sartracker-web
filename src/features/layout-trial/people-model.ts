@@ -13,7 +13,13 @@ export type PersonRow = {
   readonly positionHidden: boolean
   readonly canAcknowledge: boolean
   readonly attentionAcknowledged: boolean
+  /** Lower is more urgent. Below SHARED_OUTAGE_URGENCY means a problem of their own. */
+  readonly urgency: number
 }
+
+/** Urgency of a person whose only problem is the outage or pause everyone shares. */
+export const SHARED_OUTAGE_URGENCY = 3
+const NO_PROBLEM_URGENCY = 9
 
 /** Words a volunteer can act on for how long ago a device last reported. */
 export function formatLastHeard(lastSeen: string | null, nowMs: number): string | null {
@@ -27,8 +33,8 @@ export function formatLastHeard(lastSeen: string | null, nowMs: number): string 
   return `${hours} hr ${minutes % 60} min ago`
 }
 
-function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): { readonly statusText: string; readonly tone: PersonTone } {
-  if (!row.hasFix) return { statusText: 'No position yet', tone: 'attention' }
+function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): { readonly statusText: string; readonly tone: PersonTone; readonly urgency: number } {
+  if (!row.hasFix) return { statusText: 'No position yet', tone: 'attention', urgency: 1 }
   // The age of the position being drawn, never of the last contact with the device.
   const age = formatLastHeard(row.fixTime, nowMs) ?? 'time unknown'
   const notes: string[] = []
@@ -44,8 +50,12 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): 
   else if (row.stale || row.sourceDisplay === 'Stale') notes.push(`Out of date, position ${age}`)
   if (row.fixTimeUnverified) notes.push('position time not verified')
   if (row.ingestWarning !== null) notes.push('bad position report rejected')
-  if (notes.length > 0) return { statusText: notes.join(' · '), tone: 'attention' }
-  return { statusText: `Position ${age}`, tone: row.stationaryAttentionUnavailable ? 'muted' : 'ok' }
+  if (notes.length > 0) {
+    const ownProblem = row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
+    const urgency = row.stationaryAttention ? (row.attentionAcknowledged ? 1 : 0) : ownProblem ? 2 : SHARED_OUTAGE_URGENCY
+    return { statusText: notes.join(' · '), tone: 'attention', urgency }
+  }
+  return { statusText: `Position ${age}`, tone: row.stationaryAttentionUnavailable ? 'muted' : 'ok', urgency: NO_PROBLEM_URGENCY }
 }
 
 /**
@@ -55,7 +65,7 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, live: boolean): 
  */
 export function buildPeopleRows(rows: readonly DeviceWorkspaceRow[], nowMs: number, live = true): readonly PersonRow[] {
   const people = rows.map((row) => {
-    const { statusText, tone } = describePerson(row, nowMs, live)
+    const { statusText, tone, urgency } = describePerson(row, nowMs, live)
     return {
       deviceId: row.deviceId,
       name: row.name,
@@ -67,10 +77,18 @@ export function buildPeopleRows(rows: readonly DeviceWorkspaceRow[], nowMs: numb
       positionHidden: row.hidden,
       canAcknowledge: row.stationaryAttention && !row.attentionAcknowledged,
       attentionAcknowledged: row.attentionAcknowledged,
+      urgency,
     } satisfies PersonRow
   })
-  const rank = (person: PersonRow) => (person.tone === 'attention' ? 0 : 1)
-  return people.sort((left, right) => rank(left) - rank(right) || left.name.localeCompare(right.name))
+  return people.sort((left, right) => left.urgency - right.urgency || left.name.localeCompare(right.name))
+}
+
+/**
+ * Who to name on the map: the most urgent first, and never someone whose only
+ * problem is the outage the red alarm is already shouting about.
+ */
+export function selectExceptionsForMap(people: readonly PersonRow[]): readonly PersonRow[] {
+  return people.filter((person) => person.tone === 'attention' && person.urgency < SHARED_OUTAGE_URGENCY)
 }
 
 /** Counts the people the top of the screen should point the operator towards. */

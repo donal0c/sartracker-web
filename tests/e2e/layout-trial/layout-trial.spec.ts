@@ -125,6 +125,10 @@ for (const version of ['a', 'b', 'c'] as const) {
       await expect(page.getByTestId('mission-start-btn')).toBeVisible()
       await expect(page.getByText('Roll back time (hours)')).toBeVisible()
       await expect(page.getByTestId('mission-finish-btn')).toBeHidden()
+      // Troubleshooting does not need a mission first.
+      await page.getByTestId('trial-tracking-headline').click()
+      await expect(page.getByTestId('trial-tracking-panel')).toBeVisible()
+      await page.getByTestId('trial-panel-close').click()
       await setDefaultGroup(page)
       await expect(page.getByTestId('trial-default-group-summary')).toContainText('Rescue Team')
       await shot(page, `${version}-1-start`)
@@ -151,6 +155,8 @@ for (const version of ['a', 'b', 'c'] as const) {
       await expect(page.getByTestId('trial-position-5')).toBeChecked()
       await page.getByTestId('trial-position-6').uncheck()
       await expect(page.getByTestId('trial-position-6')).not.toBeChecked()
+      // A filtered map must say so, even with People closed.
+      await expect(page.getByTestId('trial-tracking-headline')).toContainText("1 person's location hidden on the map")
       await expect(page.getByTestId('trial-trail-6')).toBeChecked()
     })
 
@@ -159,7 +165,15 @@ for (const version of ['a', 'b', 'c'] as const) {
       await startMission(page)
       await feed(page, { lost: true })
       await expect(page.getByTestId('trial-alarm')).toContainText('TRACKING LOST')
+      await expect(page.getByTestId('trial-tracking-headline')).not.toContainText('Traccar server')
+      // The named call-outs add to the alarm rather than repeating it.
+      await expect(page.getByTestId('trial-exceptions-more')).toHaveCount(0)
       await shot(page, `${version}-4-lost`)
+      await page.getByTestId('trial-tracking-headline').click()
+      await expect(page.getByTestId('trial-tracking-advice')).toContainText('internet connection')
+      await expect(page.getByTestId('trial-reconnect')).toBeVisible()
+      await shot(page, `${version}-10-tracking-lost`)
+      await page.getByTestId('trial-panel-close').click()
       await feed(page)
       await expect(page.getByTestId('trial-alarm')).toBeHidden()
 
@@ -174,6 +188,12 @@ for (const version of ['a', 'b', 'c'] as const) {
       await page.getByTestId('mission-pause-resume-btn').click()
       await page.getByTestId('trial-pause-confirm-yes').click()
       await expect(page.getByTestId('trial-alarm')).toContainText('MISSION PAUSED')
+      await page.getByTestId('trial-tracking-headline').click()
+      await expect(page.getByTestId('trial-tracking-advice')).toContainText('Resume mission')
+      await expect(page.getByTestId('trial-tracking-advice')).not.toContainText('internet')
+      await expect(page.getByTestId('trial-reconnect')).toHaveCount(0)
+      await shot(page, `${version}-11-tracking-paused`)
+      await page.getByTestId('trial-panel-close').click()
       await showPeople(page)
       // Nothing under the alarm may read as current.
       await expect(page.getByTestId('trial-person-status-5')).toContainText('Last known position')
@@ -191,6 +211,9 @@ for (const version of ['a', 'b', 'c'] as const) {
         await expect(page.getByTestId('trial-people-panel')).toHaveCount(0)
       }
       await expect(page.getByTestId('trial-tracking-headline')).toBeVisible()
+      // People closed: the problems are still named on the map, most urgent first.
+      await expect(page.getByTestId('trial-exceptions').locator('button').first()).toContainText('Aoife Brennan')
+      await expect(page.getByTestId('trial-exception-3')).toContainText('Ciara Doyle')
       await expect.poll(async () => ((await page.locator('canvas').first().boundingBox())?.width ?? 0) / 1440, { timeout: 5_000 }).toBeGreaterThan(0.95)
       await shot(page, `${version}-7-full-map`)
 

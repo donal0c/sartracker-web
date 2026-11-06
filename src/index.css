@@ -769,7 +769,7 @@ body {
 .trial-clocks span { font-size: 12px; color: var(--trial-muted); }
 .trial-clocks strong { font-family: ui-monospace, Menlo, monospace; font-size: 17px; font-weight: 800; }
 .trial-health { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; border: 1px solid transparent; padding: 0.1rem 0.7rem; text-align: left; line-height: 1.25; }
-.trial-health strong { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.trial-health strong { font-size: 15px; line-height: 1.2; }
 .trial-health-time { font-size: 12px; color: var(--trial-muted); white-space: nowrap; }
 .trial-health-ok strong { color: #6ee7b7; }
 .trial-health-neutral strong { color: #e7e5e4; }
@@ -826,7 +826,7 @@ body {
 .trial-plain-lines dt { margin-top: 0.6rem; font-size: 13px; font-weight: 700; color: var(--trial-muted); }
 .trial-plain-lines dd { font-size: 15px; }
 .trial-plain-lines li { list-style: disc; margin-left: 1.1rem; }
-.trial-exceptions { position: absolute; left: 50%; top: 0.75rem; z-index: 25; display: flex; max-width: calc(100% - 34rem); transform: translateX(-50%); flex-direction: column; gap: 0.25rem; }
+.trial-exceptions { position: absolute; right: 0.75rem; top: 7.25rem; z-index: 25; display: flex; max-width: min(24rem, 60%); flex-direction: column; align-items: flex-end; gap: 0.25rem; }
 .trial-exceptions button { border: 1px solid #000; border-left: 4px solid #000; background: #fbbf24; color: #000; padding: 0.2rem 0.6rem; font-size: 14px; text-align: left; box-shadow: 0 4px 12px rgba(0,0,0,0.45); }
 
 [data-layout-trial] [data-testid='layer-panel'] { padding: 0 0.5rem 0.5rem; }
@@ -835,7 +835,8 @@ body {
 [data-layout-trial] .sar-tree-row { padding-top: 0.3rem; padding-bottom: 0.3rem; margin-bottom: 0; font-size: 15px; }
 [data-layout-trial] .sar-tree-row span { font-size: 15px; }
 /* Maps and Map Tools side by side, so they take one row of the map instead of two. */
-[data-layout-trial] [data-testid='drawing-toolbar'] { left: 15rem; top: 1rem; }
+[data-layout-trial] [data-testid='basemap-switcher'] { max-width: 13rem; }
+[data-layout-trial] [data-testid='drawing-toolbar'] { left: 14.5rem; top: 1rem; }
 
 [data-testid='trial-mission-host'].trial-panel-section { position: relative; overflow-y: auto; }
 .trial-mission-card { position: absolute; left: 50%; top: 1.25rem; z-index: 40; max-height: calc(100% - 2.5rem); width: 540px; max-width: calc(100% - 1.5rem); transform: translateX(-50%); overflow-y: auto; border: 2px solid #fff; background: var(--trial-bg); color: var(--trial-text); box-shadow: 0 24px 64px rgba(0,0,0,0.65); }

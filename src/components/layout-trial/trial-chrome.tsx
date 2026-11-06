@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useDiagnosticsWorkspaceStore } from '../../features/diagnostics/diagnostics-workspace-store'
 import { useLayoutTrialStore } from '../../features/layout-trial/layout-trial-store'
-import type { TrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
+import type { TrackingCondition, TrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
 import { useMissionReviewWorkspaceStore } from '../../features/mission-review/mission-review-workspace-store'
 import { useMissionStore } from '../../features/mission/mission-store'
 import { formatMissionDuration } from '../../features/mission/mission-timers'
@@ -14,6 +14,17 @@ import { APP_VERSION } from '../../lib/app-version'
 import { getAppRuntimeController } from '../../features/runtime/app-runtime-controller'
 import { ThemeToggle } from '../theme-toggle'
 import { TrackingStatusPanel } from '../tracking-status-panel'
+
+const LAST_RECEIVED = 'The last positions received. They may not be where people are now.'
+const TRACKING_ADVICE: Record<TrackingCondition, { readonly map: string; readonly todo: string }> = {
+  ok: { map: 'The latest positions received.', todo: 'Nothing. Positions are coming in normally.' },
+  attention: { map: 'The latest positions received.', todo: 'Check the people or items listed above. Tracking itself is still running.' },
+  lost: { map: LAST_RECEIVED, todo: "Don't rely on the map until this clears. Check this computer's internet connection, then press Reconnect." },
+  paused: { map: LAST_RECEIVED, todo: 'Positions stopped because the mission is paused. Press Resume mission in the red bar to start them again.' },
+  record: { map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
+  recovery: { map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
+  disconnected: { map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
+}
 
 const VERSION_LABELS = [
   { id: 'a', label: 'A', detail: 'Panel on the right' },
@@ -81,8 +92,8 @@ function MissionSummary(props: { readonly onOpen: () => void; readonly open: boo
         title="Pause, finish, add people, review"
         type="button"
       >
+        <span className={`trial-mission-phase trial-phase-${phase}`} data-testid="trial-mission-phase">{phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Mission ▾ · Running' : phase === 'paused' ? 'Mission ▾ · PAUSED' : 'Mission ▾ · Needs resuming'}</span>
         <span className="trial-mission-name" data-testid="current-mission-name">{mission?.name ?? 'No mission running'}</span>
-        <span className={`trial-mission-phase trial-phase-${phase}`} data-testid="trial-mission-phase">{phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Running · Mission ▾' : phase === 'paused' ? 'PAUSED · Mission ▾' : 'Needs resuming ▾'}</span>
       </button>
       {mission === null ? null : (
         <div className="trial-clocks" data-testid="trial-clocks">
@@ -200,7 +211,8 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const lastSuccessAt = useTrackingStore((state) => state.status.lastSuccessAt)
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
-  const lost = headline.tone === 'alert'
+  const advice = TRACKING_ADVICE[headline.condition]
+  const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
 
   return (
     <section className="trial-panel-section" data-testid="trial-tracking-panel">
@@ -210,11 +222,11 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           <dt>What has happened</dt>
           <dd data-testid="trial-tracking-happened">{headline.issues.length === 0 ? 'Positions are coming in normally.' : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
           <dt>What the map is showing</dt>
-          <dd>{lost ? 'The last positions received. They may not be where people are now.' : 'The latest positions received.'} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
+          <dd>{advice.map} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
           <dt>What to do</dt>
-          <dd>{lost ? "Don't rely on the map until this says Tracking OK. Check this computer's internet connection, then press Reconnect." : 'Nothing, unless something is listed above.'}</dd>
+          <dd data-testid="trial-tracking-advice">{advice.todo}</dd>
         </dl>
-        <button
+        {canReconnect ? <button
           className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
           data-testid="trial-reconnect"
           disabled={reconnecting}
@@ -230,7 +242,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           type="button"
         >
           {reconnecting ? 'Reconnecting…' : 'Reconnect'}
-        </button>
+        </button> : null}
         {reconnectError === null ? null : <p className="sar-inline-alert p-2 text-sm" role="alert">{reconnectError}</p>}
         <TrackingStatusPanel variant="trial" />
       </div>

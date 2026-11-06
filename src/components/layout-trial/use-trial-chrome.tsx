@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
-import { countPeopleNeedingAttention, type PersonRow } from '../../features/layout-trial/people-model'
+import { countPeopleNeedingAttention, selectExceptionsForMap, type PersonRow } from '../../features/layout-trial/people-model'
 import type { LayoutTrialVersion } from '../../features/layout-trial/layout-trial-store'
 import { useTrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
 import { useMapTargetStore } from '../../features/map/map-target-store'
@@ -51,7 +51,10 @@ export function useTrialChrome(input: {
 
   // A decision or failure always forces Mission back into view.
   const missionForced = decisionOpen || actionError !== null
-  const visible: BasePanel | TemporaryPanel | null = !running ? null : missionForced ? 'mission' : temporary ?? base
+  // Tracking opens before a mission too: troubleshooting must not need a mission first.
+  const visible: BasePanel | TemporaryPanel | null = !running
+    ? (temporary === 'tracking' ? 'tracking' : null)
+    : missionForced ? 'mission' : temporary ?? base
   const missionVisible = isSetup ? setupCardOpen || missionForced : visible === 'mission'
   const openMission = useCallback(() => setTemporary('mission'), [])
   const showBase = (panel: BasePanel) => {
@@ -146,17 +149,17 @@ export function useTrialChrome(input: {
     </aside>
   )
 
-  const overMap = version === 'c' && running && visible !== 'people'
+  const overMap = running && visible !== 'people'
     ? <ExceptionsOnMap onShowAll={() => showBase('people')} people={people} />
     : null
 
   return { top, side, overMap, slotSide: version === 'b' ? 'left' : 'right' }
 }
 
-/** Version C keeps the map clear, so whoever needs a look is named on it in words. */
+/** With People closed, whoever needs a look is still named on the map, in words. */
 function ExceptionsOnMap(props: { readonly people: readonly PersonRow[]; readonly onShowAll: () => void }) {
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
-  const exceptions = props.people.filter((person) => person.tone === 'attention')
+  const exceptions = selectExceptionsForMap(props.people)
   if (exceptions.length === 0) return null
   const extra = exceptions.length - MAX_EXCEPTIONS_ON_MAP
   return (
