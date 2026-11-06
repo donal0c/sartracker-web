@@ -2,13 +2,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useDiagnosticsWorkspaceStore } from '../../features/diagnostics/diagnostics-workspace-store'
 import { useLayoutTrialStore } from '../../features/layout-trial/layout-trial-store'
-import type { TrackingCondition, TrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
+import { useLastConfirmedAt, type TrackingCondition, type TrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
 import { useMissionReviewWorkspaceStore } from '../../features/mission-review/mission-review-workspace-store'
 import { useMissionStore } from '../../features/mission/mission-store'
 import { formatMissionDuration } from '../../features/mission/mission-timers'
 import { useMissionTimer } from '../../features/mission/use-mission-timer'
 import { useSettingsWorkspaceStore } from '../../features/settings/settings-workspace-store'
-import { useTrackingStore } from '../../features/tracking/tracking-store'
 import { formatOperatorLocalTimestamp } from '../../features/tracking/operator-time'
 import { APP_VERSION } from '../../lib/app-version'
 import { getAppRuntimeController } from '../../features/runtime/app-runtime-controller'
@@ -59,7 +58,7 @@ export function LayoutTrialSwitcher() {
 
 /** The one line that says whether the map can be trusted; click for the detail. */
 function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; readonly onOpen: () => void }) {
-  const lastSuccessAt = useTrackingStore((state) => state.status.lastSuccessAt)
+  const lastSuccessAt = useLastConfirmedAt()
   const { headline } = props
   return (
     <button
@@ -208,7 +207,7 @@ export function TrialPanelHead(props: { readonly title: ReactNode; readonly onCl
 /** Says in plain words what happened, what the map is showing and what to do. */
 export function TrackingDetails(props: { readonly headline: TrackingHeadline; readonly onClose: () => void }) {
   const { headline } = props
-  const lastSuccessAt = useTrackingStore((state) => state.status.lastSuccessAt)
+  const lastSuccessAt = useLastConfirmedAt()
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
   const advice = TRACKING_ADVICE[headline.condition]
@@ -220,7 +219,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
       <div className="trial-panel-scroll">
         <dl className="trial-plain-lines">
           <dt>What has happened</dt>
-          <dd data-testid="trial-tracking-happened">{headline.issues.length === 0 ? advice.happened : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
+          <dd data-testid="trial-tracking-happened">{advice.happened}{headline.issues.length === 0 ? null : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
           <dt>What the map is showing</dt>
           <dd>{advice.map} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
           <dt>What to do</dt>

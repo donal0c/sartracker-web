@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { parseLayoutTrialChoice, withLayoutTrialChoice } from '../../src/features/layout-trial/layout-trial-store'
 import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/layout-trial/people-model'
-import { describeTrackingHeadline } from '../../src/features/layout-trial/use-tracking-issues'
+import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/layout-trial/use-tracking-issues'
 import type { TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
@@ -52,6 +52,12 @@ describe('tracking headline', () => {
     expect(headline.condition).toBe('lost')
     expect(headline.text).toContain("2 people's locations hidden")
     expect(headline.text).not.toContain('Traccar server')
+  })
+
+  it('keeps the last confirmed time through the null the runtime publishes on pause, per mission', () => {
+    expect(rememberLastConfirmedAt('m1', '2026-11-06T11:55:00.000Z')).toBe('2026-11-06T11:55:00.000Z')
+    expect(rememberLastConfirmedAt('m1', null)).toBe('2026-11-06T11:55:00.000Z')
+    expect(rememberLastConfirmedAt('m2', null)).toBeNull()
   })
 
   it('raises a failed mission record, and keeps a noted person listed', () => {

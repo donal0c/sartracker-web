@@ -11,6 +11,25 @@ import { useStationaryAttentionStore } from '../tracking/stationary-attention-st
 import { useTrackingStore } from '../tracking/tracking-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
 
+let remembered: { readonly missionId: string | null; readonly at: string } | null = null
+
+/**
+ * Keeps the last confirmed update time for this mission. The runtime publishes a
+ * null time when pausing, and "none yet" would be false, and would also stop us
+ * spotting anyone who was already out of date before the pause.
+ */
+export function rememberLastConfirmedAt(missionId: string | null, reported: string | null): string | null {
+  if (reported !== null) remembered = { missionId, at: reported }
+  return remembered !== null && remembered.missionId === missionId ? remembered.at : null
+}
+
+/** Last confirmed update for the current mission, surviving the null published on pause. */
+export function useLastConfirmedAt(): string | null {
+  const reported = useTrackingStore((state) => state.status.lastSuccessAt)
+  const missionId = useMissionStore((state) => state.currentMission?.id ?? null)
+  return rememberLastConfirmedAt(missionId, reported)
+}
+
 export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'disconnected' | 'attention'
 
 export type TrackingHeadline = {

@@ -12,6 +12,7 @@ import { getLayerVisibilityCheckboxState } from '../../features/layers/layer-pan
 import { setLayerSubtreeVisibility } from '../../features/layers/layer-subtree-visibility'
 import { useLayerVisibilityStore } from '../../features/layers/layer-visibility-store'
 import { buildPeopleRows, type PersonRow } from '../../features/layout-trial/people-model'
+import { useLastConfirmedAt } from '../../features/layout-trial/use-tracking-issues'
 import { useMapTargetStore } from '../../features/map/map-target-store'
 import { useMissionStore } from '../../features/mission/mission-store'
 import { buildDeviceWorkspaceRows } from '../../features/tracking/device-workspace-model'
@@ -34,7 +35,7 @@ export function usePeopleRows(): readonly PersonRow[] {
   const ingestHealth = useIngestHealthStore((state) => state.summary)
   const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
   const phase = useMissionStore((state) => state.phase)
-  const lastConfirmedAt = useTrackingStore((state) => state.status.lastSuccessAt)
+  const lastConfirmedAt = useLastConfirmedAt()
   const [nowMs, setNowMs] = useState(() => Date.now())
 
   // "3 min ago" has to keep moving even when no new position arrives.

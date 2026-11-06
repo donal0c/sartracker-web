@@ -191,11 +191,15 @@ for (const version of ['a', 'b', 'c'] as const) {
       await expect(page.getByTestId('trial-alarm')).toContainText('MISSION PAUSED')
       await page.getByTestId('trial-tracking-headline').click()
       await expect(page.getByTestId('trial-tracking-advice')).toContainText('Resume mission')
+      await expect(page.getByTestId('trial-tracking-happened')).toContainText('The mission is paused')
+      // The real pause publishes no update time; neither fact below may be lost to that.
+      await expect(page.getByTestId('trial-tracking-headline')).not.toContainText('none yet')
       await expect(page.getByTestId('trial-tracking-advice')).not.toContainText('internet')
       await expect(page.getByTestId('trial-reconnect')).toHaveCount(0)
       await shot(page, `${version}-11-tracking-paused`)
       await page.getByTestId('trial-panel-close').click()
       await showPeople(page)
+      await expect(page.getByTestId('trial-person-status-3')).toContainText('Already out of date when updates stopped')
       // Nothing under the alarm may read as current.
       await expect(page.getByTestId('trial-person-status-5')).toContainText('Last known position')
       await shot(page, `${version}-6-paused`)
