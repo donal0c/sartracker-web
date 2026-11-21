@@ -45,6 +45,12 @@ type MissionControlPanelProps = {
   readonly onMinimizedChange?: (minimized: boolean) => void
   readonly onActionErrorChange?: (error: string | null) => void
   readonly onDecisionOpenChange?: (open: boolean) => void
+  /**
+   * Simplified workspace only: true while something in Mission needs the
+   * operator (a failed Start, a participant or outing warning, an archive that
+   * needs recovery), so the workspace keeps Mission open and undismissable.
+   */
+  readonly onAttentionChange?: (needed: boolean) => void
   /** Simplified workspace: plain words, clocks live in the top bar, Outings tucked away. */
   readonly variant?: 'standard' | 'simplified'
 }
@@ -57,6 +63,7 @@ export function MissionControlPanel({
   onMinimizedChange,
   onActionErrorChange,
   onDecisionOpenChange,
+  onAttentionChange,
   variant = 'standard',
 }: MissionControlPanelProps = {}) {
   const simplified = variant === 'simplified'
@@ -133,6 +140,12 @@ export function MissionControlPanel({
   const sectionsCollapsible = phase === 'active' || phase === 'paused'
   const participantSection = useParticipantSectionSummary()
   const outingSection = useOutingSectionSummary()
+  const outingNeedsAttention = outingSection.attention.length > 0
+  const archiveNeedsRecovery = phase === 'idle' && governanceMission?.storage_state === 'recovery_required'
+  const attentionNeeded = simplified && (
+    startError !== null || participantSection.attention.length > 0 || outingNeedsAttention || archiveNeedsRecovery
+  )
+  useLayoutEffect(() => { onAttentionChange?.(attentionNeeded) }, [attentionNeeded, onAttentionChange])
   const canMinimizeToMast =
     phase === 'active' &&
     currentMission !== null &&
@@ -261,8 +274,8 @@ export function MissionControlPanel({
           <ResumeMissionChoice
             busy={governanceBusy}
             mission={recoverableMission}
-            onResume={() => void resumeRecoverable()}
-            onStartNew={() => void startFresh()}
+            onResume={resumeRecoverable}
+            onStartNew={startFresh}
           />
         ) : null}
 
@@ -422,19 +435,16 @@ export function MissionControlPanel({
         ) : null}
 
         {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified && !startScreen ? (
-          <details className="text-[13px]" data-testid="ws-more-mission-options">
-            <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">More mission options</summary>
-            <div className="mt-2">
-              <MissionSectionDisclosure
-                collapsible={sectionsCollapsible}
-                section={outingSection}
-                testId="mission-outings-section"
-                title="Outings"
-              >
-                <OutingControlsSection />
-              </MissionSectionDisclosure>
-            </div>
-          </details>
+          <MoreMissionOptions open={outingNeedsAttention}>
+            <MissionSectionDisclosure
+              collapsible={sectionsCollapsible}
+              section={outingSection}
+              testId="mission-outings-section"
+              title="Outings"
+            >
+              <OutingControlsSection />
+            </MissionSectionDisclosure>
+          </MoreMissionOptions>
         ) : null}
 
         {(currentMission !== null || governanceMission !== null) && outingSection.enabled && !simplified ? (
@@ -449,7 +459,7 @@ export function MissionControlPanel({
         ) : null}
 
         {phase === 'idle' && governanceMission !== null ? (
-          <FinishedMissionFold fold={simplified} needsReview={governanceMission.storage_state === 'recovery_required'}>
+          <FinishedMissionFold fold={simplified} needsReview={archiveNeedsRecovery}>
           <div
             className="border border-sky-500/20 bg-sky-950/20 p-4"
             data-testid="mission-governance-card"
@@ -725,13 +735,36 @@ function MissionActionError({ message }: { readonly message: string }) {
 
 /**
  * Simplified start screen: the last finished mission's archive and unlock card
- * is folded under one line, and opens by itself when it needs operator review.
+ * is folded under one line. When the archive needs recovery it is never folded,
+ * so the warning cannot be collapsed out of sight.
  */
 function FinishedMissionFold(props: { readonly fold: boolean; readonly needsReview: boolean; readonly children: ReactNode }) {
   if (!props.fold) return <>{props.children}</>
+  if (props.needsReview) {
+    return (
+      <div className="text-[13px]" data-testid="start-screen-finished-mission">
+        <p className="py-1 font-semibold text-amber-300">Last finished mission needs recovery</p>
+        <div className="mt-2">{props.children}</div>
+      </div>
+    )
+  }
   return (
-    <details className="text-[13px]" data-testid="start-screen-finished-mission" open={props.needsReview}>
+    <details className="text-[13px]" data-testid="start-screen-finished-mission">
       <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">Last finished mission: archive and unlock</summary>
+      <div className="mt-2">{props.children}</div>
+    </details>
+  )
+}
+
+/**
+ * Simplified Mission panel: less-used options under one line. A warning inside
+ * (for example outings that failed to load) shows them unfolded.
+ */
+function MoreMissionOptions(props: { readonly open: boolean; readonly children: ReactNode }) {
+  if (props.open) return <div className="text-[13px]" data-testid="ws-more-mission-options">{props.children}</div>
+  return (
+    <details className="text-[13px]" data-testid="ws-more-mission-options">
+      <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">More mission options</summary>
       <div className="mt-2">{props.children}</div>
     </details>
   )

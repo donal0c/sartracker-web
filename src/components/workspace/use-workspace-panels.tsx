@@ -50,8 +50,9 @@ export function useWorkspacePanels(input: {
     setSetupCardOpen(true)
   }, [phase])
 
-  // A decision or failure always forces Mission back into view.
-  const missionForced = decisionOpen || actionError !== null
+  // A decision, failure or warning in Mission always forces it back into view.
+  const [missionAttention, setMissionAttention] = useState(false)
+  const missionForced = decisionOpen || actionError !== null || missionAttention
   // Tracking opens before a mission too: troubleshooting must not need a mission first.
   const visible: BasePanel | TemporaryPanel | null = !running
     ? (temporary === 'tracking' ? 'tracking' : null)
@@ -145,6 +146,7 @@ export function useWorkspacePanels(input: {
         </button>
         <MissionControlPanel
           onActionErrorChange={input.onActionErrorChange}
+          onAttentionChange={setMissionAttention}
           onDecisionOpenChange={input.onDecisionOpenChange}
           variant="simplified"
         />

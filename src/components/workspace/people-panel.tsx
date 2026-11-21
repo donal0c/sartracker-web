@@ -45,7 +45,8 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
   }, [props.people, query])
 
   const setVisible = (nodeId: string, visible: boolean) => {
-    void setLayerSubtreeVisibility({ root, controller, nodeId, visible })
+    // Tracking is not listed in Layers here, so switching on must also undo a hidden Tracking group.
+    void setLayerSubtreeVisibility({ root, controller, nodeId, visible, revealAncestors: true })
   }
   const allState = (nodeId: string) => {
     const node = findCatalogNode(root, nodeId)

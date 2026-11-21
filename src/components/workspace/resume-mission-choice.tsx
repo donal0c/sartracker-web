@@ -10,11 +10,20 @@ import type { Mission } from '../../infrastructure/mission-store/tauri-mission-s
 export function ResumeMissionChoice(props: {
   readonly mission: Mission
   readonly busy: boolean
-  readonly onResume: () => void
-  readonly onStartNew: () => void
+  readonly onResume: () => Promise<void>
+  readonly onStartNew: () => Promise<void>
 }) {
   const [confirmingNew, setConfirmingNew] = useState(false)
+  // One choice at a time: Resume and Finish must never run together.
+  const [pending, setPending] = useState(false)
+  const busy = props.busy || pending
   const { mission } = props
+  const run = (action: () => Promise<void>) => {
+    if (busy) return
+    setPending(true)
+    // Failures are shown by the mission view model; this only releases the lock.
+    void action().finally(() => setPending(false))
+  }
 
   return (
     <div className="space-y-3" data-testid="start-screen-resume">
@@ -30,8 +39,8 @@ export function ResumeMissionChoice(props: {
       <button
         className="sar-action-primary w-full px-4 py-3 text-[15px] font-black uppercase tracking-[0.1em] disabled:cursor-not-allowed disabled:opacity-40"
         data-testid="start-screen-resume-btn"
-        disabled={props.busy}
-        onClick={props.onResume}
+        disabled={busy}
+        onClick={() => run(props.onResume)}
         type="button"
       >
         Resume {mission.name}
@@ -47,8 +56,8 @@ export function ResumeMissionChoice(props: {
             <button
               className="sar-button-focus px-3 py-2 text-[13px] font-bold disabled:opacity-40"
               data-testid="start-screen-confirm-new-yes"
-              disabled={props.busy}
-              onClick={() => { setConfirmingNew(false); props.onStartNew() }}
+              disabled={busy}
+              onClick={() => { setConfirmingNew(false); run(props.onStartNew) }}
               type="button"
             >
               Finish it, start new
@@ -67,7 +76,7 @@ export function ResumeMissionChoice(props: {
         <button
           className="sar-button w-full px-3 py-2 text-[13px] font-bold"
           data-testid="start-screen-start-new-instead"
-          disabled={props.busy}
+          disabled={busy}
           onClick={() => setConfirmingNew(true)}
           type="button"
         >

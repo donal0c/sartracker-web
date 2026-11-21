@@ -160,7 +160,27 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-trail-6')).toBeChecked()
     })
 
-    test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
+    test('a participant warning brings Mission back and it cannot be closed until it clears', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeHidden()
+    await page.evaluate(async () => {
+      const path = '/src/features/participants/participant-store.ts'
+      const { useParticipantStore } = await import(path)
+      useParticipantStore.setState({ rosterError: 'Could not read the Traccar groups.' })
+    })
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+    await expect(page.getByTestId('ws-mission-close')).toBeDisabled()
+    await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'true')
+    await page.evaluate(async () => {
+      const path = '/src/features/participants/participant-store.ts'
+      const { useParticipantStore } = await import(path)
+      useParticipantStore.setState({ rosterError: null })
+    })
+    await expect(page.getByTestId('ws-mission-close')).toBeEnabled()
+  })
+
+  test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)
       await feed(page, { lost: true })
