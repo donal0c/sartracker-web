@@ -31,25 +31,38 @@ const WGS84_LON_MAX = 180
 // including its outlying inhabited/rescue-relevant islands, with a small margin.
 // Southern extreme: Fastnet/Mizen area (~51.4°N). Northern extreme: Inishtrahull /
 // Malin Head (~55.5°N). Western extreme: Tearaght / Blasket Islands (~-10.7°W).
-// Eastern extreme: Burr Point, Co. Down (~-5.43° longitude). These bounds intentionally
-// err toward inclusiveness: a real Irish coordinate must never be rejected, even at
-// the cost of admitting some near-coast sea (a rectangle cannot separate the two).
+// Burr Point, Co. Down (~-5.433° longitude), needs a wider eastern limit only in
+// the Co. Down latitude band. Extending it island-wide would include Wales near
+// 51.9°N/-5.3° and Kintyre/Arran east of -5.8° north of 55°N. The Rhins of
+// Galloway lie at or east of -5.18°, beyond even the Co. Down limit. The envelope
+// still admits some near-coast sea; it is not a coastline polygon.
 const IRELAND_LAT_MIN = 51.3
 const IRELAND_LAT_MAX = 55.6
 const IRELAND_LON_MIN = -10.8
-const IRELAND_LON_MAX = -5.3
+const IRELAND_LON_MAX = -5.8
+const CO_DOWN_LON_MAX = -5.3
+const CO_DOWN_LAT_MIN = 54.0
+const CO_DOWN_LAT_MAX = 54.95
+// TM65 forward/inverse datum math can drift by about 1e-8 degrees at an edge.
+// Inverse acceptance tolerates 2e-8 degrees (under 2.3 mm) at an edge; outputs are not moved.
+const INVERSE_BOUNDARY_ROUNDOFF_DEGREES = 2e-8
 
 // ITM (EPSG:2157) easting/northing envelope for the same Irish extent. These bounds
-// must fully CONTAIN the proj4 image of the WGS84 box above (sampled densely:
-// E≈404768..788260, N≈505239..987279), so that any point accepted by
+// must fully CONTAIN the proj4 image of the WGS84 envelope above (sampled densely:
+// main extent E≈404768..753402, N≈505239..987279; Co. Down extension
+// E≤777003, N≈807881..914706), so that any point accepted by
 // `isWithinIreland` / `validateIrishWGS84Range` can never subsequently fail ITM
 // validation — otherwise a genuine Irish coordinate could convert but fail to format.
 // The northern edge in particular must clear Inishtrahull (N≈965951), Ireland's
-// northernmost island, and the east must clear Burr Point (E≈766322). A small margin
-// is added. GPS zero-fill (ITM 0,0 → mid-Atlantic ~46.5°N) sits far below E_MIN, so it
-// is still rejected.
+// northernmost island, and the east must clear Burr Point (E≈766322). Only the
+// Co. Down northing band gets the wider easting limit; 778000 stays below the
+// Rhins of Galloway coast (E≥779632). Inverse transforms also validate WGS84.
+// GPS zero-fill (ITM 0,0 → mid-Atlantic ~46.5°N) sits far below E_MIN and is rejected.
 const ITM_EASTING_MIN = 400_000
-const ITM_EASTING_MAX = 790_000
+const ITM_EASTING_MAX = 760_000
+const CO_DOWN_ITM_EASTING_MAX = 778_000
+const CO_DOWN_ITM_NORTHING_MIN = 805_000
+const CO_DOWN_ITM_NORTHING_MAX = 916_000
 const ITM_NORTHING_MIN = 500_000
 const ITM_NORTHING_MAX = 990_000
 const IRISH_GRID_ROWS = ['ABCDE', 'FGHJK', 'LMNOP', 'QRSTU', 'VWXYZ']
@@ -93,7 +106,7 @@ function validateWGS84Range(lat: number, lon: number, context: string): void {
  * This is a non-throwing predicate intended for hot paths such as the live coordinate
  * readout, which tracks the mouse cursor over the map (frequently out to sea) and must
  * never raise. It is deliberately inclusive at the coast: a `true` result guarantees
- * the point is within the Irish bounding box, but does not guarantee it is on land.
+ * the point is within the Irish envelope, but does not guarantee it is on land.
  * Non-finite inputs return `false`.
  */
 export function isWithinIreland(lat: number, lon: number): boolean {
@@ -101,11 +114,14 @@ export function isWithinIreland(lat: number, lon: number): boolean {
     return false
   }
 
+  const longitudeMax =
+    lat >= CO_DOWN_LAT_MIN && lat <= CO_DOWN_LAT_MAX ? CO_DOWN_LON_MAX : IRELAND_LON_MAX
+
   return (
     lat >= IRELAND_LAT_MIN &&
     lat <= IRELAND_LAT_MAX &&
     lon >= IRELAND_LON_MIN &&
-    lon <= IRELAND_LON_MAX
+    lon <= longitudeMax
   )
 }
 
@@ -125,10 +141,34 @@ function validateIrishWGS84Range(lat: number, lon: number, context: string): voi
 }
 
 /**
+ * Validates an inverse-projected point against Ireland's envelope and returns it unchanged.
+ *
+ * Forward/inverse datum math can land a point that is exactly on an envelope edge about
+ * 1e-8 degrees outside it. Only the acceptance check snaps values within
+ * INVERSE_BOUNDARY_ROUNDOFF_DEGREES (under 2.3 mm) to that edge; the returned position is
+ * the raw projection, never a moved one.
+ */
+function validateInverseIrishCoordinate(lat: number, lon: number, context: string): [number, number] {
+  const checkedLat = [IRELAND_LAT_MIN, CO_DOWN_LAT_MIN, CO_DOWN_LAT_MAX, IRELAND_LAT_MAX]
+    .find((boundary) => Math.abs(lat - boundary) <= INVERSE_BOUNDARY_ROUNDOFF_DEGREES) ?? lat
+  const checkedLon = [IRELAND_LON_MIN, IRELAND_LON_MAX, CO_DOWN_LON_MAX]
+    .find((boundary) => Math.abs(lon - boundary) <= INVERSE_BOUNDARY_ROUNDOFF_DEGREES) ?? lon
+
+  validateWGS84Range(lat, lon, context)
+  validateIrishWGS84Range(checkedLat, checkedLon, context)
+
+  return [lat, lon]
+}
+
+/**
  * Throws when an ITM easting/northing pair falls outside Ireland's projected extent.
  */
 function validateITMRange(easting: number, northing: number, context: string): void {
-  if (easting < ITM_EASTING_MIN || easting >= ITM_EASTING_MAX) {
+  const eastingMax =
+    northing >= CO_DOWN_ITM_NORTHING_MIN && northing < CO_DOWN_ITM_NORTHING_MAX
+      ? CO_DOWN_ITM_EASTING_MAX
+      : ITM_EASTING_MAX
+  if (easting < ITM_EASTING_MIN || easting >= eastingMax) {
     throw new RangeError(`ITM easting outside valid range during ${context}`)
   }
   if (northing < ITM_NORTHING_MIN || northing >= ITM_NORTHING_MAX) {
@@ -176,6 +216,7 @@ export function wgs84ToTM65(lat: number, lon: number): [number, number] {
  * Guards the ITM input against Ireland's projected extent, mirroring `tm65ToWgs84`.
  * This rejects GPS zero-fill faults: `itmToWgs84(0, 0)` would otherwise back-project to
  * a globally valid WGS84 point ~700 km out in the Atlantic and pass silently.
+ * Also rejects inverse-projected points outside Ireland's geographic envelope.
  */
 export function itmToWgs84(easting: number, northing: number): [number, number] {
   const context = 'itm_to_wgs84'
@@ -189,13 +230,12 @@ export function itmToWgs84(easting: number, northing: number): [number, number] 
     number,
   ]
 
-  validateWGS84Range(lat, lon, context)
-
-  return [lat, lon]
+  return validateInverseIrishCoordinate(lat, lon, context)
 }
 
 /**
  * Converts TM65 easting/northing coordinates into WGS84 latitude/longitude.
+ * Rejects points outside Ireland even when the pair fits the TM65 grid domain.
  */
 export function tm65ToWgs84(easting: number, northing: number): [number, number] {
   const context = 'tm65_to_wgs84'
@@ -211,9 +251,7 @@ export function tm65ToWgs84(easting: number, northing: number): [number, number]
 
   const [lon, lat] = proj4('TM65', 'EPSG:4326', [safeEasting, safeNorthing]) as [number, number]
 
-  validateWGS84Range(lat, lon, context)
-
-  return [lat, lon]
+  return validateInverseIrishCoordinate(lat, lon, context)
 }
 
 /**

@@ -155,7 +155,8 @@ describe('ITM input range guards (DON-168 / B2-C3)', () => {
   })
 
   it('rejects ITM easting at/above the Irish extent', () => {
-    expect(() => itmToWgs84(790_000, 600_000)).toThrow(RangeError)
+    expect(() => itmToWgs84(760_000, 600_000)).toThrow(RangeError)
+    expect(() => itmToWgs84(778_000, 860_000)).toThrow(RangeError)
   })
 
   it('rejects ITM northing below the Irish extent', () => {
@@ -344,7 +345,7 @@ describe('Irish envelope covers the Co. Down coast east of -5.8°E (DON-351 / M-
       }
     }
     for (let lon = -11.0; lon <= -4.5; lon += 0.01) {
-      for (const lat of [51.0, 51.3, 51.31, 55.59, 55.6, 56.0]) {
+      for (const lat of [51.0, 51.3, 51.31, 53.99, 54.0, 54.01, 54.94, 54.95, 54.96, 55.59, 55.6, 56.0]) {
         check(lat, lon)
       }
     }
@@ -359,5 +360,77 @@ describe('Irish envelope covers the Co. Down coast east of -5.8°E (DON-351 / M-
     expect(() => wgs84ToITM(54.4834, Number.POSITIVE_INFINITY)).toThrow(RangeError)
     expect(() => itmToWgs84(800_000, 862_471)).toThrow(RangeError)
     expect(() => formatITMCoordinates(0, 0)).toThrow(RangeError)
+  })
+})
+
+describe('Irish envelope does not take in Wales or Scotland (DON-351 review)', () => {
+  // Published WGS84 positions; ITM / TM65 values are proj4 transforms of them.
+  const notIreland = [
+    { name: 'Ramsey Island, Wales', lat: 51.86, lon: -5.34, itm: [783_204, 570_879], tm65: [383_294, 70_818] },
+    { name: "St David's Head, Wales", lat: 51.9, lon: -5.31, itm: [785_106, 575_404], tm65: [385_196, 75_344] },
+    { name: "St David's, Wales", lat: 51.882, lon: -5.27, itm: [787_933, 573_504], tm65: [388_023, 73_444] },
+    { name: 'Campbeltown, Kintyre', lat: 55.425, lon: -5.605, itm: [751_599, 966_850], tm65: [351_679, 466_874] },
+    { name: 'Sanda Island, Kintyre', lat: 55.28, lon: -5.58, itm: [753_742, 950_769], tm65: [353_823, 450_790] },
+    { name: 'West shore of Arran', lat: 55.55, lon: -5.37, itm: [765_944, 981_296], tm65: [366_027, 481_323] },
+    { name: 'Corsewall Point, Rhins of Galloway', lat: 55.01, lon: -5.16, itm: [781_640, 921_737], tm65: [381_727, 421_751] },
+    { name: 'Portpatrick, Rhins of Galloway', lat: 54.84, lon: -5.12, itm: [784_976, 902_928], tm65: [385_064, 402_939] },
+    { name: 'Isle of Man west coast', lat: 54.2, lon: -4.8, itm: [808_764, 832_628], tm65: [408_857, 332_623] },
+  ] as const
+
+  for (const point of notIreland) {
+    it(`rejects ${point.name} on every transform path`, () => {
+      expect(isWithinIreland(point.lat, point.lon)).toBe(false)
+      expect(() => wgs84ToITM(point.lat, point.lon)).toThrow(RangeError)
+      expect(() => wgs84ToTM65(point.lat, point.lon)).toThrow(RangeError)
+      expect(() => itmToWgs84(point.itm[0], point.itm[1])).toThrow(RangeError)
+      expect(() => tm65ToWgs84(point.tm65[0], point.tm65[1])).toThrow(RangeError)
+    })
+  }
+
+  it('rejects the Welsh, Arran and Rhins ITM pairs when formatting ITM output', () => {
+    for (const point of notIreland.filter((candidate) => !candidate.name.startsWith('Campbeltown') && !candidate.name.startsWith('Sanda'))) {
+      expect(() => formatITMCoordinates(point.itm[0], point.itm[1]), point.name).toThrow(RangeError)
+    }
+  })
+
+  it('still accepts the whole Co. Down coast east of -5.8°', () => {
+    for (const [lat, lon] of [
+      [54.226, -5.66], // St John's Point
+      [54.32, -5.49], // Ballyquintin Point, southern tip of the Ards
+      [54.4834, -5.4331], // Burr Point
+      [54.67, -5.532], // Copeland Islands
+      [54.766, -5.687], // Black Head, Islandmagee
+    ] as const) {
+      expect(isWithinIreland(lat, lon)).toBe(true)
+      const [easting, northing] = wgs84ToITM(lat, lon)
+      expect(() => itmToWgs84(easting, northing)).not.toThrow()
+      const [tm65Easting, tm65Northing] = wgs84ToTM65(lat, lon)
+      expect(() => tm65ToWgs84(tm65Easting, tm65Northing)).not.toThrow()
+    }
+  })
+
+  it('never returns a position outside the Irish envelope from itmToWgs84 or tm65ToWgs84', () => {
+    const escaped: string[] = []
+    for (let easting = 400_000; easting < 800_000; easting += 2_500) {
+      for (let northing = 500_000; northing < 990_000; northing += 2_500) {
+        try {
+          const [lat, lon] = itmToWgs84(easting, northing)
+          if (!isWithinIreland(lat, lon)) {
+            escaped.push(`ITM ${easting},${northing}`)
+          }
+        } catch {
+          // Rejected input is the expected outcome outside Ireland.
+        }
+        try {
+          const [lat, lon] = tm65ToWgs84(easting - 400_000, northing - 500_000)
+          if (!isWithinIreland(lat, lon)) {
+            escaped.push(`TM65 ${easting - 400_000},${northing - 500_000}`)
+          }
+        } catch {
+          // Rejected input is the expected outcome outside Ireland.
+        }
+      }
+    }
+    expect(escaped.slice(0, 10)).toEqual([])
   })
 })
