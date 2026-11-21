@@ -1,4 +1,4 @@
-import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdtemp, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -49,6 +49,7 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly userDataPath: string
     readonly runGpxEvidenceImportInWorker?: Runner
     readonly gpxEvidenceImportFaultInjection?: Readonly<Record<string, unknown>>
+    readonly gpxStoppedBatchSettlementFault?: Error
   }) => Store
 }
 const { runGpxEvidenceImportInWorker } = require('../../electron/gpx-evidence-import-runner.cjs') as {
@@ -129,6 +130,73 @@ describe('watched GPX rescans and interrupted batches [DON-350]', () => {
     expect(afterGrowth.batches).toBe(afterFirst.batches + 1)
     expect(afterGrowth.receipts).toBe(afterFirst.receipts + 1)
     expect(afterGrowth.revisions).toBe(afterFirst.revisions + 1)
+  }, 60_000)
+
+  it('a same-size rewrite that keeps the old modified time is still imported [M-38] [review P1]', async () => {
+    await createStore()
+    const mission = await store!.createMission({ name: 'Timestamp-preserving sync' })
+    const alpha = path.join(userDataPath!, 'alpha.gpx')
+    await writeFile(alpha, gpxTrack('Alpha', 50))
+    const pinned = new Date('2026-11-21T09:00:00.000Z')
+    await utimes(alpha, pinned, pinned)
+    const first = await store!.importGpxEvidencePaths({ missionId: mission.id, paths: [alpha], skipRetiredSources: true })
+    expect(first.imports).toHaveLength(1)
+    // Warm the unchanged-file cache.
+    expect((await store!.importGpxEvidencePaths({ missionId: mission.id, paths: [alpha], skipRetiredSources: true })).unchanged).toEqual([alpha])
+    const before = await stat(alpha)
+    expect(before.mtimeMs).toBe(pinned.getTime())
+    // Same length, different bytes, original modified time put back, as some sync tools do.
+    await writeFile(alpha, gpxTrack('Alphb', 50))
+    expect((await stat(alpha)).size).toBe(before.size)
+    await utimes(alpha, pinned, pinned)
+    expect((await stat(alpha)).mtimeMs).toBe(before.mtimeMs)
+    const rescanned = await store!.importGpxEvidencePaths({ missionId: mission.id, paths: [alpha], skipRetiredSources: true })
+    expect(rescanned.unchanged).toEqual([])
+    expect(rescanned.imports).toEqual([expect.objectContaining({ revision_sequence: 2 })])
+  }, 60_000)
+
+  it('when a stopped batch cannot be settled, later imports are refused visibly instead of racing recovery [M-36] [review P1]', async () => {
+    const stalledRunner: Runner = (input) => runGpxEvidenceImportInWorker({ ...input, inactivityTimeoutMs: 2_000 })
+    await createStore({
+      runGpxEvidenceImportInWorker: stalledRunner,
+      gpxEvidenceImportFaultInjection: { pauseAfter: 'retained', pauseAtPathIndex: 0 },
+      gpxStoppedBatchSettlementFault: new Error('disk I/O error'),
+    })
+    const mission = await store!.createMission({ name: 'Unsettled stop' })
+    const one = path.join(userDataPath!, 'one.gpx')
+    const two = path.join(userDataPath!, 'two.gpx')
+    await writeFile(one, gpxTrack('One', 20))
+    await writeFile(two, gpxTrack('Two', 20, 500))
+
+    const stalled = store!.importGpxEvidencePaths({ missionId: mission.id, paths: [one] })
+    const queued = store!.importGpxEvidencePaths({ missionId: mission.id, paths: [two] })
+    await expect(stalled).rejects.toThrow(/could not be tidied up[\s\S]*disk I\/O error[\s\S]*restart/iu)
+    await expect(queued).rejects.toThrow(/could not be tidied up/iu)
+
+    const databasePath = (await store!.info()).database_path
+    const db = new Database(databasePath, { readonly: true })
+    try {
+      // The queued import's worker never ran, so nothing of two.gpx was retained or published.
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_source_receipts
+        WHERE mission_id = ? AND source_path = ? AND status <> 'pending'`).get(mission.id, two)).toEqual({ count: 0 })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_track_imports WHERE mission_id = ? AND source_path = ?')
+        .get(mission.id, two)).toEqual({ count: 0 })
+    } finally {
+      db.close()
+    }
+
+    // The restart the message asks for settles everything.
+    await store!.prepareClose()
+    store!.close()
+    store = createElectronMissionStore({ userDataPath: userDataPath! })
+    await store.info()
+    const reopened = new Database(databasePath, { readonly: true })
+    try {
+      expect(reopened.prepare(`SELECT COUNT(*) AS count FROM gpx_import_batches
+        WHERE mission_id = ? AND status = 'running'`).get(mission.id)).toEqual({ count: 0 })
+    } finally {
+      reopened.close()
+    }
   }, 60_000)
 
   it('a deliberate import of the same files still reaches the worker and its audit trail', async () => {

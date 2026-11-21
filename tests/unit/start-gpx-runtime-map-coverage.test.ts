@@ -183,6 +183,27 @@ describe('GPX runtime map coverage and watched rescans [DON-350]', () => {
     expect(lastRuntime(applyRuntime).importing).toBe(false)
   })
 
+  it('keeps an earlier folder\'s omitted-files warning after a later folder imports [M-40] [review P2]', async () => {
+    const applyRuntime = vi.fn()
+    const listWatchedDirectoryPaths = vi.fn().mockImplementation(async (directory: string) => (
+      directory === '/watch-big'
+        ? { paths: ['/watch-big/a.gpx'], omittedCount: 5 }
+        : { paths: ['/watch-small/b.gpx'], omittedCount: 0 }
+    ))
+    const importGpxEvidencePaths = vi.fn().mockResolvedValue({ imports: [], unchanged: ['x'], failures: [], dispatchDurationMs: 1 })
+    const controller = await startGpxRuntime({
+      gpxStore: pagedStore([], { importGpxEvidencePaths }),
+      watchSource: { listDirectoryFiles: vi.fn(), listDirectoryPaths: vi.fn(), listWatchedDirectoryPaths },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-1')
+    await controller.addWatchedDirectory('/watch-big')
+    await controller.addWatchedDirectory('/watch-small')
+    await controller.rescanWatchedDirectories()
+
+    expect(lastRuntime(applyRuntime).error).toContain('/watch-big holds more than 1000 GPX files')
+  })
+
   it('re-reads the list, issues and map when a native import is stopped part way [M-36]', async () => {
     const applyRuntime = vi.fn()
     const importGpxEvidencePaths = vi.fn().mockRejectedValue(new Error(

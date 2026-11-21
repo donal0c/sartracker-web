@@ -369,7 +369,7 @@ export async function startGpxRuntime(
           return operationResult('stale')
         }
         const result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
-        publishOmittedWatchedFiles(normalizedPath, listing.omittedCount, missionId, missionToken)
+        publishScanNotices([describeOmittedWatchedFiles(normalizedPath, listing.omittedCount)], missionId, missionToken)
         return result
       }
       const files = await dependencies.watchSource.listDirectoryFiles(normalizedPath)
@@ -404,6 +404,8 @@ export async function startGpxRuntime(
       const imported: GpxImportResult[] = []
       const failures: GpxImportOperationFailure[] = []
       let hadFailure = false
+      // Published after every folder, so a later folder's import cannot clear an earlier warning.
+      const omissions: (string | null)[] = []
       // One folder that cannot be listed or imported must not stop the others [DON-350] [M-40].
       for (const directoryPath of state.watchedDirectories) {
         try {
@@ -412,7 +414,7 @@ export async function startGpxRuntime(
             const listing = await listWatchedPaths(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
             result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
-            publishOmittedWatchedFiles(directoryPath, listing.omittedCount, missionId, missionToken)
+            omissions.push(describeOmittedWatchedFiles(directoryPath, listing.omittedCount))
           } else {
             const files = await dependencies.watchSource.listDirectoryFiles(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
@@ -433,10 +435,11 @@ export async function startGpxRuntime(
         }
       }
 
-      if (failures.length > 0 && missionToken === missionGeneration && state.activeMissionId === missionId) {
-        state = { ...state, error: appendErrorMessage(state.error, describeOperationFailures(failures)) }
-        publishRuntime()
-      }
+      publishScanNotices(
+        [failures.length > 0 ? describeOperationFailures(failures) : null, ...omissions],
+        missionId,
+        missionToken,
+      )
       return operationResult(
         imported.length > 0 ? 'imported' : hadFailure ? 'failed' : 'empty',
         imported,
@@ -845,18 +848,13 @@ export async function startGpxRuntime(
     throw new Error('Watched GPX folder listing is unavailable in this runtime.')
   }
 
-  /** Says, in words, that a watched folder holds more files than are watched. */
-  function publishOmittedWatchedFiles(
-    directoryPath: string,
-    omittedCount: number,
-    missionId: string,
-    missionToken: number,
-  ): void {
-    if (omittedCount <= 0 || missionToken !== missionGeneration || state.activeMissionId !== missionId) return
-    const notice = `Watched folder ${directoryPath} holds more than ${WATCHED_LISTING_LIMIT} GPX files; `
-      + `only the ${WATCHED_LISTING_LIMIT} most recently changed are watched and ${omittedCount} are not. `
-      + 'Move older files to another folder.'
-    state = { ...state, error: appendErrorMessage(state.error, notice) }
+  /** Adds a scan's warnings to the operator error line once every folder has been imported. */
+  function publishScanNotices(notices: readonly (string | null)[], missionId: string, missionToken: number): void {
+    const present = notices.filter((notice): notice is string => notice !== null)
+    if (present.length === 0 || missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+    let error = state.error
+    for (const notice of present) error = appendErrorMessage(error, notice)
+    state = { ...state, error }
     publishRuntime()
   }
 
@@ -992,6 +990,14 @@ function describeOperationFailures(failures: readonly GpxImportOperationFailure[
     ? ` ${failures.length - details.length} additional failure${failures.length - details.length === 1 ? '' : 's'} were not shown.`
     : ''
   return `${failures.length} GPX file${failures.length === 1 ? '' : 's'} could not be imported during this rescan: ${details.join('; ')}.${suffix}`
+}
+
+/** Says, in words, that a watched folder holds more files than are watched; null when none are left out. */
+function describeOmittedWatchedFiles(directoryPath: string, omittedCount: number): string | null {
+  if (omittedCount <= 0) return null
+  return `Watched folder ${directoryPath} holds more than ${WATCHED_LISTING_LIMIT} GPX files; `
+    + `only the ${WATCHED_LISTING_LIMIT} most recently changed are watched and ${omittedCount} are not. `
+    + 'Move older files to another folder.'
 }
 
 /** Names a watched folder that could not be listed, in words a volunteer can act on. */

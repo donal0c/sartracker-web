@@ -585,6 +585,9 @@ function createElectronMissionStore(options) {
   const activeCoverageRequests = new Set()
   const activeCoverageWorkerExits = new Set()
   let coverageWorkerFault = null
+  // Set when a stopped GPX batch could not be settled; later imports are refused
+  // visibly until a restart recovers it, so recovery never races a running batch.
+  let gpxImportQueueFault = null
   const coverageWorkerFaultWaiters = new Set()
   let coverageShutdownRequested = false
   const coverageTileControllersByRequestId = new Map()
@@ -3728,6 +3731,12 @@ function createElectronMissionStore(options) {
       startNextGpxEvidenceImport()
       return
     }
+    if (gpxImportQueueFault !== null) {
+      queued.rejectResult(gpxImportQueueFault)
+      queued.resolveWorkerExit()
+      startNextGpxEvidenceImport()
+      return
+    }
     gpxImportWorkerActive = true
     let operation
     try {
@@ -3745,9 +3754,15 @@ function createElectronMissionStore(options) {
     // The next worker starts only after a stopped batch is settled, so its
     // rows are never mistaken for the next batch's [DON-350] [M-36].
     void Promise.allSettled([outcome, exited])
-      .then(() => {
-        const settlement = settleStoppedGpxImportBatch(queued.input)
-        if (failure !== null) queued.rejectResult(describeStoppedGpxImport(failure, settlement))
+      .then(async () => {
+        const settlement = await settleStoppedGpxImportBatch(queued.input)
+        if (failure === null) return
+        if (gpxImportQueueFault !== null && settlement === null) {
+          const cause = failure instanceof Error ? failure.message : String(failure)
+          queued.rejectResult(new Error(`${cause.replace(/\.?$/u, '.')} ${gpxImportQueueFault.message}`))
+          return
+        }
+        queued.rejectResult(describeStoppedGpxImport(failure, settlement))
       })
       .finally(() => {
         queued.resolveWorkerExit()
@@ -3762,19 +3777,32 @@ function createElectronMissionStore(options) {
    * retries work without a restart. Returns the batch counts, or null when the
    * batch finished normally or recovery is left to the next startup.
    */
-  function settleStoppedGpxImportBatch(input) {
+  async function settleStoppedGpxImportBatch(input) {
     if (storeClosed || coverageShutdownRequested) return null
-    try {
-      const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(input.batchId)
-      if (batch?.status !== 'running') return null
-      return reconcileStoppedGpxImportBatch(db, input.batchId, input.missionId, now())
-    } catch (error) {
-      const reason = safeEvidenceFailureReason(error?.message ?? error)
-      console.error(`Stopped GPX import batch could not be settled in session: ${reason}`)
-      migrationState.gpxReceiptRecoveryRemaining = readUnsettledGpxImportReceiptPending(db)
-      scheduleGpxReceiptRecovery()
-      return null
+    let lastError = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 250))
+      if (storeClosed || coverageShutdownRequested) return null
+      try {
+        if (options.gpxStoppedBatchSettlementFault instanceof Error) throw options.gpxStoppedBatchSettlementFault
+        const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(input.batchId)
+        if (batch?.status !== 'running') return null
+        return reconcileStoppedGpxImportBatch(db, input.batchId, input.missionId, now())
+      } catch (error) {
+        lastError = error
+      }
     }
+    // Never start unrestricted recovery here: it would treat the next running
+    // batch's receipts as abandoned. Hold the queue and let startup recovery
+    // settle this batch, with words the operator can act on [DON-350] [M-36].
+    const reason = safeEvidenceFailureReason(lastError?.message ?? lastError)
+    console.error(`Stopped GPX import batch could not be settled in session: ${reason}`)
+    gpxImportQueueFault = new Error(
+      `A GPX import stopped part way and could not be tidied up (${reason}). `
+      + 'No further GPX imports will run until SAR Tracker is restarted; the restart finishes the recovery '
+      + 'and lists any unimported files for review.',
+    )
+    return null
   }
 
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
@@ -11929,7 +11957,8 @@ async function selectWatchedGpxPathsToImport(db, missionId, paths, fingerprints 
 
 /**
  * True when this watched path already backs a live import with exactly these
- * bytes. A matching file identity (device, inode, size, mtime) skips the read;
+ * bytes. A matching file identity (device, inode, size, mtime, ctime) verified within
+ * the last few minutes skips the read;
  * any difference re-reads and re-hashes, so changed bytes always reach the
  * worker. A read failure is left to the worker, which records it visibly
  * [DON-350] [M-38].
@@ -11941,22 +11970,41 @@ async function isUnchangedLiveGpxSource(db, missionId, sourcePath, fingerprints)
   if (stat === null || !stat.isFile()) return false
   const key = `${missionId}\u0000${sourcePath}`
   const known = fingerprints?.get(key)
-  if (known !== undefined && known.dev === stat.dev && known.ino === stat.ino
-    && known.size === stat.size && known.mtimeMs === stat.mtimeMs
+  // Change time moves on every write and cannot be set back by sync tools, unlike the
+  // modified time; the cache is also re-verified by hashing at least every few minutes.
+  if (known !== undefined && sameGpxFileIdentity(known, stat)
+    && Date.now() - known.verifiedAt < WATCHED_GPX_REHASH_INTERVAL_MS
     && known.contentSha256 === live) {
     return true
   }
   let contentSha256
+  let after
   try {
     contentSha256 = createHash('sha256').update(await readBoundedGpxSource(sourcePath)).digest('hex')
+    after = await fs.stat(sourcePath)
   } catch {
     fingerprints?.delete(key)
     return false
   }
-  fingerprints?.set(key, {
-    dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, contentSha256,
-  })
+  // Cache only when the file did not change while it was read.
+  if (sameGpxFileIdentity(stat, after)) {
+    fingerprints?.set(key, {
+      dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs,
+      contentSha256, verifiedAt: Date.now(),
+    })
+  } else {
+    fingerprints?.delete(key)
+  }
   return contentSha256 === live
+}
+
+/** A cached unchanged-file verdict is re-checked by hashing at least this often. */
+const WATCHED_GPX_REHASH_INTERVAL_MS = 5 * 60_000
+
+/** True when two stats describe the same file with no write between them. */
+function sameGpxFileIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
+    && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs
 }
 
 /** Returns the digest of the live, complete import this path (or an alias of it) names. */
