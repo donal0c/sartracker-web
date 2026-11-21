@@ -24,6 +24,7 @@ function createCoverageTileRunner(input) {
         databasePath: input.databasePath,
         cacheDirectory: input.cacheDirectory,
         faultInjection: input.faultInjection ?? null,
+        tuning: input.tuning ?? null,
       },
     }
     const created = input.createWorker?.(
@@ -32,7 +33,7 @@ function createCoverageTileRunner(input) {
     ) ?? new Worker(input.workerPath ?? DEFAULT_WORKER_PATH, workerOptions)
     created.on('message', (message) => settleRequest(created, message))
     created.on('error', (error) => {
-      const failure = new Error(`Coverage tile worker failed: ${safeMessage(error.message)}`)
+      const failure = createWorkerFailure(error)
       const expected = expectedTerminations.has(created)
       failWorker(created, failure)
       if (!expected) input.onFailure?.(failure)
@@ -165,6 +166,24 @@ function createCoverageTileRunner(input) {
   }
 }
 
+/**
+ * Names a worker crash in words an operator can act on. Running out of memory
+ * means the whole-history line is missing, not merely slow, so it says so.
+ * @param {Error & {code?: string}} error
+ */
+function createWorkerFailure(error) {
+  if (error?.code === 'ERR_WORKER_OUT_OF_MEMORY') {
+    const failure = new Error(
+      'Coverage tile worker failed: it ran out of memory building the whole-history line, ' +
+      'so that line is not shown. The mission history is too large for the coverage worker.',
+    )
+    failure.code = 'coverage-worker-out-of-memory'
+    return failure
+  }
+  return new Error(`Coverage tile worker failed: ${safeMessage(error?.message)}`)
+}
+
+/** Flattens a worker-supplied message to one bounded line. */
 function safeMessage(value) {
   return String(value ?? 'unknown error').replace(/[\r\n]+/gu, ' ').trim().slice(0, 500)
 }
