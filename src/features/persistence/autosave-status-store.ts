@@ -118,16 +118,15 @@ export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
       staleAfterMs: input.intervalMs * STALE_INTERVAL_MULTIPLIER,
       lastAttemptAt: state.lastAttemptAt ?? toIso(input.now),
     })),
-  // Switching autosave off must not hide a lifecycle backup failure that has
-  // not been resolved by a matching successful backup [DON-352, audit M-63].
+  // Switching autosave off changes the schedule only. A standing failure and
+  // the last good backup are kept, so switching it back on shows "Autosave
+  // failing" or "Autosave stale" again instead of a clean slate
+  // [DON-352, audit M-63].
   markDisabled: () =>
-    set((state) => ({
-      ...INITIAL_STATE,
-      lastFailure:
-        state.lastFailure !== null && LIFECYCLE_SYNC_REASONS.has(state.lastFailure.reason)
-          ? state.lastFailure
-          : null,
-    })),
+    set({
+      phase: 'disabled',
+      enabled: false,
+    }),
   markSyncStarted: (input) =>
     set({
       phase: 'syncing',
