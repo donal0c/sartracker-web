@@ -628,10 +628,12 @@ function readCachedSource(tileIndex, start, level, x, y) {
 
 /**
  * Inserts one cache entry, then evicts least-recently-used entries until both
- * the retained-fix budget and the entry budget hold. The new entry is kept
- * even when it alone exceeds the budget, so the current read can complete.
+ * the retained-fix budget and the entry budget hold. An entry that could not
+ * fit on its own is not cached at all: the caller still serves the current
+ * read from its local value, so the cache's charge never exceeds the budget.
  */
 function setSourceCacheEntry(key, indexId, entry) {
+  if (entry.points > sourceCacheBudgetPoints || sourceCacheBudgetEntries === 0) return
   sourceCache.set(key, { ...entry, indexId })
   sourceCachePoints += entry.points
   let keys = sourceCacheKeysByIndexId.get(indexId)

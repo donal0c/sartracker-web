@@ -37,7 +37,9 @@ const CADENCE_MS = 3_000
 const REVISIONS = 520
 const FIXES_PER_REVISION = 20
 const BUDGET_ENTRIES = 16
-const BUDGET_POINTS = 20_000
+// The trail grows to 10,400 fixes, so from about revision 250 its clipped
+// sources exceed this budget on their own and must be served uncached.
+const BUDGET_POINTS = 5_000
 const EMPTY_READS_PER_REVISION = 24
 const KEY: ChunkKey = { device_id: 'device-0', period_kind: 'unassigned', period_id: '' }
 
@@ -51,8 +53,8 @@ type Violations = {
 /** Records every revision whose cache breaks a bound or keeps an unservable index. */
 function recordViolations(violations: Violations, diagnostics: CoverageWorkerDiagnostics, revision: number) {
   if (diagnostics.sourceCacheEntries > BUDGET_ENTRIES) violations.overEntryBudget.push(revision)
-  // Only an entry needed by the read in progress may exceed the budget alone.
-  if (diagnostics.sourceCacheEntries > 1 && diagnostics.sourceCachePoints > BUDGET_POINTS) {
+  // A hard bound: no exception for a single source larger than the budget.
+  if (diagnostics.sourceCachePoints > BUDGET_POINTS) {
     violations.overPointBudget.push(revision)
   }
   // The charge must be what entries actually keep alive, shared arrays included.
