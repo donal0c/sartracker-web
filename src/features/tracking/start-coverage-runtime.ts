@@ -7,6 +7,7 @@ import { useMapOverlayWarningStore } from '../map/map-overlay-warning-store'
 import { isCoverageEnabled } from '../runtime/coverage-flag'
 import { useMissionStore } from '../mission/mission-store'
 import { createCoverageController } from './coverage-controller'
+import { parseCoverageRendererFailure } from './coverage-renderer-failure'
 import { createCoverageStalenessMonitor } from './coverage-staleness-monitor'
 import { useIngestHealthStore } from './ingest-health-store'
 import {
@@ -41,7 +42,7 @@ export function startCoverageRuntime(
       listener: (event: CoverageChangedEvent) => void,
     ) => () => void
     readonly subscribeIngestEvidenceHealth?: (listener: () => void) => () => void
-    readonly subscribeCoverageRendererFailure?: (listener: () => void) => () => void
+    readonly subscribeCoverageRendererFailure?: (listener: (failure: unknown) => void) => () => void
     readonly schedulePeriodicRefresh?: (
       callback: () => void,
       intervalMs: number,
@@ -159,10 +160,13 @@ export function startCoverageRuntime(
     void controller.notifyChanged(event.missionId, event.changeSeq)
   })
   const subscribeCoverageRendererFailure = options.subscribeCoverageRendererFailure ??
-    ((listener: () => void) =>
+    ((listener: (failure: unknown) => void) =>
       window.sartrackerElectron?.onCoverageRendererFailed?.(listener) ?? (() => undefined))
-  const unsubscribeCoverageRendererFailure = subscribeCoverageRendererFailure(() => {
-    controller.notifyRendererUnavailable('Coverage tile worker is unavailable.')
+  const unsubscribeCoverageRendererFailure = subscribeCoverageRendererFailure((failure) => {
+    controller.notifyRendererUnavailable(
+      'Coverage tile worker is unavailable.',
+      parseCoverageRendererFailure(failure),
+    )
   })
   const subscribeIngestEvidenceHealth = options.subscribeIngestEvidenceHealth ??
     ((listener: () => void) => {

@@ -28,6 +28,12 @@ const CHECK_OFFICIAL_MAP_VIEW_CHANNEL = 'sartracker:check-official-map-view'
 const OFFICIAL_MAP_PACKAGES_CHANGED_CHANNEL = 'sartracker:official-map-packages-changed'
 const COVERAGE_CHANGED_CHANNEL = 'sartracker:coverage-changed'
 const COVERAGE_RENDERER_FAILED_CHANNEL = 'sartracker:coverage-renderer-failed'
+// Inline copy of electron/coverage-renderer-failure.cjs: the sandboxed preload
+// may only require 'electron'. Only these codes reach the renderer [DON-338].
+const COVERAGE_RENDERER_FAILURE_CODES = Object.freeze([
+  'coverage-worker-out-of-memory',
+  'coverage-worker-failed',
+])
 const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
 const RENDERER_TEARDOWN_READY_CHANNEL = 'sartracker:app-runtime-teardown-ready'
 const MISSION_ARCHIVE_PROGRESS_CHANNEL = 'sartracker:mission-archive:progress'
@@ -1345,7 +1351,12 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
     return () => ipcRenderer.removeListener(COVERAGE_CHANGED_CHANNEL, handler)
   },
   onCoverageRendererFailed(listener) {
-    const handler = () => listener()
+    const handler = (_event, payload) => {
+      const code = typeof payload === 'object' && payload !== null ? payload.code : undefined
+      listener({
+        code: COVERAGE_RENDERER_FAILURE_CODES.includes(code) ? code : 'coverage-worker-failed',
+      })
+    }
     ipcRenderer.on(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
     return () => ipcRenderer.removeListener(COVERAGE_RENDERER_FAILED_CHANNEL, handler)
   },

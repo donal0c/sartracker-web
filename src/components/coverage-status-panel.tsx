@@ -43,11 +43,9 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   // [DON-338 REN-3].
   const failed = props.state.status === 'error'
   const stalled = !failed && summary.stalled
-  // Retry re-reads saved history. It cannot make the map reattach or apply a
-  // filter when nothing new arrived, so it is not offered for those stalls.
-  const retryCannotHelpStall = rendererDetached || rendererFilterPending
-  const showRetry = failed ||
-    (stalled && !retryCannotHelpStall) ||
+  // Retry re-reads saved history and, for a stalled map, re-stages the
+  // catalog so the map reattaches and re-applies the filter.
+  const showRetry = failed || stalled ||
     (summary.kind === 'behind' && !stalled &&
       !evidenceBlocked && !rendererDetached && !rendererFilterPending)
 
@@ -68,10 +66,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
                 rendererEvidencePending, outboxPending,
               })}.
               {' '}The line may be missing recent positions or be out of date.
-              {' '}Current positions remain live.
-              {retryCannotHelpStall
-                ? ' Retry cannot fix this. Check saved positions with Inspect exact fixes.'
-                : ' Press Retry.'}
+              {' '}Current positions remain live. Press Retry.
             </p>
           ) : rendererDetached ? (
             <p className="mt-1" data-testid="coverage-renderer-detached">
@@ -141,6 +136,13 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               {summary.automaticRetry
                 ? ' Retrying automatically; press Retry to try now.'
                 : ' Press Retry.'}
+            </p>
+          ) : null}
+          {failed && props.state.lastErrorClass === 'worker_out_of_memory' ? (
+            <p className="mt-1" data-testid="coverage-out-of-memory">
+              This mission&apos;s history is too large for the history builder, so the whole-history
+              line may stay missing. Saved positions are safe and current positions remain live.
+              Use Inspect exact fixes to check saved positions.
             </p>
           ) : null}
           {completenessUnverified && !progressUntrusted ? (
@@ -254,6 +256,7 @@ function describeErrorClass(value: CoverageErrorClass): string {
   switch (value) {
     case 'timeout': return 'loading took too long'
     case 'worker': return 'the history builder stopped'
+    case 'worker_out_of_memory': return 'the history builder ran out of memory'
     case 'chunk_stale': return 'new positions kept arriving while it loaded'
     case 'runtime_unavailable': return 'the history service is not available'
     case 'malformed_sequence': return 'saved history returned an invalid update'

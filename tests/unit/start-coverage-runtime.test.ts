@@ -242,6 +242,47 @@ describe('coverage runtime wiring [DON-276]', () => {
     stop()
   })
 
+  it('DON-338: carries an out-of-memory worker failure code to the coverage state', async () => {
+    vi.useFakeTimers()
+    let failureListener: ((failure: unknown) => void) | undefined
+    const missionStore = {
+      readCoverageManifest: vi.fn(async () => manifest(1)),
+      syncCoverageTileCatalog: vi.fn(async () => ({
+        activationId: 'stage-1',
+        periods: [{ periodKey: 'unassigned\u0000', revisionDigest: 'rev-1' }],
+        delivered: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      activateCoverageTileCatalog: vi.fn(async () => true),
+      finalizeCoverageTileCatalog: vi.fn(async () => true),
+      discardCoverageTileCatalog: vi.fn(async () => true),
+      readCoverageClaim: vi.fn(async () => ({
+        changeSeq: 1, databaseReady: true, blockers: [],
+        chunkRevisions: [{ key: manifest(1).chunks[0]!.key, contentRev: 1 }],
+      })),
+      cancelCoverageQuery: vi.fn(async () => true),
+    }
+    useMissionStore.setState({ currentMission: mission(), phase: 'active' })
+    const stop = startCoverageRuntime(missionStore, {
+      enabled: true,
+      rendererGeneration: 'renderer-1',
+      subscribeCoverageChanged: () => () => undefined,
+      subscribeCoverageRendererFailure: (listener) => {
+        failureListener = listener
+        return () => { failureListener = undefined }
+      },
+      schedulePeriodicRefresh: () => () => undefined,
+    })
+    await acknowledgePendingCatalog()
+    await vi.waitFor(() => expect(useCoverageStore.getState().state.status).toBe('complete'))
+
+    failureListener?.({ code: 'coverage-worker-out-of-memory', message: '/home/someone/db' })
+
+    const state = useCoverageStore.getState().state
+    expect(state).toMatchObject({ status: 'error', lastErrorClass: 'worker_out_of_memory' })
+    expect(JSON.stringify(state)).not.toContain('/home')
+    stop()
+  })
+
   it('does nothing while the internal flag is off', () => {
     const stop = startCoverageRuntime({}, { enabled: false })
 

@@ -20,6 +20,7 @@ let startupWindowReady = false
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
+const { projectCoverageRendererFailure } = require('./coverage-renderer-failure.cjs')
 const { applyGpuRenderingPreference, relaunchWithSoftwareRendering } = require('./gpu-rendering-preference.cjs')
 const {
   TEMPORARY_PROFILE_PREFIX,
@@ -1762,10 +1763,10 @@ async function startElectronApp(startupWatchdog) {
           }
         }
       },
-      onCoverageRendererFailed: () => {
+      onCoverageRendererFailed: (failure) => {
         for (const window of BrowserWindow.getAllWindows()) {
           if (!window.webContents.isDestroyed()) {
-            window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+            window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL, projectCoverageRendererFailure(failure))
           }
         }
       },

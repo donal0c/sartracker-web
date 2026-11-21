@@ -9,6 +9,7 @@ import type {
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
+import type { CoverageRendererUnavailableFailure } from './coverage-renderer-failure'
 import {
   classifyCoverageError,
   isCoverageCancellation,
@@ -100,7 +101,14 @@ export type CoverageController = {
     selectedKeys?: readonly CoverageChunkKey[],
   ) => Promise<void>
   readonly notifyRendererFailure: (failure: CoverageRendererFailure) => void
-  readonly notifyRendererUnavailable: (message: string) => void
+  /**
+   * Reports that the tile renderer (worker) is gone. `failure` carries only an
+   * allow-listed code from the main process, never raw error text.
+   */
+  readonly notifyRendererUnavailable: (
+    message: string,
+    failure?: CoverageRendererUnavailableFailure,
+  ) => void
   readonly notifyRendererDetached: (catalog?: CoverageTileCatalog) => void
   readonly cancel: () => void
   readonly resume: () => Promise<void>
@@ -193,13 +201,19 @@ export function createCoverageController(input: {
   let contextUpdateSequence = 0
   let appliedSelectionKeySet: string | null = expectedSelectionKeySet(null, context)
   let cancelRequested = false
+  /** Set by an operator Retry that re-staged the catalog; the map's acknowledgement then verifies with a load. */
+  let verifyAfterReapply = false
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
   let rendererRecoverySupersededFailureKeys: ReadonlySet<string> | null = null
   let automaticRendererRecoveryAvailable = true
   let automaticRendererRecoveryAttempts = 0
-  let scheduledRendererRecoveryEpoch: number | null = null
+  /** Owner of the single pending automatic renderer recovery attempt, if any. */
+  let scheduledRendererRecovery: {
+    readonly missionId: string
+    readonly rendererGeneration: string
+  } | null = null
   /** Fix count recorded when the map accepted each chunk revision. */
   const drawnCounts = new Map<string, { readonly contentRev: number; readonly fixCount: number }>()
   let lastAdvanceAtMs = monotonicNow()
@@ -234,7 +248,10 @@ export function createCoverageController(input: {
         next.status === 'complete'
         ? 'partial'
         : next.status
-      if (status === 'complete') lastAdvanceAtMs = monotonicNow()
+      if (status === 'complete') {
+        lastAdvanceAtMs = monotonicNow()
+        verifyAfterReapply = false
+      }
       state = {
         ...next,
         latestObservedChangeSeq,
@@ -261,7 +278,7 @@ export function createCoverageController(input: {
     return activeController !== null ||
       automaticRefreshTimer !== null ||
       refreshRequested ||
-      scheduledRendererRecoveryEpoch !== null
+      scheduledRendererRecovery !== null
   }
 
   /** Republishes when queued work started or stopped without another state change. */
@@ -333,10 +350,15 @@ export function createCoverageController(input: {
 
   /** Leaves a full quiet interval after each completed load, including slow or stale reads. */
   const scheduleAutomaticRefresh = (): void => {
-    if (!automaticRefreshRequested || automaticRefreshTimer !== null ||
-      activeController !== null || stopped || context.missionId === null) return
+    if (activeController !== null || stopped || context.missionId === null) return
     // The dedicated renderer retry owns fresh-source recovery after a failure.
-    if (state.status === 'error' && rendererRecoveryEpoch !== null) return
+    // Every settle point re-arms it, so one failed attempt never ends the
+    // retries silently [DON-338].
+    if (state.status === 'error' && rendererRecoveryEpoch !== null) {
+      scheduleAutomaticRendererRecovery(null, context.missionId, context.rendererGeneration)
+      return
+    }
+    if (!automaticRefreshRequested || automaticRefreshTimer !== null) return
     const delay = Math.max(0, lastLoadFinishedAtMs + AUTOMATIC_REFRESH_COOLDOWN_MS - monotonicNow())
     automaticRefreshTimer = globalThis.setTimeout(() => {
       automaticRefreshTimer = null
@@ -380,9 +402,10 @@ export function createCoverageController(input: {
     rendererRecoveryEpoch = null
     rendererRecoverySupersededFailureKeys = null
     automaticRendererRecoveryAvailable = false
-    scheduledRendererRecoveryEpoch = null
+    scheduledRendererRecovery = null
     rendererFailureDuringFinalization = null
     pendingCatalogRelease = null
+    verifyAfterReapply = false
     drawnCounts.clear()
     publish({ status: 'inactive' })
   }
@@ -760,12 +783,29 @@ export function createCoverageController(input: {
   const nextRequestId = (kind: string): string =>
     `coverage-${kind}-${++requestSequence}`
 
-  const publishRendererUnavailable = (message: string): void => {
+  /**
+   * Marks the renderer unavailable and queues the coalesced automatic
+   * recovery, so every renderer failure (map source, finalization, worker
+   * death) rebuilds without the operator [DON-338].
+   */
+  const publishRendererUnavailable = (message: string, failureCode?: string): void => {
+    if (state.status === 'inactive') return
+    const failedLoad = activeLoadCompletion
+    const missionId = state.missionId
+    const rendererGeneration = state.rendererGeneration
+    publishRendererUnavailableState(message, failureCode)
+    if (rendererRecoveryEpoch !== null) {
+      scheduleAutomaticRendererRecovery(failedLoad, missionId, rendererGeneration)
+    }
+  }
+
+  const publishRendererUnavailableState = (message: string, failureCode?: string): void => {
     if (state.status === 'inactive') return
     clearAutomaticRefresh()
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
-    const error = new Error(message)
+    const error: Error & { code?: string } = new Error(message)
+    if (failureCode !== undefined) error.code = failureCode
     rendererRecoverySupersededFailureKeys = null
     rendererRecoveryEpoch = ++rendererFailureEpoch
     if (
@@ -810,28 +850,40 @@ export function createCoverageController(input: {
     }, context))
   }
 
-  /** Retries one failed renderer activation after its owning load has unwound. */
+  /**
+   * Queues one automatic renderer recovery after the failed load has unwound.
+   * Coalesced: while an attempt is pending for this mission and renderer,
+   * further failures join it, and the attempt rebuilds from whatever failure
+   * is current when it runs. Backoff is capped, never exhausted.
+   */
   const scheduleAutomaticRendererRecovery = (
     failedLoad: Promise<void> | null,
-    recoveryEpoch: number,
     missionId: string,
     rendererGeneration: string,
   ): void => {
-    if (!automaticRendererRecoveryAvailable) return
+    if (!automaticRendererRecoveryAvailable || stopped) return
+    if (
+      scheduledRendererRecovery !== null &&
+      scheduledRendererRecovery.missionId === missionId &&
+      scheduledRendererRecovery.rendererGeneration === rendererGeneration
+    ) return
     const delay = AUTOMATIC_RENDERER_RETRY_DELAYS_MS[
       Math.min(automaticRendererRecoveryAttempts, AUTOMATIC_RENDERER_RETRY_DELAYS_MS.length - 1)
     ]
     automaticRendererRecoveryAttempts += 1
-    scheduledRendererRecoveryEpoch = recoveryEpoch
+    const owner = { missionId, rendererGeneration }
+    scheduledRendererRecovery = owner
     refreshUpdatingFlag()
     void (failedLoad ?? Promise.resolve()).then(async () => {
       await new Promise<void>((resolve) => {
         globalThis.setTimeout(resolve, delay)
       })
-      if (scheduledRendererRecoveryEpoch === recoveryEpoch) scheduledRendererRecoveryEpoch = null
+      // An operator Retry or a mission switch supersedes this attempt.
+      if (scheduledRendererRecovery !== owner) return
+      scheduledRendererRecovery = null
       if (
         stopped ||
-        rendererRecoveryEpoch !== recoveryEpoch ||
+        rendererRecoveryEpoch === null ||
         state.status !== 'error' ||
         context.missionId !== missionId ||
         context.rendererGeneration !== rendererGeneration
@@ -839,8 +891,35 @@ export function createCoverageController(input: {
         refreshUpdatingFlag()
         return
       }
+      if (activeController !== null) {
+        // A load is already running; its settle point re-arms recovery if it fails.
+        refreshUpdatingFlag()
+        return
+      }
       await runLoad(true, true)
     }).catch(() => undefined)
+  }
+
+  /**
+   * Operator Retry for a stalled map: when the map never reattached the
+   * finalized catalog or never applied the selected filter, re-stage the same
+   * catalog under a fresh object identity. The overlay hook re-runs on that
+   * identity, reinstalls the sources, re-acknowledges the selection and the
+   * catalog, and a verifying load follows [DON-338].
+   */
+  const reapplyFinalizedCatalog = (): void => {
+    if (stopped || state.status === 'inactive' || finalizedCatalog === null) return
+    const blockers = state.blockers ?? []
+    if (!blockers.includes('renderer_detached') && !blockers.includes('renderer_filter_pending')) return
+    if (!isCurrentCatalog(state, finalizedCatalog)) return
+    const fresh: CoverageTileCatalog = { ...finalizedCatalog }
+    if (
+      rendererDetachedCompleteCatalog !== null &&
+      isSameCatalog(rendererDetachedCompleteCatalog, fresh)
+    ) rendererDetachedCompleteCatalog = fresh
+    finalizedCatalog = fresh
+    verifyAfterReapply = true
+    publish({ ...state, tileCatalog: fresh })
   }
 
   const restoreRendererAttachment = (): void => {
@@ -852,12 +931,21 @@ export function createCoverageController(input: {
       !refreshRequested
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
+    const verify = verifyAfterReapply
+    verifyAfterReapply = false
     const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
     publish({
       ...state,
       status: restoreComplete && blockers.length === 0 ? 'complete' : 'partial',
       blockers,
     })
+    // publish() may still downgrade Complete (for example a pending filter).
+    if (verify && !isCoverageComplete()) void requestRefresh()
+  }
+
+  /** Reads the current status without control-flow narrowing from an earlier guard. */
+  function isCoverageComplete(): boolean {
+    return state.status === 'complete'
   }
 
   /** Waits until an irreversible catalog finalization settles. */
@@ -1025,6 +1113,8 @@ export function createCoverageController(input: {
     }
     if (identityChanged) automaticRendererRecoveryAvailable = true
     if (identityChanged) automaticRendererRecoveryAttempts = 0
+    if (identityChanged) scheduledRendererRecovery = null
+    if (identityChanged) verifyAfterReapply = false
     if (identityChanged) rendererFailureDuringFinalization = null
     if (identityChanged) {
       drawnCounts.clear()
@@ -1136,24 +1226,15 @@ export function createCoverageController(input: {
         rendererRecoveryEpoch !== null &&
         rendererRecoverySupersededFailureKeys?.has(failureKey) === true
       ) return
-      const failedLoad = activeLoadCompletion
-      const missionId = state.missionId
-      const rendererGeneration = state.rendererGeneration
       const supersededFailureKeys = new Set(
         activeFailureSources.map(rendererFailureSourceKey),
       )
       publishRendererUnavailable(failure.message)
       rendererRecoverySupersededFailureKeys = supersededFailureKeys
-      if (rendererRecoveryEpoch !== null) {
-        scheduleAutomaticRendererRecovery(
-          failedLoad,
-          rendererRecoveryEpoch,
-          missionId,
-          rendererGeneration,
-        )
-      }
     },
-    notifyRendererUnavailable: publishRendererUnavailable,
+    notifyRendererUnavailable: (message, failure) => {
+      publishRendererUnavailable(message, failure?.code)
+    },
     notifyRendererDetached: (catalog) => {
       if (state.status === 'inactive') return
       if (
@@ -1201,9 +1282,14 @@ export function createCoverageController(input: {
       const resumeSequence = contextUpdateSequence
       automaticRendererRecoveryAvailable = true
       automaticRendererRecoveryAttempts = 0
+      // The operator retries now; a queued automatic attempt is superseded and
+      // the next failure starts the backoff again from its shortest delay.
+      scheduledRendererRecovery = null
       await waitForCatalogFinalization()
       if (stopped || resumeSequence !== contextUpdateSequence) return
       await applyDesiredContext(true, true)
+      if (stopped || resumeSequence !== contextUpdateSequence) return
+      reapplyFinalizedCatalog()
     },
     stop: () => {
       stopped = true
