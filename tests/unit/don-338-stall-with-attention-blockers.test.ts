@@ -166,3 +166,35 @@ describe('DON-338: an attention blocker never hides a stalled history line', () 
     }
   }
 })
+
+describe('DON-338: a failure never hides an attention blocker', () => {
+  const FAILURES = [
+    { name: 'a generic worker failure', failure: undefined, outOfMemory: false },
+    { name: 'the worker running out of memory', failure: { code: 'coverage-worker-out-of-memory' as const }, outOfMemory: true },
+  ] as const
+
+  for (const attention of ATTENTION_BLOCKERS) {
+    for (const failure of FAILURES) {
+      it(`${attention.blocker} with ${failure.name}: failure, Retry and the attention message`, async () => {
+        const { controller } = createCoverageFakeMapHarness({ claimBlockers: [attention.blocker] })
+        await loadCoverage(controller)
+        controller.notifyRendererUnavailable('Coverage tile worker is unavailable.', failure.failure)
+
+        const failed = activeCoverage(controller.getState())
+        expect(failed.status).toBe('error')
+        expect(failed.blockers).toContain(attention.blocker)
+        expect(summarizeCoverageStatus(failed)).toMatchObject({ kind: 'failed', needsAttention: true })
+
+        const onRetry = vi.fn()
+        renderPanel(controller, onRetry)
+        expect(shown('coverage-error')).toContain('History incomplete')
+        expect(shown(attention.testId)).toContain(attention.text)
+        expect(shown('coverage-out-of-memory') !== null).toBe(failure.outOfMemory)
+        const retry = host.querySelector<HTMLButtonElement>('[data-testid="coverage-retry"]')
+        act(() => retry?.click())
+        expect(onRetry).toHaveBeenCalledOnce()
+        controller.stop()
+      })
+    }
+  }
+})

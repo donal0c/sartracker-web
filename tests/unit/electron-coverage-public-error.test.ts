@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { readdirSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -128,8 +129,71 @@ describe('DON-338: coverage RPC failures cross IPC as fixed public errors', () =
     }
   })
 
+  it('keeps the worker classification when a claim query is cancelled', () => {
+    // Exact text from createAbortError in electron/coverage-query-runner.cjs.
+    const raw = Object.assign(new Error('Coverage query worker was cancelled.'), { name: 'AbortError' })
+    expect(classifyCoverageError(acrossIpc(raw))).toBe('worker')
+    const publicError = toPublicCoverageError(raw)
+    expect(publicError.name).toBe('AbortError')
+    expect(classifyCoverageError(acrossIpc(publicError))).toBe('worker')
+  })
+
+  it('classifies every error text the coverage code can produce exactly as before', () => {
+    const produced = readProducedCoverageErrors()
+    expect(produced.length).toBeGreaterThan(80)
+    expect(produced).toContainEqual({ message: 'Coverage query worker was cancelled.', abort: true })
+    expect(produced).toContainEqual({ message: 'Coverage tile request was cancelled.', abort: true })
+    expect(produced.some(({ message }) => message.includes('ran out of memory'))).toBe(true)
+    for (const { message, abort } of produced) {
+      const variants = abort
+        ? [new Error(message), Object.assign(new Error(message), { name: 'AbortError' })]
+        : [new Error(message)]
+      for (const raw of variants) {
+        const publicError = toPublicCoverageError(raw)
+        const label = `${raw.name}: ${message}`
+        expect(publicError.message, label).not.toContain('/Users')
+        expect(PUBLIC_COVERAGE_ERROR_MESSAGES, label).toContain(publicError.message)
+        expect(classifyCoverageError(acrossIpc(publicError)), label)
+          .toBe(classifyCoverageError(acrossIpc(raw)))
+        expect(isCoverageCancellation(acrossIpc(publicError)), label)
+          .toBe(isCoverageCancellation(acrossIpc(raw)))
+        expect(publicError.name, label).toBe(raw.name)
+      }
+    }
+  })
+
   it('turns a thrown non-error into the generic public failure', () => {
     expect(toPublicCoverageError(HOSTILE_PATH).message).toBe('Coverage request failed.')
     expect(toPublicCoverageError(null).message).toBe('Coverage request failed.')
   })
 })
+
+type ProducedError = { readonly message: string; readonly abort: boolean }
+
+/**
+ * Reads every literal error message the coverage workers, runners, IPC and
+ * mission-store coverage paths can throw, so the regression list follows the
+ * code. Template slots become a hostile absolute path. `abort` marks a
+ * message the source also names AbortError.
+ */
+function readProducedCoverageErrors(): readonly ProducedError[] {
+  const files = readdirSync('electron')
+    .filter((name) => /^coverage-.*\.cjs$/u.test(name) && name !== 'coverage-public-error.cjs')
+    .map((name) => ({ name, coverageOnly: false }))
+  files.push({ name: 'mission-store.cjs', coverageOnly: true })
+  const produced = new Map<string, ProducedError>()
+  const errorCall = /new (?:Type|Range)?Error\(\s*((?:(?:'[^'\n]*'|`[^`]*`)\s*\+?\s*)+)[,)]/gu
+  for (const file of files) {
+    const source = readFileSync(`electron/${file.name}`, 'utf8')
+    for (const match of source.matchAll(errorCall)) {
+      const pieces = [...match[1]!.matchAll(/'([^'\n]*)'|`([^`]*)`/gu)].map((piece) => piece[1] ?? piece[2] ?? '')
+      const message = pieces.join('').replace(/\$\{[^}]*\}/gu, HOSTILE_PATH)
+      if (file.coverageOnly && !/coverage|chunk-stale/iu.test(message)) continue
+      const following = source.slice(match.index + match[0].length, match.index + match[0].length + 200)
+      const abort = /^[^\n]*(?:\n\s*\)[^\n]*)?\n\s*\w+\.name = 'AbortError'/u.test(following)
+      const prior = produced.get(message)
+      produced.set(message, { message, abort: abort || prior?.abort === true })
+    }
+  }
+  return [...produced.values()]
+}
