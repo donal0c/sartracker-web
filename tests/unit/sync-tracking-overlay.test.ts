@@ -166,11 +166,12 @@ function assertNoLegacyTypeSelector(filter: unknown): void {
   }
 }
 
+/** One fix per minute, each a little further north, so trails are real lines. */
 function trackingFix(deviceId: string, id: string, minute: number) {
   return {
     id,
     device_id: deviceId,
-    lat: 52,
+    lat: 52 + minute * 0.0001,
     lon: -9.7,
     altitude: null,
     speed: null,
