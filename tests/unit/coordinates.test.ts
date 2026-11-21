@@ -12,6 +12,7 @@ import {
   wgs84ToITM,
   wgs84ToTM65,
 } from '../../src/lib/coordinates'
+import { createMarkerDraftAtCoordinate } from '../../src/features/markers/marker-draft'
 
 type FixturePoint = {
   readonly name: string
@@ -154,7 +155,7 @@ describe('ITM input range guards (DON-168 / B2-C3)', () => {
   })
 
   it('rejects ITM easting at/above the Irish extent', () => {
-    expect(() => itmToWgs84(760_000, 600_000)).toThrow(RangeError)
+    expect(() => itmToWgs84(790_000, 600_000)).toThrow(RangeError)
   })
 
   it('rejects ITM northing below the Irish extent', () => {
@@ -183,7 +184,7 @@ describe('ITM input range guards (DON-168 / B2-C3)', () => {
     expect(() => itmToWgs84(648_222, 965_951)).not.toThrow()
   })
 
-  it('still accepts Wicklow Head, the eastern extreme (ITM E≈734629)', () => {
+  it('still accepts Wicklow Head on the east coast (ITM E≈734629)', () => {
     expect(() => itmToWgs84(734_629, 691_537)).not.toThrow()
   })
 })
@@ -235,7 +236,7 @@ describe('Irish geographic bounds for transform inputs (DON-171 / B2-C1, B2-C2)'
     expect(() => wgs84ToTM65(51.771, -10.538)).not.toThrow() // Skellig Michael
     expect(() => wgs84ToTM65(55.381, -7.374)).not.toThrow() // Malin Head
     expect(() => wgs84ToTM65(55.4339, -7.2406)).not.toThrow() // Inishtrahull (northernmost island)
-    expect(() => wgs84ToTM65(52.9577, -5.9962)).not.toThrow() // Wicklow Head (eastern extreme)
+    expect(() => wgs84ToTM65(52.9577, -5.9962)).not.toThrow() // Wicklow Head (east coast)
   })
 
   it('keeps wgs84ToITM and formatITMCoordinates mutually consistent for Irish extremes', () => {
@@ -243,7 +244,7 @@ describe('Irish geographic bounds for transform inputs (DON-171 / B2-C1, B2-C2)'
     // The ITM bounds envelope the WGS84 box precisely to preserve this.
     for (const [lat, lon] of [
       [55.4339, -7.2406], // Inishtrahull, northernmost
-      [52.9577, -5.9962], // Wicklow Head, easternmost
+      [52.9577, -5.9962], // Wicklow Head, east coast
       [51.771, -10.538], // Skellig Michael, south-west island
       [51.3903, -9.6018], // Fastnet Rock, southern
     ] as const) {
@@ -282,5 +283,81 @@ describe('isWithinIreland predicate (non-throwing, for live display)', () => {
     expect(() => isWithinIreland(Number.NaN, Number.NaN)).not.toThrow()
     expect(isWithinIreland(Number.NaN, Number.NaN)).toBe(false)
     expect(isWithinIreland(95, 200)).toBe(false)
+  })
+})
+
+describe('Irish envelope covers the Co. Down coast east of -5.8°E (DON-351 / M-03)', () => {
+  // Independent reference points on the Ards Peninsula and Copeland Islands, Co. Down.
+  // ITM values are proj4 EPSG:2157 transforms of the published WGS84 positions.
+  const coDownPoints = [
+    { name: 'Burr Point, easternmost point of the island', lat: 54.4834, lon: -5.4331, easting: 766_322, northing: 862_471 },
+    { name: 'Portaferry, Strangford Lough narrows', lat: 54.3826, lon: -5.5497, easting: 759_159, northing: 850_986 },
+    { name: 'Copeland Islands', lat: 54.67, lon: -5.532, easting: 759_186, northing: 883_003 },
+  ] as const
+
+  for (const point of coDownPoints) {
+    it(`accepts and converts ${point.name}`, () => {
+      expect(isWithinIreland(point.lat, point.lon)).toBe(true)
+
+      const [easting, northing] = wgs84ToITM(point.lat, point.lon)
+      expect(Math.abs(easting - point.easting)).toBeLessThan(5)
+      expect(Math.abs(northing - point.northing)).toBeLessThan(5)
+      expect(() => formatITMCoordinates(easting, northing)).not.toThrow()
+
+      const [tm65Easting, tm65Northing] = wgs84ToTM65(point.lat, point.lon)
+      const gridRef = formatIrishGridReference(tm65Easting, tm65Northing)
+      expect(gridRef).toMatch(/^J \d{5} \d{5}$/)
+      const [parsedEasting, parsedNorthing] = parseIrishGridReference(gridRef)
+      const [lat, lon] = tm65ToWgs84(parsedEasting, parsedNorthing)
+      expect(lat).toBeCloseTo(point.lat, 4)
+      expect(lon).toBeCloseTo(point.lon, 4)
+
+      const [backLat, backLon] = itmToWgs84(easting, northing)
+      expect(backLat).toBeCloseTo(point.lat, 6)
+      expect(backLon).toBeCloseTo(point.lon, 6)
+    })
+  }
+
+  it('lets a casualty marker be placed at Burr Point', () => {
+    expect(() => createMarkerDraftAtCoordinate(54.4834, -5.4331, 'casualty')).not.toThrow()
+  })
+
+  it('keeps every coordinate isWithinIreland accepts inside the ITM range (containment invariant)', () => {
+    // Envelope-agnostic sweep: walk past every edge of any plausible box, and require that
+    // each accepted WGS84 point projects to an ITM pair that also validates and formats.
+    const failures: string[] = []
+    const check = (lat: number, lon: number): void => {
+      if (!isWithinIreland(lat, lon)) {
+        return
+      }
+      try {
+        const [easting, northing] = wgs84ToITM(lat, lon)
+        formatITMCoordinates(easting, northing)
+        itmToWgs84(easting, northing)
+      } catch (error) {
+        failures.push(`${lat.toFixed(3)},${lon.toFixed(3)}: ${String(error)}`)
+      }
+    }
+    for (let lat = 51.0; lat <= 56.0; lat += 0.01) {
+      for (const lon of [-11, -10.8, -10.79, -5.81, -5.5, -5.4, -5.35, -5.31, -5.3, -5.29, -5.0]) {
+        check(lat, lon)
+      }
+    }
+    for (let lon = -11.0; lon <= -4.5; lon += 0.01) {
+      for (const lat of [51.0, 51.3, 51.31, 55.59, 55.6, 56.0]) {
+        check(lat, lon)
+      }
+    }
+    expect(failures).toEqual([])
+  })
+
+  it('still rejects the Irish Sea beyond the Co. Down coast, the Isle of Man and non-finite input', () => {
+    expect(isWithinIreland(54.4834, -5.0)).toBe(false)
+    expect(() => wgs84ToITM(54.2, -4.5)).toThrow(RangeError) // Isle of Man
+    expect(() => wgs84ToITM(53.4, -3.0)).toThrow(RangeError) // Liverpool
+    expect(() => wgs84ToITM(Number.NaN, -5.4331)).toThrow(RangeError)
+    expect(() => wgs84ToITM(54.4834, Number.POSITIVE_INFINITY)).toThrow(RangeError)
+    expect(() => itmToWgs84(800_000, 862_471)).toThrow(RangeError)
+    expect(() => formatITMCoordinates(0, 0)).toThrow(RangeError)
   })
 })

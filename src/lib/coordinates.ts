@@ -31,25 +31,25 @@ const WGS84_LON_MAX = 180
 // including its outlying inhabited/rescue-relevant islands, with a small margin.
 // Southern extreme: Fastnet/Mizen area (~51.4°N). Northern extreme: Inishtrahull /
 // Malin Head (~55.5°N). Western extreme: Tearaght / Blasket Islands (~-10.7°W).
-// Eastern extreme: Co. Down / Wexford coast (~-5.9°W). These bounds intentionally
+// Eastern extreme: Burr Point, Co. Down (~-5.43° longitude). These bounds intentionally
 // err toward inclusiveness: a real Irish coordinate must never be rejected, even at
 // the cost of admitting some near-coast sea (a rectangle cannot separate the two).
 const IRELAND_LAT_MIN = 51.3
 const IRELAND_LAT_MAX = 55.6
 const IRELAND_LON_MIN = -10.8
-const IRELAND_LON_MAX = -5.8
+const IRELAND_LON_MAX = -5.3
 
 // ITM (EPSG:2157) easting/northing envelope for the same Irish extent. These bounds
 // must fully CONTAIN the proj4 image of the WGS84 box above (sampled densely:
-// E≈404768..753402, N≈505239..987279), so that any point accepted by
+// E≈404768..788260, N≈505239..987279), so that any point accepted by
 // `isWithinIreland` / `validateIrishWGS84Range` can never subsequently fail ITM
 // validation — otherwise a genuine Irish coordinate could convert but fail to format.
 // The northern edge in particular must clear Inishtrahull (N≈965951), Ireland's
-// northernmost island, and the east must clear Wicklow Head (E≈734629). A small margin
+// northernmost island, and the east must clear Burr Point (E≈766322). A small margin
 // is added. GPS zero-fill (ITM 0,0 → mid-Atlantic ~46.5°N) sits far below E_MIN, so it
 // is still rejected.
 const ITM_EASTING_MIN = 400_000
-const ITM_EASTING_MAX = 760_000
+const ITM_EASTING_MAX = 790_000
 const ITM_NORTHING_MIN = 500_000
 const ITM_NORTHING_MAX = 990_000
 const IRISH_GRID_ROWS = ['ABCDE', 'FGHJK', 'LMNOP', 'QRSTU', 'VWXYZ']

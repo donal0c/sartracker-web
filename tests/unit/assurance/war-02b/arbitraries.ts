@@ -14,15 +14,15 @@ const coordinateNumber = (min: number, max: number): fc.Arbitrary<number> =>
 /** Supplies exact corner cases for the inclusive production Irish envelope. */
 export const irishCoordinateBoundaryCases: readonly IrishCoordinateCase[] = [
   { lat: 51.3, lon: -10.8 },
-  { lat: 51.3, lon: -5.8 },
+  { lat: 51.3, lon: -5.3 },
   { lat: 55.6, lon: -10.8 },
-  { lat: 55.6, lon: -5.8 },
+  { lat: 55.6, lon: -5.3 },
 ]
 
 /** Generates finite coordinates inside the inclusive production Irish envelope. */
 export const irishCoordinateArbitrary: fc.Arbitrary<IrishCoordinateCase> = fc.record({
   lat: coordinateNumber(51.3, 55.6),
-  lon: coordinateNumber(-10.8, -5.8),
+  lon: coordinateNumber(-10.8, -5.3),
 })
 
 export type CoordinateGoldenAnchorCase = {
@@ -76,7 +76,7 @@ export const coordinateValidationCases: readonly CoordinateValidationCase[] = [
   { kind: 'wgs84-tm65', lat: 50, lon: -9 },
   { kind: 'itm', easting: Number.NaN, northing: 600_000 },
   { kind: 'itm', easting: 390_000, northing: 600_000 },
-  { kind: 'itm', easting: 760_000, northing: 600_000 },
+  { kind: 'itm', easting: 790_000, northing: 600_000 },
   { kind: 'itm', easting: 600_000, northing: Number.POSITIVE_INFINITY },
   { kind: 'itm', easting: 600_000, northing: 490_000 },
   { kind: 'itm-format', easting: 0, northing: 0 },
@@ -130,7 +130,7 @@ const positionArbitrary: fc.Arbitrary<Required<IngestPosition>> = fc.record({
   device_id: fc.stringMatching(/^device-[a-z0-9]{1,6}$/u),
   name: fc.stringMatching(/^[A-Z][a-z]{0,8}$/u),
   lat: coordinateNumber(51.31, 55.59),
-  lon: coordinateNumber(-10.79, -5.81),
+  lon: coordinateNumber(-10.79, -5.31),
   altitude: fc.double({ min: 0, max: 2_000, noNaN: true, noDefaultInfinity: true }),
   speed: fc.double({ min: 0, max: 150, noNaN: true, noDefaultInfinity: true }),
   battery: fc.double({ min: 0, max: 100, noNaN: true, noDefaultInfinity: true }),
