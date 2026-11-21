@@ -149,6 +149,13 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
     mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false },
   ) {
     const onStatusChange = vi.fn()
+    const getCanonicalBreadcrumbs = vi.fn(async () => ({
+      positions: [] as readonly NormalizedTrackingPosition[],
+      totalObservedByDevice: {},
+      selectionMetadataByDevice: {},
+    }))
+    const onPollDiagnostic = vi.fn()
+    const onSnapshot = vi.fn()
     const client: TrackingPollerClient = {
       authenticate: vi.fn().mockResolvedValue(undefined),
       getDevices: vi.fn().mockResolvedValue([DEVICE]),
@@ -181,7 +188,9 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
       getInitialBreadcrumbFrom: () => new Date(START_MS),
       getInitialBreadcrumbs: async () => [],
       persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
-      onSnapshot: vi.fn(),
+      getCanonicalBreadcrumbs,
+      onPollDiagnostic,
+      onSnapshot,
       onStatusChange,
       now: () => new Date(Date.now()),
     })
@@ -194,7 +203,16 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
       readonly mode: string
       readonly warning: string | null
     }])[0])
-    return { poller, latest, all }
+    /** Initial-phase reconciliation outcomes reported as diagnostics. */
+    const initialOutcomes = () => onPollDiagnostic.mock.calls
+      .map((call) => call[0] as { readonly kind: string; readonly outcome?: string; readonly reconciliationPhase?: string })
+      .filter((event) => event.kind === 'breadcrumb_reconciliation' && event.reconciliationPhase === 'initial')
+      .map((event) => event.outcome)
+    /** Snapshots published with a tracking-cache write (forced history flushes). */
+    const cacheWritingHistoryFlushes = () => onSnapshot.mock.calls
+      .filter((call) => (call[1] as { readonly suppressTrackingCache?: boolean } | undefined)?.suppressTrackingCache === false)
+      .length
+    return { poller, latest, all, getCanonicalBreadcrumbs, initialOutcomes, cacheWritingHistoryFlushes }
   }
 
   it('raises a re-check failure when the re-check publishes, not at the next poll, then clears it', async () => {
@@ -328,6 +346,41 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
     expect(all().slice(pausedAt).filter((status) => status.mode === 'online')).toEqual([])
     expect(latest()?.mode).toBe('idle')
     expect(latest()?.warning ?? '').toMatch(/^Live refresh suspended while mission is paused\./u)
+    poller.stop()
+  })
+
+  it('reloads the canonical trail once every window is tried despite a permanent gap, and again when it fills', async () => {
+    const server: { mode: 'ok' | 'gap' | 'down'; hold?: Promise<void> } = { mode: 'gap' }
+    const { poller, latest, getCanonicalBreadcrumbs, initialOutcomes } = startPoller(server)
+    poller.start()
+    // Initial catch-up ends with one range Traccar can never serve; the
+    // 5-minute re-check has not run yet.
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000)
+    expect(latest()?.warning ?? '').toMatch(/Breadcrumb history incomplete for Alpha: \d\d:\d\d–\d\d:\d\d could not be loaded/u)
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(1)
+    // A gapped history is never reported complete.
+    expect(initialOutcomes()).not.toContain('complete')
+
+    server.mode = 'ok'
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+    expect(latest()?.warning ?? '').not.toContain('Breadcrumb history incomplete')
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalledTimes(2)
+    expect(initialOutcomes().at(-1)).toBe('complete')
+    poller.stop()
+  })
+
+  it('still flushes the trail and tracking cache after each 5-minute re-check sweep while a gap stays open', async () => {
+    const server: { mode: 'ok' | 'gap' | 'down'; hold?: Promise<void> } = { mode: 'gap' }
+    const { poller, latest, cacheWritingHistoryFlushes } = startPoller(server)
+    poller.start()
+    await vi.advanceTimersByTimeAsync(4 * 60 * 1000)
+    const afterCatchUp = cacheWritingHistoryFlushes()
+    expect(afterCatchUp).toBeGreaterThan(0)
+
+    // The re-check sweeps every device; the gap is still unfillable.
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+    expect(latest()?.warning ?? '').toContain('Breadcrumb history incomplete for Alpha')
+    expect(cacheWritingHistoryFlushes()).toBeGreaterThan(afterCatchUp)
     poller.stop()
   })
 })

@@ -343,7 +343,11 @@ export function createPollingManager(
   let canonicalizationRetryTimer: ReturnType<typeof setTimeout> | null = null
   let canonicalizationSequence = 0
   let canonicalizationRefreshPending = false
-  let initialReconciliationComplete = false
+  // How far initial catch-up has settled for the selected devices: every
+  // window tried ('attempted', possibly with an open history gap) or truly
+  // complete. Each step runs the forced flush and canonical reload once, so a
+  // gap Traccar can never serve does not starve them [DON-338].
+  let initialCatchUpSettled: 'pending' | 'attempted' | 'complete' = 'pending'
   let initialReconciliationSelectionKey: string | null = null
   let canonicalizationInFlight: {
     readonly sequence: number
@@ -593,15 +597,22 @@ export function createPollingManager(
           elapsedMs: progress.elapsedMs,
         })
       }
+      // "Every window tried" (no pending device) is not "complete": an open
+      // history gap keeps complete false and the gap warning up. Only the
+      // forced flush and the canonical reload use the weaker signal, so an
+      // unfillable gap cannot starve them [DON-338].
+      const everyWindowTried = progress.pendingDeviceCount === 0
       if (progress.phase === 'initial') {
-        if (progress.complete && !initialReconciliationComplete) {
-          initialReconciliationComplete = true
+        const settled = progress.complete ? 'complete' : everyWindowTried ? 'attempted' : 'pending'
+        if (settled === 'pending') {
+          initialCatchUpSettled = 'pending'
+        } else if (settled !== initialCatchUpSettled) {
+          initialCatchUpSettled = settled
           flushHistorySnapshot(true, true)
           requestCanonicalization()
-        } else if (!progress.complete) {
-          initialReconciliationComplete = false
         }
-      } else if (progress.complete) {
+      } else if (everyWindowTried) {
+        // The re-check swept every device (its completion count ignores gaps).
         flushHistorySnapshot(true, true)
       }
       // A failure or gap found by the 5-minute re-check is raised when that
@@ -1204,7 +1215,7 @@ export function createPollingManager(
         boundedSourceRetention = false
         canonicalizationSequence += 1
         canonicalizationRefreshPending = false
-        initialReconciliationComplete = false
+        initialCatchUpSettled = 'pending'
         initialReconciliationSelectionKey = null
         canonicalizationInFlight?.abortController.abort()
         canonicalizationInFlight = null
@@ -1669,7 +1680,7 @@ export function createPollingManager(
       ])
       if (selectionKey !== initialReconciliationSelectionKey) {
         initialReconciliationSelectionKey = selectionKey
-        initialReconciliationComplete = false
+        initialCatchUpSettled = 'pending'
       }
       const reconciliationUntil = now()
       historyReconciler.reconcile({
@@ -1950,7 +1961,7 @@ export function createPollingManager(
     latestAntiEntropyFailedNames = []
     canonicalizationSequence += 1
     canonicalizationRefreshPending = false
-    initialReconciliationComplete = false
+    initialCatchUpSettled = 'pending'
     initialReconciliationSelectionKey = null
     initialSeedAbortController = null
     canonicalizationInFlight = null
