@@ -81,12 +81,16 @@ export async function startLayerCatalogRuntime(
   let latestRefreshRequestId = 0
   let refreshInvalidationVersion = 0
   let lastPublishedInputSignature: string | null = null
+  // Bumped whenever the catalog moves to another mission; writes started before
+  // a bump must not merge into or rebuild the new mission's catalog [DON-341].
+  let missionGeneration = 0
 
   publishRuntime()
 
   return {
     refreshCatalog: async (input) => {
       if (missionId !== input.missionId) {
+        missionGeneration += 1
         latestRefreshRequestId += 1
         metadataEntries = []
         root = createEmptyLayerCatalogTree().root
@@ -195,11 +199,13 @@ export async function startLayerCatalogRuntime(
     },
     reorderNode: async (parentNodeId, orderedNodeIds) => {
       refreshInvalidationVersion += 1
+      const generationAtStart = missionGeneration
       const parent = requireNode(parentNodeId)
       const currentOrder = getChildNodeIds(parent)
       const nextOrder = mergeChildOrder(currentOrder, orderedNodeIds)
 
       for (const [index, nodeId] of nextOrder.entries()) {
+        if (generationAtStart !== missionGeneration) throw new LayerCatalogMissionChangedError()
         const node = requireNode(nodeId)
         const entry = findEntry(nodeId)
         await dependencies.layerCatalogStore.upsertMetadata({
@@ -214,7 +220,10 @@ export async function startLayerCatalogRuntime(
           metadataJson: entry?.metadataJson ?? null,
         })
       }
-      metadataEntries = await dependencies.layerCatalogStore.listMetadata(assertMissionId())
+      if (generationAtStart !== missionGeneration) throw new LayerCatalogMissionChangedError()
+      const reordered = await dependencies.layerCatalogStore.listMetadata(assertMissionId())
+      if (generationAtStart !== missionGeneration) throw new LayerCatalogMissionChangedError()
+      metadataEntries = reordered
       rebuild()
     },
   }
@@ -232,6 +241,7 @@ export async function startLayerCatalogRuntime(
   ): Promise<void> {
     refreshInvalidationVersion += 1
     const missionId = assertMissionId()
+    const generationAtStart = missionGeneration
     const nextEntries = await Promise.all(
       nodeIds.map((nodeId) => {
         const node = requireNode(nodeId)
@@ -249,6 +259,7 @@ export async function startLayerCatalogRuntime(
         })
       }),
     )
+    if (generationAtStart !== missionGeneration) throw new LayerCatalogMissionChangedError()
     metadataEntries = nextEntries.reduce(
       (currentEntries, nextEntry) => upsertMetadataEntry(currentEntries, nextEntry),
       metadataEntries,
@@ -410,4 +421,15 @@ function assertMutableNodeKind(
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Layer catalog operation failed.'
+}
+
+/**
+ * A catalog write finished after the catalog moved to another mission. The
+ * write was saved to the mission it was made in; the open mission is untouched.
+ */
+export class LayerCatalogMissionChangedError extends Error {
+  constructor() {
+    super('The mission changed while this layer change was being saved, so it was not applied to the open mission.')
+    this.name = 'LayerCatalogMissionChangedError'
+  }
 }

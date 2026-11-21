@@ -195,4 +195,20 @@ describe('People visibility writes [DON-341]', () => {
     expect(catalog.setNodeVisibilities).toHaveBeenCalledTimes(1)
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['1', '2'])
   })
+
+  it('a save that fails after the mission changed leaves the new mission alone', async () => {
+    useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1', '2'] })
+    const catalog = heldCatalog({ failWhen: () => true })
+    let missionId = 'mission-1'
+    const reveal = queueLayerSubtreeVisibility({ readMissionId: () => missionId, readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
+    const outcome = reveal.then(() => 'saved', (error: unknown) => error)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // A new mission opens, and the operator hides only person 1 there.
+    missionId = 'mission-2'
+    useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1'] })
+    await catalog.releaseAll()
+
+    expect(await outcome).toBeInstanceOf(StaleLayerVisibilityChangeError)
+    expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['1'])
+  })
 })

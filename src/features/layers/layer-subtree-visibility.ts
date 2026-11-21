@@ -14,7 +14,7 @@ import {
   collectSubtreeNodeIds,
 } from './layer-visibility-service'
 import { useLayerVisibilityStore } from './layer-visibility-store'
-import type { LayerCatalogController } from './start-layer-catalog-runtime'
+import { type LayerCatalogController, LayerCatalogMissionChangedError } from './start-layer-catalog-runtime'
 
 /**
  * Shows or hides a catalog node and everything under it. Routes runtime-only
@@ -54,8 +54,11 @@ export async function setLayerSubtreeVisibility(input: {
   try {
     await applyAndPersist(input, node.id, nodeIds, touched)
   } catch (error) {
-    // Work for a mission that is no longer open must not touch the open one's map.
+    // Work for a mission that is no longer open must not touch the open one's map,
+    // however the old save ended: check before putting anything back.
     if (error instanceof StaleLayerVisibilityChangeError) throw error
+    if (error instanceof LayerCatalogMissionChangedError) throw new StaleLayerVisibilityChangeError()
+    input.assertCurrent?.()
     // A failed save must not look saved: put the map back to what was saved.
     if (input.readRoot !== undefined) reconcileWithSaved(input.readRoot(), touched)
     throw error
