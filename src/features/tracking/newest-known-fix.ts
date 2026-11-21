@@ -104,5 +104,7 @@ function withPositionHealth(
     data_origin: position.data_origin,
     cache_age_seconds: position.cache_age_seconds,
     device_cache_stale: position.device_cache_stale || newer.device_cache_stale,
+    // A breadcrumb can only beat a fix ahead of the clock by being further ahead.
+    ...(position.fix_time_ahead_of_clock === true ? { fix_time_ahead_of_clock: true } : {}),
   }
 }

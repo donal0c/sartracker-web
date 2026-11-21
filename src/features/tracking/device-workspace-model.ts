@@ -86,6 +86,8 @@ export function buildDeviceWorkspaceRows(
         sourceDisplay:
           position === null
             ? 'No fix'
+            : position.fix_time_ahead_of_clock === true
+              ? 'Fix time ahead of laptop clock'
             : position.fix_time_unverified === true
               ? 'Fix time unverified'
             : (connectionMode !== 'online' || unconfirmedCurrentDeviceIds.has(device.device_id)) && position.data_origin === 'live'

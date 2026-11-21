@@ -23,6 +23,7 @@ import { useMissionStore } from '../features/mission/mission-store'
 import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
 import type { NormalizedTrackingPosition } from '../features/tracking/tracking-types'
 import { formatOperatorLocalTimestamp } from '../features/tracking/operator-time'
+import { FIX_TIME_AHEAD_TOLERANCE_MS } from '../features/tracking/tracking-snapshot-health'
 
 type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
@@ -102,6 +103,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     (position) => position.fix_time_unverified === true,
   )
   const unverifiedFixTimeCount = unverifiedFixTimePositions.length
+  const aheadOfClockCount = snapshot.positions.filter(
+    (position) => position.fix_time_ahead_of_clock === true,
+  ).length
   const cachedDeviceCount = snapshot.positions.filter((position) => position.data_origin === 'cache').length
   const boundedBreadcrumbDeviceCount =
     snapshot.breadcrumbMetadata?.deviceBudgets.filter((budget) => budget.truncated).length ?? 0
@@ -247,6 +251,18 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           {describeUnverifiedFixTimeSources(unverifiedFixTimePositions)}, not verified Traccar fixTime.
           {' '}{unverifiedFixTimeCount === 1 ? 'It remains' : 'They remain'} visible for immediate
           safety but {unverifiedFixTimeCount === 1 ? 'is' : 'are'} excluded from exact breadcrumb evidence.
+        </p>
+      )}
+
+      {aheadOfClockCount === 0 ? null : (
+        <p
+          className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
+          data-testid="fix-time-ahead-warning"
+        >
+          FIX TIME AHEAD OF THIS LAPTOP — {aheadOfClockCount}{' '}
+          {aheadOfClockCount === 1 ? 'device reports a fix time' : 'devices report fix times'} more than
+          {' '}{FIX_TIME_AHEAD_TOLERANCE_MS / 60_000} minutes in the future.
+          {' '}{aheadOfClockCount === 1 ? 'It is' : 'They are'} shown as stale. Check the laptop clock and the tracker time zone.
         </p>
       )}
 
