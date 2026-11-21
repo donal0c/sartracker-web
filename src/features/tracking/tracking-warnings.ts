@@ -31,6 +31,8 @@ export type TrackingWarningCode =
   | 'cache_unreadable'
   | 'cached_operational_data'
   | 'mission_storage_failed'
+  | 'mission_storage_rows_rejected'
+  | 'source_position_id_reused'
   | 'participant_scope'
   /** A warning that reached the status without a code: reported, never dropped. */
   | 'unclassified'

@@ -59,6 +59,12 @@ import {
 } from './canonical-fix-time-evidence'
 import { describeTrackingWarningForDiagnostics } from './tracking-status-diagnostics'
 import { appendTrackingWarnings } from './tracking-warnings'
+import {
+  buildStoreWriteWarnings,
+  mergeStoreWriteTotals,
+  type StoreWriteOutcome,
+  type StoreWriteTotals,
+} from './store-write-outcome'
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -293,7 +299,7 @@ export type TrackingRuntimeMissionStore = {
     readonly changedPositionCount: number
     readonly insertedPositionCount: number
     readonly skippedAmbiguousLegacyAdoptionCount: number
-  }>
+  } & StoreWriteOutcome>
   readonly listTrackingHistoryCheckpoints?: (missionId: string) => Promise<readonly {
     readonly mission_id: string
     readonly device_id: string
@@ -419,6 +425,9 @@ export async function startTrackingRuntime(
   let trackingCacheReadWarningActive = false
   let cachedOperationalDataWarning: string | null = null
   let missionPersistenceWarningActive = false
+  // Distinct fixes the store refused and reused Traccar ids it kept as
+  // conflicts, for the active mission [DON-338 STO-1, STO-3].
+  let storeWriteTotals: StoreWriteTotals | null = null
   let droppedPersistedBreadcrumbCount = 0
   let lastDroppedBreadcrumbDiagnosticKey: string | null = null
   let nextBreadcrumbQueryRequestSequence = 0
@@ -789,6 +798,7 @@ export async function startTrackingRuntime(
                     positions,
                     checkpoints,
                   })
+                  applyStoreWriteOutcome(activeMission.id, persisted)
                   changedPositionCount = persisted.changedPositionCount
                   return
                 }
@@ -865,6 +875,7 @@ export async function startTrackingRuntime(
                     ...(input.reconciledFrom === undefined ? {} : { reconciled_from: input.reconciledFrom }),
                   }],
             })
+            applyStoreWriteOutcome(activeMission.id, persisted)
             changedPositionCount = persisted.changedPositionCount
             return
           }
@@ -1634,6 +1645,7 @@ export async function startTrackingRuntime(
         expectedMissionId,
         dependencies.notifyDurablePositionChange,
         dependencies.missionModelEnabled !== true,
+        applyStoreWriteOutcome,
       )
       scheduleParticipantBackfill()
     })
@@ -1810,6 +1822,7 @@ export async function startTrackingRuntime(
             text: 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.',
           }
         : null,
+      ...buildStoreWriteWarnings(storeWriteTotals, useMissionStore.getState().currentMission?.id ?? storeWriteTotals?.missionId ?? null),
       scopeWarning === null ? null : { code: 'participant_scope', text: scopeWarning },
     )
     return {
@@ -1817,6 +1830,36 @@ export async function startTrackingRuntime(
       ...combined,
       ...(breadcrumbTransferProgress === null ? {} : { savedHistoryTransfer: breadcrumbTransferProgress }),
     }
+  }
+
+  /**
+   * Folds a tracking write acknowledgement into the operator warnings. A
+   * refused fix or a reused Traccar id is recorded by the store; this keeps
+   * it visible until the mission changes [DON-338 STO-1, STO-3].
+   */
+  function applyStoreWriteOutcome(missionId: string, outcome: StoreWriteOutcome): void {
+    if (runtimeGeneration !== activeTrackingRuntimeGeneration) return
+    const next = mergeStoreWriteTotals(storeWriteTotals, missionId, outcome)
+    const changed = storeWriteTotals === null
+      || next.missionId !== storeWriteTotals.missionId
+      || next.rejectedPositionTotal !== storeWriteTotals.rejectedPositionTotal
+      || next.sourceIdentityConflictTotal !== storeWriteTotals.sourceIdentityConflictTotal
+    storeWriteTotals = next
+    if (!changed || (next.rejectedPositionTotal === 0 && next.sourceIdentityConflictTotal === 0)) return
+    logger.warn('Mission storage refused fixes or kept reused Traccar ids as conflicts.', {
+      rejectedPositionTotal: next.rejectedPositionTotal,
+      sourceIdentityConflictTotal: next.sourceIdentityConflictTotal,
+    })
+    void dependencies.recordDiagnosticEvent?.({
+      level: 'warn',
+      category: 'tracking',
+      event: 'tracking_store_write_anomalies',
+      fields: {
+        rejectedPositionTotal: next.rejectedPositionTotal,
+        sourceIdentityConflictTotal: next.sourceIdentityConflictTotal,
+      },
+    })
+    refreshTrackingStatus()
   }
 
   function refreshTrackingStatus(): void {
@@ -2485,6 +2528,7 @@ async function persistTrackingSnapshot(
   expectedMissionId: string | null,
   notifyDurablePositionChange?: (changedPositionCount: number) => void,
   legacyAutoParticipants = true,
+  notifyStoreWriteOutcome?: (missionId: string, outcome: StoreWriteOutcome) => void,
 ): Promise<PersistedPositionKeyCache | null> {
   const activeMission = await missionStore.getActiveMission()
   if (
@@ -2611,7 +2655,9 @@ async function persistTrackingSnapshot(
   // thousands of unseen fixes; write them in bounded pieces so no single
   // transaction holds the main loop. Pieces carry no checkpoint, inserts are
   // idempotent, and keys are cached only after every piece succeeds, so a
-  // failed piece is retried in full by the next snapshot [DON-313].
+  // failed piece is retried in full by the next snapshot [DON-313]. A
+  // malformed fix does not fail its piece: the store refuses and records it,
+  // commits the rest, and reports it in the acknowledgement [DON-338 STO-3].
   if (missionStore.persistTrackingPositionsBulk !== undefined) {
     for (let start = 0; start < newPositions.length; start += HISTORY_PIECE_ROW_BUDGET) {
       const persisted = await missionStore.persistTrackingPositionsBulk({
@@ -2619,6 +2665,7 @@ async function persistTrackingSnapshot(
         positions: newPositions.slice(start, start + HISTORY_PIECE_ROW_BUDGET),
         checkpoints: [],
       })
+      notifyStoreWriteOutcome?.(activeMission.id, persisted)
       notifyDurablePositionChange?.(persisted.changedPositionCount)
     }
   } else if (missionStore.addPositionsBulk !== undefined) {
