@@ -18,6 +18,14 @@ import type {
   NormalizedTrackingPosition,
   TrackingSnapshot,
 } from '../../src/features/tracking/tracking-types'
+import type { ExactBreadcrumbDotState } from '../../src/features/tracking/exact-breadcrumb-dot-controller'
+import {
+  createDrawingRecorderMap,
+  hideLayerForControl,
+  readDrawnFeatures,
+  TRAIL_DRAWING_LAYER_IDS,
+  type DrawingRecorderMap,
+} from '../support/maplibre-drawn-features'
 
 /**
  * DON-338 regression (team field report, Dublin test, November 2026).
@@ -34,7 +42,8 @@ import type {
  * This test drives the real code path end to end: the real SQLite mission
  * store, the real exact-dot query worker, the real exact-dot runtime and
  * controller, and the real tracking map-overlay sync. Only MapLibre itself
- * is replaced, by a recorder of the GeoJSON it is given.
+ * is replaced, by a recorder that counts a fix as drawn only when a visible
+ * trail layer's filter accepts the feature that carries it.
  */
 
 const require = createRequire(import.meta.url)
@@ -71,13 +80,7 @@ type RealMissionStore = ExactBreadcrumbDotMissionStore & {
   readonly close: () => void
 }
 
-type RecordedFeature = {
-  readonly geometry: {
-    readonly type: 'Point' | 'LineString'
-    readonly coordinates: readonly number[] | readonly (readonly number[])[]
-  }
-  readonly properties: { readonly featureKind?: string; readonly deviceId?: string }
-}
+type RecordedFeature = DrawingRecorderMap['sourceData'] extends Map<string, (infer F)[]> ? F : never
 
 const DEVICE_ID = 'searcher-phone'
 const FIX_COUNT = 12_000
@@ -189,7 +192,114 @@ describe('[DON-338] whole trail stays on the map with Breadcrumb dots selected',
     },
     120_000,
   )
+
+  it(
+    'counts a fix as drawn only when a visible trail layer draws it: hiding the line layer is caught',
+    async () => {
+      const fixes = createContinuousTrail()
+      const missionId = await seedRealMissionStore(fixes)
+      const liveSnapshot = createLiveTrailSnapshot(fixes)
+
+      for (const how of ['visibility', 'filter'] as const) {
+        const lineMap = createRecordingMap()
+        syncTrackingOverlay(lineMap as never, liveSnapshot, [], [], true, {
+          deviceColors: {},
+          breadcrumbSize: 8,
+          breadcrumbTrailMode: 'line',
+        })
+        expect(countFixesNotDrawn(fixes, readTrailFeatures(lineMap))).toBe(0)
+        hideLayerForControl(lineMap, 'tracking-breadcrumbs-line', how)
+        expect(
+          countFixesNotDrawn(fixes, readTrailFeatures(lineMap)),
+          `negative control (${how}): the line layer is hidden, so the trail must not count as drawn`,
+        ).toBe(FIX_COUNT)
+      }
+
+      activateDotsMission(missionId)
+      stopRuntime = startExactBreadcrumbDotRuntime(store!)
+      await waitForReadyDotPage()
+      const dotsMap = createRecordingMap()
+      syncTrackingOverlay(
+        dotsMap as never,
+        liveSnapshot,
+        [],
+        [],
+        true,
+        { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+        useExactBreadcrumbDotStore.getState().state,
+      )
+      expect(countFixesNotDrawn(fixes, readTrailFeatures(dotsMap))).toBe(0)
+      hideLayerForControl(dotsMap, 'tracking-breadcrumbs-line', 'filter')
+      // Only the 10,000-dot page is left; the older 2,000 fixes are now undrawn.
+      expect(
+        countFixesNotDrawn(fixes, readTrailFeatures(dotsMap)),
+        'negative control: with the line filtered out, only the dot page remains',
+      ).toBe(FIX_COUNT - 10_000)
+    },
+    120_000,
+  )
+
+  it(
+    'keeps every fix drawn on one reused map through newest, Earlier, Later, loading and unavailable',
+    async () => {
+      const fixes = createContinuousTrail()
+      const missionId = await seedRealMissionStore(fixes)
+      const liveSnapshot = createLiveTrailSnapshot(fixes)
+      activateDotsMission(missionId)
+      stopRuntime = startExactBreadcrumbDotRuntime(store!)
+      await waitForReadyDotPage()
+
+      const map = createRecordingMap()
+      const style = { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' } as const
+      const drawWith = (state: ExactBreadcrumbDotState): number => {
+        syncTrackingOverlay(map as never, liveSnapshot, [], [], true, style, state)
+        return countFixesNotDrawn(fixes, readTrailFeatures(map))
+      }
+      const dotsOnMap = (): number => readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] }).length
+
+      expect.soft(drawWith(useExactBreadcrumbDotStore.getState().state), 'newest page').toBe(0)
+      expect(dotsOnMap()).toBe(10_000)
+
+      useExactBreadcrumbDotStore.getState().controller?.showEarlier()
+      await waitForReadyDotPage({ hasLater: true })
+      expect.soft(drawWith(useExactBreadcrumbDotStore.getState().state), 'after Earlier').toBe(0)
+      expect(dotsOnMap()).toBe(FIX_COUNT - 10_000)
+
+      useExactBreadcrumbDotStore.getState().controller?.showLater()
+      await waitForReadyDotPage({ hasLater: false })
+      expect.soft(drawWith(useExactBreadcrumbDotStore.getState().state), 'after Later').toBe(0)
+      expect(dotsOnMap()).toBe(10_000)
+
+      expect.soft(drawWith({ status: 'loading', missionId }), 'while loading').toBe(0)
+      expect(dotsOnMap()).toBe(0)
+      expect.soft(
+        drawWith({ status: 'unavailable', missionId, message: 'Exact breadcrumb dots are unavailable.' }),
+        'while unavailable',
+      ).toBe(0)
+      expect(dotsOnMap()).toBe(0)
+    },
+    120_000,
+  )
 })
+
+/** Puts the seeded mission in the mission store and selects Breadcrumb dots. */
+function activateDotsMission(missionId: string): void {
+  useMissionStore.setState({
+    phase: 'active',
+    currentMission: {
+      id: missionId,
+      name: 'DON-338 regression mission',
+      status: 'active',
+      start_time: new Date(MISSION_START_MS).toISOString(),
+      pause_time: null,
+      finish_time: null,
+      paused_seconds: 0,
+      notes: null,
+      schema_version: 1,
+    },
+  })
+  useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+}
 
 /** One searcher walking north with a fix every 3 s for 10 h: no gap, no stop. */
 function createContinuousTrail(): readonly NormalizedTrackingPosition[] {
@@ -273,58 +383,15 @@ async function waitForReadyDotPage(
   )
 }
 
-/** Records the GeoJSON handed to MapLibre sources; draws nothing. */
-function createRecordingMap() {
-  const layers = new Map<string, { id: string; filter?: unknown; paint?: Record<string, unknown> }>()
-  const sourceData = new Map<string, { features: RecordedFeature[] }>()
-  return {
-    sourceData,
-    getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
-    getSource: (id: string) =>
-      sourceData.has(id)
-        ? {
-            setData: (data: { features: RecordedFeature[] }) => {
-              sourceData.set(id, data)
-            },
-            updateData: () => {
-              throw new Error('Incremental source updates are not expected on a fresh map.')
-            },
-          }
-        : undefined,
-    addLayer: (spec: { id: string; filter?: unknown; paint?: Record<string, unknown> }) => {
-      layers.set(spec.id, spec)
-    },
-    addSource: (id: string, config: { data: { features: RecordedFeature[] } }) => {
-      sourceData.set(id, config.data)
-    },
-    getFilter: (id: string) => layers.get(id)?.filter,
-    getPaintProperty: (id: string, property: string) => layers.get(id)?.paint?.[property],
-    setFilter: (id: string, filter: unknown) => {
-      const layer = layers.get(id)
-      if (layer !== undefined) layer.filter = filter
-    },
-    setPaintProperty: (id: string, property: string, value: unknown) => {
-      const layer = layers.get(id)
-      if (layer !== undefined) layer.paint = { ...(layer.paint ?? {}), [property]: value }
-    },
-  }
-}
+const createRecordingMap = createDrawingRecorderMap
 
-/** Every trail feature the tracking overlay put on the map: lines and dots. */
-function readTrailFeatures(map: ReturnType<typeof createRecordingMap>): readonly RecordedFeature[] {
-  const features: RecordedFeature[] = []
-  for (const data of map.sourceData.values()) {
-    for (const feature of data.features) {
-      const kind = feature.properties.featureKind
-      if (
-        feature.properties.deviceId === DEVICE_ID &&
-        (kind === 'breadcrumb' || kind === 'breadcrumbLine')
-      ) {
-        features.push(feature)
-      }
-    }
+/** Every trail feature a visible trail layer draws for the searcher: lines, lone fixes and dots. */
+function readTrailFeatures(map: DrawingRecorderMap): readonly RecordedFeature[] {
+  const features = new Set<RecordedFeature>()
+  for (const drawn of readDrawnFeatures(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
+    if (drawn.feature.properties.deviceId === DEVICE_ID) features.add(drawn.feature)
   }
-  return features
+  return [...features]
 }
 
 /**
