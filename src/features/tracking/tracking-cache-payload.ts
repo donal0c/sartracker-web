@@ -6,6 +6,7 @@ import { thinDeviceTrailToBudget } from './breadcrumb-accumulator'
 import {
   createCacheBreadcrumbMetadata,
   createUnknownCacheSimplificationMetadata,
+  isCacheBreadcrumbMetadataConsistent,
   parseCacheBreadcrumbMetadata,
   type CacheDeviceThinning,
 } from './tracking-cache-breadcrumb-disclosure'
@@ -151,18 +152,21 @@ export async function limitTrackingCacheBreadcrumbs(
 }
 
 /**
- * Builds the snapshot a cache restore publishes. A trail the cache (or the
- * live line before it) simplified carries metadata, so the panel discloses it
- * as simplified; an older cache at the old cap is disclosed as simplified with
- * no geometry promise rather than presented as exact [DON-338].
+ * Builds the snapshot a cache restore publishes [DON-338]. The trail is shown
+ * as exact only when the cache positively records that nothing was dropped and
+ * that record matches the restored trail. A cache from an older writer (which
+ * could save an already-simplified live trail unchanged), unreadable metadata,
+ * or metadata that does not match the trail is disclosed as simplification
+ * unknown, with no accuracy promise.
  */
 export function createCachedTrackingSnapshot(payload: TrackingCachePayload): TrackingSnapshot {
-  const breadcrumbMetadata = payload.breadcrumb_metadata ?? (
-    payload.breadcrumbs.length >= MAX_TRACKING_CACHE_BREADCRUMBS ||
-    payload.breadcrumb_metadata === null
-      ? createUnknownCacheSimplificationMetadata(payload.breadcrumbs)
-      : undefined
-  )
+  const recorded = payload.breadcrumb_metadata
+  const breadcrumbMetadata = payload.breadcrumbs.length === 0
+    ? undefined
+    : recorded !== undefined && recorded !== null &&
+        isCacheBreadcrumbMetadataConsistent(recorded, payload.breadcrumbs)
+      ? recorded
+      : createUnknownCacheSimplificationMetadata(payload.breadcrumbs)
   return {
     devices: payload.devices,
     positions: payload.positions,

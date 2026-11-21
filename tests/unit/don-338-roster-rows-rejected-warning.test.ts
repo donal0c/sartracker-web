@@ -276,5 +276,74 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
       expect(statuses.at(-1)?.warning ?? '').not.toContain('DEVICE ROSTER')
       await poller.stop()
     })
+
+    /** A poller on a switchable mission that records every published status. */
+    function startMissionPoller(getDevicesWithReport: TrackingPollerClient['getDevicesWithReport']) {
+      const state = { mission: 'mission-a', mode: 'active' as 'active' | 'paused' }
+      const statuses: { readonly mode: string; readonly warning: string | null }[] = []
+      const poller = createPollingManager({
+        authenticate: vi.fn().mockResolvedValue(undefined),
+        getDevices: vi.fn().mockResolvedValue(DEVICES),
+        getDevicesWithReport,
+        getCurrentPositions: vi.fn().mockResolvedValue(POSITIONS),
+        getBreadcrumbs: vi.fn().mockResolvedValue(BREADCRUMBS),
+      }, {
+        intervalMs: 5_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        getPollingMode: () => state.mode,
+        getHistoryResetKey: () => state.mission,
+        getInitialBreadcrumbFrom: () => new Date('2026-04-04T10:00:00.000Z'),
+        onSnapshot: vi.fn(),
+        onStatusChange: (status: typeof statuses[number]) => { statuses.push(status) },
+        now: () => new Date('2026-04-06T10:35:00.000Z'),
+      })
+      poller.start()
+      return { poller, state, statuses }
+    }
+
+    it('does not carry mission A\'s missing-tracker warning into mission B', async () => {
+      const getDevicesWithReport = vi.fn()
+        .mockResolvedValueOnce({ accepted: [DEVICES[0]!], complete: false, rejectedCount: 1 })
+        .mockReturnValue(new Promise(() => undefined))
+      const { poller, state, statuses } = startMissionPoller(getDevicesWithReport)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+
+      // Switch to mission B; its roster refresh stays pending. Then pause B.
+      state.mission = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(1_000)
+      const switchedAt = statuses.length
+      state.mode = 'paused'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(statuses.at(-1)?.mode).toBe('idle')
+      expect(statuses.slice(switchedAt).some((status) => (status.warning ?? '').includes(ONE_UNREADABLE)))
+        .toBe(false)
+      await poller.stop()
+    })
+
+    it('ignores a late roster answer from mission A after switching to mission B', async () => {
+      const getDevicesWithReport = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => {
+          setTimeout(() => resolve({ accepted: [DEVICES[0]!], complete: false, rejectedCount: 1 }), 3_000)
+        }))
+        .mockReturnValue(new Promise(() => undefined))
+      const { poller, state, statuses } = startMissionPoller(getDevicesWithReport)
+      await vi.advanceTimersByTimeAsync(1_000)
+      state.mission = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(500)
+      const switchedAt = statuses.length
+      // Mission A's roster answers incomplete now, then B polls on.
+      await vi.advanceTimersByTimeAsync(7_000)
+      state.mode = 'paused'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(statuses.length).toBeGreaterThan(switchedAt)
+      expect(statuses.slice(switchedAt).some((status) => (status.warning ?? '').includes(ONE_UNREADABLE)))
+        .toBe(false)
+      await poller.stop()
+    })
   })
 })

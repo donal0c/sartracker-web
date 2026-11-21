@@ -3,6 +3,7 @@ import type {
   BreadcrumbSnapshotMetadata,
   NormalizedTrackingPosition,
 } from './tracking-types'
+import { createTrackingPositionIdentityKey } from './tracking-position-identity'
 
 /**
  * Simplification disclosure for trails that pass through the restart cache
@@ -34,19 +35,21 @@ export function createCacheBreadcrumbMetadata(
   const deviceBudgets = devices.map((device): BreadcrumbDeviceBudget => {
     const liveBudget = liveBudgets.get(device.deviceId)
     const liveTruncated = liveBudget?.truncated === true
-    const cacheThinned = device.retained.length < device.inputCount
-    const truncated = liveTruncated || cacheThinned
+    const total = Math.max(liveBudget?.total ?? 0, device.inputCount, device.retained.length)
+    // Any shortfall against what is known to exist counts as simplified.
+    const truncated = liveTruncated || total > device.retained.length
     const liveBound = liveTruncated ? readBound(liveBudget) : 0
     const geometryErrorBoundMetres = !truncated ? 0
       : liveBound === null || device.geometryErrorBoundMetres === null ? null
         : Math.max(liveBound, device.geometryErrorBoundMetres)
+    const span = timestampSpan(device.retained)
     return {
       deviceId: device.deviceId,
       retained: device.retained.length,
       sourceRetained: device.inputCount,
-      total: Math.max(liveBudget?.total ?? 0, device.inputCount),
-      firstTimestamp: device.retained[0]?.timestamp ?? null,
-      lastTimestamp: device.retained.at(-1)?.timestamp ?? null,
+      total,
+      firstTimestamp: span.first,
+      lastTimestamp: span.last,
       truncated,
       geometryErrorBoundMetres,
       targetGeometryErrorSatisfied: !truncated || (
@@ -58,12 +61,55 @@ export function createCacheBreadcrumbMetadata(
   })
   return {
     totalRetained: deviceBudgets.reduce((sum, budget) => sum + budget.retained, 0),
-    totalObserved: Math.max(
-      live?.totalObserved ?? 0,
-      deviceBudgets.reduce((sum, budget) => sum + budget.total, 0),
-    ),
+    totalObserved: deviceBudgets.reduce((sum, budget) => sum + budget.total, 0),
     deviceBudgets,
   }
+}
+
+/**
+ * Accepts persisted metadata only when it describes exactly the restored
+ * trail: one budget per device, matching counts and time spans, unique fix
+ * identities and self-consistent simplification flags. Anything else is
+ * doubtful and must be disclosed as simplification unknown, never as exact.
+ */
+export function isCacheBreadcrumbMetadataConsistent(
+  metadata: BreadcrumbSnapshotMetadata,
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+): boolean {
+  const identities = new Set<string>()
+  for (const position of breadcrumbs) {
+    const key = createTrackingPositionIdentityKey(position)
+    if (identities.has(key)) return false
+    identities.add(key)
+  }
+  const trails = groupByDevice(breadcrumbs)
+  if (metadata.deviceBudgets.length !== trails.size) return false
+  if (metadata.totalRetained !== breadcrumbs.length) return false
+  let totalObserved = 0
+  let anyTruncated = false
+  const seen = new Set<string>()
+  for (const budget of metadata.deviceBudgets) {
+    const trail = trails.get(budget.deviceId)
+    if (trail === undefined || seen.has(budget.deviceId)) return false
+    seen.add(budget.deviceId)
+    if (budget.retained !== trail.length || budget.total < budget.retained) return false
+    const span = timestampSpan(trail)
+    if (
+      !sameInstant(budget.firstTimestamp, span.first) ||
+      !sameInstant(budget.lastTimestamp, span.last)
+    ) return false
+    if (budget.truncated) {
+      const bound = budget.geometryErrorBoundMetres
+      if (budget.targetGeometryErrorSatisfied &&
+        (bound === null || bound > TARGET_GEOMETRY_ERROR_METRES)) return false
+      anyTruncated = true
+    } else if (budget.total !== budget.retained || budget.geometryErrorBoundMetres !== 0) {
+      return false
+    }
+    totalObserved += budget.total
+  }
+  if (metadata.totalObserved !== totalObserved) return false
+  return anyTruncated || metadata.totalObserved === metadata.totalRetained
 }
 
 /**
@@ -75,19 +121,14 @@ export function createCacheBreadcrumbMetadata(
 export function createUnknownCacheSimplificationMetadata(
   breadcrumbs: readonly NormalizedTrackingPosition[],
 ): BreadcrumbSnapshotMetadata {
-  const byDevice = new Map<string, NormalizedTrackingPosition[]>()
-  for (const position of breadcrumbs) {
-    const trail = byDevice.get(position.device_id)
-    if (trail === undefined) byDevice.set(position.device_id, [position])
-    else trail.push(position)
-  }
+  const byDevice = groupByDevice(breadcrumbs)
   const deviceBudgets = [...byDevice].map(([deviceId, trail]): BreadcrumbDeviceBudget => ({
     deviceId,
     retained: trail.length,
     sourceRetained: trail.length,
     total: trail.length,
-    firstTimestamp: trail[0]?.timestamp ?? null,
-    lastTimestamp: trail.at(-1)?.timestamp ?? null,
+    firstTimestamp: timestampSpan(trail).first,
+    lastTimestamp: timestampSpan(trail).last,
     truncated: true,
     geometryErrorBoundMetres: null,
     targetGeometryErrorSatisfied: false,
@@ -119,28 +160,27 @@ export function parseCacheBreadcrumbMetadata(value: unknown): BreadcrumbSnapshot
 }
 
 /**
- * Combines a restored simplified cache trail with a live snapshot. Counts are
- * conservative lower bounds; a device simplified on either side stays
- * disclosed as simplified. Returns undefined when the cache made no
- * simplification claim.
+ * Combines a restored cache trail with a live snapshot. When either side is
+ * simplified, the union is disclosed as simplified; counts are rebuilt from
+ * the union and totals are conservative lower bounds. A cached trail with no
+ * metadata is treated as simplification unknown. Returns undefined only when
+ * both sides are positively exact.
  */
 export function mergeCacheBreadcrumbMetadata(
-  cached: BreadcrumbSnapshotMetadata | undefined,
+  cachedTrail: readonly NormalizedTrackingPosition[],
+  cachedMetadata: BreadcrumbSnapshotMetadata | undefined,
   live: BreadcrumbSnapshotMetadata | undefined,
   merged: readonly NormalizedTrackingPosition[],
 ): BreadcrumbSnapshotMetadata | undefined {
-  if (cached === undefined || !cached.deviceBudgets.some((budget) => budget.truncated)) {
-    return undefined
-  }
-  const cachedBudgets = new Map(cached.deviceBudgets.map((budget) => [budget.deviceId, budget]))
+  const cached = cachedMetadata ?? (
+    cachedTrail.length === 0 ? undefined : createUnknownCacheSimplificationMetadata(cachedTrail)
+  )
+  const simplified = (metadata: BreadcrumbSnapshotMetadata | undefined) =>
+    metadata?.deviceBudgets.some((budget) => budget.truncated) === true
+  if (!simplified(cached) && !simplified(live)) return undefined
+  const cachedBudgets = new Map(cached?.deviceBudgets.map((budget) => [budget.deviceId, budget]))
   const liveBudgets = new Map(live?.deviceBudgets.map((budget) => [budget.deviceId, budget]))
-  const byDevice = new Map<string, NormalizedTrackingPosition[]>()
-  for (const position of merged) {
-    const trail = byDevice.get(position.device_id)
-    if (trail === undefined) byDevice.set(position.device_id, [position])
-    else trail.push(position)
-  }
-  const deviceBudgets = [...byDevice].map(([deviceId, trail]): BreadcrumbDeviceBudget => {
+  const deviceBudgets = [...groupByDevice(merged)].map(([deviceId, trail]): BreadcrumbDeviceBudget => {
     const sides = [cachedBudgets.get(deviceId), liveBudgets.get(deviceId)]
       .filter((budget): budget is BreadcrumbDeviceBudget => budget !== undefined)
     const truncatedSides = sides.filter((budget) => budget.truncated)
@@ -149,13 +189,15 @@ export function mergeCacheBreadcrumbMetadata(
     const geometryErrorBoundMetres = !truncated ? 0
       : bounds.some((bound) => bound === null) ? null
         : Math.max(...(bounds as number[]))
+    const total = Math.max(trail.length, ...sides.map((budget) => budget.total))
+    const span = timestampSpan(trail)
     return {
       deviceId,
       retained: trail.length,
       sourceRetained: trail.length,
-      total: Math.max(trail.length, ...sides.map((budget) => budget.total)),
-      firstTimestamp: trail[0]?.timestamp ?? null,
-      lastTimestamp: trail.at(-1)?.timestamp ?? null,
+      total,
+      firstTimestamp: span.first,
+      lastTimestamp: span.last,
       truncated,
       geometryErrorBoundMetres,
       targetGeometryErrorSatisfied: !truncated || (
@@ -167,13 +209,42 @@ export function mergeCacheBreadcrumbMetadata(
   })
   return {
     totalRetained: merged.length,
-    totalObserved: Math.max(
-      cached.totalObserved,
-      live?.totalObserved ?? 0,
-      deviceBudgets.reduce((sum, budget) => sum + budget.total, 0),
-    ),
+    totalObserved: deviceBudgets.reduce((sum, budget) => sum + budget.total, 0),
     deviceBudgets,
   }
+}
+
+/** Groups a trail by device, preserving order. */
+function groupByDevice(
+  positions: readonly NormalizedTrackingPosition[],
+): Map<string, NormalizedTrackingPosition[]> {
+  const byDevice = new Map<string, NormalizedTrackingPosition[]>()
+  for (const position of positions) {
+    const trail = byDevice.get(position.device_id)
+    if (trail === undefined) byDevice.set(position.device_id, [position])
+    else trail.push(position)
+  }
+  return byDevice
+}
+
+/** Earliest and latest timestamps of a trail, whatever its order. */
+function timestampSpan(
+  trail: readonly NormalizedTrackingPosition[],
+): { readonly first: string | null, readonly last: string | null } {
+  let first: NormalizedTrackingPosition | undefined
+  let last: NormalizedTrackingPosition | undefined
+  for (const position of trail) {
+    const ms = Date.parse(position.timestamp)
+    if (first === undefined || ms < Date.parse(first.timestamp)) first = position
+    if (last === undefined || ms > Date.parse(last.timestamp)) last = position
+  }
+  return { first: first?.timestamp ?? null, last: last?.timestamp ?? null }
+}
+
+/** True when two optional timestamps name the same instant. */
+function sameInstant(left: string | null, right: string | null): boolean {
+  if (left === null || right === null) return left === right
+  return Date.parse(left) === Date.parse(right)
 }
 
 /** A finite, non-negative bound, or null for "no promise". */

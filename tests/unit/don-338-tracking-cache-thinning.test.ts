@@ -187,19 +187,99 @@ describe('tracking cache thinning keeps the live line truthful [DON-338]', () =>
     })
   })
 
-  it('presents a small exact cache as exact', () => {
+  it('presents a small exact new cache as exact: nothing dropped is recorded explicitly', async () => {
     const breadcrumbs = Array.from({ length: 10 }, (_, index) =>
       fix('device-a', index, START_MS + index * 60_000, 53, -6))
-    const restored = createCachedTrackingSnapshot(parseTrackingCachePayload(
-      serializeTrackingCachePayload({
-        mission_id: 'mission-a',
-        cached_at: new Date(START_MS).toISOString(),
-        devices: [],
-        positions: [],
-        breadcrumbs,
-      }),
-    ))
-    expect(restored.breadcrumbMetadata).toBeUndefined()
+    const restored = await roundTrip({ devices: [], positions: [], breadcrumbs })
     expect(restored.breadcrumbs).toHaveLength(10)
+    expect(restored.breadcrumbMetadata?.deviceBudgets).toEqual([
+      expect.objectContaining({ deviceId: 'device-a', retained: 10, truncated: false }),
+    ])
+    renderPanel(restored)
+    expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
+  })
+
+  it('discloses a small cache from the old writer as simplification unknown', () => {
+    // The old writer saved an already-simplified live projection unchanged
+    // when it was under its cap, so a small old cache may still be simplified.
+    const breadcrumbs = Array.from({ length: 10 }, (_, index) =>
+      fix('device-a', index, START_MS + index * 60_000, 53, -6))
+    const restored = restoreRaw({ breadcrumbs })
+    expect(restored.breadcrumbMetadata?.deviceBudgets).toEqual([
+      expect.objectContaining({ deviceId: 'device-a', truncated: true, geometryErrorBoundMetres: null }),
+    ])
+    renderPanel(restored)
+    expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')?.textContent)
+      .toContain('too complex for a guaranteed display-error bound')
+  })
+
+  it('treats an empty cache as having no trail to disclose', () => {
+    expect(restoreRaw({ breadcrumbs: [] }).breadcrumbMetadata).toBeUndefined()
+  })
+
+  describe('falls back to simplification unknown when metadata does not match the trail', () => {
+    const breadcrumbs = Array.from({ length: 500 }, (_, index) =>
+      fix(index % 2 === 0 ? 'device-a' : 'device-b', index, START_MS + index * 60_000, 53, -6))
+    const exactBudget = (deviceId: string, trail: readonly NormalizedTrackingPosition[]) => ({
+      deviceId, retained: trail.length, sourceRetained: trail.length, total: trail.length,
+      firstTimestamp: trail[0]!.timestamp, lastTimestamp: trail.at(-1)!.timestamp,
+      truncated: false, geometryErrorBoundMetres: 0, targetGeometryErrorSatisfied: true,
+    })
+    const trailA = breadcrumbs.filter(({ device_id }) => device_id === 'device-a')
+    const trailB = breadcrumbs.filter(({ device_id }) => device_id === 'device-b')
+    const consistent = {
+      totalRetained: 500, totalObserved: 500,
+      deviceBudgets: [exactBudget('device-a', trailA), exactBudget('device-b', trailB)],
+    }
+
+    it('accepts consistent exact metadata as exact', () => {
+      const restored = restoreRaw({ breadcrumbs, breadcrumb_metadata: consistent })
+      expect(restored.breadcrumbMetadata?.deviceBudgets.some(({ truncated }) => truncated)).toBe(false)
+    })
+
+    it.each([
+      ['no device budgets', { totalRetained: 500, totalObserved: 5_000, deviceBudgets: [] }, breadcrumbs],
+      ['a device without a budget', { ...consistent, deviceBudgets: [consistent.deviceBudgets[0]!] }, breadcrumbs],
+      ['a budget for a device with no trail', { ...consistent, deviceBudgets: [
+        ...consistent.deviceBudgets, { ...consistent.deviceBudgets[0]!, deviceId: 'device-z' }] }, breadcrumbs],
+      ['a wrong retained count', { ...consistent, deviceBudgets: [
+        { ...consistent.deviceBudgets[0]!, retained: 249 }, consistent.deviceBudgets[1]!] }, breadcrumbs],
+      ['a wrong total retained', { ...consistent, totalRetained: 499 }, breadcrumbs],
+      ['observed above retained with no truncated device', { ...consistent, totalObserved: 5_000 }, breadcrumbs],
+      ['a device total above retained but not truncated', { ...consistent, deviceBudgets: [
+        { ...consistent.deviceBudgets[0]!, total: 2_000 }, consistent.deviceBudgets[1]!] }, breadcrumbs],
+      ['a wrong first timestamp', { ...consistent, deviceBudgets: [
+        { ...consistent.deviceBudgets[0]!, firstTimestamp: trailB[0]!.timestamp }, consistent.deviceBudgets[1]!] }, breadcrumbs],
+      ['duplicate fix identities', consistent, [...breadcrumbs.slice(0, 499), breadcrumbs[497]!]],
+    ] as const)('%s', (_label, metadata, trail) => {
+      const restored = restoreRaw({ breadcrumbs: trail, breadcrumb_metadata: metadata })
+      const budgets = restored.breadcrumbMetadata?.deviceBudgets ?? []
+      expect(budgets.length).toBeGreaterThan(0)
+      expect(budgets.every((budget) => budget.truncated && budget.geometryErrorBoundMetres === null))
+        .toBe(true)
+    })
   })
 })
+
+/** Restores a hand-written cache file, bypassing the writer. */
+function restoreRaw(fields: {
+  readonly breadcrumbs: readonly NormalizedTrackingPosition[]
+  readonly breadcrumb_metadata?: unknown
+}): TrackingSnapshot {
+  return createCachedTrackingSnapshot(parseTrackingCachePayload(JSON.stringify({
+    mission_id: 'mission-a',
+    cached_at: new Date(START_MS).toISOString(),
+    devices: [],
+    positions: [],
+    ...fields,
+  })))
+}
+
+/** Renders the tracking panel over one snapshot. */
+function renderPanel(snapshot: TrackingSnapshot): void {
+  useTrackingStore.setState({ snapshot })
+  host = document.createElement('div')
+  document.body.append(host)
+  root = createRoot(host)
+  act(() => root?.render(React.createElement(TrackingStatusPanel)))
+}
