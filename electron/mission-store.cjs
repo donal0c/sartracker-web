@@ -5255,7 +5255,16 @@ function reconcileStoppedGpxImportBatch(db, batchId, missionId, timestamp, befor
   const close = db.transaction(() => {
     recoverStagingGpxImports(db, timestamp, missionId)
     // Its worker stopped, so the batch is interrupted even if every file was accounted for.
-    return updateRecoveredGpxBatchCounts(db, batchId, true, timestamp)
+    const settled = updateRecoveredGpxBatchCounts(db, batchId, true, timestamp)
+    // Receipts, staged revisions and the batch changed state here, so the audit trail says so.
+    insertEvent(db, missionId, 'gpx_import_batch_interrupted', timestamp, {
+      batch_id: batchId,
+      completed_files: settled.completed,
+      failed_files: settled.failed,
+      total_files: settled.total,
+      settled_in_session: true,
+    })
+    return settled
   })
   const counts = close.immediate()
   const leftover = db.prepare(`SELECT

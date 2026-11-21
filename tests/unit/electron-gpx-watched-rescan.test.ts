@@ -272,6 +272,13 @@ describe('watched GPX rescans and interrupted batches [DON-350]', () => {
       // The interrupted file's exact bytes stay retained as a reviewable failure.
       expect(db.prepare(`SELECT source_bytes_base64 IS NOT NULL AS retained FROM gpx_import_failures
         WHERE mission_id = ? AND source_path = ?`).get(mission.id, paths[1])).toEqual({ retained: 1 })
+      // The in-session settlement is audited like every other state change [coordinator 3].
+      const settled = db.prepare(`SELECT details_json FROM mission_events
+        WHERE mission_id = ? AND event_type = 'gpx_import_batch_interrupted'`).all(mission.id)
+      expect(settled).toHaveLength(1)
+      expect(JSON.parse(String(settled[0]?.details_json))).toMatchObject({
+        completed_files: 1, failed_files: 2, total_files: 3, settled_in_session: true,
+      })
     } finally {
       db.close()
     }
