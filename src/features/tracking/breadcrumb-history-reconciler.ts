@@ -15,6 +15,16 @@ const DEFAULT_ANTI_ENTROPY_INTERVAL_MS = 5 * 60 * 1000
 const DEFAULT_ANTI_ENTROPY_RECENT_WINDOW_MS = 6 * 60 * 60 * 1000
 // Older history is swept newest first in this many chunks per device per tick.
 const DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK = 3
+// DON-338 (ING-2): a window the proxy rejects as too large or too slow is
+// split, never retried unchanged. Windows at or below this width are not split.
+const DEFAULT_MIN_WINDOW_MS = 5 * 60 * 1000
+// Attempts at the smallest window before it is recorded as a visible gap and
+// catch-up moves on to the rest of that device's history.
+const DEFAULT_MIN_WINDOW_ATTEMPTS = 3
+// A split window grows back (doubles) after this many consecutive successes.
+const WINDOW_GROWTH_SUCCESS_COUNT = 4
+// Each anti-entropy tick retries at most this many recorded gaps per device.
+const DEFAULT_GAP_RETRIES_PER_DEVICE_PER_TICK = 3
 
 type BreadcrumbHistoryReconcilerLogger = {
   readonly warn: (message: string, context: Record<string, unknown>) => void
@@ -45,6 +55,9 @@ type BreadcrumbHistoryReconcilerOptions = {
   readonly antiEntropyIntervalMs?: number
   readonly antiEntropyRecentWindowMs?: number
   readonly antiEntropyOlderChunksPerTick?: number
+  readonly minWindowMs?: number
+  readonly minWindowAttempts?: number
+  readonly gapRetriesPerDevicePerTick?: number
   readonly setTimeout?: typeof globalThis.setTimeout
   readonly clearTimeout?: typeof globalThis.clearTimeout
 }
@@ -59,6 +72,25 @@ export type BreadcrumbHistoryChunk = {
   readonly positions: readonly NormalizedTrackingPosition[]
 }
 
+/** Why a history window could not be fetched: the reply was over the size limit, or too slow. */
+export type BreadcrumbHistoryGapReason = 'oversized' | 'slow'
+
+/**
+ * A device time range whose history could not be fetched at any window size.
+ * Its fixes are neither invented nor claimed as stored; the range is retried
+ * on every anti-entropy tick until a fetch covering it succeeds [DON-338].
+ */
+export type BreadcrumbHistoryGap = {
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly from: string
+  readonly to: string
+  readonly reason: BreadcrumbHistoryGapReason
+  readonly phase: 'initial' | 'anti_entropy'
+  readonly attempts: number
+  readonly lastError: string
+}
+
 export type BreadcrumbHistoryProgress = {
   readonly phase: 'initial' | 'anti_entropy'
   readonly targetFrom: string | null
@@ -71,7 +103,10 @@ export type BreadcrumbHistoryProgress = {
   readonly failedDeviceCount: number
   readonly elapsedMs: number
   readonly pendingDeviceNames: readonly string[]
+  /** Includes every device with an unfilled history gap. */
   readonly failedDeviceNames: readonly string[]
+  /** Unfetchable ranges, merged per device and ordered by device then time. */
+  readonly historyGaps: readonly BreadcrumbHistoryGap[]
   readonly complete: boolean
 }
 
@@ -102,7 +137,26 @@ type DeviceReconciliationJob = {
   cursorMs: number
   failureCount: number
   retryAtMs: number
+  /** Current request width; halves on an oversized or slow reply. */
+  windowMs: number
+  consecutiveSuccessCount: number
+  minWindowFailureCount: number
 }
+
+type HistoryGapRecord = {
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly historyFromMs: number
+  readonly fromMs: number
+  readonly toMs: number
+  readonly phase: 'initial' | 'anti_entropy'
+  reason: BreadcrumbHistoryGapReason
+  attempts: number
+  lastError: string
+  lastAttemptAtMs: number
+}
+
+type AntiEntropyWindowOutcome = 'committed' | 'stale'
 
 type CompletedDeviceReconciliation = {
   readonly deviceId: string
@@ -162,6 +216,18 @@ export function createBreadcrumbHistoryReconciler(
     options.antiEntropyOlderChunksPerTick,
     DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK,
   )
+  const minWindowMs = Math.min(
+    chunkMs,
+    normalizePositiveInteger(options.minWindowMs, DEFAULT_MIN_WINDOW_MS),
+  )
+  const minWindowAttempts = normalizePositiveInteger(
+    options.minWindowAttempts,
+    DEFAULT_MIN_WINDOW_ATTEMPTS,
+  )
+  const gapRetriesPerDevicePerTick = normalizePositiveInteger(
+    options.gapRetriesPerDevicePerTick,
+    DEFAULT_GAP_RETRIES_PER_DEVICE_PER_TICK,
+  )
   const scheduleTimeout = options.setTimeout ?? globalThis.setTimeout.bind(globalThis)
   const clearScheduledTimeout =
     options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis)
@@ -170,6 +236,7 @@ export function createBreadcrumbHistoryReconciler(
   const completedDevicesById = new Map<string, CompletedDeviceReconciliation>()
   const failedDeviceIds = new Set<string>()
   const antiEntropyFailedDeviceIds = new Set<string>()
+  const gapsByDeviceId = new Map<string, HistoryGapRecord[]>()
   const activeInitialJobs = new Set<DeviceReconciliationJob>()
   const deviceQueue: string[] = []
   let generation = 0
@@ -226,13 +293,24 @@ export function createBreadcrumbHistoryReconciler(
       0,
     )
     const failedIds = phase === 'initial' ? failedDeviceIds : antiEntropyFailedDeviceIds
-    const failedNames = phase === 'initial'
-      ? pendingJobs
-          .filter((job) => failedIds.has(job.deviceId))
-          .map((job) => job.deviceName)
-      : completedDevices
-          .filter((device) => failedIds.has(device.deviceId))
-          .map((device) => device.deviceName)
+    const failedNamesById = new Map<string, string>()
+    if (phase === 'initial') {
+      for (const job of pendingJobs) {
+        if (failedIds.has(job.deviceId)) failedNamesById.set(job.deviceId, job.deviceName)
+      }
+    } else {
+      for (const device of completedDevices) {
+        if (failedIds.has(device.deviceId)) failedNamesById.set(device.deviceId, device.deviceName)
+      }
+    }
+    // A device with an unfilled gap stays named in both phases [DON-338].
+    for (const [deviceId, gaps] of gapsByDeviceId) {
+      const name = gaps[0]?.deviceName
+      if (name !== undefined && !failedNamesById.has(deviceId)) failedNamesById.set(deviceId, name)
+    }
+    const failedNames = [...failedNamesById.entries()]
+      .sort(([left], [right]) => compareStringsByCodeUnit(left, right))
+      .map(([, name]) => name)
     const totalDeviceCount = pendingJobs.length + completedDevices.length
     const completedDeviceCount = phase === 'initial'
       ? completedDevices.length
@@ -263,6 +341,7 @@ export function createBreadcrumbHistoryReconciler(
       elapsedMs: startedAtMs === null ? 0 : Math.max(0, Date.now() - startedAtMs),
       pendingDeviceNames: pendingJobs.map((job) => job.deviceName),
       failedDeviceNames: failedNames,
+      historyGaps: publishHistoryGaps(gapsByDeviceId),
       complete:
         phase === 'initial'
           ? pendingJobs.length === 0
@@ -270,8 +349,12 @@ export function createBreadcrumbHistoryReconciler(
     }
   }
 
+  // While any device is still catching up, report the initial phase so its
+  // failure stays visible even though healthy devices are being swept.
   const getProgress = (): BreadcrumbHistoryProgress =>
-    buildProgress(antiEntropyStartedAtMs === null ? 'initial' : 'anti_entropy')
+    buildProgress(
+      jobsByDeviceId.size > 0 || antiEntropyStartedAtMs === null ? 'initial' : 'anti_entropy',
+    )
 
   const publishProgress = (
     phase: BreadcrumbHistoryProgress['phase'] = 'initial',
@@ -308,23 +391,159 @@ export function createBreadcrumbHistoryReconciler(
     }, delayMs)
   }
 
+  /** Records an unfetchable range so it is visible and retried, never silently skipped. */
+  const recordHistoryGap = (
+    gap: Omit<HistoryGapRecord, 'attempts' | 'lastAttemptAtMs' | 'lastError'>,
+    attempts: number,
+    error: unknown,
+  ): void => {
+    const lastError = describeError(error)
+    const gaps = gapsByDeviceId.get(gap.deviceId) ?? []
+    const existing = gaps.find((record) =>
+      record.fromMs === gap.fromMs && record.toMs === gap.toMs)
+    if (existing !== undefined) {
+      existing.attempts += attempts
+      existing.lastError = lastError
+      existing.reason = gap.reason
+      existing.lastAttemptAtMs = Date.now()
+    } else {
+      gaps.push({ ...gap, attempts, lastError, lastAttemptAtMs: Date.now() })
+      gaps.sort((left, right) => left.fromMs - right.fromMs)
+      gapsByDeviceId.set(gap.deviceId, gaps)
+    }
+    options.logger.warn(
+      'Tracking breadcrumb history window could not be fetched at any size; recorded as a gap.',
+      {
+        deviceId: gap.deviceId,
+        deviceName: gap.deviceName,
+        from: new Date(gap.fromMs).toISOString(),
+        to: new Date(gap.toMs).toISOString(),
+        reason: gap.reason,
+        phase: gap.phase,
+        error: lastError,
+      },
+    )
+  }
+
+  /** A committed fetch of [fromMs, toMs] fills every gap it fully covers. */
+  const clearHistoryGapsCoveredBy = (
+    deviceId: string,
+    fromMs: number,
+    toMs: number,
+  ): void => {
+    const gaps = gapsByDeviceId.get(deviceId)
+    if (gaps === undefined) return
+    const remaining = gaps.filter((gap) => gap.fromMs < fromMs || gap.toMs > toMs)
+    if (remaining.length === 0) gapsByDeviceId.delete(deviceId)
+    else if (remaining.length !== gaps.length) gapsByDeviceId.set(deviceId, remaining)
+  }
+
+  /** Grows a split window back towards the full chunk after steady success. */
+  const noteInitialWindowSuccess = (
+    job: DeviceReconciliationJob,
+    fromMs: number,
+    toMs: number,
+  ): void => {
+    clearHistoryGapsCoveredBy(job.deviceId, fromMs, toMs)
+    job.minWindowFailureCount = 0
+    job.consecutiveSuccessCount += 1
+    if (
+      job.windowMs < chunkMs &&
+      job.consecutiveSuccessCount >= WINDOW_GROWTH_SUCCESS_COUNT
+    ) {
+      job.windowMs = Math.min(chunkMs, job.windowMs * 2)
+      job.consecutiveSuccessCount = 0
+    }
+  }
+
+  /**
+   * Handles a failed history fetch for an initial window. An oversized or slow
+   * reply splits the window; at the smallest width it is retried a bounded
+   * number of times, then recorded as a gap so the device's remaining history
+   * still catches up. Any other failure keeps the window and backs off.
+   */
+  const handleInitialFetchFailure = (
+    job: DeviceReconciliationJob,
+    fromMs: number,
+    toMs: number,
+    drainGeneration: number,
+    error: unknown,
+  ): void => {
+    if (!isCurrentJob(job, drainGeneration)) {
+      return
+    }
+    const reason = classifyWindowFailure(error)
+    if (reason === null) {
+      markJobFailed(job, drainGeneration, error)
+      return
+    }
+    job.consecutiveSuccessCount = 0
+    const widthMs = toMs - fromMs
+    if (widthMs > minWindowMs) {
+      job.windowMs = Math.max(minWindowMs, Math.floor(widthMs / 2))
+      job.minWindowFailureCount = 0
+      job.retryAtMs = 0
+      deviceQueue.push(job.deviceId)
+      options.logger.warn('Tracking breadcrumb history window failed; splitting it.', {
+        deviceId: job.deviceId,
+        deviceName: job.deviceName,
+        from: new Date(fromMs).toISOString(),
+        to: new Date(toMs).toISOString(),
+        nextWindowMs: job.windowMs,
+        reason,
+        error: describeError(error),
+      })
+      return
+    }
+    job.minWindowFailureCount += 1
+    if (job.minWindowFailureCount < minWindowAttempts) {
+      markJobFailed(job, drainGeneration, error)
+      return
+    }
+    recordHistoryGap({
+      deviceId: job.deviceId,
+      deviceName: job.deviceName,
+      historyFromMs: job.missionStartMs,
+      fromMs,
+      toMs,
+      phase: 'initial',
+      reason,
+    }, job.minWindowFailureCount, error)
+    job.cursorMs = toMs
+    job.minWindowFailureCount = 0
+    job.failureCount = 0
+    job.retryAtMs = 0
+    failedDeviceIds.delete(job.deviceId)
+    if (job.cursorMs >= job.targetMs) {
+      completeInitialJob(job)
+    } else {
+      deviceQueue.push(job.deviceId)
+    }
+  }
+
   const processJob = async (
     job: DeviceReconciliationJob,
     drainGeneration: number,
   ): Promise<void> => {
     const fromMs = job.cursorMs
-    const toMs = Math.min(fromMs + chunkMs, job.targetMs)
+    const toMs = Math.min(fromMs + job.windowMs, job.targetMs)
     if (toMs <= fromMs) {
       completeInitialJob(job)
       return
     }
 
+    let positions: readonly NormalizedTrackingPosition[]
     try {
-      const positions = await options.fetchBreadcrumbs(
+      positions = await options.fetchBreadcrumbs(
         job.deviceId,
         new Date(fromMs),
         new Date(toMs),
       )
+    } catch (error) {
+      handleInitialFetchFailure(job, fromMs, toMs, drainGeneration, error)
+      return
+    }
+    try {
       if (
         drainGeneration !== generation ||
         !options.shouldContinue() ||
@@ -360,34 +579,14 @@ export function createBreadcrumbHistoryReconciler(
       job.failureCount = 0
       job.retryAtMs = 0
       failedDeviceIds.delete(job.deviceId)
+      noteInitialWindowSuccess(job, fromMs, toMs)
       if (job.cursorMs >= job.targetMs) {
         completeInitialJob(job)
       } else {
         deviceQueue.push(job.deviceId)
       }
     } catch (error) {
-      if (
-        drainGeneration !== generation ||
-        !options.shouldContinue() ||
-        jobsByDeviceId.get(job.deviceId) !== job
-      ) {
-        return
-      }
-
-      job.failureCount += 1
-      const retryDelayMs = Math.min(
-        retryBaseMs * 2 ** (job.failureCount - 1),
-        maxRetryMs,
-      )
-      job.retryAtMs = Date.now() + retryDelayMs
-      failedDeviceIds.add(job.deviceId)
-      deviceQueue.push(job.deviceId)
-      options.logger.warn('Tracking breadcrumb reconciliation failed for device.', {
-        deviceId: job.deviceId,
-        deviceName: job.deviceName,
-        retryDelayMs,
-        error: error instanceof Error ? error.message : String(error),
-      })
+      markJobFailed(job, drainGeneration, error)
     }
   }
 
@@ -428,7 +627,7 @@ export function createBreadcrumbHistoryReconciler(
     drainGeneration: number,
   ): Promise<BreadcrumbHistoryChunk | null> => {
     const fromMs = job.cursorMs
-    const toMs = Math.min(fromMs + chunkMs, job.targetMs)
+    const toMs = Math.min(fromMs + job.windowMs, job.targetMs)
     if (toMs <= fromMs) {
       completeInitialJob(job)
       return null
@@ -452,7 +651,7 @@ export function createBreadcrumbHistoryReconciler(
         positions,
       }
     } catch (error) {
-      markJobFailed(job, drainGeneration, error)
+      handleInitialFetchFailure(job, fromMs, toMs, drainGeneration, error)
       return null
     }
   }
@@ -469,6 +668,7 @@ export function createBreadcrumbHistoryReconciler(
     job.failureCount = 0
     job.retryAtMs = 0
     failedDeviceIds.delete(job.deviceId)
+    noteInitialWindowSuccess(job, chunk.from.getTime(), chunk.to.getTime())
     if (job.cursorMs >= job.targetMs) {
       completeInitialJob(job)
     } else {
@@ -617,7 +817,7 @@ export function createBreadcrumbHistoryReconciler(
     if (
       antiEntropyTimer !== null ||
       antiEntropyBatchInFlight ||
-      completedDevicesById.size === 0 ||
+      (completedDevicesById.size === 0 && gapsByDeviceId.size === 0) ||
       !options.shouldContinue()
     ) {
       return
@@ -672,6 +872,71 @@ export function createBreadcrumbHistoryReconciler(
     return { recentFloorMs, windows }
   }
 
+  /**
+   * Fetches and commits one anti-entropy window. An oversized or slow reply is
+   * split in halves; a half that still fails at the smallest width is recorded
+   * as a gap so the rest of the sweep continues [DON-338]. Any other failure,
+   * including a persistence failure, is thrown to the caller unchanged.
+   */
+  const sweepAntiEntropyWindow = async (
+    device: CompletedDeviceReconciliation,
+    fromMs: number,
+    toMs: number,
+    batchGeneration: number,
+  ): Promise<AntiEntropyWindowOutcome> => {
+    let positions: readonly NormalizedTrackingPosition[]
+    try {
+      positions = await options.fetchBreadcrumbs(
+        device.deviceId,
+        new Date(fromMs),
+        new Date(toMs),
+      )
+    } catch (error) {
+      if (!isCurrentCompletedDevice(device, batchGeneration)) {
+        return 'stale'
+      }
+      const reason = classifyWindowFailure(error)
+      if (reason === null) {
+        throw error
+      }
+      if (toMs - fromMs <= minWindowMs) {
+        recordHistoryGap({
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+          historyFromMs: device.missionStartMs,
+          fromMs,
+          toMs,
+          phase: 'anti_entropy',
+          reason,
+        }, 1, error)
+        return 'committed'
+      }
+      const middleMs = fromMs + Math.floor((toMs - fromMs) / 2)
+      const newer = await sweepAntiEntropyWindow(device, middleMs, toMs, batchGeneration)
+      if (newer === 'stale') {
+        return 'stale'
+      }
+      return sweepAntiEntropyWindow(device, fromMs, middleMs, batchGeneration)
+    }
+    if (!isCurrentCompletedDevice(device, batchGeneration)) {
+      return 'stale'
+    }
+    await options.onChunk({
+      phase: 'anti_entropy',
+      deviceId: device.deviceId,
+      deviceName: device.deviceName,
+      historyFrom: new Date(device.missionStartMs),
+      from: new Date(fromMs),
+      to: new Date(toMs),
+      positions,
+    })
+    if (!isCurrentCompletedDevice(device, batchGeneration)) {
+      return 'stale'
+    }
+    clearHistoryGapsCoveredBy(device.deviceId, fromMs, toMs)
+    return 'committed'
+  }
+
   /** Sweeps one device's planned windows in order, one request in flight. */
   const sweepAntiEntropyDevice = async (
     device: CompletedDeviceReconciliation,
@@ -680,24 +945,13 @@ export function createBreadcrumbHistoryReconciler(
     const { recentFloorMs, windows } = planAntiEntropyWindows(device)
     for (const [index, window] of windows.entries()) {
       try {
-        const positions = await options.fetchBreadcrumbs(
-          device.deviceId,
-          new Date(window.fromMs),
-          new Date(window.toMs),
+        const outcome = await sweepAntiEntropyWindow(
+          device,
+          window.fromMs,
+          window.toMs,
+          batchGeneration,
         )
-        if (!isCurrentCompletedDevice(device, batchGeneration)) {
-          return
-        }
-        await options.onChunk({
-          phase: 'anti_entropy',
-          deviceId: device.deviceId,
-          deviceName: device.deviceName,
-          historyFrom: new Date(device.missionStartMs),
-          from: new Date(window.fromMs),
-          to: new Date(window.toMs),
-          positions,
-        })
-        if (!isCurrentCompletedDevice(device, batchGeneration)) {
+        if (outcome === 'stale') {
           return
         }
       } catch (error) {
@@ -708,13 +962,14 @@ export function createBreadcrumbHistoryReconciler(
           deviceId: device.deviceId,
           deviceName: device.deviceName,
           retryDelayMs: antiEntropyIntervalMs,
-          error: error instanceof Error ? error.message : String(error),
+          error: describeError(error),
         })
         antiEntropyFailedDeviceIds.add(device.deviceId)
         return
       }
       // A failure returns above, so the pass cursor only moves over ranges
-      // that committed: the whole recent window, then each older chunk.
+      // that committed or were recorded as gaps: the whole recent window,
+      // then each older chunk.
       const nextWindow = windows[index + 1]
       if (window.older) {
         device.antiEntropyCursorMs = Math.min(device.antiEntropyCursorMs, window.fromMs)
@@ -725,12 +980,79 @@ export function createBreadcrumbHistoryReconciler(
     antiEntropyFailedDeviceIds.delete(device.deviceId)
   }
 
+  /** True while this gap is still recorded and the batch belongs to the current mission. */
+  const isCurrentGap = (gap: HistoryGapRecord, batchGeneration: number): boolean =>
+    batchGeneration === generation &&
+    options.shouldContinue() &&
+    (gapsByDeviceId.get(gap.deviceId)?.includes(gap) ?? false)
+
+  /** Retries one recorded gap as a single window; success fills it, failure keeps it visible. */
+  const retryHistoryGap = async (
+    gap: HistoryGapRecord,
+    batchGeneration: number,
+  ): Promise<void> => {
+    if (!isCurrentGap(gap, batchGeneration)) {
+      return
+    }
+    gap.lastAttemptAtMs = Date.now()
+    try {
+      const positions = await options.fetchBreadcrumbs(
+        gap.deviceId,
+        new Date(gap.fromMs),
+        new Date(gap.toMs),
+      )
+      if (!isCurrentGap(gap, batchGeneration)) {
+        return
+      }
+      await options.onChunk({
+        phase: 'anti_entropy',
+        deviceId: gap.deviceId,
+        deviceName: gap.deviceName,
+        historyFrom: new Date(gap.historyFromMs),
+        from: new Date(gap.fromMs),
+        to: new Date(gap.toMs),
+        positions,
+      })
+      if (!isCurrentGap(gap, batchGeneration)) {
+        return
+      }
+      clearHistoryGapsCoveredBy(gap.deviceId, gap.fromMs, gap.toMs)
+    } catch (error) {
+      if (!isCurrentGap(gap, batchGeneration)) {
+        return
+      }
+      gap.attempts += 1
+      gap.lastError = describeError(error)
+      gap.reason = classifyWindowFailure(error) ?? gap.reason
+      options.logger.warn('Tracking breadcrumb history gap is still unfetchable.', {
+        deviceId: gap.deviceId,
+        deviceName: gap.deviceName,
+        from: new Date(gap.fromMs).toISOString(),
+        to: new Date(gap.toMs).toISOString(),
+        attempts: gap.attempts,
+        retryDelayMs: antiEntropyIntervalMs,
+        error: gap.lastError,
+      })
+    }
+  }
+
+  /** The gaps to retry this tick: per device, the least recently attempted first. */
+  const selectGapRetries = (): readonly HistoryGapRecord[] =>
+    [...gapsByDeviceId.keys()]
+      .sort(compareStringsByCodeUnit)
+      .flatMap((deviceId) =>
+        [...(gapsByDeviceId.get(deviceId) ?? [])]
+          .sort((left, right) =>
+            left.lastAttemptAtMs - right.lastAttemptAtMs || left.fromMs - right.fromMs)
+          .slice(0, gapRetriesPerDevicePerTick))
+
   async function runAntiEntropyBatch(batchGeneration: number): Promise<void> {
+    // DON-338 (ING-1): the sweep covers devices whose initial catch-up is
+    // done. It must not wait for a device that is still catching up or
+    // failing; the shared transport budget already bounds the combined load.
     if (
       batchGeneration !== generation ||
-      !options.shouldContinue() ||
-      jobsByDeviceId.size > 0 ||
-      draining
+      !options.shouldContinue()
     ) {
       scheduleAntiEntropy()
       return
@@ -743,15 +1065,23 @@ export function createBreadcrumbHistoryReconciler(
     const devices = [...completedDevicesById.values()].sort((left, right) =>
       compareStringsByCodeUnit(left.deviceId, right.deviceId),
     )
-    let nextDeviceIndex = 0
+    const tasks: (() => Promise<void>)[] = [
+      ...devices.map((device) => async () => {
+        if (isCurrentCompletedDevice(device, batchGeneration)) {
+          await sweepAntiEntropyDevice(device, batchGeneration)
+        }
+      }),
+      ...selectGapRetries().map((gap) => () => retryHistoryGap(gap, batchGeneration)),
+    ]
+    let nextTaskIndex = 0
     const workers = Array.from(
-      { length: Math.min(antiEntropyMaxConcurrency, devices.length) },
+      { length: Math.min(antiEntropyMaxConcurrency, tasks.length) },
       async () => {
-        while (nextDeviceIndex < devices.length) {
-          const device = devices[nextDeviceIndex]
-          nextDeviceIndex += 1
-          if (device !== undefined && isCurrentCompletedDevice(device, batchGeneration)) {
-            await sweepAntiEntropyDevice(device, batchGeneration)
+        while (nextTaskIndex < tasks.length) {
+          const task = tasks[nextTaskIndex]
+          nextTaskIndex += 1
+          if (task !== undefined) {
+            await task()
           }
         }
       },
@@ -805,6 +1135,11 @@ export function createBreadcrumbHistoryReconciler(
           antiEntropyFailedDeviceIds.delete(deviceId)
         }
       }
+      for (const deviceId of gapsByDeviceId.keys()) {
+        if (!selectedDeviceIds.has(deviceId)) {
+          gapsByDeviceId.delete(deviceId)
+        }
+      }
       for (let index = deviceQueue.length - 1; index >= 0; index -= 1) {
         const deviceId = deviceQueue[index]
         if (deviceId !== undefined && !selectedDeviceIds.has(deviceId)) {
@@ -844,6 +1179,9 @@ export function createBreadcrumbHistoryReconciler(
               ),
               failureCount: 0,
               retryAtMs: 0,
+              windowMs: chunkMs,
+              consecutiveSuccessCount: 0,
+              minWindowFailureCount: 0,
             }
             jobsByDeviceId.set(device.device_id, expansionJob)
             deviceQueue.push(device.device_id)
@@ -871,6 +1209,9 @@ export function createBreadcrumbHistoryReconciler(
               ),
               failureCount: 0,
               retryAtMs: 0,
+              windowMs: chunkMs,
+              consecutiveSuccessCount: 0,
+              minWindowFailureCount: 0,
             }
             jobsByDeviceId.set(device.device_id, expansionJob)
             failedDeviceIds.delete(device.device_id)
@@ -893,7 +1234,7 @@ export function createBreadcrumbHistoryReconciler(
           continue
         }
         initialStartedAtMs ??= Date.now()
-        const job = {
+        const job: DeviceReconciliationJob = {
           deviceId: device.device_id,
           deviceName: device.name,
           cursorMs: initialRange.cursorMs,
@@ -903,6 +1244,9 @@ export function createBreadcrumbHistoryReconciler(
           latestAvailableTargetMs: targetMs,
           failureCount: 0,
           retryAtMs: 0,
+          windowMs: chunkMs,
+          consecutiveSuccessCount: 0,
+          minWindowFailureCount: 0,
         }
         if (initialRange.cursorMs >= targetMs) {
           completeInitialJob(job)
@@ -941,6 +1285,7 @@ export function createBreadcrumbHistoryReconciler(
       completedDevicesById.clear()
       failedDeviceIds.clear()
       antiEntropyFailedDeviceIds.clear()
+      gapsByDeviceId.clear()
       deviceQueue.length = 0
       initialStartedAtMs = null
       antiEntropyStartedAtMs = null
@@ -966,6 +1311,85 @@ function isValidChunkAcknowledgement(
     }
   }
   return true
+}
+
+/** Readable message for logs and gap records. */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Classifies a fetch failure a smaller window can fix: the proxy's size limit
+ * or a timeout. Anything else (server error, network down, authentication)
+ * returns null and is retried unchanged with backoff.
+ */
+function classifyWindowFailure(error: unknown): BreadcrumbHistoryGapReason | null {
+  const message = describeError(error)
+  if (/too large/iu.test(message)) {
+    return 'oversized'
+  }
+  if (
+    /timed?\s*out|timeout/iu.test(message) ||
+    (error instanceof Error && error.name === 'TimeoutError')
+  ) {
+    return 'slow'
+  }
+  return null
+}
+
+/** Publishes gaps merged per device into contiguous ranges, ordered by device then time. */
+function publishHistoryGaps(
+  gapsByDeviceId: ReadonlyMap<string, readonly HistoryGapRecord[]>,
+): readonly BreadcrumbHistoryGap[] {
+  const published: BreadcrumbHistoryGap[] = []
+  const deviceIds = [...gapsByDeviceId.keys()].sort(compareStringsByCodeUnit)
+  for (const deviceId of deviceIds) {
+    const records = [...(gapsByDeviceId.get(deviceId) ?? [])]
+      .sort((left, right) => left.fromMs - right.fromMs)
+    let current: {
+      record: HistoryGapRecord
+      fromMs: number
+      toMs: number
+      attempts: number
+      lastError: string
+      lastAttemptAtMs: number
+    } | null = null
+    const flush = (): void => {
+      if (current === null) return
+      published.push({
+        deviceId,
+        deviceName: current.record.deviceName,
+        from: new Date(current.fromMs).toISOString(),
+        to: new Date(current.toMs).toISOString(),
+        reason: current.record.reason,
+        phase: current.record.phase,
+        attempts: current.attempts,
+        lastError: current.lastError,
+      })
+    }
+    for (const record of records) {
+      if (current !== null && record.fromMs <= current.toMs) {
+        current.toMs = Math.max(current.toMs, record.toMs)
+        current.attempts = Math.max(current.attempts, record.attempts)
+        if (record.lastAttemptAtMs >= current.lastAttemptAtMs) {
+          current.lastError = record.lastError
+          current.lastAttemptAtMs = record.lastAttemptAtMs
+        }
+        continue
+      }
+      flush()
+      current = {
+        record,
+        fromMs: record.fromMs,
+        toMs: record.toMs,
+        attempts: record.attempts,
+        lastError: record.lastError,
+        lastAttemptAtMs: record.lastAttemptAtMs,
+      }
+    }
+    flush()
+  }
+  return published
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {
