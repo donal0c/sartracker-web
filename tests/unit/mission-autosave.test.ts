@@ -9,6 +9,7 @@ import type { MissionAutosaveRuntime } from '../../src/features/persistence/miss
 import { startMissionAutosave } from '../../src/features/persistence/mission-autosave'
 import {
   selectAutosaveWarning,
+  selectLifecycleBackupFailureAlert,
   useAutosaveStatusStore,
 } from '../../src/features/persistence/autosave-status-store'
 
@@ -440,5 +441,103 @@ describe('mission autosave', () => {
     expect(runtime.removeWindowEventListener).toHaveBeenCalledTimes(1)
     expect(listeners.document).toHaveLength(0)
     expect(listeners.window).toHaveLength(0)
+  })
+
+  describe('settings reload keeps standing backup failures visible [DON-352, audit M-63]', () => {
+    it('keeps a lifecycle backup failure across a settings reload', () => {
+      const status = useAutosaveStatusStore.getState()
+      status.configure({ enabled: true, intervalMs: 10_000 })
+      status.markSyncFailed({ reason: 'mission-finish', message: 'backup target unavailable' })
+
+      useAutosaveStatusStore.getState().configure({ enabled: true, intervalMs: 30_000 })
+
+      const state = useAutosaveStatusStore.getState()
+      expect(selectLifecycleBackupFailureAlert(state)?.reason).toBe('mission-finish')
+      expect(selectAutosaveWarning(state)).toContain('backup target unavailable')
+      expect(state.phase).toBe('failed')
+      expect(state.intervalMs).toBe(30_000)
+    })
+
+    it('keeps the time since the last good backup across a settings reload', () => {
+      const status = useAutosaveStatusStore.getState()
+      status.configure({ enabled: true, intervalMs: 10_000 })
+      status.markSyncSucceeded({ reason: 'interval', backupPath: '/tmp/mission.sqlite' })
+      status.markObservedElapsed({ elapsedMs: 25_000 })
+      expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toContain('Autosave stale')
+
+      useAutosaveStatusStore.getState().configure({ enabled: true, intervalMs: 10_000 })
+
+      expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toContain('Autosave stale')
+    })
+
+    it('keeps the failure when autosave restarts after saving settings', async () => {
+      const store = {
+        getActiveMission: vi.fn().mockResolvedValue({ id: 'm-1' }),
+        syncBackup: vi.fn().mockRejectedValue(new Error('backup target unavailable')),
+      }
+      const first = startMissionAutosave(store, { intervalMs: 10_000 })
+      await first.requestSync('mission-pause').catch(() => undefined)
+      expect(selectLifecycleBackupFailureAlert(useAutosaveStatusStore.getState())).not.toBeNull()
+      first.stop()
+
+      const second = startMissionAutosave(store, { intervalMs: 20_000 })
+
+      expect(selectLifecycleBackupFailureAlert(useAutosaveStatusStore.getState())?.message)
+        .toContain('backup target unavailable')
+      second.stop()
+    })
+
+    it('keeps a lifecycle backup failure when autosave is switched off in Settings', () => {
+      const status = useAutosaveStatusStore.getState()
+      status.configure({ enabled: true, intervalMs: 10_000 })
+      status.markSyncFailed({ reason: 'mission-pause', message: 'backup target unavailable' })
+
+      useAutosaveStatusStore.getState().markDisabled()
+
+      expect(selectLifecycleBackupFailureAlert(useAutosaveStatusStore.getState())?.reason)
+        .toBe('mission-pause')
+    })
+
+    it('keeps an interval backup failure through switching autosave off and on again', () => {
+      const status = useAutosaveStatusStore.getState()
+      status.configure({ enabled: true, intervalMs: 10_000 })
+      status.markSyncFailed({ reason: 'interval', message: 'backup target unavailable' })
+
+      useAutosaveStatusStore.getState().markDisabled()
+      useAutosaveStatusStore.getState().configure({ enabled: true, intervalMs: 10_000 })
+
+      expect(useAutosaveStatusStore.getState().phase).toBe('failed')
+      expect(selectAutosaveWarning(useAutosaveStatusStore.getState()))
+        .toBe('Autosave failing: backup target unavailable')
+    })
+
+    it('keeps the last good backup through switching autosave off and on, so a stale backup still warns', () => {
+      const status = useAutosaveStatusStore.getState()
+      status.configure({ enabled: true, intervalMs: 10_000 })
+      status.markSyncSucceeded({ reason: 'interval', backupPath: '/tmp/mission.sqlite' })
+      useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 15_000 })
+
+      useAutosaveStatusStore.getState().markDisabled()
+      useAutosaveStatusStore.getState().configure({ enabled: true, intervalMs: 10_000 })
+      useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 10_000 })
+
+      expect(useAutosaveStatusStore.getState().lastSuccessAt).not.toBeNull()
+      expect(selectAutosaveWarning(useAutosaveStatusStore.getState())).toContain('Autosave stale')
+    })
+
+    it('still clears the failure once the matching lifecycle backup succeeds after a reload', () => {
+      const status = useAutosaveStatusStore.getState()
+      status.configure({ enabled: true, intervalMs: 10_000 })
+      status.markSyncFailed({ reason: 'mission-finish', message: 'backup target unavailable' })
+      useAutosaveStatusStore.getState().configure({ enabled: true, intervalMs: 10_000 })
+
+      useAutosaveStatusStore.getState().markSyncSucceeded({
+        reason: 'mission-finish',
+        backupPath: '/tmp/mission.sqlite',
+      })
+
+      expect(useAutosaveStatusStore.getState().lastFailure).toBeNull()
+      expect(useAutosaveStatusStore.getState().phase).toBe('synced')
+    })
   })
 })

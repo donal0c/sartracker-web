@@ -112,6 +112,8 @@ export async function startMissionBrowserHarness(): Promise<void> {
   let activeTrackingStop: () => void = () => undefined
   let reloadGeneration = 0
   let disposed = false
+  // Save & Close keeps a connection the coordinator already has [DON-352].
+  let trackingConnectionApplied = false
 
   const reloadSettings = async (options?: { readonly forceConnect?: boolean }) => {
     if (disposed) {
@@ -119,7 +121,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
     }
 
     const generation = ++reloadGeneration
-    const runtimeSettings = await loadRuntimeBootstrapSettings(options?.forceConnect ?? false)
+    const runtimeSettings = await loadRuntimeBootstrapSettings(
+      (options?.forceConnect ?? false) || trackingConnectionApplied,
+    )
     const envTrackingConfig =
       shouldEnableBrowserHarnessLiveTracking() ? readTrackingRuntimeConfig() : null
     const electronRuntime = isElectronRuntimeAvailable()
@@ -218,10 +222,12 @@ export async function startMissionBrowserHarness(): Promise<void> {
       stopTracking()
     }
     previousTrackingStop()
+    trackingConnectionApplied = trackingConfig !== null
   }
 
   await applyAppRuntimeController({
     reloadSettings,
+    isTrackingConnected: () => trackingConnectionApplied,
     dispose: async () => {
       if (disposed) {
         return

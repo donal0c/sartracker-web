@@ -113,6 +113,11 @@ async function main() {
     await page.screenshot({ path: path.join(evidenceDir, '04-offline-readiness-outside.png'), fullPage: true })
 
     await page.getByTestId('open-settings-workspace').click()
+    // Settings is a menu since DON-343; older builds show every setting on one page.
+    const mappingSection = page.getByTestId('settings-section-mapping')
+    if (await mappingSection.waitFor({ timeout: 5_000 }).then(() => true, () => false)) {
+      await mappingSection.click()
+    }
     await page.getByTestId('official-map-package-status').waitFor()
     const packageStatusText = await page.getByTestId('official-map-package-status').innerText()
     await page.screenshot({ path: path.join(evidenceDir, '05-settings-package-status.png'), fullPage: true })
