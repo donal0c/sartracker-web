@@ -29,6 +29,8 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     ['DON-338 reused position ids', 'TRACKING SERVER REUSED POSITION IDS'],
     ['DON-338 history line updating', 'Updating — the newest positions are being added to the history line'],
     ['DON-338 history warning on every tab', '<strong>MISSION HISTORY</strong> warning appears in the strip under the top bar'],
+    ['DON-338 history gap warning while paused', '<em>retries resume when live tracking resumes</em>'],
+    ['DON-338 history gap across a clock change', '<em>01:50 (UTC+1)–01:10 (UTC+0)</em>'],
     ['DON-338 history line stalled', '<strong>History line stalled</strong> message means the line has not changed'],
     ['DON-338 lone fix', 'is drawn as a small circle in the device\'s colour'],
   ])('%s', (_change, text) => {
