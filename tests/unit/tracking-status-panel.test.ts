@@ -500,10 +500,10 @@ describe('TrackingStatusPanel', () => {
 
     act(() => useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['device-A', 'device-B'] }))
     expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toMatch(
-      /^Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map\./u,
+      /^Every trail line is hidden on the Layers tab, so no trail line is drawn on the map\./u,
     )
     expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
-      'Every device has its trail hidden on the Layers tab, so this line is not drawn on the map.',
+      'Every trail line is hidden on the Layers tab, so this line is not drawn on the map.',
     )
   })
 
@@ -537,6 +537,39 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toContain(
       'Dots are drawn only for devices whose trail is shown.',
     )
+  })
+
+  it('does not say visible dots are hidden when every line device is hidden [DON-338]', () => {
+    // Live trail holds only device A, which is hidden; the exact page holds visible device B.
+    useTrackingStore.setState((state) => ({
+      snapshot: { ...state.snapshot, breadcrumbs: [trailFix('device-A', 0), trailFix('device-A', 1)] },
+    }))
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['device-A'] })
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        missionId: 'mission-1',
+        totalPositionCount: 2,
+        pagePositionCount: 2,
+        fromTimestamp: '2026-08-08T00:00:00.000Z',
+        toTimestamp: '2026-08-08T00:01:00.000Z',
+        hasEarlier: false,
+        hasLater: false,
+        positions: [trailFix('device-B', 0), trailFix('device-B', 1)],
+      },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+    const note = getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note).toMatch(/^Every trail line is hidden on the Layers tab, so no trail line is drawn on the map\. The dots mark all 2 exact recorded fixes/u)
+    expect(note).not.toMatch(/or dots are drawn|None are drawn/u)
+    expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toMatch(/^1 device has its trail hidden/u)
   })
 
   it('never claims a trail line when the snapshot has no trail fixes yet [DON-338]', () => {

@@ -21,7 +21,7 @@ import type { NormalizedTrackingPosition, TrackingSnapshot } from '../../src/fea
 import {
   createDrawingRecorderMap,
   hideLayerForControl,
-  readDrawnFeatures,
+  readDrawnFeaturesAtEveryOperatorZoom,
   TRAIL_DRAWING_LAYER_IDS,
   type DrawingRecorderMap,
 } from '../support/maplibre-drawn-features'
@@ -151,7 +151,7 @@ const createRecordingMap = createDrawingRecorderMap
 function drawnTrail(map: DrawingRecorderMap) {
   const drawn: Record<string, { lines: number[][][], points: number[][] }> = {}
   const seen = new Set<unknown>()
-  for (const { feature } of readDrawnFeatures(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
+  for (const { feature } of readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
     const deviceId = feature.properties.deviceId
     if (typeof deviceId !== 'string' || seen.has(feature)) continue
     seen.add(feature)

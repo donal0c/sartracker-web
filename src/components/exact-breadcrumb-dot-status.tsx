@@ -36,10 +36,13 @@ type ExactBreadcrumbDotStatusProps = {
  */
 export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
   const { line: visibility, dots, hiddenTrailCount } = props.trailDrawing
+  // Sentences about the line come only from `line`; sentences about the dots
+  // come only from `dots`. The line and the page can hold different devices,
+  // so one never decides what the other says [DON-338].
   const lineSentence = describeTrailLine(visibility)
-  const nothingDrawn = visibility === 'switched-off' || visibility === 'all-hidden'
-  const trailLineAttribute = nothingDrawn ? 'off' : visibility === 'no-trail' ? 'none' : visibility
-  const hiddenTrailNote = nothingDrawn ? null : describeHiddenTrails(hiddenTrailCount)
+  const lineNotDrawn = visibility === 'switched-off' || visibility === 'all-hidden'
+  const trailLineAttribute = lineNotDrawn ? 'off' : visibility === 'no-trail' ? 'none' : visibility
+  const hiddenTrailNote = describeHiddenTrails(hiddenTrailCount)
   const hiddenTrailElement = hiddenTrailNote === null ? null : (
     <p className="mt-1 text-amber-200" data-testid="exact-breadcrumb-dots-hidden-trails">
       {hiddenTrailNote}
@@ -53,8 +56,8 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
         role="alert"
       >
         <p>{props.state.message}</p>
-        <p data-testid="exact-breadcrumb-dots-whole-trail-note" data-trail-line={trailLineAttribute}>
-          {nothingDrawn ? lineSentence : `${lineSentence} No dots are drawn until the exact fixes load.`}
+        <p data-testid="exact-breadcrumb-dots-whole-trail-note" data-trail-line={trailLineAttribute} data-trail-dots={dots}>
+          {dots === 'none' ? lineSentence : `${lineSentence} No dots are drawn until the exact fixes load.`}
         </p>
         {hiddenTrailElement}
       </div>
@@ -67,8 +70,8 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
         data-testid="exact-breadcrumb-dots-loading"
         role="status"
       >
-        <p data-testid="exact-breadcrumb-dots-whole-trail-note" data-trail-line={trailLineAttribute}>
-          {nothingDrawn
+        <p data-testid="exact-breadcrumb-dots-whole-trail-note" data-trail-line={trailLineAttribute} data-trail-dots={dots}>
+          {dots === 'none'
             ? `${lineSentence} Loading exact recorded fixes; none are drawn while trails are not shown.`
             : `${lineSentence} Loading exact recorded fixes to mark as dots…`}
         </p>
@@ -105,7 +108,7 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
   const pagingSentence = isPaged ? ' Use Earlier and Later to move through the rest.' : ''
   const pageScope = isPaged ? `${pageCount} of ${totalCount}` : `all ${totalCount}`
   const dotsSentence = props.state.totalPositionCount === 0
-    ? nothingDrawn
+    ? dots === 'none'
       ? 'There are no exact recorded fixes yet.'
       : 'There are no exact recorded fixes to mark as dots yet.'
     : dots === 'all'
@@ -116,7 +119,7 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
 
   return (
     <div className="mb-4 border-l-4 border-l-sky-400 bg-sky-400/10 px-3 py-2 text-xs font-medium leading-relaxed text-sky-100">
-      <p data-testid="exact-breadcrumb-dots-whole-trail-note" data-trail-line={trailLineAttribute}>
+      <p data-testid="exact-breadcrumb-dots-whole-trail-note" data-trail-line={trailLineAttribute} data-trail-dots={dots}>
         {lineSentence} {dotsSentence}
       </p>
       {hiddenTrailElement}

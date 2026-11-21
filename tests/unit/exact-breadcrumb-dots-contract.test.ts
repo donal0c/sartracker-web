@@ -18,7 +18,7 @@ import type {
 } from '../../src/features/tracking/tracking-types'
 import {
   createDrawingRecorderMap,
-  readDrawnFeatures,
+  readDrawnFeaturesAtEveryOperatorZoom,
   type DrawingRecorderMap,
 } from '../support/maplibre-drawn-features'
 
@@ -152,7 +152,7 @@ describe('[DOTS-CONTRACT] whole trail line always drawn, exact Breadcrumb dots p
         fixes,
         'loading after Later',
       )
-      expect(readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
+      expect(readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
 
       assertWholeTrailDrawn(
         renderOverlay(liveSnapshot, {
@@ -163,7 +163,7 @@ describe('[DOTS-CONTRACT] whole trail line always drawn, exact Breadcrumb dots p
         fixes,
         'unavailable',
       )
-      expect(readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
+      expect(readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
       controller.stop()
     } finally {
       database.close()
@@ -349,7 +349,7 @@ function assertWholeTrailDrawn(
   label: string,
 ): void {
   assertCondition(map.layers.has('tracking-breadcrumbs-line'), `${label}: trail line layer missing`)
-  const spans = readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-line'] })
+  const spans = readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-line'] })
     .map(({ feature }) => feature)
     .filter((feature) => feature.geometry.type === 'LineString')
     .map((feature) => {
@@ -369,7 +369,7 @@ function assertExactDotsOnly(
   state: Extract<ExactBreadcrumbDotState, { readonly status: 'ready' }>,
 ): void {
   assertCondition(map.layers.has('tracking-breadcrumbs-dots'), 'dot layer missing')
-  const dotFeatures = readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] })
+  const dotFeatures = readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] })
     .map(({ feature }) => feature)
   const expected = createExactBreadcrumbDotFeatureCollection(state.positions).features
   assertCondition(
@@ -377,7 +377,7 @@ function assertExactDotsOnly(
       exactJson(expected.map((feature) => [feature.id, feature.geometry.coordinates])),
     'dot layer is not exactly the stored page',
   )
-  const representativePoints = readDrawnFeatures(map)
+  const representativePoints = readDrawnFeaturesAtEveryOperatorZoom(map)
     .filter(({ layerId, feature }) =>
       layerId !== 'tracking-breadcrumbs-dots' && feature.properties.featureKind === 'breadcrumb')
   assertCondition(representativePoints.length === 0, 'simplified trail points are drawn as dots')

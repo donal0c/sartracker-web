@@ -21,8 +21,9 @@ import {
  * so that it draws nothing. `readDrawnFeatures` only returns a feature when a
  * layer on its source exists, is visible, is of a type that draws that
  * geometry, has a filter that MapLibre's own style-spec evaluator accepts for
- * the feature's properties, and has a size and opacity that the same
- * evaluator resolves above zero for that feature. A paint value the evaluator
+ * the feature's properties at the zoom being tested, is inside its minzoom and
+ * maxzoom, and has a size, opacity and colour alpha that the same evaluator
+ * resolves above zero for that feature at that zoom. A paint value the evaluator
  * cannot parse or evaluate throws instead of counting the feature as drawn.
  */
 
@@ -40,6 +41,8 @@ export type RecordedLayer = {
   readonly id: string
   readonly type: string
   readonly source?: string
+  minzoom?: number
+  maxzoom?: number
   filter?: unknown
   paint?: Record<string, unknown>
   layout?: Record<string, unknown>
@@ -137,6 +140,13 @@ export function createDrawingRecorderMap() {
       const layer = layers.get(id)
       if (layer !== undefined) layer.paint = { ...(layer.paint ?? {}), [property]: value }
     },
+    setLayerZoomRange: (id: string, minzoom: number, maxzoom: number) => {
+      const layer = layers.get(id)
+      if (layer !== undefined) {
+        layer.minzoom = minzoom
+        layer.maxzoom = maxzoom
+      }
+    },
     getLayoutProperty: (id: string, property: string) => layers.get(id)?.layout?.[property],
     setLayoutProperty: (id: string, property: string, value: unknown) => {
       const layer = layers.get(id)
@@ -153,14 +163,51 @@ const DRAWABLE_GEOMETRY: Readonly<Record<string, readonly string[]>> = {
   circle: ['Point', 'MultiPoint'],
 }
 
-/** Paint properties that, when zero or less, make a layer of that type draw nothing. */
-const ZERO_MEANS_INVISIBLE: Readonly<Record<string, readonly string[]>> = {
-  line: ['line-width', 'line-opacity'],
-  circle: ['circle-radius', 'circle-opacity'],
+/**
+ * Zoom levels an operator actually uses: a whole-area view, a working view and
+ * a close-in view. The DON-338 regressions assert at each of them.
+ */
+export const OPERATOR_ZOOMS: readonly number[] = [10, 14, 18]
+
+/**
+ * Paint properties the helper judges per feature. A feature is drawn only
+ * when every size and opacity is above zero and every colour has alpha above
+ * zero. For circles only the fill is judged: the dark stroke alone is not the
+ * coloured trail, so circle-stroke-* are accepted but never make a dot count.
+ */
+const JUDGED_PAINT: Readonly<Record<string, Readonly<Record<string, 'size' | 'opacity' | 'color'>>>> = {
+  line: { 'line-width': 'size', 'line-opacity': 'opacity', 'line-color': 'color' },
+  circle: { 'circle-radius': 'size', 'circle-opacity': 'opacity', 'circle-color': 'color' },
 }
 
-/** The zoom the trail regressions evaluate filters and paint at. */
-const EVALUATION_ZOOM = 14
+/** Paint properties that cannot hide the judged fill, so they are accepted at any value. */
+const HARMLESS_PAINT: Readonly<Record<string, readonly string[]>> = {
+  line: ['line-translate-anchor'],
+  circle: [
+    'circle-translate-anchor',
+    'circle-pitch-scale',
+    'circle-pitch-alignment',
+    'circle-stroke-width',
+    'circle-stroke-color',
+    'circle-stroke-opacity',
+  ],
+}
+
+/**
+ * Paint properties that can hide, fade, break up or move what is drawn and
+ * that the helper does not judge. Any of these set to anything but its
+ * style-spec default throws, rather than being silently accepted.
+ */
+export const UNJUDGED_VISIBILITY_PAINT: Readonly<Record<string, readonly string[]>> = {
+  line: ['line-dasharray', 'line-gap-width', 'line-blur', 'line-offset', 'line-translate', 'line-pattern', 'line-gradient'],
+  circle: ['circle-blur', 'circle-translate'],
+}
+
+/** Layout properties that cannot hide a feature; `visibility` is judged separately. */
+const KNOWN_LAYOUT: Readonly<Record<string, readonly string[]>> = {
+  line: ['visibility', 'line-cap', 'line-join', 'line-miter-limit', 'line-round-limit', 'line-sort-key'],
+  circle: ['visibility', 'circle-sort-key'],
+}
 
 /** MapLibre's style-spec definitions for each layer type's paint properties. */
 const PAINT_SPECS: Readonly<Record<string, Readonly<Record<string, StylePropertySpecification>>>> = {
@@ -168,14 +215,16 @@ const PAINT_SPECS: Readonly<Record<string, Readonly<Record<string, StyleProperty
   circle: latest.paint_circle as Record<string, StylePropertySpecification>,
 }
 
-type PaintEvaluator = (feature: { readonly type: 1 | 2 | 3; readonly properties: Record<string, unknown>; readonly id?: string | number }) => unknown
+type EvaluatedFeature = { readonly type: 1 | 2 | 3; readonly properties: Record<string, unknown>; readonly id?: string | number }
+type PaintEvaluator = (feature: EvaluatedFeature) => unknown
 
 /**
- * Compiles one paint property with MapLibre's own expression parser. An unset
- * property uses the style-spec default. Anything that does not parse, or that
- * depends on feature state the stand-in does not hold, throws.
+ * Compiles one paint property with MapLibre's own expression parser for the
+ * zoom being tested. An unset property uses the style-spec default. Anything
+ * that does not parse, or that depends on feature state the stand-in does not
+ * hold, throws.
  */
-function compilePaintProperty(layer: RecordedLayer, property: string): PaintEvaluator {
+function compilePaintProperty(layer: RecordedLayer, property: string, zoom: number): PaintEvaluator {
   const spec = PAINT_SPECS[layer.type]?.[property]
   if (spec === undefined) {
     throw new Error(`No style-spec definition for ${layer.type} paint property ${property}.`)
@@ -193,11 +242,35 @@ function compilePaintProperty(layer: RecordedLayer, property: string): PaintEval
   const expression = compiled.value
   return (feature) => {
     try {
-      return expression.evaluateWithoutErrorHandling({ zoom: EVALUATION_ZOOM }, feature as never)
+      return expression.evaluateWithoutErrorHandling({ zoom }, feature as never)
     } catch (error) {
       throw new Error(
         `Cannot evaluate ${property} on layer ${layer.id}: ${error instanceof Error ? error.message : String(error)}`,
       )
+    }
+  }
+}
+
+/** Throws on any paint or layout property this helper cannot judge for visibility. */
+function assertJudgeableLayer(layer: RecordedLayer): void {
+  const judged = JUDGED_PAINT[layer.type] ?? {}
+  const harmless = HARMLESS_PAINT[layer.type] ?? []
+  const unjudged = UNJUDGED_VISIBILITY_PAINT[layer.type] ?? []
+  for (const [property, value] of Object.entries(layer.paint ?? {})) {
+    if (property in judged || harmless.includes(property)) continue
+    if (unjudged.includes(property)) {
+      const spec = PAINT_SPECS[layer.type]?.[property] as { readonly default?: unknown } | undefined
+      if (value === undefined || JSON.stringify(value) === JSON.stringify(spec?.default)) continue
+      throw new Error(
+        `Layer ${layer.id} sets ${property}, which can change what is drawn and is not judged by readDrawnFeatures.`,
+      )
+    }
+    throw new Error(`Layer ${layer.id} sets unknown paint property ${property}.`)
+  }
+  const knownLayout = KNOWN_LAYOUT[layer.type] ?? []
+  for (const property of Object.keys(layer.layout ?? {})) {
+    if (!knownLayout.includes(property)) {
+      throw new Error(`Layer ${layer.id} sets unknown layout property ${property}.`)
     }
   }
 }
@@ -212,14 +285,25 @@ const GEOMETRY_TYPE_CODE: Readonly<Record<string, 1 | 2 | 3>> = {
   MultiPolygon: 3,
 }
 
+/** MapLibre draws a layer from minzoom (inclusive) up to maxzoom (exclusive). */
+function isLayerInZoomRange(layer: RecordedLayer, zoom: number): boolean {
+  return zoom >= (layer.minzoom ?? 0) && zoom < (layer.maxzoom ?? 24)
+}
+
 /**
- * Returns every (layer, feature) pair the map would draw. A zero-length line
- * (all points at one place) draws nothing in MapLibre, so it is left out.
+ * Returns every (layer, feature) pair the map would draw at the given zoom.
+ * The caller must say which zoom it is testing; there is no default. A
+ * zero-length line (all points at one place) draws nothing in MapLibre, so it
+ * is left out.
  */
 export function readDrawnFeatures(
   map: DrawingRecorderMap,
-  options: { readonly layerIds?: readonly string[] } = {},
+  options: { readonly zoom: number; readonly layerIds?: readonly string[] },
 ): readonly DrawnFeature[] {
+  const zoom = (options as { readonly zoom?: unknown }).zoom
+  if (typeof zoom !== 'number' || !Number.isFinite(zoom) || zoom < 0 || zoom > 24) {
+    throw new Error(`readDrawnFeatures needs the zoom being tested (0 to 24); got ${String(zoom)}.`)
+  }
   const drawn: DrawnFeature[] = []
   for (const layerId of map.layerOrder) {
     if (options.layerIds !== undefined && !options.layerIds.includes(layerId)) continue
@@ -227,9 +311,11 @@ export function readDrawnFeatures(
     if (layer === undefined || layer.source === undefined) continue
     const geometryTypes = DRAWABLE_GEOMETRY[layer.type]
     if (geometryTypes === undefined) continue
+    assertJudgeableLayer(layer)
     if (layer.layout?.visibility === 'none') continue
-    const paintEvaluators = (ZERO_MEANS_INVISIBLE[layer.type] ?? []).map(
-      (property) => [property, compilePaintProperty(layer, property)] as const,
+    if (!isLayerInZoomRange(layer, zoom)) continue
+    const paintEvaluators = Object.entries(JUDGED_PAINT[layer.type] ?? {}).map(
+      ([property, kind]) => [property, kind, compilePaintProperty(layer, property, zoom)] as const,
     )
     const features = map.sourceData.get(layer.source) ?? []
     const filter = layer.filter === undefined
@@ -240,21 +326,47 @@ export function readDrawnFeatures(
       if (feature.geometry.type === 'LineString' && !hasTwoDistinctPoints(feature.geometry.coordinates)) {
         continue
       }
-      const evaluated = {
+      const evaluated: EvaluatedFeature = {
         type: GEOMETRY_TYPE_CODE[feature.geometry.type] ?? 1,
         properties: { ...feature.properties },
         ...(feature.id === undefined ? {} : { id: feature.id }),
       }
-      if (filter !== null && !filter.filter({ zoom: EVALUATION_ZOOM }, evaluated as never)) {
+      if (filter !== null && !filter.filter({ zoom }, evaluated as never)) {
         continue
       }
-      if (!paintEvaluators.every(([property, evaluate]) => isPositivePaintValue(layer, property, evaluate(evaluated)))) {
+      if (!paintEvaluators.every(([property, kind, evaluate]) => isVisiblePaintValue(layer, property, kind, evaluate(evaluated)))) {
         continue
       }
       drawn.push({ layerId, sourceId: layer.source, feature })
     }
   }
   return drawn
+}
+
+/**
+ * Reads the drawn features at each of the operator zooms and requires the same
+ * features to be drawn at every one of them, so a trail that disappears when
+ * the operator zooms out or in fails the regression. Returns that one set.
+ */
+export function readDrawnFeaturesAtEveryOperatorZoom(
+  map: DrawingRecorderMap,
+  options: { readonly layerIds?: readonly string[] } = {},
+): readonly DrawnFeature[] {
+  const [firstZoom, ...otherZooms] = OPERATOR_ZOOMS
+  if (firstZoom === undefined) throw new Error('No operator zooms are defined.')
+  const reference = readDrawnFeatures(map, { ...options, zoom: firstZoom })
+  for (const zoom of otherZooms) {
+    const atZoom = readDrawnFeatures(map, { ...options, zoom })
+    const same = atZoom.length === reference.length && atZoom.every(
+      (entry, index) => entry.layerId === reference[index]?.layerId && entry.feature === reference[index]?.feature,
+    )
+    if (!same) {
+      throw new Error(
+        `Drawn trail differs between zoom ${firstZoom} (${reference.length} features) and zoom ${zoom} (${atZoom.length} features).`,
+      )
+    }
+  }
+  return reference
 }
 
 /** Negative-control helper: hides a layer the way an operator toggle or a bad filter would. */
@@ -270,8 +382,20 @@ export function hideLayerForControl(
   else map.setFilter(layerId, ['==', ['get', 'deviceId'], '__no_device__'])
 }
 
-/** True when a size or opacity value draws something; a non-number throws. */
-function isPositivePaintValue(layer: RecordedLayer, property: string, value: unknown): boolean {
+/** True when a size, opacity or colour draws something; an unexpected value throws. */
+function isVisiblePaintValue(
+  layer: RecordedLayer,
+  property: string,
+  kind: 'size' | 'opacity' | 'color',
+  value: unknown,
+): boolean {
+  if (kind === 'color') {
+    const alpha = typeof value === 'object' && value !== null ? (value as { readonly a?: unknown }).a : undefined
+    if (typeof alpha !== 'number' || Number.isNaN(alpha)) {
+      throw new Error(`${property} on layer ${layer.id} evaluated to ${String(value)}, not a colour.`)
+    }
+    return alpha > 0
+  }
   if (typeof value !== 'number' || Number.isNaN(value)) {
     throw new Error(`${property} on layer ${layer.id} evaluated to ${String(value)}, not a number.`)
   }

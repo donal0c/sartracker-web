@@ -105,7 +105,11 @@ export function summarizeTrailDrawing(input: TrailDrawingInput): TrailDrawingSum
   return { line, dots, hiddenTrailCount }
 }
 
-/** The first sentence of every dots status: what trail line the map is drawing right now. */
+/**
+ * The first sentence of every dots status: what trail line the map is drawing
+ * right now. Only 'switched-off' speaks for the dots too, because the Trails
+ * switch hides both; every other state is about the line alone.
+ */
 export function describeTrailLine(visibility: TrailLineVisibility): string {
   switch (visibility) {
     case 'drawn':
@@ -115,7 +119,7 @@ export function describeTrailLine(visibility: TrailLineVisibility): string {
     case 'switched-off':
       return 'Trails are switched off on the Layers tab, so no trail line or dots are drawn on the map.'
     case 'all-hidden':
-      return 'Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map.'
+      return 'Every trail line is hidden on the Layers tab, so no trail line is drawn on the map.'
     case 'no-trail':
       return 'No trail line is on the map yet.'
   }
@@ -130,7 +134,7 @@ export function describeTrailLineNotDrawn(visibility: TrailLineVisibility): stri
     case 'switched-off':
       return 'Trails are switched off on the Layers tab, so this line is not drawn on the map.'
     case 'all-hidden':
-      return 'Every device has its trail hidden on the Layers tab, so this line is not drawn on the map.'
+      return 'Every trail line is hidden on the Layers tab, so this line is not drawn on the map.'
     default:
       return null
   }

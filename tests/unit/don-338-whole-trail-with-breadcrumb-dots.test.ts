@@ -22,7 +22,7 @@ import type { ExactBreadcrumbDotState } from '../../src/features/tracking/exact-
 import {
   createDrawingRecorderMap,
   hideLayerForControl,
-  readDrawnFeatures,
+  readDrawnFeaturesAtEveryOperatorZoom,
   TRAIL_DRAWING_LAYER_IDS,
   type DrawingRecorderMap,
 } from '../support/maplibre-drawn-features'
@@ -255,7 +255,7 @@ describe('[DON-338] whole trail stays on the map with Breadcrumb dots selected',
         syncTrackingOverlay(map as never, liveSnapshot, [], [], true, style, state)
         return countFixesNotDrawn(fixes, readTrailFeatures(map))
       }
-      const dotsOnMap = (): number => readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] }).length
+      const dotsOnMap = (): number => readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] }).length
 
       expect.soft(drawWith(useExactBreadcrumbDotStore.getState().state), 'newest page').toBe(0)
       expect(dotsOnMap()).toBe(10_000)
@@ -388,7 +388,7 @@ const createRecordingMap = createDrawingRecorderMap
 /** Every trail feature a visible trail layer draws for the searcher: lines, lone fixes and dots. */
 function readTrailFeatures(map: DrawingRecorderMap): readonly RecordedFeature[] {
   const features = new Set<RecordedFeature>()
-  for (const drawn of readDrawnFeatures(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
+  for (const drawn of readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
     if (drawn.feature.properties.deviceId === DEVICE_ID) features.add(drawn.feature)
   }
   return [...features]

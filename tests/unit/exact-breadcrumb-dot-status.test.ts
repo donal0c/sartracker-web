@@ -402,7 +402,7 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
     const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
     expect(note.getAttribute('data-trail-line')).toBe('off')
     expect(note.textContent).toBe(
-      `Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map. This page holds 10,000 of 20,000 exact recorded fixes, ${RANGE}. None are drawn while trails are not shown. Use Earlier and Later to move through the rest.`,
+      `Every trail line is hidden on the Layers tab, so no trail line is drawn on the map. This page holds 10,000 of 20,000 exact recorded fixes, ${RANGE}. None are drawn while trails are not shown. Use Earlier and Later to move through the rest.`,
     )
   })
 
@@ -491,8 +491,83 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
       trailDrawing: drawing({ line: ['B'], dot: ['B'], hidden: ['A', 'B'] }),
     })))
     expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toMatch(
-      /^Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map\./u,
+      /^Every trail line is hidden on the Layers tab, so no trail line is drawn on the map\./u,
     )
+  })
+
+  it('never contradicts what the renderers draw, for every line state and every dots state', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    // Line devices (A, C) and page devices (B, D) are separate, as when the
+    // exact page is loaded independently of the live trail.
+    const lineScenarios = {
+      'drawn': { line: ['A'], hidden: [] as string[] },
+      'partly-hidden': { line: ['A', 'C'], hidden: ['C'] },
+      'all-hidden': { line: ['A'], hidden: ['A'] },
+      'no-trail': { line: [] as string[], hidden: [] as string[] },
+    } as const
+    const dotScenarios = {
+      all: { dot: ['B'], hidden: [] as string[] },
+      some: { dot: ['B', 'D'], hidden: ['D'] },
+      none: { dot: ['D'], hidden: ['D'] },
+    } as const
+    const combinations: { line: string; dots: string; drawing: TrailDrawingSummary }[] = []
+    for (const [line, lineInput] of Object.entries(lineScenarios)) {
+      for (const [dots, dotInput] of Object.entries(dotScenarios)) {
+        combinations.push({
+          line,
+          dots,
+          drawing: drawing({ line: [...lineInput.line], dot: [...dotInput.dot], hidden: [...lineInput.hidden, ...dotInput.hidden] }),
+        })
+      }
+    }
+    combinations.push({ line: 'switched-off', dots: 'none', drawing: drawing({ trailsVisible: false, line: ['A'], dot: ['B'] }) })
+
+    const lineClaimsDrawn = /The line on the map shows/u
+    const lineClaimsNone = /no trail line/iu
+    const dotsClaimDrawn = /The dots mark/u
+    const dotsClaimNone = /or dots are drawn|None are drawn|none are drawn|No dots are drawn/u
+
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY, onEarlier: vi.fn(), onLater: vi.fn(), trailDrawing: drawing(),
+    }))
+    const renderNote = (state: ExactDotStatusProps['state'], trailDrawing: TrailDrawingSummary): string => {
+      act(() => root?.render(React.createElement(ExactBreadcrumbDotStatus, {
+        state, onEarlier: vi.fn(), onLater: vi.fn(), timeZone: 'Europe/Dublin', trailDrawing,
+      })))
+      const hiddenNotice = document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')
+      expect(hiddenNotice !== null, `hidden notice for ${JSON.stringify(trailDrawing)}`).toBe(trailDrawing.hiddenTrailCount > 0)
+      return getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    }
+    const expectLine = (text: string, line: string, label: string) => {
+      const drawn = line === 'drawn' || line === 'partly-hidden'
+      expect(lineClaimsDrawn.test(text), `${label}: ${text}`).toBe(drawn)
+      expect(lineClaimsNone.test(text), `${label}: ${text}`).toBe(!drawn)
+    }
+
+    for (const { line, dots, drawing: trailDrawing } of combinations) {
+      const label = `line ${line} × dots ${dots}`
+      expect({ line: trailDrawing.line, dots: trailDrawing.dots }, label).toEqual({ line, dots })
+      const ready = renderNote(PAGED_READY, trailDrawing)
+      expectLine(ready, line, label)
+      expect(dotsClaimDrawn.test(ready), `${label}: ${ready}`).toBe(dots === 'all')
+      expect(dotsClaimNone.test(ready), `${label}: ${ready}`).toBe(dots === 'none')
+      expect(ready.includes('Dots are drawn only for devices whose trail is shown.'), `${label}: ${ready}`).toBe(dots === 'some')
+    }
+
+    // Before a page is ready the panel has no page devices to judge.
+    for (const [line, lineInput] of [...Object.entries(lineScenarios), ['switched-off', { line: ['A'], hidden: [] }] as const]) {
+      const trailDrawing = drawing({ trailsVisible: line !== 'switched-off', line: [...lineInput.line], dot: [], hidden: [...lineInput.hidden] })
+      const off = line === 'switched-off'
+      const loading = renderNote(LOADING, trailDrawing)
+      expectLine(loading, line, `loading, line ${line}`)
+      expect(dotsClaimNone.test(loading), `loading, line ${line}: ${loading}`).toBe(off)
+      const unavailable = renderNote(UNAVAILABLE, trailDrawing)
+      expectLine(unavailable, line, `unavailable, line ${line}`)
+      expect(dotsClaimNone.test(unavailable), `unavailable, line ${line}: ${unavailable}`).toBe(true)
+      const empty = renderNote({ ...PAGED_READY, totalPositionCount: 0, pagePositionCount: 0, hasEarlier: false }, trailDrawing)
+      expectLine(empty, line, `empty page, line ${line}`)
+      expect(empty.includes('to mark as dots'), `empty page, line ${line}: ${empty}`).toBe(!off)
+    }
   })
 
   it('keeps the plain wording when every trail is drawn', async () => {
