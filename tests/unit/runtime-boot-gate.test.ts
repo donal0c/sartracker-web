@@ -9,7 +9,8 @@ vi.mock('../../src/infrastructure/support-report/tauri-support-report-store', ()
   exportSupportBundle: exportSupportBundleMock,
 }))
 
-import { CommandMast, RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
+import { RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
+import { CommandMast } from '../../src/components/classic-layout-fixture-screen'
 import { useAutosaveStatusStore } from '../../src/features/persistence/autosave-status-store'
 import { runtimeFaultReloadTarget } from '../../src/features/runtime/runtime-fault-reload'
 
