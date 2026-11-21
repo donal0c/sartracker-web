@@ -25,6 +25,8 @@ type ExactDotStatusProps = {
   readonly onLater: () => void
   readonly timeZone?: string
   readonly hiddenTrailCount?: number
+  readonly trailDeviceCount?: number
+  readonly trailsVisible: boolean
 }
 
 let root: Root | null = null
@@ -56,6 +58,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier,
       onLater,
+      trailsVisible: true,
       timeZone: 'Europe/Dublin',
     }))
 
@@ -83,6 +86,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
+      trailsVisible: true,
     }))
 
     const alert = getElement('[data-testid="exact-breadcrumb-dots-unavailable"]')
@@ -101,6 +105,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       state: { status: 'loading', missionId: 'mission-a' } as never,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
+      trailsVisible: true,
     }))
 
     expect(getElement('[data-testid="exact-breadcrumb-dots-loading"]').getAttribute('role')).toBe('status')
@@ -123,6 +128,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
+      trailsVisible: true,
       timeZone: 'Europe/Dublin',
     }))
 
@@ -149,6 +155,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
+      trailsVisible: true,
       timeZone: 'Europe/Dublin',
     }))
 
@@ -172,6 +179,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       state,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
+      trailsVisible: true,
       hiddenTrailCount: 2,
     }))
     expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBe(
@@ -182,6 +190,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       state,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
+      trailsVisible: true,
       hiddenTrailCount: 0,
     })))
     expect(document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
@@ -227,6 +236,7 @@ describe('ExactBreadcrumbDotStatus', () => {
         },
         onEarlier: () => controllerReference.current?.showEarlier(),
         onLater: () => controllerReference.current?.showLater(),
+        trailsVisible: true,
         timeZone: 'Europe/Dublin',
       })
       if (root === null) {
@@ -310,6 +320,126 @@ function createControllerPage(
     laterCursor: navigation.laterCursor ?? null,
   }
 }
+
+describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
+  const PAGED_READY = {
+    status: 'ready' as const,
+    totalPositionCount: 20_000,
+    pagePositionCount: 10_000,
+    fromTimestamp: '2026-08-08T09:00:00.000Z',
+    toTimestamp: '2026-08-08T10:00:00.000Z',
+    hasEarlier: true,
+    hasLater: false,
+  }
+  const RANGE = 'from 08/08/2026, 10:00:00 GMT+01:00 (Europe/Dublin) to 08/08/2026, 11:00:00 GMT+01:00 (Europe/Dublin)'
+  const UNAVAILABLE = {
+    status: 'unavailable' as const,
+    message: 'Exact breadcrumb dots are unavailable: the recorded fixes could not be loaded. Simplified points are never shown as dots.',
+  }
+  const LOADING = { status: 'loading', missionId: 'mission-a' } as never
+
+  it('never says the line or dots are on the map when Trails are switched off, in any page state', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+      trailsVisible: false,
+    }))
+    const readyNote = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(readyNote.getAttribute('data-trail-line')).toBe('off')
+    expect(readyNote.textContent).toBe(
+      `Trails are switched off on the Layers tab, so no trail line or dots are drawn on the map. This page holds 10,000 of 20,000 exact recorded fixes, ${RANGE}. None are drawn while trails are not shown. Use Earlier and Later to move through the rest.`,
+    )
+    expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
+      `Exact fix inspection — showing 10,000 of 20,000 — 08/08/2026, 10:00:00 GMT+01:00 (Europe/Dublin) to 08/08/2026, 11:00:00 GMT+01:00 (Europe/Dublin)`,
+    )
+
+    for (const state of [LOADING, UNAVAILABLE, { ...PAGED_READY, totalPositionCount: 0, pagePositionCount: 0, hasEarlier: false }]) {
+      act(() => root?.render(React.createElement(ExactBreadcrumbDotStatus, {
+        state,
+        onEarlier: vi.fn(),
+        onLater: vi.fn(),
+        timeZone: 'Europe/Dublin',
+        trailsVisible: false,
+      })))
+      const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+      expect(note.getAttribute('data-trail-line')).toBe('off')
+      expect(note.textContent).toMatch(/^Trails are switched off on the Layers tab, so no trail line or dots are drawn on the map\./u)
+      expect(note.textContent).not.toContain('shows the whole trail')
+      expect(note.textContent).not.toContain('The dots mark')
+      expect(note.textContent).not.toContain('to mark as dots')
+    }
+  })
+
+  it('says no line is drawn when every device has its trail hidden', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+      trailsVisible: true,
+      hiddenTrailCount: 3,
+      trailDeviceCount: 3,
+    }))
+    const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note.getAttribute('data-trail-line')).toBe('off')
+    expect(note.textContent).toBe(
+      `Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map. This page holds 10,000 of 20,000 exact recorded fixes, ${RANGE}. None are drawn while trails are not shown. Use Earlier and Later to move through the rest.`,
+    )
+  })
+
+  it('separates fixes loaded from fixes drawn and shows the hidden-trail notice in every page state', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+      trailsVisible: true,
+      hiddenTrailCount: 1,
+      trailDeviceCount: 3,
+    }))
+    const readyNote = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(readyNote.getAttribute('data-trail-line')).toBe('partly-hidden')
+    expect(readyNote.textContent).toBe(
+      `The line on the map shows the whole trail of each device whose trail is shown. This page holds 10,000 of 20,000 exact recorded fixes, ${RANGE}. Dots are drawn only for devices whose trail is shown. Use Earlier and Later to move through the rest.`,
+    )
+
+    for (const state of [LOADING, UNAVAILABLE]) {
+      act(() => root?.render(React.createElement(ExactBreadcrumbDotStatus, {
+        state,
+        onEarlier: vi.fn(),
+        onLater: vi.fn(),
+        trailsVisible: true,
+        hiddenTrailCount: 1,
+        trailDeviceCount: 3,
+      })))
+      expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBe(
+        '1 device has its trail hidden on the Layers tab. Its fixes are counted here but its line and dots are not drawn.',
+      )
+      expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toMatch(
+        /^The line on the map shows the whole trail of each device whose trail is shown\./u,
+      )
+    }
+  })
+
+  it('keeps the plain wording when every trail is drawn', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      trailsVisible: true,
+      hiddenTrailCount: 0,
+      trailDeviceCount: 3,
+    }))
+    expect(getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]').getAttribute('data-trail-line')).toBe('drawn')
+    expect(document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
+  })
+})
 
 async function loadStatusComponent(): Promise<React.ComponentType<ExactDotStatusProps>> {
   try {
