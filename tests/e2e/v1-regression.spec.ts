@@ -330,8 +330,11 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
     expect(result.amberLoadingMessageBecameVisible).toBe(false)
     // The Tracking panel's "What has happened" line holds steady across the
     // poll: no loading wording appears while the breadcrumb history is pending.
-    expect(result.statusMessageBeforePoll).not.toBeNull()
-    expect(result.statusMessageBeforePoll).not.toMatch(/loading/iu)
+    // Healthy telemetry (was "Telemetry stream healthy"): connected and running,
+    // with no lost, disconnected or loading wording, before and during the poll.
+    expect(result.statusMessageBeforePoll).toMatch(/^(Positions are coming in normally\.|Tracking is running, with something to check\.)/u)
+    expect(result.statusMessageBeforePoll).not.toMatch(/loading|not connected|stopped arriving/iu)
+    await expect(page.getByTestId('ws-tracking-headline')).not.toContainText(/not connected|TRACKING LOST|history not complete/iu)
     expect(result.statusMessageWhileHistoryPending).toBe(result.statusMessageBeforePoll)
     await expect(page.getByTestId('ws-tracking-happened')).toHaveText(
       result.statusMessageBeforePoll ?? '',
@@ -381,6 +384,16 @@ test.describe('Tracking line never reads as a positions/stale ratio (sartracker-
     // Only the headline words: the "Last update" timestamp after them holds a date.
     const cellText = ((await cell.textContent()) ?? '').split('Last update')[0]
     expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+    // Connection state (was the mast's ONLINE): Tracking says it is running, not lost or disconnected.
+    await expect(cell).not.toContainText(/not connected|TRACKING LOST/u)
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is running, with something to check.')
+    // Exactly one stale position (was STALE 1), named once in the issue list.
+    await expect(page.getByTestId('ws-tracking-happened').locator('li', { hasText: 'out of date' })).toHaveText(['1 position out of date'])
+    // Three fixes (was FIX 3): all three people listed with a position on the map.
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-people-count')).toHaveText('3')
+    for (const id of ['d1', 'd2', 'd3']) await expect(page.getByTestId(`ws-position-${id}`)).toBeVisible()
   })
 
   test('idle state shows no ratio chrome', async ({ page }) => {
@@ -392,6 +405,14 @@ test.describe('Tracking line never reads as a positions/stale ratio (sartracker-
     await expect(cell).not.toContainText('out of date')
     const cellText = (await cell.textContent()) ?? ''
     expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+    // Connection state (was IDLE): nothing is connected before a mission starts.
+    await expect(cell).toContainText('Tracking not connected')
+    // No fixes and nothing stale (was FIX 0, STALE 0): no roster to count, nothing out of date.
+    await expect(page.getByTestId('ws-toggle-people')).toHaveText('People')
+    await expect(page.getByTestId('ws-toggle-people')).toBeDisabled()
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is not connected.')
+    await expect(page.getByTestId('ws-tracking-happened')).not.toContainText('out of date')
   })
 })
 
