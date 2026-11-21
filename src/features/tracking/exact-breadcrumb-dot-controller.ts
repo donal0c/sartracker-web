@@ -172,7 +172,7 @@ export function createExactBreadcrumbDotController(input: {
       publish({
         status: 'unavailable',
         missionId: requestContext.missionId,
-        message: 'Exact breadcrumb dots are unavailable. No representative dots are shown.',
+        message: 'Exact breadcrumb dots are unavailable: the recorded fixes could not be loaded. Simplified points are never shown as dots.',
       })
     }).finally(() => {
       if (activeRequest !== controller) {
@@ -322,8 +322,10 @@ export function createExactBreadcrumbDotController(input: {
 }
 
 /**
- * Replaces line representatives only for consumers that explicitly request
- * the exact dot overlay. Loading and failure resolve to zero dots.
+ * Returns the exact-dot layer content: in dots mode the breadcrumbs are only
+ * the ready page's exact stored fixes; loading and failure resolve to zero
+ * dots. This is the dot layer only. A consumer must still draw the whole
+ * trail line from the unmodified snapshot underneath it [DON-338].
  */
 export function resolveBreadcrumbDotOverlaySnapshot(
   snapshot: TrackingSnapshot,

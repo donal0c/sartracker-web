@@ -421,7 +421,7 @@ describe('TrackingStatusPanel', () => {
     )
   })
 
-  it('shows exact-dot paging in dots mode without presenting the line simplification warning as dot semantics', () => {
+  it('shows exact-dot paging in dots mode and keeps the simplified-line disclosure, because the line stays drawn [DON-338]', () => {
     const resolvedOptions = vi.spyOn(
       Intl.DateTimeFormat.prototype,
       'resolvedOptions',
@@ -456,7 +456,12 @@ describe('TrackingStatusPanel', () => {
       onExactBreadcrumbDotsLater: () => undefined,
     }))
 
-    expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trail display simplified: showing 5,000 of at least 12,000 known fixes',
+    )
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toContain(
+      'The line on the map shows the whole trail. The dots mark 10,000 of 10,001 exact recorded fixes',
+    )
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
       'Exact fix inspection — showing 10,000 of 10,001 — 08/08/2026, 01:00:00 GMT+01:00 (Europe/Dublin) to 09/08/2026, 13:00:00 GMT+01:00 (Europe/Dublin)',
     )

@@ -10,6 +10,7 @@ import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
 import { useCoverageStore } from '../features/tracking/coverage-store'
 import { useCoverageFilterStore } from '../features/tracking/coverage-filter-store'
+import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import { CoverageStatusPanel } from './coverage-status-panel'
 import { useMissionStore } from '../features/mission/mission-store'
 import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
@@ -51,6 +52,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     (state) => state.omittedPeriodKeys.includes('unassigned\u0000'),
   )
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
+  const hiddenTrailCount = useLayerVisibilityStore(
+    (state) => state.hiddenBreadcrumbDeviceIds.length,
+  )
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
   const activeEvidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
@@ -238,6 +242,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       {breadcrumbTrailMode === 'dots' ? (
         <ExactBreadcrumbDotStatus
           state={exactBreadcrumbDotState}
+          hiddenTrailCount={hiddenTrailCount}
           onEarlier={
             props.onExactBreadcrumbDotsEarlier ??
             (() => exactBreadcrumbDotController?.showEarlier())
@@ -249,8 +254,8 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         />
       ) : null}
 
-      {breadcrumbTrailMode === 'line' &&
-      boundedBreadcrumbDeviceCount > 0 &&
+      {/* The simplified line is drawn in both modes, so its disclosure is too [DON-338]. */}
+      {boundedBreadcrumbDeviceCount > 0 &&
       snapshot.breadcrumbMetadata !== undefined ? (
         <p
           className={`mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed ${

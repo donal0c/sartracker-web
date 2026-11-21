@@ -12,6 +12,7 @@ import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
 import {
   DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+  createExactBreadcrumbDotFeatureCollection,
   createTrackingFeatureCollection,
 } from '../tracking/tracking-geojson'
 import {
@@ -97,18 +98,36 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   }
   const breadcrumbSize = clampBreadcrumbSize(trackingStyle.breadcrumbSize)
-  const overlaySnapshot = resolveBreadcrumbDotOverlaySnapshot(
+  // DON-338: the whole-trail line is always drawn from the unchanged
+  // snapshot, in every trail mode. The simplified live projection is only
+  // ever drawn as a line; it is never drawn as dots.
+  const wholeTrail = createTrackingFeatureCollection(
     input.trackingSnapshot,
-    trackingStyle.breadcrumbTrailMode,
-    input.exactBreadcrumbDotState ?? { status: 'inactive' },
-  )
-  const tracking = createTrackingFeatureCollection(
-    overlaySnapshot,
     DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
-    trackingStyle,
+    trackingStyle.breadcrumbTrailMode === 'line'
+      ? trackingStyle
+      : { ...trackingStyle, breadcrumbTrailMode: 'line' },
   )
+  // In dots mode the exact dots come only from the ready exact page; loading
+  // and failure resolve to zero dots while the line stays drawn.
+  const exactDots = trackingStyle.breadcrumbTrailMode === 'dots'
+    ? createExactBreadcrumbDotFeatureCollection(
+        resolveBreadcrumbDotOverlaySnapshot(
+          input.trackingSnapshot,
+          trackingStyle.breadcrumbTrailMode,
+          input.exactBreadcrumbDotState ?? { status: 'inactive' },
+        ).breadcrumbs,
+        trackingStyle,
+      ).features
+    : []
+  // Draw order: trail lines, then exact dots on top, then current positions.
+  const trackingFeatures: readonly Feature<Geometry>[] = [
+    ...wholeTrail.features.filter((feature) => feature.geometry.type === 'LineString'),
+    ...exactDots,
+    ...wholeTrail.features.filter((feature) => feature.geometry.type !== 'LineString'),
+  ]
 
-  for (const feature of tracking.features) {
+  for (const feature of trackingFeatures) {
     const properties = feature.properties ?? {}
     const deviceId = readStringProperty(properties, 'deviceId')
     if (feature.geometry.type === 'LineString') {

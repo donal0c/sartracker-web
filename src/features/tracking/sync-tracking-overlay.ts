@@ -61,7 +61,6 @@ const IS_BREADCRUMB_LINE_FEATURE: MapOverlayFilter = [
   ['==', ['get', 'featureKind'], 'breadcrumbLine'],
 ]
 const HIDDEN_TRACKING_FEATURE_FILTER: MapOverlayFilter = ['==', ['get', 'deviceId'], '__hidden__']
-const trackingSnapshotsWithoutBreadcrumbs = new WeakMap<TrackingSnapshot, TrackingSnapshot>()
 type IncrementalTrackingSourceState = {
   readonly source: GeoJSONSource
   readonly snapshot: TrackingSnapshot
@@ -91,14 +90,16 @@ export function syncTrackingOverlay(
 ): void {
   const breadcrumbSize = clampBreadcrumbSize(style.breadcrumbSize)
   const breadcrumbDotRadius = breadcrumbSize / 2
-  const baselineSnapshot =
-    style.breadcrumbTrailMode === 'dots'
-      ? withoutBreadcrumbs(snapshot)
-      : snapshot
+  // DON-338: the whole-route trail line is drawn in every trail mode. In
+  // Breadcrumb dots mode the exact-fix page is an inspection layer on top of
+  // that line, never a replacement for it, so no page (newest, Earlier,
+  // Later), loading state or failure can take part of a trail off the map.
+  // The tracking source is always built as lines: the live projection is
+  // simplified, so it must never be presented as exact dots.
   syncIncrementalTrackingSource(
     map,
-    baselineSnapshot,
-    style,
+    snapshot,
+    toWholeTrailLineStyle(style),
     attentionByDevice,
   )
   const exactDotPositions =
@@ -271,7 +272,8 @@ export function syncTrackingOverlay(
 
   const currentLocationVisibilityFilter = buildTrackingLayerFilter(hiddenDeviceIds)
   const breadcrumbVisibilityFilter = buildTrackingLayerFilter(hiddenBreadcrumbDeviceIds)
-  const lineTrailsVisible = breadcrumbsVisible && style.breadcrumbTrailMode === 'line'
+  // The trail line stays visible underneath the dots [DON-338].
+  const lineTrailsVisible = breadcrumbsVisible
   const dotTrailsVisible = breadcrumbsVisible && style.breadcrumbTrailMode === 'dots'
   setMapFilterIfChanged(map,
     TRACKING_BREADCRUMB_CASING_LAYER_ID,
@@ -484,16 +486,13 @@ function createAttentionFeatureKey(
     .join('|')
 }
 
-function withoutBreadcrumbs(snapshot: TrackingSnapshot): TrackingSnapshot {
-  const existing = trackingSnapshotsWithoutBreadcrumbs.get(snapshot)
-  if (existing !== undefined) {
-    return existing
-  }
-  const next: TrackingSnapshot = {
-    ...snapshot,
-    breadcrumbs: [],
-    rawBreadcrumbsForPersistence: [],
-  }
-  trackingSnapshotsWithoutBreadcrumbs.set(snapshot, next)
-  return next
+/**
+ * The tracking source always carries the whole-route line, whatever trail
+ * mode the operator chose; exact dots come only from the separate exact-dot
+ * source [DON-338].
+ */
+function toWholeTrailLineStyle(style: TrackingStylePreferences): TrackingStylePreferences {
+  return style.breadcrumbTrailMode === 'line'
+    ? style
+    : { ...style, breadcrumbTrailMode: 'line' }
 }

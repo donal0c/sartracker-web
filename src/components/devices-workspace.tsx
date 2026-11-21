@@ -20,6 +20,7 @@ import {
   useTrackingStyleStore,
 } from '../features/tracking/tracking-style-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
+import { EXACT_BREADCRUMB_DOT_PAGE_LIMIT } from '../features/tracking/exact-breadcrumb-dot-controller'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
 import { useMapTargetStore } from '../features/map/map-target-store'
@@ -195,19 +196,25 @@ function DevicesWorkspaceContent(props: {
                     </button>
                   ))}
                 </div>
+                <p
+                  className="mt-2 text-xs leading-relaxed text-stone-300"
+                  data-testid="breadcrumb-mode-description"
+                >
+                  {describeBreadcrumbMode(breadcrumbTrailMode)}
+                </p>
                 <label className="mt-2 flex flex-wrap items-center justify-between gap-3 text-sm text-stone-200">
                   <span>
                     <span className="block text-[11px] font-bold uppercase tracking-wider text-stone-400">
                       Breadcrumb Size
                     </span>
                     <span className="font-mono text-xs text-stone-300" data-testid="breadcrumb-size-label">
-                      {breadcrumbSize}px {breadcrumbTrailMode === 'dots' ? 'dot diameter' : 'trail width'}
+                      {breadcrumbSize}px {breadcrumbTrailMode === 'dots' ? 'dot diameter and trail width' : 'trail width'}
                     </span>
                   </span>
                   <input
                     aria-label={
                       breadcrumbTrailMode === 'dots'
-                        ? 'Breadcrumb dot diameter'
+                        ? 'Breadcrumb dot diameter and trail width'
                         : 'Breadcrumb trail width'
                     }
                     className="w-44 accent-amber-400"
@@ -450,6 +457,16 @@ function getFilterLabel(filter: DeviceWorkspaceFilter): string {
 
 function renderBreadcrumbModeLabel(mode: BreadcrumbTrailMode): string {
   return mode === 'dots' ? 'Breadcrumb dots' : 'Solid line'
+}
+
+/**
+ * Says plainly what each breadcrumb display draws, so Breadcrumb dots is never
+ * read as replacing the whole trail [DON-338].
+ */
+function describeBreadcrumbMode(mode: BreadcrumbTrailMode): string {
+  return mode === 'dots'
+    ? `The line still shows the whole trail. Dots mark exact recorded fixes on top of it, up to ${EXACT_BREADCRUMB_DOT_PAGE_LIMIT.toLocaleString('en-IE')} at a time. The Tracking tab says which fixes are marked and has Earlier and Later to move through them.`
+    : 'The line shows the whole trail of each device.'
 }
 
 function DeviceRow(props: {

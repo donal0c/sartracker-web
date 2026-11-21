@@ -6,7 +6,12 @@ import {
   renderLeafletFallbackOverlays,
 } from '../../src/features/map/leaflet-fallback-renderer'
 import type { Drawing, Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
-import type { TrackingSnapshot } from '../../src/features/tracking/tracking-types'
+import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import type { ExactBreadcrumbDotState } from '../../src/features/tracking/exact-breadcrumb-dot-controller'
+import type {
+  NormalizedTrackingPosition,
+  TrackingSnapshot,
+} from '../../src/features/tracking/tracking-types'
 
 describe('Leaflet fallback renderer', () => {
   it('uses the same locked raster basemap catalogue as MapLibre', () => {
@@ -153,6 +158,96 @@ describe('Leaflet fallback renderer', () => {
       .map((layer) => [layer.getLatLng().lat, layer.getLatLng().lng])
     expect(renderedCoordinates).toContainEqual([53.1234567, -8.7654321])
     expect(renderedCoordinates).not.toContainEqual([52, -9.7])
+  })
+
+  it.each(['newest page', 'earlier page', 'loading', 'unavailable'] as const)(
+    'draws the whole-trail line under exact dots for one device past 10,000 fixes (%s) [DON-338]',
+    (scenario) => {
+      const fixes = createLongTrail(12_000)
+      const accumulator = createBreadcrumbAccumulator()
+      accumulator.ingest(fixes)
+      const trail = accumulator.compact()
+      const snapshot: TrackingSnapshot = {
+        devices: [],
+        positions: [],
+        breadcrumbs: trail.positions,
+        breadcrumbMetadata: trail.metadata,
+      }
+      const page = scenario === 'newest page'
+        ? fixes.slice(-10_000)
+        : scenario === 'earlier page'
+          ? fixes.slice(0, 2_000)
+          : []
+      const state: ExactBreadcrumbDotState = scenario === 'loading'
+        ? { status: 'loading', missionId: 'mission-1' }
+        : scenario === 'unavailable'
+          ? { status: 'unavailable', missionId: 'mission-1', message: 'Exact breadcrumb dots are unavailable.' }
+          : {
+              status: 'ready',
+              missionId: 'mission-1',
+              positions: page,
+              totalPositionCount: fixes.length,
+              pagePositionCount: page.length,
+              fromTimestamp: page[0]!.timestamp,
+              toTimestamp: page.at(-1)!.timestamp,
+              hasEarlier: scenario === 'newest page',
+              hasLater: scenario === 'earlier page',
+              earlierCursor: scenario === 'newest page' ? 'earlier' : null,
+              laterCursor: scenario === 'earlier page' ? 'later' : null,
+            }
+      const group = L.layerGroup()
+
+      renderLeafletFallbackOverlays(group, {
+        ...createEmptyOverlayInput(),
+        trackingSnapshot: snapshot,
+        trackingStyle: { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+        exactBreadcrumbDotState: state,
+      })
+
+      const lineSpans = group.getLayers()
+        .filter((layer): layer is L.Polyline => layer instanceof L.Polyline && !(layer instanceof L.Polygon))
+        .map((line) => {
+          const latitudes = (line.getLatLngs() as L.LatLng[]).map((point) => point.lat)
+          return { south: Math.min(...latitudes), north: Math.max(...latitudes) }
+        })
+      const notOnLine = fixes.filter((fix) => !lineSpans.some((span) =>
+        fix.lat >= span.south - LONG_TRAIL_LAT_STEP / 4 &&
+        fix.lat <= span.north + LONG_TRAIL_LAT_STEP / 4)).length
+      expect(notOnLine, `fixes not on the drawn whole-trail line (${scenario})`).toBe(0)
+
+      const dotLatitudes = group.getLayers()
+        .filter((layer): layer is L.CircleMarker => layer instanceof L.CircleMarker)
+        .map((dot) => dot.getLatLng().lat)
+      expect(dotLatitudes).toEqual(page.map((fix) => fix.lat))
+    },
+    30_000,
+  )
+
+  it('hides the whole-trail line and the dots of a hidden trail in dots mode', () => {
+    const fixes = createLongTrail(20)
+    const group = L.layerGroup()
+
+    renderLeafletFallbackOverlays(group, {
+      ...createEmptyOverlayInput(),
+      trackingSnapshot: { devices: [], positions: [], breadcrumbs: fixes },
+      hiddenBreadcrumbDeviceIds: ['long-trail-device'],
+      trackingStyle: { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        missionId: 'mission-1',
+        positions: fixes,
+        totalPositionCount: fixes.length,
+        pagePositionCount: fixes.length,
+        fromTimestamp: fixes[0]!.timestamp,
+        toTimestamp: fixes.at(-1)!.timestamp,
+        hasEarlier: false,
+        hasLater: false,
+        earlierCursor: null,
+        laterCursor: null,
+      },
+    })
+
+    expect(group.getLayers()).toHaveLength(0)
   })
 
   it('honours hidden device, marker, and drawing visibility inputs', () => {
@@ -314,5 +409,52 @@ function createDrawing(): Drawing {
     }),
     created_at: '2026-05-31T10:00:00.000Z',
     updated_at: '2026-05-31T10:00:00.000Z',
+  }
+}
+
+const LONG_TRAIL_LAT_STEP = 0.00001
+
+/** One searcher walking due north, a fix every 3 s, no gap and no stop. */
+function createLongTrail(count: number): NormalizedTrackingPosition[] {
+  const startMs = Date.parse('2026-11-07T08:00:00.000Z')
+  return Array.from({ length: count }, (_, index) => ({
+    id: `long-fix-${index}`,
+    device_id: 'long-trail-device',
+    lat: 53.2 + index * LONG_TRAIL_LAT_STEP,
+    lon: -6.3,
+    altitude: null,
+    speed: null,
+    battery: null,
+    accuracy: null,
+    timestamp: new Date(startMs + (index + 1) * 3_000).toISOString(),
+    source: 'traccar',
+    data_origin: 'live',
+    cache_age_seconds: null,
+    device_cache_stale: false,
+  }))
+}
+
+/** Overlay input with tracking visible and every other layer empty. */
+function createEmptyOverlayInput(): Parameters<typeof renderLeafletFallbackOverlays>[1] {
+  return {
+    trackingSnapshot: { devices: [], positions: [], breadcrumbs: [] },
+    trackingVisible: true,
+    breadcrumbsVisible: true,
+    hiddenDeviceIds: [],
+    hiddenBreadcrumbDeviceIds: [],
+    markers: [],
+    markerTypeVisibility: { ipp_lkp: true, clue: true, hazard: true, casualty: true },
+    hiddenMarkerIds: [],
+    drawings: [],
+    drawingTypeVisibility: {
+      line: true,
+      search_area: true,
+      range_ring: true,
+      bearing_line: true,
+      search_sector: true,
+      text_label: true,
+    },
+    hiddenDrawingIds: [],
+    selectedDrawingId: null,
   }
 }
