@@ -568,4 +568,83 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
     expect(harness.reconciler.getProgress().historyGaps.length).toBeGreaterThan(0)
     expect(harness.reconciler.getProgress().complete).toBe(false)
   }, 30_000)
+
+  it('keeps a gap found mid-cycle out of the running gap retry cycle (round 6)', async () => {
+    // Five-minute windows throughout. Frozen gaps at the cycle start: A (one
+    // slice, recovers after its first retry), D (six slices) and B (one
+    // slice). While the cursor walks D, a recent re-check finds a new gap C
+    // just below B. C must wait for the next cycle.
+    const missionStartMs = NOW_MS - 2 * HOUR_MS
+    const at = (minutes: number): number => missionStartMs + minutes * MINUTE_MS
+    const a = { fromMs: at(10), toMs: at(15) }
+    const d = { fromMs: at(50), toMs: at(80) }
+    const b = { fromMs: at(100), toMs: at(105) }
+    const c = { fromMs: at(95), toMs: at(100) }
+    const inside = (range: { fromMs: number; toMs: number }, fromMs: number, toMs: number): boolean =>
+      fromMs < range.toMs && toMs > range.fromMs
+    const server = { aBroken: true, cBroken: false, initialDone: false, cGapAtIndex: -1 }
+    const order: string[] = []
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: MINUTE_MS,
+      missionStartMs,
+      reconcilerOptions: {
+        chunkMs: 5 * MINUTE_MS,
+        minWindowMs: 5 * MINUTE_MS,
+        antiEntropyRecentWindowMs: 30 * MINUTE_MS,
+        antiEntropyOlderChunksPerTick: 1,
+        antiEntropyRequestsPerDevicePerTick: 3,
+      },
+      rule: ({ fromMs, toMs }) => {
+        if (inside(a, fromMs, toMs)) {
+          order.push('A')
+          if (server.aBroken && server.initialDone) {
+            // The first retry fails; then A recovers and C starts failing.
+            server.aBroken = false
+            server.cBroken = true
+            return { error: new Error(TOO_LARGE_MESSAGE) }
+          }
+          return { error: server.aBroken ? new Error(TOO_LARGE_MESSAGE) : null }
+        }
+        if (inside(c, fromMs, toMs)) {
+          order.push('C')
+          if (server.cBroken && server.cGapAtIndex < 0) server.cGapAtIndex = order.length - 1
+          return { error: server.cBroken ? new Error(TOO_LARGE_MESSAGE) : null }
+        }
+        if (inside(d, fromMs, toMs)) order.push('D')
+        if (inside(b, fromMs, toMs)) order.push('B')
+        if (inside(d, fromMs, toMs) || inside(b, fromMs, toMs)) return { error: new Error(TOO_LARGE_MESSAGE) }
+        return { error: null }
+      },
+    })
+    await harness.runFor(5 * MINUTE_MS)
+    expect(harness.reconciler.getProgress().historyGaps).toHaveLength(3)
+    server.initialDone = true
+    for (let tick = 0; tick < 5 && server.aBroken; tick += 1) await harness.runFor(TICK_MS)
+    expect(server.aBroken).toBe(false)
+    const storedBefore = await harness.storedCount('1')
+    harness.uploadLateBurst('1', a.fromMs + MINUTE_MS, a.fromMs + MINUTE_MS, MINUTE_MS)
+    order.push('|recovered')
+    // D and B never recover, so delivery is A's gap filled and its fixes stored.
+    const aDelivered = async (): Promise<boolean> =>
+      !harness.reconciler.getProgress().historyGaps.some((gap) => inside(a, Date.parse(gap.from), Date.parse(gap.to)))
+      && await harness.storedCount('1') > storedBefore
+
+    // Bound: 8 frozen slices (A, six of D, B) at one gap request a turn, plus
+    // the turn in progress and the planning tick.
+    const boundTicks = 8 + 2
+    let deliveredAfterTicks: number | null = null
+    for (let tick = 1; tick <= boundTicks && deliveredAfterTicks === null; tick += 1) {
+      await harness.runFor(TICK_MS)
+      if (await aDelivered()) deliveredAfterTicks = tick
+    }
+    // C became a gap while the cycle was running, and was not retried before A.
+    expect(server.cGapAtIndex).toBeGreaterThan(-1)
+    const afterRecovery = order.slice(order.indexOf('|recovered'))
+    const nextA = afterRecovery.indexOf('A')
+    expect(nextA).toBeGreaterThan(-1)
+    const cGapInWindow = Math.max(0, server.cGapAtIndex - order.indexOf('|recovered'))
+    expect(afterRecovery.slice(cGapInWindow + 1, nextA).filter((entry) => entry === 'C')).toEqual([])
+    expect(deliveredAfterTicks).not.toBeNull()
+  }, 30_000)
 })

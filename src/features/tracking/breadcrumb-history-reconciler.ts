@@ -204,11 +204,11 @@ type DeviceLanes = {
   /** Where the next gap slice starts; rotates through the device's gaps in time order. */
   gapCursorMs: number
   /**
-   * The end of the gap retry cycle in progress: the gaps' extent frozen when
-   * the cycle started, or null between cycles. Gaps found or extended during
-   * a cycle wait for the next one, so a cycle always ends.
+   * The gap retry cycle in progress: the device's gap ranges frozen when the
+   * cycle started, or null between cycles. Gaps found or extended during a
+   * cycle wait for the next one, so a cycle always ends.
    */
-  gapCycleEndMs: number | null
+  gapCycle: readonly TimeRange[] | null
   /** Counts this device's turns; marks which turn a slice failed in. */
   turn: number
 }
@@ -1029,7 +1029,7 @@ export function createBreadcrumbHistoryReconciler(
         older: [],
         nextLaneIndex: 0,
         gapCursorMs: Number.NEGATIVE_INFINITY,
-        gapCycleEndMs: null,
+        gapCycle: null,
         windowMs: chunkMs,
         successCount: 0,
         turn: 0,
@@ -1179,32 +1179,35 @@ export function createBreadcrumbHistoryReconciler(
 
   /**
    * The next gap slice in time order after the device's gap cursor, within
-   * the cycle in progress. A cycle covers the gaps as they extended when it
-   * started; when the cursor reaches that frozen end, the next cycle starts
-   * at the earliest gap with a newly frozen end. Gaps are read afresh on
-   * every call, so a gap trimmed, split, merged or cleared mid-cycle is
-   * followed by time, never by record. One smallest-width slice per request,
-   * so a still-failing slice never blocks the rest of a gap.
+   * the cycle in progress. A cycle covers the gap ranges frozen when it
+   * started; time that became a gap later waits for the next cycle, and
+   * frozen time that is no longer a gap (filled, trimmed, cleared) is
+   * skipped, never fetched as a gap. When the cycle has nothing left, the
+   * next one starts at the earliest gap with a fresh snapshot. One
+   * smallest-width slice per request, so a still-failing slice never blocks
+   * the rest of a gap.
    */
   const nextGapSlice = (lanes: DeviceLanes): { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null => {
     const gaps = gapsByDeviceId.get(lanes.deviceId) ?? []
     if (gaps.length === 0) {
-      lanes.gapCycleEndMs = null
+      lanes.gapCycle = null
       return null
     }
     const sliceInCycle = (): { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null => {
-      const endMs = lanes.gapCycleEndMs
-      if (endMs === null) return null
-      const gap = gaps.find((record) => record.toMs > lanes.gapCursorMs && record.fromMs < endMs)
-      if (gap === undefined) return null
-      const fromMs = Math.max(gap.fromMs, lanes.gapCursorMs)
-      if (fromMs >= endMs) return null
-      return { gap, window: { fromMs, toMs: Math.min(gap.toMs, fromMs + minWindowMs, endMs) } }
+      let best: { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null = null
+      for (const frozen of lanes.gapCycle ?? []) {
+        for (const gap of gaps) {
+          const fromMs = Math.max(frozen.fromMs, gap.fromMs, lanes.gapCursorMs)
+          const toMs = Math.min(frozen.toMs, gap.toMs, fromMs + minWindowMs)
+          if (toMs > fromMs && (best === null || fromMs < best.window.fromMs)) best = { gap, window: { fromMs, toMs } }
+        }
+      }
+      return best
     }
     const next = sliceInCycle()
     if (next !== null) return next
     lanes.gapCursorMs = Number.NEGATIVE_INFINITY
-    lanes.gapCycleEndMs = Math.max(...gaps.map((record) => record.toMs))
+    lanes.gapCycle = gaps.map((gap) => ({ fromMs: gap.fromMs, toMs: gap.toMs }))
     return sliceInCycle()
   }
 
@@ -1285,10 +1288,12 @@ export function createBreadcrumbHistoryReconciler(
    *
    * Gaps are counted in cycles, not positions. With g = floor(n / L) gap
    * requests a turn (or one every L turns when n < L) and S the
-   * smallest-width slices in the gap extent frozen when the running cycle
-   * started, a recovered slice is retried within the turn in progress plus
-   * ceil(S / g) turns (S x L when n < L). Gaps that appear or extend during
-   * the cycle never lengthen it. What can still delay it: a gap split
+   * smallest-width slices in the gap ranges frozen when the running cycle
+   * started, a slice that is a gap when its cycle starts is retried within
+   * the turn in progress plus ceil(S / g) turns (S x L when n < L); one
+   * behind the cursor waits for the next cycle, frozen at the gaps then.
+   * Gaps that appear or extend during the cycle never lengthen it, so every
+   * cycle ends while gaps keep growing. What can still delay it: a gap split
    * mid-cycle can add one partial slice per split; persistence failure,
    * cancellation or a mission change ends a turn early; and a suspension
    * makes no turns at all.
