@@ -350,7 +350,19 @@ export function createPollingManager(
   // or failed refresh proves nothing new, so only a complete roster response
   // clears it; it shows on active, paused and offline statuses [DON-338].
   let settledRosterProblem: TrackingWarning | null = null
-  let rosterRefreshInFlight: Promise<DeviceRosterNormalizationResult> | null = null
+  // The detached roster request, tagged with the lifecycle and mission that
+  // asked for it. Only a request from the current lifecycle and mission is
+  // reused or applied, so a stale answer can never shrink the device list or
+  // change the roster warning of the mission now running [DON-338].
+  let rosterRefreshInFlight: {
+    readonly request: Promise<DeviceRosterNormalizationResult>
+    readonly generation: number
+    readonly historyResetKey: string | null
+  } | null = null
+  // True only while latestDevices came from a roster Traccar reported
+  // complete. Only such a list is carried into the next mission; an
+  // incomplete one was warned about in its own mission only [DON-338].
+  let latestDevicesFromCompleteRoster = false
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
   const pendingHistoryRenderPositions: NormalizedTrackingPosition[] = []
   const pendingHistoryMissionPersistencePositions: NormalizedTrackingPosition[] = []
@@ -1229,9 +1241,27 @@ export function createPollingManager(
     return combineTrackingWarnings(...getRosterWarnings(latestRosterWarning, true)).warning
   }
 
-  /** Reuses one detached roster request so slow metadata cannot accumulate. */
+  /**
+   * True while a roster request made under `generation` for mission
+   * `historyResetKey` still belongs to the running lifecycle and mission.
+   */
+  function isRosterRequestCurrent(generation: number, historyResetKey: string | null): boolean {
+    return running && !stopping &&
+      generation === lifecycleGeneration &&
+      historyResetKey === activeHistoryResetKey &&
+      historyResetKey === (options.getHistoryResetKey?.() ?? null)
+  }
+
+  /**
+   * Reuses one detached roster request per lifecycle and mission so slow
+   * metadata cannot accumulate; a new mission or lifecycle gets its own.
+   */
   function getRosterRefresh(): Promise<DeviceRosterNormalizationResult> {
-    if (rosterRefreshInFlight !== null) return rosterRefreshInFlight
+    if (
+      rosterRefreshInFlight !== null &&
+      rosterRefreshInFlight.generation === lifecycleGeneration &&
+      rosterRefreshInFlight.historyResetKey === activeHistoryResetKey
+    ) return rosterRefreshInFlight.request
     const rosterObservationId = `roster-${++rosterFetchSequence}`
     const request = (client.getDevicesWithReport?.() ?? client.getDevices().then(
       (accepted) => ({ accepted, complete: true }),
@@ -1241,22 +1271,17 @@ export function createPollingManager(
       rosterFetchByDevices.set(accepted, { rosterObservationId, complete: result.complete })
       return { ...result, accepted }
     })
-    rosterRefreshInFlight = request
     const requestGeneration = lifecycleGeneration
     const requestHistoryResetKey = activeHistoryResetKey
+    const handle = { request, generation: requestGeneration, historyResetKey: requestHistoryResetKey }
+    rosterRefreshInFlight = handle
     void request.then((result) => {
-      if (!running || stopping) return
-      latestDevices = resolveCurrentPositionDevices(
-        result.accepted,
-        latestCurrentPositions,
-        latestDevices,
-      )
+      // A roster answer requested for an earlier lifecycle or mission changes
+      // nothing in the current one: not the device list, not the roster
+      // authority, not the missing-tracker warning [DON-338].
+      if (!isRosterRequestCurrent(requestGeneration, requestHistoryResetKey)) return
+      applyRosterDevices(result.accepted, result.complete)
       latestParticipantRosterAuthoritative = result.complete
-      // A roster answer requested for an earlier lifecycle or mission must not
-      // set (or clear) the missing-tracker warning of the current one [DON-338].
-      if (requestGeneration !== lifecycleGeneration || requestHistoryResetKey !== activeHistoryResetKey) {
-        return
-      }
       // A roster that settles after the poll's grace period replaces
       // "refreshing"; an incomplete one must keep warning (ING-4 [DON-338]).
       const previousRosterText = composedRosterText()
@@ -1264,9 +1289,20 @@ export function createPollingManager(
       settledRosterProblem = latestRosterWarning
       publishSettledRosterStatus(previousRosterText, requestGeneration, requestHistoryResetKey)
     }, () => undefined).finally(() => {
-      if (rosterRefreshInFlight === request) rosterRefreshInFlight = null
+      if (rosterRefreshInFlight === handle) rosterRefreshInFlight = null
     })
     return request
+  }
+
+  /** Adopts an answered roster's devices and records whether it was complete. */
+  function applyRosterDevices(
+    accepted: readonly NormalizedTrackingDevice[],
+    complete: boolean,
+  ): void {
+    const resolved = resolveCurrentPositionDevices(accepted, latestCurrentPositions, latestDevices)
+    if (resolved === accepted) latestDevicesFromCompleteRoster = complete
+    else if (resolved !== latestDevices) latestDevicesFromCompleteRoster = false
+    latestDevices = resolved
   }
 
   const poll = async (generation: number) => {
@@ -1315,6 +1351,10 @@ export function createPollingManager(
         breadcrumbIngestWarning = null
         latestRosterWarning = null
         settledRosterProblem = null
+        // The old mission's roster request is not this mission's; and a device
+        // list not proven complete is not carried over without its warning.
+        rosterRefreshInFlight = null
+        if (!latestDevicesFromCompleteRoster) latestDevices = []
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
         lastGoodSnapshot = null
@@ -1438,6 +1478,7 @@ export function createPollingManager(
         return
       }
 
+      const rosterBaseline = latestDevices
       const devices = resolveCurrentPositionDevices(
         currentPositionResult.devices,
         currentPositionResult.accepted,
@@ -1468,6 +1509,13 @@ export function createPollingManager(
       const recovered = recoveredBeforeCurrentPositions
       consecutiveFailures = 0
       lastSuccessAt = now().toISOString()
+      // Same provenance rule as the detached callback: the poll was checked
+      // current above, and its roster request was made for this mission.
+      if (devices === currentPositionResult.devices && devices !== rosterBaseline) {
+        latestDevicesFromCompleteRoster = currentPositionResult.rosterComplete
+      } else if (devices !== rosterBaseline) {
+        latestDevicesFromCompleteRoster = false
+      }
       latestDevices = devices
       latestCurrentPositions = positions
       latestParticipantRosterAuthoritative = currentPositionResult.rosterComplete
@@ -2050,6 +2098,7 @@ export function createPollingManager(
     latestAntiEntropyFailedNames = []
     latestRosterWarning = null
     settledRosterProblem = null
+    rosterRefreshInFlight = null
     canonicalizationSequence += 1
     canonicalizationRefreshPending = false
     initialCatchUpSettled = 'pending'

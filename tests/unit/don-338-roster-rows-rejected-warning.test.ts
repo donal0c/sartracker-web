@@ -345,5 +345,117 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
         .toBe(false)
       await poller.stop()
     })
+
+    /** A switchable-mission poller recording statuses, snapshot device lists and history requests. */
+    function startCapturingPoller(getDevicesWithReport: TrackingPollerClient['getDevicesWithReport']) {
+      const state = { mission: 'mission-a', mode: 'active' as 'active' | 'paused' }
+      const statuses: { readonly mode: string; readonly warning: string | null }[] = []
+      const snapshots: { readonly atMs: number; readonly mission: string | null; readonly deviceIds: readonly string[] }[] = []
+      const historyRequests: { readonly atMs: number; readonly mission: string; readonly deviceId: string }[] = []
+      const poller = createPollingManager({
+        authenticate: vi.fn().mockResolvedValue(undefined),
+        getDevices: vi.fn().mockResolvedValue(DEVICES),
+        getDevicesWithReport,
+        getCurrentPositions: vi.fn().mockResolvedValue(POSITIONS),
+        getBreadcrumbs: vi.fn((deviceId: string) => {
+          historyRequests.push({ atMs: Date.now(), mission: state.mission, deviceId })
+          return Promise.resolve(BREADCRUMBS.filter((position) => position.device_id === deviceId))
+        }),
+      }, {
+        intervalMs: 5_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        getPollingMode: () => state.mode,
+        getHistoryResetKey: () => state.mission,
+        getInitialBreadcrumbFrom: () => new Date('2026-04-04T10:00:00.000Z'),
+        onSnapshot: (snapshot, context) => {
+          snapshots.push({
+            atMs: Date.now(),
+            mission: context?.historyResetKey ?? null,
+            deviceIds: snapshot.devices.map((device) => device.device_id),
+          })
+        },
+        onStatusChange: (status: typeof statuses[number]) => { statuses.push(status) },
+        now: () => new Date('2026-04-06T10:35:00.000Z'),
+      })
+      poller.start()
+      return { poller, state, statuses, snapshots, historyRequests }
+    }
+
+    type RosterAnswer = {
+      readonly accepted: readonly NormalizedTrackingDevice[]
+      readonly complete: boolean
+      readonly rejectedCount: number
+    }
+    const COMPLETE: RosterAnswer = { accepted: DEVICES, complete: true, rejectedCount: 0 }
+    const INCOMPLETE: RosterAnswer = { accepted: [DEVICES[0]!], complete: false, rejectedCount: 1 }
+    const late = (answer: RosterAnswer, delayMs: number) => () =>
+      new Promise<RosterAnswer>((resolve) => { setTimeout(() => resolve(answer), delayMs) })
+    const never = () => new Promise<RosterAnswer>(() => undefined)
+
+    it('a stale incomplete roster from mission A does not silently shrink mission B\'s device list', async () => {
+      const getDevicesWithReport = vi.fn()
+        .mockResolvedValueOnce(COMPLETE)
+        .mockImplementationOnce(late(INCOMPLETE, 3_000))
+        .mockImplementation(never)
+      const { poller, state, statuses, snapshots, historyRequests } = startCapturingPoller(getDevicesWithReport)
+      await vi.advanceTimersByTimeAsync(5_500) // mission A's second roster request is in flight
+      state.mission = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(500) // mission B's roster grace expires
+      const switchedAt = statuses.length
+      await vi.advanceTimersByTimeAsync(3_000) // mission A's request answers [A] only
+      const staleAnswerAtMs = Date.now()
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      const warned = statuses.slice(switchedAt).some((status) => (status.warning ?? '').includes(ONE_UNREADABLE))
+      const laterSnapshots = snapshots.filter((snapshot) =>
+        snapshot.mission === 'mission-b' && snapshot.atMs > staleAnswerAtMs)
+      expect(laterSnapshots.length).toBeGreaterThan(0)
+      expect(warned || laterSnapshots.every((snapshot) => snapshot.deviceIds.includes('2'))).toBe(true)
+      expect(laterSnapshots.every((snapshot) => snapshot.deviceIds.includes('2'))).toBe(true)
+      expect(historyRequests.filter((request) => request.mission === 'mission-b' && request.atMs > staleAnswerAtMs)
+        .map((request) => request.deviceId)).toContain('2')
+      await poller.stop()
+    })
+
+    it('gives mission B its own roster request instead of reusing mission A\'s in-flight one', async () => {
+      const getDevicesWithReport = vi.fn()
+        .mockResolvedValueOnce(COMPLETE)
+        .mockImplementationOnce(late(INCOMPLETE, 3_000))
+        .mockResolvedValueOnce(COMPLETE)
+        .mockImplementation(never)
+      const { poller, state, statuses, snapshots } = startCapturingPoller(getDevicesWithReport)
+      await vi.advanceTimersByTimeAsync(5_500)
+      expect(getDevicesWithReport).toHaveBeenCalledTimes(2)
+      state.mission = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(500)
+      expect(getDevicesWithReport).toHaveBeenCalledTimes(3)
+      const switchedAt = statuses.length
+      await vi.advanceTimersByTimeAsync(3_000) // the stale incomplete answer arrives
+      const lastB = snapshots.filter((snapshot) => snapshot.mission === 'mission-b').at(-1)
+      expect(lastB?.deviceIds).toEqual(['1', '2'])
+      expect(statuses.slice(switchedAt).some((status) => (status.warning ?? '').includes(ONE_UNREADABLE)))
+        .toBe(false)
+      await poller.stop()
+    })
+
+    it('a stale complete roster from mission A does not clear mission B\'s own incomplete-roster warning', async () => {
+      const getDevicesWithReport = vi.fn()
+        .mockResolvedValueOnce(COMPLETE)
+        .mockImplementationOnce(late(COMPLETE, 3_000))
+        .mockResolvedValueOnce(INCOMPLETE)
+        .mockImplementation(never)
+      const { poller, state, statuses } = startCapturingPoller(getDevicesWithReport)
+      await vi.advanceTimersByTimeAsync(5_500)
+      state.mission = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(500)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+      await vi.advanceTimersByTimeAsync(3_000) // the stale complete answer arrives
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+      await poller.stop()
+    })
   })
 })
