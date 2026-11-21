@@ -213,6 +213,55 @@ describe('tracking cache thinning keeps the live line truthful [DON-338]', () =>
       .toContain('too complex for a guaranteed display-error bound')
   })
 
+  describe('accepts every record the writer really produces [DON-338]', () => {
+    /** Asserts a round trip kept the writer's own record rather than "unknown". */
+    async function expectRecordKept(snapshot: TrackingSnapshot): Promise<TrackingSnapshot> {
+      const limited = await limitTrackingCacheBreadcrumbs(snapshot.breadcrumbs, {
+        metadata: snapshot.breadcrumbMetadata, yieldControl: () => Promise.resolve(),
+      })
+      const restored = await roundTrip(snapshot)
+      expect(restored.breadcrumbMetadata).toEqual(limited.metadata)
+      return restored
+    }
+    const moving = (deviceId: string, count: number, cadenceMs: number) =>
+      Array.from({ length: count }, (_, index) =>
+        fix(deviceId, index, START_MS + index * cadenceMs, 53 + index * 0.001, -6))
+
+    it('unthinned', async () => {
+      const restored = await expectRecordKept({ devices: [], positions: [], breadcrumbs: moving('device-a', 50, 60_000) })
+      expect(restored.breadcrumbMetadata?.deviceBudgets[0]).toMatchObject({ truncated: false, retained: 50, sourceRetained: 50, total: 50 })
+    })
+
+    it('thinned', async () => {
+      const restored = await expectRecordKept({ devices: [], positions: [], breadcrumbs: moving('device-a', 8_000, 3_000) })
+      expect(restored.breadcrumbMetadata?.deviceBudgets[0]).toMatchObject({ truncated: true, sourceRetained: 8_000, total: 8_000 })
+    })
+
+    it('mandatory points over budget', async () => {
+      const restored = await expectRecordKept({ devices: [], positions: [], breadcrumbs: moving('device-a', 5_001, 20 * 60_000) })
+      expect(restored.breadcrumbs).toHaveLength(5_001)
+      expect(restored.breadcrumbMetadata?.deviceBudgets[0]).toMatchObject({ truncated: false, retained: 5_001 })
+    })
+
+    it('live simplification carried through an unthinned cache', async () => {
+      const breadcrumbs = moving('device-a', 100, 60_000)
+      const restored = await expectRecordKept({ devices: [], positions: [], breadcrumbs, breadcrumbMetadata: {
+        totalRetained: 100, totalObserved: 1_000, deviceBudgets: [{
+          deviceId: 'device-a', retained: 100, sourceRetained: 1_000, total: 1_000,
+          firstTimestamp: breadcrumbs[0]!.timestamp, lastTimestamp: breadcrumbs.at(-1)!.timestamp,
+          truncated: true, geometryErrorBoundMetres: 25, targetGeometryErrorSatisfied: true,
+        }],
+      } })
+      expect(restored.breadcrumbMetadata?.deviceBudgets[0]).toMatchObject({ truncated: true, total: 1_000 })
+    })
+
+    it('empty cache', async () => {
+      const restored = await roundTrip({ devices: [], positions: [], breadcrumbs: [] })
+      expect(restored.breadcrumbs).toEqual([])
+      expect(restored.breadcrumbMetadata).toBeUndefined()
+    })
+  })
+
   it('treats an empty cache as having no trail to disclose', () => {
     expect(restoreRaw({ breadcrumbs: [] }).breadcrumbMetadata).toBeUndefined()
   })
@@ -251,6 +300,17 @@ describe('tracking cache thinning keeps the live line truthful [DON-338]', () =>
       ['a wrong first timestamp', { ...consistent, deviceBudgets: [
         { ...consistent.deviceBudgets[0]!, firstTimestamp: trailB[0]!.timestamp }, consistent.deviceBudgets[1]!] }, breadcrumbs],
       ['duplicate fix identities', consistent, [...breadcrumbs.slice(0, 499), breadcrumbs[497]!]],
+      // The record itself says fixes were dropped, yet claims nothing was.
+      ['an exact claim with more source fixes than retained', { ...consistent, deviceBudgets: [
+        { ...consistent.deviceBudgets[0]!, sourceRetained: 5_000 }, consistent.deviceBudgets[1]!] }, breadcrumbs],
+      ['source fixes above the known total', { ...consistent, totalObserved: 2_250, deviceBudgets: [
+        { ...consistent.deviceBudgets[0]!, sourceRetained: 3_000, total: 2_000, truncated: true,
+          geometryErrorBoundMetres: null, targetGeometryErrorSatisfied: false },
+        consistent.deviceBudgets[1]!] }, breadcrumbs],
+      ['retained above source fixes', { ...consistent, totalObserved: 2_250, deviceBudgets: [
+        { ...consistent.deviceBudgets[0]!, sourceRetained: 100, total: 2_000, truncated: true,
+          geometryErrorBoundMetres: null, targetGeometryErrorSatisfied: false },
+        consistent.deviceBudgets[1]!] }, breadcrumbs],
     ] as const)('%s', (_label, metadata, trail) => {
       const restored = restoreRaw({ breadcrumbs: trail, breadcrumb_metadata: metadata })
       const budgets = restored.breadcrumbMetadata?.deviceBudgets ?? []
