@@ -65,7 +65,15 @@ let cacheBytes = 0
 let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
 const sourceCache = new Map()
 const sourceCacheKeysByIndexId = new Map()
+// Each coordinate array cache entries hold, with the number of entries holding
+// it. The charge counts every such array once, however many entries share it,
+// and only while an entry holds it. Arrays of the entry's own index are
+// counted but not charged: the index keeps them alive anyway and the cache
+// never outlives the index (its entries are purged when it retires).
+const sourceArrayReferences = new Map()
 let sourceCachePoints = 0
+// Cumulative cache events, read only by diagnostics.
+const sourceCacheEvents = { evicted: 0, purged: 0, sharedArrayKeptAlive: 0, uncachedOversized: 0 }
 let nextTileIndexId = 0
 const cancelledRequestIds = new Set()
 const activeTileRequestIds = new Set()
@@ -412,12 +420,17 @@ function materializeChunk(key, contentRev, rows) {
  */
 function createChunkTileIndex(features) {
   const index = geojsonvt({ type: 'FeatureCollection', features }, TILE_INDEX_OPTIONS)
+  // Arrays the index itself holds live exactly as long as the index; cache
+  // entries never outlive it (they are purged when it retires), so the cache
+  // is not charged for them.
+  const ownArrays = new Set()
   for (const tileId of Object.keys(index.tiles)) {
     const tile = index.tiles[tileId]
     if (tile.source === null) continue
     for (const feature of tile.source) compactSourceGeometry(feature)
+    for (const array of collectSourceArrays(tile)) ownArrays.add(array)
   }
-  return { id: ++nextTileIndexId, index, prototype: Object.getPrototypeOf(index) }
+  return { id: ++nextTileIndexId, index, prototype: Object.getPrototypeOf(index), ownArrays }
 }
 
 /**
@@ -427,21 +440,18 @@ function createChunkTileIndex(features) {
  * tiles it derives are identical; the copy holds 24 bytes per fix and lives
  * outside the JavaScript heap.
  * @param {{type: string, geometry: number[] & {size?: number, start?: number, end?: number}}} feature
- * @returns {number} fixes this feature's geometry retains (shared or not)
  */
 function compactSourceGeometry(feature) {
   if (feature.type === 'LineString' || feature.type === 'Point' || feature.type === 'MultiPoint') {
     feature.geometry = compactCoordinates(feature.geometry)
-    return feature.geometry.length / 3
+    return
   }
   if (feature.type === 'MultiLineString') {
     // Clipping a line that leaves and re-enters a tile yields several parts.
-    let retained = 0
     for (let part = 0; part < feature.geometry.length; part += 1) {
       feature.geometry[part] = compactCoordinates(feature.geometry[part])
-      retained += feature.geometry[part].length / 3
     }
-    return retained
+    return
   }
   throw new Error(`Coverage tile index has an unexpected ${feature.type} source geometry.`)
 }
@@ -616,26 +626,41 @@ function readCachedSource(tileIndex, start, level, x, y) {
   const scratch = createScratchIndex(tileIndex, start)
   scratch.splitTile(start.source, start.z, start.x, start.y, level, x, y)
   const tile = scratch.tiles[toGeojsonVtTileId(level, x, y)]
-  let points = 0
   let next = null
   if (tile !== undefined) {
-    for (const feature of tile.source) points += compactSourceGeometry(feature)
+    for (const feature of tile.source) compactSourceGeometry(feature)
     next = createDrillStart(level, x, y, tile)
   }
-  setSourceCacheEntry(key, tileIndex.id, { start: next, points })
+  const arrays = [...new Set(collectSourceArrays(next))]
+  const points = arrays.reduce((sum, array) => sum + chargeOf(array, tileIndex.ownArrays), 0)
+  setSourceCacheEntry(key, tileIndex, { start: next, arrays, points })
   return next
 }
 
 /**
  * Inserts one cache entry, then evicts least-recently-used entries until both
- * the retained-fix budget and the entry budget hold. An entry that could not
- * fit on its own is not cached at all: the caller still serves the current
- * read from its local value, so the cache's charge never exceeds the budget.
+ * the retained-fix budget and the entry budget hold. An entry whose charge
+ * alone exceeds the budget is not cached at all: the caller still
+ * serves the current read from its local value, so the cache's charge never
+ * exceeds the budget. An array is charged when its first entry arrives.
+ * @param {string} key
+ * @param {{id: number, ownArrays: Set<Float64Array>}} tileIndex
+ * @param {{start: object | null, arrays: Float64Array[], points: number}} entry
+ *   arrays: the distinct arrays the entry holds; points: what they cost beyond its own index
  */
-function setSourceCacheEntry(key, indexId, entry) {
-  if (entry.points > sourceCacheBudgetPoints || sourceCacheBudgetEntries === 0) return
-  sourceCache.set(key, { ...entry, indexId })
-  sourceCachePoints += entry.points
+function setSourceCacheEntry(key, tileIndex, entry) {
+  const indexId = tileIndex.id
+  if (entry.points > sourceCacheBudgetPoints) {
+    sourceCacheEvents.uncachedOversized += 1
+    return
+  }
+  if (sourceCacheBudgetEntries === 0) return
+  sourceCache.set(key, { start: entry.start, arrays: entry.arrays, indexId, ownArrays: tileIndex.ownArrays })
+  for (const array of entry.arrays) {
+    const references = sourceArrayReferences.get(array) ?? 0
+    if (references === 0) sourceCachePoints += chargeOf(array, tileIndex.ownArrays)
+    sourceArrayReferences.set(array, references + 1)
+  }
   let keys = sourceCacheKeysByIndexId.get(indexId)
   if (keys === undefined) {
     keys = new Set()
@@ -646,16 +671,31 @@ function setSourceCacheEntry(key, indexId, entry) {
     if (cachedKey === key) break
     if (sourceCachePoints <= sourceCacheBudgetPoints &&
       sourceCache.size <= sourceCacheBudgetEntries) break
-    deleteSourceCacheEntry(cachedKey)
+    deleteSourceCacheEntry(cachedKey, 'evicted')
   }
 }
 
-/** Removes one cache entry and its charge. */
-function deleteSourceCacheEntry(key) {
+/**
+ * Removes one cache entry and its charge.
+ * @param {string} key
+ * @param {'evicted' | 'purged'} reason counted for diagnostics
+ */
+function deleteSourceCacheEntry(key, reason) {
   const cached = sourceCache.get(key)
   if (cached === undefined) return
+  sourceCacheEvents[reason] += 1
   sourceCache.delete(key)
-  sourceCachePoints -= cached.points
+  // An array is uncharged exactly when the last entry holding it goes.
+  for (const array of cached.arrays) {
+    const references = sourceArrayReferences.get(array) - 1
+    if (references === 0) {
+      sourceArrayReferences.delete(array)
+      sourceCachePoints -= chargeOf(array, cached.ownArrays)
+    } else {
+      sourceArrayReferences.set(array, references)
+      if (reason === 'evicted') sourceCacheEvents.sharedArrayKeptAlive += 1
+    }
+  }
   const keys = sourceCacheKeysByIndexId.get(cached.indexId)
   keys?.delete(key)
   if (keys?.size === 0) sourceCacheKeysByIndexId.delete(cached.indexId)
@@ -670,7 +710,7 @@ function releaseRetiredSourceCacheEntries() {
   const live = collectServableIndexIds()
   for (const [indexId, keys] of [...sourceCacheKeysByIndexId]) {
     if (live.has(indexId)) continue
-    for (const key of [...keys]) deleteSourceCacheEntry(key)
+    for (const key of [...keys]) deleteSourceCacheEntry(key, 'purged')
   }
 }
 
@@ -696,6 +736,9 @@ function readDiagnostics() {
     sourceCacheEntries: sourceCache.size,
     sourceCachePoints,
     sourceCacheRetainedPoints: countRetainedSourceCachePoints(),
+    sourceCacheEvents: { ...sourceCacheEvents },
+    sourceCacheDistinctArrays: sourceArrayReferences.size,
+    sourceCacheReferenceMismatches: countReferenceMismatches(),
     sourceCacheBudgetPoints,
     sourceCacheBudgetEntries,
     sourceCacheIndexIds: [...sourceCacheKeysByIndexId.keys()],
@@ -706,18 +749,58 @@ function readDiagnostics() {
 }
 
 /**
- * Recounts, independently of the running charge, the fixes every cache entry
- * retains, so tests can prove the charge matches what is actually kept alive.
+ * Recounts from the entries' sources themselves, independently of the running
+ * charge and reference counts, the fixes in the distinct arrays the cache
+ * keeps alive beyond each entry's own index (an array shared by several
+ * entries counts once).
  */
 function countRetainedSourceCachePoints() {
-  let retained = 0
+  const arrays = new Set()
   for (const cached of sourceCache.values()) {
-    for (const feature of cached.start?.source ?? []) {
-      const parts = feature.type === 'MultiLineString' ? feature.geometry : [feature.geometry]
-      for (const part of parts) retained += part.length / 3
+    for (const array of collectSourceArrays(cached.start)) {
+      if (!cached.ownArrays.has(array)) arrays.add(array)
     }
   }
+  let retained = 0
+  for (const array of arrays) retained += array.length / 3
   return retained
+}
+
+/** Arrays whose running reference count differs from a recount over the entries. */
+function countReferenceMismatches() {
+  const recount = new Map()
+  for (const cached of sourceCache.values()) {
+    for (const array of new Set(collectSourceArrays(cached.start))) {
+      recount.set(array, (recount.get(array) ?? 0) + 1)
+    }
+  }
+  let mismatches = 0
+  for (const [array, references] of sourceArrayReferences) {
+    if (recount.get(array) !== references) mismatches += 1
+  }
+  for (const array of recount.keys()) {
+    if (!sourceArrayReferences.has(array)) mismatches += 1
+  }
+  return mismatches
+}
+
+/** Fixes an array costs the cache: none when its own index holds it anyway. */
+function chargeOf(array, ownArrays) {
+  return ownArrays.has(array) ? 0 : array.length / 3
+}
+
+/**
+ * The coordinate arrays a drill start's source keeps alive.
+ * @param {{source: object[]} | null} start
+ * @returns {Float64Array[]}
+ */
+function collectSourceArrays(start) {
+  const arrays = []
+  for (const feature of start?.source ?? []) {
+    if (feature.type === 'MultiLineString') arrays.push(...feature.geometry)
+    else arrays.push(feature.geometry)
+  }
+  return arrays
 }
 
 /** Reads a non-negative integer limit from workerData.tuning. */

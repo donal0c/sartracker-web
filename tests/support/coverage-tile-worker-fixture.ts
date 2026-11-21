@@ -217,6 +217,14 @@ export type CoverageWorkerDiagnostics = {
   readonly sourceCacheEntries: number
   readonly sourceCachePoints: number
   readonly sourceCacheRetainedPoints: number
+  readonly sourceCacheDistinctArrays: number
+  readonly sourceCacheReferenceMismatches: number
+  readonly sourceCacheEvents: {
+    readonly evicted: number
+    readonly purged: number
+    readonly sharedArrayKeptAlive: number
+    readonly uncachedOversized: number
+  }
   readonly sourceCacheBudgetPoints: number
   readonly sourceCacheBudgetEntries: number
   readonly sourceCacheIndexIds: readonly number[]

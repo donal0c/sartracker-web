@@ -32,6 +32,9 @@ afterEach(async () => {
   fixture = undefined
 })
 
+// Healthy ~10 ms/tile on this dense 34-device box (same as before round 2);
+// churn measured ~100 ms/tile.
+const WARM_Z16_LIMIT_MS = 35
 const START_MS = Date.parse('2026-11-07T08:00:00.000Z')
 
 /** Seeds devices x fixes (unassigned period) and returns per-device fixes. */
@@ -78,8 +81,12 @@ async function buildAndSweep(
   const period = catalog.periods[0]!
   const bounds = { minLat: 52.99, maxLat: 53.03, minLon: -6.31, maxLon: -6.26 }
   let nonEmptyTiles = 0
+  const timings: Record<string, { tiles: number; ms: number }> = {}
   for (const z of zooms) {
+    const started = performance.now()
+    let tiles = 0
     for (const tile of tilesCovering(bounds, z)) {
+      tiles += 1
       const bytes = await runner.readTile({
         missionId: MISSION_ID,
         periodKey: period.periodKey,
@@ -88,9 +95,11 @@ async function buildAndSweep(
       })
       if (bytes !== null && bytes.byteLength > 0) nonEmptyTiles += 1
     }
+    timings[z in timings ? `${z} again` : z] = { tiles, ms: performance.now() - started }
   }
   expect(failures).toEqual([])
   expect(nonEmptyTiles).toBeGreaterThan(0)
+  return timings
 }
 
 describe('whole-history tile worker memory at mission scale [DON-338 COV-1]', () => {
@@ -106,7 +115,16 @@ describe('whole-history tile worker memory at mission scale [DON-338 COV-1]', ()
 
   it('builds and serves 34 devices x 24 h at 2 s cadence (43,200 fixes each) through a z16 sweep', async () => {
     const chunks = await seedMission(34, 43_200, 2_000)
-    await buildAndSweep(chunks, [12, 14, 16])
+    const timings = await buildAndSweep(chunks, [12, 14, 16, 16])
+    const report = Object.entries(timings).map(([label, { tiles, ms }]) =>
+      `${label} ${tiles} tiles ${Math.round(ms)} ms (${(ms / tiles).toFixed(1)} ms/tile)`)
+    console.info(`[DON-338 sweep] ${report.join('; ')}`)
+    // Responsiveness guard: the second z16 pass re-reads tiles whose drill-down
+    // sources are cached. Healthy, that is a few ms per tile; when the source
+    // cache churned (round 2) every read re-drilled every chunk. The limit
+    // leaves wide headroom for a loaded machine yet fails on churn.
+    const warm = timings['16 again']!
+    expect(warm.ms / warm.tiles).toBeLessThan(WARM_Z16_LIMIT_MS)
   }, 180_000)
 })
 
