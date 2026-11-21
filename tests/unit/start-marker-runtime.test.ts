@@ -329,6 +329,61 @@ describe('startMarkerRuntime mission switch during a dialog [DON-348]', () => {
     expect(last.error).toMatch(/treatment update/)
   })
 
+  it('still warns when a mission refresh discards a draft while evidence is being attached', async () => {
+    let resolveIngest: (attachment: { storedPath: string; fileName: string }) => void = () => {}
+    const ingest = vi.fn().mockReturnValue(new Promise((resolve) => { resolveIngest = resolve }))
+    const upsertMarker = vi.fn()
+    const applyRuntime = vi.fn()
+    const runtime = await startMarkerRuntime({
+      markerStore: createMarkerStoreStub({ upsertMarker }),
+      attachmentStore: { ingest },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.beginCreateAt(52.0602, -9.5048, 'casualty')
+    runtime.updateDraft({ name: 'Subject Alpha' })
+    runtime.updatePendingTreatmentUpdate('Gave 2 puffs salbutamol 14:05')
+    const attach = runtime.attachEvidence(new File(['photo'], 'scene.jpg', { type: 'image/jpeg' }))
+    await runtime.refreshMission('mission-2')
+
+    const afterRefresh = applyRuntime.mock.lastCall?.[0]
+    expect(afterRefresh.dialog).toBeNull()
+    expect(afterRefresh.error).toMatch(/Unsaved changes to marker "Subject Alpha" were discarded/)
+    expect(afterRefresh.error).toMatch(/treatment update/)
+
+    resolveIngest({ storedPath: 'attachments/scene.jpg', fileName: 'scene.jpg' })
+    await attach
+
+    const last = applyRuntime.mock.lastCall?.[0]
+    expect(upsertMarker).not.toHaveBeenCalled()
+    expect(last).toMatchObject({ activeMissionId: 'mission-2', saving: false, dialog: null })
+    expect(last.error).toMatch(/Unsaved changes to marker "Subject Alpha" were discarded/)
+  })
+
+  it('keeps the discard notice when evidence ingestion fails after the refresh', async () => {
+    let rejectIngest: (error: Error) => void = () => {}
+    const ingest = vi.fn().mockReturnValue(new Promise((_resolve, reject) => { rejectIngest = reject }))
+    const applyRuntime = vi.fn()
+    const runtime = await startMarkerRuntime({
+      markerStore: createMarkerStoreStub(),
+      attachmentStore: { ingest },
+      applyRuntime,
+    })
+
+    await runtime.refreshMission('mission-1')
+    runtime.beginCreateAt(52.0602, -9.5048, 'casualty')
+    runtime.updateDraft({ name: 'Subject Alpha' })
+    const attach = runtime.attachEvidence(new File(['photo'], 'scene.jpg', { type: 'image/jpeg' }))
+    await runtime.refreshMission('mission-2')
+    rejectIngest(new Error('disk full'))
+    await attach
+
+    const last = applyRuntime.mock.lastCall?.[0]
+    expect(last).toMatchObject({ activeMissionId: 'mission-2', saving: false, dialog: null })
+    expect(last.error).toMatch(/Unsaved changes to marker "Subject Alpha" were discarded/)
+  })
+
   it('does not warn when a mission refresh closes an unchanged marker dialog', async () => {
     const applyRuntime = vi.fn()
     const runtime = await startMarkerRuntime({

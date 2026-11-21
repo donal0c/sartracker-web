@@ -48,6 +48,9 @@ export async function startMarkerRuntime(
   let markers: readonly Marker[] = []
   let loading = false
   let saving = false
+  // True only while a marker save or retire is in flight; evidence ingestion also sets
+  // `saving` but persists nothing, so it must not hide a discarded draft.
+  let persisting = false
   let error: string | null = null
   let loadError: string | null = null
   let dialog: MarkerDialogState | null = null
@@ -59,8 +62,8 @@ export async function startMarkerRuntime(
   return {
     refreshMission: async (missionId) => {
       const token = ++refreshToken
-      // A draft whose save is in flight is not discarded: the save result reports itself.
-      const discardedDraftNotice = dialog !== null && !saving && isMarkerDialogDirty(dialog)
+      // A draft whose save or retire is in flight is not discarded: that result reports itself.
+      const discardedDraftNotice = dialog !== null && !persisting && isMarkerDialogDirty(dialog)
         ? describeDiscardedDraft(dialog)
         : null
       activeMissionId = missionId
@@ -228,7 +231,11 @@ export async function startMarkerRuntime(
         publishRuntime()
       } catch (runtimeError) {
         saving = false
-        error = toErrorMessage(runtimeError)
+        // A failed ingestion for a draft a refresh already discarded must not replace
+        // the discard notice: that notice is what the operator still needs to act on.
+        if (isCurrentDialogContext(missionId, dialogId, dialogCoordinates)) {
+          error = toErrorMessage(runtimeError)
+        }
         publishRuntime()
       }
     },
@@ -284,6 +291,7 @@ export async function startMarkerRuntime(
       const sessionId = dialog.sessionId
       const mode = dialog.mode
       saving = true
+      persisting = true
       error = null
       publishRuntime()
 
@@ -318,10 +326,12 @@ export async function startMarkerRuntime(
           dialog = null
         }
         saving = false
+        persisting = false
         publishRuntime()
         return marker
       } catch (runtimeError) {
         saving = false
+        persisting = false
         error = toErrorMessage(runtimeError)
         publishRuntime()
         throw runtimeError
@@ -336,6 +346,7 @@ export async function startMarkerRuntime(
       const missionId = activeMissionId
       const sessionId = dialog.sessionId
       saving = true
+      persisting = true
       error = null
       publishRuntime()
 
@@ -343,6 +354,7 @@ export async function startMarkerRuntime(
         const didDelete = await dependencies.markerStore.deleteMarker(markerId)
         if (!didDelete) {
           saving = false
+          persisting = false
           publishRuntime()
           return false
         }
@@ -354,11 +366,13 @@ export async function startMarkerRuntime(
           dialog = null
         }
         saving = false
+        persisting = false
         error = null
         publishRuntime()
         return true
       } catch (runtimeError) {
         saving = false
+        persisting = false
         error = toErrorMessage(runtimeError)
         publishRuntime()
         throw runtimeError
