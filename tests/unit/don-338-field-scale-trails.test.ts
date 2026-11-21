@@ -26,8 +26,7 @@ import type { NormalizedTrackingPosition, TrackingSnapshot } from '../../src/fea
  * field-shape fixtures and asserts what the operator would see: every stored
  * fix on a drawn line.
  *
- * Tests marked `it.fails` reproduce a finding another DON-338 piece fixes;
- * when that piece lands the test turns red and the marker must be removed.
+ * Three of these (LIV-1, LIV-4, COV-1) were red before the DON-338 fixes.
  */
 
 const require = createRequire(import.meta.url)
@@ -135,9 +134,9 @@ describe('[DON-338] trails at field scale stay whole', () => {
     expect(trailGapFindings(drawn.lines, drawn.stored, { layer: 'whole-history line', toleranceMetres: 60 })).toEqual([])
   }, 180_000)
 
-  // COV-1 (piece 4): the tile worker's 128 MB heap runs out building one
-  // device with 180,000 fixes, so the whole-history line never completes.
-  it.fails('whole-history tiles: one device with 180,000 stored fixes builds without running out of memory [COV-1]', async () => {
+  // COV-1: before the fix the tile worker's 128 MB heap ran out building one
+  // device with 180,000 fixes, so the whole-history line never completed.
+  it('whole-history tiles: one device with 180,000 stored fixes builds without running out of memory [COV-1]', async () => {
     const directory = await scratchDirectory()
     const databasePath = path.join(directory, 'store.sqlite')
     writeMinimalCoverageStore(databasePath, 180_000)
