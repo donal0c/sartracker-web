@@ -203,6 +203,12 @@ type DeviceLanes = {
   successCount: number
   /** Where the next gap slice starts; rotates through the device's gaps in time order. */
   gapCursorMs: number
+  /**
+   * The end of the gap retry cycle in progress: the gaps' extent frozen when
+   * the cycle started, or null between cycles. Gaps found or extended during
+   * a cycle wait for the next one, so a cycle always ends.
+   */
+  gapCycleEndMs: number | null
   /** Counts this device's turns; marks which turn a slice failed in. */
   turn: number
 }
@@ -1023,6 +1029,7 @@ export function createBreadcrumbHistoryReconciler(
         older: [],
         nextLaneIndex: 0,
         gapCursorMs: Number.NEGATIVE_INFINITY,
+        gapCycleEndMs: null,
         windowMs: chunkMs,
         successCount: 0,
         turn: 0,
@@ -1171,16 +1178,34 @@ export function createBreadcrumbHistoryReconciler(
       ?? fallbackMs
 
   /**
-   * The next gap slice in time order after the device's gap cursor, wrapping
-   * to the earliest gap. One smallest-width slice per request, so a
-   * still-failing slice never blocks the rest of a gap.
+   * The next gap slice in time order after the device's gap cursor, within
+   * the cycle in progress. A cycle covers the gaps as they extended when it
+   * started; when the cursor reaches that frozen end, the next cycle starts
+   * at the earliest gap with a newly frozen end. Gaps are read afresh on
+   * every call, so a gap trimmed, split, merged or cleared mid-cycle is
+   * followed by time, never by record. One smallest-width slice per request,
+   * so a still-failing slice never blocks the rest of a gap.
    */
   const nextGapSlice = (lanes: DeviceLanes): { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null => {
     const gaps = gapsByDeviceId.get(lanes.deviceId) ?? []
-    const gap = gaps.find((record) => record.toMs > lanes.gapCursorMs) ?? gaps[0]
-    if (gap === undefined) return null
-    const fromMs = lanes.gapCursorMs > gap.fromMs && lanes.gapCursorMs < gap.toMs ? lanes.gapCursorMs : gap.fromMs
-    return { gap, window: { fromMs, toMs: Math.min(gap.toMs, fromMs + minWindowMs) } }
+    if (gaps.length === 0) {
+      lanes.gapCycleEndMs = null
+      return null
+    }
+    const sliceInCycle = (): { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null => {
+      const endMs = lanes.gapCycleEndMs
+      if (endMs === null) return null
+      const gap = gaps.find((record) => record.toMs > lanes.gapCursorMs && record.fromMs < endMs)
+      if (gap === undefined) return null
+      const fromMs = Math.max(gap.fromMs, lanes.gapCursorMs)
+      if (fromMs >= endMs) return null
+      return { gap, window: { fromMs, toMs: Math.min(gap.toMs, fromMs + minWindowMs, endMs) } }
+    }
+    const next = sliceInCycle()
+    if (next !== null) return next
+    lanes.gapCursorMs = Number.NEGATIVE_INFINITY
+    lanes.gapCycleEndMs = Math.max(...gaps.map((record) => record.toMs))
+    return sliceInCycle()
   }
 
   /** Retries one gap slice. Success fills that slice; failure keeps the gap reported. Either way the cursor moves on. */
@@ -1257,6 +1282,16 @@ export function createBreadcrumbHistoryReconciler(
    * reply costs one extra request per narrowing, and the width grows back
    * only after four successes. A turn that runs past the next tick makes the
    * device skip that tick, so in ticks the bound is at most twice the turns.
+   *
+   * Gaps are counted in cycles, not positions. With g = floor(n / L) gap
+   * requests a turn (or one every L turns when n < L) and S the
+   * smallest-width slices in the gap extent frozen when the running cycle
+   * started, a recovered slice is retried within the turn in progress plus
+   * ceil(S / g) turns (S x L when n < L). Gaps that appear or extend during
+   * the cycle never lengthen it. What can still delay it: a gap split
+   * mid-cycle can add one partial slice per split; persistence failure,
+   * cancellation or a mission change ends a turn early; and a suspension
+   * makes no turns at all.
    */
   const runDeviceTurn = async (deviceId: string, batchGeneration: number): Promise<void> => {
     const known = lanesByDeviceId.get(deviceId)

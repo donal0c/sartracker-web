@@ -23,6 +23,9 @@ import type {
 //   d. the durable checkpoint never passes time that was not stored;
 //   e. gaps and backlog are never dropped without being fetched;
 //   f. a device's re-check requests per tick never exceed its budget.
+// Round 5 adds permanent gap tails that keep extending as time advances (so
+// the gap cursor always has new gap ahead of it), recoveries after the tail
+// has started, and a saturated many-device queue.
 
 const SECOND_MS = 1_000
 const MINUTE_MS = 60 * SECOND_MS
@@ -30,8 +33,6 @@ const HOUR_MS = 60 * MINUTE_MS
 const STEP_MS = MINUTE_MS
 const TICK_MS = 5 * MINUTE_MS
 const CHUNK_MS = 2 * HOUR_MS
-const MIN_WINDOW_MS = 30 * MINUTE_MS
-const RECENT_WINDOW_MS = 2 * HOUR_MS
 const FIX_SPACING_MS = 5 * MINUTE_MS
 const CHAOS_TICKS = 12
 const SEED_COUNT = 300
@@ -91,7 +92,7 @@ function subtractAll(range: Range, covered: readonly Range[]): Range[] {
 
 type Region = {
   readonly range: Range
-  readonly kind: 'dense' | 'temp500' | 'tempSlow' | 'permTooLarge' | 'perm500'
+  readonly kind: 'dense' | 'temp500' | 'tempSlow' | 'permTooLarge' | 'perm500' | 'permTail'
   /** Widest request the server answers inside a dense region. */
   readonly maxWidthMs?: number
   /** When a temporary failure ends. */
@@ -111,9 +112,20 @@ type Checkpoint = { historyFromMs: number; untilMs: number }
 /** Runs one seed; returns a description of the first broken invariant, or null. */
 async function runSeed(seed: number): Promise<string | null> {
   const random = createRandom(seed)
-  const deviceCount = random.int(1, 2)
+  // A saturated queue: many devices, one re-check task at a time, slow replies.
+  const saturated = random.chance(0.1)
+  const deviceCount = saturated ? random.int(6, 8) : random.int(1, 2)
+  const maxConcurrency = saturated ? 2 : 8
+  const maxDelaySeconds = saturated ? 5 : 2
   const missionHours = random.int(4, 8)
-  const budget = random.chance(0.15) ? random.int(1, 2) : random.int(3, 12)
+  // Tail seeds use a 5-minute smallest width and a 15-minute recent window,
+  // so the tail grows by about a slice every tick, and mostly one gap
+  // request a turn: a gap cursor that never wraps would never catch it.
+  const tailSeed = random.chance(0.4)
+  const budget = tailSeed && random.chance(0.7) ? random.int(3, 5)
+    : random.chance(0.15) ? random.int(1, 2) : random.int(3, 12)
+  const MIN_WINDOW_MS = (tailSeed ? 5 : 30) * MINUTE_MS
+  const RECENT_WINDOW_MS = tailSeed ? 15 * MINUTE_MS : 2 * HOUR_MS
   const nowAtStartMs = BASE_MS + missionHours * HOUR_MS
   let missionStartMs = BASE_MS
   const earliestMs = BASE_MS - HOUR_MS
@@ -149,8 +161,16 @@ async function runSeed(seed: number): Promise<string | null> {
     for (let index = random.int(0, 2); index > 0; index -= 1) {
       regions.push({ range: historyRange(random.int(5, 30) * MINUTE_MS), kind: 'temp500', recoversAtMs: random.int(nowAtStartMs, chaosEndMs) })
     }
-    if (random.chance(0.4)) {
-      regions.push({ range: historyRange(random.int(5, 40) * MINUTE_MS), kind: 'tempSlow', recoversAtMs: random.int(nowAtStartMs, chaosEndMs) })
+    // A permanent tail: every reply after its start is too large, so each new
+    // recent slice becomes a gap that extends it while time advances.
+    const tailFromMs = tailSeed && random.chance(0.8) ? chaosEndMs + random.int(10, 50) * MINUTE_MS : null
+    if (tailFromMs !== null) {
+      regions.push({ range: { fromMs: tailFromMs, toMs: Number.POSITIVE_INFINITY }, kind: 'permTail' })
+    }
+    if (random.chance(tailFromMs === null ? 0.4 : 0.9)) {
+      // With a tail, recovery may come after the gap cursor has moved into it.
+      const recoversAtMs = random.int(nowAtStartMs, tailFromMs === null ? chaosEndMs : tailFromMs + 90 * MINUTE_MS)
+      regions.push({ range: historyRange(random.int(5, 40) * MINUTE_MS), kind: 'tempSlow', recoversAtMs })
     }
     if (random.chance(0.4)) {
       regions.push({ range: historyRange(10 * MINUTE_MS), kind: 'permTooLarge' })
@@ -169,7 +189,8 @@ async function runSeed(seed: number): Promise<string | null> {
     (regionsByDevice.get(deviceId) ?? []).some((region) => {
       // A 500 is never narrowed, so a request of up to a chunk around it keeps failing;
       // a gap is retried in smallest-width slices around a too-large minute.
-      const marginMs = region.kind === 'perm500' ? CHUNK_MS : region.kind === 'permTooLarge' ? MIN_WINDOW_MS : -1
+      const marginMs = region.kind === 'perm500' ? CHUNK_MS
+        : region.kind === 'permTooLarge' || region.kind === 'permTail' ? MIN_WINDOW_MS : -1
       return marginMs >= 0 && fixMs >= region.range.fromMs - marginMs && fixMs <= region.range.toMs + marginMs
     })
 
@@ -197,7 +218,7 @@ async function runSeed(seed: number): Promise<string | null> {
     inFlight.set(deviceId, count)
     if (count > 1) fail(`a: device ${deviceId} has ${count} requests in flight`)
     requestStarts.push({ deviceId, atMs: Date.now() })
-    const delayMs = random.int(0, 2) * SECOND_MS
+    const delayMs = random.int(0, maxDelaySeconds) * SECOND_MS
     try {
       if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
     } finally {
@@ -210,7 +231,7 @@ async function runSeed(seed: number): Promise<string | null> {
       if (region.kind === 'dense' && toMs - fromMs > region.maxWidthMs!) throw new Error(random.chance(0.5) ? TOO_LARGE : TIMED_OUT)
       if (region.kind === 'temp500' && nowMs < region.recoversAtMs!) throw new Error(HTTP_500)
       if (region.kind === 'tempSlow' && nowMs < region.recoversAtMs!) throw new Error(TIMED_OUT)
-      if (region.kind === 'permTooLarge') throw new Error(TOO_LARGE)
+      if (region.kind === 'permTooLarge' || region.kind === 'permTail') throw new Error(TOO_LARGE)
       if (region.kind === 'perm500') throw new Error(HTTP_500)
     }
     return (fixesByDevice.get(deviceId) ?? [])
@@ -264,6 +285,7 @@ async function runSeed(seed: number): Promise<string | null> {
     shouldContinue: () => true,
     logger: { warn: () => undefined },
     chunkMs: CHUNK_MS,
+    maxConcurrency,
     minWindowMs: MIN_WINDOW_MS,
     antiEntropyRecentWindowMs: RECENT_WINDOW_MS,
     antiEntropyOlderChunksPerTick: 1,
@@ -285,15 +307,44 @@ async function runSeed(seed: number): Promise<string | null> {
   const failingSlices = (deviceId: string): number => (regionsByDevice.get(deviceId) ?? [])
     .filter((region) => region.kind !== 'dense' && region.kind !== 'temp500')
     .reduce((total, region) => total + Math.ceil((region.range.toMs - region.range.fromMs + 2 * CHUNK_MS) / MIN_WINDOW_MS) + 2, 0)
+  // Gap slices are retried in cycles: within the running cycle (frozen at no
+  // more than today's gap slices) plus the next, so twice the open gap
+  // slices, counted when the bound is checked.
+  const openGapSlices = (deviceId: string): number => reconciler.getProgress().historyGaps
+    .filter((gap) => gap.deviceId === deviceId)
+    .reduce((total, gap) => total + Math.ceil((Date.parse(gap.to) - Date.parse(gap.from)) / MIN_WINDOW_MS) + 1, 0)
+  // In a saturated queue a turn waits for the other devices' turns: one
+  // re-check task at a time, each at most b requests of the slowest reply.
+  const antiEntropyConcurrency = Math.max(1, Math.floor(maxConcurrency / 2))
+  const ticksPerTurn = 1 + Math.ceil((deviceCount * budget * maxDelaySeconds * SECOND_MS) / (antiEntropyConcurrency * TICK_MS))
   const boundTicks = (deviceId: string): number => {
-    const positions = Math.max(2 * historySlices, 2 * recentSlices, historySlices) + failingSlices(deviceId)
+    const positions = Math.max(2 * historySlices, 2 * recentSlices, historySlices) + failingSlices(deviceId) + 2 * openGapSlices(deviceId)
     // +3: the planning tick, a turn already in flight, and expansion catch-up.
-    return Math.ceil((1.25 * positions) / perLanePerTurn) + 3
+    return ticksPerTurn * (Math.ceil((1.25 * positions) / perLanePerTurn) + 3)
   }
+  /** When the last temporary failure near this fix ends. */
+  const recoveryOf = (deviceId: string, fixMs: number): number => (regionsByDevice.get(deviceId) ?? [])
+    .filter((region) => region.recoversAtMs !== undefined
+      && fixMs >= region.range.fromMs - CHUNK_MS && fixMs <= region.range.toMs + CHUNK_MS)
+    .reduce((latest, region) => Math.max(latest, region.recoversAtMs!), 0)
+  // A fix inside an open gap is fetched by the gap lane. Its cycle bound:
+  // the running cycle is frozen at no more than S gap slices (the most ever
+  // open), the next cycle at no more than S plus one new slice per request
+  // made meanwhile (at most L x S), so (2 + L) x S gap requests in all.
+  let maxGapSlicesSeen = new Map<string, number>()
+  const gapDeadlines = new Map<string, number>()
+  const gapBoundTicks = (deviceId: string): number =>
+    ticksPerTurn * (Math.ceil((5 * (maxGapSlicesSeen.get(deviceId) ?? 0)) / perLanePerTurn) + 3)
+  const lastRecoveryMs = Math.max(0, ...[...regionsByDevice.values()].flat().map((region) => region.recoversAtMs ?? 0))
 
   const lateFixes: LateFix[] = []
   const uploadLateFix = (deviceId: string): void => {
-    const fixMs = random.int(missionStartMs, Date.now() - MINUTE_MS) + 1
+    // In tail seeds, half the uploads land in a slow region that recovers
+    // later, so they wait in a gap while the tail keeps growing.
+    const slow = (regionsByDevice.get(deviceId) ?? []).find((region) => region.kind === 'tempSlow')
+    const fixMs = tailSeed && slow !== undefined && random.chance(0.5)
+      ? random.int(slow.range.fromMs, slow.range.toMs - 1) + 1
+      : random.int(missionStartMs, Date.now() - MINUTE_MS) + 1
     const id = `${deviceId}-late-${fixMs}`
     fixesByDevice.get(deviceId)!.push({ id, fixMs, serverMs: Date.now() })
     lateFixes.push({ id, deviceId, fixMs, uploadedAtMs: Date.now(), fetchable: !isUnfetchable(deviceId, fixMs) })
@@ -335,9 +386,20 @@ async function runSeed(seed: number): Promise<string | null> {
     previousOwed = owed
     ackedSinceCheck = new Map()
     // b. Every fetchable late fix arrives within its bound, counted from when it became eligible.
+    const seen = new Map(maxGapSlicesSeen)
+    for (const device of devices) seen.set(device.device_id, Math.max(seen.get(device.device_id) ?? 0, openGapSlices(device.device_id)))
+    maxGapSlicesSeen = seen
     for (const fix of lateFixes) {
       if (!fix.fetchable || storedIds.has(fix.id)) continue
-      const eligibleMs = Math.max(fix.uploadedAtMs, lastDisruptionMs)
+      const eligibleMs = Math.max(fix.uploadedAtMs, lastDisruptionMs, recoveryOf(fix.deviceId, fix.fixMs))
+      if (Date.now() >= eligibleMs && !gapDeadlines.has(fix.id)) {
+        const inGap = progress.historyGaps.some((gap) =>
+          gap.deviceId === fix.deviceId && Date.parse(gap.from) <= fix.fixMs && fix.fixMs <= Date.parse(gap.to))
+        gapDeadlines.set(fix.id, inGap ? Date.now() + gapBoundTicks(fix.deviceId) * TICK_MS : Number.POSITIVE_INFINITY)
+      }
+      if (Date.now() > (gapDeadlines.get(fix.id) ?? Number.POSITIVE_INFINITY)) {
+        fail(`b: late fix ${fix.id} in a gap not retried within its gap cycle bound (b=${budget})`)
+      }
       if (Date.now() - eligibleMs > boundTicks(fix.deviceId) * TICK_MS) {
         fail(`b: late fix ${fix.id} not delivered within ${boundTicks(fix.deviceId)} ticks (b=${budget})`)
       }
@@ -393,8 +455,10 @@ async function runSeed(seed: number): Promise<string | null> {
     await vi.advanceTimersByTimeAsync(STEP_MS)
     checkInvariants()
     const allDelivered = lateFixes.every((fix) => !fix.fetchable || storedIds.has(fix.id))
-    if (!chaos && Date.now() > chaosEndMs + 5 * TICK_MS && allDelivered) break
+    if (!chaos && Date.now() > Math.max(chaosEndMs, lastRecoveryMs) + 5 * TICK_MS && allDelivered) break
   }
+  const undelivered = lateFixes.find((fix) => fix.fetchable && !storedIds.has(fix.id))
+  if (undelivered !== undefined) fail(`b: late fix ${undelivered.id} still not delivered when the run ended`)
 
   // f. Re-check requests per device per tick stay within the budget. Only
   // windows with no initial catch-up, suspend, resume or expansion count.

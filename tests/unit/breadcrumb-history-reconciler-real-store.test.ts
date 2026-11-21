@@ -514,4 +514,58 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
 
     expect(harness.maxInFlightByDevice.get('1')).toBe(1)
   })
+
+  it('retries a recovered gap slice while later gap tails keep growing (round 5)', async () => {
+    // A 5-minute gap early in the mission, and from 10 minutes after now every
+    // reply is too large, so each new recent slice becomes a gap that extends
+    // a tail ahead of the gap cursor. Three re-check requests per tick.
+    const gapMs = MISSION_START_MS + 2 * HOUR_MS + MINUTE_MS
+    const tailFromMs = NOW_MS + 10 * MINUTE_MS
+    const server = { gapBroken: true, tailRequests: 0, recoveredAtMs: null as number | null }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: MINUTE_MS,
+      reconcilerOptions: {
+        antiEntropyRecentWindowMs: 15 * MINUTE_MS,
+        antiEntropyRequestsPerDevicePerTick: 3,
+      },
+      rule: ({ fromMs, toMs }) => {
+        if (toMs > tailFromMs) {
+          server.tailRequests += 1
+          return { error: new Error(TOO_LARGE_MESSAGE) }
+        }
+        if (server.gapBroken && fromMs <= gapMs + MINUTE_MS && toMs >= gapMs) {
+          // The first retry once the tail exists fails; then the range recovers.
+          if (server.tailRequests >= 4) {
+            server.gapBroken = false
+            server.recoveredAtMs = Date.now()
+          }
+          return { error: new Error(TOO_LARGE_MESSAGE) }
+        }
+        return { error: null }
+      },
+    })
+    await harness.runFor(5 * MINUTE_MS)
+    expect(harness.reconciler.getProgress().historyGaps).toHaveLength(1)
+    for (let tick = 0; tick < 60 && server.recoveredAtMs === null; tick += 1) await harness.runFor(TICK_MS)
+    expect(server.recoveredAtMs).not.toBeNull()
+    harness.uploadLateBurst('1', gapMs, gapMs, MINUTE_MS)
+    const gapSlices = harness.reconciler.getProgress().historyGaps
+      .reduce((total, gap) => total + Math.ceil((Date.parse(gap.to) - Date.parse(gap.from)) / (5 * MINUTE_MS)), 0)
+
+    // Bound: the running cycle ends at the gap extent frozen when it started
+    // (no more than the slices open now), and the gap lane gets at least
+    // floor(3 / 3) = 1 request a turn, so the recovered slice is retried
+    // within gapSlices turns plus the turn in progress and the planning tick.
+    const boundTicks = gapSlices + 2
+    let deliveredAfterTicks: number | null = null
+    for (let tick = 1; tick <= boundTicks && deliveredAfterTicks === null; tick += 1) {
+      await harness.runFor(TICK_MS)
+      if (await harness.storedCount('1') === harness.serverFixCount('1')) deliveredAfterTicks = tick
+    }
+    expect(deliveredAfterTicks).not.toBeNull()
+    // The tail is still growing and still reported.
+    expect(harness.reconciler.getProgress().historyGaps.length).toBeGreaterThan(0)
+    expect(harness.reconciler.getProgress().complete).toBe(false)
+  }, 30_000)
 })
