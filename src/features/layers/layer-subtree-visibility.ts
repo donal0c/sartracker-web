@@ -7,7 +7,7 @@ import {
   MAP_TOOLS_GROUP_NODE_ID,
   TRACKING_GROUP_NODE_ID,
 } from './layer-catalog-ids'
-import { findCatalogNode } from './layer-catalog-tree'
+import { findCatalogNode, getNodeChildren } from './layer-catalog-tree'
 import type { LayerCatalogRootNode } from './layer-catalog-types'
 import {
   applyVisibilityForNodeIds,
@@ -61,6 +61,17 @@ export async function setLayerSubtreeVisibility(input: {
     // there would also show every hidden person under it. The layer node itself
     // is persisted alone, so other people's own hidden choices are kept.
     const hiddenGroups = hiddenAncestors.filter((id) => GROUP_KEY_BY_NODE_ID[id] !== undefined)
+    // People under a hidden layer may only inherit its hidden state. Save them
+    // hidden first, so showing the layer for one person never shows the rest,
+    // now or when the mission is reopened.
+    const shown = new Set(nodeIds)
+    const siblingIds = hiddenAncestors
+      .filter((id) => GROUP_KEY_BY_NODE_ID[id] === undefined)
+      .flatMap((id) => {
+        const layer = findCatalogNode(input.root, id)
+        return layer === null ? [] : getNodeChildren(layer).map((child) => child.id).filter((childId) => !shown.has(childId))
+      })
+    if (siblingIds.length > 0) await input.controller.setNodeVisibilities(siblingIds, false)
     applyVisibilityForNodeIds(input.root, hiddenGroups, true, useLayerVisibilityStore.getState())
     await input.controller.setNodeVisibilities(hiddenAncestors, true)
   }

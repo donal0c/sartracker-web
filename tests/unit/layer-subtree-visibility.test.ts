@@ -81,5 +81,12 @@ describe('switching a layer on in the simplified workspace [DON-341]', () => {
 
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['2'])
     expect(useLayerVisibilityStore.getState().groupVisibility.tracking).toBe(true)
+    // Person 2 only inherited the hidden layer; it is saved hidden before the
+    // layer is saved visible, so reopening the mission does not reveal them.
+    const calls = setNodeVisibilities.mock.calls.map(([ids, visible]) => [ids, visible])
+    const hideSibling = calls.findIndex(([ids, visible]) => visible === false && (ids as string[]).includes(getDeviceFeatureNodeId('2')))
+    const showLayer = calls.findIndex(([ids, visible]) => visible === true && (ids as string[]).includes(TRACKING_DEVICES_LAYER_NODE_ID))
+    expect(hideSibling).toBeGreaterThanOrEqual(0)
+    expect(showLayer).toBeGreaterThan(hideSibling)
   })
 })
