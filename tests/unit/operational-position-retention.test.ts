@@ -69,7 +69,46 @@ const REMOVED_PARTICIPANT_SCOPE = createParticipationScope({
   membershipEvents: [],
 })
 
+const ACTIVE_PARTICIPANT_SCOPE = createParticipationScope({
+  participants: [{
+    id: 'participant-1',
+    mission_id: 'mission-1',
+    kind: 'device',
+    traccar_device_id: DEVICE.device_id,
+    mission_team_id: null,
+    traccar_group_id: null,
+    team_name: null,
+    provenance: 'explicit',
+    effective_from: '2026-04-06T09:00:00.000Z',
+    added_at: '2026-04-06T09:00:00.000Z',
+    added_by: 'Coordinator',
+    removed_at: null,
+    removed_by: null,
+  }],
+  membershipEvents: [],
+})
+
 describe('operational position retention', () => {
+  it('keeps a marker whose fix time is ahead of a slow laptop clock when a later poll omits the device [DON-349 M-06]', () => {
+    // The laptop clock is three minutes slow, so every fix looks future-dated.
+    // That is labelled, not a reason to drop the marker or its warning.
+    const retention = createOperationalPositionRetention()
+    const aheadOfClock: NormalizedTrackingPosition = { ...POSITION, device_cache_stale: true, fix_time_ahead_of_clock: true }
+    const first = retention.apply({ ...FIRST_SNAPSHOT, positions: [aheadOfClock] },
+      ACTIVE_PARTICIPANT_SCOPE, new Date('2026-04-06T10:56:00.000Z'), 'mission-1')
+    expect(first.positions).toEqual([expect.objectContaining({ fix_time_ahead_of_clock: true })])
+
+    const omitted = retention.apply({ ...EMPTY_SNAPSHOT, devices: [DEVICE] }, ACTIVE_PARTICIPANT_SCOPE,
+      new Date('2026-04-06T10:56:05.000Z'), 'mission-1')
+
+    expect(omitted.positions).toEqual([expect.objectContaining({
+      device_id: DEVICE.device_id,
+      device_cache_stale: true,
+      fix_time_ahead_of_clock: true,
+    })])
+    expect(omitted.devices.map((device) => device.device_id)).toEqual([DEVICE.device_id])
+  })
+
   it('advances retained cache age and expires by cache age after an omitted current row [DON-267]', () => {
     const retention = createOperationalPositionRetention()
     const observedAt = new Date('2026-04-06T11:00:00.000Z')

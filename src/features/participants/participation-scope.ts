@@ -4,6 +4,7 @@ import type {
   ParticipantBackfillCheckpoint,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { TrackingSnapshot } from '../tracking/tracking-types'
+import { isPositionExpired } from '../tracking/tracking-snapshot-health'
 
 export type ParticipationScope = {
   readonly includesAt: (deviceId: string, timestamp: string) => boolean
@@ -143,7 +144,7 @@ export function createParticipationScope(input: {
       const activeDeviceIds = new Set(operationalDeviceIdsAt(observedAt))
       const visiblePositions = snapshot.positions.filter((position) =>
         activeDeviceIds.has(position.device_id) ||
-        (position.device_cache_stale !== true && includesAt(position.device_id, position.timestamp)))
+        (!isPositionExpired(position) && includesAt(position.device_id, position.timestamp)))
       const visibleDeviceIds = new Set([
         ...activeDeviceIds,
         ...visiblePositions.map((position) => position.device_id),

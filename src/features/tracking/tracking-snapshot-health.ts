@@ -16,6 +16,28 @@ export const DEFAULT_MAX_CACHE_AGE_MS = 4 * 60 * 60 * 1000
  */
 export const FIX_TIME_AHEAD_TOLERANCE_MS = 2 * 60 * 1000
 
+/**
+ * True when an annotated position is stale because it is old (or its cache
+ * is), not merely because its fix time is ahead of this laptop's clock. A fix
+ * ahead of the clock is labelled and shown as stale, but it is the newest
+ * thing known about the device, so retention and scope keep it like a fresh
+ * fix [DON-349 M-06].
+ *
+ * @param position a position annotated by annotateTrackingSnapshotHealth
+ * @param cacheStaleTtlMs the cache freshness limit used when annotating
+ * @returns whether the position should be treated as expired
+ */
+export function isPositionExpired(
+  position: NormalizedTrackingPosition,
+  cacheStaleTtlMs: number = DEFAULT_CACHE_STALE_TTL_MS,
+): boolean {
+  if (!position.device_cache_stale) return false
+  if (position.fix_time_ahead_of_clock !== true) return true
+  return position.data_origin === 'cache'
+    && position.cache_age_seconds !== null
+    && position.cache_age_seconds * 1000 > cacheStaleTtlMs
+}
+
 type AnnotateSnapshotHealthOptions = {
   readonly now: Date
   readonly cacheAgeMs?: number | null
