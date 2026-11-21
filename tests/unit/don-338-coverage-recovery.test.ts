@@ -1,20 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type {
-  CoverageChunkKey,
-  CoverageClaim,
-  CoverageManifest,
-  CoverageReadResult,
-  CoverageTileCatalog,
-} from '../../src/infrastructure/mission-store/tauri-mission-store'
-import {
-  createCoverageController,
-  type CoverageController,
-  type CoverageState,
-} from '../../src/features/tracking/coverage-controller'
 import { summarizeCoverageStatus } from '../../src/features/tracking/coverage-progress'
-import { selectCoverageOverlaySyncInputs } from '../../src/features/tracking/sync-coverage-overlay'
-import { selectCoverageChunkKeys, type CoverageOmissions } from '../../src/features/tracking/coverage-filter-selection'
+import {
+  activeCoverage as active,
+  createCoverageFakeMapHarness as harness,
+  loadCoverageComplete as loadComplete,
+} from '../support/coverage-fake-map-harness'
 
 /**
  * DON-338 round 2: the whole-history line recovers by itself after the tile
@@ -24,97 +15,7 @@ import { selectCoverageChunkKeys, type CoverageOmissions } from '../../src/featu
  * identity or selection signature changes).
  */
 
-const KEY_A: CoverageChunkKey = { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-1' }
-const KEY_B: CoverageChunkKey = { device_id: 'device-b', period_kind: 'outing', period_id: 'outing-1' }
-
 afterEach(() => vi.useRealTimers())
-
-function manifest(): CoverageManifest {
-  return {
-    changeSeq: 1,
-    enumerated: true,
-    pendingInvalidation: false,
-    backfillIncomplete: false,
-    outings: [],
-    chunks: [KEY_A, KEY_B].map((key) => ({
-      key, contentRev: 1, builtRev: 1, fixCount: 5, exactCount: 5, fixDigest: 'digest',
-    })),
-  }
-}
-
-function claim(selectedKeys: readonly CoverageChunkKey[]): CoverageClaim {
-  return {
-    changeSeq: 1, databaseReady: true, blockers: [],
-    chunkRevisions: selectedKeys.map((key) => ({ key, contentRev: 1 })),
-  }
-}
-
-type FakeMap = {
-  /** False while the map cannot apply anything (style gone, sync stuck). */
-  working: boolean
-  omissions: CoverageOmissions
-  syncs: number
-}
-
-/** Builds a controller wired to a fake map that mimics the overlay hook's re-run rule. */
-function harness(options: { readonly failDelivery?: (call: number) => boolean } = {}) {
-  let stage = 0
-  let controller: CoverageController | null = null
-  const map: FakeMap = { working: true, omissions: { omittedDeviceIds: [], omittedPeriodKeys: [] }, syncs: 0 }
-  let lastCatalog: CoverageTileCatalog | null = null
-  let lastSignature = ''
-  const deliverSelection = vi.fn(async (request: {
-    readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
-  }): Promise<CoverageReadResult<CoverageTileCatalog>> => {
-    if (options.failDelivery?.(deliverSelection.mock.calls.length) === true) {
-      throw new Error('Coverage tile worker is unavailable.')
-    }
-    stage += 1
-    return {
-      missionId: 'mission-1',
-      activationId: `stage-${stage}`,
-      periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: `stage-${stage}` }],
-      delivered: request.chunks.map((chunk) => ({ key: chunk.key, contentRev: chunk.contentRev })),
-    }
-  })
-  const syncMap = (state: CoverageState): void => {
-    const inputs = selectCoverageOverlaySyncInputs(state, 'mission-1', map.omissions)
-    if (inputs.catalog === lastCatalog && inputs.selectionSignature === lastSignature) return
-    lastCatalog = inputs.catalog
-    lastSignature = inputs.selectionSignature
-    if (!map.working) return
-    const catalog = inputs.catalog
-    const manifestNow = state.status === 'inactive' ? null : state.manifest
-    queueMicrotask(() => {
-      void (async () => {
-        map.syncs += 1
-        await controller?.notifySelectionApplied(selectCoverageChunkKeys(manifestNow, map.omissions))
-        if (catalog !== null) await controller?.notifyCatalogApplied(catalog)
-      })().catch(() => undefined)
-    })
-  }
-  controller = createCoverageController({
-    monotonicNow: () => Date.now(),
-    readManifest: vi.fn(async () => manifest()),
-    readChunk: vi.fn(async () => { throw new Error('not used') }),
-    readClaim: vi.fn(async (query: { readonly selectedKeys: readonly CoverageChunkKey[] }) => claim(query.selectedKeys)),
-    applyChunk: vi.fn(async () => undefined),
-    deliverSelection,
-    publish: syncMap,
-  })
-  return { controller, deliverSelection, map }
-}
-
-function active(state: CoverageState): Exclude<CoverageState, { status: 'inactive' }> {
-  if (state.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
-  return state
-}
-
-async function loadComplete(controller: CoverageController): Promise<void> {
-  await controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
-  await vi.advanceTimersByTimeAsync(0)
-  expect(active(controller.getState()).status).toBe('complete')
-}
 
 describe('DON-338: the history line recovers after the tile worker dies', () => {
   it('rebuilds without operator action and never reads up to date meanwhile', async () => {

@@ -45,6 +45,11 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const stalled = !failed && summary.stalled
   // Retry re-reads saved history and, for a stalled map, re-stages the
   // catalog so the map reattaches and re-applies the filter.
+  // Attention notices stand beside any waiting or stall message, never behind
+  // one: they say why history cannot be called complete [DON-338]. A stall
+  // already names positions waiting to be saved, so that alone is not repeated.
+  const degradedShown = blockers.has('ingest_health_degraded') || (outboxPending && !stalled)
+  const attentionShown = !failed && (rendererEvidenceDegraded || degradedShown || historyUnreconciled)
   const showRetry = failed || stalled ||
     (summary.kind === 'behind' && !stalled &&
       !evidenceBlocked && !rendererDetached && !rendererFilterPending)
@@ -90,21 +95,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               Anomaly evidence is waiting to be saved. History cannot be called complete yet.
               {' '}Current positions remain live.
             </p>
-          ) : rendererEvidenceDegraded ? (
-            <p className="mt-1" data-testid="coverage-evidence-degraded">
-              Anomaly evidence may not have been fully saved. History cannot be called complete.
-              {' '}Current positions remain live; resolve the evidence warning in Tracking.
-            </p>
-          ) : degraded ? (
-            <p className="mt-1" data-testid="coverage-degraded">
-              Evidence health is degraded. History cannot be called complete until storage recovers.
-            </p>
-          ) : historyUnreconciled ? (
-            <p className="mt-1" data-testid="coverage-retrieval-warning">
-              Saved history has not been reconciled through the mission window. Completeness is not verified.
-              {' '}Loaded saved evidence remains shown. A connection recovery or visibility change does not fill this gap.
-            </p>
-          ) : props.state.status === 'complete' ? (
+          ) : attentionShown ? null : props.state.status === 'complete' ? (
             <CompleteSummary
               omittedDeviceCount={props.omittedDeviceCount}
               omittedOutingCount={props.omittedOutingCount}
@@ -125,6 +116,27 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               History incomplete — showing loaded coverage. Press Retry to load the rest.
             </p>
           ) : null}
+          {failed ? null : (
+            <>
+              {rendererEvidenceDegraded ? (
+                <p className="mt-1" data-testid="coverage-evidence-degraded">
+                  Anomaly evidence may not have been fully saved. History cannot be called complete.
+                  {' '}Current positions remain live; resolve the evidence warning in Tracking.
+                </p>
+              ) : null}
+              {degradedShown ? (
+                <p className="mt-1" data-testid="coverage-degraded">
+                  Evidence health is degraded. History cannot be called complete until storage recovers.
+                </p>
+              ) : null}
+              {historyUnreconciled ? (
+                <p className="mt-1" data-testid="coverage-retrieval-warning">
+                  Saved history has not been reconciled through the mission window. Completeness is not verified.
+                  {' '}Loaded saved evidence remains shown. A connection recovery or visibility change does not fill this gap.
+                </p>
+              ) : null}
+            </>
+          )}
           {props.state.status === 'error' ? (
             <p className="mt-1" data-testid="coverage-error">
               History incomplete — {rendererDetached
