@@ -269,6 +269,26 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
     })
 
+    test('docked Review never covers the top bar or the paused alarm (DON-176)', async ({ page }) => {
+      await open(page)
+      await startMission(page)
+      await feed(page)
+      await page.getByTestId('ws-mission-button').click()
+      await page.getByTestId('mission-pause-resume-btn').click()
+      await page.getByTestId('ws-pause-confirm-yes').click()
+      await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+
+      await page.getByTestId('ws-more-button').click()
+      await page.getByTestId('ws-open-review').click()
+      await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+      // Both stay clickable with Review open: a click that lands on Review would time out.
+      await page.getByTestId('ws-mission-button').click({ timeout: 5_000 })
+      await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+      await page.getByTestId('ws-alarm-resume').click({ timeout: 5_000 })
+      await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+      await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+    })
+
     test('map can fill the screen, and layers still open large', async ({ page }) => {
       await open(page)
       await startMission(page)

@@ -123,7 +123,10 @@ export function WorkspaceOverlay({
   if (docked) {
     return (
       <div
-        className="pointer-events-none fixed inset-0 z-30 flex"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex"
+        // In the new layout this starts below the top bar and alarms (DON-176);
+        // elsewhere the variable is unset and the panel fills the height.
+        style={{ top: 'var(--sar-workspace-header-bottom, 0px)' }}
       >
         {/*
           Docked panel is left-aligned over the map so it never covers the

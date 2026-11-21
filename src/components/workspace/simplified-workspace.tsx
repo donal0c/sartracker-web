@@ -1,8 +1,11 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 import { useFocusModeStore } from '../../features/focus-mode/focus-mode-store'
 import type { PanelArrangement } from '../../features/workspace/panel-arrangement'
 import { useWorkspacePanels } from './use-workspace-panels'
+
+/** CSS variable holding where the top bar and alarms end; docked overlays start there. */
+export const WORKSPACE_HEADER_BOTTOM_VAR = '--sar-workspace-header-bottom'
 
 /**
  * The desktop workspace approved by the team (DON-341): one shallow top bar, a
@@ -32,10 +35,31 @@ export function SimplifiedWorkspace(props: {
   // Focus Mode belonged to the old screen; it must never stack on top of this one.
   useEffect(() => { useFocusModeStore.getState().setActive(false) }, [])
 
+  // Docked workspaces (Review and replay) start below the top bar and alarms, so
+  // the Mission button, Resume and every warning stay visible and clickable (DON-176).
+  const headerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const header = headerRef.current
+    if (header === null) return undefined
+    const root = document.documentElement
+    const publish = () => root.style.setProperty(WORKSPACE_HEADER_BOTTOM_VAR, `${header.getBoundingClientRect().bottom}px`)
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(header)
+    window.addEventListener('resize', publish)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', publish)
+      root.style.removeProperty(WORKSPACE_HEADER_BOTTOM_VAR)
+    }
+  }, [])
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-panel-arrangement={props.arrangement} data-testid="simplified-workspace">
-      {panels.top}
-      {props.safetyBanner}
+      <div ref={headerRef}>
+        {panels.top}
+        {props.safetyBanner}
+      </div>
       <div className="relative flex min-h-0 flex-1">
         {panels.side}
         <section className={`relative flex-1 overflow-hidden ${panels.slotSide === 'left' ? 'order-2' : '-order-1'}`}>
