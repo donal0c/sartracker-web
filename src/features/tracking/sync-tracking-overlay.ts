@@ -37,6 +37,8 @@ export const TRACKING_DEVICE_ATTENTION_LAYER_ID = 'tracking-devices-attention'
 export const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
 export const TRACKING_DEVICE_LABEL_LAYER_ID = 'tracking-devices-label'
 export const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
+/** Lone fixes on the live trail that a line cannot draw [DON-338] [LIV-5]. */
+export const TRACKING_BREADCRUMB_LONE_FIX_LAYER_ID = 'tracking-breadcrumbs-lone-fix'
 
 /**
  * Modern expression-form geometry-kind selectors. The legacy `['==','$type',X]`
@@ -60,6 +62,11 @@ const IS_BREADCRUMB_LINE_FEATURE: MapOverlayFilter = [
   IS_LINE_GEOMETRY,
   ['==', ['get', 'featureKind'], 'breadcrumbLine'],
 ]
+const IS_BREADCRUMB_LONE_FIX_FEATURE: MapOverlayFilter = [
+  'all',
+  IS_POINT_GEOMETRY,
+  ['==', ['get', 'featureKind'], 'breadcrumbLoneFix'],
+]
 const HIDDEN_TRACKING_FEATURE_FILTER: MapOverlayFilter = ['==', ['get', 'deviceId'], '__hidden__']
 type IncrementalTrackingSourceState = {
   readonly source: GeoJSONSource
@@ -67,6 +74,7 @@ type IncrementalTrackingSourceState = {
   readonly styleKey: string
   readonly attentionKey: string
   readonly deviceFeatureIds: readonly string[]
+  /** Trail feature IDs (lines and lone fixes) per device, replaced together on change. */
   readonly lineFeatureIdsByDevice: ReadonlyMap<string, readonly string[]>
 }
 const incrementalTrackingSourceStateByMap = new WeakMap<object, IncrementalTrackingSourceState>()
@@ -162,6 +170,25 @@ export function syncTrackingOverlay(
     },
   })
   setMapPaintPropertyIfChanged(map, TRACKING_BREADCRUMB_LAYER_ID, 'line-width', breadcrumbSize)
+
+  // A lone fix is part of the trail, drawn in the trail colour at trail size.
+  // It is not a current-position marker and has no label [LIV-5].
+  const loneFixRadius = Math.max(3, breadcrumbSize / 2)
+  ensureLayer(map, {
+    id: TRACKING_BREADCRUMB_LONE_FIX_LAYER_ID,
+    type: 'circle',
+    source: TRACKING_SOURCE_ID,
+    filter: IS_BREADCRUMB_LONE_FIX_FEATURE,
+    paint: {
+      'circle-color': ['get', 'color'],
+      'circle-radius': loneFixRadius,
+      'circle-stroke-color': '#020617',
+      'circle-stroke-width': 1,
+      'circle-stroke-opacity': 0.42,
+      'circle-opacity': 0.92,
+    },
+  })
+  setMapPaintPropertyIfChanged(map, TRACKING_BREADCRUMB_LONE_FIX_LAYER_ID, 'circle-radius', loneFixRadius)
 
   ensureLayer(map, {
     id: TRACKING_BREADCRUMB_DOTS_LAYER_ID,
@@ -285,6 +312,12 @@ export function syncTrackingOverlay(
     TRACKING_BREADCRUMB_LAYER_ID,
     lineTrailsVisible
       ? combineMapFilters(IS_BREADCRUMB_LINE_FEATURE, breadcrumbVisibilityFilter)
+      : HIDDEN_TRACKING_FEATURE_FILTER,
+  )
+  setMapFilterIfChanged(map,
+    TRACKING_BREADCRUMB_LONE_FIX_LAYER_ID,
+    lineTrailsVisible
+      ? combineMapFilters(IS_BREADCRUMB_LONE_FIX_FEATURE, breadcrumbVisibilityFilter)
       : HIDDEN_TRACKING_FEATURE_FILTER,
   )
   setMapFilterIfChanged(map,
@@ -437,8 +470,9 @@ function createIncrementalSourceState(
       deviceFeatureIds.push(feature.id)
       continue
     }
-    if (feature.properties?.featureKind !== 'breadcrumbLine') continue
-    const deviceId = feature.properties.deviceId
+    const featureKind = feature.properties?.featureKind
+    if (featureKind !== 'breadcrumbLine' && featureKind !== 'breadcrumbLoneFix') continue
+    const deviceId = feature.properties?.deviceId
     if (typeof deviceId !== 'string') continue
     const ids = lineFeatureIdsByDevice.get(deviceId) ?? []
     ids.push(feature.id)

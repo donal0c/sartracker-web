@@ -283,7 +283,7 @@ describe('tracking geojson', () => {
     expect(afterRestart?.id).toBe(beforeRestart?.id)
   })
 
-  it('segments breadcrumb lines on time gaps and skips one-point segments', () => {
+  it('segments breadcrumb lines on time gaps and draws a one-point segment as a lone fix [DON-338] [LIV-5]', () => {
     const collection = createBreadcrumbFeatureCollection(
       {
         devices: devicesFixture.map((device) => normalizeTraccarDevice(device)),
@@ -324,9 +324,14 @@ describe('tracking geojson', () => {
       5 * 60 * 1000,
     )
 
-    expect(collection.features).toHaveLength(1)
+    expect(collection.features).toHaveLength(2)
     expect(collection.features[0]?.geometry.type).toBe('LineString')
     expect(collection.features[0]?.properties.deviceId).toBe('1')
+    expect(collection.features[1]?.geometry).toEqual({ type: 'Point', coordinates: [-9.8, 52.1] })
+    expect(collection.features[1]?.properties).toEqual(expect.objectContaining({
+      deviceId: '1',
+      featureKind: 'breadcrumbLoneFix',
+    }))
   })
 
   it('connects sparse but operational breadcrumb cadence into a readable trail [DON-189]', () => {

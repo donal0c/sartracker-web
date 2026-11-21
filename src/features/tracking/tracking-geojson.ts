@@ -39,6 +39,25 @@ type GeoJsonLineFeature = Feature<
   }
 >
 
+/**
+ * A one-point trail segment (a fix between two silences longer than the
+ * break rule, a device's only fix, or a segment whose fixes share one spot).
+ * A line layer cannot draw it, so it is its own trail point. It is never a
+ * current-position marker and carries no name, so it never gets a label
+ * [DON-338] [LIV-5].
+ */
+type GeoJsonLoneFixFeature = Feature<
+  Point,
+  {
+    readonly deviceId: string
+    readonly featureKind: 'breadcrumbLoneFix'
+    readonly color: string
+  }
+>
+
+/** One live trail feature: a line segment, or a lone fix the line cannot draw. */
+export type GeoJsonTrailFeature = GeoJsonLineFeature | GeoJsonLoneFixFeature
+
 type GeoJsonBreadcrumbPointFeature = Feature<
   Point,
   {
@@ -61,7 +80,7 @@ type GeoJsonExactBreadcrumbPointFeature = Feature<
 
 const breadcrumbLineFeaturesByInput = new WeakMap<
   readonly NormalizedTrackingPosition[],
-  Map<string, readonly GeoJsonLineFeature[]>
+  Map<string, readonly GeoJsonTrailFeature[]>
 >()
 const breadcrumbPointFeaturesByInput = new WeakMap<
   readonly NormalizedTrackingPosition[],
@@ -161,13 +180,16 @@ export function createDeviceFeatureCollection(
 }
 
 /**
- * Creates GeoJSON breadcrumb line features grouped by device and segmented by time gap.
+ * Creates GeoJSON live trail features grouped by device and segmented by time
+ * gap: a line for every segment with two or more distinct places, and a
+ * `breadcrumbLoneFix` point for every segment a line cannot draw, so every
+ * fix in the live projection is drawn [DON-338] [LIV-5].
  */
 export function createBreadcrumbFeatureCollection(
   snapshot: TrackingSnapshot,
   gapThresholdMs: number,
   style: Pick<TrackingStylePreferences, 'deviceColors'> = { deviceColors: {} },
-): FeatureCollection<LineString> {
+): FeatureCollection<LineString | Point, GeoJsonTrailFeature['properties']> {
   const cachedFeatures = getCachedBreadcrumbLineFeatures(
     snapshot.breadcrumbs,
     gapThresholdMs,
@@ -191,12 +213,27 @@ export function createBreadcrumbFeatureCollection(
     existing.push(breadcrumb)
   }
 
-  const features: GeoJsonLineFeature[] = []
+  const features: GeoJsonTrailFeature[] = []
 
   for (const [deviceId, breadcrumbs] of breadcrumbsByDevice.entries()) {
     const segments = createTrailSegments(breadcrumbs, gapThresholdMs)
     for (const [segmentIndex, segment] of segments.entries()) {
-      if (segment.length < 2) {
+      const first = segment[0]
+      if (first === undefined) {
+        continue
+      }
+      if (!hasTwoDistinctPlaces(segment)) {
+        // A zero-length line draws nothing, so the segment is a lone trail point.
+        features.push({
+          type: 'Feature',
+          id: `breadcrumb-lone-fix:${deviceId}:${segmentIndex}`,
+          geometry: { type: 'Point', coordinates: [first.lon, first.lat] },
+          properties: {
+            deviceId,
+            featureKind: 'breadcrumbLoneFix',
+            color: getStyledDeviceColor(deviceId, style.deviceColors),
+          },
+        })
         continue
       }
 
@@ -222,6 +259,13 @@ export function createBreadcrumbFeatureCollection(
     type: 'FeatureCollection',
     features,
   }
+}
+
+/** True when a segment covers at least two different coordinates. */
+function hasTwoDistinctPlaces(segment: readonly NormalizedTrackingPosition[]): boolean {
+  const first = segment[0]
+  if (first === undefined) return false
+  return segment.some((position) => position.lat !== first.lat || position.lon !== first.lon)
 }
 
 /**
@@ -312,7 +356,7 @@ function getCachedBreadcrumbLineFeatures(
   breadcrumbs: readonly NormalizedTrackingPosition[],
   gapThresholdMs: number,
   style: Pick<TrackingStylePreferences, 'deviceColors'>,
-): readonly GeoJsonLineFeature[] | null {
+): readonly GeoJsonTrailFeature[] | null {
   return getBreadcrumbFeatureCache(breadcrumbLineFeaturesByInput, breadcrumbs).get(
     createLineFeatureCacheKey(gapThresholdMs, style),
   ) ?? null
@@ -322,7 +366,7 @@ function setCachedBreadcrumbLineFeatures(
   breadcrumbs: readonly NormalizedTrackingPosition[],
   gapThresholdMs: number,
   style: Pick<TrackingStylePreferences, 'deviceColors'>,
-  features: readonly GeoJsonLineFeature[],
+  features: readonly GeoJsonTrailFeature[],
 ): void {
   getBreadcrumbFeatureCache(breadcrumbLineFeaturesByInput, breadcrumbs).set(
     createLineFeatureCacheKey(gapThresholdMs, style),

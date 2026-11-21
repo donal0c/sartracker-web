@@ -120,11 +120,16 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
         trackingStyle,
       ).features
     : []
-  // Draw order: trail lines, then exact dots on top, then current positions.
+  // Draw order: trail lines and lone trail fixes, then exact dots on top,
+  // then current positions.
+  const isTrailFeature = (feature: Feature<Geometry>): boolean => {
+    const featureKind = feature.properties?.featureKind
+    return featureKind === 'breadcrumbLine' || featureKind === 'breadcrumbLoneFix'
+  }
   const trackingFeatures: readonly Feature<Geometry>[] = [
-    ...wholeTrail.features.filter((feature) => feature.geometry.type === 'LineString'),
+    ...wholeTrail.features.filter(isTrailFeature),
     ...exactDots,
-    ...wholeTrail.features.filter((feature) => feature.geometry.type !== 'LineString'),
+    ...wholeTrail.features.filter((feature) => !isTrailFeature(feature)),
   ]
 
   for (const feature of trackingFeatures) {
@@ -146,6 +151,26 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     }
 
     if (feature.geometry.type === 'Point') {
+      if (readStringProperty(properties, 'featureKind') === 'breadcrumbLoneFix') {
+        // A lone fix the trail line cannot draw [LIV-5]: a trail point in the
+        // trail colour, never a current-position marker, never labelled.
+        if (
+          !input.breadcrumbsVisible ||
+          (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
+        ) {
+          continue
+        }
+        L.circleMarker(toLatLng(feature.geometry.coordinates), {
+          radius: Math.max(3, breadcrumbSize / 2),
+          color: '#020617',
+          fillColor: readStringProperty(properties, 'color') ?? '#38BDF8',
+          fillOpacity: 0.92,
+          opacity: 0.42,
+          weight: 1,
+        }).addTo(layerGroup)
+        continue
+      }
+
       if (readStringProperty(properties, 'featureKind') === 'breadcrumb') {
         if (
           !input.breadcrumbsVisible ||

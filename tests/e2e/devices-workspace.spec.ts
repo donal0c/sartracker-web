@@ -556,11 +556,12 @@ async function readOperationalTrackingState(page: import('@playwright/test').Pag
       styleLoaded: map.isStyleLoaded(),
       currentPositionCount: countKind('device'),
       breadcrumbFeatureCount:
-        countKind('breadcrumb') + countKind('breadcrumbLine'),
+        countKind('breadcrumb') + countKind('breadcrumbLine') + countKind('breadcrumbLoneFix'),
       renderedOperationalFeatureCount: map.queryRenderedFeatures(undefined, {
         layers: [
           'tracking-devices-circle',
           'tracking-breadcrumbs-line',
+          'tracking-breadcrumbs-lone-fix',
           'tracking-breadcrumbs-dots',
         ],
       }).length,

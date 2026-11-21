@@ -70,6 +70,7 @@ async function readMapFilterState(page: Page) {
       deviceCircle: readFilter('tracking-devices-circle'),
       deviceLabel: readFilter('tracking-devices-label'),
       breadcrumbLine: readFilter('tracking-breadcrumbs-line'),
+      breadcrumbLoneFix: readFilter('tracking-breadcrumbs-lone-fix'),
       drawingLine: readFilter('mission-drawings-line'),
       drawingLabel: readFilter('mission-drawings-label'),
       clueMarkers: readFilter('mission-markers-symbol-clue'),
@@ -552,6 +553,11 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
         timeout: 5_000,
       })
       .toContain('bravo')
+    await expect
+      .poll(async () => JSON.stringify((await readMapFilterState(page)).breadcrumbLoneFix), {
+        timeout: 5_000,
+      })
+      .toContain('bravo')
 
     await currentBravoToggle.click()
     await expect(currentBravoToggle).toBeChecked()
@@ -898,6 +904,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
           deviceCircle: JSON.stringify(filters.deviceCircle),
           deviceLabel: JSON.stringify(filters.deviceLabel),
           breadcrumbLine: JSON.stringify(filters.breadcrumbLine),
+          breadcrumbLoneFix: JSON.stringify(filters.breadcrumbLoneFix),
           drawingLabel: JSON.stringify(filters.drawingLabel),
           clueMarkers: JSON.stringify(filters.clueMarkers),
         }
@@ -908,6 +915,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
         deviceCircle: expect.stringContaining('bravo'),
         deviceLabel: expect.stringContaining('bravo'),
         breadcrumbLine: expect.stringContaining('__hidden__'),
+        breadcrumbLoneFix: expect.stringContaining('__hidden__'),
         drawingLabel: expect.stringContaining('__hidden__'),
         clueMarkers: expect.stringContaining('__hidden__'),
       })
