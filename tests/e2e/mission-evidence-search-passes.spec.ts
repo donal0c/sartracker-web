@@ -2,12 +2,14 @@ import { expect, test } from '@playwright/test'
 import { openMissionSections } from './helpers/mission-sections'
 
 import { formatDublinDateTimeLocal } from '../../src/features/mission-review/dublin-local-time'
+import { openMissionPanel, openMissionReview } from './helpers/workspace-panels'
 
 test.describe('PR5 mission evidence and repeated search passes [DON-279]', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
+    await page.goto('/?missionHarness=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Search Pass Evidence')
     await page.getByTestId('mission-start-btn').click()
     await openMissionSections(page, ['outings'])
@@ -16,18 +18,18 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
 
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-search_area').click({ force: true })
-    await clickMap(page, { x: 500, y: 180 })
-    await clickMap(page, { x: 650, y: 220 })
-    await clickMap(page, { x: 540, y: 340 })
-    await rightClickMap(page, { x: 540, y: 340 })
+    await clickMap(page, { x: 580, y: 180 })
+    await clickMap(page, { x: 680, y: 220 })
+    await clickMap(page, { x: 600, y: 340 })
+    await rightClickMap(page, { x: 600, y: 340 })
     await page.getByTestId('drawing-name-input').fill('Area Alpha')
     await page.getByTestId('drawing-save-btn').click()
 
     await page.getByTestId('drawing-tool-search_area').click({ force: true })
-    await clickMap(page, { x: 680, y: 180 })
-    await clickMap(page, { x: 760, y: 230 })
-    await clickMap(page, { x: 690, y: 330 })
-    await rightClickMap(page, { x: 690, y: 330 })
+    await clickMap(page, { x: 720, y: 180 })
+    await clickMap(page, { x: 800, y: 230 })
+    await clickMap(page, { x: 730, y: 330 })
+    await rightClickMap(page, { x: 730, y: 330 })
     await page.getByTestId('drawing-name-input').fill('Area Beta')
     await page.getByTestId('drawing-save-btn').click()
 
@@ -37,7 +39,7 @@ test.describe('PR5 mission evidence and repeated search passes [DON-279]', () =>
   })
 
   test('records repeated coordinator outcomes without treating coverage as authority', async ({ page }) => {
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
     await expect(page.getByTestId('search-operations-workspace')).toContainText('Area Alpha')
     await expect(page.getByTestId('search-operations-workspace')).toContainText(
