@@ -13,6 +13,10 @@ import {
 import { TRACKING_BREADCRUMB_CASING_LAYER_ID } from './sync-tracking-overlay'
 import { buildCoverageLayerFilter } from '../layers/map-layer-filters'
 import { setMapFilterIfChanged } from '../map/map-style-writes'
+import type { CoverageState } from './coverage-controller'
+import { coverageChunkIdentity } from './coverage-identity'
+import { selectCoverageChunkKeys, type CoverageOmissions } from './coverage-filter-selection'
+import { selectCoverageCatalogForMission } from './mission-coverage-scope'
 
 export type CoverageOverlayMap = {
   readonly addSource: (
@@ -78,6 +82,38 @@ type CoverageOverlayOwnership = {
   readonly commitNow: () => void
   readonly rollbackNow: () => void
   readonly finalizeNow: () => void
+}
+
+export type CoverageOverlaySyncInputs = {
+  /** Catalog the map must show; its object identity changes only when a new catalog is staged. */
+  readonly catalog: CoverageTileCatalog | null
+  /** Stable text identity of the selected chunk keys the map must acknowledge. */
+  readonly selectionSignature: string
+}
+
+/**
+ * Selects only what the map overlay must draw. Coverage state changes on every
+ * new fix (sequence numbers, counts, a new manifest object); re-running the
+ * map sync for those would abort an in-flight source load and could starve
+ * the update under continuous movement [DON-338 REN-3]. The catalog keeps its
+ * object identity across those publishes, so it is the re-run key.
+ */
+export function selectCoverageOverlaySyncInputs(
+  state: CoverageState,
+  missionId: string | null,
+  omissions: CoverageOmissions,
+): CoverageOverlaySyncInputs {
+  const catalog = selectCoverageCatalogForMission(state, missionId)
+  const manifest = state.status !== 'inactive' && state.missionId === missionId
+    ? state.manifest
+    : null
+  const keys = selectCoverageChunkKeys(manifest, omissions)
+  return {
+    catalog,
+    selectionSignature: keys === undefined
+      ? '*'
+      : keys.map(coverageChunkIdentity).sort().join('\n'),
+  }
 }
 
 const overlaysByMap = new WeakMap<object, CoverageOverlayRegistry>()

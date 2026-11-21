@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMissionStore } from '../features/mission/mission-store'
 
+import { CoverageAttentionIndicator } from './coverage-attention-indicator'
 import { FocusModeToggle } from './focus-mode-toggle'
 import { DeferredGpxImportPanel } from './deferred-gpx-import-panel'
 import { HelicopterPanel } from './helicopter-panel'
@@ -115,6 +116,12 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
           ))}
         </div>
       </div>
+
+      {/* A failed or incomplete mission history line must be visible on every
+          tab; full detail stays on Tracking [DON-338 REN-6]. */}
+      {activeTab === 'tracking' ? null : (
+        <CoverageAttentionIndicator onOpenTracking={() => setActiveTab('tracking')} />
+      )}
 
       {/* Tab content — fills remaining height */}
       <div
