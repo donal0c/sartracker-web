@@ -144,14 +144,20 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
   afterEach(() => { vi.useRealTimers() })
 
   /** Starts a poller whose history fetches fail per `server`, polling every 30 minutes. */
-  function startPoller(server: { mode: 'ok' | 'gap' | 'down' }) {
+  function startPoller(
+    server: { mode: 'ok' | 'gap' | 'down' },
+    mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false },
+  ) {
     const onStatusChange = vi.fn()
     const client: TrackingPollerClient = {
       authenticate: vi.fn().mockResolvedValue(undefined),
       getDevices: vi.fn().mockResolvedValue([DEVICE]),
       // One unreadable roster row: its warning must survive history updates.
       getDevicesWithReport: vi.fn().mockResolvedValue({ accepted: [DEVICE], complete: false, rejectedCount: 1 }),
-      getCurrentPositions: vi.fn().mockResolvedValue([] as readonly NormalizedTrackingPosition[]),
+      getCurrentPositions: vi.fn(async () => {
+        if (mission.currentFixesDown) throw new Error('current positions unavailable')
+        return [] as readonly NormalizedTrackingPosition[]
+      }),
       getBreadcrumbs: vi.fn(async (_deviceId: string, from: Date, to: Date) => {
         const fromMs = from.getTime()
         const toMs = to.getTime()
@@ -170,6 +176,7 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
       intervalMs: 30 * 60 * 1000,
       staleThresholdMs: 60 * 60 * 1000,
       getHistoryResetKey: () => 'mission-1',
+      getPollingMode: () => mission.pollingMode,
       getInitialBreadcrumbFrom: () => new Date(START_MS),
       getInitialBreadcrumbs: async () => [],
       persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
@@ -222,6 +229,42 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
     await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
     expect(latest()?.warning ?? '').not.toContain('Breadcrumb history incomplete')
     expect(latest()?.warning ?? '').toContain('DEVICE ROSTER INCOMPLETE')
+    poller.stop()
+  })
+
+  const GAP_WHILE_PAUSED =
+    /^Live refresh suspended while mission is paused\. DEVICE ROSTER INCOMPLETE — 1 device entry from Traccar could not be read, so a tracker may be missing from the map\. Check the device list in Traccar\. Breadcrumb history incomplete for Alpha: \d\d:\d\d–\d\d:\d\d could not be loaded from Traccar and is missing from the map; retries resume when live tracking resumes\.$/u
+
+  it('keeps the gap and roster warnings on the paused status while the trail stays on the map', async () => {
+    const server: { mode: 'ok' | 'gap' | 'down' } = { mode: 'gap' }
+    const mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false }
+    const { poller, latest } = startPoller(server, mission)
+    poller.start()
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+    expect(latest()?.warning ?? '').toContain('Breadcrumb history incomplete for Alpha')
+
+    mission.pollingMode = 'paused'
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
+    expect(latest()?.mode).toBe('idle')
+    expect(latest()?.warning ?? '').toMatch(GAP_WHILE_PAUSED)
+    expect(latest()?.warningCodes).toEqual(['mission_paused', 'roster_unavailable', 'history_incomplete'])
+    poller.stop()
+  })
+
+  it('keeps the gap and roster warnings on the offline status', async () => {
+    const server: { mode: 'ok' | 'gap' | 'down' } = { mode: 'gap' }
+    const mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false }
+    const { poller, latest } = startPoller(server, mission)
+    poller.start()
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+
+    mission.currentFixesDown = true
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000)
+    expect(latest()?.mode).toBe('offline')
+    expect(latest()?.warning ?? '').toMatch(
+      /^OFFLINE MODE — no current positions received for this mission\. DEVICE ROSTER INCOMPLETE — 1 device entry from Traccar could not be read, so a tracker may be missing from the map\. Check the device list in Traccar\. Breadcrumb history incomplete for Alpha: \d\d:\d\d–\d\d:\d\d could not be loaded from Traccar and is missing from the map; still retrying\.$/u,
+    )
+    expect(latest()?.warningCodes).toEqual(['offline_no_positions', 'roster_unavailable', 'history_incomplete'])
     poller.stop()
   })
 })

@@ -11,6 +11,25 @@ const MAX_NAMED_DEVICES = 5
 const MINUTE_MS = 60_000
 
 /**
+ * Whether history retries are running. While live tracking is suspended
+ * (mission paused or in recovery) nothing is retried, and the text must not
+ * claim otherwise.
+ */
+export type HistoryRetryState = 'retrying' | 'suspended'
+
+/**
+ * The clause that ends a history warning, saying truthfully whether the
+ * missing history is being retried.
+ *
+ * @param retry whether retries are running
+ * @param whileRetrying the clause used while retries run, e.g. "still retrying"
+ * @returns the clause without leading or trailing punctuation
+ */
+export function historyRetryClause(retry: HistoryRetryState, whileRetrying: string): string {
+  return retry === 'retrying' ? whileRetrying : 'retries resume when live tracking resumes'
+}
+
+/**
  * Formats a missing time range in the operator's local clock (24-hour, as the
  * rest of the app). The start is rounded down and the end up to the minute,
  * so the text never claims less is missing than really is. The date is shown
@@ -91,12 +110,14 @@ function formatUtcOffset(instantMs: number, timeZone: string): string {
  * @param gaps merged gaps ordered by device then time, as the reconciler publishes them
  * @param nowMs the current time
  * @param timeZone IANA zone; defaults to the operator's
+ * @param retry whether retries are running; decides the closing clause
  * @returns the warning sentence, or null when there are no gaps
  */
 export function describeHistoryGapsForOperator(
   gaps: readonly BreadcrumbHistoryGap[],
   nowMs: number,
   timeZone: string = resolveOperatorTimeZone(),
+  retry: HistoryRetryState = 'retrying',
 ): string | null {
   if (gaps.length === 0) return null
   const shown = gaps.slice(0, MAX_NAMED_GAP_RANGES)
@@ -116,7 +137,7 @@ export function describeHistoryGapsForOperator(
     ? `; and ${remaining} more ${remaining === 1 ? 'range' : 'ranges'}`
     : ''
   const verb = gaps.length === 1 ? 'is' : 'are'
-  return `Breadcrumb history incomplete for ${named}${more} could not be loaded from Traccar and ${verb} missing from the map; still retrying.`
+  return `Breadcrumb history incomplete for ${named}${more} could not be loaded from Traccar and ${verb} missing from the map; ${historyRetryClause(retry, 'still retrying')}.`
 }
 
 /**

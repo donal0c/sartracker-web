@@ -128,8 +128,11 @@ it('must revoke all-mission-history completion when actual history reconciliatio
   for (const mode of ['paused', 'idle'] as const) {
     pollingMode = mode
     poller.requestPollNow()
+    // A paused mission keeps its trail on the map, so it keeps the history
+    // warning; a mission-less idle state does not [DON-338].
     await vi.waitFor(() => expect(useTrackingStore.getState().status.warning).toBe(mode === 'paused'
-      ? 'Live refresh suspended while mission is paused.' : 'Waiting for an active mission.'))
+      ? 'Live refresh suspended while mission is paused. Breadcrumb history incomplete for Alpha; retries resume when live tracking resumes.'
+      : 'Waiting for an active mission.'))
     await useCoverageStore.getState().controller?.refresh()
     expect(useCoverageStore.getState().state).toMatchObject({ status: 'partial', blockers: ['history_reconciliation_incomplete'] })
   }
