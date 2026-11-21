@@ -17,6 +17,13 @@ import { compareStringsByCodeUnit } from '../../lib/deterministic-string-order'
 // rescuer's route, and its own older route must not disappear just because the
 // device keeps reporting later fixes.
 const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
+/**
+ * The live trail line breaks where two consecutive drawn fixes are more than
+ * this far apart in time. Thinning must preserve exactly those breaks
+ * (LIV-4 [DON-338]); `tracking-geojson.ts` draws with this same value and
+ * `electron/breadcrumb-query.cjs` mirrors it for the persisted projection.
+ */
+export const BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
 const TARGET_BREADCRUMB_GEOMETRY_ERROR_METRES = 25
 const METRES_PER_DEGREE_AT_EQUATOR = 111_320
 const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
@@ -24,6 +31,8 @@ const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
   Math.SQRT2 /
   METRES_PER_DEGREE_AT_EQUATOR
 const MAX_SELECTOR_ITERATIONS = 2_048
+// A spatial cell this wide holds every valid coordinate in one cell.
+const WHOLE_GLOBE_BUCKET_WIDTH_DEGREES = 360
 const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
 export { createTrailSegments as createBreadcrumbSegments } from './trail-segmentation'
@@ -274,11 +283,10 @@ export function createBreadcrumbAccumulator(
       deviceState.selectorTimeBucketWidthMs = retention.timeBucketWidthMs
       deviceState.selectorSpatialBucketWidthDegrees =
         retention.spatialBucketWidthDegrees
-      deviceState.chronological.splice(
-        0,
-        deviceState.chronological.length,
-        ...retention.positions,
-      )
+      // Replaced by copying, not splice(...positions): every mandatory point
+      // is kept, so the set can exceed the engine's argument limit [DON-338].
+      deviceState.chronological.length = 0
+      for (const entry of retention.positions) deviceState.chronological.push(entry)
       deviceState.byKey.clear()
       for (const entry of retention.positions) {
         deviceState.byKey.set(createPositionKey(entry.position), entry)
@@ -738,6 +746,12 @@ function retainDeviceTrailAcrossWindow(
       }
     }
 
+    if (
+      bucketWidthMs >= fullWindowMs &&
+      spatialBucketWidthDegrees >= WHOLE_GLOBE_BUCKET_WIDTH_DEGREES
+    ) {
+      break
+    }
     if (bucketWidthMs < fullWindowMs) {
       bucketWidthMs *= 2
     } else {
@@ -745,11 +759,53 @@ function retainDeviceTrailAcrossWindow(
     }
   }
 
+  // No grid fits the budget: the points that keep the line truthful (first,
+  // last, both sides of every real silence, continuity anchors) number more
+  // than the cap. Keep every one of them and exceed the cap rather than drop
+  // any; sampling them would invent breaks or merge real silences [DON-338].
+  // The null bound marks the trail as simplified without a geometry promise.
   return {
-    positions: retainUniformlyAcrossWindow(chronological, maxPositions),
+    positions: selectSpatiotemporalRunBoundaries(
+      chronological,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ),
     geometryErrorBoundMetres: null,
     timeBucketWidthMs: null,
     spatialBucketWidthDegrees: null,
+  }
+}
+
+/** One device trail thinned to a budget by the live line's selector. */
+export type ThinnedDeviceTrail = {
+  readonly positions: readonly NormalizedTrackingPosition[]
+  /** 0 when nothing was dropped; null when no geometry bound is promised. */
+  readonly geometryErrorBoundMetres: number | null
+}
+
+/**
+ * Thins one device's trail to about `maxPositions` with the same selector the
+ * live line uses, so other boundaries (the restart cache) cannot invent or
+ * hide a break [DON-338]. The first and last fix, both sides of every silence
+ * over {@link BREADCRUMB_LINE_GAP_THRESHOLD_MS} and the continuity anchors are
+ * always kept, even when they exceed the budget. Input may be in any order;
+ * output is chronological.
+ */
+export function thinDeviceTrailToBudget(
+  positions: readonly NormalizedTrackingPosition[],
+  maxPositions: number,
+): ThinnedDeviceTrail {
+  const chronological = positions.map(decorateWithTimestamp)
+    .sort(compareTimestampedPositions)
+  // A budget below two would keep only the last fix and hide the route's start.
+  const retention = retainDeviceTrailAcrossWindow(
+    chronological,
+    Math.max(2, Math.floor(maxPositions)),
+  )
+  return {
+    positions: retention.positions.map((entry) => entry.position),
+    geometryErrorBoundMetres: retention.positions.length === chronological.length
+      ? 0 : retention.geometryErrorBoundMetres,
   }
 }
 
@@ -759,7 +815,20 @@ function normalizeSelectorWidth(value: number | null | undefined): number | null
     : null
 }
 
-/** Retains both ends of every contiguous spatiotemporal-cell visit in time order. */
+/**
+ * Retains both ends of every contiguous spatiotemporal-cell visit in time order,
+ * plus enough points inside a long visit that thinning never invents a line
+ * break (LIV-4 [DON-338]).
+ *
+ * The live line breaks wherever two consecutive drawn points are more than
+ * {@link BREADCRUMB_LINE_GAP_THRESHOLD_MS} apart. A long standstill is
+ * one cell visit, so keeping only its two ends would draw a break where the
+ * tracker never went silent. Inside a visit this keeps the last fix before the
+ * spacing would exceed the threshold, and both sides of every real silence.
+ * The result: consecutive retained points are more than the threshold apart
+ * only where the stored fixes themselves are, so the line breaks exactly where
+ * the full trail does.
+ */
 function selectSpatiotemporalRunBoundaries(
   chronological: readonly TimestampedPosition[],
   bucketWidthMs: number,
@@ -769,16 +838,10 @@ function selectSpatiotemporalRunBoundaries(
   let runTimeBucket: number | null = null
   let runLatitudeBucket: number | null = null
   let runLongitudeBucket: number | null = null
-  let runFirst: TimestampedPosition | null = null
   let runLast: TimestampedPosition | null = null
 
-  const retainRun = () => {
-    if (runFirst !== null && runLast !== null) {
-      retained.push(runFirst)
-      if (runLast !== runFirst) {
-        retained.push(runLast)
-      }
-    }
+  const retain = (entry: TimestampedPosition) => {
+    if (retained.at(-1) !== entry) retained.push(entry)
   }
 
   for (const entry of chronological) {
@@ -790,36 +853,35 @@ function selectSpatiotemporalRunBoundaries(
       (entry.position.lon + 180) / spatialBucketWidthDegrees,
     )
     if (
+      runLast === null ||
       timeBucket !== runTimeBucket ||
       latitudeBucket !== runLatitudeBucket ||
       longitudeBucket !== runLongitudeBucket
     ) {
-      retainRun()
+      if (runLast !== null) retain(runLast)
+      retain(entry)
       runTimeBucket = timeBucket
       runLatitudeBucket = latitudeBucket
       runLongitudeBucket = longitudeBucket
-      runFirst = entry
+    } else if (
+      entry.timestampMs - runLast.timestampMs > BREADCRUMB_LINE_GAP_THRESHOLD_MS
+    ) {
+      // A real silence inside one cell visit: keep both sides so the line
+      // breaks here, exactly once.
+      retain(runLast)
+      retain(entry)
+    } else if (
+      entry.timestampMs - (retained.at(-1)?.timestampMs ?? entry.timestampMs) >
+        BREADCRUMB_LINE_GAP_THRESHOLD_MS
+    ) {
+      // Not a silence: keep the previous fix so the drawn spacing stays within
+      // the break threshold and no break is invented.
+      retain(runLast)
     }
     runLast = entry
   }
-  retainRun()
+  if (runLast !== null) retain(runLast)
   return retained
-}
-
-/** Returns a deterministic endpoint-preserving finite fallback. */
-function retainUniformlyAcrossWindow(
-  chronological: readonly TimestampedPosition[],
-  maxPositions: number,
-): readonly TimestampedPosition[] {
-  if (chronological.length <= maxPositions) {
-    return chronological
-  }
-  return Array.from({ length: maxPositions }, (_, index) => {
-    const sourceIndex = Math.round(
-      (index * (chronological.length - 1)) / (maxPositions - 1),
-    )
-    return chronological[sourceIndex]!
-  })
 }
 
 /** Combines a persisted canonical bound with any newer live simplification. */

@@ -395,6 +395,8 @@ async function startCharacterizationRuntime(input: {
         changedPositionCount: 0,
         insertedPositionCount: 0,
         skippedAmbiguousLegacyAdoptionCount: 0,
+        sourceIdentityConflictCount: 0,
+        refusedSourceIdentityConflicts: [],
       }),
       ...input.missionStore,
     },
@@ -469,14 +471,20 @@ it('rejects stale history publication at the real delayed poller flush [WAR-06-A
       changedPositionCount: input.positions.length,
       insertedPositionCount: input.positions.length,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      // The real store names the rows it refused; none here [DON-338].
+      sourceIdentityConflictCount: 0,
+      refusedSourceIdentityConflicts: [],
     }
   })
+  // Answers as the production runtime does: the store kept every observation
+  // it was sent (none refused), so the live line may draw them [DON-338].
   const persistHistoryChunk = vi.fn((input: TrackingHistoryChunkPersistenceInput) => {
-    if (input.phase !== 'initial') return Promise.resolve()
+    const answer = { changed: false, keptPositions: input.positions }
+    if (input.phase !== 'initial') return Promise.resolve(answer)
     initialHistoryPersistenceCount += 1
     return initialHistoryPersistenceCount === 1
-      ? Promise.resolve({ changed: false })
-      : pendingSecondHistoryPersistence.promise.then(() => ({ changed: false }))
+      ? Promise.resolve(answer)
+      : pendingSecondHistoryPersistence.promise.then(() => answer)
   })
   let historyFetchCount = 0
   const client: TrackingPollerClient = {
@@ -630,6 +638,9 @@ it('rejects deferred stale current-fix publication through finish-idle-start whi
       changedPositionCount: input.positions.length,
       insertedPositionCount: input.positions.length,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      // The real store names the rows it refused; none here [DON-338].
+      sourceIdentityConflictCount: 0,
+      refusedSourceIdentityConflicts: [],
     }
   })
   let currentPollCount = 0
@@ -804,6 +815,9 @@ it('rejects the unkeyed cached snapshot on Mission B cold start [WAR-06-CACHE-SI
       changedPositionCount: input.positions.length,
       insertedPositionCount: input.positions.length,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      // The real store names the rows it refused; none here [DON-338].
+      sourceIdentityConflictCount: 0,
+      refusedSourceIdentityConflicts: [],
     }
   })
   const applySnapshot = (nextSnapshot: TrackingSnapshot): void => {

@@ -4,6 +4,7 @@ import { createCurrentTransportFreshness } from './current-transport-freshness'
 import { mergeDeferredTrackingCache } from './merge-deferred-tracking-cache'
 import { HISTORY_PIECE_ROW_BUDGET } from './split-history-chunk'
 import {
+  createCachedTrackingSnapshot,
   limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
   serializeTrackingCachePayload,
@@ -35,9 +36,11 @@ import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryRequestInput,
   TrackingHistoryChunkPersistenceResult,
+  TrackingHistoryStoreAnswer,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
 } from './polling-manager'
+import { readRefusedSourcePositions, withoutRefusedPositions } from './store-refused-positions'
 import { recordHistoryAdmissionFailure, recoverHistoryAdmission } from './coverage-store'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
 import type {
@@ -50,7 +53,11 @@ import type {
   ParticipantBackfillCheckpoint,
   PersistTrackingHistoryBatchInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
-import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
+import {
+  BACKFILL_CHUNK_MILLISECONDS,
+  runParticipantBackfillPass,
+} from '../participants/participant-backfill-runtime'
+import { classifyHistoryWindowFailure } from './breadcrumb-history-reconciler'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
 import {
@@ -59,6 +66,43 @@ import {
 } from './canonical-fix-time-evidence'
 import { describeTrackingWarningForDiagnostics } from './tracking-status-diagnostics'
 import { appendTrackingWarnings } from './tracking-warnings'
+import {
+  buildStoreWriteWarnings,
+  mergeStoreWriteTotals,
+  type StoreWriteOutcome,
+  type StoreWriteTotals,
+} from './store-write-outcome'
+
+const PARTICIPANT_BACKFILL_MIN_WINDOW_MS = 5 * 60 * 1_000
+const PARTICIPANT_BACKFILL_MAX_RETRY_DELAY_MS = 30_000
+const PARTICIPANT_BACKFILL_GROWTH_SUCCESS_COUNT = 4
+
+/** Per-checkpoint retry state for participant backfill, kept in memory only. */
+type ParticipantBackfillRetryState = {
+  failureCount: number
+  retryAtMs: number
+  windowMs: number
+  successCount: number
+}
+
+/** What one participant backfill pass leaves for the scheduler. */
+type ParticipantBackfillPassResult =
+  | { readonly kind: 'continue' }
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'waiting'; readonly retryAtMs: number }
+
+/** Identifies one participant backfill checkpoint across passes. */
+function participantBackfillKey(checkpoint: ParticipantBackfillCheckpoint): string {
+  return `${checkpoint.mission_id}|${checkpoint.traccar_device_id}|${checkpoint.window_from}`
+}
+
+/** True when a write acknowledgement carries the store's write outcome counts. */
+function isStoreWriteOutcome(value: unknown): value is StoreWriteOutcome {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Partial<Record<keyof StoreWriteOutcome, unknown>>
+  return typeof candidate.rejectedPositionCount === 'number'
+    && typeof candidate.sourceIdentityConflictCount === 'number'
+}
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -123,7 +167,8 @@ type TrackingRuntimePollerFactory = (
     readonly persistHistoryRequest?: (input: TrackingHistoryRequestInput) => Promise<void>
     readonly persistHistoryChunks?: (
       inputs: readonly TrackingHistoryChunkPersistenceInput[],
-    ) => Promise<void>
+    ) => Promise<TrackingHistoryStoreAnswer>
+    readonly onTrailStoreAgreementChange?: (awaitingAgreement: boolean) => void
     readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
   },
 ) => TrackingRuntimePoller
@@ -293,7 +338,7 @@ export type TrackingRuntimeMissionStore = {
     readonly changedPositionCount: number
     readonly insertedPositionCount: number
     readonly skippedAmbiguousLegacyAdoptionCount: number
-  }>
+  } & StoreWriteOutcome>
   readonly listTrackingHistoryCheckpoints?: (missionId: string) => Promise<readonly {
     readonly mission_id: string
     readonly device_id: string
@@ -419,6 +464,13 @@ export async function startTrackingRuntime(
   let trackingCacheReadWarningActive = false
   let cachedOperationalDataWarning: string | null = null
   let missionPersistenceWarningActive = false
+  // The poller's live trail may be missing fixes a write committed without a
+  // confirmed answer; the storage warning stays until it has re-read the
+  // store [DON-338 round 10].
+  let trailAwaitingStoreAgreement = false
+  // Distinct fixes the store refused and reused Traccar ids it kept as
+  // conflicts, for the active mission [DON-338 STO-1, STO-3].
+  let storeWriteTotals: StoreWriteTotals | null = null
   let droppedPersistedBreadcrumbCount = 0
   let lastDroppedBreadcrumbDiagnosticKey: string | null = null
   let nextBreadcrumbQueryRequestSequence = 0
@@ -432,6 +484,9 @@ export async function startTrackingRuntime(
     | null = null
   let participantBackfillInFlight = false
   let participantBackfillTask: Promise<void> | null = null
+  const participantBackfillRetryStates = new Map<string, ParticipantBackfillRetryState>()
+  let lastParticipantBackfillKey: string | null = null
+  let participantBackfillRetryTimer: ReturnType<typeof setTimeout> | null = null
   const participantScopeWaiters = new Set<() => void>()
   const participantScopeReadyTimeoutMs = dependencies.participantScopeReadyTimeoutMs
     ?? DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS
@@ -642,6 +697,14 @@ export async function startTrackingRuntime(
     )
   }
   const hooks: Parameters<TrackingRuntimePollerFactory>[1] = {
+    onTrailStoreAgreementChange: (awaitingAgreement) => {
+      if (
+        runtimeGeneration !== activeTrackingRuntimeGeneration ||
+        trailAwaitingStoreAgreement === awaitingAgreement
+      ) return
+      trailAwaitingStoreAgreement = awaitingAgreement
+      refreshTrackingStatus()
+    },
     persistHistoryRequest: async (input) => {
       if (!acceptingRuntimeUpdates) throw new Error('Tracking generation stopped before history request recording.')
       let requestedFrom = input.historyFrom
@@ -727,8 +790,9 @@ export async function startTrackingRuntime(
       : {
           persistHistoryChunks: async (
             inputs: readonly TrackingHistoryChunkPersistenceInput[],
-          ): Promise<void> => {
+          ): Promise<TrackingHistoryStoreAnswer> => {
             let changedPositionCount = 0
+            let keptPositions: readonly NormalizedTrackingPosition[] = []
             try {
               await enqueueTrackingPersistence(runtimeGeneration, async () => {
                 const firstInput = inputs[0]
@@ -756,6 +820,7 @@ export async function startTrackingRuntime(
                 }
                 await waitForParticipantScopeReady(firstInput.expectedMissionId)
                 const scopedInputs = inputs.map(scopeHistoryPersistenceInput)
+                const sentPositions = scopedInputs.flatMap(({ positions: scopedPositions }) => scopedPositions)
                 const positions = scopedInputs.flatMap(({ positions: scopedPositions }) =>
                   scopedPositions.map((position) => ({
                     source_position_id: position.id,
@@ -789,7 +854,15 @@ export async function startTrackingRuntime(
                     positions,
                     checkpoints,
                   })
+                  applyStoreWriteOutcome(activeMission.id, persisted)
                   changedPositionCount = persisted.changedPositionCount
+                  // Only what was sent and kept may be drawn; a missing or
+                  // malformed answer fails this write, so nothing from it is
+                  // drawn [DON-338].
+                  keptPositions = withoutRefusedPositions(
+                    sentPositions,
+                    readRefusedSourcePositions(persisted, sentPositions),
+                  )
                   return
                 }
                 const persisted = await dependencies.missionStore.persistTrackingHistoryBatch?.({
@@ -800,6 +873,9 @@ export async function startTrackingRuntime(
                 changedPositionCount = Array.isArray(persisted)
                   ? persisted.length
                   : positions.length
+                // A legacy writer names no refused rows; never reached in the
+                // Electron app, whose bridge always offers the bulk writer.
+                keptPositions = sentPositions
               })
               dependencies.notifyDurablePositionChange?.(changedPositionCount)
               if (
@@ -809,6 +885,7 @@ export async function startTrackingRuntime(
                 missionPersistenceWarningActive = false
                 refreshTrackingStatus()
               }
+              return { keptPositions }
             } catch (error) {
               await retainMissionPersistenceFailure(
                 error,
@@ -823,6 +900,7 @@ export async function startTrackingRuntime(
       input: TrackingHistoryChunkPersistenceInput,
     ): Promise<TrackingHistoryChunkPersistenceResult> => {
       let changedPositionCount = 0
+      let keptPositions: readonly NormalizedTrackingPosition[] = []
       try {
         await enqueueTrackingPersistence(runtimeGeneration, async () => {
           const activeMission = await dependencies.missionStore.getActiveMission()
@@ -836,6 +914,10 @@ export async function startTrackingRuntime(
           }
           await waitForParticipantScopeReady(input.expectedMissionId)
           const scopedInput = scopeHistoryPersistenceInput(input)
+          // Legacy writers below name no refused rows, so what they were sent
+          // is what they kept. The Electron bridge always offers the bulk
+          // writer, so the app never reaches them [DON-338 round 10].
+          const legacyKept: readonly NormalizedTrackingPosition[] = scopedInput.positions
           const positions = scopedInput.positions.map((position) => ({
             source_position_id: position.id,
             device_id: position.device_id,
@@ -865,7 +947,15 @@ export async function startTrackingRuntime(
                     ...(input.reconciledFrom === undefined ? {} : { reconciled_from: input.reconciledFrom }),
                   }],
             })
+            applyStoreWriteOutcome(activeMission.id, persisted)
             changedPositionCount = persisted.changedPositionCount
+            // Only what was sent and kept may be drawn; a missing or
+            // malformed answer fails this write, so nothing from it is drawn
+            // [DON-338].
+            keptPositions = withoutRefusedPositions(
+              scopedInput.positions,
+              readRefusedSourcePositions(persisted, scopedInput.positions),
+            )
             return
           }
           if (
@@ -884,6 +974,7 @@ export async function startTrackingRuntime(
                   }],
             })
             changedPositionCount = Array.isArray(persisted) ? persisted.length : 0
+            keptPositions = legacyKept
             return
           }
           if (positions.length === 0) {
@@ -897,6 +988,7 @@ export async function startTrackingRuntime(
             changedPositionCount = Array.isArray(persisted)
               ? persisted.length
               : positions.length
+            keptPositions = legacyKept
             return
           }
           for (const position of positions) {
@@ -906,6 +998,7 @@ export async function startTrackingRuntime(
             })
             changedPositionCount += 1
           }
+          keptPositions = legacyKept
         })
         if (
           runtimeGeneration === activeTrackingRuntimeGeneration &&
@@ -915,7 +1008,7 @@ export async function startTrackingRuntime(
           refreshTrackingStatus()
         }
         dependencies.notifyDurablePositionChange?.(changedPositionCount)
-        return { changed: changedPositionCount > 0 }
+        return { changed: changedPositionCount > 0, keptPositions }
       } catch (error) {
         await retainMissionPersistenceFailure(
           error,
@@ -1117,8 +1210,17 @@ export async function startTrackingRuntime(
       onStatusChange: (status) => {
         if (generation === pollerGeneration) hooks.onStatusChange(status)
       },
+      onTrailStoreAgreementChange: (awaitingAgreement) => {
+        if (generation === pollerGeneration) hooks.onTrailStoreAgreementChange?.(awaitingAgreement)
+      },
     })
     pollerGeneration = generation
+    // A new poller seeds its trail from the store, so a read-back the retired
+    // one still owed is no longer needed.
+    if (trailAwaitingStoreAgreement) {
+      trailAwaitingStoreAgreement = false
+      refreshTrackingStatus()
+    }
     return candidate
   }
 
@@ -1233,6 +1335,8 @@ export async function startTrackingRuntime(
     },
     async () => {
       try {
+        if (participantBackfillRetryTimer !== null) clearTimeout(participantBackfillRetryTimer)
+        participantBackfillRetryTimer = null
         if (participantBackfillTask !== null) await participantBackfillTask
       } finally {
         participantBackfillAbortController.abort()
@@ -1399,11 +1503,7 @@ export async function startTrackingRuntime(
       (cacheMatchesMission || cacheMatchesRecovery) &&
       isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
       const healthyCachedSnapshot = annotateTrackingSnapshotHealth(
-        {
-          devices: cachedSnapshot.devices,
-          positions: cachedSnapshot.positions,
-          breadcrumbs: cachedSnapshot.breadcrumbs,
-        },
+        createCachedTrackingSnapshot(cachedSnapshot),
         {
           now: now(),
           cacheAgeMs: calculateCacheAgeMs(cachedSnapshot.cached_at, now()),
@@ -1511,13 +1611,21 @@ export async function startTrackingRuntime(
     const cachedAt = now().toISOString()
     return trackingCacheWriteLane.enqueue(
       JSON.stringify([missionId, createTrackingCacheDataKey(snapshot)]),
-      async () => serializeTrackingCachePayload({
-        mission_id: missionId,
-        cached_at: cachedAt,
-        devices: snapshot.devices,
-        positions: snapshot.positions,
-        breadcrumbs: await limitTrackingCacheBreadcrumbs(snapshot.breadcrumbs),
-      }),
+      async () => {
+        // Thinned with the live line's rule; its simplification is persisted
+        // so a restore discloses it [DON-338].
+        const limited = await limitTrackingCacheBreadcrumbs(snapshot.breadcrumbs, {
+          metadata: snapshot.breadcrumbMetadata,
+        })
+        return serializeTrackingCachePayload({
+          mission_id: missionId,
+          cached_at: cachedAt,
+          devices: snapshot.devices,
+          positions: snapshot.positions,
+          breadcrumbs: limited.breadcrumbs,
+          ...(limited.metadata === undefined ? {} : { breadcrumb_metadata: limited.metadata }),
+        })
+      },
     )
   }
 
@@ -1534,10 +1642,16 @@ export async function startTrackingRuntime(
     }
   }
 
+  /**
+   * Starts the next participant backfill pass. Passes rotate across the
+   * mission's incomplete checkpoints, so one device whose history keeps
+   * failing waits out its own backoff while the others keep moving [DON-338].
+   */
   function scheduleParticipantBackfill(): void {
     if (
       dependencies.missionModelEnabled !== true ||
       participantBackfillInFlight ||
+      participantBackfillAbortController.signal.aborted ||
       dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
       dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
       (dependencies.missionStore.persistTrackingPositionsBulk === undefined &&
@@ -1546,9 +1660,9 @@ export async function startTrackingRuntime(
     ) return
 
     participantBackfillInFlight = true
-    let shouldScheduleNext = false
-    const task = runNextParticipantBackfillPass().then((didAdvance) => {
-      shouldScheduleNext = didAdvance
+    let result: ParticipantBackfillPassResult = { kind: 'idle' }
+    const task = runNextParticipantBackfillPass().then((passResult) => {
+      result = passResult
     }).catch((error) => {
       if (!participantBackfillAbortController.signal.aborted) {
         logger.warn('Participant history backfill pass failed; it will retry.', error)
@@ -1556,32 +1670,107 @@ export async function startTrackingRuntime(
     }).finally(() => {
       participantBackfillInFlight = false
       if (participantBackfillTask === task) participantBackfillTask = null
-      if (shouldScheduleNext && acceptingRuntimeUpdates &&
-        !participantBackfillAbortController.signal.aborted) {
+      if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return
+      if (result.kind === 'continue') {
         scheduleParticipantBackfill()
+      } else if (result.kind === 'waiting') {
+        scheduleParticipantBackfillRetry(result.retryAtMs)
       }
     })
     participantBackfillTask = task
   }
 
-  async function runNextParticipantBackfillPass(): Promise<boolean> {
+  /** Wakes participant backfill when the earliest backed-off checkpoint may retry. */
+  function scheduleParticipantBackfillRetry(retryAtMs: number): void {
+    if (participantBackfillRetryTimer !== null) return
+    participantBackfillRetryTimer = setTimeout(() => {
+      participantBackfillRetryTimer = null
+      scheduleParticipantBackfill()
+    }, Math.max(0, retryAtMs - Date.now()))
+  }
+
+  /**
+   * Picks the next incomplete checkpoint whose backoff has passed, after the
+   * one picked last, so every device gets its turn.
+   */
+  function selectParticipantBackfillCheckpoint(
+    checkpoints: readonly ParticipantBackfillCheckpoint[],
+    nowMs: number,
+  ): ParticipantBackfillCheckpoint | undefined {
+    const eligible = checkpoints
+      .filter((candidate) => candidate.completed !== 1 &&
+        (participantBackfillRetryStates.get(participantBackfillKey(candidate))?.retryAtMs ?? 0) <= nowMs)
+      .sort((left, right) => {
+        const leftKey = participantBackfillKey(left)
+        const rightKey = participantBackfillKey(right)
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0
+      })
+    return eligible.find((candidate) =>
+      lastParticipantBackfillKey !== null && participantBackfillKey(candidate) > lastParticipantBackfillKey)
+      ?? eligible[0]
+  }
+
+  /**
+   * Records a failed pass for one checkpoint: backs it off, narrows its window
+   * when the reply was oversized or slow, and logs it. The durable cursor is
+   * untouched, so the failed range is neither claimed nor skipped.
+   */
+  function noteParticipantBackfillFailure(
+    checkpoint: ParticipantBackfillCheckpoint,
+    state: ParticipantBackfillRetryState,
+    error: unknown,
+  ): void {
+    state.failureCount += 1
+    state.successCount = 0
+    const retryDelayMs = Math.min(
+      1_000 * 2 ** (state.failureCount - 1),
+      PARTICIPANT_BACKFILL_MAX_RETRY_DELAY_MS,
+    )
+    state.retryAtMs = Date.now() + retryDelayMs
+    if (classifyHistoryWindowFailure(error) !== null) {
+      state.windowMs = Math.max(PARTICIPANT_BACKFILL_MIN_WINDOW_MS, Math.floor(state.windowMs / 2))
+    }
+    logger.warn('Participant history backfill failed for a device; other devices continue and it will retry.', {
+      deviceId: checkpoint.traccar_device_id,
+      reconciledUntil: checkpoint.reconciled_until,
+      windowTo: checkpoint.window_to,
+      failureCount: state.failureCount,
+      retryDelayMs,
+      windowMs: state.windowMs,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  async function runNextParticipantBackfillPass(): Promise<ParticipantBackfillPassResult> {
     // Participant backfill consumes only durability acknowledgement, never returned rows.
     const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
       ?? dependencies.missionStore.persistTrackingHistoryBatch
-    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return false
+    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return { kind: 'idle' }
     const activeMission = await dependencies.missionStore.getActiveMission()
-    if (activeMission === null) return false
+    if (activeMission === null) return { kind: 'idle' }
     const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
       activeMission.id,
     ) ?? []
-    const checkpoint = checkpoints.find((candidate) => candidate.completed !== 1)
-    if (checkpoint === undefined) return false
+    const incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
+    if (incomplete.length === 0) return { kind: 'idle' }
     if (dependencies.missionStore.listDevices !== undefined) {
       const devices = await dependencies.missionStore.listDevices(activeMission.id)
       const durableDeviceIds = new Set(devices.map((device) => device.device_id))
-      if (checkpoints.some((candidate) =>
-        candidate.completed !== 1 && !durableDeviceIds.has(candidate.traccar_device_id))) return false
+      if (incomplete.some((candidate) => !durableDeviceIds.has(candidate.traccar_device_id))) {
+        return { kind: 'idle' }
+      }
     }
+    const checkpoint = selectParticipantBackfillCheckpoint(checkpoints, Date.now())
+    if (checkpoint === undefined) {
+      const retryAtMs = Math.min(...incomplete.map((candidate) =>
+        participantBackfillRetryStates.get(participantBackfillKey(candidate))?.retryAtMs ?? 0))
+      return { kind: 'waiting', retryAtMs }
+    }
+    const key = participantBackfillKey(checkpoint)
+    lastParticipantBackfillKey = key
+    const state = participantBackfillRetryStates.get(key)
+      ?? { failureCount: 0, retryAtMs: 0, windowMs: BACKFILL_CHUNK_MILLISECONDS, successCount: 0 }
+    participantBackfillRetryStates.set(key, state)
     const observation = dependencies.beginMissionEvidenceObservation?.(
       checkpoint.mission_id,
     ) ?? { missionId: checkpoint.mission_id, complete: () => undefined }
@@ -1589,16 +1778,40 @@ export async function startTrackingRuntime(
       throw new Error('Participant history evidence scope closed before backfill admission.')
     }
     try {
-      await runParticipantBackfillPass({
-        checkpoint,
-        getBreadcrumbsWithReport: client.getBreadcrumbsWithReport,
-        ...(dependencies.recordBreadcrumbRejections === undefined
-          ? {}
-          : { recordRejections: dependencies.recordBreadcrumbRejections }),
-        persistChunk,
-        updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
-        signal: participantBackfillAbortController.signal,
-      })
+      try {
+        await runParticipantBackfillPass({
+          checkpoint,
+          getBreadcrumbsWithReport: client.getBreadcrumbsWithReport,
+          ...(dependencies.recordBreadcrumbRejections === undefined
+            ? {}
+            : { recordRejections: dependencies.recordBreadcrumbRejections }),
+          persistChunk: async (input) => {
+            const acknowledgement = await persistChunk(input)
+            // Refused fixes and reused ids reach the operator as on every other write path [DON-338].
+            if (isStoreWriteOutcome(acknowledgement)) {
+              applyStoreWriteOutcome(input.mission_id, acknowledgement)
+            }
+            return acknowledgement
+          },
+          updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
+          signal: participantBackfillAbortController.signal,
+          windowMs: state.windowMs,
+        })
+      } catch (error) {
+        if (participantBackfillAbortController.signal.aborted) throw error
+        noteParticipantBackfillFailure(checkpoint, state, error)
+        return { kind: 'continue' }
+      }
+      state.failureCount = 0
+      state.retryAtMs = 0
+      state.successCount += 1
+      if (
+        state.windowMs < BACKFILL_CHUNK_MILLISECONDS &&
+        state.successCount >= PARTICIPANT_BACKFILL_GROWTH_SUCCESS_COUNT
+      ) {
+        state.windowMs = Math.min(BACKFILL_CHUNK_MILLISECONDS, state.windowMs * 2)
+        state.successCount = 0
+      }
       const nextCheckpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
         checkpoint.mission_id,
       ) ?? []
@@ -1608,6 +1821,7 @@ export async function startTrackingRuntime(
       const checkpointAdvanced = nextCheckpoint !== undefined && (
         nextCheckpoint.completed !== checkpoint.completed ||
         nextCheckpoint.reconciled_until !== checkpoint.reconciled_until)
+      if (nextCheckpoint?.completed === 1) participantBackfillRetryStates.delete(key)
       const currentMission = await dependencies.missionStore.getActiveMission()
       if (
         acceptingRuntimeUpdates &&
@@ -1617,6 +1831,8 @@ export async function startTrackingRuntime(
         await dependencies.notifyParticipantBackfillChange?.(checkpoint.mission_id)
       }
       return checkpointAdvanced && nextCheckpoints.some((candidate) => candidate.completed !== 1)
+        ? { kind: 'continue' }
+        : { kind: 'idle' }
     } finally {
       observation.complete()
     }
@@ -1634,6 +1850,7 @@ export async function startTrackingRuntime(
         expectedMissionId,
         dependencies.notifyDurablePositionChange,
         dependencies.missionModelEnabled !== true,
+        applyStoreWriteOutcome,
       )
       scheduleParticipantBackfill()
     })
@@ -1804,12 +2021,13 @@ export async function startTrackingRuntime(
         ? { code: 'cache_unreadable', text: 'Tracking cache could not be read; waiting for fresh current positions.' } : null,
       cachedOperationalDataWarning === null ? null
         : { code: 'cached_operational_data', text: cachedOperationalDataWarning },
-      missionPersistenceWarningActive
+      missionPersistenceWarningActive || trailAwaitingStoreAgreement
         ? {
             code: 'mission_storage_failed',
             text: 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.',
           }
         : null,
+      ...buildStoreWriteWarnings(storeWriteTotals, useMissionStore.getState().currentMission?.id ?? storeWriteTotals?.missionId ?? null),
       scopeWarning === null ? null : { code: 'participant_scope', text: scopeWarning },
     )
     return {
@@ -1817,6 +2035,36 @@ export async function startTrackingRuntime(
       ...combined,
       ...(breadcrumbTransferProgress === null ? {} : { savedHistoryTransfer: breadcrumbTransferProgress }),
     }
+  }
+
+  /**
+   * Folds a tracking write acknowledgement into the operator warnings. A
+   * refused fix or a reused Traccar id is recorded by the store; this keeps
+   * it visible until the mission changes [DON-338 STO-1, STO-3].
+   */
+  function applyStoreWriteOutcome(missionId: string, outcome: StoreWriteOutcome): void {
+    if (runtimeGeneration !== activeTrackingRuntimeGeneration) return
+    const next = mergeStoreWriteTotals(storeWriteTotals, missionId, outcome)
+    const changed = storeWriteTotals === null
+      || next.missionId !== storeWriteTotals.missionId
+      || next.rejectedPositionTotal !== storeWriteTotals.rejectedPositionTotal
+      || next.sourceIdentityConflictTotal !== storeWriteTotals.sourceIdentityConflictTotal
+    storeWriteTotals = next
+    if (!changed || (next.rejectedPositionTotal === 0 && next.sourceIdentityConflictTotal === 0)) return
+    logger.warn('Mission storage refused fixes or kept reused Traccar ids as conflicts.', {
+      rejectedPositionTotal: next.rejectedPositionTotal,
+      sourceIdentityConflictTotal: next.sourceIdentityConflictTotal,
+    })
+    void dependencies.recordDiagnosticEvent?.({
+      level: 'warn',
+      category: 'tracking',
+      event: 'tracking_store_write_anomalies',
+      fields: {
+        rejectedPositionTotal: next.rejectedPositionTotal,
+        sourceIdentityConflictTotal: next.sourceIdentityConflictTotal,
+      },
+    })
+    refreshTrackingStatus()
   }
 
   function refreshTrackingStatus(): void {
@@ -2485,6 +2733,7 @@ async function persistTrackingSnapshot(
   expectedMissionId: string | null,
   notifyDurablePositionChange?: (changedPositionCount: number) => void,
   legacyAutoParticipants = true,
+  notifyStoreWriteOutcome?: (missionId: string, outcome: StoreWriteOutcome) => void,
 ): Promise<PersistedPositionKeyCache | null> {
   const activeMission = await missionStore.getActiveMission()
   if (
@@ -2611,7 +2860,9 @@ async function persistTrackingSnapshot(
   // thousands of unseen fixes; write them in bounded pieces so no single
   // transaction holds the main loop. Pieces carry no checkpoint, inserts are
   // idempotent, and keys are cached only after every piece succeeds, so a
-  // failed piece is retried in full by the next snapshot [DON-313].
+  // failed piece is retried in full by the next snapshot [DON-313]. A
+  // malformed fix does not fail its piece: the store refuses and records it,
+  // commits the rest, and reports it in the acknowledgement [DON-338 STO-3].
   if (missionStore.persistTrackingPositionsBulk !== undefined) {
     for (let start = 0; start < newPositions.length; start += HISTORY_PIECE_ROW_BUDGET) {
       const persisted = await missionStore.persistTrackingPositionsBulk({
@@ -2619,6 +2870,7 @@ async function persistTrackingSnapshot(
         positions: newPositions.slice(start, start + HISTORY_PIECE_ROW_BUDGET),
         checkpoints: [],
       })
+      notifyStoreWriteOutcome?.(activeMission.id, persisted)
       notifyDurablePositionChange?.(persisted.changedPositionCount)
     }
   } else if (missionStore.addPositionsBulk !== undefined) {

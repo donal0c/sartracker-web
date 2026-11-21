@@ -1,4 +1,4 @@
-const { randomUUID } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
 
 const {
   canonicalizeAcceptedPosition,
@@ -130,6 +130,121 @@ function recordRejectedAnomaly(db, envelope) {
   return transaction()
 }
 
+const STORE_REJECTION_EVIDENCE_FIELDS = Object.freeze([
+  'device_id',
+  'source_position_id',
+  'lat',
+  'lon',
+  'timestamp',
+  'timestamp_source',
+  'data_origin',
+])
+const MAX_STORE_REJECTION_TEXT_LENGTH = 200
+
+/**
+ * Records one position row the mission store refused, inside the caller's
+ * write transaction, so the refusal commits or rolls back with the batch.
+ * Repeat delivery of the same refused row raises its occurrence count instead
+ * of adding a row [DON-338].
+ *
+ * @param {import('better-sqlite3').Database} db open mission database
+ * @param {{ missionId: string, reasonClass: string, receivedAt: string, position: unknown }} input
+ *   the refused row as received and the fixed reason class
+ * @returns {void}
+ */
+function recordStoreRejectedPosition(db, input) {
+  const evidence = createStoreRejectionEvidence(input.position)
+  const evidenceJson = JSON.stringify(evidence)
+  const contentHash = createHash('sha256').update(evidenceJson).digest('hex')
+  const anomalyKey = `store:reason:${input.reasonClass}:content:${contentHash}`
+  const deviceId = typeof evidence.device_id === 'string' && evidence.device_id !== ''
+    ? evidence.device_id
+    : null
+  const sourcePositionId = typeof evidence.source_position_id === 'string'
+    && evidence.source_position_id.trim() !== ''
+    ? evidence.source_position_id
+    : null
+  const inserted = db.prepare(`
+    INSERT INTO ingest_anomalies (
+      id, mission_id, kind, anomaly_key, device_id, source_position_id,
+      reason_class, received_at, canonical_payload_json, created_at,
+      first_seen_at, last_seen_at, occurrence_count
+    ) VALUES (?, ?, 'rejected', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(mission_id, kind, anomaly_key) DO NOTHING
+  `).run(
+    randomUUID(),
+    input.missionId,
+    anomalyKey,
+    deviceId,
+    sourcePositionId,
+    input.reasonClass,
+    input.receivedAt,
+    evidenceJson,
+    input.receivedAt,
+    input.receivedAt,
+    input.receivedAt,
+  )
+  if (inserted.changes === 0) {
+    db.prepare(`
+      UPDATE ingest_anomalies
+      SET last_seen_at = ?, occurrence_count = occurrence_count + 1
+      WHERE mission_id = ? AND kind = 'rejected' AND anomaly_key = ?
+    `).run(input.receivedAt, input.missionId, anomalyKey)
+  } else {
+    recordInsertedAnomalySummary(db, input.missionId, 'rejected', deviceId)
+  }
+}
+
+/**
+ * Returns the mission's distinct store-write anomaly totals: rows the mission
+ * store refused, and reused source position ids whose new observation was
+ * kept as a conflict instead of a fix. Both read indexed rows only.
+ *
+ * @param {import('better-sqlite3').Database} db open mission database
+ * @param {string} missionId mission to count
+ * @returns {{ missionRejectedPositionTotal: number, missionSourceIdentityConflictTotal: number }}
+ */
+function countStoreWriteAnomalies(db, missionId) {
+  // 'store;' is the first key after every 'store:' key, so this is an index range.
+  const rejected = db.prepare(`
+    SELECT COUNT(*) AS count FROM ingest_anomalies
+    WHERE mission_id = ? AND kind = 'rejected'
+      AND anomaly_key >= 'store:' AND anomaly_key < 'store;'
+  `).get(missionId)
+  const health = db.prepare(`
+    SELECT conflict_count FROM ingest_anomaly_mission_health WHERE mission_id = ?
+  `).get(missionId)
+  return {
+    missionRejectedPositionTotal: Number(rejected?.count ?? 0),
+    missionSourceIdentityConflictTotal: Number(health?.conflict_count ?? 0),
+  }
+}
+
+/**
+ * Copies only the bounded position fields of a refused row into JSON-safe
+ * values, keeping malformed values visible as text instead of dropping them.
+ *
+ * @param {unknown} position the refused row as received
+ * @returns {Record<string, string | number | null>} bounded evidence
+ */
+function createStoreRejectionEvidence(position) {
+  const source = position !== null && typeof position === 'object' ? position : {}
+  const evidence = {}
+  for (const field of STORE_REJECTION_EVIDENCE_FIELDS) {
+    const value = source[field]
+    if (value === null || value === undefined) {
+      evidence[field] = null
+    } else if (typeof value === 'number') {
+      evidence[field] = Number.isFinite(value) ? value : String(value)
+    } else if (typeof value === 'string') {
+      evidence[field] = value.slice(0, MAX_STORE_REJECTION_TEXT_LENGTH)
+    } else {
+      evidence[field] = `[${typeof value}]`
+    }
+  }
+  return evidence
+}
+
 /** Returns bounded aggregate health facts without anomaly content. */
 function summarizeIngestAnomalies(db, missionId) {
   const counts = missionId === undefined
@@ -195,8 +310,10 @@ function recordInsertedAnomalySummary(db, missionId, kind, deviceId) {
 }
 
 module.exports = {
+  countStoreWriteAnomalies,
   listIngestAnomalies,
   recordConflictAnomaly,
   recordRejectedAnomaly,
+  recordStoreRejectedPosition,
   summarizeIngestAnomalies,
 }

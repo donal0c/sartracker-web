@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import type maplibregl from 'maplibre-gl'
 
 import {
@@ -16,14 +16,15 @@ import { useTrackingStore } from '../tracking/tracking-store'
 import { useCoverageStore } from '../tracking/coverage-store'
 import {
   isCoverageOverlayAttached,
+  selectCoverageOverlaySyncInputs,
   syncCoverageOverlay,
 } from '../tracking/sync-coverage-overlay'
 import {
   selectCoverageChunkKeys,
   useCoverageFilterStore,
 } from '../tracking/coverage-filter-store'
-import { selectCoverageCatalogForMission } from '../tracking/mission-coverage-scope'
 import type { RenderableMapId } from '../../lib/map-config'
+import type { CoverageManifest } from '../../infrastructure/mission-store/tauri-mission-store'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapOverlaySync } from './register-map-overlay-sync'
 
@@ -59,6 +60,21 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const coverageController = useCoverageStore((state) => state.controller)
   const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)
   const omittedCoveragePeriodKeys = useCoverageFilterStore((state) => state.omittedPeriodKeys)
+  // Only the catalog and the selected keys decide what the map draws; other
+  // coverage churn must not restart an in-flight source load [DON-338 REN-3].
+  const coverageSyncInputs = selectCoverageOverlaySyncInputs(coverageState, missionId, {
+    omittedDeviceIds: omittedCoverageDeviceIds,
+    omittedPeriodKeys: omittedCoveragePeriodKeys,
+  })
+  const coverageCatalog = coverageSyncInputs.catalog
+  const coverageSelectionSignature = coverageSyncInputs.selectionSignature
+  const latestCoverageManifest = useRef<CoverageManifest | null>(null)
+  useEffect(() => {
+    latestCoverageManifest.current = coverageState.status !== 'inactive' &&
+      coverageState.missionId === missionId
+      ? coverageState.manifest
+      : null
+  }, [coverageState, missionId])
 
   useEffect(() => {
     const map = options.mapRef.current
@@ -98,10 +114,9 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
   useEffect(() => {
     const map = options.mapRef.current
     if (map === null) return
+    const catalog = coverageCatalog
     const synchronizeOverlay = async (signal: AbortSignal) => {
-      const catalog = selectCoverageCatalogForMission(coverageState, missionId)
-      const manifest = coverageState.status !== 'inactive' && coverageState.missionId === missionId
-        ? coverageState.manifest : null
+      const manifest = latestCoverageManifest.current
       let activation: Awaited<ReturnType<typeof syncCoverageOverlay>> | null = null
       try {
         if (
@@ -149,7 +164,8 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
       },
     })
   }, [
-    coverageState,
+    coverageCatalog,
+    coverageSelectionSignature,
     coverageController,
     omittedCoverageDeviceIds,
     omittedCoveragePeriodKeys,

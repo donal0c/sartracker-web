@@ -75,7 +75,10 @@ test.describe('complete mission-history coverage [DON-275]', () => {
         await controller.notifyChanged(state.missionId, state.changeSeq + index)
       }
     })
-    await expect(page.getByTestId('coverage-partial')).toBeVisible()
+    // DON-338 REN-2: new fixes while history is drawn read as updating, not as incomplete.
+    await expect(page.getByTestId('coverage-updating')).toBeVisible()
+    await expect(page.getByTestId('coverage-partial')).toHaveCount(0)
+    await expect(panel).not.toContainText('History incomplete')
     await expect(panel).not.toContainText('All mission history shown')
     expect(await page.evaluate(() => sessionStorage.getItem('don325-manifest-reads'))).toBe('0')
     await panel.screenshot({ path: testInfo.outputPath('coverage-background-partial.png') })
@@ -87,7 +90,8 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await panel.screenshot({ path: testInfo.outputPath('coverage-background-complete.png') })
   })
 
-  test('a moving coverage revision stays partial and recovers with Retry [DON-254]', async ({ page }) => {
+  test('a moving coverage revision reads as updating and catches up on its own [DON-254] [DON-338]', async ({ page }) => {
+    await page.clock.install()
     await page.setViewportSize({ width: 1440, height: 1000 })
     await seedCoverageMission(page)
     const panel = page.getByTestId('coverage-status-panel')
@@ -105,12 +109,14 @@ test.describe('complete mission-history coverage [DON-275]', () => {
       } })
       await useCoverageStore.getState().controller?.refresh()
     })
-    await expect(page.getByTestId('coverage-partial')).toBeVisible()
+    await expect(page.getByTestId('coverage-updating')).toBeVisible()
+    await expect(page.getByTestId('coverage-partial')).toHaveCount(0)
     await expect(page.getByTestId('coverage-error')).toHaveCount(0)
+    await expect(page.getByTestId('coverage-retry')).toHaveCount(0)
     await expect(panel).not.toContainText('All mission history shown')
     await panel.evaluate(element => element.scrollIntoView({ block: 'center' }))
     await panel.screenshot({ path: 'tmp/native-runtime-repair/claude-coverage-partial.png' })
-    await page.getByTestId('coverage-retry').click()
+    await page.clock.fastForward(30_001)
     await expect(panel).toContainText('All mission history shown')
     await panel.evaluate(element => element.scrollIntoView({ block: 'center' }))
     await panel.screenshot({ path: 'tmp/native-runtime-repair/claude-coverage-recovered.png' })
@@ -242,8 +248,11 @@ test.describe('complete mission-history coverage [DON-275]', () => {
       useCoverageStore.getState().controller?.cancel()
     })
     await expect(coverageStatus).toContainText('History incomplete — showing loaded coverage')
+    // DON-338 REN-2: the count is what the map draws (the earlier line stays drawn).
+    const cancelled = await readCoverageNumbers(page)
+    expect(cancelled.drawn).toBeLessThan(cancelled.total)
     await expect(page.getByTestId('coverage-progress-text')).toHaveText(
-      `${decreased.delivered} of ${decreased.total} fixes`,
+      `${cancelled.drawn.toLocaleString('en-US')} of ${cancelled.total.toLocaleString('en-US')} fixes`,
     )
 
     await page.evaluate(() => {
@@ -317,12 +326,17 @@ async function countCoverageLayers(page: Page): Promise<number> {
 
 async function readCoverageNumbers(page: Page): Promise<{
   readonly delivered: number
+  readonly drawn: number
   readonly total: number
 }> {
   return page.evaluate(async () => {
     const { useCoverageStore } = await import('/src/features/tracking/coverage-store.ts')
     const state = useCoverageStore.getState().state
     if (state.status === 'inactive') throw new Error('Coverage state is inactive.')
-    return { delivered: state.deliveredFixCount, total: state.totalFixCount }
+    return {
+      delivered: state.deliveredFixCount,
+      drawn: state.drawnFixCount ?? state.deliveredFixCount,
+      total: state.totalFixCount,
+    }
   })
 }

@@ -1,7 +1,10 @@
 import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryChunkPersistenceResult,
+  TrackingHistoryStoreAnswer,
 } from './polling-manager'
+import { readKeptPositions } from './store-refused-positions'
+import type { NormalizedTrackingPosition } from './tracking-types'
 
 /**
  * The most fixes written to the mission store in one call. A call is one
@@ -63,11 +66,6 @@ export function splitHistoryChunk(
 }
 
 /**
- * Persists a chunk piece by piece, yielding between pieces. Stops at the first
- * failed piece and rejects, so the caller retries the whole chunk; pieces
- * already stored keep checkpoints that claim only what they hold.
- */
-/**
  * Splitting derives piece cursors from fix times, which is truthful only when
  * every fix lies inside the chunk's own window and the window is not inverted.
  * Anything else stays whole, so the store validates and rejects it atomically
@@ -84,32 +82,29 @@ function isWellFormedChunk(chunk: TrackingHistoryChunkPersistenceInput): boolean
   })
 }
 
-const failuresAfterStoredChange = new WeakSet<object>()
-
 /**
- * True when a failed chunk had already stored new fixes in an earlier piece.
- * Its retry may then report nothing changed, so the caller must still refresh
- * the trail from the store (DON-305 late uploads) [DON-313].
+ * Persists a chunk piece by piece, yielding between pieces. Stops at the first
+ * failed piece and rejects, so the caller retries the whole chunk; pieces
+ * already stored keep checkpoints that claim only what they hold, and the
+ * caller reloads the trail from the store because a failed chunk may have
+ * stored something (DON-305 late uploads) [DON-313]. Returns whether any
+ * piece changed the store, with every observation the store kept across the
+ * pieces [DON-338].
  */
-export function historyFailureChangedStore(reason: unknown): boolean {
-  return typeof reason === 'object' && reason !== null && failuresAfterStoredChange.has(reason)
-}
-
 export async function persistHistoryChunkInPieces(
   chunk: TrackingHistoryChunkPersistenceInput,
-  persistPiece: (piece: TrackingHistoryChunkPersistenceInput) => Promise<TrackingHistoryChunkPersistenceResult | void>,
+  persistPiece: (
+    piece: TrackingHistoryChunkPersistenceInput,
+  ) => Promise<TrackingHistoryChunkPersistenceResult | TrackingHistoryStoreAnswer | void>,
   yieldBetweenPieces: () => Promise<void>,
 ): Promise<TrackingHistoryChunkPersistenceResult> {
   let changed = false
+  const keptPositions: NormalizedTrackingPosition[] = []
   for (const [index, piece] of splitHistoryChunk(chunk).entries()) {
-    try {
-      if (index > 0) await yieldBetweenPieces()
-      const result = await persistPiece(piece)
-      changed ||= result?.changed === true
-    } catch (reason) {
-      if (changed && typeof reason === 'object' && reason !== null) failuresAfterStoredChange.add(reason)
-      throw reason
-    }
+    if (index > 0) await yieldBetweenPieces()
+    const result = await persistPiece(piece)
+    changed ||= result !== undefined && 'changed' in result && result.changed === true
+    for (const position of readKeptPositions(result)) keptPositions.push(position)
   }
-  return { changed }
+  return { changed, keptPositions }
 }

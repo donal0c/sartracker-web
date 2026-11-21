@@ -307,17 +307,28 @@ test.describe('M19 devices workspace', () => {
     await page.getByTestId('breadcrumb-size-control').fill('12')
     await page.getByTestId('breadcrumb-mode-dots').click()
 
-    await expect(page.getByTestId('breadcrumb-size-label')).toContainText('12px dot diameter')
+    await expect(page.getByTestId('breadcrumb-size-label')).toContainText(
+      '12px dot diameter and trail width',
+    )
+    await expect(page.getByTestId('breadcrumb-mode-description')).toContainText(
+      'The line still shows the whole trail.',
+    )
+    // DON-338: the whole-trail line stays drawn underneath the exact dots.
     await expect.poll(async () => formatTrackingLayerState(page)).toMatchObject({
       dotRadius: 6,
+      lineWidth: 12,
       alphaBreadcrumbColor: '#FF7A00',
       breadcrumbFeatureKind: 'breadcrumb',
-      lineFilter: expect.stringContaining('__hidden__'),
+      lineFilter: expect.stringContaining('breadcrumbLine'),
       dotFilter: expect.stringContaining('breadcrumb'),
     })
+    expect((await formatTrackingLayerState(page)).lineFilter).not.toContain('__hidden__')
 
     await page.getByTestId('breadcrumb-mode-line').click()
     await expect(page.getByTestId('breadcrumb-size-label')).toContainText('12px trail width')
+    await expect(page.getByTestId('breadcrumb-mode-description')).toContainText(
+      'The line shows the whole trail of each device.',
+    )
 
     await expect.poll(async () => formatTrackingLayerState(page)).toMatchObject({
       lineWidth: 12,
@@ -545,11 +556,12 @@ async function readOperationalTrackingState(page: import('@playwright/test').Pag
       styleLoaded: map.isStyleLoaded(),
       currentPositionCount: countKind('device'),
       breadcrumbFeatureCount:
-        countKind('breadcrumb') + countKind('breadcrumbLine'),
+        countKind('breadcrumb') + countKind('breadcrumbLine') + countKind('breadcrumbLoneFix'),
       renderedOperationalFeatureCount: map.queryRenderedFeatures(undefined, {
         layers: [
           'tracking-devices-circle',
           'tracking-breadcrumbs-line',
+          'tracking-breadcrumbs-lone-fix',
           'tracking-breadcrumbs-dots',
         ],
       }).length,

@@ -53,7 +53,7 @@ describe('coverage status panel [DON-275]', () => {
     }))
     expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
     expect(host.textContent).toContain('completeness is not yet verified')
-    expect(host.textContent).toContain('Reason: timeout')
+    expect(host.textContent).toContain('Reason: loading took too long')
   })
 
   it('uses whole-mission wording only when no history is omitted', () => {
@@ -134,24 +134,84 @@ describe('coverage status panel [DON-275]', () => {
     expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
   })
 
-  it('keeps failures explicit while backfill or reorganization context also applies', () => {
+  it('keeps failures explicit, ahead of backfill or reorganization context', () => {
     render(state('error', {
       blockers: ['backfill_incomplete'],
       lastErrorClass: 'timeout',
     }))
 
-    expect(host.textContent).toContain('Participant history is still being added')
+    expect(host.textContent).not.toContain('Participant history is still being added')
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
-    expect(host.textContent).toContain('Reason: timeout')
+    expect(host.textContent).toContain('Reason: loading took too long')
 
     render(state('error', {
       pendingInvalidation: true,
       lastErrorClass: 'worker',
     }))
 
-    expect(host.textContent).toContain('Updating outing assignment')
+    expect(host.textContent).not.toContain('Updating outing assignment')
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
-    expect(host.textContent).toContain('Reason: worker')
+    expect(host.textContent).toContain('Reason: the history builder stopped')
+  })
+
+  it('DON-338 REN-2: a moving device reads as updating with the drawn count, not as incomplete', () => {
+    const onRetry = vi.fn()
+    render(state('partial', {
+      deliveredFixCount: 0, drawnFixCount: 37_000, totalFixCount: 37_010, updating: true,
+    }), { onRetry })
+
+    expect(host.querySelector('[data-testid="coverage-updating"]')?.textContent)
+      .toContain('Updating — the newest positions are being added to the history line')
+    expect(host.textContent).not.toContain('History incomplete')
+    expect(host.querySelector('[data-testid="coverage-progress-text"]')?.textContent)
+      .toBe('37,000 of 37,010 fixes')
+    expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
+  })
+
+  it('DON-338 REN-2: a line that stopped catching up says so plainly and offers Retry', () => {
+    render(state('partial', {
+      drawnFixCount: 900, totalFixCount: 1_000, updating: true, stalled: true,
+    }))
+
+    expect(host.querySelector('[data-testid="coverage-stalled"]')?.textContent).toBe(
+      'History line stalled — it has not updated for over 2 minutes. ' +
+      'The line may be missing recent positions or be out of date. Current positions remain live. Press Retry.',
+    )
+    expect(host.querySelector('[data-testid="coverage-retry"]')).not.toBeNull()
+    expect(host.textContent).toContain('900 of 1,000 fixes')
+  })
+
+  it('DON-338 REN-2: a partial line that nothing is working on is incomplete, never "updating"', () => {
+    render(state('partial', { drawnFixCount: 900, totalFixCount: 1_000, updating: false }))
+
+    expect(host.querySelector('[data-testid="coverage-updating"]')).toBeNull()
+    expect(host.textContent).toContain('History incomplete — showing loaded coverage. Press Retry to load the rest.')
+    expect(host.querySelector('[data-testid="coverage-retry"]')).not.toBeNull()
+  })
+
+  it('DON-338 REN-4: a failure that retries itself says so', () => {
+    render(state('error', { lastErrorClass: 'timeout', updating: true }))
+    expect(host.textContent).toContain('Retrying automatically; press Retry to try now.')
+
+    render(state('error', { lastErrorClass: 'timeout', updating: false }))
+    expect(host.textContent).not.toContain('Retrying automatically')
+    expect(host.textContent).toContain('Press Retry.')
+  })
+
+  it('DON-338: explains an out-of-memory history builder in words a volunteer can act on', () => {
+    render(state('error', { lastErrorClass: 'worker_out_of_memory', updating: true }))
+    expect(host.querySelector('[data-testid="coverage-error"]')?.textContent).toBe(
+      'History incomplete — showing loaded coverage. Reason: the history builder ran out of memory. ' +
+      'Retrying automatically; press Retry to try now.',
+    )
+    expect(host.querySelector('[data-testid="coverage-out-of-memory"]')?.textContent).toBe(
+      'This mission\'s history is too large for the history builder, so the whole-history line may stay missing. ' +
+      'Saved positions are safe and current positions remain live. Use Inspect exact fixes to check saved positions.',
+    )
+
+    render(state('error', { lastErrorClass: 'worker', updating: true }))
+    expect(host.querySelector('[data-testid="coverage-out-of-memory"]')).toBeNull()
+    expect(host.textContent).toContain('Reason: the history builder stopped.')
   })
 
   it('never describes a plain coverage failure as still loading', () => {
@@ -159,7 +219,62 @@ describe('coverage status panel [DON-275]', () => {
 
     expect(host.querySelector('[data-testid="coverage-loading"]')).toBeNull()
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
-    expect(host.textContent).toContain('Reason: timeout')
+    expect(host.textContent).toContain('Reason: loading took too long')
+  })
+})
+
+/** Every temporary waiting reason and the message it shows while it is still expected to clear. */
+const WAITING_REASONS: readonly {
+  readonly name: string
+  readonly options: { readonly blockers?: readonly string[]; readonly pendingInvalidation?: boolean; readonly backfillIncomplete?: boolean }
+  readonly waitingTestId: string
+  readonly clause: string
+}[] = [
+  { name: 'renderer_detached', options: { blockers: ['renderer_detached'] }, waitingTestId: 'coverage-renderer-detached', clause: 'while reattaching to the map' },
+  { name: 'renderer_filter_pending', options: { blockers: ['renderer_filter_pending'] }, waitingTestId: 'coverage-filter-pending', clause: 'while applying the selected history filter' },
+  { name: 'pending_invalidation blocker', options: { blockers: ['pending_invalidation'] }, waitingTestId: 'coverage-reorganizing', clause: 'while updating outing assignment' },
+  { name: 'manifest pendingInvalidation', options: { pendingInvalidation: true }, waitingTestId: 'coverage-reorganizing', clause: 'while updating outing assignment' },
+  { name: 'backfill_incomplete blocker', options: { blockers: ['backfill_incomplete'] }, waitingTestId: 'coverage-backfill', clause: 'while adding participant history' },
+  { name: 'manifest backfillIncomplete', options: { backfillIncomplete: true }, waitingTestId: 'coverage-backfill', clause: 'while adding participant history' },
+  { name: 'renderer_evidence_pending', options: { blockers: ['renderer_evidence_pending'] }, waitingTestId: 'coverage-evidence-pending', clause: 'while waiting for anomaly evidence to be saved' },
+  { name: 'ingest_outbox_pending', options: { blockers: ['ingest_outbox_pending'] }, waitingTestId: 'coverage-degraded', clause: 'while waiting for new positions to be saved' },
+]
+
+describe('DON-338 REN-3: a stall or failure outranks every temporary waiting message', () => {
+  for (const reason of WAITING_REASONS) {
+    it(`says a stalled line plainly while waiting on ${reason.name}`, () => {
+      const onRetry = vi.fn()
+      render(state('partial', { ...reason.options, updating: true, stalled: true }), { onRetry })
+
+      expect(host.querySelector(`[data-testid="${reason.waitingTestId}"]`)).toBeNull()
+      const stalled = host.querySelector('[data-testid="coverage-stalled"]')?.textContent ?? ''
+      expect(stalled).toContain(`History line stalled — it has not updated for over 2 minutes ${reason.clause}.`)
+      expect(stalled).toContain('The line may be missing recent positions or be out of date.')
+      expect(stalled).toContain('Current positions remain live.')
+      // Retry re-reads saved history and, for a stalled map, re-stages the
+      // catalog so the map reattaches and re-applies the filter
+      // (don-338-coverage-recovery.test.ts proves both recover).
+      expect(stalled).toContain('Press Retry.')
+      expect(stalled).not.toContain('Retry cannot fix this')
+      click('coverage-retry')
+      expect(onRetry).toHaveBeenCalledOnce()
+    })
+
+    it(`shows a failure, not the waiting message, while waiting on ${reason.name}`, () => {
+      const onRetry = vi.fn()
+      render(state('error', { ...reason.options, lastErrorClass: 'timeout', updating: false }), { onRetry })
+
+      expect(host.querySelector(`[data-testid="${reason.waitingTestId}"]`)).toBeNull()
+      expect(host.querySelector('[data-testid="coverage-error"]')?.textContent).toContain('Reason: loading took too long.')
+      click('coverage-retry')
+      expect(onRetry).toHaveBeenCalledOnce()
+    })
+  }
+
+  it('keeps the plain waiting message while the line is not stalled', () => {
+    render(state('partial', { blockers: ['renderer_detached'], updating: true }))
+    expect(host.querySelector('[data-testid="coverage-renderer-detached"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="coverage-stalled"]')).toBeNull()
   })
 })
 
@@ -191,7 +306,11 @@ function state(
     readonly totalFixCount?: number
     readonly blockers?: readonly string[]
     readonly pendingInvalidation?: boolean
-    readonly lastErrorClass?: 'timeout' | 'worker'
+    readonly backfillIncomplete?: boolean
+    readonly lastErrorClass?: 'timeout' | 'worker' | 'worker_out_of_memory'
+    readonly drawnFixCount?: number
+    readonly updating?: boolean
+    readonly stalled?: boolean
   } = {},
 ): CoverageState {
   return {
@@ -201,7 +320,7 @@ function state(
     manifest: {
       changeSeq: 1, enumerated: true,
       pendingInvalidation: options.pendingInvalidation ?? false,
-      backfillIncomplete: false, outings: [], chunks: [],
+      backfillIncomplete: options.backfillIncomplete ?? false, outings: [], chunks: [],
     },
     tileCatalog: null, delivered: {},
     deliveredFixCount: options.deliveredFixCount ?? 10,
@@ -209,6 +328,9 @@ function state(
     lastErrorClass: options.lastErrorClass,
     blockers: options.blockers ?? [],
     updatedAt: '2026-08-24T12:00:00.000Z',
+    ...(options.drawnFixCount === undefined ? {} : { drawnFixCount: options.drawnFixCount }),
+    ...(options.updating === undefined ? {} : { updating: options.updating }),
+    ...(options.stalled === undefined ? {} : { stalled: options.stalled }),
   }
 }
 

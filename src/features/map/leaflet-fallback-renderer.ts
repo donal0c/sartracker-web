@@ -8,10 +8,12 @@ import {
   resolveBreadcrumbDotOverlaySnapshot,
   type ExactBreadcrumbDotState,
 } from '../tracking/exact-breadcrumb-dot-controller'
+import { isBreadcrumbTrailDrawnForDevice } from '../tracking/trail-line-visibility'
 import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
 import {
   DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+  createExactBreadcrumbDotFeatureCollection,
   createTrackingFeatureCollection,
 } from '../tracking/tracking-geojson'
 import {
@@ -97,25 +99,45 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     breadcrumbTrailMode: DEFAULT_BREADCRUMB_TRAIL_MODE,
   }
   const breadcrumbSize = clampBreadcrumbSize(trackingStyle.breadcrumbSize)
-  const overlaySnapshot = resolveBreadcrumbDotOverlaySnapshot(
+  // DON-338: the whole-trail line is always drawn from the unchanged
+  // snapshot, in every trail mode. The simplified live projection is only
+  // ever drawn as a line; it is never drawn as dots.
+  const wholeTrail = createTrackingFeatureCollection(
     input.trackingSnapshot,
-    trackingStyle.breadcrumbTrailMode,
-    input.exactBreadcrumbDotState ?? { status: 'inactive' },
-  )
-  const tracking = createTrackingFeatureCollection(
-    overlaySnapshot,
     DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
-    trackingStyle,
+    trackingStyle.breadcrumbTrailMode === 'line'
+      ? trackingStyle
+      : { ...trackingStyle, breadcrumbTrailMode: 'line' },
   )
+  // In dots mode the exact dots come only from the ready exact page; loading
+  // and failure resolve to zero dots while the line stays drawn.
+  const exactDots = trackingStyle.breadcrumbTrailMode === 'dots'
+    ? createExactBreadcrumbDotFeatureCollection(
+        resolveBreadcrumbDotOverlaySnapshot(
+          input.trackingSnapshot,
+          trackingStyle.breadcrumbTrailMode,
+          input.exactBreadcrumbDotState ?? { status: 'inactive' },
+        ).breadcrumbs,
+        trackingStyle,
+      ).features
+    : []
+  // Draw order: trail lines and lone trail fixes, then exact dots on top,
+  // then current positions.
+  const isTrailFeature = (feature: Feature<Geometry>): boolean => {
+    const featureKind = feature.properties?.featureKind
+    return featureKind === 'breadcrumbLine' || featureKind === 'breadcrumbLoneFix'
+  }
+  const trackingFeatures: readonly Feature<Geometry>[] = [
+    ...wholeTrail.features.filter(isTrailFeature),
+    ...exactDots,
+    ...wholeTrail.features.filter((feature) => !isTrailFeature(feature)),
+  ]
 
-  for (const feature of tracking.features) {
+  for (const feature of trackingFeatures) {
     const properties = feature.properties ?? {}
     const deviceId = readStringProperty(properties, 'deviceId')
     if (feature.geometry.type === 'LineString') {
-      if (
-        !input.breadcrumbsVisible ||
-        (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
-      ) {
+      if (!isBreadcrumbTrailDrawnForDevice(deviceId, input.breadcrumbsVisible, hiddenBreadcrumbDeviceIds)) {
         continue
       }
       L.polyline(toLatLngs(feature.geometry.coordinates), {
@@ -127,11 +149,25 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     }
 
     if (feature.geometry.type === 'Point') {
+      if (readStringProperty(properties, 'featureKind') === 'breadcrumbLoneFix') {
+        // A lone fix the trail line cannot draw [LIV-5]: a trail point in the
+        // trail colour, never a current-position marker, never labelled.
+        if (!isBreadcrumbTrailDrawnForDevice(deviceId, input.breadcrumbsVisible, hiddenBreadcrumbDeviceIds)) {
+          continue
+        }
+        L.circleMarker(toLatLng(feature.geometry.coordinates), {
+          radius: Math.max(3, breadcrumbSize / 2),
+          color: '#020617',
+          fillColor: readStringProperty(properties, 'color') ?? '#38BDF8',
+          fillOpacity: 0.92,
+          opacity: 0.42,
+          weight: 1,
+        }).addTo(layerGroup)
+        continue
+      }
+
       if (readStringProperty(properties, 'featureKind') === 'breadcrumb') {
-        if (
-          !input.breadcrumbsVisible ||
-          (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
-        ) {
+        if (!isBreadcrumbTrailDrawnForDevice(deviceId, input.breadcrumbsVisible, hiddenBreadcrumbDeviceIds)) {
           continue
         }
 

@@ -1,5 +1,9 @@
 const { createCoverageOwnerLifecycle } = require('./coverage-owner-lifecycle.cjs')
 const { sanitizeDiagnosticText } = require('./diagnostic-sanitizer.cjs')
+const {
+  isCoverageCancellationFailure,
+  toPublicCoverageError,
+} = require('./coverage-public-error.cjs')
 
 const MAX_DIAGNOSTIC_TEXT_LENGTH = 500
 
@@ -7,6 +11,7 @@ const MAX_DIAGNOSTIC_TEXT_LENGTH = 500
 function registerCoverageIpcHandlers(input) {
   input = {
     ...input,
+    ipcMain: withPublicCoverageErrors(input),
     ownerLifecycle: input.ownerLifecycle ?? createCoverageOwnerLifecycle({
       onFailure: input.onLifecycleFailure,
     }),
@@ -36,6 +41,39 @@ function registerCoverageIpcHandlers(input) {
       scopeCoverageRequestId(event, requestId),
     )
   })
+}
+
+/**
+ * Wraps ipcMain so every coverage handler rejects only with a fixed public
+ * error; the raw failure is logged in the main process [DON-338].
+ */
+function withPublicCoverageErrors(input) {
+  const ipcMain = input.ipcMain
+  return {
+    handle: (channel, handler) => ipcMain.handle(channel, async (...args) => {
+      try {
+        return await handler(...args)
+      } catch (error) {
+        if (!isCoverageCancellationFailure(error)) reportCoverageRpcFailure(input, error, channel)
+        throw toPublicCoverageError(error)
+      }
+    }),
+  }
+}
+
+/** Logs a raw coverage RPC failure in the main process only. */
+function reportCoverageRpcFailure(input, error, channel) {
+  try {
+    if (typeof input.onCoverageRpcFailure === 'function') {
+      input.onCoverageRpcFailure(error, { channel })
+      return
+    }
+    const message = sanitizeDiagnosticText(error instanceof Error ? error.message : String(error))
+      .slice(0, MAX_DIAGNOSTIC_TEXT_LENGTH)
+    console.error(`Coverage request failed on ${channel}: ${message}`)
+  } catch {
+    // Diagnostics are best-effort and must never replace the public rejection.
+  }
 }
 
 /** Owns tile reads and their cooperative cancellation by renderer process. */

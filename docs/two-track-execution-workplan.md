@@ -2,6 +2,20 @@
 
 Updated 2026-10-21. This is the single active queue. Linear owns issue detail and status; this file owns order and dependencies; [HANDOFF](../handoff/HANDOFF.md) owns continuity; [release checklist](release-checklist.md) owns the release gate. The pre-reset workplan is retained at [handoff/archive/2026-09-28-pre-reset-workplan.md](../handoff/archive/2026-09-28-pre-reset-workplan.md).
 
+## Team review of the layout trial, 21 Nov 2026 (sets the order)
+
+Source: SARNOV review plus the in-person call; ledger Answer Round 5.
+
+1. **DON-338 (Urgent, Regression):** trail splits at 10,000 points. Goes first.
+2. **DON-339** scale ×2 and **DON-340** weather links on desktop. Small and known; can join 13.8.
+3. **13.8 queue below:** DON-313, DON-312, DON-337.
+4. **DON-341 simplified layout** (children DON-342/343/344; DON-345 waits on Eamonn).
+   Port from branch `layouts/three-simplified`; don't merge the test-only switch.
+5. **DON-100 multi-day**, now unblocked: named day segments in Layers. One question is
+   still open (recording while paused). Complexity 7+, so design first.
+6. **Maps:** DON-144 all-Ireland OS (high detail in key areas), DON-346 grid,
+   DON-347 East West Mapping (late).
+
 ## 13.7 published 21 Oct 2026
 
 beta.13.7 was published 21 Oct 2026 for controlled team testing (tag 981e17cd,

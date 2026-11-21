@@ -763,6 +763,11 @@
               <tr><td><strong>EVIDENCE HEALTH</strong> (amber or red)</td><td>Rejected-position or other evidence is waiting to be saved, or could not be saved. Live positions still show. The warning stays until the evidence is saved or the storage problem is fixed; read its words and export a support bundle if it does not clear.</td></tr>
               <tr><td><strong>TRACKING REPLACEMENT EVIDENCE UNSETTLED</strong></td><td>An earlier connection has not finished saving its evidence. Keep the app open, check Diagnostics, and try <strong>Reconnect</strong>. It is not confirmed data loss, but do not ignore it because new positions are arriving.</td></tr>
               <tr><td><strong>Breadcrumb history is reconciling</strong></td><td>Catching up on older history. Current positions stay live.</td></tr>
+              <tr><td><strong>Breadcrumb history re-check is running behind for</strong> a named device, with times</td><td>The app re-reads older history every five minutes to pick up positions a phone uploaded late. For the named device and times that re-read has been behind for at least ten minutes, so <strong>late-uploaded positions from then may not be on the map yet</strong>. It continues by itself and the warning clears when it has caught up; while the mission is paused it continues when live tracking resumes.</td></tr>
+              <tr><td><strong>Breadcrumb history incomplete for</strong> a named device, with times (for example <em>10:05–10:35</em>)</td><td>That stretch of the device's trail could not be loaded from the tracking server and is <strong>missing from the map</strong>. The app keeps retrying about every five minutes and the warning clears when the stretch is filled. Until then do not read that gap as "nobody was there"; check with the team. The warning stays on screen while the mission is paused or the app is offline; while paused it ends <em>retries resume when live tracking resumes</em>, because nothing is retried until then. If the clocks change inside the missing stretch, each time shows its offset (for example <em>01:50 (UTC+1)–01:10 (UTC+0)</em>).</td></tr>
+              <tr><td><strong>DEVICE ROSTER INCOMPLETE</strong></td><td>The tracking server sent one or more device entries the app could not read, so a tracker may be missing from the map. Count your trackers against the list, and check the device list in Traccar. The warning stays up, including while the list is refreshing, the mission is paused or the app is offline, until the server sends a complete list.</td></tr>
+              <tr><td><strong>MISSION STORAGE REFUSED FIXES</strong></td><td>Some fixes arrived with a missing or invalid value (for example no time) and were not saved or drawn. All other fixes were saved. The number is the total for this mission and stays on screen. Tell an admin and export a support bundle after the mission.</td></tr>
+              <tr><td><strong>TRACKING SERVER REUSED POSITION IDS</strong></td><td>The tracking server sent a different fix under an id it had already used. The fix stored first was kept and the new one is not on the map. The server may have been reset or restored; check with whoever runs it, and check positions against your independent source.</td></tr>
             </tbody>
           </table>
           <p>
@@ -789,8 +794,10 @@
           <h3>Breadcrumbs: line or dots</h3>
           <ul>
             <li><strong>Solid line</strong> draws each trail as a line. On very long routes the line may be simplified for speed; the app then shows <strong>Trail display simplified</strong> and how far the line may differ. The saved history is not simplified.</li>
-            <li><strong>Breadcrumb dots</strong> shows every real fix as a dot. If there are more than 10,000, the Tracking tab shows one page at a time with <strong>Earlier</strong> and <strong>Later</strong>. A page never uses samples in place of real fixes.</li>
-            <li><strong>Breadcrumb size</strong> changes line width or dot size for all devices.</li>
+            <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail stays on the map while trails are switched on, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking tab says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking tab says so in red and the line still shows the whole trail.</li>
+            <li>If you hide a person's trail in the Layers tab, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking tab says how many trails are hidden. If you switch Trails off in the Layers tab, no line or dots are drawn at all, and the Tracking tab says so. Before any fix has arrived, the Tracking tab says no trail line is on the map yet.</li>
+            <li>A fix that stands on its own (a device's only fix, or one fix between two silences of more than 30 minutes) is drawn as a small circle in the device's colour, because a line needs two places.</li>
+            <li><strong>Breadcrumb size</strong> changes line width and dot size for all devices.</li>
           </ul>
           <p>
             To hide only a current-position dot or only a trail, use the <a href="#layers">Layers tab</a>.
@@ -836,13 +843,23 @@
               <tr><td><strong>All mission history shown</strong></td><td>Complete for every selected participant and outing.</td></tr>
               <tr><td><strong>All selected history shown</strong></td><td>Complete for what is ticked, but you have left some people or outings out (see Layers below).</td></tr>
               <tr><td><strong>Participant history is still being added</strong></td><td>Wait. Live positions are unaffected. Finish stays refused until it completes.</td></tr>
-              <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>Loading failed or was interrupted. What is drawn is real but not the whole record. Press <strong>Retry</strong>. Do not treat it as the full history.</td></tr>
+              <tr><td><strong>Updating — the newest positions are being added to the history line</strong></td><td>Normal while people are moving. The earlier line is drawn; the count shows how many fixes are drawn so far. Nothing to do.</td></tr>
+              <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>The line is missing fixes and is not catching up on its own (stopped, failed, or no update for over 2 minutes). What is drawn is real but not the whole record. Press <strong>Retry</strong>. Do not treat it as the full history. If it says it is retrying automatically, it will keep trying.</td></tr>
+              <tr><td><strong>Reason: the history builder ran out of memory</strong></td><td>This mission's history is too large for the part of the app that builds the whole-history line, so that line may stay missing. Saved positions are safe and current positions stay live. Use <strong>Inspect exact fixes</strong> to check saved positions, and report it.</td></tr>
               <tr><td><strong>Loaded history is shown, but completeness is not yet verified</strong></td><td>Everything may have loaded, but the final check has not passed. Press <strong>Retry</strong>.</td></tr>
             </tbody>
           </table>
           <p>
             Progress can go backwards (for example <em>0 of 0</em> briefly after a restart). A lower
             number is safer than a false 100%.
+          </p>
+          <p>
+            If mission history fails, stalls or is incomplete while the Tracking panel is not on screen
+            (the workspace is hidden, or another tab is open), an amber <strong>MISSION HISTORY</strong>
+            warning appears in the strip under the top bar. Press it to show the workspace and open
+            Tracking. A <strong>History line stalled</strong> message means the line has not changed for
+            over 2 minutes and may be missing recent positions or be out of date; current positions stay
+            live. Press <strong>Retry</strong>.
           </p>
           <p>
             Under heavy tracking a check can lose the race with new positions and is retried every
@@ -867,7 +884,7 @@
             first, about every 35 minutes on a 48-hour mission.
           </p>
           <ul>
-            <li><strong>Inspect exact fixes</strong> switches to the paged breadcrumb dots view (see above).</li>
+            <li><strong>Inspect exact fixes</strong> switches to Breadcrumb dots: the line stays and real fixes are marked on top of it, a page at a time (see above).</li>
             <li>In <strong>Layers</strong>, the <strong>Mission History</strong> checkboxes can leave out a person, a named outing, or <strong>Outside outings</strong> (fixes that fall in no outing). This only changes what is drawn; it deletes and changes nothing, and it does not hide anyone's live marker.</li>
             <li>Devices that were never picked as participants stay out of mission evidence and the mission map.</li>
           </ul>

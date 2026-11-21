@@ -13,6 +13,7 @@ import {
 } from '../../src/features/tracking/start-tracking-runtime'
 import type {
   TrackingHistoryChunkPersistenceInput,
+  TrackingHistoryChunkPersistenceResult,
   TrackingHistoryRequestInput,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
@@ -189,7 +190,7 @@ describe('startTrackingRuntime', () => {
   it('records admission failure without evidence loss and rejects a stopped generation', async () => {
     useCoverageStore.setState({ historyAdmissionFailures: {} })
     let hooks!: { persistHistoryRequest: (input: TrackingHistoryRequestInput) => Promise<void> }
-    const persist = vi.fn().mockRejectedValueOnce(new Error('disk unavailable')).mockResolvedValue({ changedPositionCount: 0 })
+    const persist = vi.fn().mockRejectedValueOnce(new Error('disk unavailable')).mockResolvedValue({ changedPositionCount: 0, refusedSourceIdentityConflicts: [] })
     const applyStatus = vi.fn()
     const stop = await startTrackingRuntime({
       config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
@@ -218,6 +219,7 @@ describe('startTrackingRuntime', () => {
       changedPositionCount: 0,
       insertedPositionCount: 0,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      refusedSourceIdentityConflicts: [],
     })
     const scope = createParticipationScope({
       participants: [{
@@ -321,7 +323,7 @@ describe('startTrackingRuntime', () => {
       await timeoutExpectation
 
       scopeStatus = 'ready'
-      await expect(hooks.persistHistoryChunk(input)).resolves.toEqual({ changed: false })
+      await expect(hooks.persistHistoryChunk(input)).resolves.toEqual({ changed: false, keptPositions: [] })
       expect(persistTrackingHistoryBatch).toHaveBeenCalledOnce()
       expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce()
       await stop()
@@ -1329,7 +1331,7 @@ describe('startTrackingRuntime', () => {
     const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [], rejected: [] })
     const listParticipantBackfillCheckpoints = vi.fn().mockResolvedValue([checkpoint])
     const upsertParticipantBackfillCheckpoint = vi.fn().mockResolvedValue(undefined)
-    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({ changedPositionCount: 0 })
+    const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({ changedPositionCount: 0, refusedSourceIdentityConflicts: [] })
     let devicesDurable = false
     const listDevices = vi.fn().mockImplementation(async () =>
       devicesDurable ? [{ device_id: '1' }] : [])
@@ -2729,12 +2731,19 @@ describe('startTrackingRuntime', () => {
         readonly id: string
         readonly device_id: string
       }[]
+      readonly breadcrumb_metadata?: {
+        readonly deviceBudgets: readonly { readonly deviceId: string, readonly truncated: boolean }[]
+      }
     }
-    expect(cachedPayload.breadcrumbs).toHaveLength(5_000)
-    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '1'))
-      .toHaveLength(2_500)
-    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '2'))
-      .toHaveLength(2_500)
+    // Each device gets an even share; the live line's selector may keep fewer
+    // (a standstill compresses) but never drops a mandatory point [DON-338].
+    expect(cachedPayload.breadcrumbs.length).toBeLessThanOrEqual(5_000)
+    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '1').length)
+      .toBeLessThanOrEqual(2_500)
+    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '2').length)
+      .toBeLessThanOrEqual(2_500)
+    expect(cachedPayload.breadcrumb_metadata?.deviceBudgets.map(({ deviceId, truncated }) =>
+      [deviceId, truncated])).toEqual([['1', true], ['2', true]])
     expect(cachedPayload.breadcrumbs.map(({ id }) => id)).toEqual(
       expect.arrayContaining(['breadcrumb-0', 'breadcrumb-1', 'breadcrumb-5998', 'breadcrumb-5999']),
     )
@@ -2867,7 +2876,7 @@ describe('startTrackingRuntime', () => {
       const checkpointWrite = createDeferred<void>()
       const persistTrackingPositionsBulk = vi.fn(async () => {
         await persistence.promise
-        return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0 }
+        return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0, refusedSourceIdentityConflicts: [] }
       })
       const persistTrackingHistoryBatch = vi.fn(async () => {
         await persistence.promise
@@ -3056,6 +3065,7 @@ describe('startTrackingRuntime', () => {
       changedPositionCount: SNAPSHOT.positions.length,
       insertedPositionCount: SNAPSHOT.positions.length,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      refusedSourceIdentityConflicts: [],
     })
     const addPositionsBulk = vi.fn()
     let pollerHooks:
@@ -3142,6 +3152,7 @@ describe('startTrackingRuntime', () => {
         changedPositionCount: input.positions.length,
         insertedPositionCount: input.positions.length,
         skippedAmbiguousLegacyAdoptionCount: 0,
+        refusedSourceIdentityConflicts: [],
       }))
       const deliver = await startWithBulkWriter(persistTrackingPositionsBulk)
       const snapshot = createLargeSnapshot()
@@ -3176,6 +3187,7 @@ describe('startTrackingRuntime', () => {
           changedPositionCount: input.positions.length,
           insertedPositionCount: input.positions.length,
           skippedAmbiguousLegacyAdoptionCount: 0,
+          refusedSourceIdentityConflicts: [],
         }
       })
       const recordMissionEvidenceLoss = vi.fn().mockResolvedValue(undefined)
@@ -4257,13 +4269,14 @@ describe('startTrackingRuntime', () => {
       | {
           persistHistoryChunk: (
             input: TrackingHistoryChunkPersistenceInput,
-          ) => Promise<{ readonly changed: boolean }>
+          ) => Promise<TrackingHistoryChunkPersistenceResult>
         }
       | undefined
     const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
       changedPositionCount: 1,
       insertedPositionCount: 1,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      refusedSourceIdentityConflicts: [],
     })
     const scope = createParticipationScope({
       participants: [{
@@ -4308,8 +4321,14 @@ describe('startTrackingRuntime', () => {
       reconciledUntil: '2026-04-06T12:00:00.000Z',
       positions: historyPositions,
     } as const
-    await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'initial' })
-    await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'anti_entropy' })
+    const initial = await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'initial' })
+    const antiEntropy = await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'anti_entropy' })
+    // Only the observation sent and kept may be held for the live trail; the
+    // two outside the participation window were never sent [DON-338 round 10].
+    expect(initial?.keptPositions).toEqual([historyPositions[1]])
+    expect(initial?.keptPositions[0]).toBe(historyPositions[1])
+    expect(antiEntropy?.keptPositions[0]).toBe(historyPositions[1])
+    expect(antiEntropy?.keptPositions).toHaveLength(1)
 
     expect(persistTrackingPositionsBulk).toHaveBeenNthCalledWith(1, {
       mission_id: 'mission-1',
@@ -4365,7 +4384,7 @@ describe('startTrackingRuntime', () => {
       historyFrom: '2026-04-06T00:00:00.000Z',
       reconciledUntil: '2026-04-06T02:00:00.000Z',
       positions: [],
-    })).resolves.toEqual({ changed: false })
+    })).resolves.toEqual({ changed: false, keptPositions: [] })
 
     expect(persistTrackingHistoryBatch).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -4395,6 +4414,7 @@ describe('startTrackingRuntime', () => {
       changedPositionCount: 1,
       insertedPositionCount: 1,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      refusedSourceIdentityConflicts: [],
     })
     const persistTrackingHistoryBatch = vi.fn()
 
@@ -4423,7 +4443,7 @@ describe('startTrackingRuntime', () => {
       historyFrom: '2026-04-06T00:00:00.000Z',
       reconciledUntil: '2026-04-06T02:00:00.000Z',
       positions: [position],
-    })).resolves.toEqual({ changed: true })
+    })).resolves.toEqual({ changed: true, keptPositions: [position] })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -4449,6 +4469,7 @@ describe('startTrackingRuntime', () => {
       changedPositionCount: 1,
       insertedPositionCount: 1,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      refusedSourceIdentityConflicts: [],
     })
     const persistTrackingHistoryBatch = vi.fn()
 
@@ -4490,7 +4511,7 @@ describe('startTrackingRuntime', () => {
     ]
 
     expect(pollerHooks?.persistHistoryChunks).toBeTypeOf('function')
-    await expect(pollerHooks?.persistHistoryChunks?.(inputs)).resolves.toBeUndefined()
+    await expect(pollerHooks?.persistHistoryChunks?.(inputs)).resolves.toEqual({ keptPositions: [position] })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
     expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
@@ -4529,12 +4550,12 @@ describe('startTrackingRuntime', () => {
       persistedMissions.push(input.mission_id)
       if ((input.checkpoints?.length ?? 0) === 0) {
         durableOrder.push('current')
-        return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0 }
+        return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0, refusedSourceIdentityConflicts: [] }
       }
       const group = ++historyCalls
       await (group === 1 ? firstGroup.promise : secondGroup.promise)
       durableOrder.push(`history-${group}`)
-      return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0 }
+      return { changedPositionCount: 1, insertedPositionCount: 1, skippedAmbiguousLegacyAdoptionCount: 0, refusedSourceIdentityConflicts: [] }
     })
     const stopPoller = vi.fn(() => producer.promise)
     const stop = await startTrackingRuntime({
@@ -4737,6 +4758,7 @@ describe('startTrackingRuntime', () => {
       changedPositionCount: 1,
       insertedPositionCount: 0,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      refusedSourceIdentityConflicts: [],
     })
     const addPosition = vi.fn()
 
@@ -4765,7 +4787,7 @@ describe('startTrackingRuntime', () => {
       historyFrom: '2026-04-06T00:00:00.000Z',
       reconciledUntil: '2026-04-06T02:00:00.000Z',
       positions: [position],
-    })).resolves.toEqual({ changed: true })
+    })).resolves.toEqual({ changed: true, keptPositions: [position] })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
     expect(addPosition).not.toHaveBeenCalled()

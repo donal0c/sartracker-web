@@ -9,6 +9,7 @@ import type {
   Position,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createCoverageScheduler } from './coverage-scheduler'
+import type { CoverageRendererUnavailableFailure } from './coverage-renderer-failure'
 import {
   classifyCoverageError,
   isCoverageCancellation,
@@ -18,7 +19,12 @@ import {
 import { createCoverageCatalogActivation } from './coverage-catalog-activation'
 import { createCoverageCatalogDeliveryBatches } from './coverage-catalog-delivery-plan'
 import { coverageChunkIdentity } from './coverage-identity'
-import { calculateCoverageProgress } from './coverage-progress'
+import {
+  calculateCoverageProgress,
+  calculateDrawnFixCount,
+  COVERAGE_CATCH_UP_STALL_MS,
+  coverageChunkFixCount,
+} from './coverage-progress'
 import {
   selectCoverageManifestChunks,
   type CoverageOmissions,
@@ -30,7 +36,11 @@ import type {
 
 export const COVERAGE_CHUNK_PAGE_LIMIT = 10_000
 const AUTOMATIC_REFRESH_COOLDOWN_MS = 30_000
-const AUTOMATIC_RENDERER_RETRY_DELAY_MS = 250
+/**
+ * Automatic renderer recovery keeps trying while the failure stays visible,
+ * backing off so a persistently failing map is not hammered [DON-338 REN-4].
+ */
+const AUTOMATIC_RENDERER_RETRY_DELAYS_MS = [250, 5_000, 15_000, 30_000] as const
 
 export type CoverageDelivery = Readonly<Record<string, number>>
 
@@ -52,6 +62,15 @@ export type CoverageState =
       readonly blockers?: readonly string[]
       readonly updatedAt?: string
       readonly message?: string
+      /**
+       * Fixes the map draws for the selected scope, counting a chunk whose
+       * drawn revision is older than the current one at its drawn size.
+       */
+      readonly drawnFixCount?: number
+      /** True while a load runs or an automatic refresh or retry is queued. */
+      readonly updating?: boolean
+      /** True when the line has been behind without any redraw for the stall interval. */
+      readonly stalled?: boolean
     }
 
 type CoverageContext = {
@@ -82,7 +101,14 @@ export type CoverageController = {
     selectedKeys?: readonly CoverageChunkKey[],
   ) => Promise<void>
   readonly notifyRendererFailure: (failure: CoverageRendererFailure) => void
-  readonly notifyRendererUnavailable: (message: string) => void
+  /**
+   * Reports that the tile renderer (worker) is gone. `failure` carries only an
+   * allow-listed code from the main process, never raw error text.
+   */
+  readonly notifyRendererUnavailable: (
+    message: string,
+    failure?: CoverageRendererUnavailableFailure,
+  ) => void
   readonly notifyRendererDetached: (catalog?: CoverageTileCatalog) => void
   readonly cancel: () => void
   readonly resume: () => Promise<void>
@@ -175,11 +201,29 @@ export function createCoverageController(input: {
   let contextUpdateSequence = 0
   let appliedSelectionKeySet: string | null = expectedSelectionKeySet(null, context)
   let cancelRequested = false
+  /** Set by an operator Retry that re-staged the catalog; the map's acknowledgement then verifies with a load. */
+  let verifyAfterReapply = false
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
+  /**
+   * Specific worker cause of the current renderer recovery episode, kept
+   * until a recovery load succeeds so a generic secondary failure (an
+   * outstanding tile, a failed rebuild) never hides it [DON-338].
+   */
+  let rendererEpisodeCause: CoverageErrorClass | null = null
   let rendererRecoverySupersededFailureKeys: ReadonlySet<string> | null = null
   let automaticRendererRecoveryAvailable = true
+  let automaticRendererRecoveryAttempts = 0
+  /** Owner of the single pending automatic renderer recovery attempt, if any. */
+  let scheduledRendererRecovery: {
+    readonly missionId: string
+    readonly rendererGeneration: string
+  } | null = null
+  /** Fix count recorded when the map accepted each chunk revision. */
+  const drawnCounts = new Map<string, { readonly contentRev: number; readonly fixCount: number }>()
+  let lastAdvanceAtMs = monotonicNow()
+  let stallTimer: ReturnType<typeof globalThis.setTimeout> | null = null
   const catalogActivation = createCoverageCatalogActivation()
   const scheduler = createCoverageScheduler({
     now: () => Date.now(),
@@ -206,19 +250,101 @@ export function createCoverageController(input: {
         ? state.latestObservedChangeSeq
         : 0
       const latestObservedChangeSeq = Math.max(next.latestObservedChangeSeq, priorObservedSequence)
+      const status = (rendererDetached || filterPending || next.changeSeq < latestObservedChangeSeq) &&
+        next.status === 'complete'
+        ? 'partial'
+        : next.status
+      if (status === 'complete') {
+        lastAdvanceAtMs = monotonicNow()
+        verifyAfterReapply = false
+      }
       state = {
         ...next,
         latestObservedChangeSeq,
-        status: (rendererDetached || filterPending || next.changeSeq < latestObservedChangeSeq) &&
-          next.status === 'complete'
-          ? 'partial'
-          : next.status,
+        status,
         blockers: [...blockers],
         lastErrorClass,
         retryableStaleCount,
+        drawnFixCount: calculateDrawnFixCount({
+          chunks: next.manifest === null ? [] : selectChunks(next.manifest, context),
+          delivered: next.delivered,
+          drawnCounts,
+        }),
+        updating: isUpdating(),
+        stalled: (status === 'loading' || status === 'partial') &&
+          monotonicNow() - lastAdvanceAtMs >= COVERAGE_CATCH_UP_STALL_MS,
       }
     }
+    armStallWatchdog()
     input.publish(state)
+  }
+
+  /** Reports whether coverage work will continue without the operator. */
+  function isUpdating(): boolean {
+    return activeController !== null ||
+      automaticRefreshTimer !== null ||
+      refreshRequested ||
+      scheduledRendererRecovery !== null
+  }
+
+  /** Republishes when queued work started or stopped without another state change. */
+  function refreshUpdatingFlag(): void {
+    if (state.status === 'inactive' || state.updating === isUpdating()) return
+    publish({ ...state })
+  }
+
+  /**
+   * Re-evaluates a behind line once it has gone the stall interval without a
+   * redraw, so a stuck update becomes visible even when nothing else changes.
+   */
+  function armStallWatchdog(): void {
+    const behind = state.status === 'loading' || state.status === 'partial'
+    if (!behind || state.status === 'inactive' || state.stalled === true || stopped) {
+      if (stallTimer !== null) globalThis.clearTimeout(stallTimer)
+      stallTimer = null
+      return
+    }
+    if (stallTimer !== null) return
+    const delay = Math.max(0, lastAdvanceAtMs + COVERAGE_CATCH_UP_STALL_MS - monotonicNow())
+    stallTimer = globalThis.setTimeout(() => {
+      stallTimer = null
+      if (state.status === 'loading' || state.status === 'partial') publish({ ...state })
+    }, delay)
+  }
+
+  /** Records that the map now draws `chunk` at its current revision. */
+  function recordDrawn(chunk: CoverageManifestChunk): void {
+    const identity = coverageChunkIdentity(chunk.key)
+    const prior = drawnCounts.get(identity)
+    if (prior?.contentRev !== chunk.contentRev) lastAdvanceAtMs = monotonicNow()
+    drawnCounts.set(identity, { contentRev: chunk.contentRev, fixCount: coverageChunkFixCount(chunk) })
+  }
+
+  /**
+   * Orders chunks whose current revision is not drawn. A chunk with nothing
+   * drawn at all bypasses the open-outing rebuild cooldown, so a renderer
+   * restart or a new device never leaves a period off the map [DON-338 REN-5].
+   */
+  function orderPendingChunks(
+    manifest: CoverageManifest,
+    chunks: readonly CoverageManifestChunk[],
+    delivered: Readonly<Record<string, number>>,
+    bypassOpenOutingCooldown: boolean,
+  ): readonly CoverageManifestChunk[] {
+    const undrawn = chunks.filter((chunk) =>
+      delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev)
+    const ready = new Set(scheduler.order(manifest, undrawn, { bypassOpenOutingCooldown })
+      .map((chunk) => coverageChunkIdentity(chunk.key)))
+    for (const chunk of undrawn) {
+      if (delivered[coverageChunkIdentity(chunk.key)] === undefined) {
+        ready.add(coverageChunkIdentity(chunk.key))
+      }
+    }
+    return scheduler.order(
+      manifest,
+      undrawn.filter((chunk) => ready.has(coverageChunkIdentity(chunk.key))),
+      { bypassOpenOutingCooldown: true },
+    )
   }
 
   /** Drops background work when an operator action or ownership boundary supersedes it. */
@@ -230,17 +356,26 @@ export function createCoverageController(input: {
 
   /** Leaves a full quiet interval after each completed load, including slow or stale reads. */
   const scheduleAutomaticRefresh = (): void => {
-    if (!automaticRefreshRequested || automaticRefreshTimer !== null ||
-      activeController !== null || stopped || context.missionId === null) return
+    if (activeController !== null || stopped || context.missionId === null) return
     // The dedicated renderer retry owns fresh-source recovery after a failure.
-    if (state.status === 'error' && rendererRecoveryEpoch !== null) return
+    // Every settle point re-arms it, so one failed attempt never ends the
+    // retries silently [DON-338].
+    if (state.status === 'error' && rendererRecoveryEpoch !== null) {
+      scheduleAutomaticRendererRecovery(null, context.missionId, context.rendererGeneration)
+      return
+    }
+    if (!automaticRefreshRequested || automaticRefreshTimer !== null) return
     const delay = Math.max(0, lastLoadFinishedAtMs + AUTOMATIC_REFRESH_COOLDOWN_MS - monotonicNow())
     automaticRefreshTimer = globalThis.setTimeout(() => {
       automaticRefreshTimer = null
-      if (!automaticRefreshRequested || stopped || context.missionId === null) return
+      if (!automaticRefreshRequested || stopped || context.missionId === null) {
+        refreshUpdatingFlag()
+        return
+      }
       automaticRefreshRequested = false
       void runLoad(true)
     }, delay)
+    refreshUpdatingFlag()
   }
 
   /** Retains prior geometry as Partial; an observed sequence is never delivery proof. */
@@ -271,10 +406,14 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     rendererRecoveryEpoch = null
+    rendererEpisodeCause = null
     rendererRecoverySupersededFailureKeys = null
     automaticRendererRecoveryAvailable = false
+    scheduledRendererRecovery = null
     rendererFailureDuringFinalization = null
     pendingCatalogRelease = null
+    verifyAfterReapply = false
+    drawnCounts.clear()
     publish({ status: 'inactive' })
   }
 
@@ -363,11 +502,11 @@ export function createCoverageController(input: {
       let activeSelected = selected
       let activeCatalog = priorCatalog
       if (input.deliverSelection !== undefined) {
-        const pending = scheduler.order(
+        const pending = orderPendingChunks(
           manifest,
-          manifest.chunks.filter((chunk) =>
-            delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev),
-          { bypassOpenOutingCooldown },
+          manifest.chunks,
+          delivered,
+          bypassOpenOutingCooldown,
         )
         const catalogBatches = recoveryEpochAtLoad === null
           ? createCoverageCatalogDeliveryBatches({
@@ -415,13 +554,15 @@ export function createCoverageController(input: {
             throw error
           }
           if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
-          const currentRevisions = new Map(manifest.chunks.map((chunk) => [
-            coverageChunkIdentity(chunk.key), chunk.contentRev,
+          const currentChunks = new Map(manifest.chunks.map((chunk) => [
+            coverageChunkIdentity(chunk.key), chunk,
           ]))
           for (const entry of activeCatalog.delivered) {
             const identity = coverageChunkIdentity(entry.key)
-            if (currentRevisions.get(identity) === entry.contentRev) {
+            const current = currentChunks.get(identity)
+            if (current?.contentRev === entry.contentRev) {
               delivered[identity] = entry.contentRev
+              recordDrawn(current)
             }
           }
           publish(createActiveState({
@@ -438,8 +579,10 @@ export function createCoverageController(input: {
           rendererRecoveryEpoch === recoveryEpochAtLoad
         ) {
           rendererRecoveryEpoch = null
+          rendererEpisodeCause = null
           rendererRecoverySupersededFailureKeys = null
           automaticRendererRecoveryAvailable = true
+          automaticRendererRecoveryAttempts = 0
         }
         const refreshedManifest = await input.readManifest(
           missionId,
@@ -455,10 +598,11 @@ export function createCoverageController(input: {
         activeManifest = refreshedManifest
         activeSelected = selectChunks(activeManifest, context)
       } else {
-        for (const descriptor of scheduler.order(
+        for (const descriptor of orderPendingChunks(
           manifest,
           selected,
-          { bypassOpenOutingCooldown },
+          delivered,
+          bypassOpenOutingCooldown,
         )) {
           const identity = coverageChunkIdentity(descriptor.key)
           if (delivered[identity] === descriptor.contentRev) continue
@@ -474,6 +618,7 @@ export function createCoverageController(input: {
           await input.applyChunk(payload)
           if (!ownsOperation(operation, controller, missionId, rendererGeneration)) return
           delivered[identity] = descriptor.contentRev
+          recordDrawn(descriptor)
           publish(createActiveState({
             status: 'loading', missionId, rendererGeneration,
             changeSeq: manifest.changeSeq,
@@ -521,6 +666,13 @@ export function createCoverageController(input: {
         claim.changeSeq === finalSequence &&
         claimCoversSelection(claim.chunkRevisions, activeSelected, delivered)
       if (complete) automaticRefreshRequested = false
+      // A chunk revision that moved past what was drawn is caught up by the
+      // normal cadence even when no further change notification arrives.
+      else if (
+        deferredRendererFailure === null &&
+        activeSelected.some((chunk) =>
+          delivered[coverageChunkIdentity(chunk.key)] !== chunk.contentRev)
+      ) automaticRefreshRequested = true
       publish(createActiveState({
         status: deferredRendererFailure !== null
           ? 'error'
@@ -536,7 +688,7 @@ export function createCoverageController(input: {
         ...(deferredRendererFailure === null
           ? {}
           : {
-              lastErrorClass: classifyCoverageError(deferredRendererFailure),
+              lastErrorClass: classifyRendererEpisodeError(deferredRendererFailure),
               message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
             }),
       }, context))
@@ -553,10 +705,13 @@ export function createCoverageController(input: {
         publishStaleResult()
         return
       }
+      // A failed load stays visible as an error and retries on the normal
+      // cadence instead of waiting for the operator [DON-338 REN-4].
+      if (rendererRecoveryEpoch === null) automaticRefreshRequested = true
       publish({
         ...withFinalizedCatalog(asPartialState(state), finalizedCatalog),
         status: 'error',
-        lastErrorClass: classifyCoverageError(error),
+        lastErrorClass: classifyRendererEpisodeError(error),
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
       })
     } finally {
@@ -578,6 +733,7 @@ export function createCoverageController(input: {
         } else {
           scheduleAutomaticRefresh()
         }
+        refreshUpdatingFlag()
       }
       resolveLoadCompletion()
       if (activeLoadCompletion === loadCompletion) activeLoadCompletion = null
@@ -635,12 +791,33 @@ export function createCoverageController(input: {
   const nextRequestId = (kind: string): string =>
     `coverage-${kind}-${++requestSequence}`
 
-  const publishRendererUnavailable = (message: string): void => {
+  /**
+   * Marks the renderer unavailable and queues the coalesced automatic
+   * recovery, so every renderer failure (map source, finalization, worker
+   * death) rebuilds without the operator [DON-338].
+   */
+  const publishRendererUnavailable = (message: string, failureCode?: string): void => {
+    if (state.status === 'inactive') return
+    const failedLoad = activeLoadCompletion
+    const missionId = state.missionId
+    const rendererGeneration = state.rendererGeneration
+    publishRendererUnavailableState(message, failureCode)
+    if (rendererRecoveryEpoch !== null) {
+      scheduleAutomaticRendererRecovery(failedLoad, missionId, rendererGeneration)
+    }
+  }
+
+  const publishRendererUnavailableState = (message: string, failureCode?: string): void => {
     if (state.status === 'inactive') return
     clearAutomaticRefresh()
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
-    const error = new Error(message)
+    const error: Error & { code?: string } = new Error(message)
+    if (failureCode !== undefined) error.code = failureCode
+    const errorClass = classifyRendererEpisodeError(error)
+    if (rendererRecoveryEpoch === null || errorClass === 'worker_out_of_memory') {
+      rendererEpisodeCause = errorClass === 'worker_out_of_memory' ? errorClass : null
+    }
     rendererRecoverySupersededFailureKeys = null
     rendererRecoveryEpoch = ++rendererFailureEpoch
     if (
@@ -652,7 +829,7 @@ export function createCoverageController(input: {
       publish({
         ...state,
         status: 'error',
-        lastErrorClass: classifyCoverageError(error),
+        lastErrorClass: errorClass,
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
       })
       return
@@ -680,33 +857,104 @@ export function createCoverageController(input: {
       ...(state.blockers === undefined
         ? {}
         : { blockers: state.blockers.filter((blocker) => blocker !== 'renderer_detached') }),
-      lastErrorClass: classifyCoverageError(error),
+      lastErrorClass: errorClass,
       message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
     }, context))
   }
 
-  /** Retries one failed renderer activation after its owning load has unwound. */
+  /**
+   * Classifies a failure, keeping the episode's specific worker cause when
+   * the new failure is only generic and a recovery episode is still open.
+   */
+  function classifyRendererEpisodeError(error: unknown): CoverageErrorClass {
+    const errorClass = classifyCoverageError(error)
+    if (
+      rendererRecoveryEpoch !== null &&
+      rendererEpisodeCause !== null &&
+      GENERIC_RENDERER_FAILURE_CLASSES.has(errorClass)
+    ) return rendererEpisodeCause
+    return errorClass
+  }
+
+  /** Every renderer source that can still contribute visible coverage. */
+  function activeRendererFailureSources(): readonly CoverageRendererFailureSource[] {
+    const catalog = state.status === 'inactive' ? null : state.tileCatalog
+    return [
+      ...finalizedRendererFailureSources,
+      ...(catalog === null ? [] : coverageCatalogFailureSources(catalog)),
+    ]
+  }
+
+  /**
+   * Queues one automatic renderer recovery after the failed load has unwound.
+   * Coalesced: while an attempt is pending for this mission and renderer,
+   * further failures join it, and the attempt rebuilds from whatever failure
+   * is current when it runs. Backoff is capped, never exhausted.
+   */
   const scheduleAutomaticRendererRecovery = (
     failedLoad: Promise<void> | null,
-    recoveryEpoch: number,
     missionId: string,
     rendererGeneration: string,
   ): void => {
-    if (!automaticRendererRecoveryAvailable) return
-    automaticRendererRecoveryAvailable = false
+    if (!automaticRendererRecoveryAvailable || stopped) return
+    if (
+      scheduledRendererRecovery !== null &&
+      scheduledRendererRecovery.missionId === missionId &&
+      scheduledRendererRecovery.rendererGeneration === rendererGeneration
+    ) return
+    const delay = AUTOMATIC_RENDERER_RETRY_DELAYS_MS[
+      Math.min(automaticRendererRecoveryAttempts, AUTOMATIC_RENDERER_RETRY_DELAYS_MS.length - 1)
+    ]
+    automaticRendererRecoveryAttempts += 1
+    const owner = { missionId, rendererGeneration }
+    scheduledRendererRecovery = owner
+    refreshUpdatingFlag()
     void (failedLoad ?? Promise.resolve()).then(async () => {
       await new Promise<void>((resolve) => {
-        globalThis.setTimeout(resolve, AUTOMATIC_RENDERER_RETRY_DELAY_MS)
+        globalThis.setTimeout(resolve, delay)
       })
+      // An operator Retry or a mission switch supersedes this attempt.
+      if (scheduledRendererRecovery !== owner) return
+      scheduledRendererRecovery = null
       if (
         stopped ||
-        rendererRecoveryEpoch !== recoveryEpoch ||
+        rendererRecoveryEpoch === null ||
         state.status !== 'error' ||
         context.missionId !== missionId ||
         context.rendererGeneration !== rendererGeneration
-      ) return
+      ) {
+        refreshUpdatingFlag()
+        return
+      }
+      if (activeController !== null) {
+        // A load is already running; its settle point re-arms recovery if it fails.
+        refreshUpdatingFlag()
+        return
+      }
       await runLoad(true, true)
     }).catch(() => undefined)
+  }
+
+  /**
+   * Operator Retry for a stalled map: when the map never reattached the
+   * finalized catalog or never applied the selected filter, re-stage the same
+   * catalog under a fresh object identity. The overlay hook re-runs on that
+   * identity, reinstalls the sources, re-acknowledges the selection and the
+   * catalog, and a verifying load follows [DON-338].
+   */
+  const reapplyFinalizedCatalog = (): void => {
+    if (stopped || state.status === 'inactive' || finalizedCatalog === null) return
+    const blockers = state.blockers ?? []
+    if (!blockers.includes('renderer_detached') && !blockers.includes('renderer_filter_pending')) return
+    if (!isCurrentCatalog(state, finalizedCatalog)) return
+    const fresh: CoverageTileCatalog = { ...finalizedCatalog }
+    if (
+      rendererDetachedCompleteCatalog !== null &&
+      isSameCatalog(rendererDetachedCompleteCatalog, fresh)
+    ) rendererDetachedCompleteCatalog = fresh
+    finalizedCatalog = fresh
+    verifyAfterReapply = true
+    publish({ ...state, tileCatalog: fresh })
   }
 
   const restoreRendererAttachment = (): void => {
@@ -718,12 +966,21 @@ export function createCoverageController(input: {
       !refreshRequested
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
+    const verify = verifyAfterReapply
+    verifyAfterReapply = false
     const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
     publish({
       ...state,
       status: restoreComplete && blockers.length === 0 ? 'complete' : 'partial',
       blockers,
     })
+    // publish() may still downgrade Complete (for example a pending filter).
+    if (verify && !isCoverageComplete()) void requestRefresh()
+  }
+
+  /** Reads the current status without control-flow narrowing from an earlier guard. */
+  function isCoverageComplete(): boolean {
+    return state.status === 'complete'
   }
 
   /** Waits until an irreversible catalog finalization settles. */
@@ -756,6 +1013,9 @@ export function createCoverageController(input: {
     }
     let ownedFinalization: Promise<void> | null = null
     let rendererFinalizationStarted = false
+    // The map has started applying this catalog; its own source and backend
+    // limits now own failure, so the acceptance timeout must not fire mid-apply.
+    catalogActivation.holdTimeout(catalog)
     try {
       const activationEpoch = rendererDetachEpoch
       await input.activateCatalog?.(catalog)
@@ -884,10 +1144,18 @@ export function createCoverageController(input: {
     if (identityChanged) rendererDetached = false
     if (identityChanged) {
       rendererRecoveryEpoch = null
+      rendererEpisodeCause = null
       rendererRecoverySupersededFailureKeys = null
     }
     if (identityChanged) automaticRendererRecoveryAvailable = true
+    if (identityChanged) automaticRendererRecoveryAttempts = 0
+    if (identityChanged) scheduledRendererRecovery = null
+    if (identityChanged) verifyAfterReapply = false
     if (identityChanged) rendererFailureDuringFinalization = null
+    if (identityChanged) {
+      drawnCounts.clear()
+      lastAdvanceAtMs = monotonicNow()
+    }
     operationGeneration += 1
     refreshRequested = false
     context = desiredContext
@@ -983,35 +1251,28 @@ export function createCoverageController(input: {
         failure.revisionDigest,
         )
       ) return
-      const failedCatalog = state.tileCatalog
-      const activeFailureSources = [
-        ...finalizedRendererFailureSources,
-        ...(failedCatalog === null ? [] : coverageCatalogFailureSources(failedCatalog)),
-      ]
+      const activeFailureSources = activeRendererFailureSources()
       if (!matchesRendererFailureSource(activeFailureSources, failure)) return
       const failureKey = rendererFailureSourceKey(failure)
       if (
         rendererRecoveryEpoch !== null &&
         rendererRecoverySupersededFailureKeys?.has(failureKey) === true
       ) return
-      const failedLoad = activeLoadCompletion
-      const missionId = state.missionId
-      const rendererGeneration = state.rendererGeneration
       const supersededFailureKeys = new Set(
         activeFailureSources.map(rendererFailureSourceKey),
       )
       publishRendererUnavailable(failure.message)
       rendererRecoverySupersededFailureKeys = supersededFailureKeys
-      if (rendererRecoveryEpoch !== null) {
-        scheduleAutomaticRendererRecovery(
-          failedLoad,
-          rendererRecoveryEpoch,
-          missionId,
-          rendererGeneration,
-        )
-      }
     },
-    notifyRendererUnavailable: publishRendererUnavailable,
+    notifyRendererUnavailable: (message, failure) => {
+      // Tiles still outstanding when the worker died fail afterwards; they
+      // belong to this episode and must not start a new one [DON-338].
+      const outstandingFailureKeys = new Set(
+        activeRendererFailureSources().map(rendererFailureSourceKey),
+      )
+      publishRendererUnavailable(message, failure?.code)
+      if (rendererRecoveryEpoch !== null) rendererRecoverySupersededFailureKeys = outstandingFailureKeys
+    },
     notifyRendererDetached: (catalog) => {
       if (state.status === 'inactive') return
       if (
@@ -1058,9 +1319,15 @@ export function createCoverageController(input: {
     resume: async () => {
       const resumeSequence = contextUpdateSequence
       automaticRendererRecoveryAvailable = true
+      automaticRendererRecoveryAttempts = 0
+      // The operator retries now; a queued automatic attempt is superseded and
+      // the next failure starts the backoff again from its shortest delay.
+      scheduledRendererRecovery = null
       await waitForCatalogFinalization()
       if (stopped || resumeSequence !== contextUpdateSequence) return
       await applyDesiredContext(true, true)
+      if (stopped || resumeSequence !== contextUpdateSequence) return
+      reapplyFinalizedCatalog()
     },
     stop: () => {
       stopped = true
@@ -1124,6 +1391,9 @@ function isSameCatalog(
 }
 
 /** Describes the fallback source owner before a renderer provides per-period ownership. */
+/** Failure classes that say nothing more specific than "something failed". */
+const GENERIC_RENDERER_FAILURE_CLASSES: ReadonlySet<CoverageErrorClass> = new Set(['unknown', 'worker'])
+
 function coverageCatalogFailureSources(
   catalog: CoverageTileCatalog,
 ): readonly CoverageRendererFailureSource[] {

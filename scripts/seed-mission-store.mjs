@@ -23,8 +23,10 @@ async function main() {
       const target =
         plan.mode === 'target-size'
           ? `${formatBytes(plan.targetBytes)} target`
-          : `${plan.durationDays} simulated days`
-      console.log(`${preset.padEnd(12)} ${target}`)
+          : plan.mode === 'field-shape'
+            ? `${plan.positionCount.toLocaleString()} fixes, ${plan.deviceCount} device(s), field shape`
+            : `${plan.durationDays} simulated days`
+      console.log(`${preset.padEnd(16)} ${target}`)
     }
     return
   }
@@ -48,8 +50,9 @@ async function main() {
       }
       lastProgressAt = now
       lastPercent = percent
-      const target =
-        progress.targetBytes !== null
+      const target = progress.targetPositions !== undefined
+        ? `${progress.positions.toLocaleString()} / ${progress.targetPositions.toLocaleString()} fixes`
+        : progress.targetBytes !== null
           ? `${formatBytes(progress.databaseBytes)} / ${formatBytes(progress.targetBytes)}`
           : `${progress.polls.toLocaleString()} / ${progress.targetPolls.toLocaleString()} polls`
       console.log(`  progress: ${target} (${percent.toFixed(1)}%)`)
@@ -71,6 +74,9 @@ async function main() {
 
 /** Calculates bounded progress for byte-size and duration presets. */
 function calculatePercent(progress) {
+  if (progress.targetPositions !== undefined && progress.targetPositions > 0) {
+    return Math.min(100, (progress.positions / progress.targetPositions) * 100)
+  }
   const numerator =
     progress.targetBytes !== null ? progress.databaseBytes : progress.polls
   const denominator =

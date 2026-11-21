@@ -9,8 +9,10 @@ function readOutingFixSummary(database, input) {
       FROM outings WHERE mission_id = ? ORDER BY started_at ASC, id ASC`).all(missionId)
     const acceptedFixCounts = outingRows.map(() => 0)
     let totalAcceptedFixCount = 0
+    // Count only fixes the map draws: the trail and whole-history layers admit
+    // rows with authoritative fix-time provenance only [DON-338 LIF-11].
     for (const position of database.prepare(
-      'SELECT timestamp FROM positions WHERE mission_id = ?',
+      "SELECT timestamp FROM positions WHERE mission_id = ? AND timestamp_source = 'fix'",
     ).iterate(missionId)) {
       totalAcceptedFixCount += 1
       const outingIndex = findContainingOutingIndex(outingRows, position.timestamp)

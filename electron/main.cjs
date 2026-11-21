@@ -20,6 +20,7 @@ let startupWindowReady = false
 const { createElectronSettingsStore } = require('./settings-store.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
+const { projectCoverageRendererFailure } = require('./coverage-renderer-failure.cjs')
 const { applyGpuRenderingPreference, relaunchWithSoftwareRendering } = require('./gpu-rendering-preference.cjs')
 const {
   TEMPORARY_PROFILE_PREFIX,
@@ -889,10 +890,14 @@ function createTraccarHttpRequestHandler(settingsStore) {
     const request = normalizeTraccarRequest(input)
     await assertConfiguredTraccarOrigin(settingsStore, request.url)
     const controller = new AbortController()
+    let timedOut = false
     const timeout =
       request.timeoutMs === null
         ? undefined
-        : setTimeout(() => controller.abort(), request.timeoutMs)
+        : setTimeout(() => {
+            timedOut = true
+            controller.abort()
+          }, request.timeoutMs)
 
     try {
       const response = await fetch(request.url, {
@@ -904,12 +909,10 @@ function createTraccarHttpRequestHandler(settingsStore) {
 
       const contentLength = Number(response.headers.get('content-length'))
       if (Number.isFinite(contentLength) && contentLength > MAX_TRACCAR_PROXY_RESPONSE_BYTES) {
+        await response.body?.cancel().catch(() => undefined)
         throw new Error('Traccar response is too large.')
       }
-      const body = await response.text()
-      if (Buffer.byteLength(body, 'utf8') > MAX_TRACCAR_PROXY_RESPONSE_BYTES) {
-        throw new Error('Traccar response is too large.')
-      }
+      const body = await readTraccarResponseText(response, MAX_TRACCAR_PROXY_RESPONSE_BYTES)
 
       return {
         status: response.status,
@@ -917,12 +920,46 @@ function createTraccarHttpRequestHandler(settingsStore) {
         headers: Object.fromEntries(response.headers.entries()),
         body,
       }
+    } catch (error) {
+      // DON-338: name the timeout so history catch-up can split a slow window
+      // instead of retrying it unchanged; an abort alone does not say why.
+      if (timedOut) {
+        throw new Error(`Traccar request timed out after ${request.timeoutMs} ms.`)
+      }
+      throw error
     } finally {
       if (timeout !== undefined) {
         clearTimeout(timeout)
       }
     }
   }
+}
+
+/**
+ * Reads a Traccar reply as UTF-8 text, stopping and cancelling the stream as
+ * soon as it passes the byte limit, so an unsized reply is never buffered whole.
+ */
+async function readTraccarResponseText(response, maxBytes) {
+  if (response.body === null) {
+    return ''
+  }
+  const reader = response.body.getReader()
+  const chunks = []
+  let totalBytes = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) {
+      break
+    }
+    totalBytes += value.byteLength
+    if (totalBytes > maxBytes) {
+      await reader.cancel().catch(() => undefined)
+      throw new Error('Traccar response is too large.')
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)))
+    .toString('utf8')
 }
 
 async function assertConfiguredTraccarOrigin(settingsStore, requestUrl) {
@@ -1726,10 +1763,10 @@ async function startElectronApp(startupWatchdog) {
           }
         }
       },
-      onCoverageRendererFailed: () => {
+      onCoverageRendererFailed: (failure) => {
         for (const window of BrowserWindow.getAllWindows()) {
           if (!window.webContents.isDestroyed()) {
-            window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL)
+            window.webContents.send(COVERAGE_RENDERER_FAILED_CHANNEL, projectCoverageRendererFailure(failure))
           }
         }
       },

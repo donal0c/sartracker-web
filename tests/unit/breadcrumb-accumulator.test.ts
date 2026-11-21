@@ -512,7 +512,12 @@ describe('breadcrumb accumulator', () => {
 
     const result = createBreadcrumbAccumulator().append(route)
 
-    expect(result.positions.length).toBeLessThanOrEqual(5_000)
+    // DON-338 review: every fix here is one side of a real >30-minute silence,
+    // so all of them are needed to draw the trail truthfully. The selector
+    // still terminates, and keeps them all (over the 5,000 cap) rather than
+    // sampling them and merging separate silences.
+    expect(result.positions).toHaveLength(5_001)
+    expect(result.metadata.deviceBudgets[0]?.geometryErrorBoundMetres).toBeNull()
     expect(result.positions[0]?.id).toBe('1')
     expect(result.positions.at(-1)?.id).toBe('5001')
   })

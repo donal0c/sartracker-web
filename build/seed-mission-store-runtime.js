@@ -19,7 +19,9 @@ import {
   buildFixtureManifest,
   createBreadcrumbProgrammeScenario,
   createDeterministicId,
+  createFieldShapeScenario,
   createFixturePlan,
+  fieldShapeWriteBatches,
   fixtureGeneratorVersionForPlan,
   fixtureManifestPath,
 } from './seed-mission-store-lib.js'
@@ -30,6 +32,8 @@ const { CURRENT_SCHEMA_VERSION, createElectronMissionStore } = require('../elect
 const FIXTURE_MISSION_ID = 'fixture-mission-000000000001'
 const FIXTURE_MISSION_NAME = 'SYNTHETIC FIELD-SCALE VALIDATION MISSION'
 const FIXTURE_START_MS = Date.parse('2026-01-01T00:00:00.000Z')
+/** The mission name a field-shape fixture carries; the DON-338 smoke opens it by this name. */
+export const FIELD_SHAPE_MISSION_NAME = 'SYNTHETIC FIELD-SHAPE TRAIL MISSION'
 const DEFAULT_POLLS_PER_BATCH = 1_000
 
 /**
@@ -60,18 +64,28 @@ export async function generateMissionStoreFixture(options) {
   const temporaryDatabasePath = path.join(temporaryRoot, 'mission-store.sqlite')
 
   try {
-    const store = createElectronMissionStore({
-      userDataPath: temporaryRoot,
-      readAdminRoster: async () => [],
-    })
-    store.close()
+    let seedResult
+    if (plan.mode === 'field-shape') {
+      seedResult = await seedFieldShapeThroughStore({
+        userDataPath: temporaryRoot,
+        databasePath: temporaryDatabasePath,
+        plan,
+        progress,
+      })
+    } else {
+      const store = createElectronMissionStore({
+        userDataPath: temporaryRoot,
+        readAdminRoster: async () => [],
+      })
+      store.close()
 
-    const seedResult = seedDatabase({
-      databasePath: temporaryDatabasePath,
-      plan,
-      progress,
-      faultInjection: options.faultInjection,
-    })
+      seedResult = seedDatabase({
+        databasePath: temporaryDatabasePath,
+        plan,
+        progress,
+        faultInjection: options.faultInjection,
+      })
+    }
 
     const databaseBytes = (await stat(temporaryDatabasePath)).size
     const sha256 = await sha256File(temporaryDatabasePath)
@@ -293,6 +307,124 @@ function seedBreadcrumbProgrammeDatabase({ databasePath, plan, progress, faultIn
       throw new Error('Breadcrumb programme fixture historical position audit count drifted.')
     }
     db.pragma('journal_mode = WAL')
+    return {
+      effectivePlan: plan,
+      rowCounts,
+      tableBytes: readAllDatabaseObjectBytes(db),
+      scenario,
+    }
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * Seeds a field-shape fixture through the production mission store's own write
+ * paths (the ones the history reconciler uses), so coverage ledgers, history
+ * checkpoints and participant backfill state are exactly what real ingest
+ * leaves behind. Late-uploaded blocks are written after everything newer, as a
+ * phone that regains signal delivers them [DON-338].
+ */
+async function seedFieldShapeThroughStore({ userDataPath, databasePath, plan, progress }) {
+  const scenario = createFieldShapeScenario(plan)
+  const store = createElectronMissionStore({ userDataPath, readAdminRoster: async () => [] })
+  let closed = false
+  try {
+    const mission = await store.createMission({
+      name: FIELD_SHAPE_MISSION_NAME,
+      start_time: plan.missionStartTime,
+      notes: 'Synthetic field-shape validation data only (DON-338). Never use operationally.',
+    })
+    for (const device of plan.fieldDevices) {
+      await store.upsertDevice({
+        mission_id: mission.id,
+        device_id: device.deviceId,
+        name: device.name,
+        color: syntheticDeviceColor(device.deviceIndex),
+        status: 'online',
+      })
+    }
+    await store.selectMissionParticipants({
+      mission_id: mission.id,
+      groups: [],
+      devices: plan.fieldDevices.map((device) => ({ traccar_device_id: device.deviceId })),
+      selected_by: 'Synthetic coordinator',
+    })
+    // The participants were selected at Start with history from Start; their
+    // backfill is complete because every fix is written below.
+    for (const checkpoint of await store.listParticipantBackfillCheckpoints(mission.id)) {
+      if (checkpoint.completed === 1 || checkpoint.completed === true) continue
+      await store.upsertParticipantBackfillCheckpoint({
+        mission_id: mission.id,
+        traccar_device_id: checkpoint.traccar_device_id,
+        window_from: checkpoint.window_from,
+        window_to: checkpoint.window_to,
+        reconciled_until: checkpoint.window_to,
+        completed: true,
+      })
+    }
+
+    let written = 0
+    for (const batch of fieldShapeWriteBatches(plan)) {
+      await store.persistTrackingHistoryBatch({
+        mission_id: mission.id,
+        positions: batch.map((fix) => ({
+          source_position_id: fix.sourcePositionId,
+          device_id: fix.deviceId,
+          lat: fix.lat,
+          lon: fix.lon,
+          altitude: 120,
+          speed: 0.4,
+          battery: 80,
+          accuracy: 5,
+          source: 'traccar',
+          timestamp: fix.timestamp,
+          timestamp_source: 'fix',
+        })),
+      })
+      written += batch.length
+      progress({
+        preset: plan.preset,
+        polls: 0,
+        databaseBytes: 0,
+        targetBytes: null,
+        targetPolls: plan.pollCount,
+        positions: written,
+        targetPositions: plan.positionCount,
+      })
+    }
+    await store.persistTrackingHistoryBatch({
+      mission_id: mission.id,
+      positions: [],
+      checkpoints: scenario.devices.map((device) => ({
+        device_id: device.deviceId,
+        history_from: plan.missionStartTime,
+        reconciled_until: device.lastTimestamp,
+      })),
+    })
+    await store.prepareClose()
+    store.close()
+    closed = true
+  } finally {
+    if (!closed) {
+      await store.prepareClose().catch(() => undefined)
+      try { store.close() } catch { /* already failing; the original error wins */ }
+    }
+  }
+
+  const db = new Database(databasePath)
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)')
+    const integrityResult = db.pragma('integrity_check', { simple: true })
+    if (integrityResult !== 'ok') {
+      throw new Error(`Generated field-shape fixture failed integrity_check: ${integrityResult}`)
+    }
+    const rowCounts = readBreadcrumbProgrammeRowCounts(db)
+    if (rowCounts.positions !== plan.positionCount) {
+      throw new Error(
+        `Field-shape fixture position count drifted: expected ${plan.positionCount}, got ${rowCounts.positions}.`,
+      )
+    }
     return {
       effectivePlan: plan,
       rowCounts,

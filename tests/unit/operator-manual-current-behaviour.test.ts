@@ -23,6 +23,18 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     ['SAR-QA-025 typical mission', 'A typical mission, the way the team runs it'],
     ['DON-319 GPX hidden on map', 'Hidden on map'],
     ['DON-300 short top-bar labels', '<strong>DIAG</strong>'],
+    ['DON-338 history gap warning', 'could not be loaded from the tracking server and is <strong>missing from the map</strong>'],
+    ['DON-338 unreadable roster rows', 'DEVICE ROSTER INCOMPLETE'],
+    ['DON-338 refused fixes', 'MISSION STORAGE REFUSED FIXES'],
+    ['DON-338 reused position ids', 'TRACKING SERVER REUSED POSITION IDS'],
+    ['DON-338 history line updating', 'Updating — the newest positions are being added to the history line'],
+    ['DON-338 history warning on every tab', '<strong>MISSION HISTORY</strong> warning appears in the strip under the top bar'],
+    ['DON-338 history gap warning while paused', '<em>retries resume when live tracking resumes</em>'],
+    ['DON-338 history gap across a clock change', '<em>01:50 (UTC+1)–01:10 (UTC+0)</em>'],
+    ['DON-338 history builder out of memory', '<strong>Reason: the history builder ran out of memory</strong>'],
+    ['DON-338 history re-check running behind', '<strong>Breadcrumb history re-check is running behind for</strong> a named device, with times'],
+    ['DON-338 history line stalled', '<strong>History line stalled</strong> message means the line has not changed'],
+    ['DON-338 lone fix', 'is drawn as a small circle in the device\'s colour'],
   ])('%s', (_change, text) => {
     expect(manual).toContain(text)
   })

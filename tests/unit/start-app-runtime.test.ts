@@ -8,6 +8,11 @@ import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
 import { createParticipationScope } from '../../src/features/participants/participation-scope'
+import { startTrackingRuntime as realStartTrackingRuntime } from '../../src/features/tracking/start-tracking-runtime'
+import type { TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
+import type { TrackingHistoryChunkPersistenceInput } from '../../src/features/tracking/polling-manager'
+
+type StartTrackingInput = Parameters<typeof realStartTrackingRuntime>[0]
 
 const coverageFlagState = vi.hoisted(() => ({ enabled: false }))
 const ARCHIVE_CUSTODY = {
@@ -517,6 +522,110 @@ describe('app runtime startup', () => {
       selectionMetadataByDevice: {},
     })
 
+  })
+
+  it('forwards the store-agreement hook to the poller, and the storage warning waits for agreement [DON-338 round 11]', async () => {
+    useMissionStore.setState({
+      phase: 'active',
+      currentMission: {
+        id: 'mission-1', name: 'Mission 1', status: 'active',
+        start_time: '2026-08-22T10:00:00.000Z', pause_time: null,
+        finish_time: null, paused_seconds: 0, notes: null, schema_version: 8,
+      },
+    })
+    const createPollingManager = vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() })
+    const statuses: { readonly warningCodes?: readonly string[] }[] = []
+    let storeWriteFails = true
+    // The real tracking runtime builds the poller through the app factory;
+    // only its outer environment (server, cache, store port) is synthetic.
+    const startTrackingRuntime = vi.fn().mockImplementation(async (input: StartTrackingInput) =>
+      realStartTrackingRuntime({
+        ...input,
+        config: { baseUrl: 'http://synthetic.invalid' },
+        createClient: vi.fn().mockReturnValue({}),
+        cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+        missionStore: {
+          getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+          listPositions: vi.fn().mockResolvedValue([]),
+          upsertDevice: vi.fn().mockResolvedValue(undefined),
+          addPosition: vi.fn().mockRejectedValue(new Error('per-row writer must not be used')),
+          persistTrackingPositionsBulk: vi.fn().mockImplementation(async () => {
+            if (storeWriteFails) throw new Error('synthetic store failure')
+            return { inserted: 0, duplicates: 0, rejected: [], refusedSourceIdentityConflicts: [] }
+          }),
+        },
+        writeCache: false,
+        applyStatus: (status) => {
+          statuses.push(status)
+          input.applyStatus(status)
+        },
+      }))
+
+    await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(createMissionStoreStub()),
+      readRuntimeBootstrapSettings: vi.fn().mockResolvedValue(createBootstrapSettings()),
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+      createPollingManager,
+    })
+
+    // Participant selection for the mission is loaded, so writes may proceed.
+    useParticipantStore.setState({
+      activeMissionId: 'mission-1',
+      loading: false,
+      error: null,
+      scope: createParticipationScope({ participants: [], membershipEvents: [] }),
+    })
+    expect(startTrackingRuntime).toHaveBeenCalledTimes(1)
+    expect(createPollingManager).toHaveBeenCalledTimes(1)
+    const pollerOptions = createPollingManager.mock.calls[0]![1] as {
+      readonly onStatusChange: (status: TrackingConnectionStatus) => void
+      readonly persistHistoryChunk?: (input: TrackingHistoryChunkPersistenceInput) => Promise<unknown>
+      readonly onTrailStoreAgreementChange?: (awaitingAgreement: boolean) => void
+    }
+    // The poller receives the runtime's hook through the real factory.
+    expect(pollerOptions.onTrailStoreAgreementChange).toEqual(expect.any(Function))
+    pollerOptions.onStatusChange({
+      mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null,
+    })
+    const fix = {
+      device_id: 'device-1', source_position_id: 'fix-1', lat: 53.1, lon: -6.1,
+      accuracy: 5, altitude: null, speed: null, course: null, battery: null,
+      timestamp: '2026-08-22T10:05:00.000Z', received_at: '2026-08-22T10:05:01.000Z',
+      source: 'traccar' as const,
+    }
+    const chunk: TrackingHistoryChunkPersistenceInput = {
+      phase: 'incremental', expectedMissionId: 'mission-1', deviceId: 'device-1',
+      historyFrom: '2026-08-22T10:00:00.000Z', reconciledFrom: '2026-08-22T10:00:00.000Z',
+      reconciledUntil: '2026-08-22T10:10:00.000Z', positions: [fix],
+    }
+
+    // A write fails; the poller marks the line as awaiting the store.
+    await expect(pollerOptions.persistHistoryChunk!(chunk)).rejects.toThrow()
+    pollerOptions.onTrailStoreAgreementChange!(true)
+    await vi.waitFor(() => expect(statuses.at(-1)?.warningCodes).toContain('mission_storage_failed'))
+
+    // The retry is confirmed, but the line has not been reloaded yet.
+    storeWriteFails = false
+    await pollerOptions.persistHistoryChunk!(chunk)
+    pollerOptions.onStatusChange({
+      mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null,
+    })
+    expect(statuses.at(-1)?.warningCodes).toContain('mission_storage_failed')
+
+    // Only agreement reported by the poller clears the warning.
+    pollerOptions.onTrailStoreAgreementChange!(false)
+    pollerOptions.onStatusChange({
+      mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null,
+    })
+    await vi.waitFor(() => expect(statuses.at(-1)?.warningCodes ?? []).not.toContain('mission_storage_failed'))
   })
 
   it('registers the service worker on startup', async () => {

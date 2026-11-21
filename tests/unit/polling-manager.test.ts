@@ -18,6 +18,20 @@ import {
   normalizeTraccarPosition,
 } from '../../src/features/tracking/traccar-normalization'
 
+/**
+ * A history port standing in for the tracking runtime when nothing is
+ * withheld or refused: the store kept every observation sent. The poller
+ * draws only what an answer lists as kept [DON-338 round 10].
+ */
+function keptAll(input: TrackingHistoryChunkPersistenceInput, changed = true) {
+  return { changed, keptPositions: input.positions }
+}
+
+/** The group form of {@link keptAll}. */
+function keptAllOf(inputs: readonly TrackingHistoryChunkPersistenceInput[]) {
+  return { keptPositions: inputs.flatMap((input) => input.positions) }
+}
+
 const NORMALIZED_DEVICES = devicesFixture.map((device) => normalizeTraccarDevice(device))
 const NORMALIZED_POSITIONS = positionsFixture.map((position) =>
   normalizeTraccarPosition(position, 'live'),
@@ -2157,8 +2171,9 @@ describe('polling manager', () => {
     const missionStartedAt = new Date('2026-04-06T00:00:00.000Z')
     const currentTime = new Date('2026-04-06T06:00:00.000Z')
     const persistence = createDeferred<void>()
-    const persistHistoryChunks = vi.fn().mockReturnValue(persistence.promise)
-    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: true })
+    const persistHistoryChunks = vi.fn((inputs: readonly TrackingHistoryChunkPersistenceInput[]) =>
+      persistence.promise.then(() => keptAllOf(inputs)))
+    const persistHistoryChunk = vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => keptAll(input))
     const historyPositions = NORMALIZED_DEVICES.slice(0, 2).map((device, index) => ({
       ...NORMALIZED_BREADCRUMBS[index]!,
       id: `initial-wave-${device.device_id}`,
@@ -2245,12 +2260,12 @@ describe('polling manager', () => {
     )
     const singletonAcknowledgementQueue = [...singletonAcknowledgements]
     const persistHistoryChunks = vi.fn().mockImplementation(
-      (inputs: readonly unknown[]) => {
+      (inputs: readonly TrackingHistoryChunkPersistenceInput[]) => {
         if (inputs.length > 1) {
           return Promise.reject(new Error('wave transaction rejected'))
         }
         const acknowledgement = singletonAcknowledgementQueue.shift()
-        return acknowledgement?.promise ?? Promise.resolve()
+        return (acknowledgement?.promise ?? Promise.resolve()).then(() => keptAllOf(inputs))
       },
     )
     const historyPositions = NORMALIZED_DEVICES.slice(0, 2).map((device, index) => ({
@@ -2319,7 +2334,7 @@ describe('polling manager', () => {
     const currentTime = new Date('2026-04-07T12:00:00.000Z')
     let nextPositionId = 1
     const onSnapshot = vi.fn()
-    const persistHistoryChunk = vi.fn().mockResolvedValue(undefined)
+    const persistHistoryChunk = vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => keptAll(input))
     const client = createClient({
       getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
       getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
@@ -2385,7 +2400,7 @@ describe('polling manager', () => {
     }>()
     const getCanonicalBreadcrumbs = vi.fn().mockReturnValue(canonicalLoad.promise)
     const onSnapshot = vi.fn()
-    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: true })
+    const persistHistoryChunk = vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => keptAll(input))
     const client = createClient({
       getDevices: vi.fn().mockResolvedValue(NORMALIZED_DEVICES),
       getCurrentPositions: vi.fn().mockResolvedValue([NORMALIZED_POSITIONS[0]!]),
@@ -2514,7 +2529,7 @@ describe('polling manager', () => {
       .mockReturnValueOnce(firstCanonicalLoad.promise)
       .mockResolvedValue(canonicalSeed)
     const persistHistoryChunk = vi.fn().mockImplementation(async (input) => ({
-      changed: input.phase === 'initial' ? true : changed,
+      changed: input.phase === 'initial' ? true : changed, keptPositions: input.positions,
     }))
     const poller = createPollingManager(createClient({
       getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
@@ -2952,7 +2967,7 @@ describe('polling manager', () => {
       getInitialBreadcrumbFrom: () => new Date('2026-04-06T00:00:00.000Z'),
       getInitialBreadcrumbs: async () => [],
       persistHistoryChunk: vi.fn().mockImplementation(async (input) => ({
-        changed: input.phase === 'initial' || changed,
+        changed: input.phase === 'initial' || changed, keptPositions: input.positions,
       })),
       onSnapshot,
       onStatusChange: vi.fn(),
@@ -3152,8 +3167,15 @@ describe('polling manager', () => {
     expect(cancelledBackfillRequests).toBe(6)
   })
 
-  it('does not canonicalize history that failed durable persistence', async () => {
-    const getCanonicalBreadcrumbs = vi.fn()
+  it('does not draw history that failed durable persistence, and re-reads the store instead [DON-338 round 10]', async () => {
+    // Adapted in round 10: a failed write may still have committed (a lost
+    // answer), so the poller reloads the line from the store rather than
+    // trusting either the failed history or its own line. The store holds
+    // nothing from this write, so nothing from it is drawn.
+    const getCanonicalBreadcrumbs = vi.fn().mockResolvedValue({
+      positions: [], totalObservedByDevice: {}, selectionMetadataByDevice: {},
+    })
+    const onTrailStoreAgreementChange = vi.fn()
     const onSnapshot = vi.fn()
     const poller = createPollingManager(createClient({
       getDevices: vi.fn().mockResolvedValue([NORMALIZED_DEVICES[0]!]),
@@ -3174,6 +3196,7 @@ describe('polling manager', () => {
       persistHistoryChunk: vi.fn().mockRejectedValue(
         new Error('atomic persistence failed'),
       ),
+      onTrailStoreAgreementChange,
       onSnapshot,
       onStatusChange: vi.fn(),
       now: () => new Date('2026-04-06T02:00:00.000Z'),
@@ -3182,7 +3205,10 @@ describe('polling manager', () => {
     poller.start()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(getCanonicalBreadcrumbs).not.toHaveBeenCalled()
+    expect(getCanonicalBreadcrumbs).toHaveBeenCalled()
+    // Each failed attempt awaits agreement until the read-back lands.
+    expect(onTrailStoreAgreementChange.mock.calls.at(0)).toEqual([true])
+    expect(onTrailStoreAgreementChange.mock.calls.at(-1)).toEqual([false])
     expect(
       onSnapshot.mock.calls.flatMap((call) => call[0].breadcrumbs),
     ).not.toContainEqual(NORMALIZED_BREADCRUMBS[0])
@@ -4538,7 +4564,7 @@ describe('polling manager', () => {
       .mockResolvedValueOnce(NORMALIZED_POSITIONS)
       .mockReturnValueOnce(slowCurrentPoll.promise)
     const onSnapshot = vi.fn()
-    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: false })
+    const persistHistoryChunk = vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => keptAll(input, false))
     const scheduledTimers: Array<{ readonly delay: number; fired: boolean }> = []
     const scheduleTimeoutSpy = vi.fn((callback: () => void, delay = 0) => {
       const timer = { delay, fired: false }
@@ -4626,7 +4652,7 @@ describe('polling manager', () => {
       .mockReturnValueOnce(slowCurrentPoll.promise)
     const onSnapshot = vi.fn()
     const onStatusChange = vi.fn()
-    const persistHistoryChunk = vi.fn().mockResolvedValue({ changed: false })
+    const persistHistoryChunk = vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => keptAll(input, false))
     const poller = createPollingManager(createClient({
       getCurrentPositions: currentPositions,
       getBreadcrumbs: vi.fn().mockImplementation(
@@ -4677,10 +4703,12 @@ describe('polling manager', () => {
 
       slowCurrentPoll.resolve([])
       await vi.advanceTimersByTimeAsync(0)
+      // History was still loading when the mission paused: the paused status
+      // keeps saying so, without claiming loading continues [DON-338].
       expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'idle',
-        warning: 'Live refresh suspended while mission is paused.',
-        warningCodes: ['mission_paused'],
+        warning: 'Live refresh suspended while mission is paused. Breadcrumb history is reconciling for Donal Phone, Team Lead; loading resumes when live tracking resumes.',
+        warningCodes: ['mission_paused', 'history_reconciling'],
       }))
     } finally {
       slowCurrentPoll.resolve([])

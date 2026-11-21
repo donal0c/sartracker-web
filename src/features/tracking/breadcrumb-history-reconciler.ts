@@ -15,6 +15,18 @@ const DEFAULT_ANTI_ENTROPY_INTERVAL_MS = 5 * 60 * 1000
 const DEFAULT_ANTI_ENTROPY_RECENT_WINDOW_MS = 6 * 60 * 60 * 1000
 // Older history is swept newest first in this many chunks per device per tick.
 const DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK = 3
+// DON-338 (ING-2): a window the proxy rejects as too large or too slow is
+// split, never retried unchanged. Windows at or below this width are not split.
+const DEFAULT_MIN_WINDOW_MS = 5 * 60 * 1000
+// Attempts at the smallest window before it is recorded as a visible gap and
+// catch-up moves on to the rest of that device's history.
+const DEFAULT_MIN_WINDOW_ATTEMPTS = 3
+// A split window grows back (doubles) after this many consecutive successes.
+const WINDOW_GROWTH_SUCCESS_COUNT = 4
+// DON-338 review: one device's re-check work per tick is bounded so a slow
+// device cannot hold the sweep. Requests: twice what the normal plan needs at
+// the device's current window width, and never fewer than this floor.
+const MIN_ANTI_ENTROPY_REQUESTS_PER_DEVICE_PER_TICK = 12
 
 type BreadcrumbHistoryReconcilerLogger = {
   readonly warn: (message: string, context: Record<string, unknown>) => void
@@ -25,7 +37,7 @@ export type BreadcrumbHistoryChunkAcknowledgement =
   | void
   | readonly PromiseSettledResult<void>[]
 
-type BreadcrumbHistoryReconcilerOptions = {
+export type BreadcrumbHistoryReconcilerOptions = {
   readonly fetchBreadcrumbs: (
     deviceId: string,
     from: Date,
@@ -45,6 +57,12 @@ type BreadcrumbHistoryReconcilerOptions = {
   readonly antiEntropyIntervalMs?: number
   readonly antiEntropyRecentWindowMs?: number
   readonly antiEntropyOlderChunksPerTick?: number
+  readonly minWindowMs?: number
+  readonly minWindowAttempts?: number
+  /** Fixed re-check requests per device per tick; by default twice the plan at the current width, at least 12. */
+  readonly antiEntropyRequestsPerDevicePerTick?: number
+  /** Wall-clock budget for one device's re-check work in one tick; defaults to the tick interval. */
+  readonly antiEntropyDeviceTimeBudgetMs?: number
   readonly setTimeout?: typeof globalThis.setTimeout
   readonly clearTimeout?: typeof globalThis.clearTimeout
 }
@@ -59,6 +77,37 @@ export type BreadcrumbHistoryChunk = {
   readonly positions: readonly NormalizedTrackingPosition[]
 }
 
+/** Why a history window could not be fetched: the reply was over the size limit, or too slow. */
+export type BreadcrumbHistoryGapReason = 'oversized' | 'slow'
+
+/**
+ * A device time range whose history could not be fetched at any window size.
+ * Its fixes are neither invented nor claimed as stored; the range is retried
+ * on every anti-entropy tick until a fetch covering it succeeds [DON-338].
+ */
+export type BreadcrumbHistoryGap = {
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly from: string
+  readonly to: string
+  readonly reason: BreadcrumbHistoryGapReason
+  readonly phase: 'initial' | 'anti_entropy'
+  readonly attempts: number
+  readonly lastError: string
+}
+
+/**
+ * A device time range the 5-minute re-check has planned but not yet re-read,
+ * because that device's per-tick budget ran out. It is resumed next tick and
+ * is neither claimed as checked nor forgotten [DON-338].
+ */
+export type BreadcrumbHistoryRecheckBacklog = {
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly from: string
+  readonly to: string
+}
+
 export type BreadcrumbHistoryProgress = {
   readonly phase: 'initial' | 'anti_entropy'
   readonly targetFrom: string | null
@@ -71,7 +120,13 @@ export type BreadcrumbHistoryProgress = {
   readonly failedDeviceCount: number
   readonly elapsedMs: number
   readonly pendingDeviceNames: readonly string[]
+  /** Includes every device with an unfilled history gap. */
   readonly failedDeviceNames: readonly string[]
+  /** Unfetchable ranges, merged per device and ordered by device then time. */
+  readonly historyGaps: readonly BreadcrumbHistoryGap[]
+  /** Re-check ranges still to be re-read, merged per device. */
+  readonly recheckBacklog: readonly BreadcrumbHistoryRecheckBacklog[]
+  /** Never true while any history gap is unfilled, in either phase. */
   readonly complete: boolean
 }
 
@@ -102,6 +157,60 @@ type DeviceReconciliationJob = {
   cursorMs: number
   failureCount: number
   retryAtMs: number
+  /** Current request width; halves on an oversized or slow reply. */
+  windowMs: number
+  consecutiveSuccessCount: number
+  minWindowFailureCount: number
+}
+
+type HistoryGapRecord = {
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly historyFromMs: number
+  fromMs: number
+  toMs: number
+  phase: 'initial' | 'anti_entropy'
+  reason: BreadcrumbHistoryGapReason
+  attempts: number
+  lastError: string
+  lastAttemptAtMs: number
+}
+
+/** A queued re-check range; `failedInTurn` marks a range that failed in that turn and waits at the back. */
+type LaneSlice = {
+  readonly fromMs: number
+  readonly toMs: number
+  readonly failedInTurn: number
+}
+
+/** The re-check lanes a device's turn rotates through. The initial lane is the catch-up drain. */
+const RECHECK_LANES = ['recent', 'older', 'gap'] as const
+
+/**
+ * One device's queued re-check work. Kept by device id, so it survives
+ * suspend, resume and range expansion until it is fetched or the device or
+ * mission goes away.
+ */
+type DeviceLanes = {
+  readonly deviceId: string
+  deviceName: string
+  recent: LaneSlice[]
+  older: LaneSlice[]
+  /** The lane the next turn starts from: the one after the lane served last. */
+  nextLaneIndex: number
+  /** Current re-check request width; halves on an oversized or slow reply. */
+  windowMs: number
+  successCount: number
+  /** Where the next gap slice starts; rotates through the device's gaps in time order. */
+  gapCursorMs: number
+  /**
+   * The gap retry cycle in progress: the device's gap ranges frozen when the
+   * cycle started, or null between cycles. Gaps found or extended during a
+   * cycle wait for the next one, so a cycle always ends.
+   */
+  gapCycle: readonly TimeRange[] | null
+  /** Counts this device's turns; marks which turn a slice failed in. */
+  turn: number
 }
 
 type CompletedDeviceReconciliation = {
@@ -119,10 +228,9 @@ type CompletedDeviceReconciliation = {
   latestAvailableTargetMs: number
 }
 
-type AntiEntropyWindow = {
+type TimeRange = {
   readonly fromMs: number
   readonly toMs: number
-  readonly older: boolean
 }
 
 /**
@@ -162,6 +270,21 @@ export function createBreadcrumbHistoryReconciler(
     options.antiEntropyOlderChunksPerTick,
     DEFAULT_ANTI_ENTROPY_OLDER_CHUNKS_PER_TICK,
   )
+  const minWindowMs = Math.min(
+    chunkMs,
+    normalizePositiveInteger(options.minWindowMs, DEFAULT_MIN_WINDOW_MS),
+  )
+  const minWindowAttempts = normalizePositiveInteger(
+    options.minWindowAttempts,
+    DEFAULT_MIN_WINDOW_ATTEMPTS,
+  )
+  const antiEntropyDeviceTimeBudgetMs = normalizePositiveInteger(
+    options.antiEntropyDeviceTimeBudgetMs,
+    antiEntropyIntervalMs,
+  )
+  const fixedRequestBudget = options.antiEntropyRequestsPerDevicePerTick === undefined
+    ? null
+    : normalizePositiveInteger(options.antiEntropyRequestsPerDevicePerTick, 1)
   const scheduleTimeout = options.setTimeout ?? globalThis.setTimeout.bind(globalThis)
   const clearScheduledTimeout =
     options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis)
@@ -170,13 +293,27 @@ export function createBreadcrumbHistoryReconciler(
   const completedDevicesById = new Map<string, CompletedDeviceReconciliation>()
   const failedDeviceIds = new Set<string>()
   const antiEntropyFailedDeviceIds = new Set<string>()
+  const gapsByDeviceId = new Map<string, HistoryGapRecord[]>()
   const activeInitialJobs = new Set<DeviceReconciliationJob>()
   const deviceQueue: string[] = []
   let generation = 0
   let draining = false
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let antiEntropyTimer: ReturnType<typeof setTimeout> | null = null
-  let antiEntropyBatchInFlight = false
+  const lanesByDeviceId = new Map<string, DeviceLanes>()
+  // One FIFO admission lock per device id for every request: initial
+  // catch-up, recent and older re-check and gap retries. It is not tied to a
+  // job object or a generation, so it holds across suspend, resume and range
+  // expansion until the in-flight request settles. Only a reset (a new
+  // mission) starts fresh locks, so a new mission never waits on an old one.
+  const deviceLocks = new Map<string, { readonly epoch: number; held: boolean; readonly waiters: (() => void)[] }>()
+  let missionEpoch = 0
+  // A device's re-check turn queued or running, by generation; a tick skips it.
+  const turnsInFlight = new Map<string, number>()
+  const antiEntropyTaskQueue: (() => Promise<void>)[] = []
+  let antiEntropyActiveTaskCount = 0
+  // Set when every initial job finished but a gap withheld completion.
+  let initialCompletionWithheld = false
   let initialStartedAtMs: number | null = null
   let antiEntropyStartedAtMs: number | null = null
 
@@ -226,19 +363,33 @@ export function createBreadcrumbHistoryReconciler(
       0,
     )
     const failedIds = phase === 'initial' ? failedDeviceIds : antiEntropyFailedDeviceIds
-    const failedNames = phase === 'initial'
-      ? pendingJobs
-          .filter((job) => failedIds.has(job.deviceId))
-          .map((job) => job.deviceName)
-      : completedDevices
-          .filter((device) => failedIds.has(device.deviceId))
-          .map((device) => device.deviceName)
+    const failedNamesById = new Map<string, string>()
+    if (phase === 'initial') {
+      for (const job of pendingJobs) {
+        if (failedIds.has(job.deviceId)) failedNamesById.set(job.deviceId, job.deviceName)
+      }
+    } else {
+      for (const device of completedDevices) {
+        if (failedIds.has(device.deviceId)) failedNamesById.set(device.deviceId, device.deviceName)
+      }
+    }
+    // A device with an unfilled gap stays named in both phases [DON-338].
+    for (const [deviceId, gaps] of gapsByDeviceId) {
+      const name = gaps[0]?.deviceName
+      if (name !== undefined && !failedNamesById.has(deviceId)) failedNamesById.set(deviceId, name)
+    }
+    const failedNames = [...failedNamesById.entries()]
+      .sort(([left], [right]) => compareStringsByCodeUnit(left, right))
+      .map(([, name]) => name)
     const totalDeviceCount = pendingJobs.length + completedDevices.length
     const completedDeviceCount = phase === 'initial'
       ? completedDevices.length
       : completedDevices.filter(
-          (device) => device.antiEntropyCursorMs <= device.missionStartMs,
+          (device) =>
+            device.antiEntropyCursorMs <= device.missionStartMs && !hasBacklog(device.deviceId),
         ).length
+    const noGaps = gapsByDeviceId.size === 0
+    const noBacklog = [...lanesByDeviceId.keys()].every((deviceId) => !hasBacklog(deviceId))
     const startedAtMs = phase === 'initial' ? initialStartedAtMs : antiEntropyStartedAtMs
     return {
       phase,
@@ -263,21 +414,48 @@ export function createBreadcrumbHistoryReconciler(
       elapsedMs: startedAtMs === null ? 0 : Math.max(0, Date.now() - startedAtMs),
       pendingDeviceNames: pendingJobs.map((job) => job.deviceName),
       failedDeviceNames: failedNames,
+      historyGaps: publishHistoryGaps(gapsByDeviceId),
+      recheckBacklog: publishRecheckBacklog(lanesByDeviceId),
+      // DON-338 review: a gapped history is never reported complete. The
+      // initial phase claims only that every initial window was fetched or is
+      // a reported gap; re-check backlog re-reads history already fetched, so
+      // it keeps the re-check phase incomplete (and is published as
+      // recheckBacklog) without withholding the initial claim.
       complete:
-        phase === 'initial'
+        noGaps &&
+        (phase === 'initial'
           ? pendingJobs.length === 0
-          : completedDeviceCount === totalDeviceCount,
+          : noBacklog && completedDeviceCount === totalDeviceCount),
     }
   }
 
+  // While any device is still catching up, report the initial phase so its
+  // failure stays visible even though healthy devices are being swept.
   const getProgress = (): BreadcrumbHistoryProgress =>
-    buildProgress(antiEntropyStartedAtMs === null ? 'initial' : 'anti_entropy')
+    buildProgress(
+      jobsByDeviceId.size > 0 || antiEntropyStartedAtMs === null ? 'initial' : 'anti_entropy',
+    )
 
   const publishProgress = (
     phase: BreadcrumbHistoryProgress['phase'] = 'initial',
   ): void => {
     if (options.shouldContinue()) {
-      options.onProgress(buildProgress(phase))
+      const progress = buildProgress(phase)
+      if (phase === 'initial') {
+        initialCompletionWithheld =
+          jobsByDeviceId.size === 0 && !progress.complete && gapsByDeviceId.size > 0
+      }
+      options.onProgress(progress)
+    }
+  }
+
+  /**
+   * Publishes the initial completion that a gap withheld, once the last gap
+   * is filled, so consumers waiting on it (canonical trail reload) run.
+   */
+  const publishWithheldInitialCompletion = (): void => {
+    if (initialCompletionWithheld && jobsByDeviceId.size === 0 && gapsByDeviceId.size === 0) {
+      publishProgress('initial')
     }
   }
 
@@ -295,6 +473,65 @@ export function createBreadcrumbHistoryReconciler(
     })
   }
 
+  /** True while the device has re-check ranges queued in its recent or older lane. */
+  function hasBacklog(deviceId: string): boolean {
+    const lanes = lanesByDeviceId.get(deviceId)
+    return lanes !== undefined && (lanes.recent.length > 0 || lanes.older.length > 0)
+  }
+
+  /**
+   * Takes the device's admission lock. Returns its release at once when the
+   * device is free; otherwise a promise of it, resolved once every earlier
+   * request for the device has settled. Waiters are served in order.
+   */
+  const acquireDevice = (deviceId: string): (() => void) | Promise<() => void> => {
+    let lock = deviceLocks.get(deviceId)
+    if (lock === undefined || lock.epoch !== missionEpoch) {
+      lock = { epoch: missionEpoch, held: false, waiters: [] }
+      deviceLocks.set(deviceId, lock)
+    }
+    const current = lock
+    const makeRelease = (): (() => void) => {
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        const next = current.waiters.shift()
+        if (next !== undefined) {
+          next()
+          return
+        }
+        current.held = false
+        if (deviceLocks.get(deviceId) === current) deviceLocks.delete(deviceId)
+      }
+    }
+    if (!current.held) {
+      current.held = true
+      return makeRelease()
+    }
+    return new Promise((resolve) => {
+      current.waiters.push(() => resolve(makeRelease()))
+    })
+  }
+
+  /** Fetches one window under the device's admission lock. */
+  const fetchUnderLock = async (
+    deviceId: string,
+    fromMs: number,
+    toMs: number,
+    stillWanted: () => boolean,
+  ): Promise<readonly NormalizedTrackingPosition[] | null> => {
+    // A free device is fetched synchronously, as before the lock existed.
+    const acquired = acquireDevice(deviceId)
+    const release = typeof acquired === 'function' ? acquired : await acquired
+    try {
+      if (!stillWanted()) return null
+      return await options.fetchBreadcrumbs(deviceId, new Date(fromMs), new Date(toMs))
+    } finally {
+      release()
+    }
+  }
+
   const scheduleDrain = (delayMs: number): void => {
     if (retryTimer !== null || !options.shouldContinue()) {
       return
@@ -308,23 +545,192 @@ export function createBreadcrumbHistoryReconciler(
     }, delayMs)
   }
 
+  /**
+   * Records an unfetchable range so it is visible and retried, never silently
+   * skipped. Overlapping or touching ranges of one device merge into one
+   * record, keeping the initial phase if either was initial.
+   */
+  const recordHistoryGap = (
+    gap: Omit<HistoryGapRecord, 'attempts' | 'lastAttemptAtMs' | 'lastError'>,
+    attempts: number,
+    error: unknown,
+  ): void => {
+    const lastError = describeError(error)
+    const nowMs = Date.now()
+    const gaps = gapsByDeviceId.get(gap.deviceId) ?? []
+    const touching = gaps.filter((record) => record.fromMs <= gap.toMs && record.toMs >= gap.fromMs)
+    const merged: HistoryGapRecord = touching[0] ?? { ...gap, attempts: 0, lastError, lastAttemptAtMs: nowMs }
+    for (const record of touching.slice(1)) {
+      merged.fromMs = Math.min(merged.fromMs, record.fromMs)
+      merged.toMs = Math.max(merged.toMs, record.toMs)
+      merged.attempts += record.attempts
+      if (record.phase === 'initial') merged.phase = 'initial'
+    }
+    merged.fromMs = Math.min(merged.fromMs, gap.fromMs)
+    merged.toMs = Math.max(merged.toMs, gap.toMs)
+    merged.attempts += attempts
+    merged.lastError = lastError
+    merged.reason = gap.reason
+    merged.lastAttemptAtMs = nowMs
+    if (gap.phase === 'initial') merged.phase = 'initial'
+    const remaining = gaps.filter((record) => !touching.includes(record))
+    remaining.push(merged)
+    remaining.sort((left, right) => left.fromMs - right.fromMs)
+    gapsByDeviceId.set(gap.deviceId, remaining)
+    options.logger.warn(
+      'Tracking breadcrumb history window could not be fetched at any size; recorded as a gap.',
+      {
+        deviceId: gap.deviceId,
+        deviceName: gap.deviceName,
+        from: new Date(gap.fromMs).toISOString(),
+        to: new Date(gap.toMs).toISOString(),
+        reason: gap.reason,
+        phase: gap.phase,
+        error: lastError,
+      },
+    )
+  }
+
+  /**
+   * A committed fetch of [fromMs, toMs] fills exactly that part of the
+   * device's gaps: covered records go, partly covered ones are trimmed or split.
+   */
+  const clearHistoryGapsCoveredBy = (
+    deviceId: string,
+    fromMs: number,
+    toMs: number,
+  ): void => {
+    const gaps = gapsByDeviceId.get(deviceId)
+    if (gaps === undefined) return
+    const remaining: HistoryGapRecord[] = []
+    for (const gap of gaps) {
+      if (gap.toMs <= fromMs || gap.fromMs >= toMs) {
+        remaining.push(gap)
+        continue
+      }
+      if (gap.fromMs < fromMs && gap.toMs > toMs) {
+        remaining.push({ ...gap, toMs: fromMs }, { ...gap, fromMs: toMs })
+      } else if (gap.fromMs < fromMs) {
+        gap.toMs = fromMs
+        remaining.push(gap)
+      } else if (gap.toMs > toMs) {
+        gap.fromMs = toMs
+        remaining.push(gap)
+      }
+    }
+    if (remaining.length === 0) gapsByDeviceId.delete(deviceId)
+    else gapsByDeviceId.set(deviceId, remaining)
+  }
+
+  /** Grows a split window back towards the full chunk after steady success. */
+  const noteInitialWindowSuccess = (
+    job: DeviceReconciliationJob,
+    fromMs: number,
+    toMs: number,
+  ): void => {
+    clearHistoryGapsCoveredBy(job.deviceId, fromMs, toMs)
+    job.minWindowFailureCount = 0
+    job.consecutiveSuccessCount += 1
+    if (
+      job.windowMs < chunkMs &&
+      job.consecutiveSuccessCount >= WINDOW_GROWTH_SUCCESS_COUNT
+    ) {
+      job.windowMs = Math.min(chunkMs, job.windowMs * 2)
+      job.consecutiveSuccessCount = 0
+    }
+  }
+
+  /**
+   * Handles a failed history fetch for an initial window. An oversized or slow
+   * reply splits the window; at the smallest width it is retried a bounded
+   * number of times, then recorded as a gap so the device's remaining history
+   * still catches up. Any other failure keeps the window and backs off.
+   */
+  const handleInitialFetchFailure = (
+    job: DeviceReconciliationJob,
+    fromMs: number,
+    toMs: number,
+    drainGeneration: number,
+    error: unknown,
+  ): void => {
+    if (!isCurrentJob(job, drainGeneration)) {
+      return
+    }
+    const reason = classifyHistoryWindowFailure(error)
+    if (reason === null) {
+      markJobFailed(job, drainGeneration, error)
+      return
+    }
+    job.consecutiveSuccessCount = 0
+    const widthMs = toMs - fromMs
+    if (widthMs > minWindowMs) {
+      job.windowMs = Math.max(minWindowMs, Math.floor(widthMs / 2))
+      job.minWindowFailureCount = 0
+      job.retryAtMs = 0
+      deviceQueue.push(job.deviceId)
+      options.logger.warn('Tracking breadcrumb history window failed; splitting it.', {
+        deviceId: job.deviceId,
+        deviceName: job.deviceName,
+        from: new Date(fromMs).toISOString(),
+        to: new Date(toMs).toISOString(),
+        nextWindowMs: job.windowMs,
+        reason,
+        error: describeError(error),
+      })
+      return
+    }
+    job.minWindowFailureCount += 1
+    if (job.minWindowFailureCount < minWindowAttempts) {
+      markJobFailed(job, drainGeneration, error)
+      return
+    }
+    recordHistoryGap({
+      deviceId: job.deviceId,
+      deviceName: job.deviceName,
+      historyFromMs: job.missionStartMs,
+      fromMs,
+      toMs,
+      phase: 'initial',
+      reason,
+    }, job.minWindowFailureCount, error)
+    job.cursorMs = toMs
+    job.minWindowFailureCount = 0
+    job.failureCount = 0
+    job.retryAtMs = 0
+    failedDeviceIds.delete(job.deviceId)
+    if (job.cursorMs >= job.targetMs) {
+      completeInitialJob(job)
+    } else {
+      deviceQueue.push(job.deviceId)
+    }
+  }
+
   const processJob = async (
     job: DeviceReconciliationJob,
     drainGeneration: number,
   ): Promise<void> => {
     const fromMs = job.cursorMs
-    const toMs = Math.min(fromMs + chunkMs, job.targetMs)
+    const toMs = Math.min(fromMs + job.windowMs, job.targetMs)
     if (toMs <= fromMs) {
       completeInitialJob(job)
       return
     }
 
+    let positions: readonly NormalizedTrackingPosition[]
     try {
-      const positions = await options.fetchBreadcrumbs(
+      const fetched = await fetchUnderLock(
         job.deviceId,
-        new Date(fromMs),
-        new Date(toMs),
+        fromMs,
+        toMs,
+        () => isCurrentJob(job, drainGeneration),
       )
+      if (fetched === null) return
+      positions = fetched
+    } catch (error) {
+      handleInitialFetchFailure(job, fromMs, toMs, drainGeneration, error)
+      return
+    }
+    try {
       if (
         drainGeneration !== generation ||
         !options.shouldContinue() ||
@@ -360,34 +766,14 @@ export function createBreadcrumbHistoryReconciler(
       job.failureCount = 0
       job.retryAtMs = 0
       failedDeviceIds.delete(job.deviceId)
+      noteInitialWindowSuccess(job, fromMs, toMs)
       if (job.cursorMs >= job.targetMs) {
         completeInitialJob(job)
       } else {
         deviceQueue.push(job.deviceId)
       }
     } catch (error) {
-      if (
-        drainGeneration !== generation ||
-        !options.shouldContinue() ||
-        jobsByDeviceId.get(job.deviceId) !== job
-      ) {
-        return
-      }
-
-      job.failureCount += 1
-      const retryDelayMs = Math.min(
-        retryBaseMs * 2 ** (job.failureCount - 1),
-        maxRetryMs,
-      )
-      job.retryAtMs = Date.now() + retryDelayMs
-      failedDeviceIds.add(job.deviceId)
-      deviceQueue.push(job.deviceId)
-      options.logger.warn('Tracking breadcrumb reconciliation failed for device.', {
-        deviceId: job.deviceId,
-        deviceName: job.deviceName,
-        retryDelayMs,
-        error: error instanceof Error ? error.message : String(error),
-      })
+      markJobFailed(job, drainGeneration, error)
     }
   }
 
@@ -428,18 +814,19 @@ export function createBreadcrumbHistoryReconciler(
     drainGeneration: number,
   ): Promise<BreadcrumbHistoryChunk | null> => {
     const fromMs = job.cursorMs
-    const toMs = Math.min(fromMs + chunkMs, job.targetMs)
+    const toMs = Math.min(fromMs + job.windowMs, job.targetMs)
     if (toMs <= fromMs) {
       completeInitialJob(job)
       return null
     }
     try {
-      const positions = await options.fetchBreadcrumbs(
+      const positions = await fetchUnderLock(
         job.deviceId,
-        new Date(fromMs),
-        new Date(toMs),
+        fromMs,
+        toMs,
+        () => isCurrentJob(job, drainGeneration),
       )
-      if (!isCurrentJob(job, drainGeneration)) {
+      if (positions === null || !isCurrentJob(job, drainGeneration)) {
         return null
       }
       return {
@@ -452,7 +839,7 @@ export function createBreadcrumbHistoryReconciler(
         positions,
       }
     } catch (error) {
-      markJobFailed(job, drainGeneration, error)
+      handleInitialFetchFailure(job, fromMs, toMs, drainGeneration, error)
       return null
     }
   }
@@ -469,6 +856,7 @@ export function createBreadcrumbHistoryReconciler(
     job.failureCount = 0
     job.retryAtMs = 0
     failedDeviceIds.delete(job.deviceId)
+    noteInitialWindowSuccess(job, chunk.from.getTime(), chunk.to.getTime())
     if (job.cursorMs >= job.targetMs) {
       completeInitialJob(job)
     } else {
@@ -616,8 +1004,7 @@ export function createBreadcrumbHistoryReconciler(
   function scheduleAntiEntropy(): void {
     if (
       antiEntropyTimer !== null ||
-      antiEntropyBatchInFlight ||
-      completedDevicesById.size === 0 ||
+      (completedDevicesById.size === 0 && gapsByDeviceId.size === 0 && lanesByDeviceId.size === 0) ||
       !options.shouldContinue()
     ) {
       return
@@ -626,138 +1013,432 @@ export function createBreadcrumbHistoryReconciler(
     antiEntropyTimer = scheduleTimeout(() => {
       antiEntropyTimer = null
       if (scheduledGeneration === generation) {
-        void runAntiEntropyBatch(scheduledGeneration)
+        void runAntiEntropyTick(scheduledGeneration)
       }
     }, antiEntropyIntervalMs)
   }
 
-  const isCurrentCompletedDevice = (
-    device: CompletedDeviceReconciliation,
-    batchGeneration: number,
-  ): boolean =>
-    batchGeneration === generation &&
-    options.shouldContinue() &&
-    completedDevicesById.get(device.deviceId) === device
+  /** The device's re-check lanes, created on first use. */
+  const lanesFor = (deviceId: string, deviceName: string): DeviceLanes => {
+    let lanes = lanesByDeviceId.get(deviceId)
+    if (lanes === undefined) {
+      lanes = {
+        deviceId,
+        deviceName,
+        recent: [],
+        older: [],
+        nextLaneIndex: 0,
+        gapCursorMs: Number.NEGATIVE_INFINITY,
+        gapCycle: null,
+        windowMs: chunkMs,
+        successCount: 0,
+        turn: 0,
+      }
+      lanesByDeviceId.set(deviceId, lanes)
+    }
+    lanes.deviceName = deviceName
+    return lanes
+  }
 
   /**
-   * Plans one device's tick: the recent window, then the next older chunks of
-   * the pass, all newest first. Starts a new pass when the last one finished.
+   * Appends a range to the tail of a lane, minus anything already queued in
+   * either lane or recorded as a gap, so planning never moves or duplicates
+   * queued work.
    */
-  const planAntiEntropyWindows = (
-    device: CompletedDeviceReconciliation,
-  ): { readonly recentFloorMs: number; readonly windows: readonly AntiEntropyWindow[] } => {
+  const enqueueRange = (lanes: DeviceLanes, lane: 'recent' | 'older', range: TimeRange): void => {
+    let pieces: TimeRange[] = range.toMs > range.fromMs ? [range] : []
+    const covered: readonly TimeRange[] = [
+      ...lanes.recent,
+      ...lanes.older,
+      ...(gapsByDeviceId.get(lanes.deviceId) ?? []),
+    ]
+    for (const taken of covered) pieces = pieces.flatMap((piece) => removeTimeRange([piece], taken))
+    // The recent lane is read newest first, where late uploads land.
+    if (lane === 'recent') pieces.sort((left, right) => right.fromMs - left.fromMs)
+    lanes[lane].push(...pieces.map((piece) => ({ ...piece, failedInTurn: -1 })))
+  }
+
+  /**
+   * Plans a completed device's tick. The recent window is queued every tick,
+   * because that is where late uploads land; the next older span of the pass
+   * is queued only when the older lane is empty.
+   */
+  const planDevice = (device: CompletedDeviceReconciliation): void => {
+    const lanes = lanesFor(device.deviceId, device.deviceName)
+    const recentTopMs = device.latestAvailableTargetMs
+    const recentFloorMs = Math.max(device.missionStartMs, recentTopMs - antiEntropyRecentWindowMs)
+    enqueueRange(lanes, 'recent', { fromMs: recentFloorMs, toMs: recentTopMs })
+    if (lanes.older.length > 0) return
     if (device.antiEntropyCursorMs <= device.missionStartMs) {
       device.antiEntropyTargetMs = device.latestAvailableTargetMs
       device.antiEntropyCursorMs = device.antiEntropyTargetMs
     }
-    const recentTopMs = device.latestAvailableTargetMs
-    const recentFloorMs = Math.max(
-      device.missionStartMs,
-      recentTopMs - antiEntropyRecentWindowMs,
+    const olderTopMs = Math.min(device.antiEntropyCursorMs, recentFloorMs)
+    const olderFloorMs = Math.max(device.missionStartMs, olderTopMs - antiEntropyOlderChunksPerTick * chunkMs)
+    enqueueRange(lanes, 'older', { fromMs: olderFloorMs, toMs: olderTopMs })
+    device.antiEntropyCursorMs = Math.min(device.antiEntropyCursorMs, olderFloorMs)
+  }
+
+  /** Requests one device may make in one turn: fixed, or twice its plan at its current width, at least 12. */
+  const requestBudgetFor = (lanes: DeviceLanes): number =>
+    fixedRequestBudget ?? Math.max(
+      MIN_ANTI_ENTROPY_REQUESTS_PER_DEVICE_PER_TICK,
+      2 * Math.ceil((antiEntropyRecentWindowMs + antiEntropyOlderChunksPerTick * chunkMs) / lanes.windowMs),
     )
-    const windows: AntiEntropyWindow[] = []
-    for (let toMs = recentTopMs; toMs > recentFloorMs; toMs -= chunkMs) {
-      windows.push({ fromMs: Math.max(recentFloorMs, toMs - chunkMs), toMs, older: false })
-    }
-    let olderTopMs = Math.min(device.antiEntropyCursorMs, recentFloorMs)
-    for (
-      let count = 0;
-      count < antiEntropyOlderChunksPerTick && olderTopMs > device.missionStartMs;
-      count += 1
-    ) {
-      const fromMs = Math.max(device.missionStartMs, olderTopMs - chunkMs)
-      windows.push({ fromMs, toMs: olderTopMs, older: true })
-      olderTopMs = fromMs
-    }
-    return { recentFloorMs, windows }
+
+  /** Names a device whose re-check failed for a reason a smaller window cannot fix. */
+  const markAntiEntropyFailed = (lanes: DeviceLanes, error: unknown): void => {
+    options.logger.warn('Tracking breadcrumb anti-entropy check failed for device.', {
+      deviceId: lanes.deviceId,
+      deviceName: lanes.deviceName,
+      retryDelayMs: antiEntropyIntervalMs,
+      error: describeError(error),
+    })
+    antiEntropyFailedDeviceIds.add(lanes.deviceId)
   }
 
-  /** Sweeps one device's planned windows in order, one request in flight. */
-  const sweepAntiEntropyDevice = async (
-    device: CompletedDeviceReconciliation,
-    batchGeneration: number,
-  ): Promise<void> => {
-    const { recentFloorMs, windows } = planAntiEntropyWindows(device)
-    for (const [index, window] of windows.entries()) {
-      try {
-        const positions = await options.fetchBreadcrumbs(
-          device.deviceId,
-          new Date(window.fromMs),
-          new Date(window.toMs),
+  /** The outcome of one re-check request for the device's turn. */
+  type TurnRequestOutcome = 'done' | 'narrowed' | 'failed' | 'stop'
+
+  /**
+   * Fetches and commits the head of a recent or older lane at the device's
+   * width. An oversized or slow reply halves the width and keeps the slice at
+   * the head; at the smallest width the slice becomes a gap. Any other fetch
+   * failure moves only that slice to the back of its lane. A persistence
+   * failure stops the turn.
+   */
+  const fetchLaneHead = async (
+    lanes: DeviceLanes,
+    lane: 'recent' | 'older',
+    window: TimeRange,
+    isCurrent: () => boolean,
+  ): Promise<TurnRequestOutcome> => {
+    let positions: readonly NormalizedTrackingPosition[]
+    try {
+      const fetched = await fetchUnderLock(lanes.deviceId, window.fromMs, window.toMs, isCurrent)
+      if (fetched === null) return 'stop'
+      positions = fetched
+    } catch (error) {
+      if (!isCurrent()) return 'stop'
+      const reason = classifyHistoryWindowFailure(error)
+      if (reason === null) {
+        markAntiEntropyFailed(lanes, error)
+        lanes[lane] = subtractFromLane(lanes[lane], window)
+        lanes[lane].push({ ...window, failedInTurn: lanes.turn })
+        return 'failed'
+      }
+      lanes.successCount = 0
+      if (window.toMs - window.fromMs > minWindowMs) {
+        lanes.windowMs = Math.max(minWindowMs, Math.floor((window.toMs - window.fromMs) / 2))
+        return 'narrowed'
+      }
+      lanes[lane] = subtractFromLane(lanes[lane], window)
+      recordHistoryGap({
+        deviceId: lanes.deviceId,
+        deviceName: lanes.deviceName,
+        historyFromMs: historyFromFor(lanes.deviceId, window.fromMs),
+        fromMs: window.fromMs,
+        toMs: window.toMs,
+        phase: 'anti_entropy',
+        reason,
+      }, 1, error)
+      return 'done'
+    }
+    if (!isCurrent()) return 'stop'
+    try {
+      await options.onChunk({
+        phase: 'anti_entropy',
+        deviceId: lanes.deviceId,
+        deviceName: lanes.deviceName,
+        historyFrom: new Date(historyFromFor(lanes.deviceId, window.fromMs)),
+        from: new Date(window.fromMs),
+        to: new Date(window.toMs),
+        positions,
+      })
+    } catch (error) {
+      if (isCurrent()) markAntiEntropyFailed(lanes, error)
+      return 'stop'
+    }
+    if (!isCurrent()) return 'stop'
+    lanes[lane] = subtractFromLane(lanes[lane], window)
+    clearHistoryGapsCoveredBy(lanes.deviceId, window.fromMs, window.toMs)
+    lanes.successCount += 1
+    if (lanes.windowMs < chunkMs && lanes.successCount >= WINDOW_GROWTH_SUCCESS_COUNT) {
+      lanes.windowMs = Math.min(chunkMs, lanes.windowMs * 2)
+      lanes.successCount = 0
+    }
+    return 'done'
+  }
+
+  /** The history start a device's checkpoint is keyed by; a gap keeps its own. */
+  const historyFromFor = (deviceId: string, fallbackMs: number): number =>
+    completedDevicesById.get(deviceId)?.missionStartMs
+      ?? jobsByDeviceId.get(deviceId)?.missionStartMs
+      ?? gapsByDeviceId.get(deviceId)?.[0]?.historyFromMs
+      ?? fallbackMs
+
+  /**
+   * The next gap slice in time order after the device's gap cursor, within
+   * the cycle in progress. A cycle covers the gap ranges frozen when it
+   * started; time that became a gap later waits for the next cycle, and
+   * frozen time that is no longer a gap (filled, trimmed, cleared) is
+   * skipped, never fetched as a gap. When the cycle has nothing left, the
+   * next one starts at the earliest gap with a fresh snapshot. One
+   * smallest-width slice per request, so a still-failing slice never blocks
+   * the rest of a gap.
+   */
+  const nextGapSlice = (lanes: DeviceLanes): { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null => {
+    const gaps = gapsByDeviceId.get(lanes.deviceId) ?? []
+    if (gaps.length === 0) {
+      lanes.gapCycle = null
+      return null
+    }
+    const sliceInCycle = (): { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null => {
+      let best: { readonly gap: HistoryGapRecord; readonly window: TimeRange } | null = null
+      for (const frozen of lanes.gapCycle ?? []) {
+        for (const gap of gaps) {
+          const fromMs = Math.max(frozen.fromMs, gap.fromMs, lanes.gapCursorMs)
+          const toMs = Math.min(frozen.toMs, gap.toMs, fromMs + minWindowMs)
+          if (toMs > fromMs && (best === null || fromMs < best.window.fromMs)) best = { gap, window: { fromMs, toMs } }
+        }
+      }
+      return best
+    }
+    const next = sliceInCycle()
+    if (next !== null) return next
+    lanes.gapCursorMs = Number.NEGATIVE_INFINITY
+    lanes.gapCycle = gaps.map((gap) => ({ fromMs: gap.fromMs, toMs: gap.toMs }))
+    return sliceInCycle()
+  }
+
+  /** Retries one gap slice. Success fills that slice; failure keeps the gap reported. Either way the cursor moves on. */
+  const fetchGapSlice = async (
+    lanes: DeviceLanes,
+    gap: HistoryGapRecord,
+    window: TimeRange,
+    isCurrent: () => boolean,
+  ): Promise<TurnRequestOutcome> => {
+    lanes.gapCursorMs = window.toMs
+    gap.lastAttemptAtMs = Date.now()
+    let positions: readonly NormalizedTrackingPosition[]
+    try {
+      const fetched = await fetchUnderLock(lanes.deviceId, window.fromMs, window.toMs, isCurrent)
+      if (fetched === null) return 'stop'
+      positions = fetched
+    } catch (error) {
+      if (!isCurrent()) return 'stop'
+      gap.attempts += 1
+      gap.lastError = describeError(error)
+      gap.reason = classifyHistoryWindowFailure(error) ?? gap.reason
+      options.logger.warn('Tracking breadcrumb history gap is still unfetchable.', {
+        deviceId: gap.deviceId,
+        deviceName: gap.deviceName,
+        from: new Date(window.fromMs).toISOString(),
+        to: new Date(window.toMs).toISOString(),
+        attempts: gap.attempts,
+        retryDelayMs: antiEntropyIntervalMs,
+        error: gap.lastError,
+      })
+      return 'failed'
+    }
+    if (!isCurrent()) return 'stop'
+    try {
+      await options.onChunk({
+        phase: 'anti_entropy',
+        deviceId: gap.deviceId,
+        deviceName: gap.deviceName,
+        // The device's current history start: a range expansion since the gap
+        // was recorded moved it, and the store rejects a later one.
+        historyFrom: new Date(historyFromFor(gap.deviceId, gap.historyFromMs)),
+        from: new Date(window.fromMs),
+        to: new Date(window.toMs),
+        positions,
+      })
+    } catch (error) {
+      if (isCurrent()) markAntiEntropyFailed(lanes, error)
+      return 'stop'
+    }
+    if (!isCurrent()) return 'stop'
+    clearHistoryGapsCoveredBy(gap.deviceId, window.fromMs, window.toMs)
+    return 'done'
+  }
+
+  /**
+   * One device's re-check turn. Every request goes through the device's
+   * admission lock, so the device never has two requests in flight. The turn
+   * takes one request from each non-empty lane (recent, older, gap) in
+   * rotation, starting from the lane after the one served last, until the
+   * request budget b or the time budget is spent; the first request is always
+   * made. Within a lane, work is strict FIFO; a slice that failed this turn
+   * waits at the back and is not retried until the next turn, and a gap slice
+   * is tried at most once per turn. A failure in one lane never stops the
+   * others: only cancellation, a mission change or a persistence failure ends
+   * the turn early. A device still in initial catch-up runs its gap lane
+   * here; its initial lane is the catch-up drain, which shares the lock.
+   *
+   * Bound: let n be the requests a turn makes (n = b unless the time budget
+   * ends it first; n >= 1) and L the non-empty lanes. Rotation gives every
+   * non-empty lane at least floor(n / L) of them, and when n < L every lane
+   * is served at least once every L turns. So a slice at position p of its
+   * lane is fetched within ceil(p / floor(n / L)) turns (n >= L) or p x L
+   * turns (n < L), provided its own request succeeds. An oversized or slow
+   * reply costs one extra request per narrowing, and the width grows back
+   * only after four successes. A turn that runs past the next tick makes the
+   * device skip that tick, so in ticks the bound is at most twice the turns.
+   *
+   * Gaps are counted in cycles, not positions. With g = floor(n / L) gap
+   * requests a turn (or one every L turns when n < L) and S the
+   * smallest-width slices in the gap ranges frozen when the running cycle
+   * started, a slice that is a gap when its cycle starts is retried within
+   * the turn in progress plus ceil(S / g) turns (S x L when n < L); one
+   * behind the cursor waits for the next cycle, frozen at the gaps then.
+   * Gaps that appear or extend during the cycle never lengthen it, so every
+   * cycle ends while gaps keep growing. What can still delay it: a gap split
+   * mid-cycle can add one partial slice per split; persistence failure,
+   * cancellation or a mission change ends a turn early; and a suspension
+   * makes no turns at all.
+   */
+  const runDeviceTurn = async (deviceId: string, batchGeneration: number): Promise<void> => {
+    const known = lanesByDeviceId.get(deviceId)
+    const deviceName = known?.deviceName
+      ?? completedDevicesById.get(deviceId)?.deviceName
+      ?? gapsByDeviceId.get(deviceId)?.[0]?.deviceName
+    if (deviceName === undefined) return
+    const lanes = known ?? lanesFor(deviceId, deviceName)
+    const isCurrent = (): boolean =>
+      batchGeneration === generation && options.shouldContinue() && lanesByDeviceId.get(deviceId) === lanes
+    lanes.turn += 1
+    const turn = lanes.turn
+    const startedAtMs = Date.now()
+    let requestBudget = requestBudgetFor(lanes)
+    let requestCount = 0
+    let failed = false
+    const triedGapSlices = new Set<number>()
+    let laneIndex = lanes.nextLaneIndex
+    let idleLanes = 0
+    while (isCurrent() && idleLanes < RECHECK_LANES.length) {
+      if (requestCount > 0 && (requestCount >= requestBudget || Date.now() - startedAtMs >= antiEntropyDeviceTimeBudgetMs)) break
+      const lane = RECHECK_LANES[laneIndex]!
+      laneIndex = (laneIndex + 1) % RECHECK_LANES.length
+      let outcome: TurnRequestOutcome
+      if (lane === 'gap') {
+        const next = nextGapSlice(lanes)
+        if (next === null || triedGapSlices.has(next.window.fromMs)) {
+          idleLanes += 1
+          continue
+        }
+        triedGapSlices.add(next.window.fromMs)
+        idleLanes = 0
+        lanes.nextLaneIndex = laneIndex
+        requestCount += 1
+        outcome = await fetchGapSlice(lanes, next.gap, next.window, isCurrent)
+      } else {
+        const head = lanes[lane][0]
+        if (head === undefined || head.failedInTurn === turn) {
+          idleLanes += 1
+          continue
+        }
+        idleLanes = 0
+        lanes.nextLaneIndex = laneIndex
+        requestCount += 1
+        // Recent slices are read from their newest end, older slices from their oldest.
+        outcome = await fetchLaneHead(
+          lanes,
+          lane,
+          lane === 'recent'
+            ? { fromMs: Math.max(head.fromMs, head.toMs - lanes.windowMs), toMs: head.toMs }
+            : { fromMs: head.fromMs, toMs: Math.min(head.toMs, head.fromMs + lanes.windowMs) },
+          isCurrent,
         )
-        if (!isCurrentCompletedDevice(device, batchGeneration)) {
-          return
-        }
-        await options.onChunk({
-          phase: 'anti_entropy',
-          deviceId: device.deviceId,
-          deviceName: device.deviceName,
-          historyFrom: new Date(device.missionStartMs),
-          from: new Date(window.fromMs),
-          to: new Date(window.toMs),
-          positions,
-        })
-        if (!isCurrentCompletedDevice(device, batchGeneration)) {
-          return
-        }
-      } catch (error) {
-        if (!isCurrentCompletedDevice(device, batchGeneration)) {
-          return
-        }
-        options.logger.warn('Tracking breadcrumb anti-entropy check failed for device.', {
-          deviceId: device.deviceId,
-          deviceName: device.deviceName,
-          retryDelayMs: antiEntropyIntervalMs,
-          error: error instanceof Error ? error.message : String(error),
-        })
-        antiEntropyFailedDeviceIds.add(device.deviceId)
-        return
       }
-      // A failure returns above, so the pass cursor only moves over ranges
-      // that committed: the whole recent window, then each older chunk.
-      const nextWindow = windows[index + 1]
-      if (window.older) {
-        device.antiEntropyCursorMs = Math.min(device.antiEntropyCursorMs, window.fromMs)
-      } else if (nextWindow === undefined || nextWindow.older) {
-        device.antiEntropyCursorMs = Math.min(device.antiEntropyCursorMs, recentFloorMs)
-      }
+      if (outcome === 'stop') return
+      if (outcome === 'failed') failed = true
+      // Narrower windows need more requests to cover the same plan; the time budget still bounds a slow device.
+      if (outcome === 'narrowed') requestBudget = Math.max(requestBudget, requestBudgetFor(lanes))
     }
-    antiEntropyFailedDeviceIds.delete(device.deviceId)
+    if (!isCurrent()) return
+    if (hasBacklog(deviceId)) {
+      options.logger.warn('Tracking breadcrumb re-check budget used up for device; resuming next tick.', {
+        deviceId,
+        deviceName: lanes.deviceName,
+        requestCount,
+        elapsedMs: Date.now() - startedAtMs,
+      })
+    } else if (!failed) {
+      antiEntropyFailedDeviceIds.delete(deviceId)
+    }
   }
 
-  async function runAntiEntropyBatch(batchGeneration: number): Promise<void> {
+  /** Starts queued re-check work while the sweep's share of the transport allows. */
+  const pumpAntiEntropyTasks = (): void => {
+    while (
+      antiEntropyActiveTaskCount < antiEntropyMaxConcurrency &&
+      antiEntropyTaskQueue.length > 0
+    ) {
+      const task = antiEntropyTaskQueue.shift()!
+      antiEntropyActiveTaskCount += 1
+      void task().finally(() => {
+        antiEntropyActiveTaskCount -= 1
+        pumpAntiEntropyTasks()
+      })
+    }
+  }
+
+  /** Queues one unit of re-check work; resolves when it has run. */
+  const enqueueAntiEntropyTask = (work: () => Promise<void>): Promise<void> =>
+    new Promise<void>((resolve) => {
+      antiEntropyTaskQueue.push(async () => {
+        try {
+          await work()
+        } catch (error) {
+          options.logger.warn('Tracking breadcrumb re-check task failed unexpectedly.', {
+            error: describeError(error),
+          })
+        } finally {
+          resolve()
+        }
+      })
+      pumpAntiEntropyTasks()
+    })
+
+  /**
+   * One 5-minute re-check tick. The next tick is scheduled when this one
+   * starts, so a slow device never delays the others. Every device with
+   * re-check work or an open gap gets one turn, including a device still in
+   * initial catch-up; a device whose previous turn is still queued or running
+   * is skipped [DON-338 ING-1 and review].
+   */
+  async function runAntiEntropyTick(batchGeneration: number): Promise<void> {
     if (
       batchGeneration !== generation ||
-      !options.shouldContinue() ||
-      jobsByDeviceId.size > 0 ||
-      draining
+      !options.shouldContinue()
     ) {
       scheduleAntiEntropy()
       return
     }
     antiEntropyStartedAtMs ??= Date.now()
-    antiEntropyBatchInFlight = true
+    scheduleAntiEntropy()
 
-    // Every device's recent window is swept on every tick; the device pool is
-    // bounded to half of maxConcurrency, leaving the rest for live polling.
-    const devices = [...completedDevicesById.values()].sort((left, right) =>
-      compareStringsByCodeUnit(left.deviceId, right.deviceId),
-    )
-    let nextDeviceIndex = 0
-    const workers = Array.from(
-      { length: Math.min(antiEntropyMaxConcurrency, devices.length) },
-      async () => {
-        while (nextDeviceIndex < devices.length) {
-          const device = devices[nextDeviceIndex]
-          nextDeviceIndex += 1
-          if (device !== undefined && isCurrentCompletedDevice(device, batchGeneration)) {
-            await sweepAntiEntropyDevice(device, batchGeneration)
-          }
+    const deviceIds = [...new Set([
+      ...completedDevicesById.keys(),
+      ...lanesByDeviceId.keys(),
+      ...gapsByDeviceId.keys(),
+    ])]
+      .sort(compareStringsByCodeUnit)
+      .filter((deviceId) => turnsInFlight.get(deviceId) !== batchGeneration)
+    await Promise.all(deviceIds.map((deviceId) => {
+      const device = completedDevicesById.get(deviceId)
+      if (device !== undefined) planDevice(device)
+      turnsInFlight.set(deviceId, batchGeneration)
+      return enqueueAntiEntropyTask(async () => {
+        try {
+          await runDeviceTurn(deviceId, batchGeneration)
+        } finally {
+          if (turnsInFlight.get(deviceId) === batchGeneration) turnsInFlight.delete(deviceId)
+          if (batchGeneration === generation) publishWithheldInitialCompletion()
         }
-      },
-    )
-    await Promise.all(workers)
-    antiEntropyBatchInFlight = false
+      })
+    }))
     if (batchGeneration === generation) {
       const progress = buildProgress('anti_entropy')
       publishProgress('anti_entropy')
@@ -805,6 +1486,16 @@ export function createBreadcrumbHistoryReconciler(
           antiEntropyFailedDeviceIds.delete(deviceId)
         }
       }
+      for (const deviceId of gapsByDeviceId.keys()) {
+        if (!selectedDeviceIds.has(deviceId)) {
+          gapsByDeviceId.delete(deviceId)
+        }
+      }
+      for (const deviceId of lanesByDeviceId.keys()) {
+        if (!selectedDeviceIds.has(deviceId)) {
+          lanesByDeviceId.delete(deviceId)
+        }
+      }
       for (let index = deviceQueue.length - 1; index >= 0; index -= 1) {
         const deviceId = deviceQueue[index]
         if (deviceId !== undefined && !selectedDeviceIds.has(deviceId)) {
@@ -844,6 +1535,9 @@ export function createBreadcrumbHistoryReconciler(
               ),
               failureCount: 0,
               retryAtMs: 0,
+              windowMs: chunkMs,
+              consecutiveSuccessCount: 0,
+              minWindowFailureCount: 0,
             }
             jobsByDeviceId.set(device.device_id, expansionJob)
             deviceQueue.push(device.device_id)
@@ -871,6 +1565,9 @@ export function createBreadcrumbHistoryReconciler(
               ),
               failureCount: 0,
               retryAtMs: 0,
+              windowMs: chunkMs,
+              consecutiveSuccessCount: 0,
+              minWindowFailureCount: 0,
             }
             jobsByDeviceId.set(device.device_id, expansionJob)
             failedDeviceIds.delete(device.device_id)
@@ -893,7 +1590,7 @@ export function createBreadcrumbHistoryReconciler(
           continue
         }
         initialStartedAtMs ??= Date.now()
-        const job = {
+        const job: DeviceReconciliationJob = {
           deviceId: device.device_id,
           deviceName: device.name,
           cursorMs: initialRange.cursorMs,
@@ -903,6 +1600,9 @@ export function createBreadcrumbHistoryReconciler(
           latestAvailableTargetMs: targetMs,
           failureCount: 0,
           retryAtMs: 0,
+          windowMs: chunkMs,
+          consecutiveSuccessCount: 0,
+          minWindowFailureCount: 0,
         }
         if (initialRange.cursorMs >= targetMs) {
           completeInitialJob(job)
@@ -941,6 +1641,10 @@ export function createBreadcrumbHistoryReconciler(
       completedDevicesById.clear()
       failedDeviceIds.clear()
       antiEntropyFailedDeviceIds.clear()
+      gapsByDeviceId.clear()
+      lanesByDeviceId.clear()
+      missionEpoch += 1
+      initialCompletionWithheld = false
       deviceQueue.length = 0
       initialStartedAtMs = null
       antiEntropyStartedAtMs = null
@@ -966,6 +1670,140 @@ function isValidChunkAcknowledgement(
     }
   }
   return true
+}
+
+/** Readable message for logs and gap records. */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Classifies a fetch failure a smaller window can fix: the proxy's size limit
+ * or a timeout. Anything else (server error, network down, authentication)
+ * returns null and is retried unchanged with backoff. Shared with the
+ * participant history backfill.
+ */
+export function classifyHistoryWindowFailure(error: unknown): BreadcrumbHistoryGapReason | null {
+  const message = describeError(error)
+  if (/too large/iu.test(message)) {
+    return 'oversized'
+  }
+  if (
+    /timed?\s*out|timeout/iu.test(message) ||
+    (error instanceof Error && error.name === 'TimeoutError')
+  ) {
+    return 'slow'
+  }
+  return null
+}
+
+/** Adds a range to a sorted, merged range list. */
+function addTimeRange(ranges: readonly TimeRange[], added: TimeRange): TimeRange[] {
+  const merged: TimeRange[] = []
+  let current = added
+  for (const range of ranges) {
+    if (range.toMs < current.fromMs || range.fromMs > current.toMs) {
+      merged.push(range)
+    } else {
+      current = {
+        fromMs: Math.min(range.fromMs, current.fromMs),
+        toMs: Math.max(range.toMs, current.toMs),
+      }
+    }
+  }
+  merged.push(current)
+  return merged.sort((left, right) => left.fromMs - right.fromMs)
+}
+
+/** Removes a range from a sorted, merged range list, splitting ranges it cuts. */
+function removeTimeRange(ranges: readonly TimeRange[], removed: TimeRange): TimeRange[] {
+  const remaining: TimeRange[] = []
+  for (const range of ranges) {
+    if (range.toMs <= removed.fromMs || range.fromMs >= removed.toMs) {
+      remaining.push(range)
+      continue
+    }
+    if (range.fromMs < removed.fromMs) remaining.push({ fromMs: range.fromMs, toMs: removed.fromMs })
+    if (range.toMs > removed.toMs) remaining.push({ fromMs: removed.toMs, toMs: range.toMs })
+  }
+  return remaining
+}
+
+/** Publishes each device's queued re-check ranges, merged, as ISO ranges ordered by device then time. */
+function publishRecheckBacklog(
+  lanesByDeviceId: ReadonlyMap<string, DeviceLanes>,
+): readonly BreadcrumbHistoryRecheckBacklog[] {
+  return [...lanesByDeviceId.values()]
+    .sort((left, right) => compareStringsByCodeUnit(left.deviceId, right.deviceId))
+    .flatMap((lanes) => [...lanes.recent, ...lanes.older]
+      .reduce<TimeRange[]>((merged, slice) => addTimeRange(merged, slice), [])
+      .map((range) => ({
+        deviceId: lanes.deviceId,
+        deviceName: lanes.deviceName,
+        from: new Date(range.fromMs).toISOString(),
+        to: new Date(range.toMs).toISOString(),
+      })))
+}
+
+/** The lane without the given range, order kept; a split slice keeps its place. */
+function subtractFromLane(slices: readonly LaneSlice[], removed: TimeRange): LaneSlice[] {
+  return slices.flatMap((slice) =>
+    removeTimeRange([slice], removed).map((piece) => ({ ...piece, failedInTurn: slice.failedInTurn })))
+}
+
+/** Publishes gaps merged per device into contiguous ranges, ordered by device then time. */
+function publishHistoryGaps(
+  gapsByDeviceId: ReadonlyMap<string, readonly HistoryGapRecord[]>,
+): readonly BreadcrumbHistoryGap[] {
+  const published: BreadcrumbHistoryGap[] = []
+  const deviceIds = [...gapsByDeviceId.keys()].sort(compareStringsByCodeUnit)
+  for (const deviceId of deviceIds) {
+    const records = [...(gapsByDeviceId.get(deviceId) ?? [])]
+      .sort((left, right) => left.fromMs - right.fromMs)
+    let current: {
+      record: HistoryGapRecord
+      fromMs: number
+      toMs: number
+      attempts: number
+      lastError: string
+      lastAttemptAtMs: number
+    } | null = null
+    const flush = (): void => {
+      if (current === null) return
+      published.push({
+        deviceId,
+        deviceName: current.record.deviceName,
+        from: new Date(current.fromMs).toISOString(),
+        to: new Date(current.toMs).toISOString(),
+        reason: current.record.reason,
+        phase: current.record.phase,
+        attempts: current.attempts,
+        lastError: current.lastError,
+      })
+    }
+    for (const record of records) {
+      if (current !== null && record.fromMs <= current.toMs) {
+        current.toMs = Math.max(current.toMs, record.toMs)
+        current.attempts = Math.max(current.attempts, record.attempts)
+        if (record.lastAttemptAtMs >= current.lastAttemptAtMs) {
+          current.lastError = record.lastError
+          current.lastAttemptAtMs = record.lastAttemptAtMs
+        }
+        continue
+      }
+      flush()
+      current = {
+        record,
+        fromMs: record.fromMs,
+        toMs: record.toMs,
+        attempts: record.attempts,
+        lastError: record.lastError,
+        lastAttemptAtMs: record.lastAttemptAtMs,
+      }
+    }
+    flush()
+  }
+  return published
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {

@@ -10,6 +10,7 @@ import { useTrackingStyleStore } from '../../src/features/tracking/tracking-styl
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
+import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { Mission } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
@@ -45,6 +46,7 @@ describe('TrackingStatusPanel', () => {
     useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
     useCoverageStore.setState(useCoverageStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
+    useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -421,7 +423,190 @@ describe('TrackingStatusPanel', () => {
     )
   })
 
-  it('shows exact-dot paging in dots mode without presenting the line simplification warning as dot semantics', () => {
+  it.each([
+    ['Trails switched off', () => useLayerVisibilityStore.setState({ breadcrumbsVisible: false })],
+    ['Tracking group switched off', () => useLayerVisibilityStore.setState((state) => ({
+      groupVisibility: { ...state.groupVisibility, tracking: false },
+    }))],
+  ] as const)('never says a trail line is on the map when %s [DON-338]', (_label, switchOff) => {
+    seedSimplifiedLineMetadata()
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    switchOff()
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        totalPositionCount: 10_001,
+        pagePositionCount: 10_000,
+        fromTimestamp: '2026-08-08T00:00:00.000Z',
+        toTimestamp: '2026-08-09T12:00:00.000Z',
+        hasEarlier: true,
+        hasLater: false,
+      },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+
+    const note = getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note).not.toContain('shows the whole trail')
+    expect(note).not.toContain('The dots mark')
+    expect(note).toContain('no trail line or dots are drawn on the map')
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'of at least 12,000 known fixes across the full route.',
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trails are switched off on the Layers tab, so this line is not drawn on the map.',
+    )
+
+    act(() => useTrackingStyleStore.setState({ breadcrumbTrailMode: 'line' }))
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trails are switched off on the Layers tab, so this line is not drawn on the map.',
+    )
+  })
+
+  it('judges hidden trails from the trail geometry, not the roster: a device with history but no roster entry still draws [DON-338]', () => {
+    seedSimplifiedLineMetadata()
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        // Roster has A only; the restored history holds trail fixes for B.
+        devices: [
+          { device_id: 'device-A', name: 'A', status: 'online', last_seen: null, unique_id: null, category: null },
+        ],
+        breadcrumbs: [trailFix('device-B', 0), trailFix('device-B', 1)],
+      },
+    }))
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['device-A', 'gone-device'] })
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: { status: 'loading', missionId: 'mission-1' },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toBe(
+      'The line on the map shows the whole trail. Loading exact recorded fixes to mark as dots…',
+    )
+    expect(host!.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).not.toContain('not drawn on the map')
+
+    act(() => useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['device-A', 'device-B'] }))
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toMatch(
+      /^Every trail line is hidden on the Layers tab, so no trail line is drawn on the map\./u,
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Every trail line is hidden on the Layers tab, so this line is not drawn on the map.',
+    )
+  })
+
+  it('counts a hidden device whose only trail is on the exact page [DON-338]', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: { ...state.snapshot, breadcrumbs: [trailFix('device-B', 0), trailFix('device-B', 1)] },
+    }))
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['device-C'] })
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        missionId: 'mission-1',
+        totalPositionCount: 3,
+        pagePositionCount: 3,
+        fromTimestamp: '2026-08-08T00:00:00.000Z',
+        toTimestamp: '2026-08-08T00:02:00.000Z',
+        hasEarlier: false,
+        hasLater: false,
+        positions: [trailFix('device-B', 0), trailFix('device-B', 1), trailFix('device-C', 2)],
+      },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+    expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toMatch(/^1 device has its trail hidden/u)
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toContain(
+      'Dots are drawn only for devices whose trail is shown.',
+    )
+  })
+
+  it('does not say visible dots are hidden when every line device is hidden [DON-338]', () => {
+    // Live trail holds only device A, which is hidden; the exact page holds visible device B.
+    useTrackingStore.setState((state) => ({
+      snapshot: { ...state.snapshot, breadcrumbs: [trailFix('device-A', 0), trailFix('device-A', 1)] },
+    }))
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['device-A'] })
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        missionId: 'mission-1',
+        totalPositionCount: 2,
+        pagePositionCount: 2,
+        fromTimestamp: '2026-08-08T00:00:00.000Z',
+        toTimestamp: '2026-08-08T00:01:00.000Z',
+        hasEarlier: false,
+        hasLater: false,
+        positions: [trailFix('device-B', 0), trailFix('device-B', 1)],
+      },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+    const note = getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note).toMatch(/^Every trail line is hidden on the Layers tab, so no trail line is drawn on the map\. The dots mark all 2 exact recorded fixes/u)
+    expect(note).not.toMatch(/or dots are drawn|None are drawn/u)
+    expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toMatch(/^1 device has its trail hidden/u)
+  })
+
+  it('never claims a trail line when the snapshot has no trail fixes yet [DON-338]', () => {
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    for (const exactBreadcrumbDotState of [
+      { status: 'loading', missionId: 'mission-1' },
+      { status: 'unavailable', missionId: 'mission-1', message: 'Exact breadcrumb dots are unavailable.' },
+      {
+        status: 'ready', missionId: 'mission-1', totalPositionCount: 0, pagePositionCount: 0,
+        fromTimestamp: null, toTimestamp: null, hasEarlier: false, hasLater: false, positions: [],
+      },
+    ]) {
+      if (root === null) {
+        render(React.createElement(Panel, {
+          exactBreadcrumbDotState,
+          onExactBreadcrumbDotsEarlier: () => undefined,
+          onExactBreadcrumbDotsLater: () => undefined,
+        }))
+      } else {
+        act(() => root?.render(React.createElement(Panel, {
+          exactBreadcrumbDotState,
+          onExactBreadcrumbDotsEarlier: () => undefined,
+          onExactBreadcrumbDotsLater: () => undefined,
+        })))
+      }
+      const note = getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+      expect(note).toMatch(/^No trail line is on the map yet\./u)
+      expect(note).not.toContain('shows the whole trail')
+    }
+  })
+
+  it('shows exact-dot paging in dots mode and keeps the simplified-line disclosure, because the line stays drawn [DON-338]', () => {
     const resolvedOptions = vi.spyOn(
       Intl.DateTimeFormat.prototype,
       'resolvedOptions',
@@ -456,7 +641,12 @@ describe('TrackingStatusPanel', () => {
       onExactBreadcrumbDotsLater: () => undefined,
     }))
 
-    expect(document.querySelector('[data-testid="breadcrumb-display-summary"]')).toBeNull()
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trail display simplified: showing 5,000 of at least 12,000 known fixes',
+    )
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toContain(
+      'The line on the map shows the whole trail. The dots mark 10,000 of 10,001 exact recorded fixes',
+    )
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
       'Exact fix inspection — showing 10,000 of 10,001 — 08/08/2026, 01:00:00 GMT+01:00 (Europe/Dublin) to 09/08/2026, 13:00:00 GMT+01:00 (Europe/Dublin)',
     )
@@ -519,6 +709,8 @@ function seedSimplifiedLineMetadata(): void {
   useTrackingStore.setState((state) => ({
     snapshot: {
       ...state.snapshot,
+      // A simplified line has retained fixes to draw.
+      breadcrumbs: [trailFix('tracker-1', 0), trailFix('tracker-1', 1)],
       breadcrumbMetadata: {
         totalRetained: 5_000,
         totalObserved: 12_000,
@@ -557,4 +749,23 @@ function getElement(selector: string): HTMLElement {
 
 function getText(selector: string): string {
   return getElement(selector).textContent ?? ''
+}
+
+/** One trail fix for a device, a minute apart and 10 m north each time. */
+function trailFix(deviceId: string, minute: number) {
+  return {
+    id: `${deviceId}-${minute}`,
+    device_id: deviceId,
+    lat: 52 + minute * 0.0001,
+    lon: -9,
+    altitude: null,
+    speed: null,
+    battery: null,
+    accuracy: null,
+    timestamp: new Date(Date.parse('2026-08-08T00:00:00.000Z') + minute * 60_000).toISOString(),
+    source: 'traccar' as const,
+    data_origin: 'live' as const,
+    cache_age_seconds: null,
+    device_cache_stale: false,
+  }
 }

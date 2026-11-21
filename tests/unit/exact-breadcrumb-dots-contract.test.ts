@@ -9,17 +9,30 @@ import {
   type ExactBreadcrumbDotPage,
   type ExactBreadcrumbDotState,
 } from '../../src/features/tracking/exact-breadcrumb-dot-controller'
+import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import { syncTrackingOverlay } from '../../src/features/tracking/sync-tracking-overlay'
 import { createExactBreadcrumbDotFeatureCollection } from '../../src/features/tracking/tracking-geojson'
 import type {
   NormalizedTrackingPosition,
   TrackingSnapshot,
 } from '../../src/features/tracking/tracking-types'
+import {
+  createDrawingRecorderMap,
+  readDrawnFeaturesAtEveryOperatorZoom,
+  type DrawingRecorderMap,
+} from '../support/maplibre-drawn-features'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
 const MISSION_ID = 'dots-contract-mission'
 const ACTIVE_DEVICE_IDS = ['device-a', 'device-b'] as const
 const PAGE_LIMIT = 10_000
+const SINGLE_DEVICE_ID = 'single-searcher'
+/** One device well past the 10,000-fix page: 10,000 + 10,000 + 5,123. */
+const SINGLE_DEVICE_FIX_COUNT = 25_123
+const SINGLE_DEVICE_LAT_STEP = 0.00001
+const SINGLE_DEVICE_LAT_TOLERANCE = SINGLE_DEVICE_LAT_STEP / 4
+const DOTS_STYLE = { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' } as const
 
 const CONTRACT_SUITE_PATHS = [
   'tests/unit/breadcrumb-live-exact-proof-lib.test.ts',
@@ -74,7 +87,117 @@ type ContractMutation =
   | 'truncate-page'
   | 'lie-about-total'
 
-describe('[DOTS-CONTRACT] exact Breadcrumb Dots inspection and evidence contract', () => {
+/**
+ * The Breadcrumb dots contract [DON-338]:
+ *
+ * 1. Whole trail always drawn. Choosing Breadcrumb dots never takes any part
+ *    of a trail off the map: the whole-route line stays drawn underneath the
+ *    dots on the newest page, on every Earlier/Later page, and while a page is
+ *    loading or unavailable.
+ * 2. Exact dots, paged. The dots are only exact stored fixes, never simplified
+ *    or representative points, delivered in pages of at most 10,000 that move
+ *    with Earlier/Later; the pages together equal the stored truth exactly.
+ */
+describe('[DOTS-CONTRACT] whole trail line always drawn, exact Breadcrumb dots paged on top', () => {
+  it('draws the whole trail of one device with more than 10,000 fixes under every dot page, loading and failure [DON-338]', async () => {
+    const database = createContractDatabase()
+    try {
+      const fixes = seedSingleDeviceMission(database)
+      const liveSnapshot = createLiveTrailSnapshot(fixes)
+      const query = loadExactDotQuery()
+      const published: ExactBreadcrumbDotState[] = []
+      const controller = createExactBreadcrumbDotController({
+        limit: PAGE_LIMIT,
+        queryPage: async (input) => toRendererPage(roundTripIpcPayload(query(database, input))),
+        publish: (state) => published.push(state),
+      })
+      controller.updateContext({
+        missionId: MISSION_ID,
+        trailMode: 'dots',
+        activeDeviceIds: [],
+      })
+
+      // One map for the whole sequence, as in the app, so stale layers or
+      // sources left by an earlier state are caught.
+      const map = createDrawingRecorderMap()
+      const loading = published.find((state) => state.status === 'loading')
+      assertCondition(loading !== undefined, 'controller did not publish a loading state')
+      assertWholeTrailDrawn(renderOverlay(liveSnapshot, loading, map), fixes, 'loading')
+
+      const pageSizes: number[] = []
+      const seen = new Set<string>()
+      let state = await waitForReady(controller, null)
+      while (true) {
+        renderOverlay(liveSnapshot, state, map)
+        assertWholeTrailDrawn(map, fixes, `page ending ${state.toTimestamp}`)
+        assertExactDotsOnly(map, state)
+        assertCondition(state.totalPositionCount === fixes.length, 'page total disagrees with truth')
+        pageSizes.push(state.pagePositionCount)
+        for (const position of state.positions) seen.add(position.id)
+        if (!state.hasEarlier) break
+        const previousFrom = state.fromTimestamp
+        controller.showEarlier()
+        state = await waitForReady(controller, previousFrom)
+      }
+      expect(pageSizes).toEqual([10_000, 10_000, 5_123])
+      expect(seen.size).toBe(fixes.length)
+
+      controller.showLater()
+      const later = await waitForReady(controller, state.fromTimestamp)
+      assertWholeTrailDrawn(renderOverlay(liveSnapshot, later, map), fixes, 'after Later')
+      assertExactDotsOnly(map, later)
+
+      assertWholeTrailDrawn(
+        renderOverlay(liveSnapshot, { status: 'loading', missionId: MISSION_ID }, map),
+        fixes,
+        'loading after Later',
+      )
+      expect(readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
+
+      assertWholeTrailDrawn(
+        renderOverlay(liveSnapshot, {
+          status: 'unavailable',
+          missionId: MISSION_ID,
+          message: 'Exact breadcrumb dots are unavailable. No representative dots are shown.',
+        }, map),
+        fixes,
+        'unavailable',
+      )
+      expect(readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
+      controller.stop()
+    } finally {
+      database.close()
+    }
+  }, 60_000)
+
+  it('proves the whole-trail guard rejects a dots display that drops the trail line', () => {
+    const fixes = createSingleDeviceFixes()
+    const liveSnapshot = createLiveTrailSnapshot(fixes)
+    const lineRemoved = renderOverlay({ ...liveSnapshot, breadcrumbs: [] }, { status: 'inactive' })
+    expect(() => assertWholeTrailDrawn(lineRemoved, fixes, 'line removed'))
+      .toThrow(/DOTS_CONTRACT_VIOLATION/u)
+
+    const lineHidden = renderOverlay(liveSnapshot, { status: 'inactive' })
+    lineHidden.setFilter('tracking-breadcrumbs-line', ['==', ['get', 'deviceId'], '__hidden__'])
+    expect(() => assertWholeTrailDrawn(lineHidden, fixes, 'line hidden'))
+      .toThrow(/DOTS_CONTRACT_VIOLATION/u)
+
+    // A filter that names breadcrumbLine but can never match a line feature.
+    const lineFilteredOut = renderOverlay(liveSnapshot, { status: 'inactive' })
+    lineFilteredOut.setFilter('tracking-breadcrumbs-line', [
+      'all',
+      ['==', ['get', 'featureKind'], 'breadcrumbLine'],
+      ['==', ['geometry-type'], 'Point'],
+    ])
+    expect(() => assertWholeTrailDrawn(lineFilteredOut, fixes, 'line filtered out'))
+      .toThrow(/DOTS_CONTRACT_VIOLATION/u)
+
+    const lineInvisible = renderOverlay(liveSnapshot, { status: 'inactive' })
+    lineInvisible.setLayoutProperty('tracking-breadcrumbs-line', 'visibility', 'none')
+    expect(() => assertWholeTrailDrawn(lineInvisible, fixes, 'line layout hidden'))
+      .toThrow(/DOTS_CONTRACT_VIOLATION/u)
+  })
+
   it('enumerates every supporting contract suite as an explicit table of contents', () => {
     for (const suitePath of CONTRACT_SUITE_PATHS) {
       expect(statSync(suitePath).size, suitePath).toBeGreaterThan(0)
@@ -123,6 +246,142 @@ describe('[DOTS-CONTRACT] exact Breadcrumb Dots inspection and evidence contract
     }
   })
 })
+
+/** One searcher walking due north, a fix every 3 s, no gap and no stop. */
+function createSingleDeviceFixes(): NormalizedTrackingPosition[] {
+  const missionStartMs = Date.UTC(2026, 7, 8)
+  return Array.from({ length: SINGLE_DEVICE_FIX_COUNT }, (_, ordinal) => toNormalizedPosition({
+    id: `single-local-${ordinal}`,
+    source_position_id: `single-source-${String(ordinal).padStart(6, '0')}`,
+    device_id: SINGLE_DEVICE_ID,
+    lat: 53 + ordinal * SINGLE_DEVICE_LAT_STEP,
+    lon: -6.3,
+    timestamp: new Date(missionStartMs + 60_000 + ordinal * 3_000).toISOString(),
+    data_origin: 'live',
+  }))
+}
+
+/** Seeds one device with more than two full dot pages of exact fixes. */
+function seedSingleDeviceMission(
+  database: ReturnType<typeof createContractDatabase>,
+): NormalizedTrackingPosition[] {
+  const fixes = createSingleDeviceFixes()
+  database.prepare('INSERT INTO missions (id, start_time) VALUES (?, ?)').run(
+    MISSION_ID,
+    new Date(Date.UTC(2026, 7, 8)).toISOString(),
+  )
+  database.prepare('INSERT INTO devices (id, mission_id, device_id) VALUES (?, ?, ?)').run(
+    `${MISSION_ID}:${SINGLE_DEVICE_ID}`,
+    MISSION_ID,
+    SINGLE_DEVICE_ID,
+  )
+  const insertPosition = database.prepare(`
+    INSERT INTO positions (
+      id, mission_id, device_id, source_position_id,
+      lat, lon, timestamp, data_origin
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'live')
+  `)
+  database.transaction(() => {
+    for (const [ordinal, fix] of fixes.entries()) {
+      insertPosition.run(
+        `single-local-${ordinal}`,
+        MISSION_ID,
+        fix.device_id,
+        fix.source_position_id,
+        fix.lat,
+        fix.lon,
+        fix.timestamp,
+      )
+    }
+  })()
+  return fixes
+}
+
+/** The live trail exactly as the production accumulator publishes it. */
+function createLiveTrailSnapshot(fixes: readonly NormalizedTrackingPosition[]): TrackingSnapshot {
+  const accumulator = createBreadcrumbAccumulator()
+  accumulator.ingest(fixes)
+  const trail = accumulator.compact()
+  return {
+    devices: [],
+    positions: [fixes.at(-1)!],
+    breadcrumbs: trail.positions,
+    breadcrumbMetadata: trail.metadata,
+  }
+}
+
+/** Waits until the controller settles on a ready page different from the last one. */
+async function waitForReady(
+  controller: ReturnType<typeof createExactBreadcrumbDotController>,
+  previousFromTimestamp: string | null,
+): Promise<Extract<ExactBreadcrumbDotState, { readonly status: 'ready' }>> {
+  await vi.waitFor(() => {
+    const state = controller.getState()
+    expect(state.status).toBe('ready')
+    if (state.status === 'ready' && previousFromTimestamp !== null) {
+      expect(state.fromTimestamp).not.toBe(previousFromTimestamp)
+    }
+  }, { timeout: 30_000, interval: 10 })
+  const state = controller.getState()
+  if (state.status !== 'ready') throw new Error('DOTS_CONTRACT_VIOLATION: controller is not ready')
+  return state
+}
+
+/** Runs the production map-overlay sync against a drawing recorder, reusing `map` when given. */
+function renderOverlay(
+  snapshot: TrackingSnapshot,
+  state: ExactBreadcrumbDotState,
+  map: DrawingRecorderMap = createDrawingRecorderMap(),
+): DrawingRecorderMap {
+  syncTrackingOverlay(map as never, snapshot, [], [], true, DOTS_STYLE, state)
+  return map
+}
+
+/**
+ * Rule 1: every stored fix lies on a line the trail line layer actually draws:
+ * the layer exists, is visible, and its filter (evaluated by MapLibre's own
+ * style-spec) accepts the line feature. The trail runs due north, so a fix is
+ * covered when a drawn line spans its latitude.
+ */
+function assertWholeTrailDrawn(
+  map: DrawingRecorderMap,
+  fixes: readonly NormalizedTrackingPosition[],
+  label: string,
+): void {
+  assertCondition(map.layers.has('tracking-breadcrumbs-line'), `${label}: trail line layer missing`)
+  const spans = readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-line'] })
+    .map(({ feature }) => feature)
+    .filter((feature) => feature.geometry.type === 'LineString')
+    .map((feature) => {
+      const latitudes = (feature.geometry.coordinates as readonly (readonly number[])[])
+        .map((coordinate) => coordinate[1]!)
+      return { south: Math.min(...latitudes), north: Math.max(...latitudes) }
+    })
+  const notDrawn = fixes.filter((fix) => !spans.some((span) =>
+    fix.lat >= span.south - SINGLE_DEVICE_LAT_TOLERANCE &&
+    fix.lat <= span.north + SINGLE_DEVICE_LAT_TOLERANCE)).length
+  assertCondition(notDrawn === 0, `${label}: ${notDrawn} of ${fixes.length} fixes are not on the drawn trail`)
+}
+
+/** Rule 2: the dot layer draws exactly the ready page's stored fixes and nothing else. */
+function assertExactDotsOnly(
+  map: DrawingRecorderMap,
+  state: Extract<ExactBreadcrumbDotState, { readonly status: 'ready' }>,
+): void {
+  assertCondition(map.layers.has('tracking-breadcrumbs-dots'), 'dot layer missing')
+  const dotFeatures = readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: ['tracking-breadcrumbs-dots'] })
+    .map(({ feature }) => feature)
+  const expected = createExactBreadcrumbDotFeatureCollection(state.positions).features
+  assertCondition(
+    exactJson(dotFeatures.map((feature) => [feature.id, feature.geometry.coordinates])) ===
+      exactJson(expected.map((feature) => [feature.id, feature.geometry.coordinates])),
+    'dot layer is not exactly the stored page',
+  )
+  const representativePoints = readDrawnFeaturesAtEveryOperatorZoom(map)
+    .filter(({ layerId, feature }) =>
+      layerId !== 'tracking-breadcrumbs-dots' && feature.properties.featureKind === 'breadcrumb')
+  assertCondition(representativePoints.length === 0, 'simplified trail points are drawn as dots')
+}
 
 /** Creates the smallest real SQLite schema accepted by the production exact query. */
 function createContractDatabase() {

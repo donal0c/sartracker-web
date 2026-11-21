@@ -111,7 +111,10 @@ export type SarTrackerElectronBridge = {
     readonly missionId: string
     readonly changeSeq: number
   }) => void) => () => void
-  readonly onCoverageRendererFailed?: (listener: () => void) => () => void
+  /** Tile-worker failure; `code` is allow-listed by main and preload, never raw error text. */
+  readonly onCoverageRendererFailed?: (
+    listener: (failure: { readonly code: string }) => void,
+  ) => () => void
   readonly onMissionArchiveProgress?: (
     listener: (progress: MissionArchiveProgress) => void,
   ) => () => void

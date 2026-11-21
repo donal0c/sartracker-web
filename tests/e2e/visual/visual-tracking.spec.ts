@@ -576,6 +576,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       .toEqual({
         injectedBreadcrumbDots: 4,
         currentDeviceMarkers: 0,
+        alphaTrailLineRendered: true,
       })
 
     await captureAndRegister(page, {
@@ -585,12 +586,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       severity: 'critical',
       verificationPrompt: `Verify this zoomed SAR Tracker map after four closely spaced GPS fixes were added to the authoritative mission trail:
 1. The four newly added orange breadcrumb dots should be visible along one short diagonal route near the centre of the map; earlier mission dots may also remain visible
-2. The dots should be distinct rather than collapsed into one marker or reduced to only the first and last point
-3. The map should remain readable at this close zoom with normal topographic detail
-4. No dialog or workspace should cover the route
+2. An orange trail line should run underneath and through the dots: Breadcrumb dots mark exact fixes on top of the whole trail line, never instead of it
+3. The dots should be distinct rather than collapsed into one marker or reduced to only the first and last point
+4. The map should remain readable at this close zoom with normal topographic detail
+5. No dialog or workspace should cover the route
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'MapLibre exact-dot source contains all four newly injected Alpha Team source identities',
+        'whole-trail line layer stays visible under the dots [DON-338]',
         'breadcrumb display mode is dots',
         'Alpha Team breadcrumb colour is orange',
       ],
@@ -777,6 +780,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 async function readDotModeRenderState(page: Page): Promise<{
   readonly injectedBreadcrumbDots: number
   readonly currentDeviceMarkers: number
+  readonly alphaTrailLineRendered: boolean
 }> {
   return page.evaluate(() => {
     const map = window.__SARTRACKER_MAP__
@@ -801,6 +805,10 @@ async function readDotModeRenderState(page: Page): Promise<{
         map?.queryRenderedFeatures(undefined, {
           layers: ['tracking-devices-circle'],
         }).length ?? 0,
+      // DON-338: the whole-trail line is drawn underneath the exact dots.
+      alphaTrailLineRendered: (map?.queryRenderedFeatures(undefined, {
+        layers: ['tracking-breadcrumbs-line'],
+      }) ?? []).some((feature) => feature.properties?.deviceId === 'alpha'),
     }
   })
 }

@@ -1,3 +1,4 @@
+import { mergeCacheBreadcrumbMetadata } from './tracking-cache-breadcrumb-disclosure'
 import { createTrackingPositionIdentityKey } from './tracking-position-identity'
 import type { TrackingSnapshot } from './tracking-types'
 
@@ -22,7 +23,11 @@ export function mergeDeferredTrackingCache(
       .map((position) => [position.device_id, position])).values()],
     breadcrumbs,
     // Live-only reduction counts cannot describe a cache/live union. No new
-    // completeness or simplification claim is inferred from cached display rows.
-    breadcrumbMetadata: cached.breadcrumbs.length === 0 ? live.breadcrumbMetadata : undefined,
+    // completeness claim is inferred from cached display rows; if either side
+    // is (or may be) simplified, the union is disclosed as simplified [DON-338].
+    breadcrumbMetadata: cached.breadcrumbs.length === 0 ? live.breadcrumbMetadata
+      : mergeCacheBreadcrumbMetadata(
+        cached.breadcrumbs, cached.breadcrumbMetadata, live.breadcrumbMetadata, breadcrumbs,
+      ),
   }
 }

@@ -5,28 +5,54 @@
  * - DON-281: after crashes, Archive & Lock with an empty Admin Roster must
  *   complete, routing through Settings when an evidence-loss acknowledgement
  *   is required (13.4's "Read first" issue).
+ * - DON-338 / SAR-FIELD-002: on a seeded field-scale mission (over 10,000
+ *   fixes on one device; 34 devices), Breadcrumb dots and Earlier must leave
+ *   the whole trail drawn, and the whole-history line must be complete.
  * - DON-288: launched without the test box's GPU workaround flag, the map must
  *   render, or the operator must see the message and "Restart with software
  *   rendering"; the button must relaunch the app with a drawn map and remember it.
  */
 
 import { execFile } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
 import { chromium } from 'playwright'
 
+import { FIELD_SHAPE_MISSION_NAME, generateMissionStoreFixture } from '../../../build/seed-mission-store-runtime.js'
 import { delay, launchApp } from '../lib/app.mjs'
 import { startMockTraccar } from '../lib/mock-traccar.mjs'
 import { archiveMission, bodyText, connectProvider, finishMission, resumeIfPrompted, startMission } from '../lib/operator.mjs'
 import { describeMapNotDrawn, waitForMapDrawn } from '../lib/map-ready.mjs'
-import { expectProduct } from '../lib/results.mjs'
+import { expectProduct, NotTested } from '../lib/results.mjs'
+import { STORE_FILE, withStore } from '../lib/store.mjs'
+import { parseDotSummary, verifyWholeTrailDrawn, WHOLE_TRAIL_UI } from '../lib/whole-trail.mjs'
 
 /** How long a map may take to load its style and tiles; software rendering is slow. */
 const MAP_DRAW_TIMEOUT_MS = 120_000
+/** How long the whole-history layer may take to build and report complete for a field-scale mission. */
+const COVERAGE_COMPLETE_TIMEOUT_MS = 240_000
+/** How long one page of exact dots may take to load. */
+const DOTS_READY_TIMEOUT_MS = 90_000
+
+/**
+ * The team's DON-338 workflow on a field-scale mission: open it, choose
+ * Breadcrumb dots, press Earlier. The whole trail must stay drawn throughout,
+ * and the whole-history line and status must be complete [DON-338, SAR-FIELD-002].
+ */
+function wholeTrailCheck(id, preset) {
+  return {
+    check: 'Tracking matches provider exactly',
+    id,
+    timeoutMs: 20 * 60_000,
+    run: (ctx) => runWholeTrailWorkflow(ctx, preset),
+  }
+}
 
 export default [
+  wholeTrailCheck('don-338-whole-trail', 'field-trail-25k'),
+  wholeTrailCheck('don-338-many-devices', 'field-34-devices'),
   {
     check: 'Mission lifecycle and crash recovery',
     id: 'crash-archive',
@@ -194,4 +220,117 @@ async function stopListenerOnPort(port) {
     while (Date.now() < deadline && (await listeners()).length > 0) await delay(500)
   }
   if ((await listeners()).length > 0) throw new Error(`The relaunched app on port ${port} would not stop.`)
+}
+
+/**
+ * Seeds a field-shape mission into a fresh profile, then drives the team's
+ * workflow and checks the drawn map after each step [DON-338].
+ *
+ * @param {import('../lib/app.mjs').SmokeContext} ctx
+ * @param {string} preset a field-shape preset from build/seed-mission-store-lib.js
+ * @returns {Promise<string>} evidence
+ */
+export async function runWholeTrailWorkflow(ctx, preset) {
+  const profile = path.join(ctx.runDir, 'profile')
+  await mkdir(profile, { recursive: true })
+  const fixture = await generateMissionStoreFixture({ preset, outputPath: path.join(ctx.runDir, 'fixture', `${preset}.sqlite`) })
+  await copyFile(fixture.outputPath, path.join(profile, STORE_FILE))
+  const { stored, names } = storedTrail(profile)
+  const expectedTotal = fixture.manifest.workload.realPositionRows
+  if (stored.length !== expectedTotal) {
+    throw new NotTested(`The seeded profile holds ${stored.length} fixes, not the ${expectedTotal} the ${preset} fixture declares.`)
+  }
+
+  const app = await launchApp(ctx, { profile, label: preset })
+  const t = (testId) => app.page.getByTestId(testId)
+  await resumeIfPrompted(app.page)
+  const drawn = await waitForMapDrawn(app.page, { timeoutMs: MAP_DRAW_TIMEOUT_MS })
+  if (!drawn.ready) throw new NotTested(`Before the trail could be checked, ${describeMapNotDrawn(drawn.state, MAP_DRAW_TIMEOUT_MS)}.`)
+  const steps = []
+
+  // The whole-history layer must finish for the stored mission.
+  await t(WHOLE_TRAIL_UI.trackingTab).click()
+  const complete = await t(WHOLE_TRAIL_UI.coverageComplete).waitFor({ timeout: COVERAGE_COMPLETE_TIMEOUT_MS }).then(() => true, () => false)
+  await app.shot('coverage')
+  expectProduct(complete, `The mission history status did not reach "All mission history shown" within ${COVERAGE_COMPLETE_TIMEOUT_MS / 1000} s for a stored, fully reconciled mission: "${await panelText(app.page)}" [DON-338 / REN-2]`)
+  const coverage = await shotAfter(app, 'coverage-line', verifyWholeTrailDrawn(app.page, stored, { step: 'Whole-history line', names, layers: 'coverage' }))
+  steps.push(`whole-history line complete and drawn through all fixes (${coverage.layers.length} layer(s))`)
+
+  // Control: in the default Solid line the live trail and the whole-history
+  // line together draw every fix. If nothing at all is drawn the seed or launch
+  // is wrong, and the dots result would mean nothing.
+  const control = await shotAfter(app, 'solid-line',
+    verifyWholeTrailDrawn(app.page, stored, { step: 'Solid line (default)', names, nothingDrawnIsNotTested: true }))
+  steps.push(`Solid line: all ${control.fixes.toLocaleString('en-GB')} fixes of ${control.devices} device(s) on the drawn trail`)
+
+  // The team's path into dots: "Inspect exact fixes".
+  await t(WHOLE_TRAIL_UI.showDots).click()
+  const firstPage = await waitForDotPage(app.page, null)
+  const firstCounts = parseDotSummary(firstPage)
+  expectProduct(firstCounts !== null && firstCounts.total === stored.length,
+    `The Breadcrumb dots status does not give the whole mission's fix count (${stored.length.toLocaleString('en-GB')}): "${firstPage}" [DON-338]`)
+  await shotAfter(app, 'dots', verifyWholeTrailDrawn(app.page, stored, { step: `Breadcrumb dots ("${firstPage}")`, names }))
+  steps.push(`Breadcrumb dots ("${firstPage}"): whole trail still drawn`)
+
+  // Earlier: the operator looks for the rest of the trail.
+  const earlier = t(WHOLE_TRAIL_UI.earlier)
+  if (await earlier.isVisible().catch(() => false) && await earlier.isEnabled().catch(() => false)) {
+    await earlier.click()
+    const earlierPage = await waitForDotPage(app.page, firstPage)
+    await shotAfter(app, 'dots-earlier', verifyWholeTrailDrawn(app.page, stored, { step: `Breadcrumb dots after Earlier ("${earlierPage}")`, names }))
+    steps.push(`after Earlier ("${earlierPage}"): whole trail still drawn`)
+  } else {
+    steps.push('no Earlier page offered (all dots on one page)')
+  }
+  await verifyWholeTrailDrawn(app.page, stored, { step: 'Whole-history line under dots', names, layers: 'coverage' })
+  await app.stop()
+  return `${preset} (${stored.length.toLocaleString('en-GB')} fixes, synthetic): ${steps.join('; ')} [DON-338, SAR-FIELD-002].`
+}
+
+/** Stored fixes and device names of the seeded field-shape mission. */
+function storedTrail(profile) {
+  return withStore(profile, (db) => {
+    const mission = db.prepare('SELECT id FROM missions WHERE name = ? ORDER BY rowid DESC LIMIT 1').get(FIELD_SHAPE_MISSION_NAME)
+    if (mission === undefined) throw new NotTested('The field-shape mission is not in the seeded profile.')
+    const names = Object.fromEntries(db.prepare('SELECT device_id, name FROM devices WHERE mission_id = ?').raw().all(mission.id))
+    const stored = db.prepare("SELECT device_id, lat, lon, timestamp FROM positions WHERE mission_id = ? AND timestamp_source = 'fix'")
+      .raw().all(mission.id)
+      .map(([deviceId, lat, lon, timestamp]) => ({ deviceId: String(deviceId), lat: Number(lat), lon: Number(lon), time: Date.parse(timestamp) }))
+    return { stored, names }
+  })
+}
+
+/**
+ * Waits for a dots page whose status differs from `previous`; fails with the
+ * operator-visible message if the dots cannot be shown.
+ */
+async function waitForDotPage(page, previous) {
+  const deadline = Date.now() + DOTS_READY_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    const unavailable = page.getByTestId(WHOLE_TRAIL_UI.dotsUnavailable)
+    if (await unavailable.isVisible().catch(() => false)) {
+      expectProduct(false, `Breadcrumb dots could not be shown: "${(await unavailable.innerText().catch(() => '')).trim()}" [DON-338]`)
+    }
+    const summary = page.getByTestId(WHOLE_TRAIL_UI.dotsSummary)
+    const text = (await summary.innerText({ timeout: 1000 }).catch(() => '')).replace(/\s+/gu, ' ').trim()
+    if (text !== '' && text !== previous) return text
+    await delay(1000)
+  }
+  expectProduct(false, `No Breadcrumb dots page was shown within ${DOTS_READY_TIMEOUT_MS / 1000} s${previous === null ? '' : ` after Earlier (still "${previous}")`} [DON-338]`)
+  return ''
+}
+
+/** The coverage panel's visible text, for a FAIL row. */
+async function panelText(page) {
+  return (await page.getByTestId(WHOLE_TRAIL_UI.coveragePanel).innerText({ timeout: 2000 }).catch(() => '(no coverage panel shown)'))
+    .replace(/\s+/gu, ' ').trim().slice(0, 240)
+}
+
+/** Saves a screenshot once `check` settles (pass or fail), so a FAIL row has its picture. */
+async function shotAfter(app, name, check) {
+  try {
+    return await check
+  } finally {
+    await app.shot(name).catch(() => undefined)
+  }
 }

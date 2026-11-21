@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { resolveMissionHistoryOmissions } from '../features/layers/breadcrumb-coverage-visibility'
 import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
@@ -6,10 +7,17 @@ import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrum
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
 import { useTrackingStyleStore } from '../features/tracking/tracking-style-store'
 import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
+import {
+  collectTrailDeviceIds,
+  describeTrailLineNotDrawn,
+  summarizeTrailDrawing,
+} from '../features/tracking/trail-line-visibility'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
 import { useCoverageStore } from '../features/tracking/coverage-store'
 import { useCoverageFilterStore } from '../features/tracking/coverage-filter-store'
+import { useLayerVisibilityStore } from '../features/layers/layer-visibility-store'
+import { getEffectiveTrackingVisible } from '../features/layers/effective-overlay-visibility'
 import { CoverageStatusPanel } from './coverage-status-panel'
 import { useMissionStore } from '../features/mission/mission-store'
 import { selectCoverageStateForMission } from '../features/tracking/mission-coverage-scope'
@@ -51,6 +59,13 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     (state) => state.omittedPeriodKeys.includes('unassigned\u0000'),
   )
   const storedExactBreadcrumbDotState = useExactBreadcrumbDotStore((state) => state.state)
+  const hiddenBreadcrumbDeviceIds = useLayerVisibilityStore(
+    (state) => state.hiddenBreadcrumbDeviceIds,
+  )
+  // Same rule the maps use: the Tracking group and the Trails switch must both be on [DON-338].
+  const trailsVisible = useLayerVisibilityStore(
+    (state) => getEffectiveTrackingVisible(state.groupVisibility) && state.breadcrumbsVisible,
+  )
   const exactBreadcrumbDotController = useExactBreadcrumbDotStore((state) => state.controller)
   const ingestHealth = useIngestHealthStore((state) => state.summary)
   const activeEvidenceHealth = useIngestHealthStore((state) => state.evidenceHealth)
@@ -63,6 +78,25 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     Object.values(state.byDevice).filter((attention) => attention.state === 'attention').length,
   )
   const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
+  // Judge what is drawn from the renderers' own geometry inputs, never the roster:
+  // the line comes from the live trail, the dots from the exact page [DON-338].
+  const lineDeviceIds = useMemo(
+    () => collectTrailDeviceIds(snapshot.breadcrumbs),
+    [snapshot.breadcrumbs],
+  )
+  const dotDeviceIds = useMemo(
+    () => collectTrailDeviceIds(
+      exactBreadcrumbDotState.status === 'ready' && 'positions' in exactBreadcrumbDotState
+        ? exactBreadcrumbDotState.positions
+        : [],
+    ),
+    [exactBreadcrumbDotState],
+  )
+  const trailDrawing = useMemo(
+    () => summarizeTrailDrawing({ trailsVisible, hiddenBreadcrumbDeviceIds, lineDeviceIds, dotDeviceIds }),
+    [trailsVisible, hiddenBreadcrumbDeviceIds, lineDeviceIds, dotDeviceIds],
+  )
+  const trailLineNotDrawnSentence = describeTrailLineNotDrawn(trailDrawing.line)
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const unverifiedFixTimePositions = snapshot.positions.filter(
     (position) => position.fix_time_unverified === true,
@@ -238,6 +272,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       {breadcrumbTrailMode === 'dots' ? (
         <ExactBreadcrumbDotStatus
           state={exactBreadcrumbDotState}
+          trailDrawing={trailDrawing}
           onEarlier={
             props.onExactBreadcrumbDotsEarlier ??
             (() => exactBreadcrumbDotController?.showEarlier())
@@ -249,8 +284,8 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         />
       ) : null}
 
-      {breadcrumbTrailMode === 'line' &&
-      boundedBreadcrumbDeviceCount > 0 &&
+      {/* The simplified line is drawn in both modes, so its disclosure is too [DON-338]. */}
+      {boundedBreadcrumbDeviceCount > 0 &&
       snapshot.breadcrumbMetadata !== undefined ? (
         <p
           className={`mb-4 border-l-4 px-3 py-2 text-xs font-medium leading-relaxed ${
@@ -270,6 +305,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
               ? 'This route is too complex for a guaranteed display-error bound.'
               : `Displayed route error may be up to ${Math.ceil(maximumBreadcrumbErrorBoundMetres)} metres for this route.`}{' '}
           Full mission history remains stored.
+          {trailLineNotDrawnSentence === null ? null : ` ${trailLineNotDrawnSentence}`}
         </p>
       ) : null}
 

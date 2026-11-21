@@ -654,6 +654,131 @@ participants; SAR Tracker never auto-enrols the whole server).
 - Harvey and Hiker maps are needed "later" (M03).
 - Platform: AppImage on PCLinuxOS, not the Ubuntu .deb the release box tests.
 
+## Answer Round 5 — SARNOV review and in-person call (2026-11-21)
+
+Source 1: the lead tester's written review of the layout trial, `SARNOV.odt`, received
+2026-11-18 ([extracted text](../team-feedback/sarnov/extracted.md); it is local
+only because one screenshot names team members). The written points are quoted
+verbatim below.
+Source 2: an in-person session between Donal and the lead tester on 2026-11-21, recorded
+in Granola ("Mission tracking app UI and data structure refinements", note
+`8f929a94-8800-41bb-9067-062fee6eb755`). The questions came from
+the local call-questions file in `team-feedback/sarnov/`.
+**The call answers are paraphrased from raw speech, not verbatim.** Re-read the
+transcript before relying on exact wording.
+
+### SAR-QA-026 — Starting and resuming a mission
+
+**SARNOV (1), verbatim:** "Simplify above. Traccar default group setup in settings. Start new mission or resume previous mission. Remove all unnecessary from above."
+**Call answer (paraphrased):** opening the app should offer either resume (when a
+mission is unfinished) or a new mission with only mission name, roll back time
+and Start. "Resume" means reopening the last unfinished mission. Their own group
+(the KMRT SAR Traccar group) is set once in Settings and ticked automatically.
+**Related prior IDs:** SAR-QA-015, SAR-QA-025 (the default-group tension is now
+settled: a coordinator-configured default group, ticked automatically, within
+explicit coordinator selection).
+**Derived meaning:** the start screen has two choices: Resume last unfinished
+mission, or New (name, roll back, Start). The default group is pre-ticked from Settings.
+
+### SAR-QA-027 — Multi-day missions are split by day
+
+**SARNOV (9), verbatim:** "Pause /Resume Mission. Need a way to pause a mission with option of naming that segment of a search and ability to then have the option of displaying / not displaying that segment in part or whole through Layers. Display of Multi day search would be very difficult to follow without this option."
+**Call answer (paraphrased):** most missions last one to two days. The coordinator
+pauses in the evening and resumes the next day. Each day goes into Layers as a
+separate, coordinator-named part ("Day 1", "Day 2"). Day 2 starts with a clean
+map, and Day 1 can be laid over it from Layers. Earlier talk of "outings" and
+"segments" became blurred; it is simply one mission split by day, with a name
+the coordinator chooses.
+**Related prior IDs:** SAR-QA-001 (omit earlier periods selectively per device
+per day), SAR-QA-003 (all mission data by default), the Round 2 answer that a
+"day" means an outing, and the Round 3 answer that an outing is started and
+ended by the coordinator and outings never overlap. DON-100.
+**Derived meaning:** the outing is the day segment. The coordinator names it.
+Showing and hiding works per segment, and per person within a segment
+(SAR-QA-001). **Supersedes SAR-QA-003 for the live map after a resume:** a
+resumed day starts with only the current segment shown, and earlier days are
+available in Layers. **Not answered:** whether positions keep being recorded while
+paused overnight. Ask the team, citing the "never invent data" invariant.
+
+### SAR-QA-028 — Settings structure
+
+**SARNOV (2), verbatim:** "Settings. Have sub menu in settings, simplifies interface. Settings / Mission Defaults / Tracking Sources. (Set primary tracking group here as default to simplify login) / Mapping / Weather Links / Advanced settings"
+**Call answer (paraphrased):** confirmed. Settings should be a menu of those five
+sections instead of one long scrolling page; setup is rare, so it should be easy
+to find. What goes under Advanced is left to Donal.
+
+### SAR-QA-029 — High contrast: replace the black
+
+**SARNOV (4), verbatim:** "High Contrast, need to lose the black, something similar to below." (The example is a light grey application window.)
+**Call answer (paraphrased):** the black background is the problem and is
+frustrating people. Highlighting box borders is not enough; the background colour
+has to change, to a light grey or blue as in the example.
+**Related prior IDs:** simplification brief rule 13 (raised in May, June and September).
+
+### SAR-QA-030 — Maps: East West Mapping, all-Ireland OS and the grid
+
+**SARNOV (3), verbatim:** "Need to test OS mapping for Munster and also have East West Mapping option. Needs testing"
+**SARNOV (7), verbatim:** "No grid showing in OS mapping"
+**Call answer (paraphrased):**
+- East West Mapping is a separate official map product, more detailed in many
+  areas, chosen in Maps as an alternative to Discovery. About half of hill walkers
+  carry it in a phone app, so it lets a coordinator match a walker's photo or
+  description. It is for later; contact through the person in Wexford whose name
+  the lead tester passed on.
+- OS mapping: the team has supplied the files, but only a small area has been
+  tested; they want all of Ireland (about 2 GB). The lead tester's suggestion is high
+  resolution for the roughly 20 places that need it (for KMRT: the Reeks, the
+  Dingle Peninsula, the West Cork peninsulas) and lower resolution elsewhere, or
+  a West/East Munster split with a small overlap.
+- The grid: 1 km grid lines are built into the OS mapping but are not being
+  displayed. Not critical at the moment.
+**Related prior IDs:** SAR-QA-025 (Harvey and Hiker maps needed "later"). DON-76, DON-144.
+
+### SAR-QA-031 — Open questions sent back to Donal
+
+- SARNOV (10), "Remove panel below." (the stack of "No position yet" labels):
+  The lead tester was unsure what the follow-up question meant. Donal is to send it in
+  writing. Do not remove the warning without an answer: it tells the
+  coordinator that someone is not on the map.
+- The items still owed (support bundle, Tomies Wood GPX, Layers screenshot,
+  Mint long run): the lead tester was unclear what these are. Donal is to send them.
+
+### SAR-FIELD-003 — Weather links fail on the desktop app
+
+**SARNOV (6), verbatim:** "Weather Links; Not working"
+**Call answer (paraphrased):** they fail in the desktop app too; weather has never worked.
+
+### SAR-FIELD-004 — Map scale wrong by a factor of two
+
+**SARNOV (8), verbatim:** "Map Scale. Not accurate, error of factor x2 on Open Topo, could do with a more modern scale image indicator."
+**Derived meaning:** confirmed in code. `src/features/map/map-scale-readout.ts`
+uses the metres-per-pixel figure for 256-pixel tiles, but MapLibre zoom levels are
+sized for 512-pixel tiles, so the bar shows twice the true distance on every map.
+
+### SAR-FIELD-005 — The trail splits at 10,000 points again (regression)
+
+**SARNOV (11), verbatim:** "have we limit on number of data points displayed?"
+**Call answer (paraphrased):** on a test in Dublin about two weeks earlier
+(around 7 Nov), with the lead tester's phone tracking all the time, a second tester saw the trail
+reach 10,000 points and start a new segment automatically. The whole trail could
+not be shown at once, only before or after the split. With 34 people out for a
+day this will be exceeded. They saw this problem before; it seems to have come back.
+**Related prior IDs:** SAR-FIELD-002, SAR-QA-001/002/008 (complete coverage by
+default). DON-267.
+**Derived meaning:** treat as a regression of the complete-coverage default until
+evidence shows otherwise. The build the testers ran must be identified first: the
+browser layout trial or the 13.6/13.7 desktop release.
+
+### SAR-QA-032 — Layout trial verdict
+
+**SARNOV (5), verbatim:** "Mission Running works well, leave as is for moment. Browser testing mode, lose this banner."
+**Call answer (paraphrased):** the new top bar and panel arrangement is fine. The
+banner appears only in the browser test. The recording does not name which
+trial layout (A, B or C). The aim is to switch on, resume or start a mission and
+walk away, without spending time on setup.
+**Derived meaning:** port the trial's top bar and one-panel-at-a-time layout to
+the desktop app. Confirm the letter in the next written exchange.
+
 ## PR-5 Implementation Links — 2026-08-27
 
 These links add implementation traceability only; they do not amend or

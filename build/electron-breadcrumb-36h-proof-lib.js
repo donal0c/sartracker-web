@@ -1129,7 +1129,12 @@ export function createRenderedBreadcrumbEvidence(featureCollection) {
           coordinates: normalizeCoordinates(feature.geometry.coordinates),
         }]
       }
-      if (featureKind === 'breadcrumb' && feature?.geometry?.type === 'Point') {
+      // A lone trail fix is part of the drawn line evidence: dropping it must
+      // change the digest [DON-338] [LIV-5].
+      if (
+        (featureKind === 'breadcrumb' || featureKind === 'breadcrumbLoneFix') &&
+        feature?.geometry?.type === 'Point'
+      ) {
         return [{
           deviceId,
           coordinates: normalizeCoordinates([feature.geometry.coordinates]),
@@ -1233,6 +1238,10 @@ export function buildBreadcrumb36HourRenderedOracle(
     options.gapThresholdMs ?? RENDER_BREADCRUMB_GAP_THRESHOLD_MS,
   )
   const rendered = createRenderedBreadcrumbEvidence(featureCollection)
+  const stationaryCollapsedPositionCount = featureCollection.features.reduce(
+    (total, feature) => total + (feature.properties.collapsedPositionCount ?? 0),
+    0,
+  )
   const dotRendered = createRenderedBreadcrumbEvidence(
     createOracleBreadcrumbPointFeatureCollection(positionsByDevice),
   )
@@ -1280,10 +1289,24 @@ export function buildBreadcrumb36HourRenderedOracle(
     retainedIdentityCount: selection.positions.length,
     retainedIdentitySha256: retainedIdentityDigest.digest('hex'),
     droppedPositionCount: selection.droppedPositionCount,
+    stationaryCollapsedPositionCount,
     devices,
     rendered,
     dotRendered,
   }
+}
+
+/**
+ * True when every retained source identity is accounted for by a rendered
+ * coordinate, allowing for stationary segments that draw one lone-fix point
+ * for several fixes at the same place [DON-338]. Oracles recorded before that
+ * field existed are checked strictly.
+ */
+export function renderedOracleCoordinatesMatchRetainedIdentities(oracle) {
+  const collapsed = Number.isSafeInteger(oracle?.stationaryCollapsedPositionCount)
+    ? oracle.stationaryCollapsedPositionCount
+    : 0
+  return oracle?.retainedIdentityCount === oracle?.rendered?.coordinateCount + collapsed
 }
 
 /**
@@ -1533,25 +1556,48 @@ function compareExactDotOracleStrings(left, right) {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-function createOracleBreadcrumbFeatureCollection(positionsByDevice, gapThresholdMs) {
+/**
+ * Builds the expected live trail exactly as `src/features/tracking/tracking-geojson.ts`
+ * draws it: a line for each time-gap segment that covers two or more distinct
+ * places, and a `breadcrumbLoneFix` point at the segment's first fix for a
+ * single fix or a stationary (zero-length) segment, which a line cannot draw
+ * [DON-338] [LIV-5].
+ */
+export function createOracleBreadcrumbFeatureCollection(positionsByDevice, gapThresholdMs) {
   const features = []
   for (const [deviceId, positions] of positionsByDevice.entries()) {
     let segment = []
     let previousTimestampMs = null
     const appendSegment = () => {
-      if (segment.length >= 2) {
+      const first = segment[0]
+      if (first === undefined) return
+      const hasTwoDistinctPlaces = segment.some(
+        (position) => position.lat !== first.lat || position.lon !== first.lon,
+      )
+      if (!hasTwoDistinctPlaces) {
         features.push({
           type: 'Feature',
-          geometry: {
-            type: 'LineString',
-            coordinates: segment.map((position) => [position.lon, position.lat]),
-          },
+          geometry: { type: 'Point', coordinates: [first.lon, first.lat] },
           properties: {
             deviceId,
-            featureKind: 'breadcrumbLine',
+            featureKind: 'breadcrumbLoneFix',
+            // Fixes after the first in a stationary segment share its point.
+            collapsedPositionCount: segment.length - 1,
           },
         })
+        return
       }
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: segment.map((position) => [position.lon, position.lat]),
+        },
+        properties: {
+          deviceId,
+          featureKind: 'breadcrumbLine',
+        },
+      })
     }
     for (const position of positions) {
       const timestampMs = Date.parse(position.timestamp)
@@ -1927,7 +1973,7 @@ function validateRenderedOracle(reasons, rendered, oracle, sourceTruth) {
   ) {
     reasons.push('Canonical rendered oracle has inconsistent per-device metadata coverage.')
   }
-  if (oracle.retainedIdentityCount !== oracle.rendered.coordinateCount) {
+  if (!renderedOracleCoordinatesMatchRetainedIdentities(oracle)) {
     reasons.push(
       'Canonical retained source-identity count did not match its rendered coordinate count.',
     )

@@ -35,9 +35,9 @@ describe('outing fix-summary worker', () => {
     const database = new Database(databasePath)
     database.exec(`
       CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT, started_at TEXT, ended_at TEXT);
-      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT);
+      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT, timestamp_source TEXT);
       INSERT INTO outings VALUES ('outing-a', 'mission-1', '2026-08-20T09:00:00.000Z', NULL);
-      INSERT INTO positions VALUES ('position-a', 'mission-1', '2026-08-20T10:00:00.000Z');
+      INSERT INTO positions VALUES ('position-a', 'mission-1', '2026-08-20T10:00:00.000Z', 'fix');
     `)
     database.close()
 

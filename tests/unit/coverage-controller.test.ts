@@ -1006,7 +1006,10 @@ describe('coverage controller [DON-276]', () => {
     }))
   })
 
-  it('bounds automatic renderer recovery to one attempt until the operator retries', async () => {
+  // DON-338 REN-4: recovery no longer stops after one attempt; it backs off
+  // (250 ms, then 5 s, 15 s, 30 s) while the failure stays visible, and an
+  // operator Retry still runs at once and restarts the back-off.
+  it('backs off repeated automatic renderer recovery and lets the operator retry at once', async () => {
     const initial = manifest(1, [[KEY_A, 1]])
     const deliverSelection = vi.fn(async () => {
       const attempt = deliverSelection.mock.calls.length

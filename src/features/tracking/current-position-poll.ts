@@ -10,6 +10,32 @@ import type { TrackingWarning } from './tracking-warnings'
 export const ROSTER_UNAVAILABLE_WARNING =
   'DEVICE ROSTER UNAVAILABLE — current fixes are using last-known device details.'
 
+/**
+ * Builds the operator warning for a roster that left out rows Traccar sent but
+ * the app could not read (ING-4 [DON-338]). A dropped row is a device whose
+ * position and history may be missing from the map, so it must never pass
+ * silently. The text counts the entries; it never names or invents a device.
+ *
+ * @param roster the settled roster result
+ * @returns the roster warning, or null when the roster is complete
+ */
+export function createIncompleteRosterWarning(
+  roster: DeviceRosterNormalizationResult,
+): TrackingWarning | null {
+  if (roster.complete) return null
+  const count = roster.rejectedCount
+  const text = count === 1
+    ? '1 device entry from Traccar could not be read, so a tracker may be missing from the map.'
+    : count !== undefined && Number.isSafeInteger(count) && count > 1
+      ? `${count} device entries from Traccar could not be read, so trackers may be missing from the map.`
+      : 'some device entries from Traccar could not be read, so trackers may be missing from the map.'
+  return {
+    // No dedicated code exists yet; part of the roster is unavailable.
+    code: 'roster_unavailable',
+    text: `DEVICE ROSTER INCOMPLETE — ${text} Check the device list in Traccar.`,
+  }
+}
+
 type CurrentPositionPollClient = {
   readonly getDevices: () => Promise<readonly NormalizedTrackingDevice[]>
   readonly getDevicesWithReport?: () => Promise<DeviceRosterNormalizationResult>
@@ -74,7 +100,7 @@ export async function fetchRosterAndCurrentPositions(
   return {
     ...positions,
     devices: rosterResult.value.accepted,
-    rosterWarning: null,
+    rosterWarning: createIncompleteRosterWarning(rosterResult.value),
     rosterFailure: null,
     rosterComplete: rosterResult.value.complete,
   }

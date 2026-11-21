@@ -167,6 +167,15 @@ export type CoverageTileCatalog = {
     readonly key: CoverageChunkKey
     readonly contentRev: number
   }[]
+  /**
+   * Delivered chunks whose revision moved on while the catalog was built. Each
+   * is drawn honestly at the listed (older) revision and must be retried; it is
+   * never current [DON-338 COV-2].
+   */
+  readonly moved?: readonly {
+    readonly key: CoverageChunkKey
+    readonly contentRev: number
+  }[]
   /** Browser-validation payload only; native Electron catalogs never include it. */
   readonly browserHarnessGeoJson?: {
     readonly type: 'FeatureCollection'
@@ -979,6 +988,29 @@ export type TrackingPositionsPersistenceAck = {
   readonly changedPositionCount: number
   readonly insertedPositionCount: number
   readonly skippedAmbiguousLegacyAdoptionCount: number
+  /**
+   * Rows refused in this call and recorded as 'rejected' ingest anomalies;
+   * the good rows of the call were committed [DON-338 STO-3]. Optional only
+   * for stores that predate it.
+   */
+  readonly rejectedPositionCount?: number
+  /** Reused source position ids in this call kept as conflicts [DON-338 STO-1]. */
+  readonly sourceIdentityConflictCount?: number
+  /** Distinct rows the store has refused in this mission. */
+  readonly missionRejectedPositionTotal?: number
+  /** Distinct reused-id observations kept as conflicts in this mission. */
+  readonly missionSourceIdentityConflictTotal?: number
+  /**
+   * Each row of this call refused as a source-id conflict: its index in the
+   * batch, and its device id and source position id exactly as sent. No
+   * content of the refused row and nothing about the kept row [DON-338].
+   * The tracking runtime validates it on receipt.
+   */
+  readonly refusedSourceIdentityConflicts: readonly {
+    readonly index: number
+    readonly device_id: string
+    readonly source_position_id: string
+  }[]
 }
 
 export type UpsertMarkerInput = {

@@ -20,15 +20,15 @@ describe('outing fix-summary query', () => {
     const database = new Database(':memory:')
     database.exec(`
       CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT, started_at TEXT, ended_at TEXT);
-      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT);
+      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT, timestamp_source TEXT);
       INSERT INTO outings VALUES
         ('outing-a', 'mission-1', '2026-08-20T09:00:00.000Z', '2026-08-20T11:00:00.000Z'),
         ('outing-b', 'mission-1', '2026-08-20T11:00:00.000Z', '2026-08-20T12:00:00.000Z');
       INSERT INTO positions VALUES
-        ('before', 'mission-1', '2026-08-20T08:59:59.000Z'),
-        ('a', 'mission-1', '2026-08-20T10:00:00.000Z'),
-        ('boundary', 'mission-1', '2026-08-20T11:00:00.000Z'),
-        ('after', 'mission-1', '2026-08-20T12:00:00.000Z');
+        ('before', 'mission-1', '2026-08-20T08:59:59.000Z', 'fix'),
+        ('a', 'mission-1', '2026-08-20T10:00:00.000Z', 'fix'),
+        ('boundary', 'mission-1', '2026-08-20T11:00:00.000Z', 'fix'),
+        ('after', 'mission-1', '2026-08-20T12:00:00.000Z', 'fix');
     `)
 
     expect(readOutingFixSummary(database, { missionId: 'mission-1' })).toEqual({
@@ -46,14 +46,36 @@ describe('outing fix-summary query', () => {
     const database = new Database(':memory:')
     database.exec(`
       CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT, started_at TEXT, ended_at TEXT);
-      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT);
-      INSERT INTO positions VALUES ('legacy', 'legacy-mission', '2026-08-20T10:00:00.000Z');
+      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT, timestamp_source TEXT);
+      INSERT INTO positions VALUES ('legacy', 'legacy-mission', '2026-08-20T10:00:00.000Z', 'fix');
     `)
 
     expect(readOutingFixSummary(database, { missionId: 'legacy-mission' })).toEqual({
       outings: [],
       unassigned_accepted_fix_count: 1,
       total_accepted_fix_count: 1,
+    })
+    database.close()
+  })
+
+  it('counts only fixes the map draws, leaving out rows with no fix-time provenance [DON-338 LIF-11]', () => {
+    const database = new Database(':memory:')
+    database.exec(`
+      CREATE TABLE outings (id TEXT PRIMARY KEY, mission_id TEXT, started_at TEXT, ended_at TEXT);
+      CREATE TABLE positions (id TEXT PRIMARY KEY, mission_id TEXT, timestamp TEXT, timestamp_source TEXT);
+      INSERT INTO outings VALUES
+        ('outing-a', 'mission-1', '2026-08-20T09:00:00.000Z', '2026-08-20T11:00:00.000Z');
+      INSERT INTO positions VALUES
+        ('drawn-in-outing', 'mission-1', '2026-08-20T10:00:00.000Z', 'fix'),
+        ('undrawn-in-outing', 'mission-1', '2026-08-20T10:30:00.000Z', NULL),
+        ('drawn-unassigned', 'mission-1', '2026-08-20T12:00:00.000Z', 'fix'),
+        ('undrawn-unassigned', 'mission-1', '2026-08-20T12:30:00.000Z', NULL);
+    `)
+
+    expect(readOutingFixSummary(database, { missionId: 'mission-1' })).toEqual({
+      outings: [{ outing_id: 'outing-a', accepted_fix_count: 1 }],
+      unassigned_accepted_fix_count: 1,
+      total_accepted_fix_count: 2,
     })
     database.close()
   })

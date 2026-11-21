@@ -246,6 +246,8 @@ describe('traccar client', () => {
     await expect(client.getDevicesWithReport()).resolves.toEqual({
       accepted: [expect.objectContaining({ device_id: '1' })],
       complete: false,
+      // ING-4 [DON-338]: the dropped-row count feeds the roster warning.
+      rejectedCount: 1,
     })
   })
 
