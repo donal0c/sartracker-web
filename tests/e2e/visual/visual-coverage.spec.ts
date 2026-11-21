@@ -48,7 +48,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'tracking',
       severity: 'critical',
       verificationPrompt: `Verify this SAR Tracker mission-history loading element:
-1. It clearly says complete mission history is loading from saved evidence.
+1. It clearly says the history line is updating (newest positions being added) or loading, not that history is incomplete.
 2. A visible progress bar is present.
 3. Exact "N of M fixes" numbers are visible and N is lower than M.
 4. The display does not claim 100% or "All mission history shown" while delivery is incomplete.

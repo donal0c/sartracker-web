@@ -53,7 +53,7 @@ describe('coverage status panel [DON-275]', () => {
     }))
     expect(host.querySelector('[data-testid="coverage-progress"]')).toBeNull()
     expect(host.textContent).toContain('completeness is not yet verified')
-    expect(host.textContent).toContain('Reason: timeout')
+    expect(host.textContent).toContain('Reason: loading took too long')
   })
 
   it('uses whole-mission wording only when no history is omitted', () => {
@@ -142,7 +142,7 @@ describe('coverage status panel [DON-275]', () => {
 
     expect(host.textContent).toContain('Participant history is still being added')
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
-    expect(host.textContent).toContain('Reason: timeout')
+    expect(host.textContent).toContain('Reason: loading took too long')
 
     render(state('error', {
       pendingInvalidation: true,
@@ -151,7 +151,49 @@ describe('coverage status panel [DON-275]', () => {
 
     expect(host.textContent).toContain('Updating outing assignment')
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
-    expect(host.textContent).toContain('Reason: worker')
+    expect(host.textContent).toContain('Reason: the history builder stopped')
+  })
+
+  it('DON-338 REN-2: a moving device reads as updating with the drawn count, not as incomplete', () => {
+    const onRetry = vi.fn()
+    render(state('partial', {
+      deliveredFixCount: 0, drawnFixCount: 37_000, totalFixCount: 37_010, updating: true,
+    }), { onRetry })
+
+    expect(host.querySelector('[data-testid="coverage-updating"]')?.textContent)
+      .toContain('Updating — the newest positions are being added to the history line')
+    expect(host.textContent).not.toContain('History incomplete')
+    expect(host.querySelector('[data-testid="coverage-progress-text"]')?.textContent)
+      .toBe('37,000 of 37,010 fixes')
+    expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
+  })
+
+  it('DON-338 REN-2: a line that stopped catching up says so plainly and offers Retry', () => {
+    render(state('partial', {
+      drawnFixCount: 900, totalFixCount: 1_000, updating: true, stalled: true,
+    }))
+
+    expect(host.querySelector('[data-testid="coverage-partial"]')?.textContent)
+      .toContain('History incomplete — showing loaded coverage. The history line has not updated for over 2 minutes. Press Retry.')
+    expect(host.querySelector('[data-testid="coverage-retry"]')).not.toBeNull()
+    expect(host.textContent).toContain('900 of 1,000 fixes')
+  })
+
+  it('DON-338 REN-2: a partial line that nothing is working on is incomplete, never "updating"', () => {
+    render(state('partial', { drawnFixCount: 900, totalFixCount: 1_000, updating: false }))
+
+    expect(host.querySelector('[data-testid="coverage-updating"]')).toBeNull()
+    expect(host.textContent).toContain('History incomplete — showing loaded coverage. Press Retry to load the rest.')
+    expect(host.querySelector('[data-testid="coverage-retry"]')).not.toBeNull()
+  })
+
+  it('DON-338 REN-4: a failure that retries itself says so', () => {
+    render(state('error', { lastErrorClass: 'timeout', updating: true }))
+    expect(host.textContent).toContain('Retrying automatically; press Retry to try now.')
+
+    render(state('error', { lastErrorClass: 'timeout', updating: false }))
+    expect(host.textContent).not.toContain('Retrying automatically')
+    expect(host.textContent).toContain('Press Retry.')
   })
 
   it('never describes a plain coverage failure as still loading', () => {
@@ -159,7 +201,7 @@ describe('coverage status panel [DON-275]', () => {
 
     expect(host.querySelector('[data-testid="coverage-loading"]')).toBeNull()
     expect(host.textContent).toContain('History incomplete — showing loaded coverage')
-    expect(host.textContent).toContain('Reason: timeout')
+    expect(host.textContent).toContain('Reason: loading took too long')
   })
 })
 
@@ -192,6 +234,9 @@ function state(
     readonly blockers?: readonly string[]
     readonly pendingInvalidation?: boolean
     readonly lastErrorClass?: 'timeout' | 'worker'
+    readonly drawnFixCount?: number
+    readonly updating?: boolean
+    readonly stalled?: boolean
   } = {},
 ): CoverageState {
   return {
@@ -209,6 +254,9 @@ function state(
     lastErrorClass: options.lastErrorClass,
     blockers: options.blockers ?? [],
     updatedAt: '2026-08-24T12:00:00.000Z',
+    ...(options.drawnFixCount === undefined ? {} : { drawnFixCount: options.drawnFixCount }),
+    ...(options.updating === undefined ? {} : { updating: options.updating }),
+    ...(options.stalled === undefined ? {} : { stalled: options.stalled }),
   }
 }
 
