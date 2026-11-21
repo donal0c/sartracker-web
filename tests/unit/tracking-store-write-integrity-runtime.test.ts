@@ -86,6 +86,7 @@ async function startWithRealStore(
   ) => Promise<TrackingHistoryChunkPersistenceResult>
   readonly statuses: TrackingConnectionStatus[]
   readonly recordMissionEvidenceLoss: ReturnType<typeof vi.fn>
+  readonly reportTrailStoreAgreement: (awaitingAgreement: boolean) => void
 }> {
   userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-runtime-write-integrity-'))
   const realStore = createElectronMissionStore({ userDataPath })
@@ -100,6 +101,7 @@ async function startWithRealStore(
         readonly persistHistoryChunk: (
           input: TrackingHistoryChunkPersistenceInput,
         ) => Promise<TrackingHistoryChunkPersistenceResult>
+        readonly onTrailStoreAgreementChange: (awaitingAgreement: boolean) => void
       }
     | undefined
   stopRuntime = await startTrackingRuntime({
@@ -133,6 +135,7 @@ async function startWithRealStore(
     persistHistoryChunk: (input) => hooks!.persistHistoryChunk(input),
     statuses,
     recordMissionEvidenceLoss,
+    reportTrailStoreAgreement: (awaitingAgreement) => hooks!.onTrailStoreAgreementChange(awaitingAgreement),
   }
 }
 
@@ -209,7 +212,7 @@ describe('history writes name the observations the store refused [DON-338 round 
     }
   }
 
-  it('returns exactly the refused observation, not the kept original sent in the same chunk', async () => {
+  it('returns exactly the observations sent and kept, never the refused copy of a kept original', async () => {
     const runtime = await startWithRealStore()
     await registerDevice(runtime)
     const [original, other] = snapshotOf(2, 'traccar').breadcrumbs
@@ -217,8 +220,10 @@ describe('history writes name the observations the store refused [DON-338 round 
 
     const result = await runtime.persistHistoryChunk(chunkOf(runtime.missionId, [original!, other!, conflict]))
 
-    expect(result.refusedPositions).toHaveLength(1)
-    expect(result.refusedPositions?.[0]).toBe(conflict)
+    // Round 10: the answer lists what was kept (sent and not refused).
+    expect(result.keptPositions).toHaveLength(2)
+    expect(result.keptPositions[0]).toBe(original)
+    expect(result.keptPositions[1]).toBe(other)
     await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes).toContain('source_position_id_reused'))
   })
 
@@ -232,5 +237,32 @@ describe('history writes name the observations the store refused [DON-338 round 
       .rejects.toThrow(/Mission storage did not confirm which trail fixes it refused/)
     await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes).toContain('mission_storage_failed'))
     expect(runtime.recordMissionEvidenceLoss).toHaveBeenCalled()
+  })
+
+  it('keeps the storage warning up after a successful retry until the live trail has re-read the store [DON-338 round 10]', async () => {
+    let dropList = true
+    const runtime = await startWithRealStore((acknowledgement) => {
+      if (!dropList) return acknowledgement
+      dropList = false
+      return Object.fromEntries(Object.entries(acknowledgement).filter(([key]) => key !== 'refusedSourceIdentityConflicts'))
+    })
+    await registerDevice(runtime)
+    const chunk = chunkOf(runtime.missionId, snapshotOf(2, 'traccar').breadcrumbs)
+    const latestCodes = () => runtime.statuses.at(-1)?.warningCodes ?? []
+
+    // The write commits but its answer loses the list: the poller then owes
+    // a store read-back before its line agrees with the store.
+    await expect(runtime.persistHistoryChunk(chunk)).rejects.toThrow(/did not confirm/)
+    runtime.reportTrailStoreAgreement(true)
+    await expect(runtime.realStore.countPositions(runtime.missionId)).resolves.toBe(2)
+    expect(latestCodes()).toContain('mission_storage_failed')
+
+    // The retry is answered (the rows are now duplicates); the warning stays.
+    await expect(runtime.persistHistoryChunk(chunk)).resolves.toMatchObject({ changed: false })
+    expect(latestCodes()).toContain('mission_storage_failed')
+
+    // Once the poller's reload has drawn the store's rows, it clears.
+    runtime.reportTrailStoreAgreement(false)
+    expect(latestCodes()).not.toContain('mission_storage_failed')
   })
 })

@@ -166,17 +166,28 @@ async function openRealStore(
 function persistHistoryLikeRuntime(
   realStore: RealStore,
   missionId: string,
-  options: { readonly participationFromMs?: number; readonly lostAcknowledgements?: number } = {},
+  options: {
+    readonly participationFromMs?: number | (() => number)
+    readonly lostAcknowledgements?: number
+    /** Drops the refused-row list from the first answer whose write matches, after the commit. */
+    readonly dropRefusalListOnce?: (sent: readonly NormalizedTrackingPosition[]) => boolean
+  } = {},
 ) {
   let conflicts = 0
   let lost = options.lostAcknowledgements ?? 0
+  let listDropped = false
+  const sentIds: string[] = []
   const writes: Promise<unknown>[] = []
+  const participationFromMs = (): number => typeof options.participationFromMs === 'function'
+    ? options.participationFromMs()
+    : options.participationFromMs ?? Number.NEGATIVE_INFINITY
   const persistHistoryChunk = async (
     input: TrackingHistoryChunkPersistenceInput,
   ): Promise<TrackingHistoryChunkPersistenceResult> => {
     const scoped = input.positions.filter((position) =>
       position.timestamp_source === 'fix' && position.fix_time_unverified !== true &&
-      Date.parse(position.timestamp) >= (options.participationFromMs ?? Number.NEGATIVE_INFINITY))
+      Date.parse(position.timestamp) >= participationFromMs())
+    sentIds.push(...scoped.map((position) => `${position.id}@${position.lat}`))
     const write = realStore.persistTrackingPositionsBulk({
       mission_id: missionId,
       positions: scoped.map((position) => ({
@@ -202,13 +213,22 @@ function persistHistoryLikeRuntime(
       lost -= 1
       throw new Error('acknowledgement lost')
     }
+    let answer: unknown = acknowledgement
+    if (!listDropped && options.dropRefusalListOnce?.(scoped) === true) {
+      listDropped = true
+      answer = Object.fromEntries(Object.entries(acknowledgement)
+        .filter(([key]) => key !== 'refusedSourceIdentityConflicts'))
+    }
+    const refused = readRefusedSourcePositions(answer, scoped)
     return {
       changed: acknowledgement.changedPositionCount > 0,
-      refusedPositions: readRefusedSourcePositions(acknowledgement, scoped),
+      keptPositions: scoped.filter((position) => !refused.includes(position)),
     }
   }
   return {
     persistHistoryChunk,
+    /** Every observation sent to the store, as `id@lat`. */
+    sentIds: () => [...sentIds],
     conflicts: async () => {
       await Promise.allSettled(writes)
       return conflicts
@@ -264,6 +284,8 @@ function startPoller(
     ) => Promise<TrackingHistoryChunkPersistenceResult>
     readonly missionKey?: () => string
     readonly devices?: readonly NormalizedTrackingDevice[]
+    readonly historyAntiEntropyIntervalMs?: number
+    readonly onTrailStoreAgreementChange?: (awaiting: boolean) => void
   } = {},
 ) {
   let request = 0
@@ -297,6 +319,12 @@ function startPoller(
     ...(options.persistHistoryChunk === undefined
       ? {}
       : { persistHistoryChunk: options.persistHistoryChunk }),
+    ...(options.historyAntiEntropyIntervalMs === undefined
+      ? {}
+      : { historyAntiEntropyIntervalMs: options.historyAntiEntropyIntervalMs }),
+    ...(options.onTrailStoreAgreementChange === undefined
+      ? {}
+      : { onTrailStoreAgreementChange: options.onTrailStoreAgreementChange }),
     onSnapshot: (snapshot) => {
       snapshots.push(snapshot)
       return options.onSnapshot?.(snapshot)
@@ -696,5 +724,97 @@ describe('[DON-338] round 9: the live line obeys the store\'s named refusals, no
 
     expect(after.positions).toContain(corrected)
     expect(after.metadata.totalObserved).toBe(compacted.metadata.totalObserved)
+  })
+})
+
+/** The store's rows for every device, as the canonical reload reads them. */
+function canonicalFromStore(realStore: RealStore, missionId: string): () => Promise<CanonicalBreadcrumbSeed> {
+  return async () => {
+    const rows = await realStore.listPositions(missionId)
+    const positions = rows
+      .map((row) => fix(row.source_position_id ?? '', row.timestamp, row.lat, row.lon, row.device_id))
+      .sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp))
+    const totalObservedByDevice: Record<string, number> = {}
+    for (const position of positions) {
+      totalObservedByDevice[position.device_id] = (totalObservedByDevice[position.device_id] ?? 0) + 1
+    }
+    return { positions, totalObservedByDevice, selectionMetadataByDevice: {} }
+  }
+}
+
+describe('[DON-338] round 10: the live line agrees with the store after an unconfirmed write, and holds only what was sent and kept', () => {
+  it('MAJOR 1: a late fix committed under a lost refusal list is drawn once a later sweep finds it duplicate, and agreement is awaited until it is', async () => {
+    const { realStore, missionId } = await openRealStore()
+    // A late upload: Traccar serves this fix only after initial catch-up, and
+    // it is older than the live window, so only the re-check sweep fetches it.
+    const late = fix('late', new Date(NOW_MS - 40 * 60_000 + 45_000).toISOString(), 52.05)
+    const provider = { uploaded: false }
+    const persistence = persistHistoryLikeRuntime(realStore, missionId, {
+      dropRefusalListOnce: (sent) => sent.some((position) => position.id === 'late'),
+    })
+    const agreement: { readonly awaiting: boolean; readonly lateDrawn: boolean }[] = []
+    const started: ReturnType<typeof startPoller> = startPoller(
+      { responses: [], respond: () => provider.uploaded ? [late, FIX_18] : [FIX_18] },
+      {
+        persistHistoryChunk: persistence.persistHistoryChunk,
+        getCanonicalBreadcrumbs: canonicalFromStore(realStore, missionId),
+        historyAntiEntropyIntervalMs: 60_000,
+        onTrailStoreAgreementChange: (awaiting) => {
+          // Read when the poller reports, after startPoller has returned.
+          const latest = started.snapshots.at(-1)
+          agreement.push({ awaiting, lateDrawn: latest?.breadcrumbs.some((position) => position.id === 'late') ?? false })
+        },
+      },
+    )
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(started.historyRequests()).toBeGreaterThanOrEqual(2)
+    })
+    provider.uploaded = true
+    // The sweep that commits the late fix loses the refused-row list; three
+    // more sweeps then find it a duplicate (changed: false).
+    for (let sweep = 0; sweep < 4; sweep += 1) await vi.advanceTimersByTimeAsync(60_000)
+    await vi.advanceTimersByTimeAsync(5_000)
+    await started.poller.stop()
+
+    expect((await realStore.listPositions(missionId)).map((row) => row.source_position_id)).toContain('late')
+    expect(started.snapshots.at(-1)!.breadcrumbs.map((position) => position.id)).toContain('late')
+    expect(agreement.at(0)).toEqual({ awaiting: true, lateDrawn: false })
+    expect(agreement.at(-1)).toEqual({ awaiting: false, lateDrawn: true })
+  })
+
+  it('MAJOR 2: an observation withheld from the write by the participation scope is never held for the line or the restart cache, even after the scope widens', async () => {
+    const { realStore, missionId } = await openRealStore()
+    const participationStart = { ms: NOW_MS - 30 * 60_000 }
+    // The current-position poll saved id 17 at 52.2 inside the scope.
+    const savedCurrent17 = fix('17', new Date(participationStart.ms + 30_000).toISOString(), 52.2)
+    await persistLikeRuntime(realStore, missionId, [savedCurrent17])
+    // History returns id 17 at 52.1, before participation began.
+    const outOfScope17 = fix('17', new Date(participationStart.ms - 30_000).toISOString(), 52.1)
+    const persistence = persistHistoryLikeRuntime(realStore, missionId, {
+      participationFromMs: () => participationStart.ms,
+    })
+    const started = startPoller(
+      { responses: [[outOfScope17, FIX_18]] },
+      { persistHistoryChunk: persistence.persistHistoryChunk },
+    )
+    await vi.waitFor(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(started.historyRequests()).toBeGreaterThanOrEqual(2)
+    })
+    expect(persistence.sentIds()).not.toContain('17@52.1')
+    // The participant is re-added with history from mission start.
+    participationStart.ms = NOW_MS - 60 * 60_000
+    await pollUntil(started, started.historyRequests() + 2)
+
+    for (const snapshot of started.snapshots) {
+      expect(snapshot.breadcrumbs.filter((position) => position.lat === 52.1)).toEqual([])
+      const restored = await roundTripCache(snapshot)
+      expect(restored.breadcrumbs.filter((position) => position.lat === 52.1)).toEqual([])
+    }
+    // The store kept its first row for id 17.
+    expect((await realStore.listPositions(missionId)).filter((row) => row.source_position_id === '17')
+      .map((row) => row.lat)).toEqual([52.2])
+    expect(started.snapshots.at(-1)!.breadcrumbs).toContainEqual(FIX_18)
   })
 })

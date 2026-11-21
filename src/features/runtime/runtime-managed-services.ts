@@ -89,7 +89,7 @@ type CreateManagedRuntimeServicesDependencies = {
         ) => Promise<import('../tracking/polling-manager').TrackingHistoryChunkPersistenceResult>
         readonly persistHistoryChunks?: (
           inputs: readonly import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput[],
-        ) => Promise<import('../tracking/polling-manager').TrackingHistoryRefusals | void>
+        ) => Promise<import('../tracking/polling-manager').TrackingHistoryStoreAnswer>
         readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
       },
     ) => {
@@ -177,7 +177,7 @@ type CreateManagedRuntimeServicesDependencies = {
       ) => Promise<import('../tracking/polling-manager').TrackingHistoryChunkPersistenceResult>
       readonly persistHistoryChunks?: (
         inputs: readonly import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput[],
-      ) => Promise<import('../tracking/polling-manager').TrackingHistoryRefusals | void>
+      ) => Promise<import('../tracking/polling-manager').TrackingHistoryStoreAnswer>
       readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
     },
   ) => {

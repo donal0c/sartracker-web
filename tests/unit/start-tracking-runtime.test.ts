@@ -13,6 +13,7 @@ import {
 } from '../../src/features/tracking/start-tracking-runtime'
 import type {
   TrackingHistoryChunkPersistenceInput,
+  TrackingHistoryChunkPersistenceResult,
   TrackingHistoryRequestInput,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
@@ -322,7 +323,7 @@ describe('startTrackingRuntime', () => {
       await timeoutExpectation
 
       scopeStatus = 'ready'
-      await expect(hooks.persistHistoryChunk(input)).resolves.toEqual({ changed: false, refusedPositions: [] })
+      await expect(hooks.persistHistoryChunk(input)).resolves.toEqual({ changed: false, keptPositions: [] })
       expect(persistTrackingHistoryBatch).toHaveBeenCalledOnce()
       expect(recordMissionEvidenceLoss).toHaveBeenCalledOnce()
       await stop()
@@ -4268,7 +4269,7 @@ describe('startTrackingRuntime', () => {
       | {
           persistHistoryChunk: (
             input: TrackingHistoryChunkPersistenceInput,
-          ) => Promise<{ readonly changed: boolean }>
+          ) => Promise<TrackingHistoryChunkPersistenceResult>
         }
       | undefined
     const persistTrackingPositionsBulk = vi.fn().mockResolvedValue({
@@ -4320,8 +4321,14 @@ describe('startTrackingRuntime', () => {
       reconciledUntil: '2026-04-06T12:00:00.000Z',
       positions: historyPositions,
     } as const
-    await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'initial' })
-    await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'anti_entropy' })
+    const initial = await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'initial' })
+    const antiEntropy = await pollerHooks?.persistHistoryChunk({ ...baseInput, phase: 'anti_entropy' })
+    // Only the observation sent and kept may be held for the live trail; the
+    // two outside the participation window were never sent [DON-338 round 10].
+    expect(initial?.keptPositions).toEqual([historyPositions[1]])
+    expect(initial?.keptPositions[0]).toBe(historyPositions[1])
+    expect(antiEntropy?.keptPositions[0]).toBe(historyPositions[1])
+    expect(antiEntropy?.keptPositions).toHaveLength(1)
 
     expect(persistTrackingPositionsBulk).toHaveBeenNthCalledWith(1, {
       mission_id: 'mission-1',
@@ -4377,7 +4384,7 @@ describe('startTrackingRuntime', () => {
       historyFrom: '2026-04-06T00:00:00.000Z',
       reconciledUntil: '2026-04-06T02:00:00.000Z',
       positions: [],
-    })).resolves.toEqual({ changed: false, refusedPositions: [] })
+    })).resolves.toEqual({ changed: false, keptPositions: [] })
 
     expect(persistTrackingHistoryBatch).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -4436,7 +4443,7 @@ describe('startTrackingRuntime', () => {
       historyFrom: '2026-04-06T00:00:00.000Z',
       reconciledUntil: '2026-04-06T02:00:00.000Z',
       positions: [position],
-    })).resolves.toEqual({ changed: true, refusedPositions: [] })
+    })).resolves.toEqual({ changed: true, keptPositions: [position] })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
       mission_id: 'mission-1',
@@ -4504,7 +4511,7 @@ describe('startTrackingRuntime', () => {
     ]
 
     expect(pollerHooks?.persistHistoryChunks).toBeTypeOf('function')
-    await expect(pollerHooks?.persistHistoryChunks?.(inputs)).resolves.toEqual({ refusedPositions: [] })
+    await expect(pollerHooks?.persistHistoryChunks?.(inputs)).resolves.toEqual({ keptPositions: [position] })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
     expect(persistTrackingPositionsBulk).toHaveBeenCalledWith({
@@ -4780,7 +4787,7 @@ describe('startTrackingRuntime', () => {
       historyFrom: '2026-04-06T00:00:00.000Z',
       reconciledUntil: '2026-04-06T02:00:00.000Z',
       positions: [position],
-    })).resolves.toEqual({ changed: true, refusedPositions: [] })
+    })).resolves.toEqual({ changed: true, keptPositions: [position] })
 
     expect(persistTrackingPositionsBulk).toHaveBeenCalledOnce()
     expect(addPosition).not.toHaveBeenCalled()

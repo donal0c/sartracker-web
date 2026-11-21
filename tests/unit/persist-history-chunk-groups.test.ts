@@ -74,7 +74,7 @@ describe('persistHistoryChunkGroups', () => {
       [[inputs[0]]], ...pieces.map((piece) => [[piece]]), [inputs.slice(2)],
     ])
     expect(onAcknowledged.mock.calls).toEqual([
-      [inputs[0], 0, null, []], [inputs[1], 1, { changed: false, refusedPositions: [] }, []], [inputs[2], 2, null, []], [inputs[3], 3, null, []],
+      [inputs[0], 0, null, []], [inputs[1], 1, { changed: false, keptPositions: [] }, []], [inputs[2], 2, null, []], [inputs[3], 3, null, []],
     ])
     // A yield between the groups and between the pieces of the large chunk.
     expect(yieldBetweenGroups).toHaveBeenCalledTimes(4)
@@ -146,14 +146,14 @@ describe('persistHistoryChunkGroups', () => {
     expect(onAcknowledged).toHaveBeenCalledExactlyOnceWith(inputs[0], 0, null, [])
   })
 
-  it('passes the observations the store refused in a group to every chunk of that group [DON-338]', async () => {
+  it('passes the observations the store kept in a group to every chunk of that group [DON-338]', async () => {
     const inputs = [chunk('a', 2), chunk('b', 2)]
-    const refused = [inputs[1]!.positions[0]!]
-    const persistGroup = vi.fn().mockResolvedValue({ refusedPositions: refused })
+    const kept = [inputs[0]!.positions[1]!, inputs[1]!.positions[0]!]
+    const persistGroup = vi.fn().mockResolvedValue({ keptPositions: kept })
     const onAcknowledged = vi.fn()
     await persistHistoryChunkGroups({ inputs, persistGroup, onAcknowledged, yieldBetweenGroups: async () => undefined })
-    expect(onAcknowledged.mock.calls).toEqual([[inputs[0], 0, null, refused], [inputs[1], 1, null, refused]])
-    expect(onAcknowledged.mock.calls[1]![3][0]).toBe(inputs[1]!.positions[0])
+    expect(onAcknowledged.mock.calls).toEqual([[inputs[0], 0, null, kept], [inputs[1], 1, null, kept]])
+    expect(onAcknowledged.mock.calls[1]![3][1]).toBe(inputs[1]!.positions[0])
   })
 
   it('does not repeat durable writes when acknowledgement publication throws', async () => {

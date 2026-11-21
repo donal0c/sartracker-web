@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   HISTORY_PIECE_ROW_BUDGET,
-  historyFailureChangedStore,
   persistHistoryChunkInPieces,
   splitHistoryChunk,
 } from '../../src/features/tracking/split-history-chunk'
@@ -89,35 +88,34 @@ describe('history chunks split into bounded pieces [DON-313]', () => {
     const yieldBetweenPieces = vi.fn().mockResolvedValue(undefined)
 
     await expect(persistHistoryChunkInPieces(chunk, persistPiece, yieldBetweenPieces))
-      .resolves.toEqual({ changed: true, refusedPositions: [] })
+      .resolves.toEqual({ changed: true, keptPositions: [] })
     expect(persistPiece).toHaveBeenCalledTimes(3)
     expect(yieldBetweenPieces).toHaveBeenCalledTimes(2)
   })
 
-  it('collects every observation the store refused across the pieces [DON-338]', async () => {
+  it('collects every observation the store kept across the pieces [DON-338]', async () => {
     const chunk = oneHertzChunk(600)
     const pieces = splitHistoryChunk(chunk)
     const persistPiece = vi.fn(async (piece: (typeof pieces)[number]) => ({
       changed: false,
-      refusedPositions: [piece.positions[0]!],
+      keptPositions: [piece.positions[0]!],
     }))
 
     const result = await persistHistoryChunkInPieces(chunk, persistPiece, async () => undefined)
 
-    expect(result.refusedPositions).toEqual(pieces.map((piece) => piece.positions[0]))
-    expect(result.refusedPositions?.[1]).toBe(pieces[1]!.positions[0])
+    expect(result.keptPositions).toEqual(pieces.map((piece) => piece.positions[0]))
+    expect(result.keptPositions[1]).toBe(pieces[1]!.positions[0])
   })
 
-  it('marks a failure that follows a stored change, so the trail is still refreshed', async () => {
+  it('rejects with the failed piece\'s own error after earlier pieces stored fixes', async () => {
+    // Round 10: the poller now re-reads the store after every unconfirmed
+    // write, so a failure no longer needs marking as "changed the store".
     const chunk = oneHertzChunk(600)
     const failure = new Error('disk unavailable')
     const persistPiece = vi.fn().mockResolvedValueOnce({ changed: true }).mockRejectedValueOnce(failure)
 
-    const outcome = persistHistoryChunkInPieces(chunk, persistPiece, async () => undefined)
-
-    await expect(outcome).rejects.toBe(failure)
-    expect(historyFailureChangedStore(failure)).toBe(true)
-    expect(historyFailureChangedStore(new Error('unrelated'))).toBe(false)
+    await expect(persistHistoryChunkInPieces(chunk, persistPiece, async () => undefined)).rejects.toBe(failure)
+    expect(persistPiece).toHaveBeenCalledTimes(2)
   })
 
   it('keeps an oversized group of fixes sharing one instant together, so no cursor overclaims', () => {
