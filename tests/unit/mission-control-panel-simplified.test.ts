@@ -116,6 +116,18 @@ describe('MissionControlPanel in the simplified workspace', () => {
     expect(onAttentionChange).toHaveBeenLastCalledWith(true)
   })
 
+  it('shows a finished mission\'s archive and unlock controls unfolded, as the old screen did', async () => {
+    mocks.model = createModel({
+      phase: 'idle', currentMission: null, canStart: true,
+      governanceMission: createMission({ status: 'finished' } as Partial<Mission>),
+    })
+    await renderPanel()
+    const card = document.querySelector('[data-testid="start-screen-finished-mission"]')
+    expect(card?.textContent).toContain('Last finished mission: archive and unlock')
+    expect(card?.closest('details')).toBeNull()
+    expect(document.querySelector('[data-testid="mission-governance-card"]')?.closest('details')).toBeNull()
+  })
+
   it('cannot start a new mission while Resume is still in progress', async () => {
     let finishResume: () => void = () => {}
     const resumeRecoverable = vi.fn(() => new Promise<void>((resolve) => { finishResume = resolve }))

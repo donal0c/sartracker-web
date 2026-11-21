@@ -5,6 +5,7 @@ import { persistFullMap, readStoredFullMap } from '../../features/workspace/full
 import { panelOpenByDefault, panelSide, type PanelArrangement } from '../../features/workspace/panel-arrangement'
 import { useTrackingHeadline } from '../../features/workspace/tracking-headline'
 import { useMissionStore } from '../../features/mission/mission-store'
+import { selectWorkspaceHideBlockedReason } from '../../features/mission/workspace-hide-blocked-reason'
 import { CoverageAttentionIndicator } from '../coverage-attention-indicator'
 import { DeferredGpxImportPanel } from '../deferred-gpx-import-panel'
 import { HelicopterPanel } from '../helicopter-panel'
@@ -34,6 +35,7 @@ export function useWorkspacePanels(input: {
   const { arrangement, decisionOpen, actionError } = input
   const side = panelSide(arrangement)
   const phase = useMissionStore((state) => state.phase)
+  const governanceMission = useMissionStore((state) => state.governanceMission)
   const headline = useTrackingHeadline()
   const people = usePeopleRows()
   const attentionCount = countPeopleNeedingAttention(people)
@@ -61,6 +63,12 @@ export function useWorkspacePanels(input: {
 
   // A decision or failed action always forces Mission back into view.
   const missionForced = decisionOpen || actionError !== null
+  // Before Start the card is Mission itself. As on the old screen, it cannot be
+  // closed while a mission waits to be resumed or a finished mission's archive
+  // controls are showing (selectWorkspaceHideBlockedReason).
+  const setupHideBlockedReason = isSetup
+    ? selectWorkspaceHideBlockedReason({ decisionOpen, actionError, phase, governanceMission })
+    : null
   // A warning in Mission opens it once and stays on the Mission button until it
   // clears, but never locks the operator out of Tracking (Reconnect) or the map.
   const [missionAttention, setMissionAttention] = useState(false)
@@ -73,7 +81,7 @@ export function useWorkspacePanels(input: {
   const visible: BasePanel | TemporaryPanel | null = !running
     ? (temporary === 'tracking' ? 'tracking' : null)
     : missionForced ? 'mission' : temporary ?? base
-  const missionVisible = isSetup ? setupCardOpen || missionForced : visible === 'mission'
+  const missionVisible = isSetup ? setupCardOpen || setupHideBlockedReason !== null : visible === 'mission'
   const openMission = useCallback(() => setTemporary('mission'), [])
   const showBase = (panel: BasePanel) => {
     setTemporary(null)
@@ -112,7 +120,7 @@ export function useWorkspacePanels(input: {
         missionOpen={missionVisible}
         onOpenTracking={() => setTemporary('tracking')}
         onToggleMission={() => {
-          if (isSetup) setSetupCardOpen(!setupCardOpen)
+          if (isSetup) setSetupCardOpen(setupHideBlockedReason !== null || !setupCardOpen)
           else setTemporary(temporary === 'mission' ? null : 'mission')
         }}
         panelButtons={panelButtons}
@@ -155,7 +163,8 @@ export function useWorkspacePanels(input: {
         <button
           className="ws-close ws-mission-close"
           data-testid="ws-mission-close"
-          disabled={missionForced}
+          disabled={isSetup ? setupHideBlockedReason !== null : missionForced}
+          title={(isSetup ? setupHideBlockedReason : null) ?? undefined}
           onClick={() => { if (isSetup) setSetupCardOpen(false); else setTemporary(null) }}
           type="button"
         >

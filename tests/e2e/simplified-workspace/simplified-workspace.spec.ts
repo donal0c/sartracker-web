@@ -341,6 +341,42 @@ test.describe('Start screen', () => {
     await expect(page.getByTestId('ws-people-panel')).toBeVisible()
   })
 
+  test('the unfinished-mission card cannot be closed while it waits to be resumed', async ({ page }) => {
+    await open(page)
+    await page.getByTestId('mission-name-input').fill('Exercise Echo')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+
+    await open(page)
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await expect(page.getByTestId('ws-mission-close')).toBeDisabled()
+    await expect(page.getByTestId('ws-mission-close')).toHaveAttribute('title', /must remain visible/)
+    await page.getByTestId('ws-mission-button').click()
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+  })
+
+  test('after Finish, the archive controls for that mission cannot be closed', async ({ page }) => {
+    await open(page)
+    await page.getByTestId('mission-name-input').fill('Exercise Foxtrot')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+
+    await expect(page.getByTestId('mission-governance-card')).toBeVisible()
+    await expect(page.getByTestId('ws-mission-close')).toBeDisabled()
+    await page.getByTestId('ws-mission-button').click()
+    await expect(page.getByTestId('mission-governance-card')).toBeVisible()
+  })
+
+  test('before any mission, the start card can still be closed for a clear map', async ({ page }) => {
+    await open(page)
+    await expect(page.getByTestId('mission-name-input')).toBeVisible()
+    await page.getByTestId('ws-mission-close').click()
+    await expect(page.getByTestId('ws-mission-host')).toBeHidden()
+  })
+
   test('starting new instead of resuming asks first, then keeps the old record', async ({ page }) => {
     await open(page)
     await page.getByTestId('mission-name-input').fill('Exercise Charlie')

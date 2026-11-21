@@ -744,25 +744,19 @@ function MissionActionError({ message }: { readonly message: string }) {
 const PARTICIPANT_PROGRESS_REASONS: ReadonlySet<string> = new Set(['history still loading', 'no participants selected'])
 
 /**
- * Simplified start screen: the last finished mission's archive and unlock card
- * is folded under one line. When the archive needs recovery it is never folded,
- * so the warning cannot be collapsed out of sight.
+ * The last finished mission's archive and unlock controls on the start screen.
+ * They are never folded away: the old screen showed them in full until the
+ * mission was archived, and the card cannot be closed while they show (DON-341).
  */
 function FinishedMissionFold(props: { readonly fold: boolean; readonly needsReview: boolean; readonly children: ReactNode }) {
   if (!props.fold) return <>{props.children}</>
-  if (props.needsReview) {
-    return (
-      <div className="text-[13px]" data-testid="start-screen-finished-mission">
-        <p className="py-1 font-semibold text-amber-300">Last finished mission needs recovery</p>
-        <div className="mt-2">{props.children}</div>
-      </div>
-    )
-  }
   return (
-    <details className="text-[13px]" data-testid="start-screen-finished-mission">
-      <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">Last finished mission: archive and unlock</summary>
+    <div className="text-[13px]" data-testid="start-screen-finished-mission">
+      <p className={`py-1 font-semibold ${props.needsReview ? 'text-amber-300' : 'text-stone-200'}`}>
+        {props.needsReview ? 'Last finished mission needs recovery' : 'Last finished mission: archive and unlock'}
+      </p>
       <div className="mt-2">{props.children}</div>
-    </details>
+    </div>
   )
 }
 
