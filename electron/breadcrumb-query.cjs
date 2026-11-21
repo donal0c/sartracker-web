@@ -13,6 +13,8 @@ const MAX_SELECTOR_ITERATIONS = 2_048
 // The live line's break rule: src/features/tracking/breadcrumb-accumulator.ts
 // BREADCRUMB_LINE_GAP_THRESHOLD_MS. A unit test keeps the two equal.
 const BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
+// A spatial cell this wide holds every valid coordinate in one cell.
+const WHOLE_GLOBE_BUCKET_WIDTH_DEGREES = 360
 const SQLITE_ROW_ID_PARAMETER_CHUNK = 500
 const ROW_ID_INDEX = 0
 const SOURCE_POSITION_ID_INDEX = 1
@@ -187,6 +189,12 @@ function retainCompactPositionRowsAcrossWindow(
         spatialBucketWidthDegrees,
       }
     }
+    if (
+      bucketWidthMs >= fullWindowMs &&
+      spatialBucketWidthDegrees >= WHOLE_GLOBE_BUCKET_WIDTH_DEGREES
+    ) {
+      break
+    }
     if (bucketWidthMs < fullWindowMs) {
       bucketWidthMs *= 2
     } else {
@@ -194,10 +202,18 @@ function retainCompactPositionRowsAcrossWindow(
     }
   }
 
+  // No grid fits the budget: the points that keep the line truthful (first,
+  // last, both sides of every real silence, continuity anchors) number more
+  // than the cap. Keep every one and exceed the cap rather than drop any;
+  // sampling them would invent breaks or merge real silences [DON-338].
+  // Mirrors the live accumulator.
   return {
-    rowIds: retainUniformlyAcrossWindow(chronological, maxPositions).map(
-      (position) => position[ROW_ID_INDEX],
-    ),
+    rowIds: [...collectCompactCandidateRowIds(
+      chronological,
+      deviceId,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ).values()],
     geometryErrorBoundMetres: null,
     timeBucketWidthMs: null,
     spatialBucketWidthDegrees: null,
@@ -332,18 +348,6 @@ function createCompactSpatiotemporalBucketKey(
     (position[LONGITUDE_INDEX] + 180) / spatialBucketWidthDegrees,
   )
   return `${timeBucket}:${latitudeBucket}:${longitudeBucket}`
-}
-
-function retainUniformlyAcrossWindow(chronological, maxPositions) {
-  if (chronological.length <= maxPositions) {
-    return chronological
-  }
-  return Array.from({ length: maxPositions }, (_, index) => {
-    const sourceIndex = Math.round(
-      (index * (chronological.length - 1)) / (maxPositions - 1),
-    )
-    return chronological[sourceIndex]
-  })
 }
 
 function fetchPositionRowsByRowId(db, missionId, rowIds) {

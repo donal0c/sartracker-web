@@ -2,7 +2,10 @@ import { createRequire } from 'node:module'
 
 import { describe, expect, it } from 'vitest'
 
-import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import {
+  createBreadcrumbAccumulator,
+  createBreadcrumbSegments,
+} from '../../src/features/tracking/breadcrumb-accumulator'
 import {
   createBreadcrumbFeatureCollection,
   DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
@@ -214,6 +217,49 @@ describe('[DON-338] LIV-4 live trail line continuity under thinning', () => {
       expect(retained[0]?.timestamp).toBe(positions[0]!.timestamp)
       expect(retained.at(-1)?.timestamp).toBe(positions.at(-1)!.timestamp)
       expect(countDrawnSegments(retained)).toBe(1)
+    }
+  })
+
+  // Review blocker: when the mandatory points alone (first, last, both sides of
+  // every real silence, and the continuity anchors) exceed 5,000, the old
+  // fallback sampled uniformly and dropped some of them, inventing breaks and
+  // merging real silences. Mandatory points must all be kept.
+  it('keeps every fix of a 5,001-fix trail reported every 20 minutes, as one line', () => {
+    const fixes: RouteFix[] = Array.from({ length: 5_001 }, (_, index) => ({
+      timestampMs: START_MS + index * 20 * 60 * 1000,
+      lat: 54 + (index % 50) * 1e-3,
+      lon: -6 + Math.floor(index / 50) * 1e-3,
+    }))
+    const positions = fixes.map(toPosition)
+    expect(countSourceGaps(fixes)).toBe(0)
+
+    for (const retained of [
+      accumulateLive(positions).positions,
+      createBreadcrumbAccumulator(positions).snapshot().positions,
+      selectPersisted(fixes),
+    ]) {
+      expect(retained).toHaveLength(5_001)
+      expect(countDrawnSegments(retained)).toBe(1)
+    }
+  })
+
+  it('keeps every one of more than 5,000 separate trail pieces', () => {
+    // 5,200 lone fixes, each 31 minutes after the last: 5,200 real pieces.
+    const fixes: RouteFix[] = Array.from({ length: 5_200 }, (_, index) => ({
+      timestampMs: START_MS + index * 31 * 60 * 1000,
+      lat: 54 + (index % 50) * 1e-3,
+      lon: -6 + Math.floor(index / 50) * 1e-3,
+    }))
+    const positions = fixes.map(toPosition)
+    expect(countSourceGaps(fixes)).toBe(5_199)
+
+    for (const retained of [
+      accumulateLive(positions).positions,
+      createBreadcrumbAccumulator(positions).snapshot().positions,
+      selectPersisted(fixes),
+    ]) {
+      expect(retained).toHaveLength(5_200)
+      expect(createBreadcrumbSegments(retained, DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS)).toHaveLength(5_200)
     }
   })
 })

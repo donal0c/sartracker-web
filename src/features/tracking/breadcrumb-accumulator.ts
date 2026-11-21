@@ -31,6 +31,8 @@ const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
   Math.SQRT2 /
   METRES_PER_DEGREE_AT_EQUATOR
 const MAX_SELECTOR_ITERATIONS = 2_048
+// A spatial cell this wide holds every valid coordinate in one cell.
+const WHOLE_GLOBE_BUCKET_WIDTH_DEGREES = 360
 const parsedTimestampByPosition = new WeakMap<NormalizedTrackingPosition, number>()
 
 export { createTrailSegments as createBreadcrumbSegments } from './trail-segmentation'
@@ -745,6 +747,12 @@ function retainDeviceTrailAcrossWindow(
       }
     }
 
+    if (
+      bucketWidthMs >= fullWindowMs &&
+      spatialBucketWidthDegrees >= WHOLE_GLOBE_BUCKET_WIDTH_DEGREES
+    ) {
+      break
+    }
     if (bucketWidthMs < fullWindowMs) {
       bucketWidthMs *= 2
     } else {
@@ -752,8 +760,17 @@ function retainDeviceTrailAcrossWindow(
     }
   }
 
+  // No grid fits the budget: the points that keep the line truthful (first,
+  // last, both sides of every real silence, continuity anchors) number more
+  // than the cap. Keep every one of them and exceed the cap rather than drop
+  // any; sampling them would invent breaks or merge real silences [DON-338].
+  // The null bound marks the trail as simplified without a geometry promise.
   return {
-    positions: retainUniformlyAcrossWindow(chronological, maxPositions),
+    positions: selectSpatiotemporalRunBoundaries(
+      chronological,
+      Number.POSITIVE_INFINITY,
+      Number.POSITIVE_INFINITY,
+    ),
     geometryErrorBoundMetres: null,
     timeBucketWidthMs: null,
     spatialBucketWidthDegrees: null,
@@ -833,22 +850,6 @@ function selectSpatiotemporalRunBoundaries(
   }
   if (runLast !== null) retain(runLast)
   return retained
-}
-
-/** Returns a deterministic endpoint-preserving finite fallback. */
-function retainUniformlyAcrossWindow(
-  chronological: readonly TimestampedPosition[],
-  maxPositions: number,
-): readonly TimestampedPosition[] {
-  if (chronological.length <= maxPositions) {
-    return chronological
-  }
-  return Array.from({ length: maxPositions }, (_, index) => {
-    const sourceIndex = Math.round(
-      (index * (chronological.length - 1)) / (maxPositions - 1),
-    )
-    return chronological[sourceIndex]!
-  })
 }
 
 /** Combines a persisted canonical bound with any newer live simplification. */
