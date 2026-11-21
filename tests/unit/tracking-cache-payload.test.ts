@@ -18,40 +18,46 @@ describe('tracking cache payload', () => {
       cached_at: '2026-04-06T10:34:00.000Z', devices: [], positions: [], breadcrumbs: [],
     })).toThrow(/mission_id/)
   })
-  it('shares the global breadcrumb cache budget with cooperative bounded work [DON-252]', async () => {
+  it('shares the global breadcrumb cache budget with cooperative bounded work [DON-252] [DON-338]', async () => {
     const basePosition = normalizeTraccarPosition(positionsFixture[0], 'live')
-    const shortTrail = Array.from({ length: 100 }, (_, index) => ({
+    const startMs = Date.parse('2026-04-06T08:00:00.000Z')
+    const moving = (deviceId: string, prefix: string, index: number) => ({
       ...basePosition,
-      id: `short-${index}`,
-      device_id: 'short-device',
-    }))
-    const longTrail = Array.from({ length: 5_000 }, (_, index) => ({
-      ...basePosition,
-      id: `long-${index}`,
-      device_id: 'long-device',
-    }))
+      id: `${prefix}-${index}`,
+      device_id: deviceId,
+      lat: 53 + index * 0.001,
+      lon: -6,
+      timestamp: new Date(startMs + index * 3_000).toISOString(),
+    })
+    const shortTrail = Array.from({ length: 100 }, (_, index) => moving('short-device', 'short', index))
+    const longTrail = Array.from({ length: 5_000 }, (_, index) => moving('long-device', 'long', index))
 
     const yieldControl = vi.fn().mockResolvedValue(undefined)
-    const retained = await limitTrackingCacheBreadcrumbs(
+    const { breadcrumbs: retained, metadata } = await limitTrackingCacheBreadcrumbs(
       [...shortTrail, ...longTrail],
       { yieldControl },
     )
 
     expect(yieldControl).toHaveBeenCalled()
-    expect(retained).toHaveLength(5_000)
+    expect(retained.length).toBeLessThanOrEqual(5_000)
     expect(retained.filter(({ device_id }) => device_id === 'short-device'))
       .toHaveLength(100)
-    expect(retained.filter(({ device_id }) => device_id === 'long-device'))
-      .toHaveLength(4_900)
+    const longRetained = retained.filter(({ device_id }) => device_id === 'long-device').length
+    expect(longRetained).toBeLessThanOrEqual(4_900)
+    expect(longRetained).toBeGreaterThan(1_000)
     expect(retained.map(({ id }) => id)).toEqual(expect.arrayContaining([
       'short-0',
       'short-99',
       'long-0',
       'long-4999',
     ]))
+    expect(metadata?.deviceBudgets.find((budget) => budget.deviceId === 'long-device'))
+      .toMatchObject({ truncated: true, total: 5_000, retained: longRetained })
+    expect(metadata?.deviceBudgets.find((budget) => budget.deviceId === 'short-device'))
+      .toMatchObject({ truncated: false, retained: 100 })
   })
 
-  it('yields through bookkeeping for more device trails than the cache can retain [DON-252]', async () => {
+  it('keeps every device trail rather than drop one when there are more trails than budget [DON-252] [DON-338]', async () => {
     const basePosition = normalizeTraccarPosition(positionsFixture[0], 'live')
     const breadcrumbs = Array.from({ length: 6_001 }, (_, index) => ({
       ...basePosition,
@@ -60,17 +66,17 @@ describe('tracking cache payload', () => {
     }))
     const yieldControl = vi.fn().mockResolvedValue(undefined)
 
-    const retained = await limitTrackingCacheBreadcrumbs(
+    const { breadcrumbs: retained } = await limitTrackingCacheBreadcrumbs(
       breadcrumbs,
       { yieldControl },
     )
 
-    expect(retained).toHaveLength(5_000)
+    // A device's first and last fix are mandatory, so the budget is exceeded.
+    expect(retained).toHaveLength(6_001)
     expect(retained[0]?.device_id).toBe('device-0')
-    expect(retained.at(-1)?.device_id).toBe('device-4999')
-    // All four potentially large passes must yield: count, allocation,
-    // retained-ordinal construction, and final selection.
-    expect(yieldControl.mock.calls.length).toBeGreaterThanOrEqual(19)
+    expect(retained.at(-1)?.device_id).toBe('device-6000')
+    // The large passes still yield: grouping, allocation, thinning, selection.
+    expect(yieldControl.mock.calls.length).toBeGreaterThanOrEqual(15)
   })
 
   it('serializes and parses a normalized tracking snapshot', () => {

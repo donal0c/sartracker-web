@@ -85,11 +85,14 @@ function listBreadcrumbPositionsFromReadSnapshot(db, missionId, perDeviceLimit) 
       total.device_id,
       perDeviceLimit,
     )
-    positions.push(...(
-      fallbackRowsByRowId.size > 0
-        ? selection.rowIds.map((rowId) => fallbackRowsByRowId.get(rowId))
-        : fetchPositionRowsByRowId(db, missionId, selection.rowIds)
-    ).filter(Boolean))
+    const selectedRows = fallbackRowsByRowId.size > 0
+      ? selection.rowIds.map((rowId) => fallbackRowsByRowId.get(rowId))
+      : fetchPositionRowsByRowId(db, missionId, selection.rowIds)
+    // A loop, not push(...rows): every mandatory point is kept, so the
+    // selection can exceed the engine's argument limit [DON-338].
+    for (const row of selectedRows) {
+      if (row) positions.push(row)
+    }
     deviceSelections.push({
       device_id: total.device_id,
       geometryErrorBoundMetres: selection.geometryErrorBoundMetres,

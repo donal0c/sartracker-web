@@ -120,7 +120,33 @@ export function describeHistoryGapsForOperator(
   retry: HistoryRetryState = 'retrying',
 ): string | null {
   if (gaps.length === 0) return null
-  const shown = gaps.slice(0, MAX_NAMED_GAP_RANGES)
+  const verb = gaps.length === 1 ? 'is' : 'are'
+  return `Breadcrumb history incomplete for ${nameRangesBounded(gaps, nowMs, timeZone)} could not be loaded from Traccar and ${verb} missing from the map; ${historyRetryClause(retry, 'still retrying')}.`
+}
+
+/** One device time range named to the operator. */
+type NamedDeviceRange = {
+  readonly deviceId: string
+  readonly deviceName: string
+  readonly from: string
+  readonly to: string
+}
+
+/**
+ * Names device time ranges in local clock time: at most three ranges,
+ * grouped by device, then a count of the rest (never dropped silently).
+ *
+ * @param ranges ranges ordered by device then time
+ * @param nowMs the current time
+ * @param timeZone IANA zone
+ * @returns e.g. "Alpha: 09:00–09:10, 10:05–10:35; Bravo: 11:00–11:20; and 2 more ranges"
+ */
+function nameRangesBounded(
+  ranges: readonly NamedDeviceRange[],
+  nowMs: number,
+  timeZone: string,
+): string {
+  const shown = ranges.slice(0, MAX_NAMED_GAP_RANGES)
   const pieces: { readonly deviceId: string; readonly name: string; readonly ranges: string[] }[] = []
   for (const entry of shown) {
     const range = formatOperatorClockRange(entry.from, entry.to, nowMs, timeZone)
@@ -131,13 +157,36 @@ export function describeHistoryGapsForOperator(
       pieces.push({ deviceId: entry.deviceId, name: entry.deviceName, ranges: [range] })
     }
   }
-  const remaining = gaps.length - shown.length
+  const remaining = ranges.length - shown.length
   const named = pieces.map((piece) => `${piece.name}: ${piece.ranges.join(', ')}`).join('; ')
   const more = remaining > 0
     ? `; and ${remaining} more ${remaining === 1 ? 'range' : 'ranges'}`
     : ''
-  const verb = gaps.length === 1 ? 'is' : 'are'
-  return `Breadcrumb history incomplete for ${named}${more} could not be loaded from Traccar and ${verb} missing from the map; ${historyRetryClause(retry, 'still retrying')}.`
+  return `${named}${more}`
+}
+
+/**
+ * Describes re-check ranges that are running behind: late-uploaded positions
+ * in them may not be on the map yet. Names at most three ranges [DON-338].
+ *
+ * @param backlog re-check ranges still to be re-read, ordered by device then time
+ * @param nowMs the current time
+ * @param timeZone IANA zone; defaults to the operator's
+ * @param retry whether the re-check is running or suspended with live tracking
+ * @returns the warning sentence, or null when nothing is behind
+ */
+export function describeRecheckBacklogForOperator(
+  backlog: readonly NamedDeviceRange[],
+  nowMs: number,
+  timeZone: string = resolveOperatorTimeZone(),
+  retry: HistoryRetryState = 'retrying',
+): string | null {
+  if (backlog.length === 0) return null
+  const times = backlog.length === 1 ? 'that time' : 'those times'
+  const continues = retry === 'retrying'
+    ? 'The re-check continues by itself.'
+    : 'The re-check continues when live tracking resumes.'
+  return `Breadcrumb history re-check is running behind for ${nameRangesBounded(backlog, nowMs, timeZone)}; late-uploaded positions from ${times} may not be on the map yet. ${continues}`
 }
 
 /**

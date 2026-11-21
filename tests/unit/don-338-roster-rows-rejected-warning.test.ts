@@ -200,5 +200,81 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
       expect(statuses.some((status) => status.publishedAtMs < pausedAtMs)).toBe(true)
       expect(statuses.filter((status) => status.publishedAtMs >= pausedAtMs && status.mode === 'online')).toEqual([])
     })
+
+    it('keeps a known missing-tracker warning while the next roster refresh is pending, active and paused', async () => {
+      // The first roster answers incomplete; the next never answers within the
+      // grace period. "Refreshing" must not erase what is already known.
+      let pollingMode: 'active' | 'paused' = 'active'
+      const getDevicesWithReport = vi.fn()
+        .mockResolvedValueOnce({ accepted: [DEVICES[0]!], complete: false, rejectedCount: 1 })
+        .mockReturnValue(new Promise(() => undefined))
+      const statuses: { readonly mode: string; readonly warning: string | null; readonly warningCodes?: readonly string[] }[] = []
+      const poller = createPollingManager({
+        authenticate: vi.fn().mockResolvedValue(undefined),
+        getDevices: vi.fn().mockResolvedValue(DEVICES),
+        getDevicesWithReport,
+        getCurrentPositions: vi.fn().mockResolvedValue(POSITIONS),
+        getBreadcrumbs: vi.fn().mockResolvedValue(BREADCRUMBS),
+      }, {
+        intervalMs: 5_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        getPollingMode: () => pollingMode,
+        getInitialBreadcrumbFrom: () => new Date('2026-04-04T10:00:00.000Z'),
+        onSnapshot: vi.fn(),
+        onStatusChange: (status: typeof statuses[number]) => { statuses.push(status) },
+        now: () => new Date('2026-04-06T10:35:00.000Z'),
+      })
+      poller.start()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+
+      // Second poll: the roster request is still pending after the grace period.
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(getDevicesWithReport).toHaveBeenCalledTimes(2)
+      const active = statuses.at(-1)
+      expect(active?.mode).toBe('online')
+      expect(active?.warning ?? '').toContain('refreshing device roster')
+      expect(active?.warning ?? '').toContain(ONE_UNREADABLE)
+
+      pollingMode = 'paused'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(1_000)
+      const paused = statuses.at(-1)
+      expect(paused?.mode).toBe('idle')
+      expect(paused?.warning ?? '').toBe(`Live refresh suspended while mission is paused. ${ONE_UNREADABLE}`)
+      await poller.stop()
+    })
+
+    it('clears the known missing-tracker warning only when a complete roster arrives', async () => {
+      const getDevicesWithReport = vi.fn()
+        .mockResolvedValueOnce({ accepted: [DEVICES[0]!], complete: false, rejectedCount: 1 })
+        .mockRejectedValueOnce(new Error('roster endpoint down'))
+        .mockResolvedValue({ accepted: DEVICES, complete: true, rejectedCount: 0 })
+      const statuses: { readonly warning: string | null }[] = []
+      const poller = createPollingManager({
+        authenticate: vi.fn().mockResolvedValue(undefined),
+        getDevices: vi.fn().mockResolvedValue(DEVICES),
+        getDevicesWithReport,
+        getCurrentPositions: vi.fn().mockResolvedValue(POSITIONS),
+        getBreadcrumbs: vi.fn().mockResolvedValue(BREADCRUMBS),
+      }, {
+        intervalMs: 5_000,
+        staleThresholdMs: 60 * 60 * 1000,
+        getInitialBreadcrumbFrom: () => new Date('2026-04-04T10:00:00.000Z'),
+        onSnapshot: vi.fn(),
+        onStatusChange: (status: typeof statuses[number]) => { statuses.push(status) },
+        now: () => new Date('2026-04-06T10:35:00.000Z'),
+      })
+      poller.start()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+      // A failed roster request proves nothing about the missing tracker.
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(statuses.at(-1)?.warning ?? '').toContain('DEVICE ROSTER UNAVAILABLE')
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(statuses.at(-1)?.warning ?? '').not.toContain('DEVICE ROSTER')
+      await poller.stop()
+    })
   })
 })

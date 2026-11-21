@@ -2,9 +2,18 @@ import {
   normalizeTraccarDevice,
   normalizeTraccarPosition,
 } from './traccar-normalization'
+import { thinDeviceTrailToBudget } from './breadcrumb-accumulator'
+import {
+  createCacheBreadcrumbMetadata,
+  createUnknownCacheSimplificationMetadata,
+  parseCacheBreadcrumbMetadata,
+  type CacheDeviceThinning,
+} from './tracking-cache-breadcrumb-disclosure'
 import type {
+  BreadcrumbSnapshotMetadata,
   NormalizedTrackingDevice,
   NormalizedTrackingPosition,
+  TrackingSnapshot,
 } from './tracking-types'
 import { normalizeTrackingIsoTimestamp } from './tracking-timestamp'
 
@@ -15,6 +24,11 @@ export type TrackingCachePayload = {
   readonly devices: readonly NormalizedTrackingDevice[]
   readonly positions: readonly NormalizedTrackingPosition[]
   readonly breadcrumbs: readonly NormalizedTrackingPosition[]
+  /**
+   * Simplification of the cached trail. Absent in older caches; null after
+   * parsing means present but unreadable, which is disclosed as simplified.
+   */
+  readonly breadcrumb_metadata?: BreadcrumbSnapshotMetadata | null
 }
 
 export type TrackingCacheDroppedEntries = {
@@ -32,6 +46,14 @@ const TRACKING_CACHE_SELECTION_WORK_CHUNK = 1_024
 
 type TrackingCacheBreadcrumbLimitOptions = {
   readonly yieldControl?: () => Promise<void>
+  /** Live simplification already applied to these breadcrumbs, if any. */
+  readonly metadata?: BreadcrumbSnapshotMetadata | undefined
+}
+
+export type LimitedTrackingCacheBreadcrumbs = {
+  readonly breadcrumbs: readonly NormalizedTrackingPosition[]
+  /** Persisted so a restored trail is disclosed as simplified when it is. */
+  readonly metadata: BreadcrumbSnapshotMetadata | undefined
 }
 
 /** Yields cache-only projection work so current-position timers can run. */
@@ -40,48 +62,48 @@ function yieldTrackingCacheSelection(): Promise<void> {
 }
 
 /**
- * Keeps restart cache serialization globally bounded while sharing the budget
- * across device trails where capacity permits. A one-row quota keeps the
- * latest breadcrumb; trails beyond the global budget receive no breadcrumb.
- * Current positions are retained separately by the cache payload.
+ * Keeps restart cache serialization near a global budget shared across device
+ * trails, thinning each trail with the live line's selector [DON-338]. Every
+ * device keeps its first and last fix, both sides of every real silence and
+ * the continuity anchors, so the restored line never gains or loses a break;
+ * the budget is exceeded rather than drop one of those points. Current
+ * positions are retained separately by the cache payload.
  */
 export async function limitTrackingCacheBreadcrumbs(
   breadcrumbs: readonly NormalizedTrackingPosition[],
   options: TrackingCacheBreadcrumbLimitOptions = {},
-): Promise<readonly NormalizedTrackingPosition[]> {
-  if (breadcrumbs.length <= MAX_TRACKING_CACHE_BREADCRUMBS) return breadcrumbs
-
+): Promise<LimitedTrackingCacheBreadcrumbs> {
   const yieldControl = options.yieldControl ?? yieldTrackingCacheSelection
-  const deviceIndexById = new Map<string, number>()
-  const positionCountByDevice: number[] = []
-  const quotas: number[] = []
-  const nextOrdinalByDevice: number[] = []
+  const trails = new Map<string, NormalizedTrackingPosition[]>()
   for (let index = 0; index < breadcrumbs.length; index += 1) {
-    const deviceId = breadcrumbs[index]!.device_id
-    let deviceIndex = deviceIndexById.get(deviceId)
-    if (deviceIndex === undefined) {
-      deviceIndex = positionCountByDevice.length
-      deviceIndexById.set(deviceId, deviceIndex)
-      positionCountByDevice.push(0)
-      quotas.push(0)
-      nextOrdinalByDevice.push(0)
-    }
-    positionCountByDevice[deviceIndex]! += 1
+    const position = breadcrumbs[index]!
+    const trail = trails.get(position.device_id)
+    if (trail === undefined) trails.set(position.device_id, [position])
+    else trail.push(position)
     if ((index + 1) % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
       await yieldControl()
     }
   }
 
+  if (breadcrumbs.length <= MAX_TRACKING_CACHE_BREADCRUMBS) {
+    const unchanged = [...trails].map(([deviceId, trail]): CacheDeviceThinning => ({
+      deviceId, inputCount: trail.length, retained: trail, geometryErrorBoundMetres: 0,
+    }))
+    return {
+      breadcrumbs,
+      metadata: unchanged.length === 0
+        ? options.metadata : createCacheBreadcrumbMetadata(unchanged, options.metadata),
+    }
+  }
+
+  const deviceTrails = [...trails]
+  const quotas = deviceTrails.map(() => 0)
   let remaining = MAX_TRACKING_CACHE_BREADCRUMBS
   let allocationWork = 0
   while (remaining > 0) {
     let progressed = false
-    for (
-      let index = 0;
-      index < positionCountByDevice.length && remaining > 0;
-      index += 1
-    ) {
-      if (quotas[index]! < positionCountByDevice[index]!) {
+    for (let index = 0; index < deviceTrails.length && remaining > 0; index += 1) {
+      if (quotas[index]! < deviceTrails[index]![1].length) {
         quotas[index]! += 1
         remaining -= 1
         progressed = true
@@ -94,48 +116,59 @@ export async function limitTrackingCacheBreadcrumbs(
     if (!progressed) break
   }
 
-  const retainedOrdinalsByDevice: Array<Set<number> | null> = []
-  let targetWork = 0
-  for (let deviceIndex = 0; deviceIndex < quotas.length; deviceIndex += 1) {
-    targetWork += 1
-    if (targetWork % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
+  const thinned: CacheDeviceThinning[] = []
+  const retainedPositions = new Set<NormalizedTrackingPosition>()
+  let thinningWork = 0
+  for (let index = 0; index < deviceTrails.length; index += 1) {
+    const [deviceId, trail] = deviceTrails[index]!
+    const result = thinDeviceTrailToBudget(trail, quotas[index]!)
+    for (const position of result.positions) retainedPositions.add(position)
+    thinned.push({
+      deviceId,
+      inputCount: trail.length,
+      retained: result.positions,
+      geometryErrorBoundMetres: result.geometryErrorBoundMetres,
+    })
+    thinningWork += trail.length
+    if (thinningWork >= TRACKING_CACHE_SELECTION_WORK_CHUNK) {
+      thinningWork = 0
       await yieldControl()
-    }
-    const quota = quotas[deviceIndex]!
-    const positionCount = positionCountByDevice[deviceIndex]!
-    if (quota === 1) {
-      retainedOrdinalsByDevice.push(new Set([positionCount - 1]))
-    } else if (quota > 1) {
-      const retainedOrdinals = new Set<number>()
-      for (let index = 0; index < quota; index += 1) {
-        retainedOrdinals.add(Math.round(
-          (index * (positionCount - 1)) / (quota - 1),
-        ))
-        targetWork += 1
-        if (targetWork % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
-          await yieldControl()
-        }
-      }
-      retainedOrdinalsByDevice.push(retainedOrdinals)
-    } else {
-      retainedOrdinalsByDevice.push(null)
     }
   }
 
   const retained: NormalizedTrackingPosition[] = []
   for (let index = 0; index < breadcrumbs.length; index += 1) {
     const position = breadcrumbs[index]!
-    const deviceIndex = deviceIndexById.get(position.device_id)!
-    const ordinal = nextOrdinalByDevice[deviceIndex]!
-    nextOrdinalByDevice[deviceIndex]! += 1
-    if (retainedOrdinalsByDevice[deviceIndex]?.has(ordinal) === true) {
-      retained.push(position)
-    }
+    if (retainedPositions.has(position)) retained.push(position)
     if ((index + 1) % TRACKING_CACHE_SELECTION_WORK_CHUNK === 0) {
       await yieldControl()
     }
   }
-  return retained
+  return {
+    breadcrumbs: retained,
+    metadata: createCacheBreadcrumbMetadata(thinned, options.metadata),
+  }
+}
+
+/**
+ * Builds the snapshot a cache restore publishes. A trail the cache (or the
+ * live line before it) simplified carries metadata, so the panel discloses it
+ * as simplified; an older cache at the old cap is disclosed as simplified with
+ * no geometry promise rather than presented as exact [DON-338].
+ */
+export function createCachedTrackingSnapshot(payload: TrackingCachePayload): TrackingSnapshot {
+  const breadcrumbMetadata = payload.breadcrumb_metadata ?? (
+    payload.breadcrumbs.length >= MAX_TRACKING_CACHE_BREADCRUMBS ||
+    payload.breadcrumb_metadata === null
+      ? createUnknownCacheSimplificationMetadata(payload.breadcrumbs)
+      : undefined
+  )
+  return {
+    devices: payload.devices,
+    positions: payload.positions,
+    breadcrumbs: payload.breadcrumbs,
+    ...(breadcrumbMetadata === undefined ? {} : { breadcrumbMetadata }),
+  }
 }
 
 /**
@@ -186,6 +219,9 @@ export function parseTrackingCachePayload(
       'breadcrumbs',
       options.onDroppedEntries,
     ),
+    ...('breadcrumb_metadata' in record
+      ? { breadcrumb_metadata: parseCacheBreadcrumbMetadata(record.breadcrumb_metadata) }
+      : {}),
   }
 }
 
