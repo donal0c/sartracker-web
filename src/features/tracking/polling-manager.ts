@@ -266,6 +266,11 @@ const MAX_POLL_INTERVAL_MS = 3_600_000
 const BREADCRUMB_CURSOR_OVERLAP_MS = 5 * 60 * 1000
 const BREADCRUMB_RECENT_WINDOW_MAX_MS = 2 * 60 * 60 * 1000
 const HISTORY_PUBLISH_DELAY_MS = 100
+// Spacing between store reloads owed by unconfirmed trail writes: doubles from
+// the base (at least two poll intervals) while writes keep failing, never
+// beyond the cap (at least four poll intervals) [DON-349 P-6].
+const OWED_RELOAD_SPACING_BASE_MS = 5_000
+const OWED_RELOAD_SPACING_MAX_MS = 60_000
 const HISTORY_PERSISTENCE_BATCH_LIMIT = 5_000
 const HISTORY_TRANSPORT_MAX_CONCURRENCY = 8
 // Reconciler history (initial catch-up and sweep together) may hold at most
@@ -406,6 +411,17 @@ export function createPollingManager(
   // reading. The live line awaits agreement while the two differ.
   let unconfirmedTrailWrites = 0
   let trailWritesAgreedThrough = 0
+  // Owed-reload spacing [DON-349 P-6]. A fault that fails every write (a full
+  // disk, a participant scope stuck in error) must not reload the whole trail
+  // on every poll. After an owed reload starts, further owed reloads wait out
+  // a cooldown that doubles while writes keep going unconfirmed, up to a cap.
+  // The line keeps awaiting agreement meanwhile (the storage warning stays
+  // up), and the reload is never given up: each cooldown ends with the owed
+  // reload. A cooldown with no unconfirmed write resets the spacing. Timers,
+  // not clock reads, so an injected or frozen clock cannot stall it.
+  let owedReloadSpacingMs = 0
+  let owedReloadCooldownTimer: ReturnType<typeof setTimeout> | null = null
+  let unconfirmedWriteDuringCooldown = false
   // How far initial catch-up has settled for the selected devices: every
   // window tried ('attempted', possibly with an open history gap) or truly
   // complete. Each step runs the forced flush and canonical reload once, so a
@@ -498,12 +514,52 @@ export function createPollingManager(
       return
     }
     const wasAwaiting = trailAwaitsStoreAgreement()
+    unconfirmedWriteDuringCooldown = true
     unconfirmedTrailWrites += 1
     if (!wasAwaiting) options.onTrailStoreAgreementChange?.(true)
-    // Starts a reload, or marks the running one for a follow-up whose fence
-    // includes this write. Outside active polling it does nothing; the poll
-    // tick re-requests on resume.
-    requestCanonicalization()
+    // Starts a reload, or schedules it after the owed-reload spacing. A reload
+    // already running does not cover this write; when it ends, the owed
+    // reload is requested again through the same spacing. Outside active
+    // polling it does nothing; the poll tick re-requests on resume.
+    requestOwedTrailReload()
+  }
+
+  /** Clears the 5 s retry after a failed reload. */
+  function clearCanonicalizationRetryTimer(): void {
+    if (canonicalizationRetryTimer !== null) {
+      clearScheduledTimeout(canonicalizationRetryTimer)
+      canonicalizationRetryTimer = null
+    }
+  }
+
+  /**
+   * Starts the cooldown after an owed reload began. It doubles from the base
+   * (two poll intervals, so a fault that fails every poll lands inside it)
+   * up to the cap. When it ends, a cooldown without an unconfirmed write
+   * resets the spacing, and any reload still owed is requested [DON-349 P-6].
+   */
+  function startOwedReloadCooldown(): void {
+    const baseMs = Math.max(OWED_RELOAD_SPACING_BASE_MS, 2 * pollIntervalMs)
+    const capMs = Math.max(OWED_RELOAD_SPACING_MAX_MS, 4 * pollIntervalMs)
+    owedReloadSpacingMs = owedReloadSpacingMs === 0
+      ? baseMs
+      : Math.min(capMs, owedReloadSpacingMs * 2)
+    unconfirmedWriteDuringCooldown = false
+    owedReloadCooldownTimer = scheduleTimeout(() => {
+      owedReloadCooldownTimer = null
+      if (!unconfirmedWriteDuringCooldown) owedReloadSpacingMs = 0
+      requestOwedTrailReload()
+    }, owedReloadSpacingMs)
+  }
+
+  /** Ends any owed-reload cooldown and resets the spacing. */
+  function resetOwedReloadSpacing(): void {
+    if (owedReloadCooldownTimer !== null) {
+      clearScheduledTimeout(owedReloadCooldownTimer)
+      owedReloadCooldownTimer = null
+    }
+    owedReloadSpacingMs = 0
+    unconfirmedWriteDuringCooldown = false
   }
 
   /**
@@ -514,12 +570,17 @@ export function createPollingManager(
    */
   function requestOwedTrailReload(): void {
     if (
-      trailAwaitsStoreAgreement() &&
-      canonicalizationInFlight === null &&
-      canonicalizationRetryTimer === null
+      !trailAwaitsStoreAgreement() ||
+      canonicalizationInFlight !== null ||
+      canonicalizationRetryTimer !== null ||
+      owedReloadCooldownTimer !== null
     ) {
-      requestCanonicalization()
+      // A reload running, a failed reload's retry or a cooldown each end by
+      // requesting the owed reload again.
+      return
     }
+    requestCanonicalization()
+    if (canonicalizationInFlight !== null) startOwedReloadCooldown()
   }
 
   /**
@@ -530,6 +591,7 @@ export function createPollingManager(
   function forgetAwaitedStoreAgreement(): void {
     const wasAwaiting = trailAwaitsStoreAgreement()
     trailWritesAgreedThrough = unconfirmedTrailWrites
+    resetOwedReloadSpacing()
     if (wasAwaiting) options.onTrailStoreAgreementChange?.(false)
   }
 
@@ -824,10 +886,7 @@ export function createPollingManager(
       canonicalizationRefreshPending = true
       return
     }
-    if (canonicalizationRetryTimer !== null) {
-      clearScheduledTimeout(canonicalizationRetryTimer)
-      canonicalizationRetryTimer = null
-    }
+    clearCanonicalizationRetryTimer()
     const sequence = ++canonicalizationSequence
     const historyResetKey = activeHistoryResetKey
     // Unconfirmed writes up to here may be in what this read returns; any
@@ -1462,10 +1521,7 @@ export function createPollingManager(
         initialReconciliationSelectionKey = null
         canonicalizationInFlight?.abortController.abort()
         canonicalizationInFlight = null
-        if (canonicalizationRetryTimer !== null) {
-          clearScheduledTimeout(canonicalizationRetryTimer)
-          canonicalizationRetryTimer = null
-        }
+        clearCanonicalizationRetryTimer()
         breadcrumbFetchCompleted = false
         breadcrumbStatusWarning = null
         breadcrumbStatusWarningWhileSuspended = null
@@ -2237,10 +2293,7 @@ export function createPollingManager(
     initialReconciliationSelectionKey = null
     initialSeedAbortController = null
     canonicalizationInFlight = null
-    if (canonicalizationRetryTimer !== null) {
-      clearScheduledTimeout(canonicalizationRetryTimer)
-      canonicalizationRetryTimer = null
-    }
+    clearCanonicalizationRetryTimer()
   }
 
   function discardSupersededPoll(

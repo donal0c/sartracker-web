@@ -3206,9 +3206,11 @@ describe('polling manager', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(getCanonicalBreadcrumbs).toHaveBeenCalled()
-    // Each failed attempt awaits agreement until the read-back lands.
+    // A failed attempt awaits agreement until a read-back begun after it
+    // lands. Later failures in the same instant wait out the owed-reload
+    // cooldown, so the line is awaiting again [DON-349 P-6].
     expect(onTrailStoreAgreementChange.mock.calls.at(0)).toEqual([true])
-    expect(onTrailStoreAgreementChange.mock.calls.at(-1)).toEqual([false])
+    expect(onTrailStoreAgreementChange.mock.calls).toContainEqual([false])
     expect(
       onSnapshot.mock.calls.flatMap((call) => call[0].breadcrumbs),
     ).not.toContainEqual(NORMALIZED_BREADCRUMBS[0])
