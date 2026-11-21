@@ -283,11 +283,10 @@ export function createBreadcrumbAccumulator(
       deviceState.selectorTimeBucketWidthMs = retention.timeBucketWidthMs
       deviceState.selectorSpatialBucketWidthDegrees =
         retention.spatialBucketWidthDegrees
-      deviceState.chronological.splice(
-        0,
-        deviceState.chronological.length,
-        ...retention.positions,
-      )
+      // Replaced by copying, not splice(...positions): every mandatory point
+      // is kept, so the set can exceed the engine's argument limit [DON-338].
+      deviceState.chronological.length = 0
+      for (const entry of retention.positions) deviceState.chronological.push(entry)
       deviceState.byKey.clear()
       for (const entry of retention.positions) {
         deviceState.byKey.set(createPositionKey(entry.position), entry)
