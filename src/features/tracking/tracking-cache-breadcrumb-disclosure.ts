@@ -86,13 +86,19 @@ export function isCacheBreadcrumbMetadataConsistent(
   if (metadata.deviceBudgets.length !== trails.size) return false
   if (metadata.totalRetained !== breadcrumbs.length) return false
   let totalObserved = 0
+  let totalSourceRetained = 0
   let anyTruncated = false
   const seen = new Set<string>()
   for (const budget of metadata.deviceBudgets) {
     const trail = trails.get(budget.deviceId)
     if (trail === undefined || seen.has(budget.deviceId)) return false
     seen.add(budget.deviceId)
-    if (budget.retained !== trail.length || budget.total < budget.retained) return false
+    // Counts must nest: retained <= sourceRetained <= total.
+    if (
+      budget.retained !== trail.length ||
+      budget.sourceRetained < budget.retained ||
+      budget.total < budget.sourceRetained
+    ) return false
     const span = timestampSpan(trail)
     if (
       !sameInstant(budget.firstTimestamp, span.first) ||
@@ -103,13 +109,26 @@ export function isCacheBreadcrumbMetadataConsistent(
       if (budget.targetGeometryErrorSatisfied &&
         (bound === null || bound > TARGET_GEOMETRY_ERROR_METRES)) return false
       anyTruncated = true
-    } else if (budget.total !== budget.retained || budget.geometryErrorBoundMetres !== 0) {
+    } else if (
+      // A claim that nothing was dropped needs all three counts equal.
+      budget.sourceRetained !== budget.retained ||
+      budget.total !== budget.retained ||
+      budget.geometryErrorBoundMetres !== 0
+    ) {
       return false
     }
+    totalSourceRetained += budget.sourceRetained
     totalObserved += budget.total
   }
   if (metadata.totalObserved !== totalObserved) return false
-  return anyTruncated || metadata.totalObserved === metadata.totalRetained
+  if (
+    metadata.totalRetained > totalSourceRetained ||
+    totalSourceRetained > metadata.totalObserved
+  ) return false
+  return anyTruncated || (
+    metadata.totalObserved === metadata.totalRetained &&
+    totalSourceRetained === metadata.totalRetained
+  )
 }
 
 /**
