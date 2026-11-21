@@ -306,8 +306,8 @@ export function createBreadcrumbHistoryReconciler(
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let antiEntropyTimer: ReturnType<typeof setTimeout> | null = null
   const lanesByDeviceId = new Map<string, DeviceLanes>()
-  // Where each device's rejoin walk resumes: the end of the earliest gap the
-  // initial catch-up stepped over. The store only advances its checkpoint
+  // Where each device's rejoin walk resumes: the start of the earliest gap
+  // the initial catch-up stepped over. The store only advances its checkpoint
   // from a window that starts at or before it, so history fetched past a gap
   // must be re-read in order once the gap is filled [DON-349 P-1].
   const rejoinCursorMsByDeviceId = new Map<string, number>()
@@ -705,7 +705,7 @@ export function createBreadcrumbHistoryReconciler(
     }, job.minWindowFailureCount, error)
     rejoinCursorMsByDeviceId.set(
       job.deviceId,
-      Math.min(rejoinCursorMsByDeviceId.get(job.deviceId) ?? Number.POSITIVE_INFINITY, toMs),
+      Math.min(rejoinCursorMsByDeviceId.get(job.deviceId) ?? Number.POSITIVE_INFINITY, fromMs),
     )
     job.cursorMs = toMs
     job.minWindowFailureCount = 0
@@ -1186,9 +1186,10 @@ export function createBreadcrumbHistoryReconciler(
 
   /**
    * The next rejoin window for the device, or null when there is none to make
-   * now. The walk waits while any gap starts before its cursor, because the
-   * store's checkpoint cannot pass an unfilled gap; it stops short of the next
-   * gap and steps over one it reaches, waiting for that gap in turn. It ends
+   * now. The walk waits at the start of any gap at or before its cursor,
+   * because the store's checkpoint cannot pass an unfilled gap, and never
+   * jumps one: a gap can be filled from its far end first, and the checkpoint
+   * then stops where the gap's last slice was filled. It ends
    * at the device's newest fetched time: the catch-up cursor while the device
    * is still catching up, otherwise the newest time it has been read to.
    */
@@ -1203,12 +1204,8 @@ export function createBreadcrumbHistoryReconciler(
       return null
     }
     const gaps = gapsByDeviceId.get(lanes.deviceId) ?? []
-    if (gaps.some((gap) => gap.fromMs < cursorMs)) return null
+    if (gaps.some((gap) => gap.fromMs <= cursorMs)) return null
     const nextGap = gaps.find((gap) => gap.toMs > cursorMs)
-    if (nextGap !== undefined && nextGap.fromMs <= cursorMs) {
-      rejoinCursorMsByDeviceId.set(lanes.deviceId, nextGap.toMs)
-      return null
-    }
     const toMs = Math.min(cursorMs + lanes.windowMs, targetMs, nextGap?.fromMs ?? Number.POSITIVE_INFINITY)
     return { fromMs: cursorMs, toMs }
   }
@@ -1251,7 +1248,7 @@ export function createBreadcrumbHistoryReconciler(
         phase: 'anti_entropy',
         reason,
       }, 1, error)
-      rejoinCursorMsByDeviceId.set(lanes.deviceId, window.toMs)
+      // The walk waits at the new gap's start until it is filled.
       return 'done'
     }
     if (!isCurrent()) return 'stop'

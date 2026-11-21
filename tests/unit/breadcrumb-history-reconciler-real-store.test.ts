@@ -300,6 +300,44 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
     expect(await harness.storedCount('1')).toBe(harness.serverFixCount('1'))
   })
 
+  it('[DON-349] P-1: the checkpoint still catches up when a later gap heals from its far end first', async () => {
+    // Two gaps. The rejoin walk reaches the second while its first slice still
+    // fails; its tail is filled first. The walk must restart from where the
+    // checkpoint stops, not from the end of that gap.
+    const firstFromMs = MISSION_START_MS + 2 * HOUR_MS
+    const firstToMs = firstFromMs + 5 * MINUTE_MS
+    const headFromMs = MISSION_START_MS + 3 * HOUR_MS
+    const headToMs = headFromMs + 5 * MINUTE_MS
+    const tailToMs = headToMs + 20 * MINUTE_MS
+    const server = { firstBroken: true, headBroken: true, tailBroken: true }
+    const touches = (fromMs: number, toMs: number, rangeFromMs: number, rangeToMs: number): boolean =>
+      fromMs < rangeToMs && toMs > rangeFromMs
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: 10 * SECOND_MS,
+      rule: ({ fromMs, toMs }) => ({
+        error: (server.firstBroken && touches(fromMs, toMs, firstFromMs, firstToMs))
+          || (server.headBroken && touches(fromMs, toMs, headFromMs, headToMs))
+          || (server.tailBroken && touches(fromMs, toMs, headToMs, tailToMs))
+          ? new Error(TOO_LARGE_MESSAGE)
+          : null,
+      }),
+    })
+    await harness.runFor(15 * MINUTE_MS)
+    server.firstBroken = false
+    await harness.runFor(6 * TICK_MS)
+    server.tailBroken = false
+    await harness.runFor(6 * TICK_MS)
+    expect(Date.parse((await harness.checkpointOf('1'))!.reconciled_until)).toBeLessThanOrEqual(headToMs)
+
+    server.headBroken = false
+    await harness.runFor(12 * TICK_MS)
+
+    const checkpoint = await harness.checkpointOf('1')
+    expect(Date.parse(checkpoint!.reconciled_until)).toBeGreaterThanOrEqual(Date.now() - 2 * TICK_MS)
+    expect(await harness.storedCount('1')).toBe(harness.serverFixCount('1'))
+  })
+
   it('does not report the re-check complete while a re-check gap is unfilled (finding 1)', async () => {
     const server = { broken: false }
     const badFromMs = NOW_MS - 3 * HOUR_MS
