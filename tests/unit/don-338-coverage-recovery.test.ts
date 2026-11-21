@@ -1,20 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type {
-  CoverageChunkKey,
-  CoverageClaim,
-  CoverageManifest,
-  CoverageReadResult,
-  CoverageTileCatalog,
-} from '../../src/infrastructure/mission-store/tauri-mission-store'
-import {
-  createCoverageController,
-  type CoverageController,
-  type CoverageState,
-} from '../../src/features/tracking/coverage-controller'
 import { summarizeCoverageStatus } from '../../src/features/tracking/coverage-progress'
-import { selectCoverageOverlaySyncInputs } from '../../src/features/tracking/sync-coverage-overlay'
-import { selectCoverageChunkKeys, type CoverageOmissions } from '../../src/features/tracking/coverage-filter-selection'
+import {
+  activeCoverage as active,
+  createCoverageFakeMapHarness as harness,
+  loadCoverageComplete as loadComplete,
+} from '../support/coverage-fake-map-harness'
 
 /**
  * DON-338 round 2: the whole-history line recovers by itself after the tile
@@ -24,97 +15,7 @@ import { selectCoverageChunkKeys, type CoverageOmissions } from '../../src/featu
  * identity or selection signature changes).
  */
 
-const KEY_A: CoverageChunkKey = { device_id: 'device-a', period_kind: 'outing', period_id: 'outing-1' }
-const KEY_B: CoverageChunkKey = { device_id: 'device-b', period_kind: 'outing', period_id: 'outing-1' }
-
 afterEach(() => vi.useRealTimers())
-
-function manifest(): CoverageManifest {
-  return {
-    changeSeq: 1,
-    enumerated: true,
-    pendingInvalidation: false,
-    backfillIncomplete: false,
-    outings: [],
-    chunks: [KEY_A, KEY_B].map((key) => ({
-      key, contentRev: 1, builtRev: 1, fixCount: 5, exactCount: 5, fixDigest: 'digest',
-    })),
-  }
-}
-
-function claim(selectedKeys: readonly CoverageChunkKey[]): CoverageClaim {
-  return {
-    changeSeq: 1, databaseReady: true, blockers: [],
-    chunkRevisions: selectedKeys.map((key) => ({ key, contentRev: 1 })),
-  }
-}
-
-type FakeMap = {
-  /** False while the map cannot apply anything (style gone, sync stuck). */
-  working: boolean
-  omissions: CoverageOmissions
-  syncs: number
-}
-
-/** Builds a controller wired to a fake map that mimics the overlay hook's re-run rule. */
-function harness(options: { readonly failDelivery?: (call: number) => boolean } = {}) {
-  let stage = 0
-  let controller: CoverageController | null = null
-  const map: FakeMap = { working: true, omissions: { omittedDeviceIds: [], omittedPeriodKeys: [] }, syncs: 0 }
-  let lastCatalog: CoverageTileCatalog | null = null
-  let lastSignature = ''
-  const deliverSelection = vi.fn(async (request: {
-    readonly chunks: readonly { readonly key: CoverageChunkKey; readonly contentRev: number }[]
-  }): Promise<CoverageReadResult<CoverageTileCatalog>> => {
-    if (options.failDelivery?.(deliverSelection.mock.calls.length) === true) {
-      throw new Error('Coverage tile worker is unavailable.')
-    }
-    stage += 1
-    return {
-      missionId: 'mission-1',
-      activationId: `stage-${stage}`,
-      periods: [{ periodKey: 'outing\u0000outing-1', revisionDigest: `stage-${stage}` }],
-      delivered: request.chunks.map((chunk) => ({ key: chunk.key, contentRev: chunk.contentRev })),
-    }
-  })
-  const syncMap = (state: CoverageState): void => {
-    const inputs = selectCoverageOverlaySyncInputs(state, 'mission-1', map.omissions)
-    if (inputs.catalog === lastCatalog && inputs.selectionSignature === lastSignature) return
-    lastCatalog = inputs.catalog
-    lastSignature = inputs.selectionSignature
-    if (!map.working) return
-    const catalog = inputs.catalog
-    const manifestNow = state.status === 'inactive' ? null : state.manifest
-    queueMicrotask(() => {
-      void (async () => {
-        map.syncs += 1
-        await controller?.notifySelectionApplied(selectCoverageChunkKeys(manifestNow, map.omissions))
-        if (catalog !== null) await controller?.notifyCatalogApplied(catalog)
-      })().catch(() => undefined)
-    })
-  }
-  controller = createCoverageController({
-    monotonicNow: () => Date.now(),
-    readManifest: vi.fn(async () => manifest()),
-    readChunk: vi.fn(async () => { throw new Error('not used') }),
-    readClaim: vi.fn(async (query: { readonly selectedKeys: readonly CoverageChunkKey[] }) => claim(query.selectedKeys)),
-    applyChunk: vi.fn(async () => undefined),
-    deliverSelection,
-    publish: syncMap,
-  })
-  return { controller, deliverSelection, map }
-}
-
-function active(state: CoverageState): Exclude<CoverageState, { status: 'inactive' }> {
-  if (state.status === 'inactive') throw new Error('Coverage unexpectedly inactive.')
-  return state
-}
-
-async function loadComplete(controller: CoverageController): Promise<void> {
-  await controller.updateContext({ missionId: 'mission-1', rendererGeneration: 'r1' })
-  await vi.advanceTimersByTimeAsync(0)
-  expect(active(controller.getState()).status).toBe('complete')
-}
 
 describe('DON-338: the history line recovers after the tile worker dies', () => {
   it('rebuilds without operator action and never reads up to date meanwhile', async () => {
@@ -208,6 +109,63 @@ describe('DON-338: Retry makes the map re-apply a stalled catalog or filter', ()
     const recovered = active(controller.getState())
     expect(recovered.blockers ?? []).not.toContain('renderer_filter_pending')
     expect(recovered).toMatchObject({ status: 'complete', totalFixCount: 5 })
+    controller.stop()
+  })
+})
+
+describe('DON-338: the worker cause holds for its whole recovery episode', () => {
+  const OUT_OF_MEMORY = { code: 'coverage-worker-out-of-memory' } as const
+
+  /** A tile of the given stage's catalog rejecting, as the dead worker's outstanding tiles do. */
+  function tileFailure(stage: number) {
+    return {
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: `stage-${stage}`,
+      activationId: `stage-${stage}`,
+      message: 'Coverage tile delivery failed',
+    }
+  }
+
+  it('keeps out-of-memory when an outstanding tile then fails generically', async () => {
+    vi.useFakeTimers()
+    const { controller, deliverSelection } = harness()
+    await loadComplete(controller)
+
+    controller.notifyRendererUnavailable('Coverage tile worker is unavailable.', OUT_OF_MEMORY)
+    controller.notifyRendererFailure(tileFailure(1))
+    expect(active(controller.getState())).toMatchObject({
+      status: 'error', lastErrorClass: 'worker_out_of_memory', updating: true,
+    })
+
+    // The secondary failure did not start a new episode: the first attempt
+    // still runs on the first backoff step and recovers.
+    await vi.advanceTimersByTimeAsync(250)
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(active(controller.getState()).status).toBe('complete')
+    controller.stop()
+  })
+
+  it('keeps out-of-memory when a recovery load fails generically, and clears it once one succeeds', async () => {
+    vi.useFakeTimers()
+    const { controller, deliverSelection } = harness({ failDelivery: (call) => call === 2 })
+    await loadComplete(controller)
+
+    controller.notifyRendererUnavailable('Coverage tile worker is unavailable.', OUT_OF_MEMORY)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    expect(active(controller.getState())).toMatchObject({ status: 'error', lastErrorClass: 'worker_out_of_memory' })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(active(controller.getState()).status).toBe('complete')
+
+    // A new, unrelated failure after recovery is its own cause.
+    controller.notifyRendererFailure(tileFailure(2))
+    const later = active(controller.getState())
+    expect(later.status).toBe('error')
+    expect(later.lastErrorClass).not.toBe('worker_out_of_memory')
     controller.stop()
   })
 })

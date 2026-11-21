@@ -206,6 +206,12 @@ export function createCoverageController(input: {
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
+  /**
+   * Specific worker cause of the current renderer recovery episode, kept
+   * until a recovery load succeeds so a generic secondary failure (an
+   * outstanding tile, a failed rebuild) never hides it [DON-338].
+   */
+  let rendererEpisodeCause: CoverageErrorClass | null = null
   let rendererRecoverySupersededFailureKeys: ReadonlySet<string> | null = null
   let automaticRendererRecoveryAvailable = true
   let automaticRendererRecoveryAttempts = 0
@@ -400,6 +406,7 @@ export function createCoverageController(input: {
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
     rendererRecoveryEpoch = null
+    rendererEpisodeCause = null
     rendererRecoverySupersededFailureKeys = null
     automaticRendererRecoveryAvailable = false
     scheduledRendererRecovery = null
@@ -572,6 +579,7 @@ export function createCoverageController(input: {
           rendererRecoveryEpoch === recoveryEpochAtLoad
         ) {
           rendererRecoveryEpoch = null
+          rendererEpisodeCause = null
           rendererRecoverySupersededFailureKeys = null
           automaticRendererRecoveryAvailable = true
           automaticRendererRecoveryAttempts = 0
@@ -680,7 +688,7 @@ export function createCoverageController(input: {
         ...(deferredRendererFailure === null
           ? {}
           : {
-              lastErrorClass: classifyCoverageError(deferredRendererFailure),
+              lastErrorClass: classifyRendererEpisodeError(deferredRendererFailure),
               message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
             }),
       }, context))
@@ -703,7 +711,7 @@ export function createCoverageController(input: {
       publish({
         ...withFinalizedCatalog(asPartialState(state), finalizedCatalog),
         status: 'error',
-        lastErrorClass: classifyCoverageError(error),
+        lastErrorClass: classifyRendererEpisodeError(error),
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
       })
     } finally {
@@ -806,6 +814,10 @@ export function createCoverageController(input: {
     rendererDetachedCompleteCatalog = null
     const error: Error & { code?: string } = new Error(message)
     if (failureCode !== undefined) error.code = failureCode
+    const errorClass = classifyRendererEpisodeError(error)
+    if (rendererRecoveryEpoch === null || errorClass === 'worker_out_of_memory') {
+      rendererEpisodeCause = errorClass === 'worker_out_of_memory' ? errorClass : null
+    }
     rendererRecoverySupersededFailureKeys = null
     rendererRecoveryEpoch = ++rendererFailureEpoch
     if (
@@ -817,7 +829,7 @@ export function createCoverageController(input: {
       publish({
         ...state,
         status: 'error',
-        lastErrorClass: classifyCoverageError(error),
+        lastErrorClass: errorClass,
         message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
       })
       return
@@ -845,9 +857,32 @@ export function createCoverageController(input: {
       ...(state.blockers === undefined
         ? {}
         : { blockers: state.blockers.filter((blocker) => blocker !== 'renderer_detached') }),
-      lastErrorClass: classifyCoverageError(error),
+      lastErrorClass: errorClass,
       message: 'Complete mission history is temporarily unavailable. Existing coverage remains shown.',
     }, context))
+  }
+
+  /**
+   * Classifies a failure, keeping the episode's specific worker cause when
+   * the new failure is only generic and a recovery episode is still open.
+   */
+  function classifyRendererEpisodeError(error: unknown): CoverageErrorClass {
+    const errorClass = classifyCoverageError(error)
+    if (
+      rendererRecoveryEpoch !== null &&
+      rendererEpisodeCause !== null &&
+      GENERIC_RENDERER_FAILURE_CLASSES.has(errorClass)
+    ) return rendererEpisodeCause
+    return errorClass
+  }
+
+  /** Every renderer source that can still contribute visible coverage. */
+  function activeRendererFailureSources(): readonly CoverageRendererFailureSource[] {
+    const catalog = state.status === 'inactive' ? null : state.tileCatalog
+    return [
+      ...finalizedRendererFailureSources,
+      ...(catalog === null ? [] : coverageCatalogFailureSources(catalog)),
+    ]
   }
 
   /**
@@ -1109,6 +1144,7 @@ export function createCoverageController(input: {
     if (identityChanged) rendererDetached = false
     if (identityChanged) {
       rendererRecoveryEpoch = null
+      rendererEpisodeCause = null
       rendererRecoverySupersededFailureKeys = null
     }
     if (identityChanged) automaticRendererRecoveryAvailable = true
@@ -1215,11 +1251,7 @@ export function createCoverageController(input: {
         failure.revisionDigest,
         )
       ) return
-      const failedCatalog = state.tileCatalog
-      const activeFailureSources = [
-        ...finalizedRendererFailureSources,
-        ...(failedCatalog === null ? [] : coverageCatalogFailureSources(failedCatalog)),
-      ]
+      const activeFailureSources = activeRendererFailureSources()
       if (!matchesRendererFailureSource(activeFailureSources, failure)) return
       const failureKey = rendererFailureSourceKey(failure)
       if (
@@ -1233,7 +1265,13 @@ export function createCoverageController(input: {
       rendererRecoverySupersededFailureKeys = supersededFailureKeys
     },
     notifyRendererUnavailable: (message, failure) => {
+      // Tiles still outstanding when the worker died fail afterwards; they
+      // belong to this episode and must not start a new one [DON-338].
+      const outstandingFailureKeys = new Set(
+        activeRendererFailureSources().map(rendererFailureSourceKey),
+      )
       publishRendererUnavailable(message, failure?.code)
+      if (rendererRecoveryEpoch !== null) rendererRecoverySupersededFailureKeys = outstandingFailureKeys
     },
     notifyRendererDetached: (catalog) => {
       if (state.status === 'inactive') return
@@ -1353,6 +1391,9 @@ function isSameCatalog(
 }
 
 /** Describes the fallback source owner before a renderer provides per-period ownership. */
+/** Failure classes that say nothing more specific than "something failed". */
+const GENERIC_RENDERER_FAILURE_CLASSES: ReadonlySet<CoverageErrorClass> = new Set(['unknown', 'worker'])
+
 function coverageCatalogFailureSources(
   catalog: CoverageTileCatalog,
 ): readonly CoverageRendererFailureSource[] {

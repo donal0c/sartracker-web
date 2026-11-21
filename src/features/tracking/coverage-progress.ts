@@ -128,11 +128,11 @@ export function summarizeCoverageStatus(state: CoverageState): CoverageStatusSum
   if (state.status === 'error') return { ...base, kind: 'failed', needsAttention: true }
 
   const blockers = state.blockers ?? []
-  if (blockers.some((blocker) => ATTENTION_BLOCKERS.has(blocker))) {
-    return { ...base, kind: 'behind', needsAttention: true }
-  }
-  if (state.stalled === true) {
-    return { ...base, kind: 'behind', needsAttention: true, stalled: true }
+  // The stall is judged first: an attention blocker must never hide a line
+  // that has stopped redrawing [DON-338].
+  const stalled = state.stalled === true
+  if (stalled || blockers.some((blocker) => ATTENTION_BLOCKERS.has(blocker))) {
+    return { ...base, kind: 'behind', needsAttention: true, stalled }
   }
   const working = state.updating === true ||
     state.status === 'loading' ||

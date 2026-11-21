@@ -158,7 +158,10 @@ describe('coverage IPC ownership [DON-276]', () => {
     )).resolves.toMatchObject({ activationId: 'coverage-stage-subscription-failure' })
     await expect(handlers.get('catalog')?.(
       { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-subscription-failure',
-    )).rejects.toBe(subscriptionError)
+    )).rejects.toMatchObject({
+      // The public error keeps the cancellation name, not the raw text [DON-338].
+      name: 'AbortError', message: 'Coverage request was cancelled.',
+    })
     expect(ownerLifecycle.subscribe).toHaveBeenCalledTimes(2)
     expect(discardCoverageTileCatalog).toHaveBeenCalledWith({
       activationId: 'coverage-stage-subscription-failure',
@@ -303,7 +306,7 @@ describe('coverage IPC ownership [DON-276]', () => {
     const readResult = Promise.resolve(handlers.get('manifest')?.(
       { sender: senderA }, 'mission-1', 'request-1',
     ))
-    const rejection = expect(readResult).rejects.toThrow(/terminated/u)
+    const rejection = expect(readResult).rejects.toThrow('Coverage history worker failed.')
     expect(readCoverageManifest).toHaveBeenCalledWith('mission-1', '41:coverage:request-1')
     await expect(handlers.get('cancel')?.({ sender: senderB }, 'request-1')).resolves.toBe(false)
     expect(cancelCoverageQuery).toHaveBeenLastCalledWith('42:coverage:request-1')
@@ -368,7 +371,7 @@ describe('coverage IPC ownership [DON-276]', () => {
     const ownerRead = Promise.resolve(handlers.get('tile-read')?.(
       { sender: senderA }, { z: 8 }, 'tile-1',
     ))
-    const rejection = expect(ownerRead).rejects.toThrow(/cancelled/u)
+    const rejection = expect(ownerRead).rejects.toThrow('Coverage request failed.')
     expect(readCoverageTile).toHaveBeenCalledWith({ z: 8 }, '52:coverage:tile-1')
 
     await expect(handlers.get('tile-cancel')?.(
@@ -564,7 +567,7 @@ describe('coverage IPC ownership [DON-276]', () => {
     )
 
     await expect(handlers.get('activate')?.({ sender: owner }, payload))
-      .rejects.toThrow(/interrupted/iu)
+      .rejects.toThrow('Coverage request failed.')
     expect(owner.listenerCount('destroyed')).toBe(1)
     await expect(handlers.get('activate')?.({ sender: owner }, payload)).resolves.toBe(true)
     await expect(handlers.get('finalize')?.({ sender: owner }, payload)).resolves.toBe(true)
@@ -651,9 +654,9 @@ describe('coverage IPC ownership [DON-276]', () => {
     )
     await expect(handlers.get('activate')?.({ sender }, failedPayload)).resolves.toBe(true)
     await expect(handlers.get('finalize')?.({ sender }, failedPayload))
-      .rejects.toThrow(/finalize failure/iu)
+      .rejects.toThrow('Coverage request failed.')
     await expect(handlers.get('discard')?.({ sender }, failedPayload))
-      .rejects.toThrow(/cleanup failure/iu)
+      .rejects.toThrow('Coverage request failed.')
 
     await expect(handlers.get('catalog')?.(
       { sender }, { missionId: 'mission-1', chunks: [] }, 'catalog-after-retry',
