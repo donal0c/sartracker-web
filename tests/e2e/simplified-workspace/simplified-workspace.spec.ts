@@ -233,6 +233,42 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
     })
 
+    test('while paused, the full-width alarm and its Resume stay on screen whatever panel is open', async ({ page }) => {
+      // The old screen held Mission open while paused. The new layout does not
+      // (it would block Tracking's Reconnect); this alarm is what replaces it.
+      await open(page)
+      await startMission(page)
+      await feed(page)
+      await page.getByTestId('ws-mission-button').click()
+      await page.getByTestId('mission-pause-resume-btn').click()
+      await page.getByTestId('ws-pause-confirm-yes').click()
+      await expect(page.getByTestId('ws-mission-phase')).toContainText('PAUSED')
+
+      const alarmShows = async () => {
+        await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+        await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
+        await expect(page.getByTestId('ws-alarm-resume')).toBeEnabled()
+        const box = await page.getByTestId('ws-alarm').boundingBox()
+        expect(box?.width ?? 0).toBeGreaterThan(1440 * 0.9)
+      }
+      // Pausing closes Mission; nothing holds it open, so the alarm must carry the state.
+      await expect(page.getByTestId('ws-mission-host')).toBeHidden()
+      await alarmShows()
+      for (const id of ['ws-toggle-people', 'ws-toggle-layers', 'ws-tracking-headline'] as const) {
+        await page.getByTestId(id).click()
+        await alarmShows()
+      }
+      // Reconnect stays reachable while paused: Tracking opens beside the alarm.
+      await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+      await page.getByTestId('ws-panel-close').click()
+      await page.getByTestId('ws-full-map').click()
+      await alarmShows()
+
+      await page.getByTestId('ws-alarm-resume').click()
+      await expect(page.getByTestId('ws-alarm')).toBeHidden()
+      await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    })
+
     test('map can fill the screen, and layers still open large', async ({ page }) => {
       await open(page)
       await startMission(page)
