@@ -174,6 +174,12 @@ export async function startGpxRuntime(
   let importErrorRevision = 0
   let nextImportCursor: string | null = null
   let mapRefreshToken = 0
+  /**
+   * Colours and outings saved while a map read may already hold older ones. Each read merges the
+   * entries newer than its start, so a save never restarts the read and never loses to it [DON-350].
+   */
+  let presentationSequence = 0
+  const savedPresentations = new Map<string, SavedPresentation>()
 
   publishRuntime()
 
@@ -185,6 +191,7 @@ export async function startGpxRuntime(
       const previousMissionId = state.activeMissionId
       if (missionId !== previousMissionId) {
         missionGeneration += 1
+        savedPresentations.clear()
       }
       state = {
         ...state,
@@ -332,7 +339,7 @@ export async function startGpxRuntime(
         error: null,
       }
       publishRuntime()
-      await refreshMapAfterPresentationChange(missionId, missionToken)
+      recordSavedPresentation(missionId, missionToken, updatedImport.id, { metadata_json: updatedImport.metadata_json })
       return updatedImport
     },
     addWatchedDirectory: async (directoryPath: string) => {
@@ -488,6 +495,7 @@ export async function startGpxRuntime(
         outing_id: outingId,
         ...(assignedBy === undefined ? {} : { assigned_by: assignedBy }),
       })
+      recordSavedPresentation(missionId, missionToken, updated.id, updated.outing_id === undefined ? {} : { outing_id: updated.outing_id })
       if (token !== refreshToken || state.activeMissionId !== missionId) return updated
       state = {
         ...state,
@@ -499,7 +507,6 @@ export async function startGpxRuntime(
         error: null,
       }
       publishRuntime()
-      await refreshMapAfterPresentationChange(missionId, missionToken)
       return updated
     },
   }
@@ -826,14 +833,28 @@ export async function startGpxRuntime(
     await refreshMap(missionId, isCurrent)
   }
 
-  /**
-   * A map read already in flight may hold the old colour or outing; starting a new read
-   * discards it, so the map cannot draw older metadata than the panel shows [DON-350].
-   */
-  async function refreshMapAfterPresentationChange(missionId: string, missionToken: number): Promise<void> {
-    const isCurrent = () => missionToken === missionGeneration && state.activeMissionId === missionId
-    if (!isCurrent()) return
-    await refreshMap(missionId, isCurrent)
+  /** Remembers a saved colour or outing until a map read that started after it has finished. */
+  function recordSavedPresentation(
+    missionId: string,
+    missionToken: number,
+    importId: string,
+    patch: SavedPresentationPatch,
+  ): void {
+    if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+    const earlier = savedPresentations.get(importId)
+    savedPresentations.set(importId, { sequence: ++presentationSequence, patch: { ...earlier?.patch, ...patch } })
+  }
+
+  /** Applies saves newer than a read's start to its entries, and forgets saves the read already holds. */
+  function mergeSavedPresentations(entries: readonly GpxTrackImport[], readFrom: number): readonly GpxTrackImport[] {
+    for (const [importId, saved] of savedPresentations) {
+      if (saved.sequence <= readFrom) savedPresentations.delete(importId)
+    }
+    if (savedPresentations.size === 0) return entries
+    return entries.map((entry) => {
+      const saved = savedPresentations.get(entry.id)
+      return saved === undefined ? entry : { ...entry, ...saved.patch }
+    })
   }
 
   /**
@@ -844,13 +865,15 @@ export async function startGpxRuntime(
     const listMapPage = dependencies.gpxStore.listGpxMapProjectionPage
     if (listMapPage === undefined) return
     const token = ++mapRefreshToken
+    const readFrom = presentationSequence
     const stillCurrent = () => token === mapRefreshToken && isCurrent()
     try {
       const projection = await readGpxMapProjection({ listGpxMapProjectionPage: listMapPage }, missionId, stillCurrent)
       if (projection === null || !stillCurrent()) return
       state = {
         ...state,
-        mapImports: projection.entries,
+        // The last good map stays drawn until this read finishes; it then carries the latest saves.
+        mapImports: mergeSavedPresentations(projection.entries, readFrom),
         mapImportTotal: projection.totalActive,
         mapCoverageNotice: describeGpxMapCoverage(projection),
       }
@@ -1028,6 +1051,9 @@ function describeOperationFailures(failures: readonly GpxImportOperationFailure[
 }
 
 /** Says, in words, that a watched folder holds more files than are watched; null when none are left out. */
+type SavedPresentationPatch = { readonly metadata_json?: string | null; readonly outing_id?: string | null }
+type SavedPresentation = { readonly sequence: number; readonly patch: SavedPresentationPatch }
+
 type StoppedChunkProgress = {
   readonly total: number
   readonly finished: number

@@ -45,6 +45,50 @@ function pagedStore(imports: readonly GpxTrackImport[], overrides: Record<string
   }
 }
 
+/**
+ * A store whose second map page waits until the test releases it, and whose saves change what
+ * later pages serve, like the real store.
+ */
+function heldMapStore() {
+  const stored = new Map(thirty.map((entry) => [entry.id, entry]))
+  const heldPages: (() => void)[] = []
+  let pageHeld: () => void = () => undefined
+  let nextPageHeld = new Promise<void>((resolve) => { pageHeld = resolve })
+  const current = () => [...stored.values()]
+  const store = pagedStore(thirty, {
+    listGpxMapProjectionPage: vi.fn().mockImplementation(async ({ cursor }: { readonly cursor?: string }) => {
+      if (cursor === undefined) {
+        return { entries: current().slice(0, 20), undrawn: [], totalActive: 30, truncated: false, nextCursor: 'map-2' }
+      }
+      await new Promise<void>((resolve) => {
+        heldPages.push(resolve)
+        pageHeld()
+        nextPageHeld = new Promise<void>((next) => { pageHeld = next })
+      })
+      return { entries: current().slice(20), undrawn: [], totalActive: 30, truncated: false, nextCursor: null }
+    }),
+    updateGpxImportPresentation: vi.fn().mockImplementation(async (input: { readonly id: string; readonly metadata_json: string }) => {
+      const updated = { ...stored.get(input.id)!, metadata_json: input.metadata_json }
+      stored.set(input.id, updated)
+      return updated
+    }),
+    assignGpxImportToOuting: vi.fn().mockImplementation(async (input: { readonly import_id: string; readonly outing_id: string }) => {
+      const updated = { ...stored.get(input.import_id)!, outing_id: input.outing_id }
+      stored.set(input.import_id, updated)
+      return updated
+    }),
+  })
+  return {
+    store,
+    /** Resolves once the next second map page is waiting. */
+    pageHeld: () => nextPageHeld,
+    heldCount: () => heldPages.length,
+    /** Releases the oldest held page, or every held page. */
+    releaseOldest: () => heldPages.shift()?.(),
+    releaseAll: () => { while (heldPages.length > 0) heldPages.shift()?.() },
+  }
+}
+
 describe('GPX runtime map coverage and watched rescans [DON-350]', () => {
   it('draws every active import, not only the visible list page [M-87]', async () => {
     const applyRuntime = vi.fn()
@@ -58,56 +102,70 @@ describe('GPX runtime map coverage and watched rescans [DON-350]', () => {
     expect(runtime.mapCoverageNotice).toBeNull()
   })
 
-  it('a map read still in flight does not put back a colour or outing the operator just saved [DON-350] [review]', async () => {
+  it('a map read still in flight does not put back a colour the operator just saved [DON-350] [review]', async () => {
     const applyRuntime = vi.fn()
-    const stored = new Map(thirty.map((entry) => [entry.id, entry]))
-    let releasePageTwo: () => void = () => undefined
-    let pageTwoRequested: () => void = () => undefined
-    const pageTwoAsked = new Promise<void>((resolve) => { pageTwoRequested = resolve })
-    let holdNextPageTwo = true
-    const current = () => [...stored.values()]
-    const store = pagedStore(thirty, {
-      listGpxMapProjectionPage: vi.fn().mockImplementation(async ({ cursor }: { readonly cursor?: string }) => {
-        // Each page reads the store as it is when that page is served.
-        const snapshot = current()
-        if (cursor === undefined) {
-          return { entries: snapshot.slice(0, 20), undrawn: [], totalActive: 30, truncated: false, nextCursor: 'map-2' }
-        }
-        if (holdNextPageTwo) {
-          holdNextPageTwo = false
-          pageTwoRequested()
-          await new Promise<void>((resolve) => { releasePageTwo = resolve })
-        }
-        return { entries: current().slice(20), undrawn: [], totalActive: 30, truncated: false, nextCursor: null }
-      }),
-      updateGpxImportPresentation: vi.fn().mockImplementation(async (input: { readonly id: string; readonly metadata_json: string }) => {
-        const updated = { ...stored.get(input.id)!, metadata_json: input.metadata_json }
-        stored.set(input.id, updated)
-        return updated
-      }),
-      assignGpxImportToOuting: vi.fn().mockImplementation(async (input: { readonly import_id: string; readonly outing_id: string }) => {
-        const updated = { ...stored.get(input.import_id)!, outing_id: input.outing_id }
-        stored.set(input.import_id, updated)
-        return updated
-      }),
-    })
-    const controller = await startGpxRuntime({ gpxStore: store, applyRuntime })
+    const held = heldMapStore()
+    const controller = await startGpxRuntime({ gpxStore: held.store, applyRuntime })
+    const waiting = held.pageHeld()
     const refreshing = controller.refreshMission('mission-1')
-    await pageTwoAsked
+    await waiting
 
-    // Page one of the map already holds team-00 with its old presentation.
-    const saved = await controller.updateImportColor('team-00', '#2563eb')
-    await controller.assignImportToOuting('team-01', 'outing-7')
-    releasePageTwo()
+    // Page one of the held read already holds team-00 with its old presentation.
+    const saving = controller.updateImportColor('team-00', '#2563eb')
+    await vi.waitFor(() => expect(held.store.updateGpxImportPresentation).toHaveBeenCalledTimes(1))
+    held.releaseAll()
+    const saved = await saving
+    await refreshing
+    held.releaseAll()
+
+    const runtime = lastRuntime(applyRuntime)
+    expect(runtime.imports.find((entry) => entry.id === 'team-00')?.metadata_json).toBe(saved?.metadata_json)
+    expect(runtime.mapImports.find((entry) => entry.id === 'team-00')?.metadata_json).toBe(saved?.metadata_json)
+    expect(runtime.mapImports).toHaveLength(30)
+  })
+
+  it('a map read still in flight does not put back an outing the operator just assigned [DON-350] [review]', async () => {
+    const applyRuntime = vi.fn()
+    const held = heldMapStore()
+    const controller = await startGpxRuntime({ gpxStore: held.store, applyRuntime })
+    const waiting = held.pageHeld()
+    const refreshing = controller.refreshMission('mission-1')
+    await waiting
+
+    const assigning = controller.assignImportToOuting('team-01', 'outing-7')
+    await vi.waitFor(() => expect(held.store.assignGpxImportToOuting).toHaveBeenCalledTimes(1))
+    held.releaseAll()
+    await assigning
+    await refreshing
+    held.releaseAll()
+
+    const runtime = lastRuntime(applyRuntime)
+    expect(runtime.mapImports.find((entry) => entry.id === 'team-01')?.outing_id).toBe('outing-7')
+    expect(runtime.mapImports).toHaveLength(30)
+  })
+
+  it('saves that keep arriving during a map read do not keep the map blank [DON-350] [review]', async () => {
+    const applyRuntime = vi.fn()
+    const held = heldMapStore()
+    const controller = await startGpxRuntime({ gpxStore: held.store, applyRuntime })
+    const waiting = held.pageHeld()
+    const refreshing = controller.refreshMission('mission-1')
+    await waiting
+
+    const colours = ['#111111', '#222222', '#333333', '#444444', '#555555']
+    const saves = colours.map((colour) => controller.updateImportColor('team-00', colour))
+    await vi.waitFor(() => expect(held.store.updateGpxImportPresentation).toHaveBeenCalledTimes(colours.length))
+    // Only the first read is let through; any read the saves started stays held.
+    held.releaseOldest()
     await refreshing
 
     const runtime = lastRuntime(applyRuntime)
-    const panelEntry = runtime.imports.find((entry) => entry.id === 'team-00')
-    const mapEntry = runtime.mapImports.find((entry) => entry.id === 'team-00')
-    expect(panelEntry?.metadata_json).toBe(saved?.metadata_json)
-    expect(mapEntry?.metadata_json).toBe(saved?.metadata_json)
-    expect(runtime.mapImports.find((entry) => entry.id === 'team-01')?.outing_id).toBe('outing-7')
     expect(runtime.mapImports).toHaveLength(30)
+    expect(runtime.mapImports.find((entry) => entry.id === 'team-00')?.metadata_json)
+      .toBe(runtime.imports.find((entry) => entry.id === 'team-00')?.metadata_json)
+    expect(runtime.mapImports.find((entry) => entry.id === 'team-00')?.metadata_json).toContain('#555555'.toUpperCase())
+    held.releaseAll()
+    await Promise.all(saves)
   })
 
   it('tells the operator by name when a track cannot be drawn, and when the track cap is reached [M-87]', async () => {
