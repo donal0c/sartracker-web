@@ -14,13 +14,16 @@ const MINUTE_MS = 60_000
  * Formats a missing time range in the operator's local clock (24-hour, as the
  * rest of the app). The start is rounded down and the end up to the minute,
  * so the text never claims less is missing than really is. The date is shown
- * only when the range is not today or crosses midnight.
+ * only when the range is not today or crosses midnight. When the UTC offset
+ * differs between the two ends (a clock change inside the range), both times
+ * carry their offset, so "01:50–01:10" never appears to run backwards.
  *
  * @param fromIso range start (UTC ISO instant)
  * @param toIso range end (UTC ISO instant)
  * @param nowMs the current time, which decides what "today" is
  * @param timeZone IANA zone; defaults to the operator's
- * @returns e.g. "10:05–10:35" or "20/11/2026 23:50–21/11/2026 00:20"
+ * @returns e.g. "10:05–10:35", "20/11/2026 23:50–21/11/2026 00:20" or
+ *   "01:50 (UTC+1)–01:10 (UTC+0)"
  */
 export function formatOperatorClockRange(
   fromIso: string,
@@ -47,8 +50,11 @@ export function formatOperatorClockRange(
   })
   const fromDay = day.format(fromMs)
   const toDay = day.format(toMs)
-  const fromClock = clock.format(fromMs)
-  const toClock = clock.format(toMs)
+  const fromOffset = formatUtcOffset(fromMs, timeZone)
+  const toOffset = formatUtcOffset(toMs, timeZone)
+  const showOffsets = fromOffset !== toOffset
+  const fromClock = showOffsets ? `${clock.format(fromMs)} (${fromOffset})` : clock.format(fromMs)
+  const toClock = showOffsets ? `${clock.format(toMs)} (${toOffset})` : clock.format(toMs)
   if (fromDay !== toDay) {
     return `${fromDay} ${fromClock}–${toDay} ${toClock}`
   }
@@ -56,6 +62,26 @@ export function formatOperatorClockRange(
     return `${fromDay} ${fromClock}–${toClock}`
   }
   return `${fromClock}–${toClock}`
+}
+
+/**
+ * Formats a zone's UTC offset at one instant, e.g. "UTC+1", "UTC+0" or
+ * "UTC+5:30".
+ *
+ * @param instantMs the instant
+ * @param timeZone IANA zone
+ * @returns the offset label
+ */
+function formatUtcOffset(instantMs: number, timeZone: string): string {
+  const name = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
+    .formatToParts(instantMs)
+    .find((part) => part.type === 'timeZoneName')?.value ?? 'GMT'
+  // "GMT" (zero offset) or "GMT+01:00" / "GMT-03:30".
+  const match = /^GMT(?<sign>[+-])(?<hours>\d{2}):(?<minutes>\d{2})$/u.exec(name)
+  if (match?.groups === undefined) return name === 'GMT' ? 'UTC+0' : name
+  const hours = Number(match.groups.hours)
+  const minutes = match.groups.minutes === '00' ? '' : `:${match.groups.minutes}`
+  return `UTC${match.groups.sign}${hours}${minutes}`
 }
 
 /**

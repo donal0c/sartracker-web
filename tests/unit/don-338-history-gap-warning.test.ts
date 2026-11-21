@@ -59,6 +59,36 @@ describe('[DON-338] history gap wording', () => {
     )).toBe('20/11/2026 23:50–21/11/2026 00:20')
   })
 
+  it('shows the UTC offset on both ends when the clocks go back inside the range', () => {
+    // 00:50Z is 01:50 IST; 01:10Z is 01:10 GMT. Without offsets this would
+    // read "01:50–01:10", a range that runs backwards.
+    expect(formatOperatorClockRange(
+      '2026-10-25T00:50:00.000Z',
+      '2026-10-25T01:10:00.000Z',
+      Date.parse('2026-10-25T12:00:00.000Z'),
+      ZONE,
+    )).toBe('01:50 (UTC+1)–01:10 (UTC+0)')
+  })
+
+  it('shows the UTC offset on both ends when the clocks go forward inside the range', () => {
+    // 00:50Z is 00:50 GMT; 01:10Z is 02:10 IST: twenty minutes, not eighty.
+    expect(formatOperatorClockRange(
+      '2026-03-29T00:50:00.000Z',
+      '2026-03-29T01:10:00.000Z',
+      Date.parse('2026-03-29T12:00:00.000Z'),
+      ZONE,
+    )).toBe('00:50 (UTC+0)–02:10 (UTC+1)')
+  })
+
+  it('shows offsets with the date when a range across a clock change is not today', () => {
+    expect(formatOperatorClockRange(
+      '2026-10-25T00:50:00.000Z',
+      '2026-10-25T01:10:00.000Z',
+      NOW_MS,
+      ZONE,
+    )).toBe('25/10/2026 01:50 (UTC+1)–01:10 (UTC+0)')
+  })
+
   it('names one gap in plain words', () => {
     expect(describeHistoryGapsForOperator(
       [gap('1', 'Alpha', '2026-11-21T10:05:00.000Z', '2026-11-21T10:35:00.000Z')],
