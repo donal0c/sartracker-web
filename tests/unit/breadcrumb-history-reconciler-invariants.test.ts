@@ -110,7 +110,7 @@ type LateFix = {
 type Checkpoint = { historyFromMs: number; untilMs: number }
 
 /** Runs one seed; returns a description of the first broken invariant, or null. */
-async function runSeed(seed: number): Promise<string | null> {
+async function runSeed(seed: number): Promise<{ readonly failure: string | null; readonly tailBoundChecked: boolean }> {
   const random = createRandom(seed)
   // A saturated queue: many devices, one re-check task at a time, slow replies.
   const saturated = random.chance(0.1)
@@ -304,9 +304,15 @@ async function runSeed(seed: number): Promise<string | null> {
   const perLanePerTurn = budget >= 3 ? Math.floor(budget / 3) : 1 / 3
   const historySlices = Math.ceil((nowAtStartMs + 4 * HOUR_MS - earliestMs) / MIN_WINDOW_MS)
   const recentSlices = Math.ceil(RECENT_WINDOW_MS / MIN_WINDOW_MS) + 2
+  // A permanent tail never ends; only the part up to now can hold slices, so
+  // its contribution is capped at the current time.
   const failingSlices = (deviceId: string): number => (regionsByDevice.get(deviceId) ?? [])
     .filter((region) => region.kind !== 'dense' && region.kind !== 'temp500')
-    .reduce((total, region) => total + Math.ceil((region.range.toMs - region.range.fromMs + 2 * CHUNK_MS) / MIN_WINDOW_MS) + 2, 0)
+    .reduce((total, region) => {
+      const toMs = Math.min(region.range.toMs, Date.now())
+      if (toMs <= region.range.fromMs) return total
+      return total + Math.ceil((toMs - region.range.fromMs + 2 * CHUNK_MS) / MIN_WINDOW_MS) + 2
+    }, 0)
   // Gap slices are retried in cycles: within the running cycle (frozen at no
   // more than today's gap slices) plus the next, so twice the open gap
   // slices, counted when the bound is checked.
@@ -359,6 +365,9 @@ async function runSeed(seed: number): Promise<string | null> {
     return owed
   }
 
+  const hasTail = (deviceId: string): boolean =>
+    (regionsByDevice.get(deviceId) ?? []).some((region) => region.kind === 'permTail')
+  let tailBoundChecked = false
   let previousOwed = new Map<string, Range[]>()
   let progressChecked = 0
   const checkInvariants = (): void => {
@@ -391,17 +400,22 @@ async function runSeed(seed: number): Promise<string | null> {
     maxGapSlicesSeen = seen
     for (const fix of lateFixes) {
       if (!fix.fetchable || storedIds.has(fix.id)) continue
+      const bound = boundTicks(fix.deviceId)
+      if (!Number.isFinite(bound)) fail(`b: the delivery bound for ${fix.id} is not finite`)
+      if (hasTail(fix.deviceId)) tailBoundChecked = true
       const eligibleMs = Math.max(fix.uploadedAtMs, lastDisruptionMs, recoveryOf(fix.deviceId, fix.fixMs))
       if (Date.now() >= eligibleMs && !gapDeadlines.has(fix.id)) {
         const inGap = progress.historyGaps.some((gap) =>
           gap.deviceId === fix.deviceId && Date.parse(gap.from) <= fix.fixMs && fix.fixMs <= Date.parse(gap.to))
-        gapDeadlines.set(fix.id, inGap ? Date.now() + gapBoundTicks(fix.deviceId) * TICK_MS : Number.POSITIVE_INFINITY)
+        const gapBound = gapBoundTicks(fix.deviceId)
+        if (inGap && !Number.isFinite(gapBound)) fail(`b: the gap cycle bound for ${fix.id} is not finite`)
+        gapDeadlines.set(fix.id, inGap ? Date.now() + gapBound * TICK_MS : Number.POSITIVE_INFINITY)
       }
       if (Date.now() > (gapDeadlines.get(fix.id) ?? Number.POSITIVE_INFINITY)) {
         fail(`b: late fix ${fix.id} in a gap not retried within its gap cycle bound (b=${budget})`)
       }
-      if (Date.now() - eligibleMs > boundTicks(fix.deviceId) * TICK_MS) {
-        fail(`b: late fix ${fix.id} not delivered within ${boundTicks(fix.deviceId)} ticks (b=${budget})`)
+      if (Date.now() - eligibleMs > bound * TICK_MS) {
+        fail(`b: late fix ${fix.id} not delivered within ${bound} ticks (b=${budget})`)
       }
     }
   }
@@ -477,7 +491,7 @@ async function runSeed(seed: number): Promise<string | null> {
     }
   }
   reconciler.reset()
-  return failure
+  return { failure, tailBoundChecked }
 }
 
 function pendingDeviceNamesHas(progress: BreadcrumbHistoryProgress, name: string): boolean {
@@ -495,16 +509,21 @@ describe('history reconciler scheduling invariants under random schedules [DON-3
 
   it(`holds every invariant for ${SEED_COUNT} seeds`, async () => {
     const failures: string[] = []
+    let tailSeedsWithFiniteBound = 0
     // DEBUG_SEED=<n> replays one seed.
     const only = Number(process.env.DEBUG_SEED ?? 0)
     for (let seed = only || 1; seed <= (only || SEED_COUNT); seed += 1) {
-      const failure = await runSeed(seed)
+      const { failure, tailBoundChecked } = await runSeed(seed)
+      if (tailBoundChecked) tailSeedsWithFiniteBound += 1
       if (failure !== null) {
         failures.push(`seed ${seed}: ${failure}`)
         if (failures.length >= 5) break
       }
     }
     if (failures.length > 0) console.error(failures.join('\n'))
+    if (process.env.REPORT_SEEDS) process.stderr.write(`\nseeds with a permanent tail and a finite applied bound: ${tailSeedsWithFiniteBound}\n`)
     expect(failures).toEqual([])
+    // Permanent-tail schedules stay covered by a finite delivery bound.
+    if (only === 0) expect(tailSeedsWithFiniteBound).toBeGreaterThanOrEqual(50)
   }, 120_000)
 })
