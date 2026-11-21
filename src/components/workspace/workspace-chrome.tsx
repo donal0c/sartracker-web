@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useDiagnosticsWorkspaceStore } from '../../features/diagnostics/diagnostics-workspace-store'
-import { useLastConfirmedAt, type TrackingCondition, type TrackingHeadline } from '../../features/layout-trial/use-tracking-issues'
+import { useLastConfirmedAt, type TrackingCondition, type TrackingHeadline } from '../../features/workspace/tracking-headline'
 import { useMissionReviewWorkspaceStore } from '../../features/mission-review/mission-review-workspace-store'
 import { useMissionStore } from '../../features/mission/mission-store'
 import { formatMissionDuration } from '../../features/mission/mission-timers'
@@ -31,15 +31,15 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
   return (
     <button
       aria-label={`${headline.text}. Open tracking details`}
-      className={`trial-health trial-health-${headline.tone}`}
-      data-testid="trial-tracking-headline"
+      className={`ws-health ws-health-${headline.tone}`}
+      data-testid="ws-tracking-headline"
       onClick={props.onOpen}
       role="status"
       title="Open tracking details"
       type="button"
     >
       <strong><span aria-hidden="true">{headline.tone === 'ok' ? '●' : '⚠'} </span>{headline.text}</strong>
-      <span className="trial-health-time">Last update {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt).replace(/ GMT.*$/, '')}</span>
+      <span className="ws-health-time">Last update {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt).replace(/ GMT.*$/, '')}</span>
     </button>
   )
 }
@@ -47,23 +47,26 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
 /** Mission name and the active search clock (Sar_4); Since start is in the Mission panel. */
 function MissionSummary(props: { readonly onOpen: () => void; readonly open: boolean }) {
   const mission = useMissionStore((state) => state.currentMission)
+  const recoverableMission = useMissionStore((state) => state.recoverableMission)
   const phase = useMissionStore((state) => state.phase)
   const timer = useMissionTimer(mission)
+  // An unfinished mission waiting to be resumed is named, not reported as "No mission running".
+  const shownName = mission?.name ?? (phase === 'recovery' ? recoverableMission?.name : undefined) ?? 'No mission running'
   return (
     <>
       <button
         aria-expanded={props.open}
-        className="trial-mission-button"
-        data-testid="trial-mission-button"
+        className="ws-mission-button"
+        data-testid="ws-mission-button"
         onClick={props.onOpen}
         title="Pause, finish, add people, review"
         type="button"
       >
-        <span className={`trial-mission-phase trial-phase-${phase}`} data-testid="trial-mission-phase">{phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Mission ▾ · Running' : phase === 'paused' ? 'Mission ▾ · PAUSED' : 'Mission ▾ · Needs resuming'}</span>
-        <span className="trial-mission-name" data-testid="current-mission-name">{mission?.name ?? 'No mission running'}</span>
+        <span className={`ws-mission-phase ws-phase-${phase}`} data-testid="ws-mission-phase">{phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Mission ▾ · Running' : phase === 'paused' ? 'Mission ▾ · PAUSED' : 'Mission ▾ · Needs resuming'}</span>
+        <span className="ws-mission-name" data-testid="current-mission-name">{shownName}</span>
       </button>
       {mission === null ? null : (
-        <div className="trial-clocks" data-testid="trial-clocks">
+        <div className="ws-clocks" data-testid="ws-clocks">
           <div><span>Search time</span><strong>{formatMissionDuration(timer?.activeSeconds ?? 0)}</strong></div>
         </div>
       )}
@@ -89,15 +92,15 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
 
   return (
     <div className="relative" ref={ref}>
-      <button aria-expanded={open} className="trial-bar-button" data-testid="trial-more-button" onClick={() => setOpen(!open)} type="button">More ▾</button>
+      <button aria-expanded={open} className="ws-bar-button" data-testid="ws-more-button" onClick={() => setOpen(!open)} type="button">More ▾</button>
       {open ? (
-        <div className="trial-menu" data-testid="trial-more-menu">
-          <button data-testid="trial-open-review" onClick={() => { setOpen(false); openReview() }} type="button">Review and replay</button>
+        <div className="ws-menu" data-testid="ws-more-menu">
+          <button data-testid="ws-open-review" onClick={() => { setOpen(false); openReview() }} type="button">Review and replay</button>
           <button data-testid="open-diagnostics-workspace" onClick={() => { setOpen(false); openDiagnostics() }} type="button">Diagnostics</button>
           <a data-testid="open-help-manual" href="./manual/index.html" rel="noreferrer" target="_blank">Help</a>
-          <div className="trial-menu-row">{props.weather}</div>
-          <div className="trial-menu-row"><ThemeToggle /></div>
-          <p className="trial-menu-version">{APP_VERSION}</p>
+          <div className="ws-menu-row">{props.weather}</div>
+          <div className="ws-menu-row"><ThemeToggle /></div>
+          <p className="ws-menu-version">{APP_VERSION}</p>
         </div>
       ) : null}
     </div>
@@ -105,7 +108,7 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
 }
 
 /** A single shallow row: mission, trust in the map, panels, and little else. */
-export function TrialTopBar(props: {
+export function WorkspaceTopBar(props: {
   readonly headline: TrackingHeadline
   readonly missionOpen: boolean
   readonly onToggleMission: () => void
@@ -115,14 +118,14 @@ export function TrialTopBar(props: {
 }) {
   const openSettings = useSettingsWorkspaceStore((state) => state.openWorkspace)
   return (
-    <header className="trial-top-bar" data-testid="trial-top-bar">
-      <img alt="Mountain Rescue team logo" className="trial-logo" src="./brand/kmrt-logo-compact.png" />
+    <header className="ws-top-bar" data-testid="ws-top-bar">
+      <img alt="Mountain Rescue team logo" className="ws-logo" src="./brand/kmrt-logo-compact.png" />
       <h1 className="sr-only" data-testid="app-title">SAR Tracker</h1>
       <MissionSummary onOpen={props.onToggleMission} open={props.missionOpen} />
       <TrackingHeadlineButton headline={props.headline} onOpen={props.onOpenTracking} />
-      <div className="trial-bar-actions">
+      <div className="ws-bar-actions">
         {props.panelButtons}
-        <button className="trial-bar-button" data-testid="open-settings-workspace" onClick={() => openSettings()} type="button">Settings</button>
+        <button className="ws-bar-button" data-testid="open-settings-workspace" onClick={() => openSettings()} type="button">Settings</button>
         <MoreMenu weather={props.weather} />
       </div>
     </header>
@@ -130,18 +133,18 @@ export function TrialTopBar(props: {
 }
 
 /** Full-width alarm for a stopped map; it cannot be scrolled or closed away. */
-export function TrialAlarm(props: { readonly headline: TrackingHeadline; readonly onOpenTracking: () => void }) {
+export function TrackingAlarm(props: { readonly headline: TrackingHeadline; readonly onOpenTracking: () => void }) {
   const phase = useMissionStore((state) => state.phase)
   const controller = useMissionStore((state) => state.controller)
   const [resumeError, setResumeError] = useState<string | null>(null)
   if (props.headline.tone !== 'alert') return null
   return (
-    <div className="trial-alarm" data-testid="trial-alarm" role="alert">
+    <div className="ws-alarm" data-testid="ws-alarm" role="alert">
       <strong>{props.headline.alarm ?? props.headline.text}</strong>
       {resumeError === null ? null : <span>{resumeError}</span>}
       {phase === 'paused' ? (
         <button
-          data-testid="trial-alarm-resume"
+          data-testid="ws-alarm-resume"
           onClick={() => {
             setResumeError(null)
             controller?.resumeMission().catch((error: unknown) => {
@@ -153,20 +156,20 @@ export function TrialAlarm(props: { readonly headline: TrackingHeadline; readonl
           Resume mission
         </button>
       ) : (
-        <button data-testid="trial-alarm-details" onClick={props.onOpenTracking} type="button">What to do</button>
+        <button data-testid="ws-alarm-details" onClick={props.onOpenTracking} type="button">What to do</button>
       )}
     </div>
   )
 }
 
 /** Heading shared by every panel in the side slot, always with a plain way out. */
-export function TrialPanelHead(props: { readonly title: ReactNode; readonly onClose: () => void; readonly children?: ReactNode }) {
+export function PanelHead(props: { readonly title: ReactNode; readonly onClose: () => void; readonly children?: ReactNode }) {
   return (
-    <div className="trial-section-head">
+    <div className="ws-section-head">
       <h2>{props.title}</h2>
       <span className="flex items-center gap-1">
         {props.children}
-        <button className="trial-close" data-testid="trial-panel-close" onClick={props.onClose} type="button">Close</button>
+        <button className="ws-close" data-testid="ws-panel-close" onClick={props.onClose} type="button">Close</button>
       </span>
     </div>
   )
@@ -182,20 +185,20 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
 
   return (
-    <section className="trial-panel-section" data-testid="trial-tracking-panel">
-      <TrialPanelHead onClose={props.onClose} title="Tracking" />
-      <div className="trial-panel-scroll">
-        <dl className="trial-plain-lines">
+    <section className="ws-panel-section" data-testid="ws-tracking-panel">
+      <PanelHead onClose={props.onClose} title="Tracking" />
+      <div className="ws-panel-scroll">
+        <dl className="ws-plain-lines">
           <dt>What has happened</dt>
-          <dd data-testid="trial-tracking-happened">{advice.happened}{headline.issues.length === 0 ? null : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
+          <dd data-testid="ws-tracking-happened">{advice.happened}{headline.issues.length === 0 ? null : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
           <dt>What the map is showing</dt>
           <dd>{advice.map} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
           <dt>What to do</dt>
-          <dd data-testid="trial-tracking-advice">{advice.todo}</dd>
+          <dd data-testid="ws-tracking-advice">{advice.todo}</dd>
         </dl>
         {canReconnect ? <button
           className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
-          data-testid="trial-reconnect"
+          data-testid="ws-reconnect"
           disabled={reconnecting}
           onClick={() => {
             const controller = getAppRuntimeController()
@@ -211,7 +214,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           {reconnecting ? 'Reconnecting…' : 'Reconnect'}
         </button> : null}
         {reconnectError === null ? null : <p className="sar-inline-alert p-2 text-sm" role="alert">{reconnectError}</p>}
-        <TrackingStatusPanel variant="trial" />
+        <TrackingStatusPanel variant="simplified" />
       </div>
     </section>
   )

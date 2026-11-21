@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import {
   getBreadcrumbDeviceFeatureNodeId,
@@ -11,45 +11,17 @@ import { findCatalogNode } from '../../features/layers/layer-catalog-tree'
 import { getLayerVisibilityCheckboxState } from '../../features/layers/layer-panel-model'
 import { setLayerSubtreeVisibility } from '../../features/layers/layer-subtree-visibility'
 import { useLayerVisibilityStore } from '../../features/layers/layer-visibility-store'
-import { buildPeopleRows, type PersonRow } from '../../features/layout-trial/people-model'
-import { useLastConfirmedAt } from '../../features/layout-trial/use-tracking-issues'
+import type { PersonRow } from '../../features/workspace/people-model'
 import { useMapTargetStore } from '../../features/map/map-target-store'
 import { useMissionStore } from '../../features/mission/mission-store'
-import { buildDeviceWorkspaceRows } from '../../features/tracking/device-workspace-model'
 import { useDeviceWorkspaceStore } from '../../features/tracking/device-workspace-store'
-import { useIngestHealthStore } from '../../features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../../features/tracking/stationary-attention-store'
 import { createDeviceColor } from '../../features/tracking/tracking-color'
-import { useTrackingStore } from '../../features/tracking/tracking-store'
 import { useTrackingStyleStore } from '../../features/tracking/tracking-style-store'
 
-import { TrialPanelHead } from './trial-chrome'
+import { PanelHead } from './workspace-chrome'
 
 const SEARCH_THRESHOLD = 8
-
-/** Builds the live people list once, for the panel and for its count on the buttons. */
-export function usePeopleRows(): readonly PersonRow[] {
-  const snapshot = useTrackingStore((state) => state.snapshot)
-  const mode = useTrackingStore((state) => state.status.mode)
-  const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
-  const ingestHealth = useIngestHealthStore((state) => state.summary)
-  const attentionByDevice = useStationaryAttentionStore((state) => state.byDevice)
-  const phase = useMissionStore((state) => state.phase)
-  const lastConfirmedAt = useLastConfirmedAt()
-  const [nowMs, setNowMs] = useState(() => Date.now())
-
-  // "3 min ago" has to keep moving even when no new position arrives.
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 20_000)
-    return () => window.clearInterval(timer)
-  }, [])
-
-  return useMemo(() => buildPeopleRows(
-    buildDeviceWorkspaceRows(snapshot, hiddenDeviceIds, ingestHealth, attentionByDevice, mode),
-    nowMs,
-    { live: mode === 'online' && phase === 'active', lastConfirmedAt },
-  ), [attentionByDevice, hiddenDeviceIds, ingestHealth, lastConfirmedAt, mode, nowMs, phase, snapshot])
-}
 
 /**
  * The team's own idea of the panel: each active person by name, with their
@@ -83,21 +55,21 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
   const allTrails = allState(TRACKING_BREADCRUMBS_LAYER_NODE_ID)
 
   return (
-    <section className="trial-panel-section" data-testid="trial-people-panel">
-      <TrialPanelHead onClose={props.onClose} title={<>People <span className="trial-count" data-testid="trial-people-count">{props.people.length}</span></>}>
-        <button className="trial-link-button" data-testid="open-devices-workspace" onClick={() => openDevices()} type="button">
+    <section className="ws-panel-section" data-testid="ws-people-panel">
+      <PanelHead onClose={props.onClose} title={<>People <span className="ws-count" data-testid="ws-people-count">{props.people.length}</span></>}>
+        <button className="ws-link-button" data-testid="open-devices-workspace" onClick={() => openDevices()} type="button">
           All devices
         </button>
-      </TrialPanelHead>
+      </PanelHead>
 
-      <div className="trial-people-grid trial-people-all" data-testid="trial-people-all">
+      <div className="ws-people-grid ws-people-all" data-testid="ws-people-all">
         <span>Everyone</span>
-        <span className="trial-tick-column">
+        <span className="ws-tick-column">
           <label>
             <input
               aria-checked={allPositions.mixed ? 'mixed' : allPositions.checked}
               checked={allPositions.checked}
-              data-testid="trial-all-positions"
+              data-testid="ws-all-positions"
               onChange={(event) => setVisible(TRACKING_DEVICES_LAYER_NODE_ID, event.target.checked)}
               ref={(input) => { if (input !== null) input.indeterminate = allPositions.mixed }}
               type="checkbox"
@@ -105,12 +77,12 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
             <span>Location</span>
           </label>
         </span>
-        <span className="trial-tick-column">
+        <span className="ws-tick-column">
           <label>
             <input
               aria-checked={allTrails.mixed ? 'mixed' : allTrails.checked}
               checked={allTrails.checked}
-              data-testid="trial-all-trails"
+              data-testid="ws-all-trails"
               onChange={(event) => setVisible(TRACKING_BREADCRUMBS_LAYER_NODE_ID, event.target.checked)}
               ref={(input) => { if (input !== null) input.indeterminate = allTrails.mixed }}
               type="checkbox"
@@ -123,8 +95,8 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
       {props.people.length > SEARCH_THRESHOLD ? (
         <input
           aria-label="Find a person"
-          className="sar-input trial-people-search"
-          data-testid="trial-people-search"
+          className="sar-input ws-people-search"
+          data-testid="ws-people-search"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Find a person"
           type="search"
@@ -132,9 +104,9 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
         />
       ) : null}
 
-      <ul className="trial-people-list min-h-0 flex-1 overflow-y-auto" data-testid="trial-people-list">
+      <ul className="ws-people-list min-h-0 flex-1 overflow-y-auto" data-testid="ws-people-list">
         {props.people.length === 0 ? (
-          <li className="trial-empty">
+          <li className="ws-empty">
             {hasMission ? (
               <>
                 <p>Nobody on this mission yet.</p>
@@ -143,14 +115,14 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
             ) : <p>Start a mission to see your team here.</p>}
           </li>
         ) : shown.length === 0 ? (
-          <li className="trial-empty"><p>Nobody called {query.trim()}.</p></li>
+          <li className="ws-empty"><p>Nobody called {query.trim()}.</p></li>
         ) : shown.map((person) => (
-          <li className={`trial-person trial-person-${person.tone}`} data-testid={`trial-person-${person.deviceId}`} key={person.deviceId}>
-            <div className="trial-people-grid">
+          <li className={`ws-person ws-person-${person.tone}`} data-testid={`ws-person-${person.deviceId}`} key={person.deviceId}>
+            <div className="ws-people-grid">
               <button
                 aria-label={person.canZoom ? `Go to ${person.name} on the map` : `${person.name} has no position yet`}
-                className="trial-person-main"
-                data-testid={`trial-person-zoom-${person.deviceId}`}
+                className="ws-person-main"
+                data-testid={`ws-person-zoom-${person.deviceId}`}
                 disabled={!person.canZoom}
                 onClick={() => {
                   if (person.latitude !== null && person.longitude !== null) {
@@ -162,28 +134,28 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
               >
                 <span
                   aria-hidden="true"
-                  className="trial-swatch"
+                  className="ws-swatch"
                   style={{ backgroundColor: deviceColors[person.deviceId] ?? createDeviceColor(person.deviceId) }}
                 />
                 <span className="min-w-0">
-                  <span className="trial-person-name">{person.name}</span>
-                  <span className="trial-person-status" data-testid={`trial-person-status-${person.deviceId}`}>{person.statusText}</span>
+                  <span className="ws-person-name">{person.name}</span>
+                  <span className="ws-person-status" data-testid={`ws-person-status-${person.deviceId}`}>{person.statusText}</span>
                 </span>
               </button>
-              <span className="trial-tick-column">
+              <span className="ws-tick-column">
                 <input
                   aria-label={`Show ${person.name}'s current location`}
                   checked={!person.positionHidden}
-                  data-testid={`trial-position-${person.deviceId}`}
+                  data-testid={`ws-position-${person.deviceId}`}
                   onChange={(event) => setVisible(getDeviceFeatureNodeId(person.deviceId), event.target.checked)}
                   type="checkbox"
                 />
               </span>
-              <span className="trial-tick-column">
+              <span className="ws-tick-column">
                 <input
                   aria-label={`Show ${person.name}'s breadcrumb trail`}
                   checked={!hiddenBreadcrumbs.includes(person.deviceId)}
-                  data-testid={`trial-trail-${person.deviceId}`}
+                  data-testid={`ws-trail-${person.deviceId}`}
                   onChange={(event) => setVisible(getBreadcrumbDeviceFeatureNodeId(person.deviceId), event.target.checked)}
                   type="checkbox"
                 />
@@ -191,8 +163,8 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
             </div>
             {person.canAcknowledge ? (
               <button
-                className="trial-ack"
-                data-testid={`trial-acknowledge-${person.deviceId}`}
+                className="ws-ack"
+                data-testid={`ws-acknowledge-${person.deviceId}`}
                 onClick={() => acknowledge(person.deviceId)}
                 type="button"
               >

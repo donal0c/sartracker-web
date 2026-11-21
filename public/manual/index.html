@@ -483,7 +483,7 @@
           <ol>
             <li>Open SAR Tracker. Confirm the tracking strip is green. If it says <strong>Tracking is not configured</strong>, go to <a href="#settings">Settings</a> first.</li>
             <li>Type a <strong>Mission name</strong> your coordinators will recognise later.</li>
-            <li>If the search began before you opened the app, set <strong>Start offset (hours)</strong> (up to 48).</li>
+            <li>If the search began before you opened the app, set <strong>Roll back time (hours)</strong> (up to 48).</li>
             <li>Tick the <strong>groups and devices taking part</strong> <em>before</em> you press Start.</li>
             <li>Press <strong>Start</strong>.</li>
             <li>Check the chip says <strong>ACTIVE</strong> and your teams are on the map.</li>
@@ -498,15 +498,15 @@
           <ol>
             <li><strong>Start the PC and open the AppImage from the desktop.</strong> On PCLinuxOS this is the SAR Tracker AppImage file.</li>
             <li><strong>Enter the mission name.</strong></li>
-            <li><strong>Set the roll back time</strong>: the <strong>Start offset (hours)</strong>, up to 48, if people were out before you opened the app.</li>
+            <li><strong>Set the roll back time</strong>: <strong>Roll back time (hours)</strong>, up to 48, if people were out before you opened the app.</li>
             <li><strong>Start.</strong> Your team's own group (for example KMRT) is already ticked, marked <em>team default</em>, if it was chosen once in Settings → Mission Defaults. Its members' tracks are fetched back to the start offset.</li>
             <li><strong>Discovery map.</strong> SAR Tracker opens on the map you last chose, so Discovery Topo comes back by itself if its package is ready.</li>
             <li><strong>From here the mission develops:</strong> convert coordinates (<strong>Convert</strong>, bottom right), add the casualty location (a <a href="#markers">Casualty marker</a>), and watch where people are.</li>
             <li><strong>Switch maps when you need to</strong>: OpenTopoMap and ESRI Satellite are in <strong>Maps</strong> (they need internet).</li>
-            <li><strong>Full screen:</strong> turn on <strong>Focus Mode</strong>, then press <strong>F11</strong> on Linux. Press F11 again and <strong>Exit Focus</strong> to come back.</li>
+            <li><strong>Full screen:</strong> press <strong>Full map</strong> in the top bar to close the side panel, then <strong>F11</strong> on Linux. Press F11 again and <strong>Show panel</strong> to come back.</li>
           </ol>
           <p>
-            Add another team after Start in Mission Control → <strong>Participants</strong>, and choose
+            Add another team after Start with the <strong>Mission</strong> button (top left) → <strong>Participants</strong>, and choose
             <strong>History from: Mission start</strong> to bring in their earlier track.
           </p>
         </section>
@@ -522,17 +522,16 @@
               <tr><th>Part</th><th>What it shows</th></tr>
             </thead>
             <tbody>
-              <tr><td><strong>Top bar</strong></td><td>Mission name, chip and start time; <strong>Elapsed</strong> and <strong>Active</strong> (search) timers; device count; <strong>Online / FIX / STALE</strong>; <strong>System status</strong>; and the buttons <strong>Diagnostics</strong>, <strong>Focus Mode</strong>, <strong>Settings</strong>, <strong>Weather</strong> and <strong>Help</strong> (this manual, in a new tab). On screens narrower than about 1640 pixels they show short labels: <strong>DIAG</strong>, <strong>FOCUS</strong>, <strong>SET</strong>, <strong>WX</strong> and <strong>HELP</strong>.</td></tr>
-              <tr><td><strong>Tracking strip</strong></td><td>Whether positions are arriving, and when the last one did. The <strong>Theme</strong> button on the right switches Standard and High contrast.</td></tr>
+              <tr><td><strong>Top bar</strong></td><td>From the left: the <strong>Mission</strong> button (name and state: <em>Start a mission</em>, <em>Running</em>, <em>PAUSED</em> or <em>Needs resuming</em>; press it to pause, finish or add people) with the search clock; the <strong>tracking line</strong>, which says in plain words whether positions are arriving and when the last one did (press it for what to do); <strong>People</strong>, <strong>Layers</strong> and <strong>Full map</strong>; then <strong>Weather</strong>, <strong>Settings</strong> and <strong>More</strong> (Review and replay, Diagnostics, Help, Theme).</td></tr>
+              <tr><td><strong>Alarm bar</strong></td><td>A full-width red bar under the top bar when the map cannot be trusted: tracking lost, the mission paused, or the mission record failing. It stays until the cause is fixed. <strong>What to do</strong> opens the Tracking panel.</td></tr>
               <tr><td><strong>Map</strong></td><td>Top left: <strong>Maps</strong> (which map) and <strong>Map Tools</strong> (draw, measure). Bottom: scale, and the position under the cursor in <strong>DD</strong>, <strong>Irish Grid</strong> and <strong>DMS</strong>, with a <strong>Convert</strong> button.</td></tr>
-              <tr><td><strong>Right side</strong></td><td><strong>Mission Control</strong> at the top (start, pause, finish, people, outings; during a mission people and outings fold to one line). Below it three tabs: <strong>Tracking</strong>, <strong>Tools</strong> and <strong>Layers</strong>.</td></tr>
+              <tr><td><strong>Side panel</strong></td><td>One panel at a time, on the right: <strong>People</strong> (who is out, who needs a look), <strong>Layers</strong>, <strong>Tracking</strong> (opened from the tracking line) or <strong>Mission</strong> (opened from the Mission button). <strong>Close</strong> or <strong>Full map</strong> gives the map the whole width. With People closed, anyone who needs a look is listed over the map.</td></tr>
             </tbody>
           </table>
           <div class="note">
-            During a mission, <strong>Participants</strong> and <strong>Outings</strong> fold to one
-            line each so the tab area keeps its room; press <strong>Show</strong> to open one. If the
-            right side is still tight, Mission Control and the tab area each scroll on their own, or use
-            <a href="#display">Focus Mode or Minimize</a> to give the map more room.
+            Warnings are never hidden by closing a panel. Lost or stale tracking, a paused mission and
+            storage problems always show in the top bar or the alarm bar; trail history problems show a
+            <strong>History incomplete</strong> button over the map whenever the Tracking panel is closed.
           </div>
         </section>
 
@@ -541,13 +540,13 @@
 
           <h3 id="mission-start">Start a mission</h3>
           <figure class="screenshot narrow">
-            <img src="assets/start-mission-setup.png" alt="Mission Control before starting: mission name, start offset, and groups and devices ticked" />
-            <figcaption>Ready to start. Hill Team (a group) and Charlie Team (a single device) are ticked.</figcaption>
+            <img src="assets/start-new-mission.png" alt="New mission screen: mission name, roll back time, the team default group ticked, and Start" />
+            <figcaption>When the app opens with no unfinished mission: a name, the roll back time and Start. The team default group is already ticked.</figcaption>
           </figure>
           <ul>
             <li><strong>Mission name</strong>: required. Use plain words, for example the place and date.</li>
-            <li><strong>Start offset (hours)</strong>: backdates the start when the search began before you opened the app. Maximum 48 hours.</li>
-            <li><strong>Mission participants</strong>: tick the <strong>groups</strong> and <strong>devices</strong> that are part of this search. A group covers everyone in it; their own boxes are locked and say <em>included by selected group</em>.
+            <li><strong>Roll back time (hours)</strong>: backdates the start when the search began before you opened the app. Maximum 48 hours.</li>
+            <li><strong>Who's taking part</strong>: your team default group shows already ticked. To change it, open <strong>Change who's taking part</strong> and tick the <strong>groups</strong> that are part of this search; <strong>Add one person at a time</strong> ticks single devices. A group covers everyone in it; their own boxes are locked and say <em>included by selected group</em>.
               Each time this step opens, SAR Tracker re-reads the groups from Traccar, so a group created since you
               started the app appears without a restart. While it reads you see <em>Refreshing Traccar groups…</em>. If the
               read fails, a message with a <strong>Retry</strong> button appears and the groups already listed stay as they were.
@@ -557,14 +556,14 @@
             <strong>Team default group.</strong> In <strong>Settings → Mission Defaults → Team default
             group</strong>, choose your team's own Traccar group (for example KMRT). It is then ticked
             automatically in the Start step of every new mission, marked <em>team default</em>, so its
-            members' history is fetched from the Start offset. Untick it if your team is not taking part;
+            members' history is fetched from the roll back time. Untick it if your team is not taking part;
             SAR Tracker will not tick it again for that mission. Nothing else is ever selected
             automatically. If the group is no longer on the tracking server, the Start step says so and
             nothing is ticked.
           </p>
           <div class="note">
             <strong>Earlier history is only fetched for people you tick before Start.</strong> If you
-            use a Start offset, tick everyone who was out during that time first. Someone you add
+            use a roll back time, tick everyone who was out during that time first. Someone you add
             after Start needs an explicit <strong>History from</strong> choice (below). If you start
             with nobody ticked, the app allows it and says so: those devices' positions are not saved
             as mission evidence or shown on the mission map until you add them.
@@ -687,34 +686,24 @@
 
           <h3 id="mission-recovery">If the app restarts or crashes</h3>
           <figure class="screenshot narrow">
-            <img src="assets/recovery-choice.png" alt="Resume Mission question with Resume and Start Fresh buttons" />
-            <figcaption>After a reload or interrupted session, the app asks before doing anything.</figcaption>
+            <img src="assets/start-resume-mission.png" alt="Unfinished mission screen with a large Resume button and a smaller Start a new mission instead button" />
+            <figcaption>When the app opens with an unfinished mission, Resume is the first choice.</figcaption>
           </figure>
           <ul>
+            <li>The top bar says <strong>Needs resuming</strong> and names the mission, and the tracking line says tracking is not live until you choose.</li>
             <li><strong>Resume</strong> keeps the same mission. A mission that was running carries on; one you had paused stays paused until you press Resume on the mission panel.</li>
             <li>The gap between the interruption and your choice counts as paused time, and Review records it as an automatic pause after an unexpected shutdown.</li>
-            <li><strong>Start Fresh</strong> abandons that recovery path. Use it only if the interrupted mission is <em>not</em> the current incident.</li>
+            <li><strong>Start a new mission instead</strong> asks first: <em>Finish it, start new</em> finishes the unfinished mission (its record is kept and can still be reviewed) and opens the new-mission screen. <em>Go back</em> changes nothing. Use it only if the unfinished mission is <em>not</em> the current incident.</li>
             <li>Keep <strong>one</strong> mission open across a multi-day search, even if the app or computer is closed overnight. Finish only at stand-down. Do not start a new mission each day to save space.</li>
           </ul>
         </section>
 
         <section id="display">
           <h2>Make more room, or make it easier to read</h2>
-          <div class="shot-row">
-            <figure class="screenshot">
-              <img src="assets/focus-mode.jpg" alt="Focus Mode Plus: the map fills the window and the right side is a compact panel" />
-              <figcaption>Focus Mode Plus. The map is bigger and the coordinates sit at the bottom.</figcaption>
-            </figure>
-            <figure class="screenshot">
-              <img src="assets/mission-control-minimized.png" alt="Top of the screen with Mission Control minimized to a one-line summary" />
-              <figcaption>Mission Control minimized to a summary line.</figcaption>
-            </figure>
-          </div>
           <ul>
-            <li><strong>Focus Mode</strong> (top bar) gives the map most of the window. Press <strong>Exit Focus</strong> to come back. The tracking strip stays visible.</li>
-            <li><strong>Minimize</strong> (Mission Control header) shrinks Mission Control to one line: mission name, state, search timer, <strong>Review</strong> and <strong>Restore mission</strong>. Restore it to reach <strong>Pause</strong> or <strong>Finish</strong>. The app restores it by itself when something needs a decision.</li>
-            <li><strong>Collapse</strong> (Layers tab) hides the whole right side. <strong>Restore workspace</strong> in the top strip brings it back. Your layer choices are kept.</li>
-            <li><strong>Theme</strong>: Standard or High contrast. The choice is remembered on this computer.</li>
+            <li><strong>Full map</strong> (top bar) closes the side panel so the map fills the window. <strong>Show panel</strong> brings People back. Warnings stay in the top bar and the alarm bar.</li>
+            <li><strong>Close</strong> on any panel does the same for that panel. Your layer choices are kept.</li>
+            <li><strong>Theme</strong> (top bar → <strong>More</strong>): Standard or High contrast. The choice is remembered on this computer.</li>
           </ul>
         </section>
 
@@ -726,8 +715,8 @@
             positions it had and marks them, rather than clearing the map.
           </p>
           <figure class="screenshot narrow">
-            <img src="assets/tracking-tab.png" alt="Tracking tab: ONLINE chip, Open Devices button, device, fix, cache and stale counters, and last success time" />
-            <figcaption>The Tracking tab when the feed is healthy.</figcaption>
+            <img src="assets/tracking-tab.png" alt="Tracking panel: ONLINE chip, Open Devices button, device, fix, cache and stale counters, and last success time" />
+            <figcaption>The Tracking panel when the feed is healthy.</figcaption>
           </figure>
 
           <h3>What the tracking strip and chips are telling you</h3>
@@ -749,7 +738,7 @@
             <figcaption>Tracking lost: the strip and the OFFLINE chip are red, and the last-known positions stay on the map.</figcaption>
           </figure>
           <p>
-            Other amber or red warnings you may meet in the Tracking tab, and what they mean:
+            Other amber or red warnings you may meet in the Tracking panel, and what they mean:
           </p>
           <table>
             <thead>
@@ -779,7 +768,7 @@
           <h3 id="devices">Devices workspace</h3>
           <figure class="screenshot">
             <img src="assets/devices-workspace.png" alt="Devices workspace listing three teams with trail colours, status, last seen and a Zoom button, and a selected-device panel" />
-            <figcaption>Open it with <strong>Open Devices</strong> in the Tracking tab. Close it with <strong>Close</strong> or Esc.</figcaption>
+            <figcaption>Open it with <strong>Open Devices</strong> in the Tracking panel. Close it with <strong>Close</strong> or Esc.</figcaption>
           </figure>
           <ul>
             <li><strong>Filters</strong> along the top: Devices, Hidden, Online, Stale, NoFix. The search box searches inside the chosen filter.</li>
@@ -794,13 +783,13 @@
           <h3>Breadcrumbs: line or dots</h3>
           <ul>
             <li><strong>Solid line</strong> draws each trail as a line. On very long routes the line may be simplified for speed; the app then shows <strong>Trail display simplified</strong> and how far the line may differ. The saved history is not simplified.</li>
-            <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail stays on the map while trails are switched on, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking tab says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking tab says so in red and the line still shows the whole trail.</li>
-            <li>If you hide a person's trail in the Layers tab, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking tab says how many trails are hidden. If you switch Trails off in the Layers tab, no line or dots are drawn at all, and the Tracking tab says so. Before any fix has arrived, the Tracking tab says no trail line is on the map yet.</li>
+            <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail stays on the map while trails are switched on, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking panel says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking panel says so in red and the line still shows the whole trail.</li>
+            <li>If you hide a person's trail in the Layers panel, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking panel says how many trails are hidden. If you switch Trails off in the Layers panel, no line or dots are drawn at all, and the Tracking panel says so. Before any fix has arrived, the Tracking panel says no trail line is on the map yet.</li>
             <li>A fix that stands on its own (a device's only fix, or one fix between two silences of more than 30 minutes) is drawn as a small circle in the device's colour, because a line needs two places.</li>
             <li><strong>Breadcrumb size</strong> changes line width and dot size for all devices.</li>
           </ul>
           <p>
-            To hide only a current-position dot or only a trail, use the <a href="#layers">Layers tab</a>.
+            To hide only a current-position dot or only a trail, use the <a href="#layers">Layers panel</a>.
           </p>
 
           <h3 id="stationary">Stationary attention</h3>
@@ -827,7 +816,7 @@
           <h2>Mission history coverage</h2>
           <figure class="screenshot narrow">
             <img src="assets/mission-history-coverage.png" alt="Mission History Coverage panel saying All mission history shown, with an Inspect exact fixes button" />
-            <figcaption>The panel in the Tracking tab. Healthy state.</figcaption>
+            <figcaption>The panel in the Tracking panel. Healthy state.</figcaption>
           </figure>
           <p>
             The thin violet lines on the map are the saved history of the people you have ticked. This panel
@@ -996,8 +985,8 @@
         <section id="layers">
           <h2>Layers: show and hide things</h2>
           <figure class="screenshot narrow">
-            <img src="assets/layers-tab.png" alt="Layers tab with a search box, Show Hidden, Expand All and Collapse All, and the layer tree" />
-            <figcaption>The Layers tab. Tick a box to show something on the map; untick to hide it.</figcaption>
+            <img src="assets/layers-tab.png" alt="Layers panel with a search box, Show Hidden, Expand All and Collapse All, and the layer tree" />
+            <figcaption>The Layers panel. Tick a box to show something on the map; untick to hide it.</figcaption>
           </figure>
           <p>
             The tree groups everything on the map: <strong>Tracking</strong> (<strong>Current Location</strong> and
@@ -1041,7 +1030,7 @@
             <li><strong>Map label size</strong> changes the text on the map. Casualty labels start larger.</li>
             <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app.</li>
             <li><strong>Retire</strong> asks twice (<strong>Retire</strong>, then <strong>Retire Marker</strong>; <strong>Keep</strong> cancels). A retired marker leaves the map but its history stays in the record.</li>
-            <li>If a marker sits on top of a drawing, clicking selects the <strong>marker</strong>. To edit the drawing underneath, use the Layers tab.</li>
+            <li>If a marker sits on top of a drawing, clicking selects the <strong>marker</strong>. To edit the drawing underneath, use the Layers panel.</li>
             <li>To place a marker from a grid reference instead of a click, use <a href="#tools"><strong>Marker at GR</strong></a>, or <strong>Create Marker Here</strong> in the <a href="#map">coordinate converter</a>.</li>
           </ul>
         </section>
@@ -1089,7 +1078,7 @@
           <p>
             Search areas start red so they show over hills; you can pick a colour, hide the name on the map
             when labels crowd it, and record team, status, probability of area, terrain and notes. To correct
-            a drawing, click it (or use the Layers tab), then edit or <strong>Retire</strong> it and confirm.
+            a drawing, click it (or use the Layers panel), then edit or <strong>Retire</strong> it and confirm.
             Retiring removes it from the map but keeps its history.
           </p>
           <figure class="screenshot">
@@ -1102,7 +1091,7 @@
           <h2>GPX tracks and helicopters</h2>
           <p>Both live in the <strong>Tools</strong> tab.</p>
           <figure class="screenshot narrow">
-            <img src="assets/tools-tab.png" alt="Tools tab with GPX Tracks controls and one imported track" />
+            <img src="assets/tools-tab.png" alt="GPX and helicopters panel (Layers → <strong>Add GPX, helicopters</strong>) with GPX Tracks controls and one imported track" />
             <figcaption>GPX Tracks with one imported track. In the browser test copy the file buttons are switched off.</figcaption>
           </figure>
           <h3>GPX tracks</h3>
@@ -1136,7 +1125,7 @@
         <section id="review">
           <h2>Review and Replay</h2>
           <p>
-            <strong>Review</strong> (Mission Control header) opens the <strong>Audit Workspace</strong>: what the
+            <strong>Review and replay</strong> (top bar → <strong>More</strong>) opens the <strong>Audit Workspace</strong>: what the
             app has saved for a mission. Nothing in it changes the mission.
           </p>
           <figure class="screenshot">
@@ -1211,7 +1200,7 @@
             <figcaption>The <strong>Mission Governance</strong> card appears after Finish.</figcaption>
           </figure>
           <ol>
-            <li>Find <strong>Mission Governance</strong> in Mission Control. It acts on the mission named there, which starts as the one you finished most recently. If several missions are finished, <strong>choose the right one in the Mission list and check the name</strong> before you go on.</li>
+            <li>Find <strong>Mission Governance</strong> on the new-mission screen, under <strong>Last finished mission: archive and unlock</strong>. It acts on the mission named there, which starts as the one you finished most recently. If several missions are finished, <strong>choose the right one in the Mission list and check the name</strong> before you go on.</li>
             <li>Press <strong>Archive &amp; Lock</strong>.</li>
             <li>Type an <strong>archive passphrase</strong> twice. Use at least 14 characters with at least three of: lower case, upper case, numbers, symbols. Press <strong>Generate one-time recovery code</strong>.</li>
             <li>Write the code down safely. Type it back exactly in the confirmation box.</li>
@@ -1291,7 +1280,7 @@
             blocked again until an admin records the new one.
           </p>
           <p>
-            After an unexpected close, the Tracking tab says <em>rejected-position evidence may have been
+            After an unexpected close, the Tracking panel says <em>rejected-position evidence may have been
             lost when the app closed unexpectedly</em>. This appears only if the app held unsaved rejected
             positions when it closed. If SAR Tracker cannot tell (for example the first start after
             upgrading from beta 13.5 following an unexpected close), it shows the same warning for every
@@ -1445,7 +1434,7 @@
             <li>It is at <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong> and is for training and quick surface checks only. It keeps mission data in the browser session, has no official maps, and cannot use file pickers or restart recovery. Never use it for a real incident.</li>
             <li>Confirm the amber <strong>Browser testing mode</strong> banner and <strong>Browser test / Session storage only</strong> in the top bar.</li>
             <li>In <strong>Settings → Data Sources</strong> use the team's <strong>https</strong> Traccar address (from your admin), <strong>Basic</strong> login, <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>. A plain <code>http://</code> address is blocked from this page. After a full page reload, enter the password again.</li>
-            <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>Start offset</strong> and tick the teams before Start.</li>
+            <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>roll back time</strong> and tick the teams before Start.</li>
             <li>When you report something, include the URL, mission name, browser, what you expected and what happened, and a screenshot if you can. The checklist is <code>docs/team-testing-feedback-loop.md</code>.</li>
           </ul>
 

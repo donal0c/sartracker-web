@@ -28,8 +28,8 @@ type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
   readonly onExactBreadcrumbDotsEarlier?: () => void
   readonly onExactBreadcrumbDotsLater?: () => void
-  /** Layout trial: only the warnings and history status; the plain summary sits above it. */
-  readonly variant?: 'standard' | 'trial'
+  /** Simplified workspace: only the warnings and history status; the plain summary sits above it. */
+  readonly variant?: 'standard' | 'simplified'
 }
 
 /**
@@ -135,14 +135,14 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         ? 'sar-status-chip-alert'
         : 'sar-status-chip-neutral'
 
-  const trial = props.variant === 'trial'
+  const simplified = props.variant === 'simplified'
 
   return (
     <div
-      className={trial ? 'text-sm' : 'sar-panel p-4 text-sm'}
+      className={simplified ? 'text-sm' : 'sar-panel p-4 text-sm'}
       data-testid="tracking-status"
     >
-      {trial ? null : <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
+      {simplified ? null : <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
         <div>
           <span className="sar-section-label text-amber-300">Tracking System</span>
           <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
@@ -166,7 +166,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </div>
       </div>}
 
-      {trial ? null : <div className="mb-4 flex">
+      {simplified ? null : <div className="mb-4 flex">
         <button
           className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
           aria-describedby={status.warning === null ? undefined : 'tracking-status-message'}
@@ -178,7 +178,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </button>
       </div>}
 
-      {status.warning === null || trial ? null : (
+      {status.warning === null || simplified ? null : (
         <TrackingStatusMessage tone={criticalTrustWarning ? 'critical' : 'warning'}>
           {status.warning}
         </TrackingStatusMessage>
@@ -254,7 +254,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       )}
 
-      {stationaryAttentionCount === 0 || trial ? null : (
+      {stationaryAttentionCount === 0 || simplified ? null : (
         <p
           className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
           data-testid="stationary-attention-summary"
@@ -270,7 +270,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         omittedOutingCount={omittedCoverageOutingCount}
         unassignedOmitted={unassignedCoverageOmitted}
         onInspectExactFixes={() => setBreadcrumbTrailMode('dots')}
-        {...(trial ? { inspectLabel: 'Show recorded positions' } : {})}
+        {...(simplified ? { inspectLabel: 'Show recorded positions' } : {})}
         onRetry={() => void coverageController?.resume()}
       />
 
@@ -314,7 +314,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       ) : null}
 
-      {trial ? null : <><div
+      {simplified ? null : <><div
         className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100"
         data-testid="tracking-counters"
       >

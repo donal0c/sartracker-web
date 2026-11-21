@@ -5,8 +5,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The real App layout, awareness strip and OperationalSidebar render; only the
-// heavy panels, bridges and the map are stubbed [DON-338 REN-6].
+// The real App layout and simplified workspace render; only the heavy panels,
+// bridges and the map are stubbed [DON-338 REN-6, DON-341].
 const nothing = vi.hoisted(() => () => null)
 vi.mock('../../src/components/map-view', () => ({ MapView: nothing }))
 vi.mock('../../src/features/drawings/drawing-runtime-bridge', () => ({ DrawingRuntimeBridge: nothing }))
@@ -33,8 +33,7 @@ vi.mock('../../src/components/tracking-status-panel', () => ({
   TrackingStatusPanel: () => React.createElement('div', { 'data-testid': 'tracking-panel-stub' }),
 }))
 vi.mock('../../src/components/layer-filter-panel', () => ({
-  LayerFilterPanel: (props: { readonly onCollapseWorkspace: () => void }) =>
-    React.createElement('button', { 'data-testid': 'collapse-stub', onClick: props.onCollapseWorkspace, type: 'button' }, 'Hide'),
+  LayerFilterPanel: () => React.createElement('div', { 'data-testid': 'layers-panel-stub' }),
 }))
 
 import App from '../../src/App'
@@ -42,7 +41,6 @@ import type { CoverageState } from '../../src/features/tracking/coverage-control
 import { applyCoverageState, useCoverageStore } from '../../src/features/tracking/coverage-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import { useRuntimeBootStore } from '../../src/features/runtime/runtime-boot-store'
-import { useFocusModeStore } from '../../src/features/focus-mode/focus-mode-store'
 
 let host: HTMLDivElement
 let root: Root
@@ -56,9 +54,9 @@ beforeEach(() => {
   document.body.append(host)
   root = createRoot(host)
   useRuntimeBootStore.setState({ phase: 'ready', error: null })
-  useFocusModeStore.setState({ active: false })
   useMissionStore.setState({
-    currentMission: { id: 'mission-1' } as ReturnType<typeof useMissionStore.getState>['currentMission'],
+    phase: 'active',
+    currentMission: { id: 'mission-1', name: 'Exercise', start_time: '2026-11-21T10:00:00.000Z' } as ReturnType<typeof useMissionStore.getState>['currentMission'],
   })
 })
 
@@ -69,59 +67,46 @@ afterEach(() => {
   useCoverageStore.setState({ state: { status: 'inactive' }, sourceState: { status: 'inactive' } })
 })
 
-describe('DON-338 REN-6: whole-history warning outside the collapsible sidebar', () => {
-  it('stays visible with the sidebar collapsed', () => {
+describe('DON-338 REN-6: whole-history warning outside the side panel', () => {
+  it('stays visible with the side panel closed for a full map', () => {
     renderApp()
-    // Collapse is offered from the Layers tab.
-    clickTestId('sidebar-tab-layers')
-    clickTestId('collapse-stub')
+    clickTestId('ws-full-map')
     act(() => applyCoverageState(coverage('error', { updating: true })))
 
-    expect(sidebar().style.display).toBe('none')
+    expect(host.querySelector('[data-testid="ws-side"]')?.getAttribute('data-empty')).toBe('true')
     const indicator = host.querySelector<HTMLButtonElement>('[data-testid="coverage-attention-indicator"]')
     expect(indicator).not.toBeNull()
-    expect(indicator?.closest('[data-testid="operational-sidebar"]')).toBeNull()
+    expect(indicator?.closest('[data-testid="ws-side"]')).toBeNull()
     expect(indicator?.textContent).toContain('the history line could not be updated')
     expect(indicator?.textContent).toContain('Open Tracking for details.')
   })
 
-  it('restores the sidebar and opens Tracking when pressed', () => {
+  it('opens the Tracking panel when pressed, and is not repeated there', () => {
     renderApp()
-    clickTestId('sidebar-tab-layers')
-    clickTestId('collapse-stub')
+    clickTestId('ws-full-map')
     act(() => applyCoverageState(coverage('partial', { updating: true, stalled: true })))
     expect(indicatorText()).toContain('has not updated for over 2 minutes')
 
     clickTestId('coverage-attention-indicator')
-    expect(sidebar().style.display).toBe('')
-    expect(host.querySelector('[data-testid="sidebar-tab-tracking"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(host.querySelector('[data-testid="ws-tracking-panel"]')).not.toBeNull()
     expect(host.querySelector('[data-testid="tracking-panel-stub"]')).not.toBeNull()
-    // Tracking shows the full panel, so the compact warning is not repeated there.
     expect(host.querySelector('[data-testid="coverage-attention-indicator"]')).toBeNull()
   })
 
-  it('shows on any other tab while the sidebar is open', () => {
+  it('shows while People or Layers is open', () => {
     renderApp()
     act(() => applyCoverageState(coverage('partial', { updating: false })))
-    expect(host.querySelector('[data-testid="coverage-attention-indicator"]')).toBeNull()
-
-    clickTestId('sidebar-tab-tools')
+    expect(host.querySelector('[data-testid="ws-people-panel"]')).not.toBeNull()
     expect(indicatorText()).toContain('the history line is incomplete')
-    clickTestId('coverage-attention-indicator')
-    expect(host.querySelector('[data-testid="tracking-panel-stub"]')).not.toBeNull()
-  })
 
-  it('shows in Focus Mode, which opens on the Layers tab', () => {
-    useFocusModeStore.setState({ active: true })
-    renderApp()
-    act(() => applyCoverageState(coverage('error')))
-    expect(indicatorText()).toContain('the history line could not be updated')
+    clickTestId('ws-toggle-layers')
+    expect(host.querySelector('[data-testid="layers-panel-stub"]')).not.toBeNull()
+    expect(indicatorText()).toContain('the history line is incomplete')
   })
 
   it('stays calm while the line is up to date or catching up normally', () => {
     renderApp()
-    clickTestId('sidebar-tab-layers')
-    clickTestId('collapse-stub')
+    clickTestId('ws-full-map')
     act(() => applyCoverageState(coverage('complete')))
     expect(host.querySelector('[data-testid="coverage-attention-indicator"]')).toBeNull()
 
@@ -134,7 +119,6 @@ describe('DON-338 REN-6: whole-history warning outside the collapsible sidebar',
 
   it('ignores coverage that belongs to another mission', () => {
     renderApp()
-    clickTestId('sidebar-tab-layers')
     act(() => applyCoverageState({ ...coverage('error'), missionId: 'mission-2' }))
     expect(host.querySelector('[data-testid="coverage-attention-indicator"]')).toBeNull()
   })
@@ -142,12 +126,6 @@ describe('DON-338 REN-6: whole-history warning outside the collapsible sidebar',
 
 function renderApp(): void {
   act(() => root.render(React.createElement(App)))
-}
-
-function sidebar(): HTMLElement {
-  const element = host.querySelector<HTMLElement>('[data-testid="operational-sidebar"]')
-  if (element === null) throw new Error('operational sidebar did not render')
-  return element
 }
 
 function clickTestId(testId: string): void {

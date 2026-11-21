@@ -1,4 +1,6 @@
-import { lazy, Suspense, useLayoutEffect, useState } from 'react'
+import { lazy, Suspense, useLayoutEffect, useState, type ReactNode } from 'react'
+
+import { ResumeMissionChoice } from './workspace/resume-mission-choice'
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
@@ -43,8 +45,8 @@ type MissionControlPanelProps = {
   readonly onMinimizedChange?: (minimized: boolean) => void
   readonly onActionErrorChange?: (error: string | null) => void
   readonly onDecisionOpenChange?: (open: boolean) => void
-  /** Layout trial: plain words, clocks live in the top bar, Outings tucked away. */
-  readonly variant?: 'standard' | 'trial'
+  /** Simplified workspace: plain words, clocks live in the top bar, Outings tucked away. */
+  readonly variant?: 'standard' | 'simplified'
 }
 
 /**
@@ -57,8 +59,8 @@ export function MissionControlPanel({
   onDecisionOpenChange,
   variant = 'standard',
 }: MissionControlPanelProps = {}) {
-  const trial = variant === 'trial'
-  // Trial only: the team asked for Pause not to be easy to hit by accident.
+  const simplified = variant === 'simplified'
+  // the team asked for Pause not to be easy to hit by accident.
   const [confirmingPause, setConfirmingPause] = useState(false)
   const {
     phase,
@@ -138,6 +140,9 @@ export function MissionControlPanel({
     !decisionOpen &&
     onMinimizedChange !== undefined
   const effectiveMinimized = canMinimizeToMast && minimized
+  // DON-342: the simplified start screen offers only Resume, or New with name, roll back and Start.
+  const resumeChoice = simplified && phase === 'recovery' && recoverableMission !== null
+  const startScreen = simplified && (phase === 'idle' || resumeChoice)
 
   if (effectiveMinimized) {
     return null
@@ -151,15 +156,15 @@ export function MissionControlPanel({
     >
       <div className={`sar-mission-header flex items-center justify-between border-b border-[var(--sar-line)] ${sectionsCollapsible ? 'mb-3 pb-2' : 'mb-4 pb-3'}`}>
         <div>
-          <span className="sar-section-label text-amber-300">{trial ? (phase === 'idle' ? 'Start a mission' : 'Mission') : 'Mission Control'}</span>
-          {sectionsCollapsible || trial ? null : (
+          <span className="sar-section-label text-amber-300">{simplified ? (phase === 'idle' ? 'New mission' : resumeChoice ? 'Unfinished mission' : 'Mission') : 'Mission Control'}</span>
+          {sectionsCollapsible || simplified ? null : (
             <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
               lifecycle and timing
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {trial ? null : <button
+          {simplified ? null : <button
             className="sar-button px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em]"
             data-testid="open-mission-review-workspace"
             disabled={!canOpenReview}
@@ -179,7 +184,7 @@ export function MissionControlPanel({
               Minimize
             </button>
           ) : null}
-          {phase !== 'idle' && !trial && (
+          {phase !== 'idle' && !simplified && (
             <div
               className={`h-2 w-2 rounded-full ${
                 phase === 'active'
@@ -197,7 +202,7 @@ export function MissionControlPanel({
             >
               {phasePresentation.statusLabel}
             </span>
-          ) : trial ? null : (
+          ) : simplified ? null : (
             <span
               className={`font-semibold uppercase text-[11px] ${
                 phase === 'active'
@@ -250,16 +255,25 @@ export function MissionControlPanel({
         </div>
       ) : null}
 
-      <div className={trial ? 'flex flex-col gap-2' : sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
+      <div className={simplified ? 'flex flex-col gap-2' : sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
         {/* Primary Telemetry; compact during a mission (also shown in the mast) [DON-300] */}
-        <div className={`grid gap-3 sm:grid-cols-2 ${trial ? (phase === 'idle' ? 'hidden' : 'sm:!grid-cols-1') : ''}`}>
+        {resumeChoice && recoverableMission !== null ? (
+          <ResumeMissionChoice
+            busy={governanceBusy}
+            mission={recoverableMission}
+            onResume={() => void resumeRecoverable()}
+            onStartNew={() => void startFresh()}
+          />
+        ) : null}
+
+        <div className={`grid gap-3 sm:grid-cols-2 ${simplified ? (startScreen ? 'hidden' : 'sm:!grid-cols-1') : ''}`}>
           <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">{trial ? 'Since start' : 'Elapsed'}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">{simplified ? 'Since start' : 'Elapsed'}</p>
             <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'} ${trial ? 'hidden' : ''}`}>
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'} ${simplified ? 'hidden' : ''}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
             <p className={`mt-1 font-mono font-black leading-none text-emerald-400 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
@@ -269,7 +283,7 @@ export function MissionControlPanel({
 
         {/* Setup Inputs - Only visible in Idle */}
         {phase === 'idle' ? (
-          <div className="sar-module space-y-4 p-4">
+          <div className="sar-module space-y-4 p-4" data-testid={simplified ? 'start-screen-new' : undefined}>
             <div>
               <label
                 className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
@@ -284,7 +298,7 @@ export function MissionControlPanel({
                 id={MISSION_NAME_INPUT_ID}
                 maxLength={MAX_MISSION_NAME_BYTES}
                 onChange={(event) => setMissionName(event.target.value)}
-                placeholder={trial ? 'For example: Coomloughra search' : 'Search Operation Name'}
+                placeholder={simplified ? 'For example: Coomloughra search' : 'Search Operation Name'}
                 value={missionName}
               />
             </div>
@@ -294,9 +308,9 @@ export function MissionControlPanel({
                 className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
                 htmlFor={MISSION_OFFSET_INPUT_ID}
               >
-                {trial ? 'Roll back time (hours)' : 'Start Offset (Hours)'}
+                {simplified ? 'Roll back time (hours)' : 'Start Offset (Hours)'}
               </label>
-              {trial ? <p className="mt-1 text-[13px] text-stone-300">If people were out before you opened this. Leave at 0 if not.</p> : null}
+              {simplified ? <p className="mt-1 text-[13px] text-stone-300">If people were out before you opened this. Leave at 0 if not.</p> : null}
               <input
                 className="sar-input mt-2 w-full px-3 py-2 text-sm"
                 data-testid="mission-offset-input"
@@ -334,13 +348,13 @@ export function MissionControlPanel({
         </div>
 
         {/* Tactical Actions */}
-        <div className={`space-y-2 ${trial ? 'order-last border-t border-[var(--sar-line)] pt-3' : ''}`}>
-          {trial && confirmingPause ? (
-            <div className="border border-amber-300 p-3" data-testid="trial-pause-confirm" role="group" aria-label="Confirm pause">
+        <div className={`space-y-2 ${simplified ? 'order-last border-t border-[var(--sar-line)] pt-3' : ''} ${resumeChoice ? 'hidden' : ''}`}>
+          {simplified && confirmingPause ? (
+            <div className="border border-amber-300 p-3" data-testid="ws-pause-confirm" role="group" aria-label="Confirm pause">
               <p className="text-[14px] font-bold">Pause the mission? Positions stop updating until you resume.</p>
               <div className="mt-2 grid grid-cols-2 gap-2">
-                <button className="sar-button-focus px-3 py-2 text-[13px] font-bold" data-testid="trial-pause-confirm-yes" onClick={() => { setConfirmingPause(false); void pauseOrResume() }} type="button">Pause</button>
-                <button className="sar-button px-3 py-2 text-[13px] font-bold" data-testid="trial-pause-confirm-no" onClick={() => setConfirmingPause(false)} type="button">Keep going</button>
+                <button className="sar-button-focus px-3 py-2 text-[13px] font-bold" data-testid="ws-pause-confirm-yes" onClick={() => { setConfirmingPause(false); void pauseOrResume() }} type="button">Pause</button>
+                <button className="sar-button px-3 py-2 text-[13px] font-bold" data-testid="ws-pause-confirm-no" onClick={() => setConfirmingPause(false)} type="button">Keep going</button>
               </div>
             </div>
           ) : null}
@@ -353,7 +367,7 @@ export function MissionControlPanel({
           >
             Start
           </button>
-          <div className={`grid gap-2 sm:grid-cols-2 ${trial && phase === 'idle' ? 'hidden' : ''}`}>
+          <div className={`grid gap-2 sm:grid-cols-2 ${simplified && phase === 'idle' ? 'hidden' : ''}`}>
             <button
               className={`px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale ${
                 phasePresentation.paused
@@ -363,7 +377,7 @@ export function MissionControlPanel({
               data-testid="mission-pause-resume-btn"
               disabled={!canPauseOrResume}
               onClick={() => {
-                if (trial && phase === 'active') setConfirmingPause(true)
+                if (simplified && phase === 'active') setConfirmingPause(true)
                 else void pauseOrResume()
               }}
               type="button"
@@ -384,18 +398,18 @@ export function MissionControlPanel({
 
         {/* During a mission Pause/Finish sit above the sections, so a section
             held open by a warning can never push them out of view [DON-300]. */}
-        {phase !== 'idle' ? (
+        {phase !== 'idle' && !resumeChoice ? (
           <MissionSectionDisclosure
             collapsible={sectionsCollapsible}
             section={participantSection}
             testId="mission-participants-section"
-            title={trial ? 'People on this mission' : 'Participants'}
+            title={simplified ? 'People on this mission' : 'Participants'}
           >
             <ParticipantControlsSection phase={phase} />
           </MissionSectionDisclosure>
         ) : null}
 
-        {trial && phase !== 'idle' ? (
+        {simplified && !startScreen ? (
           <button
             className="sar-button w-full px-3 py-2 text-[13px] font-bold"
             data-testid="open-mission-review-workspace"
@@ -407,8 +421,8 @@ export function MissionControlPanel({
           </button>
         ) : null}
 
-        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && trial ? (
-          <details className="text-[13px]" data-testid="trial-more-mission-options">
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified && !startScreen ? (
+          <details className="text-[13px]" data-testid="ws-more-mission-options">
             <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">More mission options</summary>
             <div className="mt-2">
               <MissionSectionDisclosure
@@ -423,7 +437,7 @@ export function MissionControlPanel({
           </details>
         ) : null}
 
-        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && !trial ? (
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && !simplified ? (
           <MissionSectionDisclosure
             collapsible={sectionsCollapsible}
             section={outingSection}
@@ -435,6 +449,7 @@ export function MissionControlPanel({
         ) : null}
 
         {phase === 'idle' && governanceMission !== null ? (
+          <FinishedMissionFold fold={simplified} needsReview={governanceMission.storage_state === 'recovery_required'}>
           <div
             className="border border-sky-500/20 bg-sky-950/20 p-4"
             data-testid="mission-governance-card"
@@ -536,6 +551,7 @@ export function MissionControlPanel({
               ) : null}
             </div>
           </div>
+          </FinishedMissionFold>
         ) : null}
 
         {governanceFeedback !== null ? (
@@ -545,7 +561,7 @@ export function MissionControlPanel({
         ) : null}
       </div>
 
-      {phase === 'recovery' && recoverableMission !== null ? (
+      {phase === 'recovery' && recoverableMission !== null && !resumeChoice ? (
         <div className="mt-4 border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl" data-testid="mission-recovery-dialog">
           <p className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide">Resume Mission?</p>
           <div className="mt-2 font-mono text-[13px] leading-relaxed text-stone-300">
@@ -704,5 +720,19 @@ function MissionActionError({ message }: { readonly message: string }) {
     >
       {message}
     </p>
+  )
+}
+
+/**
+ * Simplified start screen: the last finished mission's archive and unlock card
+ * is folded under one line, and opens by itself when it needs operator review.
+ */
+function FinishedMissionFold(props: { readonly fold: boolean; readonly needsReview: boolean; readonly children: ReactNode }) {
+  if (!props.fold) return <>{props.children}</>
+  return (
+    <details className="text-[13px]" data-testid="start-screen-finished-mission" open={props.needsReview}>
+      <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">Last finished mission: archive and unlock</summary>
+      <div className="mt-2">{props.children}</div>
+    </details>
   )
 }

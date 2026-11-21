@@ -27,8 +27,8 @@ import { COVERAGE_GROUP_NODE_ID, isCoverageNodeId, TRACKING_GROUP_NODE_ID } from
 /**
  * Renders the operational layer tree and feature inspection workspace.
  */
-export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason = null, variant = 'standard' }: { readonly onCollapseWorkspace?: () => void; readonly collapseDisabledReason?: string | null; readonly variant?: 'standard' | 'trial' } = {}) {
-  const trial = variant === 'trial'
+export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason = null, variant = 'standard' }: { readonly onCollapseWorkspace?: () => void; readonly collapseDisabledReason?: string | null; readonly variant?: 'standard' | 'simplified' } = {}) {
+  const simplified = variant === 'simplified'
   const root = useLayerCatalogStore((state) => state.root)
   const selectedNodeId = useLayerCatalogStore((state) => state.selectedNodeId)
   const catalogController = useLayerCatalogStore((state) => state.controller)
@@ -49,11 +49,11 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
 
   const filteredRoot = useMemo(() => {
     const searched = filterCatalogTree(root, searchQuery)
-    // The trial always lists hidden items, unticked, so they can be switched back on.
-    const shown = showHidden || trial ? searched : filterHiddenNodes(searched)
-    // In the trial, Tracking lives in the People panel, so it is not listed twice.
-    return trial ? { ...shown, children: shown.children.filter((group) => group.id !== TRACKING_GROUP_NODE_ID) } : shown
-  }, [root, searchQuery, showHidden, trial])
+    // The simplified always lists hidden items, unticked, so they can be switched back on.
+    const shown = showHidden || simplified ? searched : filterHiddenNodes(searched)
+    // In the simplified workspace, Tracking lives in the People panel, so it is not listed twice.
+    return simplified ? { ...shown, children: shown.children.filter((group) => group.id !== TRACKING_GROUP_NODE_ID) } : shown
+  }, [root, searchQuery, showHidden, simplified])
   const selectedNode = useMemo(
     () => findCatalogNode(root, selectedNodeId),
     [root, selectedNodeId],
@@ -74,10 +74,10 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
 
   return (
     <section
-      className={trial ? 'flex min-h-0 flex-1 flex-col text-sm' : 'sar-panel flex min-h-0 flex-1 flex-col p-4 text-sm'}
+      className={simplified ? 'flex min-h-0 flex-1 flex-col text-sm' : 'sar-panel flex min-h-0 flex-1 flex-col p-4 text-sm'}
       data-testid="layer-panel"
     >
-      {trial ? null : <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--sar-line)] pb-3">
+      {simplified ? null : <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--sar-line)] pb-3">
         <div>
           <h3 className="sar-section-label text-amber-300">
             Layer Workspace
@@ -100,17 +100,17 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
 
       {collapseDisabledReason !== null && <p className="mb-3 text-xs text-amber-200">{collapseDisabledReason}</p>}
 
-      {trial || onCollapseWorkspace || panelExpanded ? (
-        <div className={`flex min-h-0 flex-1 flex-col ${trial ? 'gap-2' : 'gap-4'}`}>
+      {simplified || onCollapseWorkspace || panelExpanded ? (
+        <div className={`flex min-h-0 flex-1 flex-col ${simplified ? 'gap-2' : 'gap-4'}`}>
           <input
             className="sar-input w-full px-3 py-2 text-xs"
             data-testid="layer-tree-search"
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder={trial ? 'Find a layer' : 'Search layers and features...'}
+            placeholder={simplified ? 'Find a layer' : 'Search layers and features...'}
             value={searchQuery}
           />
 
-          {trial ? null : <div className="flex flex-wrap items-center gap-2">
+          {simplified ? null : <div className="flex flex-wrap items-center gap-2">
             <label
               className="sar-toggle flex items-center gap-2 px-2.5 py-1.5 text-xs font-semibold text-stone-200"
               data-testid="layer-show-hidden-toggle"
@@ -153,8 +153,8 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
             <EmptyState message={catalogError} testId="layer-tree-error" />
           ) : null}
 
-          <div className={trial ? 'flex min-h-[6rem] flex-1 flex-col' : 'sar-module flex min-h-[12rem] flex-1 flex-col'}>
-            {trial ? null : <div className="flex-shrink-0 border-b border-stone-800/60 px-3 py-2">
+          <div className={simplified ? 'flex min-h-[6rem] flex-1 flex-col' : 'sar-module flex min-h-[12rem] flex-1 flex-col'}>
+            {simplified ? null : <div className="flex-shrink-0 border-b border-stone-800/60 px-3 py-2">
               <p className="sar-section-label">
                 Layer Tree
               </p>
@@ -183,7 +183,7 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
                       key={node.id}
                       measurementCount={measurements.length}
                       onSelect={catalogController?.selectNode ?? (() => undefined)}
-                      trial={trial}
+                      simplified={simplified}
                       root={root}
                       selectedNodeId={selectedNodeId}
                       toggleNodeExpanded={toggleNodeExpanded}
@@ -196,8 +196,8 @@ export function LayerFilterPanel({ onCollapseWorkspace, collapseDisabledReason =
             </div>
           </div>
 
-          {trial && selectedNode === null ? null : trial && hasNodeChildren(selectedNode ?? root) ? null : <>
-          {trial ? <button className="trial-close self-end" data-testid="trial-layer-details-close" onClick={() => catalogController?.selectNode(null)} type="button">Close details</button> : null}
+          {simplified && selectedNode === null ? null : simplified && hasNodeChildren(selectedNode ?? root) ? null : <>
+          {simplified ? <button className="ws-close self-end" data-testid="ws-layer-details-close" onClick={() => catalogController?.selectNode(null)} type="button">Close details</button> : null}
           <LayerInspector
             controller={catalogController}
             key={selectedNode?.id ?? 'empty'}
@@ -224,7 +224,7 @@ function TreeNodeRow(props: {
   readonly onSelect: (nodeId: string | null) => void
   readonly trackingBreadcrumbCount: number
   readonly measurementCount: number
-  readonly trial?: boolean
+  readonly simplified?: boolean
 }) {
   const isExpanded = props.expandedNodeIds.includes(props.node.id)
   const children = getNodeChildren(props.node)
@@ -283,16 +283,16 @@ function TreeNodeRow(props: {
           className="min-w-0 flex-1 truncate text-left"
           data-testid={`layer-select-${toLayerTreeTestId(props.node.id)}`}
           onClick={() => {
-            // Trial: a heading just opens; only an actual item opens its details.
-            if (props.trial === true && hasNodeChildren(props.node)) props.toggleNodeExpanded(props.node.id)
+            // Simplified: a heading just opens; only an actual item opens its details.
+            if (props.simplified === true && hasNodeChildren(props.node)) props.toggleNodeExpanded(props.node.id)
             else props.onSelect(props.node.id)
           }}
           type="button"
         >
-          <span className="truncate font-medium">{props.trial === true && props.node.id === COVERAGE_GROUP_NODE_ID ? 'Earlier tracks' : props.node.displayLabel}</span>
+          <span className="truncate font-medium">{props.simplified === true && props.node.id === COVERAGE_GROUP_NODE_ID ? 'Earlier tracks' : props.node.displayLabel}</span>
         </button>
 
-        {props.trial === true && (props.depth === 0 || childCount === '0') ? null : <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-300">
+        {props.simplified === true && (props.depth === 0 || childCount === '0') ? null : <span className="min-w-[2rem] text-right font-mono text-[11px] text-stone-300">
           {childCount}
         </span>}
       </div>
@@ -311,7 +311,7 @@ function TreeNodeRow(props: {
               selectedNodeId={props.selectedNodeId}
               toggleNodeExpanded={props.toggleNodeExpanded}
               trackingBreadcrumbCount={props.trackingBreadcrumbCount}
-              trial={props.trial === true}
+              simplified={props.simplified === true}
             />
           ))
         : null}

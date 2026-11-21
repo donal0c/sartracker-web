@@ -6,9 +6,6 @@ import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
 import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { DevicesWorkspace } from './components/devices-workspace'
-import { OperationalSidebar } from './components/operational-sidebar'
-import { useSidebarTabs } from './components/use-sidebar-tabs'
-import { CoverageAttentionIndicator } from './components/coverage-attention-indicator'
 import { FocusModeToggle } from './components/focus-mode-toggle'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
@@ -17,17 +14,14 @@ import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { OutingRuntimeBridge } from './features/outings/outing-runtime-bridge'
 import { ParticipantRuntimeBridge } from './features/participants/participant-runtime-bridge'
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
-import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
 import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
 import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
 import { openExternalUrl } from './infrastructure/url-opener/open-external-url'
 import type { WeatherLinkSettings } from './features/settings/settings-types'
-import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 import { useSettingsWorkspaceStore } from './features/settings/settings-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
-import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
 import { MapErrorBoundary } from './components/map-error-boundary'
@@ -46,13 +40,8 @@ import { reloadRuntimeFaultShell } from './features/runtime/runtime-fault-reload
 import { useTrackingStore } from './features/tracking/tracking-store'
 import { selectCommandMastTrackingReadout } from './features/tracking/command-mast-tracking-readout'
 import { APP_VERSION } from './lib/app-version'
-import { CompactMissionStrip } from './components/compact-mission-strip'
-import { PersistentTrackingHealth } from './components/persistent-tracking-health'
-import { ThemeToggle } from './components/theme-toggle'
-import { LayoutTrialSwitcher } from './components/layout-trial/layout-trial-switcher'
-import { selectLayoutTrialVersion, useLayoutTrialStore } from './features/layout-trial/layout-trial-store'
-import { useWorkspaceVisibility } from './features/mission/use-workspace-visibility'
-import { selectWorkspaceHideBlockedReason } from './features/mission/workspace-hide-blocked-reason'
+import { SimplifiedWorkspace } from './components/workspace/simplified-workspace'
+import { DESKTOP_PANEL_ARRANGEMENT } from './features/workspace/panel-arrangement'
 
 // Settings stays mounted so its open/close behaviour is unchanged; only its
 // code is split out of the default application chunk.
@@ -60,12 +49,6 @@ const SettingsWorkspace = lazy(async () => {
   const module = await import('./components/settings-workspace')
 
   return { default: module.SettingsWorkspace }
-})
-// Trial code stays out of the default chunk, so a normal launch does not carry it.
-const TrialLayout = lazy(async () => {
-  const module = await import('./components/layout-trial/trial-layout')
-
-  return { default: module.TrialLayout }
 })
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
@@ -76,48 +59,17 @@ const MapView = lazy(async () => {
 type RuntimeMode = 'electron' | 'hosted-browser'
 
 function App() {
-  const trialVersion = useLayoutTrialStore(selectLayoutTrialVersion)
-  const status = useAppStore((state) => state.status)
-  const focusModeActive = useFocusModeStore((state) => state.active)
   const settingsOpen = useSettingsWorkspaceStore((state) => state.open)
   const settingsFocusTarget = useSettingsWorkspaceStore((state) => state.focusTarget)
-  const openSettingsWorkspace = useSettingsWorkspaceStore((state) => state.openWorkspace)
   const closeSettingsWorkspace = useSettingsWorkspaceStore((state) => state.closeWorkspace)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
   const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
-  const restoreWorkspaceRef = useRef<HTMLButtonElement>(null)
-  const collapseOriginRef = useRef<HTMLElement | null>(null)
   const handleMissionActionError = useCallback((error: string | null) => {
     setMissionActionError(error)
   }, [])
-  const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
-  const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'electron'
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
-  const missionPhase = useMissionStore((state) => state.phase)
-  const currentMission = useMissionStore((state) => state.currentMission)
-  const governanceMission = useMissionStore((state) => state.governanceMission)
-  const railCollapseBlockedReason = selectWorkspaceHideBlockedReason({
-    decisionOpen: missionDecisionOpen,
-    actionError: missionActionError,
-    phase: missionPhase,
-    governanceMission,
-  })
-  const workspace = useWorkspaceVisibility(
-    `${currentMission?.id ?? 'none'}:${missionPhase}:${governanceMission?.id ?? 'none'}`,
-    railCollapseBlockedReason,
-  )
-  const effectiveRailCollapsed = workspace.collapsed
-  const sidebarTabs = useSidebarTabs(focusModeActive)
-  // The history warning lives in the awareness strip, outside the collapsible
-  // sidebar, whenever the full Tracking panel is not on screen [DON-338 REN-6].
-  const trackingPanelHidden = effectiveRailCollapsed || sidebarTabs.activeTab !== 'tracking'
-  const missionControlMinimized =
-    missionPhase === 'active' &&
-    missionActionError === null &&
-    currentMission !== null &&
-    workspace.minimized
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -139,7 +91,6 @@ function App() {
   return (
     <main
       className="sar-shell flex h-screen w-full flex-col overflow-hidden"
-      data-focus-mode={focusModeActive ? 'true' : 'false'}
       data-testid="app-shell"
     >
       <DiagnosticsRuntimeBridge />
@@ -153,59 +104,11 @@ function App() {
       <MeasurementRuntimeBridge />
       <MissionReviewRuntimeBridge />
 
-      <LayoutTrialSwitcher />
-      {trialVersion !== null ? null : focusModeActive ? null : (
-        <CommandMast
-          missionControlMinimized={missionControlMinimized}
-          onOpenDiagnostics={openDiagnosticsWorkspace}
-          onOpenSettings={() => openSettingsWorkspace()}
-          runtimeMode={runtimeMode}
-          status={status}
-        />
-      )}
-      {trialVersion !== null ? (
-        <Suspense fallback={null}>
-          <TrialLayout
-            actionError={missionActionError}
-            decisionOpen={missionDecisionOpen}
-            map={(
-              <Suspense fallback={<div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">Loading map shell...</div>}>
-                <MapErrorBoundary>
-                  <MapView />
-                </MapErrorBoundary>
-              </Suspense>
-            )}
-            onActionErrorChange={handleMissionActionError}
-            onDecisionOpenChange={setMissionDecisionOpen}
-            // focusModeActive keeps the autosave warning here now the old mast is gone.
-            safetyBanner={<RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive />}
-            version={trialVersion}
-            weather={<WeatherMenu />}
-          />
-        </Suspense>
-      ) : <>
-      <div className="sar-awareness-strip">
-        {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={workspace.restore} />}
-        <PersistentTrackingHealth />
-        {trackingPanelHidden && <CoverageAttentionIndicator onOpenTracking={() => {
-          workspace.restoreRail()
-          sidebarTabs.setActiveTab('tracking')
-        }} />}
-        <ThemeToggle />
-        {effectiveRailCollapsed && <button ref={restoreWorkspaceRef} className="sar-button px-3 py-2 text-xs font-bold" data-testid="restore-workspace" onClick={() => {
-          workspace.restoreRail()
-          requestAnimationFrame(() => collapseOriginRef.current?.focus())
-        }} type="button">Restore workspace</button>}
-        {focusModeActive && effectiveRailCollapsed && <FocusModeToggle className="sar-button px-3 py-2 text-xs" />}
-      </div>
-      <RuntimeSafetyBanner
-        browserTestingMode={browserTestingMode}
-        focusModeActive={focusModeActive}
-      />
-
-      <div className="flex min-h-0 flex-1">
-        {/* Map Area - Expanded */}
-        <section className="relative flex-1 overflow-hidden">
+      <SimplifiedWorkspace
+        actionError={missionActionError}
+        arrangement={DESKTOP_PANEL_ARRANGEMENT}
+        decisionOpen={missionDecisionOpen}
+        map={(
           <Suspense
             fallback={
               <div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">
@@ -217,26 +120,13 @@ function App() {
               <MapView />
             </MapErrorBoundary>
           </Suspense>
-        </section>
-
-        <OperationalSidebar
-          focusModeActive={focusModeActive}
-          tabs={sidebarTabs}
-          collapsed={effectiveRailCollapsed}
-          minimized={missionControlMinimized}
-          collapseDisabledReason={railCollapseBlockedReason}
-          onActionErrorChange={handleMissionActionError}
-          onDecisionOpenChange={setMissionDecisionOpen}
-          onMinimizedChange={workspace.minimize}
-          onCollapseWorkspace={() => {
-            collapseOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-            workspace.collapse()
-            requestAnimationFrame(() => restoreWorkspaceRef.current?.focus())
-          }}
-        />
-      </div>
-
-      </>}
+        )}
+        onActionErrorChange={handleMissionActionError}
+        onDecisionOpenChange={setMissionDecisionOpen}
+        // The old mast is gone, so the autosave warning shows in the safety banner.
+        safetyBanner={<RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive />}
+        weather={<WeatherMenu />}
+      />
 
       <DrawingDialog />
       <CoordinateConverterDialog />

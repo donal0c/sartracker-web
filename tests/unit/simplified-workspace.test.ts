@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseLayoutTrialChoice, withLayoutTrialChoice } from '../../src/features/layout-trial/layout-trial-store'
-import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/layout-trial/people-model'
-import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/layout-trial/use-tracking-issues'
+import { DESKTOP_PANEL_ARRANGEMENT, panelOpenByDefault, panelSide } from '../../src/features/workspace/panel-arrangement'
+import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/workspace/people-model'
+import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/workspace/tracking-headline'
 import type { TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
@@ -18,16 +18,18 @@ function row(overrides: Partial<DeviceWorkspaceRow>): DeviceWorkspaceRow {
   }
 }
 
-describe('layout trial choice', () => {
-  it('is off unless the link asks for a known version, so desktop launches never change', () => {
-    expect(parseLayoutTrialChoice('')).toBeNull()
-    expect(parseLayoutTrialChoice('?layout=z')).toBeNull()
-    expect(parseLayoutTrialChoice('?missionHarness=1&layout=b')).toBe('b')
-    expect(parseLayoutTrialChoice('?layout=current')).toBe('current')
+describe('panel arrangement', () => {
+  it('opens the desktop app on the panel-on-the-right arrangement until the team lead confirms otherwise', () => {
+    expect(DESKTOP_PANEL_ARRANGEMENT).toBe('right')
+    expect(panelSide(DESKTOP_PANEL_ARRANGEMENT)).toBe('right')
+    expect(panelOpenByDefault(DESKTOP_PANEL_ARRANGEMENT)).toBe(true)
   })
 
-  it('keeps other link parameters when switching', () => {
-    expect(withLayoutTrialChoice('https://x.test/?missionHarness=1&layout=a', 'c')).toBe('https://x.test/?missionHarness=1&layout=c')
+  it('keeps the other trial arrangements one constant away', () => {
+    expect(panelSide('left')).toBe('left')
+    expect(panelOpenByDefault('left')).toBe(true)
+    expect(panelSide('map-first')).toBe('right')
+    expect(panelOpenByDefault('map-first')).toBe(false)
   })
 })
 
