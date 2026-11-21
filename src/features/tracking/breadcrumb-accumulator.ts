@@ -17,6 +17,13 @@ import { compareStringsByCodeUnit } from '../../lib/deterministic-string-order'
 // rescuer's route, and its own older route must not disappear just because the
 // device keeps reporting later fixes.
 const MAX_BREADCRUMB_POSITIONS_PER_DEVICE = 5_000
+/**
+ * The live trail line breaks where two consecutive drawn fixes are more than
+ * this far apart in time. Thinning must preserve exactly those breaks
+ * (LIV-4 [DON-338]); `tracking-geojson.ts` draws with this same value and
+ * `electron/breadcrumb-query.cjs` mirrors it for the persisted projection.
+ */
+export const BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
 const TARGET_BREADCRUMB_GEOMETRY_ERROR_METRES = 25
 const METRES_PER_DEGREE_AT_EQUATOR = 111_320
 const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
@@ -759,7 +766,20 @@ function normalizeSelectorWidth(value: number | null | undefined): number | null
     : null
 }
 
-/** Retains both ends of every contiguous spatiotemporal-cell visit in time order. */
+/**
+ * Retains both ends of every contiguous spatiotemporal-cell visit in time order,
+ * plus enough points inside a long visit that thinning never invents a line
+ * break (LIV-4 [DON-338]).
+ *
+ * The live line breaks wherever two consecutive drawn points are more than
+ * {@link BREADCRUMB_LINE_GAP_THRESHOLD_MS} apart. A long standstill is
+ * one cell visit, so keeping only its two ends would draw a break where the
+ * tracker never went silent. Inside a visit this keeps the last fix before the
+ * spacing would exceed the threshold, and both sides of every real silence.
+ * The result: consecutive retained points are more than the threshold apart
+ * only where the stored fixes themselves are, so the line breaks exactly where
+ * the full trail does.
+ */
 function selectSpatiotemporalRunBoundaries(
   chronological: readonly TimestampedPosition[],
   bucketWidthMs: number,
@@ -769,16 +789,10 @@ function selectSpatiotemporalRunBoundaries(
   let runTimeBucket: number | null = null
   let runLatitudeBucket: number | null = null
   let runLongitudeBucket: number | null = null
-  let runFirst: TimestampedPosition | null = null
   let runLast: TimestampedPosition | null = null
 
-  const retainRun = () => {
-    if (runFirst !== null && runLast !== null) {
-      retained.push(runFirst)
-      if (runLast !== runFirst) {
-        retained.push(runLast)
-      }
-    }
+  const retain = (entry: TimestampedPosition) => {
+    if (retained.at(-1) !== entry) retained.push(entry)
   }
 
   for (const entry of chronological) {
@@ -790,19 +804,34 @@ function selectSpatiotemporalRunBoundaries(
       (entry.position.lon + 180) / spatialBucketWidthDegrees,
     )
     if (
+      runLast === null ||
       timeBucket !== runTimeBucket ||
       latitudeBucket !== runLatitudeBucket ||
       longitudeBucket !== runLongitudeBucket
     ) {
-      retainRun()
+      if (runLast !== null) retain(runLast)
+      retain(entry)
       runTimeBucket = timeBucket
       runLatitudeBucket = latitudeBucket
       runLongitudeBucket = longitudeBucket
-      runFirst = entry
+    } else if (
+      entry.timestampMs - runLast.timestampMs > BREADCRUMB_LINE_GAP_THRESHOLD_MS
+    ) {
+      // A real silence inside one cell visit: keep both sides so the line
+      // breaks here, exactly once.
+      retain(runLast)
+      retain(entry)
+    } else if (
+      entry.timestampMs - (retained.at(-1)?.timestampMs ?? entry.timestampMs) >
+        BREADCRUMB_LINE_GAP_THRESHOLD_MS
+    ) {
+      // Not a silence: keep the previous fix so the drawn spacing stays within
+      // the break threshold and no break is invented.
+      retain(runLast)
     }
     runLast = entry
   }
-  retainRun()
+  if (runLast !== null) retain(runLast)
   return retained
 }
 

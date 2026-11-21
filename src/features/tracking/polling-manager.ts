@@ -28,6 +28,7 @@ import type {
 } from '../diagnostics/tracking-poll-ledger'
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
 import {
+  createIncompleteRosterWarning,
   fetchRosterAndCurrentPositions,
 } from './current-position-poll'
 import type { CurrentPositionRejection } from './ingest-health'
@@ -598,6 +599,8 @@ export function createPollingManager(
         publishStatus({
           mode: 'online',
           ...combineTrackingWarnings(
+            // History progress must not wipe a roster warning (ING-4 [DON-338]).
+            latestRosterWarning,
             breadcrumbStatusWarning,
             breadcrumbIngestWarning,
           ),
@@ -1055,7 +1058,9 @@ export function createPollingManager(
         latestDevices,
       )
       latestParticipantRosterAuthoritative = result.complete
-      latestRosterWarning = null
+      // A roster that settles after the poll's grace period replaces
+      // "refreshing"; an incomplete one must keep warning (ING-4 [DON-338]).
+      latestRosterWarning = createIncompleteRosterWarning(result)
     }, () => undefined).finally(() => {
       if (rosterRefreshInFlight === request) rosterRefreshInFlight = null
     })
