@@ -244,6 +244,8 @@ function createController(): MarkerRuntimeController & {
     beginCreateFromDraft: vi.fn(),
     beginEdit: vi.fn(),
     updateDraft: vi.fn(),
+    updatePendingTreatmentUpdate: vi.fn(),
+    dismissError: vi.fn(),
     changeDraftType: vi.fn(),
     attachEvidence: vi.fn(),
     clearAttachment: vi.fn(),

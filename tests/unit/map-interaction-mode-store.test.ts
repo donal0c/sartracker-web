@@ -47,7 +47,7 @@ describe('map interaction mode store', () => {
       expect(
         computeMapInteractionMode({
           ...idle,
-          markerDialog: { mode: 'create', draft: {} as never },
+          markerDialog: { mode: 'create', draft: {} as never, baselineDraft: {} as never, pendingTreatmentUpdate: '', sessionId: 1 },
         }),
       ).toBe('marker_dialog')
     })
@@ -85,7 +85,7 @@ describe('map interaction mode store', () => {
       expect(
         computeMapInteractionMode({
           ...idle,
-          markerDialog: { mode: 'create', draft: {} as never },
+          markerDialog: { mode: 'create', draft: {} as never, baselineDraft: {} as never, pendingTreatmentUpdate: '', sessionId: 1 },
           measurementMode: 'armed',
         }),
       ).toBe('marker_dialog')
@@ -116,7 +116,7 @@ describe('map interaction mode store', () => {
         computeMapInteractionMode({
           ...idle,
           drawingDialog: { mode: 'edit', draft: {} as never },
-          markerDialog: { mode: 'create', draft: {} as never },
+          markerDialog: { mode: 'create', draft: {} as never, baselineDraft: {} as never, pendingTreatmentUpdate: '', sessionId: 1 },
         }),
       ).toBe('drawing_dialog')
     })
@@ -125,7 +125,7 @@ describe('map interaction mode store', () => {
       expect(
         computeMapInteractionMode({
           ...idle,
-          markerDialog: { mode: 'create', draft: {} as never },
+          markerDialog: { mode: 'create', draft: {} as never, baselineDraft: {} as never, pendingTreatmentUpdate: '', sessionId: 1 },
           drawingActiveTool: 'line',
         }),
       ).toBe('marker_dialog')
@@ -134,7 +134,7 @@ describe('map interaction mode store', () => {
     it('returns non-idle during marker dialog so marker clicks are self-suppressed', () => {
       const mode = computeMapInteractionMode({
         ...idle,
-        markerDialog: { mode: 'create', draft: {} as never },
+        markerDialog: { mode: 'create', draft: {} as never, baselineDraft: {} as never, pendingTreatmentUpdate: '', sessionId: 1 },
       })
       expect(mode).not.toBe('idle')
     })

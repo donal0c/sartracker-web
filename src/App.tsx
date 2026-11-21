@@ -13,6 +13,7 @@ import { FocusModeToggle } from './components/focus-mode-toggle'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
 import { MarkerDialog } from './components/marker-dialog'
+import { MarkerStatusBanner } from './components/marker-status-banner'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { OutingRuntimeBridge } from './features/outings/outing-runtime-bridge'
 import { ParticipantRuntimeBridge } from './features/participants/participant-runtime-bridge'
@@ -208,6 +209,7 @@ function App() {
       <DevicesWorkspace />
       <MissionReviewWorkspace />
       <MarkerDialog />
+      <MarkerStatusBanner />
       <DiagnosticsWorkspace />
       <Suspense fallback={null}>
         <SettingsWorkspace
