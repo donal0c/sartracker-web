@@ -441,7 +441,9 @@ export function MissionControlPanel({
           </button>
         ) : null}
 
-        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified && !startScreen ? (
+        {/* After Finish the start screen still lists the finished mission's outings, so one left open reads "Open" (DON-270). */}
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified
+          && (!startScreen || (phase === 'idle' && governanceMission !== null)) ? (
           <MoreMissionOptions open={outingNeedsAttention}>
             <MissionSectionDisclosure
               collapsible={sectionsCollapsible}
