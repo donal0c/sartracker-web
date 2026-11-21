@@ -174,6 +174,21 @@ describe('settings validation', () => {
     })
   })
 
+  it('rejects weather links with a user name or password, which the desktop app refuses to open [DON-340]', () => {
+    const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+    draft.weather.links = [
+      { name: 'With password', url: 'https://user:secret@www.met.ie/' },
+      { name: 'With user only', url: 'user@www.met.ie/forecast' },
+      { name: 'Plain', url: 'https://www.met.ie/' },
+    ]
+
+    const errors = validateSettingsDraft(draft)
+    const message = 'Remove the user name or password from this weather link; SAR Tracker will not open links that contain them.'
+    expect(errors['weather.links.0.url']).toBe(message)
+    expect(errors['weather.links.1.url']).toBe(message)
+    expect(errors['weather.links.2.url']).toBeUndefined()
+  })
+
   it('limits weather links to a small operational list', () => {
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
     draft.weather.links = Array.from({ length: 6 }, (_, index) => ({
