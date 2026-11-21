@@ -49,7 +49,7 @@ const { createElectronMissionStore } = require('../../electron/mission-store.cjs
     readonly userDataPath: string
     readonly runGpxEvidenceImportInWorker?: Runner
     readonly gpxEvidenceImportFaultInjection?: Readonly<Record<string, unknown>>
-    readonly gpxStoppedBatchSettlementFault?: Error
+    readonly gpxStoppedBatchSettlementFault?: Error | { readonly onceBeforeStagingCleanup: Error }
   }) => Store
 }
 const { runGpxEvidenceImportInWorker } = require('../../electron/gpx-evidence-import-runner.cjs') as {
@@ -173,6 +173,12 @@ describe('watched GPX rescans and interrupted batches [DON-350]', () => {
     await expect(stalled).rejects.toThrow(/could not be tidied up[\s\S]*disk I\/O error[\s\S]*restart/iu)
     await expect(queued).rejects.toThrow(/could not be tidied up/iu)
 
+    // A later request is refused before it writes any batch.
+    const three = path.join(userDataPath!, 'three.gpx')
+    await writeFile(three, gpxTrack('Three', 20, 900))
+    await expect(store!.importGpxEvidencePaths({ missionId: mission.id, paths: [three] }))
+      .rejects.toThrow(/could not be tidied up/iu)
+
     const databasePath = (await store!.info()).database_path
     const db = new Database(databasePath, { readonly: true })
     try {
@@ -181,6 +187,11 @@ describe('watched GPX rescans and interrupted batches [DON-350]', () => {
         WHERE mission_id = ? AND source_path = ? AND status <> 'pending'`).get(mission.id, two)).toEqual({ count: 0 })
       expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_track_imports WHERE mission_id = ? AND source_path = ?')
         .get(mission.id, two)).toEqual({ count: 0 })
+      // The stopped batch and the one queued before the fault; the later request wrote nothing.
+      expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_import_batches WHERE mission_id = ?').get(mission.id))
+        .toEqual({ count: 2 })
+      expect(db.prepare('SELECT COUNT(*) AS count FROM gpx_import_source_receipts WHERE mission_id = ? AND source_path = ?')
+        .get(mission.id, three)).toEqual({ count: 0 })
     } finally {
       db.close()
     }
@@ -196,6 +207,29 @@ describe('watched GPX rescans and interrupted batches [DON-350]', () => {
         WHERE mission_id = ? AND status = 'running'`).get(mission.id)).toEqual({ count: 0 })
     } finally {
       reopened.close()
+    }
+  }, 60_000)
+
+  it('a settlement that fails part way is finished before the next import starts [M-36] [review P2]', async () => {
+    const stalledRunner: Runner = (input) => runGpxEvidenceImportInWorker({ ...input, inactivityTimeoutMs: 2_000 })
+    await createStore({
+      runGpxEvidenceImportInWorker: stalledRunner,
+      gpxEvidenceImportFaultInjection: { pauseAfter: 'retained', pauseAtPathIndex: 0 },
+      gpxStoppedBatchSettlementFault: { onceBeforeStagingCleanup: new Error('database is locked') },
+    })
+    const mission = await store!.createMission({ name: 'Partial settlement' })
+    const one = path.join(userDataPath!, 'one.gpx')
+    await writeFile(one, gpxTrack('One', 20))
+    await expect(store!.importGpxEvidencePaths({ missionId: mission.id, paths: [one] }))
+      .rejects.toThrow(/stopped responding[\s\S]*0 of 1 GPX file was imported/u)
+    const db = new Database((await store!.info()).database_path, { readonly: true })
+    try {
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_revisions
+        WHERE mission_id = ? AND import_state = 'staging'`).get(mission.id)).toEqual({ count: 0 })
+      expect(db.prepare(`SELECT COUNT(*) AS count FROM gpx_import_source_receipts
+        WHERE mission_id = ? AND status IN ('pending', 'retained')`).get(mission.id)).toEqual({ count: 0 })
+    } finally {
+      db.close()
     }
   }, 60_000)
 

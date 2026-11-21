@@ -3634,6 +3634,7 @@ function createElectronMissionStore(options) {
       throw new Error('GPX import retired-source option is invalid.')
     }
     assertGpxImportAdmissionOpen()
+    if (gpxImportQueueFault !== null) throw gpxImportQueueFault
     ensureWritableMission(db, missionId)
     // Receipts, the worker and the retired lookup all use one normalized identity.
     const requestedPaths = candidate.paths.map((entry) => normalizeGpxSourcePathIdentity(entry.trim()))
@@ -3648,6 +3649,7 @@ function createElectronMissionStore(options) {
       return { imports: [], failures: [], unchanged, dispatchDurationMs: 0 }
     }
     assertGpxImportAdmissionOpen()
+    if (gpxImportQueueFault !== null) throw gpxImportQueueFault
     ensureWritableMission(db, missionId)
     if (migrationState.gpxReceiptRecoveryRemaining > 0
       || gpxReceiptRecoveryFailure !== null) {
@@ -3780,14 +3782,27 @@ function createElectronMissionStore(options) {
   async function settleStoppedGpxImportBatch(input) {
     if (storeClosed || coverageShutdownRequested) return null
     let lastError = null
+    // Once settlement starts, retries finish it whatever the batch status reads, since
+    // receipt recovery may already have closed the batch before cleanup failed.
+    let started = false
+    const fault = options.gpxStoppedBatchSettlementFault
+    let onceFault = fault?.onceBeforeStagingCleanup instanceof Error ? fault.onceBeforeStagingCleanup : null
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 250))
       if (storeClosed || coverageShutdownRequested) return null
       try {
-        if (options.gpxStoppedBatchSettlementFault instanceof Error) throw options.gpxStoppedBatchSettlementFault
-        const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(input.batchId)
-        if (batch?.status !== 'running') return null
-        return reconcileStoppedGpxImportBatch(db, input.batchId, input.missionId, now())
+        if (fault instanceof Error) throw fault
+        if (!started) {
+          const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(input.batchId)
+          if (batch?.status !== 'running') return null
+          started = true
+        }
+        return reconcileStoppedGpxImportBatch(db, input.batchId, input.missionId, now(), () => {
+          if (onceFault === null) return
+          const injected = onceFault
+          onceFault = null
+          throw injected
+        })
       } catch (error) {
         lastError = error
       }
@@ -5228,19 +5243,28 @@ function updateRecoveredGpxBatchCounts(db, batchId, interrupted, migrationTime) 
  * are kept as a failure, and the batch is closed with truthful counts. Uses
  * the same rules as startup recovery [DON-350] [M-36].
  */
-function reconcileStoppedGpxImportBatch(db, batchId, missionId, timestamp) {
+function reconcileStoppedGpxImportBatch(db, batchId, missionId, timestamp, beforeStagingCleanup = () => undefined) {
   for (let turn = 0; turn < 1_000; turn += 1) {
     const unsettled = db.prepare(`SELECT 1 FROM gpx_import_source_receipts
       WHERE batch_id = ? AND status IN ('pending', 'retained') LIMIT 1`).get(batchId)
     if (unsettled === undefined) break
     recoverUnsettledGpxImportReceipts(db, timestamp, MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN, {}, batchId)
   }
+  beforeStagingCleanup()
   const close = db.transaction(() => {
     recoverStagingGpxImports(db, timestamp, missionId)
-    const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(batchId)
-    return updateRecoveredGpxBatchCounts(db, batchId, batch?.status === 'running', timestamp)
+    // Its worker stopped, so the batch is interrupted even if every file was accounted for.
+    return updateRecoveredGpxBatchCounts(db, batchId, true, timestamp)
   })
-  return close.immediate()
+  const counts = close.immediate()
+  const leftover = db.prepare(`SELECT
+      (SELECT COUNT(*) FROM gpx_import_source_receipts WHERE batch_id = ? AND status IN ('pending', 'retained'))
+      + (SELECT COUNT(*) FROM gpx_import_revisions WHERE mission_id = ? AND import_state = 'staging') AS count`)
+    .get(batchId, missionId)
+  if (Number(leftover?.count ?? 0) > 0) {
+    throw new Error('GPX import settlement left unfinished receipts or staged revisions.')
+  }
+  return counts
 }
 
 /** Turns a stopped worker's error into one that says how much of the batch was imported. */
