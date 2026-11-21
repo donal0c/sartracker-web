@@ -109,6 +109,29 @@ describe('operational position retention', () => {
     expect(omitted.devices.map((device) => device.device_id)).toEqual([DEVICE.device_id])
   })
 
+  it('keeps the clock warning on a retained marker whose newest breadcrumb is ahead of the clock [DON-349 M-06 review]', () => {
+    // The current fix is on time, but the device's newest breadcrumb is five
+    // minutes ahead. Marker selection draws that breadcrumb, so the retained
+    // position must keep the warning when a later poll omits the current row.
+    const retention = createOperationalPositionRetention()
+    const futureBreadcrumb: NormalizedTrackingPosition = {
+      ...POSITION,
+      id: 'breadcrumb-future',
+      timestamp: '2026-04-06T11:05:00.000Z',
+    }
+    const observedAt = new Date('2026-04-06T11:00:00.000Z')
+    retention.apply({ ...FIRST_SNAPSHOT, breadcrumbs: [POSITION, futureBreadcrumb] },
+      ACTIVE_PARTICIPANT_SCOPE, observedAt, 'mission-1')
+
+    const omitted = retention.apply({ ...EMPTY_SNAPSHOT, devices: [DEVICE], breadcrumbs: [POSITION, futureBreadcrumb] },
+      ACTIVE_PARTICIPANT_SCOPE, new Date('2026-04-06T11:00:05.000Z'), 'mission-1')
+
+    expect(omitted.positions).toEqual([expect.objectContaining({
+      device_id: DEVICE.device_id,
+      fix_time_ahead_of_clock: true,
+    })])
+  })
+
   it('advances retained cache age and expires by cache age after an omitted current row [DON-267]', () => {
     const retention = createOperationalPositionRetention()
     const observedAt = new Date('2026-04-06T11:00:00.000Z')

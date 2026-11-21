@@ -65,7 +65,9 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
       const refreshedPositions = [...positionsByDevice.values()].map((position) => annotateTrackingSnapshotHealth({
         devices: [],
         positions: [position],
-        breadcrumbs: [],
+        // The device's breadcrumbs keep a breadcrumb-ahead-of-clock warning on
+        // a retained marker; marker selection draws that breadcrumb [DON-349].
+        breadcrumbs: filtered.breadcrumbs.filter((breadcrumb) => breadcrumb.device_id === position.device_id),
       }, {
         now: observedAt,
         deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
