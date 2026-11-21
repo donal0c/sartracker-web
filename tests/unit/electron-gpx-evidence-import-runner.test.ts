@@ -133,4 +133,61 @@ describe('GPX evidence import worker runner [DON-277]', () => {
     await importResult.workerExited
     expect(terminate).toHaveBeenCalledOnce()
   })
+
+  describe('inactivity watchdog [DON-350] [M-36]', () => {
+    /** A mock worker that the test drives message by message. */
+    function createMockWorker() {
+      const worker = new EventEmitter() as EventEmitter & { terminate: () => Promise<number> }
+      worker.terminate = vi.fn(async () => {
+        queueMicrotask(() => worker.emit('exit', 1))
+        return 1
+      })
+      return worker
+    }
+
+    it('keeps a long batch alive while the worker keeps reporting progress', async () => {
+      vi.useFakeTimers()
+      try {
+        const worker = createMockWorker()
+        const result = runGpxEvidenceImportInWorker({
+          databasePath: '/tmp/unused.sqlite', missionId: 'mission-1', paths: ['/tmp/a.gpx', '/tmp/b.gpx'],
+          createWorker: () => worker,
+        })
+        for (let elapsed = 0; elapsed < 200_000; elapsed += 10_000) {
+          await vi.advanceTimersByTimeAsync(10_000)
+          worker.emit('message', { type: 'heartbeat' })
+        }
+        worker.emit('message', { type: 'complete', imports: [], failures: [] })
+        worker.emit('exit', 0)
+        await expect(result).resolves.toMatchObject({ imports: [], failures: [] })
+        expect(worker.terminate).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('stops a worker that has gone quiet and says it stalled, not that it was large', async () => {
+      vi.useFakeTimers()
+      try {
+        const worker = createMockWorker()
+        const result = runGpxEvidenceImportInWorker({
+          databasePath: '/tmp/unused.sqlite', missionId: 'mission-1', paths: ['/tmp/a.gpx'],
+          createWorker: () => worker,
+          inactivityTimeoutMs: 5_000,
+        })
+        const settled = result.then(() => null, (error: unknown) => error)
+        worker.emit('message', { type: 'progress', completed: 0, total: 1 })
+        await vi.advanceTimersByTimeAsync(4_000)
+        worker.emit('message', { type: 'heartbeat' })
+        await vi.advanceTimersByTimeAsync(4_000)
+        expect(worker.terminate).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1_500)
+        expect(worker.terminate).toHaveBeenCalledTimes(1)
+        expect(String(await settled)).toMatch(/stopped responding for 5 s/u)
+        await result.workerExited
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
 })

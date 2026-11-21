@@ -9,8 +9,21 @@ const {
   compactGpxDisplayGeometry,
   listGpxImportProjectionPage,
   listGpxImportRevisionProjectionPage,
+  listGpxMapProjectionPage,
+  MAP_TOTAL_BYTE_BUDGET,
   packGpxRendererPage,
 } = require('../../electron/gpx-renderer-boundary.cjs') as {
+  readonly MAP_TOTAL_BYTE_BUDGET: number
+  readonly listGpxMapProjectionPage: (
+    db: TestDatabase,
+    input: { readonly missionId: string; readonly cursor?: string },
+  ) => {
+    readonly entries: readonly Readonly<Record<string, unknown>>[]
+    readonly nextCursor: string | null
+    readonly totalActive: number
+    readonly undrawn: readonly { readonly id: string; readonly display_name: string; readonly reason: string }[]
+    readonly truncated: boolean
+  }
   readonly compactGpxDisplayGeometry: (geometryJson: string) => string
   readonly packGpxRendererPage: (
     rows: readonly Readonly<Record<string, unknown>>[],
@@ -240,5 +253,140 @@ describe('GPX renderer containment boundary [DON-274]', () => {
     expect(preload).not.toContain('listGpxDirectoryFiles(')
     expect(main).not.toContain("'sartracker:read-gpx-files'")
     expect(main).not.toContain("'sartracker:list-gpx-directory-files'")
+  })
+
+  describe('map projection covers every imported track [DON-350] [M-87]', () => {
+    const SCHEMA = `
+      CREATE TABLE gpx_track_imports (
+        id TEXT PRIMARY KEY, mission_id TEXT, source_path TEXT, file_name TEXT,
+        display_name TEXT, geometry_json TEXT, metadata_json TEXT,
+        content_sha256 TEXT, source_bytes_base64 TEXT, timing_class TEXT,
+        outing_id TEXT, revision_sequence INTEGER, retired_at TEXT,
+        retired_by TEXT, import_state TEXT, imported_at TEXT, updated_at TEXT
+      );
+      CREATE TABLE gpx_import_revisions (
+        id TEXT PRIMARY KEY, mission_id TEXT, import_id TEXT,
+        revision_sequence INTEGER, content_sha256 TEXT,
+        source_bytes_base64 TEXT, source_path TEXT, file_name TEXT,
+        display_name TEXT, geometry_json TEXT, metadata_json TEXT,
+        timing_class TEXT, outing_id TEXT, import_state TEXT,
+        completeness TEXT, recorded_at TEXT, audit_event_id TEXT
+      );
+    `
+
+    /** A day-long track at 1-2 s logging with 10-decimal coordinates, already display-compacted to 384 KiB. */
+    function largeTrackGeometry(seed: number): string {
+      const coordinates = Array.from({ length: 10_800 }, (_unused, index) => [
+        Number((-9.7 + seed / 100 + index / 1_000_000).toFixed(10)) + 0.0000000001,
+        Number((52 + seed / 100 + index / 1_000_000).toFixed(10)) + 0.0000000001,
+      ])
+      return compactGpxDisplayGeometry(JSON.stringify({ type: 'MultiLineString', coordinates: [coordinates] }))
+    }
+
+    function seedImports(db: TestDatabase, geometries: readonly string[], retiredIndexes: readonly number[] = []) {
+      geometries.forEach((geometry, index) => {
+        const id = `gpx-${String(index).padStart(3, '0')}`
+        const at = new Date(Date.UTC(2026, 7, 27, 10, 0, index)).toISOString()
+        db.prepare(`INSERT INTO gpx_track_imports VALUES (
+          ?, 'mission-1', ?, ?, ?, ?, NULL, ?, 'retained-bytes', 'fully_dated',
+          NULL, 1, ?, NULL, 'complete', ?, ?
+        )`).run(id, `/field/${id}.gpx`, `${id}.gpx`, `Team ${id}`, geometry, `sha-${index}`,
+          retiredIndexes.includes(index) ? at : null, at, at)
+        db.prepare(`INSERT INTO gpx_import_revisions VALUES (
+          ?, 'mission-1', ?, 1, ?, 'retained-bytes', ?, ?, ?, ?, NULL,
+          'fully_dated', NULL, 'complete', 'complete', ?, ?
+        )`).run(`revision-${id}`, id, `sha-${index}`, `/field/${id}.gpx`, `${id}.gpx`, `Team ${id}`,
+          geometry, at, `event-${id}`)
+      })
+    }
+
+    function drainMap(db: TestDatabase) {
+      const entries: Readonly<Record<string, unknown>>[] = []
+      const undrawn: { readonly id: string }[] = []
+      let cursor: string | undefined
+      let totalActive = 0
+      let truncated = false
+      for (let pages = 0; pages < 1_000; pages += 1) {
+        const page = listGpxMapProjectionPage(db, { missionId: 'mission-1', ...(cursor === undefined ? {} : { cursor }) })
+        expect(Buffer.byteLength(JSON.stringify(page), 'utf8')).toBeLessThanOrEqual(1024 * 1024)
+        entries.push(...page.entries)
+        undrawn.push(...page.undrawn)
+        totalActive = page.totalActive
+        truncated ||= page.truncated
+        if (page.nextCursor === null) return { entries, undrawn, totalActive, truncated }
+        cursor = page.nextCursor
+      }
+      throw new Error('Map projection did not terminate.')
+    }
+
+    it('draws all six large team tracks although one list page holds only a few', () => {
+      const db = new Database(':memory:')
+      db.exec(SCHEMA)
+      seedImports(db, Array.from({ length: 6 }, (_unused, index) => largeTrackGeometry(index)))
+
+      const listPage = listGpxImportProjectionPage(db, { missionId: 'mission-1' })
+      expect(listPage.entries.length).toBeLessThan(6)
+
+      const map = drainMap(db)
+      expect(map.entries.map((entry) => entry.id)).toEqual(
+        Array.from({ length: 6 }, (_unused, index) => `gpx-${String(index).padStart(3, '0')}`))
+      expect(map.totalActive).toBe(6)
+      expect(map.undrawn).toEqual([])
+      expect(map.truncated).toBe(false)
+      expect(JSON.stringify(map)).not.toContain('retained-bytes')
+      const drawnBytes = map.entries.reduce((sum, entry) => sum + Buffer.byteLength(String(entry.geometry_json), 'utf8'), 0)
+      expect(drawnBytes).toBeLessThanOrEqual(MAP_TOTAL_BYTE_BUDGET)
+      db.close()
+    })
+
+    it('shares the mission-wide budget across many tracks and keeps every endpoint', () => {
+      const db = new Database(':memory:')
+      db.exec(SCHEMA)
+      const geometries = Array.from({ length: 40 }, (_unused, index) => largeTrackGeometry(index))
+      seedImports(db, geometries, [39])
+
+      const map = drainMap(db)
+      expect(map.entries).toHaveLength(39)
+      expect(map.totalActive).toBe(39)
+      const drawnBytes = map.entries.reduce((sum, entry) => sum + Buffer.byteLength(String(entry.geometry_json), 'utf8'), 0)
+      expect(drawnBytes).toBeLessThanOrEqual(MAP_TOTAL_BYTE_BUDGET)
+      const first = JSON.parse(String(map.entries[0]!.geometry_json)) as { coordinates: number[][][] }
+      const source = JSON.parse(geometries[0]!) as { coordinates: number[][][] }
+      expect(first.coordinates[0]![0]).toEqual(source.coordinates[0]![0])
+      expect(first.coordinates[0]!.at(-1)).toEqual(source.coordinates[0]!.at(-1))
+      db.close()
+    })
+
+    it('reports tracks beyond the map cap as not drawn rather than dropping them silently', () => {
+      const db = new Database(':memory:')
+      db.exec(SCHEMA)
+      const tiny = '{"type":"MultiLineString","coordinates":[[[-9.7,52],[-9.71,52.01]]]}'
+      seedImports(db, Array.from({ length: 520 }, () => tiny))
+
+      const map = drainMap(db)
+      expect(map.totalActive).toBe(520)
+      expect(map.entries).toHaveLength(512)
+      expect(map.truncated).toBe(true)
+      db.close()
+    })
+
+    it('names a track it cannot draw instead of leaving it silently off the map', () => {
+      const db = new Database(':memory:')
+      db.exec(SCHEMA)
+      // Thousands of two-point segments cannot be thinned without hiding whole segments.
+      const fragmented = JSON.stringify({
+        type: 'MultiLineString',
+        coordinates: Array.from({ length: 20_000 }, (_unused, index) => [
+          [-9.7 + index / 100_000, 52], [-9.7 + index / 100_000, 52.0001],
+        ]),
+      })
+      seedImports(db, [...Array.from({ length: 30 }, (_unused, index) => largeTrackGeometry(index)), fragmented])
+
+      const map = drainMap(db)
+      expect(map.totalActive).toBe(31)
+      expect(map.entries).toHaveLength(30)
+      expect(map.undrawn).toEqual([expect.objectContaining({ id: 'gpx-030', display_name: 'Team gpx-030' })])
+      db.close()
+    })
   })
 })

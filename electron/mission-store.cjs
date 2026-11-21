@@ -34,6 +34,7 @@ const {
   compactGpxDisplayGeometry,
   listGpxImportProjectionPage,
   listGpxImportRevisionProjectionPage,
+  listGpxMapProjectionPage,
   packGpxRendererPage,
 } = require('./gpx-renderer-boundary.cjs')
 const { validateSqliteSnapshotSanity } = require('./sqlite-snapshot-sanity.cjs')
@@ -606,6 +607,10 @@ function createElectronMissionStore(options) {
   // Watched-folder scans run one at a time to completion, so a scan's
   // "already reported" check always sees the issues earlier scans recorded.
   let watchedGpxScanTail = Promise.resolve()
+  // Last observed file identity and digest per watched path, so an unchanged
+  // file is skipped without being read again. In memory only: after a restart
+  // the first scan re-hashes, and still writes nothing [DON-350] [M-38].
+  const watchedGpxFingerprints = new Map()
   // Set when a renderer pending marker could not be written this session.
   let rendererEvidenceMarkerWriteFailed = false
   let gpxImportWorkerActive = false
@@ -2935,6 +2940,10 @@ function createElectronMissionStore(options) {
       input?.missionId,
       () => listGpxImportProjectionPage(db, input),
     ),
+    listGpxMapProjectionPage: async (input) => readLiveMissionReviewFacet(
+      input?.missionId,
+      () => listGpxMapProjectionPage(db, input),
+    ),
     listGpxImportRevisionPage: async (input) =>
       listGpxImportRevisionProjectionPage(db, input),
     listGpxImportIssues: async (input) => listGpxImportIssues(db, input),
@@ -3625,11 +3634,15 @@ function createElectronMissionStore(options) {
     ensureWritableMission(db, missionId)
     // Receipts, the worker and the retired lookup all use one normalized identity.
     const requestedPaths = candidate.paths.map((entry) => normalizeGpxSourcePathIdentity(entry.trim()))
-    const paths = candidate.skipRetiredSources === true
-      ? await selectWatchedGpxPathsToImport(db, missionId, requestedPaths)
-      : requestedPaths
+    const selection = candidate.skipRetiredSources === true
+      ? await selectWatchedGpxPathsToImport(db, missionId, requestedPaths, watchedGpxFingerprints)
+      : { selected: requestedPaths, unchanged: [] }
+    const paths = selection.selected
+    // Unchanged files are reported apart from imports, so a rescan never looks
+    // like new evidence to the renderer [DON-350] [M-37].
+    const unchanged = selection.unchanged
     if (paths.length === 0) {
-      return { imports: [], failures: [], dispatchDurationMs: 0 }
+      return { imports: [], failures: [], unchanged, dispatchDurationMs: 0 }
     }
     assertGpxImportAdmissionOpen()
     ensureWritableMission(db, missionId)
@@ -3672,7 +3685,9 @@ function createElectronMissionStore(options) {
     entry.quiesced = Promise.allSettled([entry.completion, entry.workerExited])
     activeGpxEvidenceImports.add(entry)
     entry.quiesced.finally(() => activeGpxEvidenceImports.delete(entry))
-    return result
+    const reported = Promise.resolve(result).then((value) => ({ ...value, unchanged }))
+    Object.defineProperty(reported, 'workerExited', { value: entry.workerExited })
+    return reported
   }
 
   /** Refuses new GPX import work once the store has started closing. */
@@ -3724,14 +3739,42 @@ function createElectronMissionStore(options) {
       startNextGpxEvidenceImport()
       return
     }
-    void Promise.resolve(operation).then(queued.resolveResult, queued.rejectResult)
-    void Promise.resolve(operation.workerExited ?? operation)
-      .catch(() => undefined)
+    let failure = null
+    const outcome = Promise.resolve(operation).then(queued.resolveResult, (error) => { failure = error })
+    const exited = Promise.resolve(operation?.workerExited ?? operation).catch(() => undefined)
+    // The next worker starts only after a stopped batch is settled, so its
+    // rows are never mistaken for the next batch's [DON-350] [M-36].
+    void Promise.allSettled([outcome, exited])
+      .then(() => {
+        const settlement = settleStoppedGpxImportBatch(queued.input)
+        if (failure !== null) queued.rejectResult(describeStoppedGpxImport(failure, settlement))
+      })
       .finally(() => {
         queued.resolveWorkerExit()
         gpxImportWorkerActive = false
         startNextGpxEvidenceImport()
       })
+  }
+
+  /**
+   * Settles a batch whose worker exited without finishing it (stalled, crashed
+   * or failed), using the startup recovery rules, so Finish, archive and
+   * retries work without a restart. Returns the batch counts, or null when the
+   * batch finished normally or recovery is left to the next startup.
+   */
+  function settleStoppedGpxImportBatch(input) {
+    if (storeClosed || coverageShutdownRequested) return null
+    try {
+      const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(input.batchId)
+      if (batch?.status !== 'running') return null
+      return reconcileStoppedGpxImportBatch(db, input.batchId, input.missionId, now())
+    } catch (error) {
+      const reason = safeEvidenceFailureReason(error?.message ?? error)
+      console.error(`Stopped GPX import batch could not be settled in session: ${reason}`)
+      migrationState.gpxReceiptRecoveryRemaining = readUnsettledGpxImportReceiptPending(db)
+      scheduleGpxReceiptRecovery()
+      return null
+    }
   }
 
   /** Serializes chunk payload reads while allowing small manifest/claim reads alongside. */
@@ -4977,12 +5020,14 @@ function columnExists(db, tableName, columnName) {
 }
 
 /** Retains interrupted staged GPX bytes as explicit failures before removing partial rows. */
-function recoverStagingGpxImports(db, migrationTime) {
+function recoverStagingGpxImports(db, migrationTime, missionId = null) {
   const staged = db.prepare(`SELECT revisions.*, imports.import_state AS projection_state
     FROM gpx_import_revisions AS revisions
     JOIN gpx_track_imports AS imports ON imports.id = revisions.import_id
     WHERE revisions.import_state = 'staging'
-    ORDER BY revisions.mission_id, revisions.import_id, revisions.revision_sequence`).all()
+      ${missionId === null ? '' : 'AND revisions.mission_id = ?'}
+    ORDER BY revisions.mission_id, revisions.import_id, revisions.revision_sequence`)
+    .all(...(missionId === null ? [] : [missionId]))
   const byMission = new Map()
   for (const revision of staged) {
     const values = byMission.get(revision.mission_id) ?? []
@@ -5032,6 +5077,7 @@ function recoverUnsettledGpxImportReceipts(
   migrationTime,
   maximumRows = MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN,
   faultInjection = {},
+  batchId = null,
 ) {
   const rowLimit = Math.max(1, Math.min(MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN, maximumRows))
   const transaction = db.transaction(() => {
@@ -5040,8 +5086,9 @@ function recoverUnsettledGpxImportReceipts(
       COALESCE(length(CAST(source_bytes_base64 AS BLOB)), 0) AS retained_base64_bytes
     FROM gpx_import_source_receipts
     WHERE status IN ('pending', 'retained')
+      ${batchId === null ? '' : 'AND batch_id = ?'}
     ORDER BY mission_id, batch_id, source_path
-    LIMIT ?`).all(rowLimit)
+    LIMIT ?`).all(...(batchId === null ? [] : [batchId]), rowLimit)
     const receipts = []
     let remainingBytes = MAX_GPX_RECEIPT_RECOVERY_BYTES_PER_TURN
     for (const candidate of candidates) {
@@ -5111,33 +5158,73 @@ function recoverUnsettledGpxImportReceipts(
         SET status = 'failed', updated_at = ? WHERE batch_id = ? AND source_path = ?`)
         .run(migrationTime, receipt.batch_id, receipt.source_path)
     }
-    for (const batchId of batchIds) {
-      const counts = db.prepare(`SELECT
-        (SELECT COUNT(*) FROM gpx_import_source_receipts
-          WHERE batch_id = ? AND status = 'settled') AS completed_files,
-        (SELECT COUNT(*) FROM (
-          SELECT source_path FROM gpx_import_failures WHERE batch_id = ?
-          UNION
-          -- A watched rescan settles a repeated failure without a new row [DON-322].
-          SELECT source_path FROM gpx_import_source_receipts
-            WHERE batch_id = ? AND status = 'failed')) AS failed_files,
-        (SELECT total_files FROM gpx_import_batches WHERE id = ?) AS total_files`)
-        .get(batchId, batchId, batchId, batchId)
-      const completed = Number(counts?.completed_files ?? 0)
-      const failed = Number(counts?.failed_files ?? 0)
-      const total = Number(counts?.total_files ?? 0)
-      const fullyAccounted = completed + failed === total
-      const status = interruptedBatchIds.has(batchId) || !fullyAccounted || failed > 0
-        ? 'interrupted'
-        : 'completed'
-      db.prepare(`UPDATE gpx_import_batches
-        SET status = ?, completed_files = ?, failed_files = ?,
-            updated_at = ?, finished_at = ?
-        WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
+    for (const touchedBatchId of batchIds) {
+      updateRecoveredGpxBatchCounts(db, touchedBatchId, interruptedBatchIds.has(touchedBatchId), migrationTime)
     }
     return { remaining: readUnsettledGpxImportReceiptPending(db) }
   })
   return transaction.immediate()
+}
+
+/** Recomputes a recovered batch's counts and closes it as interrupted or completed. */
+function updateRecoveredGpxBatchCounts(db, batchId, interrupted, migrationTime) {
+  const counts = db.prepare(`SELECT
+    (SELECT COUNT(*) FROM gpx_import_source_receipts
+      WHERE batch_id = ? AND status = 'settled') AS completed_files,
+    (SELECT COUNT(*) FROM (
+      SELECT source_path FROM gpx_import_failures WHERE batch_id = ?
+      UNION
+      -- A watched rescan settles a repeated failure without a new row [DON-322].
+      SELECT source_path FROM gpx_import_source_receipts
+        WHERE batch_id = ? AND status = 'failed')) AS failed_files,
+    (SELECT total_files FROM gpx_import_batches WHERE id = ?) AS total_files`)
+    .get(batchId, batchId, batchId, batchId)
+  const completed = Number(counts?.completed_files ?? 0)
+  const failed = Number(counts?.failed_files ?? 0)
+  const total = Number(counts?.total_files ?? 0)
+  const fullyAccounted = completed + failed === total
+  const status = interrupted || !fullyAccounted || failed > 0
+    ? 'interrupted'
+    : 'completed'
+  db.prepare(`UPDATE gpx_import_batches
+    SET status = ?, completed_files = ?, failed_files = ?,
+        updated_at = ?, finished_at = ?
+    WHERE id = ?`).run(status, completed, failed, migrationTime, migrationTime, batchId)
+  return { completed, failed, total }
+}
+
+/**
+ * Settles one batch whose worker stopped before finishing it, in session: its
+ * unsettled receipts become failures (keeping any retained bytes) or exact
+ * settlements, any staged revision of the mission is removed after its bytes
+ * are kept as a failure, and the batch is closed with truthful counts. Uses
+ * the same rules as startup recovery [DON-350] [M-36].
+ */
+function reconcileStoppedGpxImportBatch(db, batchId, missionId, timestamp) {
+  for (let turn = 0; turn < 1_000; turn += 1) {
+    const unsettled = db.prepare(`SELECT 1 FROM gpx_import_source_receipts
+      WHERE batch_id = ? AND status IN ('pending', 'retained') LIMIT 1`).get(batchId)
+    if (unsettled === undefined) break
+    recoverUnsettledGpxImportReceipts(db, timestamp, MAX_GPX_RECEIPT_RECOVERY_ROWS_PER_TURN, {}, batchId)
+  }
+  const close = db.transaction(() => {
+    recoverStagingGpxImports(db, timestamp, missionId)
+    const batch = db.prepare('SELECT status FROM gpx_import_batches WHERE id = ?').get(batchId)
+    return updateRecoveredGpxBatchCounts(db, batchId, batch?.status === 'running', timestamp)
+  })
+  return close.immediate()
+}
+
+/** Turns a stopped worker's error into one that says how much of the batch was imported. */
+function describeStoppedGpxImport(error, settlement) {
+  if (settlement === null) return error
+  const cause = error instanceof Error ? error.message : String(error)
+  const issues = settlement.total - settlement.completed
+  const described = new Error(
+    `${cause.replace(/\.?$/u, '.')} ${settlement.completed} of ${settlement.total} GPX file${settlement.total === 1 ? ' was' : 's were'} imported before it stopped; ${issues} ${issues === 1 ? 'is' : 'are'} listed as import issues for review.`,
+  )
+  if (error instanceof Error) described.name = error.name
+  return described
 }
 
 /** Returns one when startup still owns interrupted GPX receipts. */
@@ -11812,12 +11899,17 @@ function assignGpxEvidenceToOuting(db, input) {
  * goes to the worker, so new evidence is never hidden. Reads use the worker's
  * 8 MiB bound; paths arrive already normalized.
  */
-async function selectWatchedGpxPathsToImport(db, missionId, paths) {
+async function selectWatchedGpxPathsToImport(db, missionId, paths, fingerprints = null) {
   const selected = []
+  const unchanged = []
   for (const normalizedPath of paths) {
     const retired = readRetiredGpxSource(db, missionId, normalizedPath)
     if (retired === undefined) {
-      selected.push(normalizedPath)
+      if (await isUnchangedLiveGpxSource(db, missionId, normalizedPath, fingerprints)) {
+        unchanged.push(normalizedPath)
+      } else {
+        selected.push(normalizedPath)
+      }
       continue
     }
     let contentSha256 = null
@@ -11832,7 +11924,54 @@ async function selectWatchedGpxPathsToImport(db, missionId, paths) {
     if (hasReportedGpxFailure(db, missionId, normalizedPath, contentSha256, reason)) continue
     selected.push(normalizedPath)
   }
-  return selected
+  return { selected, unchanged }
+}
+
+/**
+ * True when this watched path already backs a live import with exactly these
+ * bytes. A matching file identity (device, inode, size, mtime) skips the read;
+ * any difference re-reads and re-hashes, so changed bytes always reach the
+ * worker. A read failure is left to the worker, which records it visibly
+ * [DON-350] [M-38].
+ */
+async function isUnchangedLiveGpxSource(db, missionId, sourcePath, fingerprints) {
+  const live = readLiveGpxSourceHash(db, missionId, sourcePath)
+  if (live === undefined) return false
+  const stat = await fs.stat(sourcePath).catch(() => null)
+  if (stat === null || !stat.isFile()) return false
+  const key = `${missionId}\u0000${sourcePath}`
+  const known = fingerprints?.get(key)
+  if (known !== undefined && known.dev === stat.dev && known.ino === stat.ino
+    && known.size === stat.size && known.mtimeMs === stat.mtimeMs
+    && known.contentSha256 === live) {
+    return true
+  }
+  let contentSha256
+  try {
+    contentSha256 = createHash('sha256').update(await readBoundedGpxSource(sourcePath)).digest('hex')
+  } catch {
+    fingerprints?.delete(key)
+    return false
+  }
+  fingerprints?.set(key, {
+    dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs, contentSha256,
+  })
+  return contentSha256 === live
+}
+
+/** Returns the digest of the live, complete import this path (or an alias of it) names. */
+function readLiveGpxSourceHash(db, missionId, sourcePath) {
+  const row = db.prepare(`SELECT content_sha256 FROM gpx_track_imports
+      WHERE mission_id = ? AND source_path = ? AND retired_at IS NULL
+        AND import_state = 'complete' AND content_sha256 IS NOT NULL
+    UNION ALL
+    SELECT imports.content_sha256 FROM gpx_import_aliases AS aliases
+      JOIN gpx_track_imports AS imports ON imports.id = aliases.import_id
+      WHERE aliases.mission_id = ? AND aliases.source_path = ?
+        AND imports.retired_at IS NULL AND imports.import_state = 'complete'
+        AND imports.content_sha256 IS NOT NULL
+    LIMIT 1`).get(missionId, sourcePath, missionId, sourcePath)
+  return typeof row?.content_sha256 === 'string' ? row.content_sha256 : undefined
 }
 
 /** Matches the worker's path identity, so receipts and failures agree. */
