@@ -65,9 +65,9 @@ afterEach(async () => {
 })
 
 describe('[DON-338] whole trail with Breadcrumb dots on a 34-device mission', () => {
-  // LIV-1 (piece 1): dots mode removes the line and draws only the newest
+  // LIV-1: before the fix dots mode removed the line and drew only the newest
   // 10,000-dot page pooled across all devices.
-  it.fails('draws every fix of every device with Breadcrumb dots selected [LIV-1]', async () => {
+  it('draws every fix of every device with Breadcrumb dots selected [LIV-1]', async () => {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-don-338-dots-'))
     const fixture = await generateMissionStoreFixture({
       preset: 'field-34-devices',

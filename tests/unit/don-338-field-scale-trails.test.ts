@@ -92,10 +92,10 @@ describe('[DON-338] trails at field scale stay whole', () => {
     expect(lines.features).toHaveLength(2)
   })
 
-  // LIV-4 (piece 7): the live-line simplifier thins a long standstill so the
-  // retained fixes either side are more than 30 minutes apart, and the line
-  // breaks although the searcher reported throughout.
-  it.fails('live line: a 45-minute standstill inside a 42,700-fix trail does not split the line [LIV-4]', () => {
+  // LIV-4: before the fix the live-line simplifier thinned a long standstill
+  // so the retained fixes either side were more than 30 minutes apart, and the
+  // line broke although the searcher reported throughout.
+  it('live line: a 45-minute standstill inside a 42,700-fix trail does not split the line [LIV-4]', () => {
     const start = Date.parse('2026-01-10T06:00:00.000Z')
     const positions: NormalizedTrackingPosition[] = []
     let time = start
