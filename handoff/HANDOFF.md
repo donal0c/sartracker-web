@@ -1,6 +1,6 @@
 # HANDOFF.md — Current state
 
-Updated 2026-10-21 (beta.13.7 published). Queue: [workplan](../docs/two-track-execution-workplan.md).
+Updated 2026-11-21 (team review of the layout trial; 13.7 is the latest release). Queue: [workplan](../docs/two-track-execution-workplan.md).
 Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
 [archive/handoff-20261018-pre137.md](archive/handoff-20261018-pre137.md).
 
@@ -21,15 +21,31 @@ Release gate: [checklist](../docs/release-checklist.md). Earlier detail:
   change). Shipped as known issue with workaround; fix in 13.8.
 - Box evidence: `~/sartracker-13.7-smoke/` (out/full, out/soak, large, hand).
 
+## Team review, 18–21 Nov 2026
+
+Eamonn reviewed the browser layout trial (`SARNOV.odt`, in
+`team-feedback/sarnov/`, local only) and went through it with Donal in person on
+21 Nov (Granola note `8f929a94…`). Answers: ledger Answer Round 5 (SAR-QA-026–032,
+SAR-FIELD-003–005). The trial (branch `layouts/three-simplified`, live at
+sartracker-layouts.vercel.app with `?missionHarness=1&layout=a`) is approved in
+principle. Desktop only from now on. Target: done before Christmas.
+
 ## Next action
 
-1. Donal: tell the team 13.7 is out, with its two known issues (brief freezes
-   under heavy load; re-add a watched GPX folder after every restart).
-2. Ask Donal how the team meeting (week of 19 Oct) went: maps (DON-144/76/7)
-   and any new reports change the 13.8 order.
-3. Then the [13.8 queue](../docs/two-track-execution-workplan.md): DON-313
-   commit stalls first, DON-312 memory margin, DON-337 (needs Donal's design
-   choice: resume the watch vs a visible stopped-watch notice).
+1. **DON-338 (Urgent, Regression):** the trail splits at 10,000 points again.
+   Identify the build first (trial or desktop), then write a failing test.
+2. DON-339 scale ×2 (cause known) and DON-340 weather links fail on desktop.
+3. DON-341 simplified layout into desktop: children DON-342 start/resume,
+   DON-343 Settings menu, DON-344 light theme, DON-345 "No position yet"
+   (waiting on Eamonn).
+4. The 13.8 queue in the [workplan](../docs/two-track-execution-workplan.md)
+   still stands: DON-313, DON-312, DON-337.
+5. Then DON-100 multi-day (now unblocked, complexity 7+, design first) and the
+   maps track: DON-144 (all-Ireland OS), DON-346 grid, DON-347 East West Mapping.
+6. **Donal to send Eamonn in writing:** the "No position yet" question; which
+   layout letter he used; whether positions keep recording while paused overnight;
+   what the owed items are (support bundle, Tomies Wood GPX, Layers screenshot,
+   Mint long run). Questions: `team-feedback/sarnov/call-questions-eamonn.md`.
 
 ## Linear state (21 Oct)
 
