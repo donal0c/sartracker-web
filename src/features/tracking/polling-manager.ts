@@ -39,6 +39,7 @@ import {
   fetchRosterAndCurrentPositions,
 } from './current-position-poll'
 import type { CurrentPositionRejection } from './ingest-health'
+import { withoutRefusedPositions } from './store-refused-positions'
 import type {
   BreadcrumbNormalizationResult,
   CurrentPositionNormalizationResult,
@@ -134,7 +135,7 @@ type PollingManagerOptions = {
   readonly persistHistoryRequest?: (input: TrackingHistoryRequestInput) => Promise<void>
   readonly persistHistoryChunks?: (
     inputs: readonly TrackingHistoryChunkPersistenceInput[],
-  ) => Promise<void>
+  ) => Promise<TrackingHistoryRefusals | void>
   readonly getBreadcrumbDeviceIds?: () => readonly string[] | null
   /** Selected mission participants. An explicit empty list means fetch no history. */
   readonly getParticipantDeviceIds?: () => readonly string[] | null
@@ -217,7 +218,19 @@ export type TrackingHistoryRequestInput = {
   readonly requestedUntil: string
 }
 
-export type TrackingHistoryChunkPersistenceResult = {
+/**
+ * The observations of one history write that the mission store refused as
+ * source-id conflicts [DON-338 round 9]. They are the same objects the poller
+ * passed in the write's input, and never reach the live trail. The production
+ * runtime always sets this from the store's acknowledgement and fails the
+ * write when that answer is missing or malformed; a port that writes to no
+ * store that can refuse a row may leave it out.
+ */
+export type TrackingHistoryRefusals = {
+  readonly refusedPositions?: readonly NormalizedTrackingPosition[]
+}
+
+export type TrackingHistoryChunkPersistenceResult = TrackingHistoryRefusals & {
   readonly changed: boolean
 }
 
@@ -455,19 +468,22 @@ export function createPollingManager(
     chunk: BreadcrumbHistoryChunk,
     persistedDirectly: boolean,
     persistenceResult: TrackingHistoryChunkPersistenceResult | null,
+    refusedPositions: readonly NormalizedTrackingPosition[] = persistenceResult?.refusedPositions ?? [],
   ): void => {
     if (!isHistoryReconciliationCurrent()) {
       return
     }
     rememberAcknowledgedHistoryCheckpoint(chunk)
-    canonicalizationInFlight?.trailingPositions.push(...chunk.positions)
+    // Only what the store did not refuse reaches the live trail [DON-338].
+    const renderablePositions = withoutRefusedPositions(chunk.positions, refusedPositions)
+    canonicalizationInFlight?.trailingPositions.push(...renderablePositions)
     if (
       chunk.phase === 'anti_entropy' &&
       persistenceResult?.changed === true
     ) {
       requestCanonicalization()
     }
-    if (chunk.positions.length === 0) {
+    if (renderablePositions.length === 0) {
       return
     }
     // DON-305: the sweep re-reads every device's recent hours each tick. A
@@ -480,7 +496,7 @@ export function createPollingManager(
     ) {
       return
     }
-    for (const position of chunk.positions) {
+    for (const position of renderablePositions) {
       pendingHistoryRenderPositions.push(position)
       if (!persistedDirectly) {
         pendingHistoryMissionPersistencePositions.push(position)
@@ -522,21 +538,24 @@ export function createPollingManager(
       const input = createHistoryPersistenceInput(chunk)
       let persistedDirectly = false
       let persistenceResult: TrackingHistoryChunkPersistenceResult | null = null
+      let refusedPositions: readonly NormalizedTrackingPosition[] = []
       try {
         if (options.persistHistoryChunk !== undefined) {
           persistenceResult = await runMissionEvidencePersistence(
             input.expectedMissionId,
             () => persistHistoryChunkInPieces(input, options.persistHistoryChunk!, continueWithNextPiece),
           )
+          refusedPositions = persistenceResult.refusedPositions ?? []
           persistedDirectly = true
         } else if (
           chunk.phase === 'initial' &&
           options.persistHistoryChunks !== undefined
         ) {
-          await runMissionEvidencePersistence(
+          const groupResult = await runMissionEvidencePersistence(
             input.expectedMissionId,
             () => persistHistoryChunkInPieces(input, (piece) => options.persistHistoryChunks!([piece]), continueWithNextPiece),
           )
+          refusedPositions = groupResult.refusedPositions ?? []
           persistedDirectly = true
         }
       } catch (reason) {
@@ -547,6 +566,7 @@ export function createPollingManager(
         chunk,
         persistedDirectly,
         persistenceResult,
+        refusedPositions,
       )
     },
     onChunks: async (chunks) => {
@@ -563,11 +583,11 @@ export function createPollingManager(
               persistGroup: options.persistHistoryChunks!,
               ...(options.persistHistoryChunk === undefined
                 ? {} : { persistChunk: options.persistHistoryChunk }),
-              onAcknowledged: (input, index, result) => {
+              onAcknowledged: (input, index, result, refusedPositions) => {
                 if (input.expectedMissionId !== activeHistoryResetKey) return
                 const chunk = chunks[index]
                 if (chunk !== undefined) {
-                  acceptPersistedHistoryChunk(chunk, true, result)
+                  acceptPersistedHistoryChunk(chunk, true, result, refusedPositions)
                 }
               },
               yieldBetweenGroups: () => new Promise<void>((resolve) => {
@@ -2210,8 +2230,11 @@ export function createPollingManager(
           'live',
         )
         const breadcrumbs = result.accepted
+        let refusedPositions: readonly NormalizedTrackingPosition[] = []
         if (options.persistHistoryChunk !== undefined && request.historyResetKey !== null && initialFrom !== null) {
-          await runMissionEvidencePersistence(request.historyResetKey, () => persistHistoryChunkInPieces({
+          // The live line waits for the store's answer and leaves out what it
+          // refused; a failed or unanswered write draws nothing [DON-338].
+          const persisted = await runMissionEvidencePersistence(request.historyResetKey, () => persistHistoryChunkInPieces({
             phase: 'incremental', expectedMissionId: request.historyResetKey, deviceId: device.device_id,
             historyFrom: initialFrom.toISOString(), reconciledFrom: fetchFrom.toISOString(),
             reconciledUntil: fetchUntil.toISOString(), positions: breadcrumbs,
@@ -2220,6 +2243,7 @@ export function createPollingManager(
             refreshAfterPartialHistoryFailure(reason)
             throw reason
           })
+          refusedPositions = persisted.refusedPositions ?? []
         }
         const newestTimestamp = getCursorTimestampFromBatch(
           breadcrumbs,
@@ -2231,7 +2255,7 @@ export function createPollingManager(
 
         return {
           breadcrumbs,
-          recentBreadcrumbs: breadcrumbs,
+          recentBreadcrumbs: withoutRefusedPositions(breadcrumbs, refusedPositions),
           previousCursor: lastTimestamp ?? null,
           requestedFrom: fetchFrom.toISOString(),
           requestedTo: fetchUntil.toISOString(),

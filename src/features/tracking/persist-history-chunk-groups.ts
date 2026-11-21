@@ -1,7 +1,9 @@
 import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryChunkPersistenceResult,
+  TrackingHistoryRefusals,
 } from './polling-manager'
+import type { NormalizedTrackingPosition } from './tracking-types'
 import { HISTORY_PIECE_ROW_BUDGET, persistHistoryChunkInPieces } from './split-history-chunk'
 
 /**
@@ -18,12 +20,20 @@ type ChunkEntry = {
 
 type PersistHistoryChunkGroupsOptions = {
   readonly inputs: readonly TrackingHistoryChunkPersistenceInput[]
-  readonly persistGroup: (inputs: readonly TrackingHistoryChunkPersistenceInput[]) => Promise<void>
+  readonly persistGroup: (
+    inputs: readonly TrackingHistoryChunkPersistenceInput[],
+  ) => Promise<TrackingHistoryRefusals | void>
   readonly persistChunk?: (input: TrackingHistoryChunkPersistenceInput) => Promise<TrackingHistoryChunkPersistenceResult>
+  /**
+   * Called once per acknowledged chunk. `refusedPositions` holds the
+   * observations the store refused in the write that carried it (for a group
+   * write, every refused observation of the group, matched by identity).
+   */
   readonly onAcknowledged: (
     input: TrackingHistoryChunkPersistenceInput,
     index: number,
     result: TrackingHistoryChunkPersistenceResult | null,
+    refusedPositions: readonly NormalizedTrackingPosition[],
   ) => void
   readonly yieldBetweenGroups: () => Promise<void>
 }
@@ -43,9 +53,10 @@ export async function persistHistoryChunkGroups(
   function acknowledge(
     entry: ChunkEntry,
     result: TrackingHistoryChunkPersistenceResult | null,
+    refusedPositions: readonly NormalizedTrackingPosition[] = result?.refusedPositions ?? [],
   ): PromiseSettledResult<void> {
     try {
-      options.onAcknowledged(entry.input, entry.index, result)
+      options.onAcknowledged(entry.input, entry.index, result, refusedPositions)
       return { status: 'fulfilled', value: undefined }
     } catch (reason) {
       return { status: 'rejected', reason }
@@ -72,13 +83,14 @@ export async function persistHistoryChunkGroups(
       continue
     }
     let groupFailure: { readonly reason: unknown } | undefined
+    let groupRefusals: readonly NormalizedTrackingPosition[] = []
     try {
-      await options.persistGroup(group.map(({ input }) => input))
+      groupRefusals = (await options.persistGroup(group.map(({ input }) => input)))?.refusedPositions ?? []
     } catch (reason) {
       groupFailure = { reason }
     }
     if (groupFailure === undefined) {
-      for (const entry of group) results[entry.index] = acknowledge(entry, null)
+      for (const entry of group) results[entry.index] = acknowledge(entry, null, groupRefusals)
       continue
     }
     if (group.length === 1 && options.persistChunk === undefined) {
@@ -87,17 +99,19 @@ export async function persistHistoryChunkGroups(
     }
     await Promise.all(group.map(async (entry) => {
       let result: TrackingHistoryChunkPersistenceResult | null = null
+      let refusals: readonly NormalizedTrackingPosition[] = []
       try {
         if (options.persistChunk !== undefined) {
           result = await options.persistChunk(entry.input)
+          refusals = result.refusedPositions ?? []
         } else {
-          await options.persistGroup([entry.input])
+          refusals = (await options.persistGroup([entry.input]))?.refusedPositions ?? []
         }
       } catch (reason) {
         results[entry.index] = { status: 'rejected', reason }
         return
       }
-      results[entry.index] = acknowledge(entry, result)
+      results[entry.index] = acknowledge(entry, result, refusals)
     }))
   }
   return results

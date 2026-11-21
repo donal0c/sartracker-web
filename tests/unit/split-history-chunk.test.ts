@@ -88,9 +88,24 @@ describe('history chunks split into bounded pieces [DON-313]', () => {
       .mockResolvedValue({ changed: true })
     const yieldBetweenPieces = vi.fn().mockResolvedValue(undefined)
 
-    await expect(persistHistoryChunkInPieces(chunk, persistPiece, yieldBetweenPieces)).resolves.toEqual({ changed: true })
+    await expect(persistHistoryChunkInPieces(chunk, persistPiece, yieldBetweenPieces))
+      .resolves.toEqual({ changed: true, refusedPositions: [] })
     expect(persistPiece).toHaveBeenCalledTimes(3)
     expect(yieldBetweenPieces).toHaveBeenCalledTimes(2)
+  })
+
+  it('collects every observation the store refused across the pieces [DON-338]', async () => {
+    const chunk = oneHertzChunk(600)
+    const pieces = splitHistoryChunk(chunk)
+    const persistPiece = vi.fn(async (piece: (typeof pieces)[number]) => ({
+      changed: false,
+      refusedPositions: [piece.positions[0]!],
+    }))
+
+    const result = await persistHistoryChunkInPieces(chunk, persistPiece, async () => undefined)
+
+    expect(result.refusedPositions).toEqual(pieces.map((piece) => piece.positions[0]))
+    expect(result.refusedPositions?.[1]).toBe(pieces[1]!.positions[0])
   })
 
   it('marks a failure that follows a stored change, so the trail is still refreshed', async () => {

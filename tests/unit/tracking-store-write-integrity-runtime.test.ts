@@ -13,7 +13,11 @@ import {
 } from '../../src/features/tracking/traccar-normalization'
 import type { TrackingConnectionStatus, TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 import { startTrackingRuntime } from '../../src/features/tracking/start-tracking-runtime'
-import type { TrackingSnapshotContext } from '../../src/features/tracking/polling-manager'
+import type {
+  TrackingHistoryChunkPersistenceInput,
+  TrackingHistoryChunkPersistenceResult,
+  TrackingSnapshotContext,
+} from '../../src/features/tracking/polling-manager'
 
 // DON-338 piece 3: the real snapshot persist loop against the real mission
 // store. One bad fix must not stop the other fixes of its 256-row piece from
@@ -71,10 +75,15 @@ function snapshotOf(count: number, prefix: string): TrackingSnapshot {
 }
 
 /** Starts the tracking runtime with the real store as its only position writer. */
-async function startWithRealStore(): Promise<{
+async function startWithRealStore(
+  wrapAcknowledgement: (acknowledgement: Record<string, unknown>) => unknown = (acknowledgement) => acknowledgement,
+): Promise<{
   readonly missionId: string
   readonly realStore: RealStore
   readonly deliver: (snapshot: TrackingSnapshot) => Promise<void> | void
+  readonly persistHistoryChunk: (
+    input: TrackingHistoryChunkPersistenceInput,
+  ) => Promise<TrackingHistoryChunkPersistenceResult>
   readonly statuses: TrackingConnectionStatus[]
   readonly recordMissionEvidenceLoss: ReturnType<typeof vi.fn>
 }> {
@@ -88,6 +97,9 @@ async function startWithRealStore(): Promise<{
     | {
         readonly onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
         readonly onStatusChange: (status: TrackingConnectionStatus) => void
+        readonly persistHistoryChunk: (
+          input: TrackingHistoryChunkPersistenceInput,
+        ) => Promise<TrackingHistoryChunkPersistenceResult>
       }
     | undefined
   stopRuntime = await startTrackingRuntime({
@@ -103,7 +115,8 @@ async function startWithRealStore(): Promise<{
       listPositions: vi.fn().mockResolvedValue([]),
       upsertDevice: (input) => realStore.upsertDevice(input),
       addPosition: vi.fn().mockRejectedValue(new Error('per-row writer must not be used')),
-      persistTrackingPositionsBulk: (input) => realStore.persistTrackingPositionsBulk(input),
+      persistTrackingPositionsBulk: async (input) =>
+        wrapAcknowledgement(await realStore.persistTrackingPositionsBulk(input)) as never,
     },
     applySnapshot: vi.fn(),
     applyStatus: (status) => { statuses.push(status) },
@@ -117,6 +130,7 @@ async function startWithRealStore(): Promise<{
     missionId: mission.id,
     realStore,
     deliver: (snapshot) => hooks!.onSnapshot(snapshot, { historyResetKey: mission.id }),
+    persistHistoryChunk: (input) => hooks!.persistHistoryChunk(input),
     statuses,
     recordMissionEvidenceLoss,
   }
@@ -167,5 +181,56 @@ describe('tracking persist loop with the real mission store [DON-338]', () => {
       .toContain('source_position_id_reused'))
     expect(runtime.statuses.at(-1)!.warning).toMatch(/1 position id was reused/i)
     await expect(runtime.realStore.countPositions(runtime.missionId)).resolves.toBe(3)
+  })
+})
+
+describe('history writes name the observations the store refused [DON-338 round 9]', () => {
+  /** Registers the template device, as the snapshot path would before history arrives. */
+  async function registerDevice(runtime: { readonly realStore: RealStore; readonly missionId: string }): Promise<void> {
+    await runtime.realStore.upsertDevice({
+      mission_id: runtime.missionId,
+      device_id: TEMPLATE.device_id,
+      name: 'Synthetic',
+      color: '#336699',
+      status: 'online',
+    })
+  }
+
+  /** One history chunk for the template device covering the snapshot's fixes. */
+  function chunkOf(missionId: string, positions: TrackingSnapshot['breadcrumbs']): TrackingHistoryChunkPersistenceInput {
+    return {
+      phase: 'incremental',
+      expectedMissionId: missionId,
+      deviceId: TEMPLATE.device_id,
+      historyFrom: '2026-04-06T07:00:00.000Z',
+      reconciledFrom: '2026-04-06T07:00:00.000Z',
+      reconciledUntil: '2026-04-06T13:00:00.000Z',
+      positions,
+    }
+  }
+
+  it('returns exactly the refused observation, not the kept original sent in the same chunk', async () => {
+    const runtime = await startWithRealStore()
+    await registerDevice(runtime)
+    const [original, other] = snapshotOf(2, 'traccar').breadcrumbs
+    const conflict = { ...original!, lat: 53.4 }
+
+    const result = await runtime.persistHistoryChunk(chunkOf(runtime.missionId, [original!, other!, conflict]))
+
+    expect(result.refusedPositions).toHaveLength(1)
+    expect(result.refusedPositions?.[0]).toBe(conflict)
+    await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes).toContain('source_position_id_reused'))
+  })
+
+  it('fails the write under the persistence warning when the store\'s answer has no refused-row list', async () => {
+    const runtime = await startWithRealStore((acknowledgement) =>
+      Object.fromEntries(Object.entries(acknowledgement).filter(([key]) => key !== 'refusedSourceIdentityConflicts')))
+    await registerDevice(runtime)
+    const chunk = chunkOf(runtime.missionId, snapshotOf(2, 'traccar').breadcrumbs)
+
+    await expect(runtime.persistHistoryChunk(chunk))
+      .rejects.toThrow(/Mission storage did not confirm which trail fixes it refused/)
+    await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes).toContain('mission_storage_failed'))
+    expect(runtime.recordMissionEvidenceLoss).toHaveBeenCalled()
   })
 })

@@ -1,7 +1,9 @@
 import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryChunkPersistenceResult,
+  TrackingHistoryRefusals,
 } from './polling-manager'
+import type { NormalizedTrackingPosition } from './tracking-types'
 
 /**
  * The most fixes written to the mission store in one call. A call is one
@@ -63,11 +65,6 @@ export function splitHistoryChunk(
 }
 
 /**
- * Persists a chunk piece by piece, yielding between pieces. Stops at the first
- * failed piece and rejects, so the caller retries the whole chunk; pieces
- * already stored keep checkpoints that claim only what they hold.
- */
-/**
  * Splitting derives piece cursors from fix times, which is truthful only when
  * every fix lies inside the chunk's own window and the window is not inverted.
  * Anything else stays whole, so the store validates and rejects it atomically
@@ -95,21 +92,32 @@ export function historyFailureChangedStore(reason: unknown): boolean {
   return typeof reason === 'object' && reason !== null && failuresAfterStoredChange.has(reason)
 }
 
+/**
+ * Persists a chunk piece by piece, yielding between pieces. Stops at the first
+ * failed piece and rejects, so the caller retries the whole chunk; pieces
+ * already stored keep checkpoints that claim only what they hold. Returns
+ * whether any piece changed the store, with every observation the store
+ * refused across the pieces [DON-338].
+ */
 export async function persistHistoryChunkInPieces(
   chunk: TrackingHistoryChunkPersistenceInput,
-  persistPiece: (piece: TrackingHistoryChunkPersistenceInput) => Promise<TrackingHistoryChunkPersistenceResult | void>,
+  persistPiece: (
+    piece: TrackingHistoryChunkPersistenceInput,
+  ) => Promise<TrackingHistoryChunkPersistenceResult | TrackingHistoryRefusals | void>,
   yieldBetweenPieces: () => Promise<void>,
 ): Promise<TrackingHistoryChunkPersistenceResult> {
   let changed = false
+  const refusedPositions: NormalizedTrackingPosition[] = []
   for (const [index, piece] of splitHistoryChunk(chunk).entries()) {
     try {
       if (index > 0) await yieldBetweenPieces()
       const result = await persistPiece(piece)
-      changed ||= result?.changed === true
+      changed ||= result !== undefined && 'changed' in result && result.changed === true
+      for (const position of result?.refusedPositions ?? []) refusedPositions.push(position)
     } catch (reason) {
       if (changed && typeof reason === 'object' && reason !== null) failuresAfterStoredChange.add(reason)
       throw reason
     }
   }
-  return { changed }
+  return { changed, refusedPositions }
 }
