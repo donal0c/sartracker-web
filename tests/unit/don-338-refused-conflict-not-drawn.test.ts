@@ -171,6 +171,12 @@ function persistHistoryLikeRuntime(
     readonly lostAcknowledgements?: number
     /** Drops the refused-row list from the first answer whose write matches, after the commit. */
     readonly dropRefusalListOnce?: (sent: readonly NormalizedTrackingPosition[]) => boolean
+    /**
+     * Runs after each commit, before the answer is returned: may hold the
+     * answer (a slow IPC reply) and decide it arrives malformed (no refused-row
+     * list) [DON-338 round 11].
+     */
+    readonly afterCommit?: (sent: readonly NormalizedTrackingPosition[]) => Promise<'answer' | 'malformed'>
   } = {},
 ) {
   let conflicts = 0
@@ -214,8 +220,9 @@ function persistHistoryLikeRuntime(
       throw new Error('acknowledgement lost')
     }
     let answer: unknown = acknowledgement
-    if (!listDropped && options.dropRefusalListOnce?.(scoped) === true) {
-      listDropped = true
+    const malformed = (await options.afterCommit?.(scoped)) === 'malformed'
+    if (malformed || (!listDropped && options.dropRefusalListOnce?.(scoped) === true)) {
+      if (!malformed) listDropped = true
       answer = Object.fromEntries(Object.entries(acknowledgement)
         .filter(([key]) => key !== 'refusedSourceIdentityConflicts'))
     }
@@ -278,7 +285,8 @@ function startPoller(
   options: {
     readonly onSnapshot?: (snapshot: TrackingSnapshot) => void | Promise<void>
     readonly getInitialBreadcrumbs?: () => Promise<readonly NormalizedTrackingPosition[]>
-    readonly getCanonicalBreadcrumbs?: () => Promise<CanonicalBreadcrumbSeed>
+    readonly getCanonicalBreadcrumbs?: (historyResetKey: string) => Promise<CanonicalBreadcrumbSeed>
+    readonly getPollingMode?: () => 'active' | 'paused' | 'idle'
     readonly persistHistoryChunk?: (
       input: TrackingHistoryChunkPersistenceInput,
     ) => Promise<TrackingHistoryChunkPersistenceResult>
@@ -322,6 +330,7 @@ function startPoller(
     ...(options.historyAntiEntropyIntervalMs === undefined
       ? {}
       : { historyAntiEntropyIntervalMs: options.historyAntiEntropyIntervalMs }),
+    ...(options.getPollingMode === undefined ? {} : { getPollingMode: options.getPollingMode }),
     ...(options.onTrailStoreAgreementChange === undefined
       ? {}
       : { onTrailStoreAgreementChange: options.onTrailStoreAgreementChange }),
@@ -816,5 +825,253 @@ describe('[DON-338] round 10: the live line agrees with the store after an uncon
     expect((await realStore.listPositions(missionId)).filter((row) => row.source_position_id === '17')
       .map((row) => row.lat)).toEqual([52.2])
     expect(started.snapshots.at(-1)!.breadcrumbs).toContainEqual(FIX_18)
+  })
+})
+
+const LATE_19 = fix('19', new Date(NOW_MS - 40 * 60_000 + 45_000).toISOString(), 52.05)
+const LATE_20 = fix('20', new Date(NOW_MS - 40 * 60_000 + 50_000).toISOString(), 52.051)
+const EMPTY_SEED: CanonicalBreadcrumbSeed = { positions: [], totalObservedByDevice: {}, selectionMetadataByDevice: {} }
+
+/**
+ * The canonical reload over the real store. Each read takes the store's rows
+ * when it begins; a read the test holds delivers them only when released.
+ * Another mission's key reads an empty store.
+ */
+function canonicalReadsFromStore(realStore: RealStore, missionId: string) {
+  const read = canonicalFromStore(realStore, missionId)
+  const held: (() => void)[] = []
+  let holdNext = 0
+  let heldTotal = 0
+  let begun = 0
+  return {
+    getCanonicalBreadcrumbs: async (historyResetKey: string): Promise<CanonicalBreadcrumbSeed> => {
+      begun += 1
+      const seed = historyResetKey === MISSION_KEY ? await read() : EMPTY_SEED
+      if (holdNext > 0) {
+        holdNext -= 1
+        heldTotal += 1
+        await new Promise<void>((resolve) => { held.push(resolve) })
+      }
+      return seed
+    },
+    holdNextRead: (): void => { holdNext += 1 },
+    heldReads: (): number => held.length,
+    heldTotal: (): number => heldTotal,
+    releaseOldest: (): void => { held.shift()?.() },
+    begun: (): number => begun,
+  }
+}
+
+/** Store answers scripted per fix id: the first write carrying the id may be held and may arrive malformed. */
+function scriptedAnswers() {
+  const plans = new Map<string, { readonly hold: boolean }>()
+  const held: (() => void)[] = []
+  const malformed: string[] = []
+  return {
+    malformedFor: (id: string, plan: { readonly hold: boolean }): void => { plans.set(id, plan) },
+    afterCommit: async (sent: readonly NormalizedTrackingPosition[]): Promise<'answer' | 'malformed'> => {
+      const id = sent.map((position) => position.id).find((candidate) => plans.has(candidate))
+      if (id === undefined) return 'answer'
+      const plan = plans.get(id)!
+      plans.delete(id)
+      if (plan.hold) await new Promise<void>((resolve) => { held.push(resolve) })
+      malformed.push(id)
+      return 'malformed'
+    },
+    heldAnswers: (): number => held.length,
+    releaseAnswers: (): void => { held.splice(0).forEach((release) => release()) },
+    malformed: (): readonly string[] => [...malformed],
+  }
+}
+
+/** Advances fake time in steps until the condition holds. */
+async function advanceUntil(condition: () => boolean, stepMs = 1_000, maxSteps = 400): Promise<void> {
+  for (let step = 0; step < maxSteps; step += 1) {
+    if (condition()) return
+    await vi.advanceTimersByTimeAsync(stepMs)
+  }
+  throw new Error('Condition not reached in fake time.')
+}
+
+type AgreementEntry = { readonly awaiting: boolean; readonly lineIds: readonly string[] }
+
+/** The ids on device 1's latest published line. */
+function latestLineIds(started: ReturnType<typeof startPoller>): readonly string[] {
+  return started.snapshots.at(-1)?.breadcrumbs.map((position) => position.id) ?? []
+}
+
+/** Starts the real poller over the real store with scripted answers, a controllable mode and mission key. */
+async function startAgreementScenario(options: {
+  readonly answers: ReturnType<typeof scriptedAnswers>
+  readonly serving?: () => boolean
+}) {
+  const { realStore, missionId } = await openRealStore()
+  const uploaded: NormalizedTrackingPosition[] = []
+  const mode: { current: 'active' | 'paused' } = { current: 'active' }
+  const missionKey = { current: MISSION_KEY }
+  const persistence = persistHistoryLikeRuntime(realStore, missionId, { afterCommit: options.answers.afterCommit })
+  const canonical = canonicalReadsFromStore(realStore, missionId)
+  const agreement: AgreementEntry[] = []
+  const started: ReturnType<typeof startPoller> = startPoller(
+    {
+      responses: [],
+      respond: () => (options.serving?.() ?? true) ? [...uploaded, FIX_18] : [],
+    },
+    {
+      persistHistoryChunk: persistence.persistHistoryChunk,
+      getCanonicalBreadcrumbs: canonical.getCanonicalBreadcrumbs,
+      getPollingMode: () => mode.current,
+      missionKey: () => missionKey.current,
+      historyAntiEntropyIntervalMs: 60_000,
+      onTrailStoreAgreementChange: (awaiting) => {
+        agreement.push({ awaiting, lineIds: latestLineIds(started) })
+      },
+    },
+  )
+  await advanceUntil(() => started.historyRequests() >= 2, 5_000)
+  const storedIds = async (): Promise<readonly (string | null)[]> =>
+    (await realStore.listPositions(missionId)).map((row) => row.source_position_id)
+  return { started, uploaded, mode, missionKey, persistence, canonical, agreement, storedIds }
+}
+
+describe('[DON-338] round 11: every unconfirmed trail write is owed a store reload that began after it', () => {
+  it('schedule 1: a malformed answer delivered while paused still owes a reload; after resume the stored fix is drawn and only then does agreement clear', async () => {
+    const answers = scriptedAnswers()
+    answers.malformedFor('19', { hold: true })
+    const scenario = await startAgreementScenario({ answers })
+    scenario.uploaded.push(LATE_19)
+    // An anti-entropy write commits fix 19; its answer is held.
+    await advanceUntil(() => answers.heldAnswers() === 1)
+    expect(await scenario.storedIds()).toContain('19')
+    scenario.mode.current = 'paused'
+    await vi.advanceTimersByTimeAsync(5_000)
+    answers.releaseAnswers()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(answers.malformed()).toEqual(['19'])
+    // The mark is recorded in pause; the warning is up.
+    expect(scenario.agreement).toEqual([{ awaiting: true, lineIds: expect.not.arrayContaining(['19']) }])
+    scenario.mode.current = 'active'
+    // Resume: the retry finds 19 unchanged and publishes nothing.
+    for (let sweep = 0; sweep < 3; sweep += 1) await vi.advanceTimersByTimeAsync(60_000)
+    await scenario.started.poller.stop()
+
+    expect(latestLineIds(scenario.started)).toContain('19')
+    expect(scenario.agreement.at(-1)).toEqual({ awaiting: false, lineIds: expect.arrayContaining(['19']) })
+  })
+
+  it('schedule 2: a second failure while reload A runs is not cleared by A, and a follow-up discarded in pause is re-requested on resume', async () => {
+    const answers = scriptedAnswers()
+    answers.malformedFor('19', { hold: false })
+    answers.malformedFor('20', { hold: false })
+    const scenario = await startAgreementScenario({ answers })
+    scenario.canonical.holdNextRead()
+    scenario.uploaded.push(LATE_19)
+    // Fix 19 commits unconfirmed and reload A begins; A's result is held.
+    await advanceUntil(() => scenario.canonical.heldReads() === 1)
+    expect(answers.malformed()).toEqual(['19'])
+    scenario.canonical.holdNextRead()
+    scenario.uploaded.push(LATE_20)
+    // Fix 20 commits under another rejected answer while A is held.
+    await advanceUntil(() => answers.malformed().includes('20'))
+    expect(await scenario.storedIds()).toContain('20')
+    scenario.canonical.releaseOldest()
+    // A applies (19 only); the follow-up reload begins and is held.
+    await advanceUntil(() => scenario.canonical.heldTotal() === 2 && scenario.canonical.heldReads() === 1)
+    expect(latestLineIds(scenario.started)).toContain('19')
+    expect(latestLineIds(scenario.started)).not.toContain('20')
+    scenario.mode.current = 'paused'
+    await vi.advanceTimersByTimeAsync(5_000)
+    scenario.canonical.releaseOldest()
+    await vi.advanceTimersByTimeAsync(10_000)
+    scenario.mode.current = 'active'
+    // Resume; the confirmed retry of 20 is a duplicate and publishes nothing.
+    for (let sweep = 0; sweep < 3; sweep += 1) await vi.advanceTimersByTimeAsync(60_000)
+    await scenario.started.poller.stop()
+
+    expect(latestLineIds(scenario.started)).toEqual(expect.arrayContaining(['19', '20']))
+    // Agreement never clears while the line lacks a stored, unconfirmed fix.
+    for (const entry of scenario.agreement.filter((candidate) => !candidate.awaiting)) {
+      expect(entry.lineIds).toEqual(expect.arrayContaining(['19', '20']))
+    }
+    expect(scenario.agreement.at(-1)?.awaiting).toBe(false)
+  })
+
+  it('a mark set while paused is reloaded on resume even when no further write happens', async () => {
+    const answers = scriptedAnswers()
+    answers.malformedFor('19', { hold: true })
+    const provider = { serving: true }
+    const scenario = await startAgreementScenario({ answers, serving: () => provider.serving })
+    scenario.uploaded.push(LATE_19)
+    await advanceUntil(() => answers.heldAnswers() === 1)
+    scenario.mode.current = 'paused'
+    await vi.advanceTimersByTimeAsync(5_000)
+    answers.releaseAnswers()
+    await vi.advanceTimersByTimeAsync(10_000)
+    // Traccar serves nothing more, so nothing more is written.
+    provider.serving = false
+    const sentBeforeResume = scenario.persistence.sentIds().length
+    const readsBeforeResume = scenario.canonical.begun()
+    scenario.mode.current = 'active'
+    await vi.advanceTimersByTimeAsync(15_000)
+    await scenario.started.poller.stop()
+
+    expect(scenario.persistence.sentIds()).toHaveLength(sentBeforeResume)
+    expect(scenario.canonical.begun()).toBeGreaterThan(readsBeforeResume)
+    expect(latestLineIds(scenario.started)).toContain('19')
+    expect(scenario.agreement.map((entry) => entry.awaiting)).toEqual([true, false])
+  })
+
+  it('two failures with reload A in flight: A does not clear the mark; the follow-up that saw both does', async () => {
+    const answers = scriptedAnswers()
+    answers.malformedFor('19', { hold: false })
+    answers.malformedFor('20', { hold: false })
+    const scenario = await startAgreementScenario({ answers })
+    scenario.canonical.holdNextRead()
+    scenario.uploaded.push(LATE_19)
+    await advanceUntil(() => scenario.canonical.heldReads() === 1)
+    scenario.canonical.holdNextRead()
+    scenario.uploaded.push(LATE_20)
+    await advanceUntil(() => answers.malformed().includes('20'))
+    scenario.canonical.releaseOldest()
+    await advanceUntil(() => scenario.canonical.heldTotal() === 2 && scenario.canonical.heldReads() === 1)
+    // A applied with 19 only: still awaiting agreement.
+    expect(scenario.agreement.map((entry) => entry.awaiting)).toEqual([true])
+    scenario.canonical.releaseOldest()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await scenario.started.poller.stop()
+
+    expect(latestLineIds(scenario.started)).toEqual(expect.arrayContaining(['19', '20']))
+    expect(scenario.agreement).toEqual([
+      { awaiting: true, lineIds: expect.not.arrayContaining(['19']) },
+      { awaiting: false, lineIds: expect.arrayContaining(['19', '20']) },
+    ])
+  })
+
+  it('a mission switch drops the mark; the old mission\'s late answer and reload never reach the new mission', async () => {
+    const answers = scriptedAnswers()
+    answers.malformedFor('19', { hold: false })
+    answers.malformedFor('20', { hold: true })
+    const scenario = await startAgreementScenario({ answers })
+    scenario.canonical.holdNextRead()
+    scenario.uploaded.push(LATE_19)
+    await advanceUntil(() => scenario.canonical.heldReads() === 1)
+    expect(scenario.agreement.map((entry) => entry.awaiting)).toEqual([true])
+    scenario.uploaded.push(LATE_20)
+    // Mission A's write of 20 commits; its answer is held across the switch.
+    await advanceUntil(() => answers.heldAnswers() === 1)
+    scenario.missionKey.current = 'mission-b'
+    scenario.uploaded.length = 0
+    await advanceUntil(() => scenario.agreement.length === 2)
+    expect(scenario.agreement[1]?.awaiting).toBe(false)
+    // Mission A's malformed answer and its reload result arrive after the switch.
+    answers.releaseAnswers()
+    scenario.canonical.releaseOldest()
+    for (let sweep = 0; sweep < 2; sweep += 1) await vi.advanceTimersByTimeAsync(60_000)
+    await scenario.started.poller.stop()
+
+    expect(answers.malformed()).toEqual(['19', '20'])
+    expect(scenario.agreement.map((entry) => entry.awaiting)).toEqual([true, false])
+    expect(latestLineIds(scenario.started)).not.toContain('19')
+    expect(latestLineIds(scenario.started)).not.toContain('20')
   })
 })

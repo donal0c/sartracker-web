@@ -91,6 +91,8 @@ type CreateManagedRuntimeServicesDependencies = {
           inputs: readonly import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput[],
         ) => Promise<import('../tracking/polling-manager').TrackingHistoryStoreAnswer>
         readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
+        /** Reports whether the live line awaits agreement with the store [DON-338]. */
+        readonly onTrailStoreAgreementChange?: (awaitingAgreement: boolean) => void
       },
     ) => {
       readonly start: () => void
@@ -179,6 +181,8 @@ type CreateManagedRuntimeServicesDependencies = {
         inputs: readonly import('../tracking/polling-manager').TrackingHistoryChunkPersistenceInput[],
       ) => Promise<import('../tracking/polling-manager').TrackingHistoryStoreAnswer>
       readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
+      /** Reports whether the live line awaits agreement with the store [DON-338]. */
+      readonly onTrailStoreAgreementChange?: (awaitingAgreement: boolean) => void
     },
   ) => {
     readonly start: () => void

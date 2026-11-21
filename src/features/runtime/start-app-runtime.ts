@@ -453,6 +453,11 @@ export async function startAppRuntime(
             ? {}
             : { onBreadcrumbRejections: rejectionEvidenceDelivery.recordEvidence }),
           onPollDiagnostic: hooks.onPollDiagnostic,
+          // The storage warning stays up until the live line agrees with the
+          // store after an unconfirmed trail write [DON-338 round 11].
+          ...(hooks.onTrailStoreAgreementChange === undefined
+            ? {}
+            : { onTrailStoreAgreementChange: hooks.onTrailStoreAgreementChange }),
         }),
       createTrackingCache:
         runtimeKind === 'electron' ? createElectronTrackingCache : createTauriTrackingCache,

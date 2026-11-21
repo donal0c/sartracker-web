@@ -400,9 +400,12 @@ export function createPollingManager(
   let canonicalizationRetryTimer: ReturnType<typeof setTimeout> | null = null
   let canonicalizationSequence = 0
   let canonicalizationRefreshPending = false
-  // The canonicalization sequence current when a trail write's outcome went
-  // unconfirmed; null when the live line agrees with the store [DON-338].
-  let trailAgreementAwaitedSince: number | null = null
+  // Store agreement fence [DON-338 round 11]. Every trail write for the
+  // current mission whose outcome went unconfirmed advances the counter; a
+  // store reload that applies records the counter it saw when it began
+  // reading. The live line awaits agreement while the two differ.
+  let unconfirmedTrailWrites = 0
+  let trailWritesAgreedThrough = 0
   // How far initial catch-up has settled for the selected devices: every
   // window tried ('attempted', possibly with an open history gap) or truly
   // complete. Each step runs the forced flush and canonical reload once, so a
@@ -470,30 +473,48 @@ export function createPollingManager(
     }
   }
 
+  /** True while an unconfirmed trail write has not been followed by an applied store reload. */
+  function trailAwaitsStoreAgreement(): boolean {
+    return unconfirmedTrailWrites > trailWritesAgreedThrough
+  }
+
   /**
    * A trail write whose outcome was not confirmed may still have committed:
    * an earlier piece, or the whole write under a lost or malformed answer.
    * Its retry can then report nothing changed and draw nothing, so the live
-   * line is marked as awaiting agreement and reloaded from the store. Only a
-   * reload begun after this point clears the mark [DON-313] [DON-338 round 10].
+   * line awaits agreement with the store and is reloaded from it. Recorded in
+   * every polling mode (pause, suspend, offline) while the write's mission is
+   * the current one; only a reload that begins after this write clears it
+   * [DON-313] [DON-338 round 11].
    */
-  function awaitStoreAgreementAfterUnconfirmedWrite(): void {
-    if (!isHistoryReconciliationCurrent()) return
-    if (trailAgreementAwaitedSince === null) {
-      trailAgreementAwaitedSince = canonicalizationSequence
-      options.onTrailStoreAgreementChange?.(true)
+  function recordUnconfirmedTrailWrite(missionKey: string | null): void {
+    if (
+      missionKey === null ||
+      missionKey !== activeHistoryResetKey ||
+      !isHistoryPublicationCurrent()
+    ) {
+      // Another mission's write, or a stopped poller: that line is rebuilt
+      // from the store when its mission is next loaded.
+      return
     }
+    const wasAwaiting = trailAwaitsStoreAgreement()
+    unconfirmedTrailWrites += 1
+    if (!wasAwaiting) options.onTrailStoreAgreementChange?.(true)
+    // Starts a reload, or marks the running one for a follow-up whose fence
+    // includes this write. Outside active polling it does nothing; the poll
+    // tick re-requests on resume.
     requestCanonicalization()
   }
 
   /**
-   * After a confirmed save, retries the store read-back still owed by an
-   * earlier unconfirmed write when no reload is running or scheduled (for
-   * example because polling was paused when the write failed) [DON-338 round 10].
+   * Requests the store reload owed by an unconfirmed write when none is
+   * running or scheduled. Called on every active poll tick (so resume after
+   * pause or suspend picks it up), after each confirmed save, and after a
+   * reload completes [DON-338 round 11].
    */
-  function reconcileTrailAfterConfirmedSave(): void {
+  function requestOwedTrailReload(): void {
     if (
-      trailAgreementAwaitedSince !== null &&
+      trailAwaitsStoreAgreement() &&
       canonicalizationInFlight === null &&
       canonicalizationRetryTimer === null
     ) {
@@ -501,11 +522,15 @@ export function createPollingManager(
     }
   }
 
-  /** Drops an owed read-back when its mission's history is discarded. */
+  /**
+   * Drops the owed reload when this poller stops tracking the mission's line:
+   * a mission or history identity change (the new line starts empty and is
+   * seeded from the store) or stop (a restarted poller seeds from the store).
+   */
   function forgetAwaitedStoreAgreement(): void {
-    if (trailAgreementAwaitedSince === null) return
-    trailAgreementAwaitedSince = null
-    options.onTrailStoreAgreementChange?.(false)
+    const wasAwaiting = trailAwaitsStoreAgreement()
+    trailWritesAgreedThrough = unconfirmedTrailWrites
+    if (wasAwaiting) options.onTrailStoreAgreementChange?.(false)
   }
 
   const acceptPersistedHistoryChunk = (
@@ -518,7 +543,7 @@ export function createPollingManager(
       return
     }
     rememberAcknowledgedHistoryCheckpoint(chunk)
-    if (persistedDirectly) reconcileTrailAfterConfirmedSave()
+    if (persistedDirectly) requestOwedTrailReload()
     // Only what was sent to the store and kept reaches the live trail; the
     // fallback port (no store answer) is not used while a mission is active
     // [DON-338 round 10].
@@ -608,7 +633,7 @@ export function createPollingManager(
           persistedDirectly = true
         }
       } catch (reason) {
-        awaitStoreAgreementAfterUnconfirmedWrite()
+        recordUnconfirmedTrailWrite(input.expectedMissionId)
         throw reason
       }
       acceptPersistedHistoryChunk(
@@ -645,12 +670,12 @@ export function createPollingManager(
             }),
           )
           if (groupResults.some((result) => result.status === 'rejected')) {
-            awaitStoreAgreementAfterUnconfirmedWrite()
+            recordUnconfirmedTrailWrite(inputs[0]?.expectedMissionId ?? null)
           }
           return groupResults
         } catch (reason) {
           // A closed wave fence must not reopen through reconciler fallback.
-          awaitStoreAgreementAfterUnconfirmedWrite()
+          recordUnconfirmedTrailWrite(inputs[0]?.expectedMissionId ?? null)
           return chunks.map(() => ({ status: 'rejected' as const, reason }))
         }
       }
@@ -660,7 +685,7 @@ export function createPollingManager(
             input.expectedMissionId,
             () => persistHistoryChunkInPieces(input, options.persistHistoryChunk!, continueWithNextPiece),
           ).catch((reason: unknown) => {
-            awaitStoreAgreementAfterUnconfirmedWrite()
+            recordUnconfirmedTrailWrite(input.expectedMissionId)
             throw reason
           })))
         if (!isHistoryReconciliationCurrent()) {
@@ -805,6 +830,9 @@ export function createPollingManager(
     }
     const sequence = ++canonicalizationSequence
     const historyResetKey = activeHistoryResetKey
+    // Unconfirmed writes up to here may be in what this read returns; any
+    // later one may not, so it keeps the line awaiting agreement.
+    const agreementFence = unconfirmedTrailWrites
     const abortController = new AbortController()
     const state = {
       sequence,
@@ -860,9 +888,9 @@ export function createPollingManager(
         },
       )
       completedSuccessfully = true
-      if (trailAgreementAwaitedSince !== null && sequence > trailAgreementAwaitedSince) {
-        trailAgreementAwaitedSince = null
-        options.onTrailStoreAgreementChange?.(false)
+      if (agreementFence > trailWritesAgreedThrough) {
+        trailWritesAgreedThrough = agreementFence
+        if (!trailAwaitsStoreAgreement()) options.onTrailStoreAgreementChange?.(false)
       }
     }).catch((error) => {
       if (isAbortError(error)) {
@@ -890,7 +918,11 @@ export function createPollingManager(
         } else if (!completedSuccessfully) {
           // The existing delayed retry will read the newest durable truth.
           // Do not also spin an immediate dirty refresh after a worker failure.
+          // A result discarded while paused or suspended schedules nothing;
+          // the owed reload is re-requested on the next active poll tick.
           canonicalizationRefreshPending = false
+        } else {
+          requestOwedTrailReload()
         }
       }
     })
@@ -1484,6 +1516,10 @@ export function createPollingManager(
         scheduleNextPoll(pollIntervalMs)
         return
       }
+
+      // Resume pump: a reload owed by an unconfirmed write whose reload was
+      // skipped or discarded while polling was not active [DON-338 round 11].
+      requestOwedTrailReload()
 
       await withPollPhase('authentication', authenticateIfNeeded())
       if (stopping || discardSupersededPoll(generation, pollHistoryResetKey)) return
@@ -2299,11 +2335,11 @@ export function createPollingManager(
           }, options.persistHistoryChunk!, continueWithNextPiece)).catch((reason: unknown) => {
             // The write may have committed: fixes stored before the failure may
             // fall out of the next live window, so read the store back.
-            awaitStoreAgreementAfterUnconfirmedWrite()
+            recordUnconfirmedTrailWrite(request.historyResetKey)
             throw reason
           })
           recentBreadcrumbs = onlyKeptPositions(breadcrumbs, persisted.keptPositions)
-          reconcileTrailAfterConfirmedSave()
+          requestOwedTrailReload()
         }
         const newestTimestamp = getCursorTimestampFromBatch(
           breadcrumbs,

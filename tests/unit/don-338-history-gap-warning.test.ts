@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createPollingManager, type TrackingPollerClient } from '../../src/features/tracking/polling-manager'
+import { createPollingManager, type TrackingHistoryChunkPersistenceInput, type TrackingPollerClient } from '../../src/features/tracking/polling-manager'
 import {
   describeHistoryGapsForOperator,
   formatOperatorClockRange,
@@ -187,7 +187,8 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
       getPollingMode: () => mission.pollingMode,
       getInitialBreadcrumbFrom: () => new Date(START_MS),
       getInitialBreadcrumbs: async () => [],
-      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      // Answers as the store does: every observation sent was kept [DON-338].
+      persistHistoryChunk: vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => ({ changed: false, keptPositions: input.positions })),
       getCanonicalBreadcrumbs,
       onPollDiagnostic,
       onSnapshot,
