@@ -1,4 +1,10 @@
-import { featureFilter, type FilterSpecification } from '@maplibre/maplibre-gl-style-spec'
+import {
+  createPropertyExpression,
+  featureFilter,
+  latest,
+  type FilterSpecification,
+  type StylePropertySpecification,
+} from '@maplibre/maplibre-gl-style-spec'
 
 import {
   TRACKING_BREADCRUMB_DOTS_LAYER_ID,
@@ -13,9 +19,11 @@ import {
  * Counting features in a GeoJSON source is not enough to prove a trail is on
  * the map: the drawing layer could be missing, hidden, transparent or filtered
  * so that it draws nothing. `readDrawnFeatures` only returns a feature when a
- * layer on its source exists, is visible, has a non-zero size and opacity, is
- * of a type that draws that geometry, and has a filter that MapLibre's own
- * style-spec evaluator accepts for the feature's properties.
+ * layer on its source exists, is visible, is of a type that draws that
+ * geometry, has a filter that MapLibre's own style-spec evaluator accepts for
+ * the feature's properties, and has a size and opacity that the same
+ * evaluator resolves above zero for that feature. A paint value the evaluator
+ * cannot parse or evaluate throws instead of counting the feature as drawn.
  */
 
 export type RecordedFeature = {
@@ -145,10 +153,53 @@ const DRAWABLE_GEOMETRY: Readonly<Record<string, readonly string[]>> = {
   circle: ['Point', 'MultiPoint'],
 }
 
-/** Paint properties that, when zero, make a layer of that type draw nothing. */
+/** Paint properties that, when zero or less, make a layer of that type draw nothing. */
 const ZERO_MEANS_INVISIBLE: Readonly<Record<string, readonly string[]>> = {
   line: ['line-width', 'line-opacity'],
   circle: ['circle-radius', 'circle-opacity'],
+}
+
+/** The zoom the trail regressions evaluate filters and paint at. */
+const EVALUATION_ZOOM = 14
+
+/** MapLibre's style-spec definitions for each layer type's paint properties. */
+const PAINT_SPECS: Readonly<Record<string, Readonly<Record<string, StylePropertySpecification>>>> = {
+  line: latest.paint_line as Record<string, StylePropertySpecification>,
+  circle: latest.paint_circle as Record<string, StylePropertySpecification>,
+}
+
+type PaintEvaluator = (feature: { readonly type: 1 | 2 | 3; readonly properties: Record<string, unknown>; readonly id?: string | number }) => unknown
+
+/**
+ * Compiles one paint property with MapLibre's own expression parser. An unset
+ * property uses the style-spec default. Anything that does not parse, or that
+ * depends on feature state the stand-in does not hold, throws.
+ */
+function compilePaintProperty(layer: RecordedLayer, property: string): PaintEvaluator {
+  const spec = PAINT_SPECS[layer.type]?.[property]
+  if (spec === undefined) {
+    throw new Error(`No style-spec definition for ${layer.type} paint property ${property}.`)
+  }
+  const value = layer.paint?.[property] ?? (spec as { readonly default?: unknown }).default
+  const compiled = createPropertyExpression(value, spec)
+  if (compiled.result === 'error') {
+    throw new Error(
+      `Cannot evaluate ${property} on layer ${layer.id}: ${compiled.value.map((error) => error.message).join('; ')}`,
+    )
+  }
+  if (compiled.value.isStateDependent) {
+    throw new Error(`Cannot evaluate ${property} on layer ${layer.id}: it depends on feature state.`)
+  }
+  const expression = compiled.value
+  return (feature) => {
+    try {
+      return expression.evaluateWithoutErrorHandling({ zoom: EVALUATION_ZOOM }, feature as never)
+    } catch (error) {
+      throw new Error(
+        `Cannot evaluate ${property} on layer ${layer.id}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
 }
 
 /** MapLibre's vector-tile geometry codes, which `['geometry-type']` filters read. */
@@ -177,9 +228,9 @@ export function readDrawnFeatures(
     const geometryTypes = DRAWABLE_GEOMETRY[layer.type]
     if (geometryTypes === undefined) continue
     if (layer.layout?.visibility === 'none') continue
-    if ((ZERO_MEANS_INVISIBLE[layer.type] ?? []).some((property) => layer.paint?.[property] === 0)) {
-      continue
-    }
+    const paintEvaluators = (ZERO_MEANS_INVISIBLE[layer.type] ?? []).map(
+      (property) => [property, compilePaintProperty(layer, property)] as const,
+    )
     const features = map.sourceData.get(layer.source) ?? []
     const filter = layer.filter === undefined
       ? null
@@ -189,14 +240,15 @@ export function readDrawnFeatures(
       if (feature.geometry.type === 'LineString' && !hasTwoDistinctPoints(feature.geometry.coordinates)) {
         continue
       }
-      if (filter !== null && !filter.filter(
-        { zoom: 14 },
-        {
-          type: GEOMETRY_TYPE_CODE[feature.geometry.type] ?? 1,
-          properties: { ...feature.properties },
-          ...(feature.id === undefined ? {} : { id: feature.id }),
-        } as never,
-      )) {
+      const evaluated = {
+        type: GEOMETRY_TYPE_CODE[feature.geometry.type] ?? 1,
+        properties: { ...feature.properties },
+        ...(feature.id === undefined ? {} : { id: feature.id }),
+      }
+      if (filter !== null && !filter.filter({ zoom: EVALUATION_ZOOM }, evaluated as never)) {
+        continue
+      }
+      if (!paintEvaluators.every(([property, evaluate]) => isPositivePaintValue(layer, property, evaluate(evaluated)))) {
         continue
       }
       drawn.push({ layerId, sourceId: layer.source, feature })
@@ -216,6 +268,14 @@ export function hideLayerForControl(
   }
   if (how === 'visibility') map.setLayoutProperty(layerId, 'visibility', 'none')
   else map.setFilter(layerId, ['==', ['get', 'deviceId'], '__no_device__'])
+}
+
+/** True when a size or opacity value draws something; a non-number throws. */
+function isPositivePaintValue(layer: RecordedLayer, property: string, value: unknown): boolean {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new Error(`${property} on layer ${layer.id} evaluated to ${String(value)}, not a number.`)
+  }
+  return value > 0
 }
 
 function hasTwoDistinctPoints(coordinates: unknown): boolean {
