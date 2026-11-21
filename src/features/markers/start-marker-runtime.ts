@@ -11,7 +11,7 @@ import {
   createMarkerDraftFromMarker,
   type MarkerDraft,
 } from './marker-draft'
-import type { MarkerDialogState, MarkerRuntimeState } from './marker-store'
+import { isMarkerDialogDirty, type MarkerDialogState, type MarkerRuntimeState } from './marker-store'
 import type { MarkerAttachmentBoundary } from '../../infrastructure/marker-attachment-store/marker-attachment-boundary'
 import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 
@@ -59,9 +59,15 @@ export async function startMarkerRuntime(
   return {
     refreshMission: async (missionId) => {
       const token = ++refreshToken
+      // A draft whose save is in flight is not discarded: the save result reports itself.
+      const discardedDraftNotice = dialog !== null && !saving && isMarkerDialogDirty(dialog)
+        ? describeDiscardedDraft(dialog)
+        : null
       activeMissionId = missionId
       dialog = null
-      error = null
+      // A mission change cannot wait for the discard confirmation, so say what was lost
+      // instead of dropping unsaved marker edits silently.
+      error = discardedDraftNotice
       loadError = null
 
       if (missionId === null) {
@@ -274,6 +280,9 @@ export async function startMarkerRuntime(
         }
       }
 
+      const missionId = activeMissionId
+      const sessionId = dialog.sessionId
+      const mode = dialog.mode
       saving = true
       error = null
       publishRuntime()
@@ -281,25 +290,33 @@ export async function startMarkerRuntime(
       try {
         const marker = await dependencies.markerStore.upsertMarker(
           buildMarkerSaveInput({
-            missionId: activeMissionId,
+            missionId,
             displayOrder: draft.displayOrder ?? getNextDisplayOrder(markers),
             draft,
           }),
         )
 
-        markers = upsertMarker(markers, marker)
+        // The store write stands, but only the mission it was saved to may show it.
+        // A refresh to another mission while the save was in flight already replaced
+        // the marker list and closed this dialog.
+        const sameMission = activeMissionId === missionId
+        if (sameMission) {
+          markers = upsertMarker(markers, marker)
+        }
         void dependencies.recordDiagnosticEvent?.({
           level: 'info',
           category: 'marker',
           event: 'marker_saved',
           fields: {
-            mode: dialog.mode,
+            mode,
             markerType: marker.type,
-            markerCount: markers.length,
+            markerCount: sameMission ? markers.length : null,
             hasAttachment: marker.attachment_path !== null,
           },
         })
-        dialog = null
+        if (dialog?.sessionId === sessionId) {
+          dialog = null
+        }
         saving = false
         publishRuntime()
         return marker
@@ -316,6 +333,8 @@ export async function startMarkerRuntime(
       }
 
       const markerId = dialog.draft.id
+      const missionId = activeMissionId
+      const sessionId = dialog.sessionId
       saving = true
       error = null
       publishRuntime()
@@ -328,8 +347,12 @@ export async function startMarkerRuntime(
           return false
         }
 
-        markers = markers.filter((marker) => marker.id !== markerId)
-        dialog = null
+        if (activeMissionId === missionId) {
+          markers = markers.filter((marker) => marker.id !== markerId)
+        }
+        if (dialog?.sessionId === sessionId) {
+          dialog = null
+        }
         saving = false
         error = null
         publishRuntime()
@@ -352,6 +375,15 @@ export async function startMarkerRuntime(
       baselineDraft: { ...draft, coordinates: { ...draft.coordinates } },
       pendingTreatmentUpdate: '',
     }
+  }
+
+  /** Names the marker whose unsaved edits a mission refresh discarded. */
+  function describeDiscardedDraft(discarded: MarkerDialogState): string {
+    const name = discarded.draft.name.trim() === '' ? 'without a name' : `"${discarded.draft.name.trim()}"`
+    const treatmentNote = discarded.pendingTreatmentUpdate.trim() !== ''
+      ? ', including a treatment update that had not been added,'
+      : ''
+    return `Unsaved changes to marker ${name} were discarded${treatmentNote} because the mission changed or reloaded. Reopen the marker and re-enter them.`
   }
 
   /** Records failure kind only; raw exceptions may contain locations or personal details. */
