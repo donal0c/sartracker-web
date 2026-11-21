@@ -377,6 +377,43 @@ test.describe('Start screen', () => {
     await expect(page.getByTestId('ws-mission-host')).toBeHidden()
   })
 
+  test('Layers, GPX and helicopters open in every phase; People says it needs a mission', async ({ page }) => {
+    const checkPanels = async () => {
+      await expect(page.getByTestId('ws-toggle-people')).toBeDisabled()
+      await expect(page.getByTestId('ws-toggle-people')).toHaveAttribute('title', /Start or resume a mission/)
+      await page.getByTestId('ws-toggle-layers').click()
+      await expect(page.getByTestId('ws-layers-panel')).toBeVisible()
+      await page.getByTestId('ws-open-tools').click()
+      await expect(page.getByTestId('ws-tools-panel')).toBeVisible()
+      await page.getByTestId('ws-tools-panel').getByTestId('ws-panel-close').click()
+      await expect(page.getByTestId('ws-tools-panel')).toHaveCount(0)
+    }
+
+    // Before Start.
+    await open(page)
+    await checkPanels()
+
+    // After Finish.
+    await page.getByTestId('mission-name-input').fill('Exercise Golf')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await expect(page.getByTestId('mission-governance-card')).toBeVisible()
+    await checkPanels()
+
+    // In recovery, waiting to be resumed.
+    await page.getByTestId('mission-name-input').fill('Exercise Hotel')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await open(page)
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await checkPanels()
+    // The start card stays on screen alongside the panels.
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+  })
+
   test('starting new instead of resuming asks first, then keeps the old record', async ({ page }) => {
     await open(page)
     await page.getByTestId('mission-name-input').fill('Exercise Charlie')

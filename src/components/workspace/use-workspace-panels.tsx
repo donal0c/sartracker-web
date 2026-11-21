@@ -56,9 +56,13 @@ export function useWorkspacePanels(input: {
   const running = phase === 'active' || phase === 'paused'
   const isSetup = phase === 'idle' || phase === 'recovery'
   const [setupCardOpen, setSetupCardOpen] = useState(true)
+  // Layers before Start, in recovery and after Finish. Kept apart from `base`
+  // so closing it does not count as choosing Full map.
+  const [setupPanel, setSetupPanel] = useState<'layers' | null>(null)
   useEffect(() => {
     setTemporary(null)
     setSetupCardOpen(true)
+    setSetupPanel(null)
   }, [phase])
 
   // A decision or failed action always forces Mission back into view.
@@ -77,28 +81,46 @@ export function useWorkspacePanels(input: {
     setSetupCardOpen(true)
     setTemporary('mission')
   }, [missionAttention])
-  // Tracking opens before a mission too: troubleshooting must not need a mission first.
+  // Tracking, Layers, GPX and helicopters open before a mission too, as the old
+  // sidebar tabs did. Before Start, Mission is the card, never a side panel.
   const visible: BasePanel | TemporaryPanel | null = !running
-    ? (temporary === 'tracking' ? 'tracking' : null)
+    ? (temporary === 'mission' ? null : temporary ?? setupPanel)
     : missionForced ? 'mission' : temporary ?? base
   const missionVisible = isSetup ? setupCardOpen || setupHideBlockedReason !== null : visible === 'mission'
   const openMission = useCallback(() => setTemporary('mission'), [])
   const showBase = (panel: BasePanel) => {
     setTemporary(null)
+    if (!running) {
+      if (panel === 'layers') setSetupPanel(visible === 'layers' ? null : 'layers')
+      return
+    }
     setBase(visible === panel ? null : panel)
   }
-  const closeBase = () => { setTemporary(null); setBase(null) }
+  const closeBase = () => {
+    setTemporary(null)
+    if (running) setBase(null)
+    else setSetupPanel(null)
+  }
 
-  const panelButtons = !running ? null : (
+  const panelButtons = (
     <>
-      <button aria-pressed={visible === 'people'} className="ws-bar-button" data-testid="ws-toggle-people" onClick={() => showBase('people')} type="button">
-        People {people.length}
+      <button
+        aria-pressed={visible === 'people'}
+        className="ws-bar-button"
+        data-testid="ws-toggle-people"
+        disabled={!running}
+        onClick={() => showBase('people')}
+        // People are the running mission's roster; say why rather than hide the button.
+        title={running ? undefined : 'Start or resume a mission to see people'}
+        type="button"
+      >
+        {running ? `People ${people.length}` : 'People'}
         {attentionCount > 0 ? <span className="ws-badge" data-testid="ws-people-attention">{attentionCount} ⚠</span> : null}
       </button>
       <button aria-pressed={visible === 'layers'} className="ws-bar-button" data-testid="ws-toggle-layers" onClick={() => showBase('layers')} type="button">
         Layers
       </button>
-      {!panelOpenByDefault(arrangement) ? null : (
+      {!running || !panelOpenByDefault(arrangement) ? null : (
         <button
           aria-pressed={visible === null}
           className="ws-bar-button"
