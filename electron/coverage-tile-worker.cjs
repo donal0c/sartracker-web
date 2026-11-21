@@ -18,12 +18,33 @@ const {
   diffCoverageTileCatalog,
   selectInvalidatedCoverageTilePaths,
 } = require('./coverage-tile-catalog.cjs')
-const { createTrailSegments } = require('./coverage-trail-segmentation.cjs')
 const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { replaceCoverageTileCacheEntry } = require('./coverage-tile-cache-ledger.cjs')
 
+// Must equal coverage-trail-segmentation.cjs createTrailSegments(rows, 30 min):
+// a new segment starts only where Date.parse(next) - Date.parse(previous) > 30 min.
 const GAP_THRESHOLD_MS = 30 * 60 * 1000
 const MAX_CACHE_BYTES = 512 * 1024 * 1024
+const TILE_INDEX_OPTIONS = Object.freeze({
+  maxZoom: 16,
+  indexMaxZoom: 8,
+  indexMaxPoints: 100_000,
+  tolerance: 3,
+  extent: 4096,
+  buffer: 64,
+  lineMetrics: false,
+  promoteId: null,
+})
+// geojson-vt caches every tile it drills below its pre-built index, forever,
+// which exhausted the worker heap (COV-1). Drill-downs here run on a throwaway
+// copy of the index state instead; only clipped sources at these zoom levels
+// are kept, in a least-recently-used cache bounded by fix count.
+const SOURCE_CACHE_LEVELS = Object.freeze([10, 12, 14])
+const DEFAULT_SOURCE_CACHE_POINTS = 2_000_000
+const sourceCacheBudgetPoints = Number.isInteger(workerData?.tuning?.sourceCachePoints) &&
+  workerData.tuning.sourceCachePoints >= 0
+  ? workerData.tuning.sourceCachePoints
+  : DEFAULT_SOURCE_CACHE_POINTS
 
 if (parentPort === null) throw new Error('Coverage tile worker requires a parent port.')
 
@@ -40,6 +61,9 @@ let nextStageId = 0
 const workerGeneration = randomUUID()
 let cacheBytes = 0
 let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
+const sourceCache = new Map()
+let sourceCachePoints = 0
+let nextTileIndexId = 0
 const cancelledRequestIds = new Set()
 const activeTileRequestIds = new Set()
 const queuedCatalogRequestIds = new Set()
@@ -128,6 +152,7 @@ async function syncCatalog(message) {
     if (!desiredKeys.has(existingKey)) nextChunksByKey.delete(existingKey)
   }
 
+  if (workerData.faultInjection?.exhaustHeapOnSync === true) exhaustHeap()
   const changed = new Set(difference.changedChunkKeys)
   for (const descriptor of message.chunks) {
     const chunkKey = createChunkKey(descriptor.key)
@@ -150,21 +175,14 @@ async function syncCatalog(message) {
   )
   for (const periodKey of difference.invalidatedPeriodKeys) {
     throwIfRequestCancelled(message.requestId)
-    const features = [...nextChunksByKey.values()]
-      .filter((chunk) => createPeriodKey(chunk.key) === periodKey)
-      .flatMap((chunk) => chunk.features)
-    if (features.length === 0) {
+    // Chunk order is the map's insertion order, exactly the feature order the
+    // single period-wide index used before per-chunk indexes replaced it.
+    const periodChunks = Object.freeze([...nextChunksByKey.values()]
+      .filter((chunk) => createPeriodKey(chunk.key) === periodKey && chunk.featureCount > 0))
+    if (periodChunks.length === 0) {
       nextIndexesByPeriod.delete(periodKey)
     } else {
-      nextIndexesByPeriod.set(periodKey, geojsonvt({ type: 'FeatureCollection', features }, {
-        maxZoom: 16,
-        indexMaxZoom: 8,
-        indexMaxPoints: 100_000,
-        tolerance: 3,
-        buffer: 64,
-        lineMetrics: false,
-        promoteId: null,
-      }))
+      nextIndexesByPeriod.set(periodKey, periodChunks)
     }
     await yieldToMessages()
   }
@@ -308,46 +326,318 @@ function readChunkSnapshot(missionId, descriptor) {
       throw error
     }
     const query = createCoverageRowsQuery(database, missionId, descriptor.key)
-    const rows = [...query.statement.iterate(...query.params)]
-    return materializeChunk(descriptor.key, descriptor.contentRev, rows)
+    return materializeChunk(
+      descriptor.key,
+      descriptor.contentRev,
+      query.statement.iterate(...query.params),
+    )
   })
   return read()
 }
 
-/** Materializes the same lossless 30-minute segmentation used by live trails. */
+/**
+ * Streams one chunk's ordered rows into the same lossless 30-minute
+ * segmentation used by live trails, then keeps only its compact tile index.
+ * Rows are never held as an array: only each segment's [lon, lat] pairs live
+ * until the index is built, and those are released when this returns.
+ * @param {{device_id: string, period_kind: string, period_id: string}} key
+ * @param {number} contentRev
+ * @param {Iterable<{id: string, source_position_id: string|null, timestamp: string, lat: number, lon: number}>} rows
+ */
 function materializeChunk(key, contentRev, rows) {
   const chunkKey = createChunkKey(key)
   const digest = createHash('sha256')
-  for (let index = 0; index < rows.length; index += 1) {
-    if (index > 0) digest.update('\n')
-    digest.update(createAcceptedPositionIdentity(rows[index]))
+  const segments = []
+  let segment = null
+  let previousTime = 0
+  let fixCount = 0
+  let minTs = null
+  let maxTs = null
+  for (const row of rows) {
+    if (fixCount > 0) digest.update('\n')
+    digest.update(createAcceptedPositionIdentity(row))
+    const time = Date.parse(row.timestamp)
+    if (segment === null || time - previousTime > GAP_THRESHOLD_MS) {
+      segment = []
+      segments.push(segment)
+    }
+    segment.push([row.lon, row.lat])
+    previousTime = time
+    if (fixCount === 0) minTs = row.timestamp ?? null
+    maxTs = row.timestamp ?? null
+    fixCount += 1
   }
-  const segments = createTrailSegments(rows, GAP_THRESHOLD_MS)
+  const features = segments.map((coordinates, index) => ({
+    type: 'Feature',
+    id: `${chunkKey}:${contentRev}:${index}`,
+    geometry: coordinates.length === 1
+      ? { type: 'Point', coordinates: coordinates[0] }
+      : { type: 'LineString', coordinates },
+    properties: {
+      chunk_key: chunkKey,
+      device_id: key.device_id,
+      period_kind: key.period_kind,
+      period_id: key.period_id,
+      content_rev: contentRev,
+    },
+  }))
   return {
     key,
     contentRev,
-    fixCount: rows.length,
+    fixCount,
     fixDigest: digest.digest('hex'),
-    minTs: rows[0]?.timestamp ?? null,
-    maxTs: rows.at(-1)?.timestamp ?? null,
-    features: segments.map((segment, index) => ({
-      type: 'Feature',
-      id: `${chunkKey}:${contentRev}:${index}`,
-      geometry: segment.length === 1
-        ? { type: 'Point', coordinates: [segment[0].lon, segment[0].lat] }
-        : {
-            type: 'LineString',
-            coordinates: segment.map((position) => [position.lon, position.lat]),
-          },
-      properties: {
-        chunk_key: chunkKey,
-        device_id: key.device_id,
-        period_kind: key.period_kind,
-        period_id: key.period_id,
-        content_rev: contentRev,
-      },
-    })),
+    minTs,
+    maxTs,
+    featureCount: features.length,
+    tileIndex: features.length === 0 ? null : createChunkTileIndex(features),
+    lineMarkers: features
+      .filter((feature) => feature.geometry.type === 'LineString')
+      .map(createLineMarker),
   }
+}
+
+/**
+ * Builds one chunk's geojson-vt index. Its pre-built tiles are never drilled
+ * in place (see readChunkTile), so the index keeps exactly its post-build state.
+ * @param {object[]} features GeoJSON features of one chunk, in segment order.
+ */
+function createChunkTileIndex(features) {
+  const index = geojsonvt({ type: 'FeatureCollection', features }, TILE_INDEX_OPTIONS)
+  for (const tileId of Object.keys(index.tiles)) {
+    const tile = index.tiles[tileId]
+    if (tile.source === null) continue
+    for (const feature of tile.source) compactSourceGeometry(feature)
+  }
+  return { id: ++nextTileIndexId, index, prototype: Object.getPrototypeOf(index) }
+}
+
+/**
+ * Stores one retained source geometry as an exact Float64Array copy instead
+ * of a growable JS array of doubles. geojson-vt only indexes these arrays and
+ * reads their size/start/end fields when clipping and simplifying, so the
+ * tiles it derives are identical; the copy holds 24 bytes per fix and lives
+ * outside the JavaScript heap.
+ * @param {{type: string, geometry: number[] & {size?: number, start?: number, end?: number}}} feature
+ * @returns {number} fixes newly copied
+ */
+function compactSourceGeometry(feature) {
+  if (feature.type === 'LineString' || feature.type === 'Point' || feature.type === 'MultiPoint') {
+    const copied = countCopiedFixes(feature.geometry)
+    feature.geometry = compactCoordinates(feature.geometry)
+    return copied
+  }
+  if (feature.type === 'MultiLineString') {
+    // Clipping a line that leaves and re-enters a tile yields several parts.
+    let copied = 0
+    for (let part = 0; part < feature.geometry.length; part += 1) {
+      copied += countCopiedFixes(feature.geometry[part])
+      feature.geometry[part] = compactCoordinates(feature.geometry[part])
+    }
+    return copied
+  }
+  throw new Error(`Coverage tile index has an unexpected ${feature.type} source geometry.`)
+}
+
+/** Fixes a compaction will newly copy (shared, already compact arrays cost nothing). */
+function countCopiedFixes(coordinates) {
+  return coordinates instanceof Float64Array ? 0 : coordinates.length / 3
+}
+
+/** Copies one flat [x, y, importance, ...] array, keeping its line metrics. */
+function compactCoordinates(coordinates) {
+  if (coordinates instanceof Float64Array) return coordinates
+  const compact = Float64Array.from(coordinates)
+  if (coordinates.size !== undefined) compact.size = coordinates.size
+  if (coordinates.start !== undefined) compact.start = coordinates.start
+  if (coordinates.end !== undefined) compact.end = coordinates.end
+  return compact
+}
+
+/**
+ * Records what is needed to keep a short line visible as a dot (COV-5):
+ * geojson-vt drops a whole line below max zoom when its total projected length
+ * is under the simplification tolerance. Size and first vertex use geojson-vt's
+ * own projection and length formula so the drop decision matches exactly.
+ * @param {{id: string, geometry: {coordinates: number[][]}, properties: object}} feature
+ */
+function createLineMarker(feature) {
+  const coordinates = feature.geometry.coordinates
+  let size = 0
+  let x0 = 0
+  let y0 = 0
+  for (let index = 0; index < coordinates.length; index += 1) {
+    const x = projectX(coordinates[index][0])
+    const y = projectY(coordinates[index][1])
+    if (index > 0) size += Math.sqrt(Math.pow(x - x0, 2) + Math.pow(y - y0, 2))
+    x0 = x
+    y0 = y
+  }
+  return Object.freeze({
+    id: feature.id,
+    tags: feature.properties,
+    size: Math.abs(size),
+    x: projectX(coordinates[0][0]),
+    y: projectY(coordinates[0][1]),
+  })
+}
+
+/** Same Web Mercator X projection as geojson-vt's convert step. */
+function projectX(lon) {
+  return lon / 360 + 0.5
+}
+
+/** Same clamped Web Mercator Y projection as geojson-vt's convert step. */
+function projectY(lat) {
+  const sin = Math.sin(lat * Math.PI / 180)
+  const y = 0.5 - 0.25 * Math.log((1 + sin) / (1 - sin)) / Math.PI
+  return y < 0 ? 0 : y > 1 ? 1 : y
+}
+
+/**
+ * Composes one period tile from its chunks' indexes in period order. Each
+ * geojson-vt feature is clipped and simplified independently, so the
+ * concatenation equals the tile of one index built from all features. Dots for
+ * lines dropped at this zoom are appended after every indexed feature.
+ * @param {readonly object[]} periodChunks chunks of one period, in period order
+ * @returns {{features: object[]} | null}
+ */
+function readPeriodTile(periodChunks, z, x, y) {
+  let found = false
+  const features = []
+  for (const chunk of periodChunks) {
+    if (chunk.tileIndex === null) continue
+    const tile = readChunkTile(chunk.tileIndex, z, x, y)
+    if (!tile) continue
+    found = true
+    for (const feature of tile.features) features.push(feature)
+  }
+  if (z < TILE_INDEX_OPTIONS.maxZoom) {
+    const tolerance = TILE_INDEX_OPTIONS.tolerance / ((1 << z) * TILE_INDEX_OPTIONS.extent)
+    const z2 = 1 << z
+    const buffer = TILE_INDEX_OPTIONS.buffer / TILE_INDEX_OPTIONS.extent
+    for (const chunk of periodChunks) {
+      for (const marker of chunk.lineMarkers) {
+        if (!(marker.size < tolerance)) continue
+        const tileX = marker.x * z2 - x
+        const tileY = marker.y * z2 - y
+        if (tileX < -buffer || tileX > 1 + buffer || tileY < -buffer || tileY > 1 + buffer) continue
+        found = true
+        features.push({
+          geometry: [[
+            Math.round(TILE_INDEX_OPTIONS.extent * tileX),
+            Math.round(TILE_INDEX_OPTIONS.extent * tileY),
+          ]],
+          type: 1,
+          tags: marker.tags,
+          id: marker.id,
+        })
+      }
+    }
+  }
+  return found ? { features } : null
+}
+
+/**
+ * Reads one chunk tile with geojson-vt's own getTile/splitTile/clip/transform,
+ * but never lets it cache drilled tiles in the retained index. A drill starts
+ * from the nearest pre-built ancestor that getTile itself would choose, or from
+ * a cached clipped source on that same ancestor chain, and runs on a throwaway
+ * index object; clipping the same chain from either start gives the same tile.
+ * @returns {object | null} the transformed geojson-vt tile, or null
+ */
+function readChunkTile(tileIndex, z, x, y) {
+  const index = tileIndex.index
+  if (index.tiles[toGeojsonVtTileId(z, x, y)] !== undefined) return index.getTile(z, x, y)
+  let start = null
+  for (let parentZ = z - 1; parentZ >= 0 && start === null; parentZ -= 1) {
+    const parentX = x >> (z - parentZ)
+    const parentY = y >> (z - parentZ)
+    const tile = index.tiles[toGeojsonVtTileId(parentZ, parentX, parentY)]
+    if (tile !== undefined) start = createDrillStart(parentZ, parentX, parentY, tile)
+  }
+  if (start === null || !start.source) return null
+  for (const level of SOURCE_CACHE_LEVELS) {
+    if (level <= start.z || level >= z) continue
+    start = readCachedSource(tileIndex, start, level, x >> (z - level), y >> (z - level))
+    if (start === null) return null
+  }
+  return createScratchIndex(tileIndex, start).getTile(z, x, y)
+}
+
+/** Captures what splitTile reads from a parent tile: its source and bounds. */
+function createDrillStart(z, x, y, tile) {
+  return Object.freeze({
+    z, x, y,
+    source: tile.source,
+    minX: tile.minX,
+    minY: tile.minY,
+    maxX: tile.maxX,
+    maxY: tile.maxY,
+  })
+}
+
+/**
+ * Creates a disposable geojson-vt index holding only a copy of the drill start
+ * tile, so splitTile's writes (new tiles, source = null) never reach the
+ * retained index.
+ */
+function createScratchIndex(tileIndex, start) {
+  const scratch = Object.create(tileIndex.prototype)
+  scratch.options = tileIndex.index.options
+  scratch.tiles = {
+    [toGeojsonVtTileId(start.z, start.x, start.y)]: {
+      source: start.source,
+      minX: start.minX,
+      minY: start.minY,
+      maxX: start.maxX,
+      maxY: start.maxY,
+    },
+  }
+  scratch.tileCoords = []
+  return scratch
+}
+
+/**
+ * Returns the clipped source of one tile at a cache level, drilling it from
+ * start on a scratch index when it is not cached. Returns null when the chain
+ * has no geometry there, which is exactly when getTile would return null.
+ */
+function readCachedSource(tileIndex, start, level, x, y) {
+  const key = `${tileIndex.id}/${level}/${x}/${y}`
+  if (sourceCache.has(key)) {
+    const cached = sourceCache.get(key)
+    sourceCache.delete(key)
+    sourceCache.set(key, cached)
+    return cached.start
+  }
+  const scratch = createScratchIndex(tileIndex, start)
+  scratch.splitTile(start.source, start.z, start.x, start.y, level, x, y)
+  const tile = scratch.tiles[toGeojsonVtTileId(level, x, y)]
+  let points = 0
+  let next = null
+  if (tile !== undefined) {
+    for (const feature of tile.source) points += compactSourceGeometry(feature)
+    next = createDrillStart(level, x, y, tile)
+  }
+  sourceCache.set(key, { start: next, points })
+  sourceCachePoints += points
+  for (const [cachedKey, cached] of sourceCache) {
+    if (sourceCachePoints <= sourceCacheBudgetPoints || cachedKey === key) break
+    sourceCache.delete(cachedKey)
+    sourceCachePoints -= cached.points
+  }
+  return next
+}
+
+/** geojson-vt's internal tile key (src/index.js toID). */
+function toGeojsonVtTileId(z, x, y) {
+  return (((1 << z) * y + x) * 32) + z
+}
+
+/** Test-only fault: grows the heap until V8 terminates this worker. */
+function exhaustHeap() {
+  const retained = []
+  for (;;) retained.push(new Array(16_384).fill(Math.random()))
 }
 
 /** Serves only the currently attested revision for one logical period. */
@@ -383,10 +673,10 @@ async function readTileUncancelled(message) {
     : activePeriod !== undefined
       ? indexesByPeriod
       : activatedCatalog.predecessor.indexesByPeriod
-  const index = servingIndexes.get(message.periodKey)
-  if (index === undefined) return Buffer.alloc(0)
+  const periodChunks = servingIndexes.get(message.periodKey)
+  if (periodChunks === undefined) return Buffer.alloc(0)
   const coordinates = normalizeCoverageTileAddress(message)
-  const tile = index.getTile(coordinates.z, coordinates.x, coordinates.y)
+  const tile = readPeriodTile(periodChunks, coordinates.z, coordinates.x, coordinates.y)
   if (!tile) return Buffer.alloc(0)
   const contributors = readTileContributors(tile)
   const safeMission = hashPath(servingCatalog.missionId)
