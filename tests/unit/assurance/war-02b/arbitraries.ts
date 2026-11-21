@@ -17,6 +17,10 @@ export const irishCoordinateBoundaryCases: readonly IrishCoordinateCase[] = [
   { lat: 51.3, lon: -5.8 },
   { lat: 55.6, lon: -10.8 },
   { lat: 55.6, lon: -5.8 },
+  { lat: 54.0, lon: -5.8 },
+  { lat: 54.0, lon: -5.3 },
+  { lat: 54.95, lon: -5.8 },
+  { lat: 54.95, lon: -5.3 },
 ]
 
 /** Generates finite coordinates inside the inclusive production Irish envelope. */

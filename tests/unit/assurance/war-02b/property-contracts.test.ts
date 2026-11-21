@@ -85,7 +85,7 @@ describe('WAR-02B bounded safety properties', () => {
       assertBoundedProperty(`coordinate envelope boundary ${index + 1}`, result)
       expect(result.numRuns).toBe(1)
     }
-    expect(irishCoordinateBoundaryCases).toHaveLength(4)
+    expect(irishCoordinateBoundaryCases).toHaveLength(8)
   })
 
   it('holds position-ingest identity and fail-closed conflict decisions', () => {

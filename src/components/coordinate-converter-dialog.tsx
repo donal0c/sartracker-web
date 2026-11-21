@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   convertCoordinates,
@@ -6,6 +6,7 @@ import {
   formatCoordinateClipboardValue,
   type CoordinateClipboardKind,
   type CoordinateConversionResult,
+  type CoordinateConverterDraft,
   type CoordinateConverterMode,
 } from '../features/coordinates/coordinate-tool'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
@@ -28,6 +29,7 @@ export function CoordinateConverterDialog() {
   const missionPhase = useMissionStore((state) => state.phase)
   const [draft, setDraft] = useState(createCoordinateConverterDraft)
   const [result, setResult] = useState<CoordinateConversionResult | null>(null)
+  const resultRef = useRef<CoordinateConversionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copiedKind, setCopiedKind] = useState<CoordinateClipboardKind | null>(null)
   const markerCreationDisabled =
@@ -39,7 +41,7 @@ export function CoordinateConverterDialog() {
     }
 
     setDraft(createCoordinateConverterDraft())
-    setResult(null)
+    updateResult(null)
     setError(null)
     setCopiedKind(null)
   }, [open])
@@ -86,10 +88,7 @@ export function CoordinateConverterDialog() {
                     checked={draft.mode === mode}
                     className="sr-only"
                     name="coordinate-mode"
-                    onChange={() => {
-                      setDraft((current) => ({ ...current, mode }))
-                      setError(null)
-                    }}
+                    onChange={() => updateDraft({ mode })}
                     type="radio"
                     value={mode}
                   />
@@ -102,7 +101,7 @@ export function CoordinateConverterDialog() {
           {draft.mode === 'ig' ? (
             <Field
               label="Irish Grid"
-              onChange={(value) => setDraft((current) => ({ ...current, irishGridRef: value }))}
+              onChange={(value) => updateDraft({ irishGridRef: value })}
               testId="coordinate-input-irish-grid-ref"
               value={draft.irishGridRef}
             />
@@ -112,13 +111,13 @@ export function CoordinateConverterDialog() {
             <section className="grid gap-4 md:grid-cols-2">
               <Field
                 label="Latitude"
-                onChange={(value) => setDraft((current) => ({ ...current, latitude: value }))}
+                onChange={(value) => updateDraft({ latitude: value })}
                 testId="coordinate-input-latitude"
                 value={draft.latitude}
               />
               <Field
                 label="Longitude"
-                onChange={(value) => setDraft((current) => ({ ...current, longitude: value }))}
+                onChange={(value) => updateDraft({ longitude: value })}
                 testId="coordinate-input-longitude"
                 value={draft.longitude}
               />
@@ -129,13 +128,13 @@ export function CoordinateConverterDialog() {
             <section className="grid gap-4 md:grid-cols-2">
               <Field
                 label="Latitude DMS"
-                onChange={(value) => setDraft((current) => ({ ...current, dmsLatitude: value }))}
+                onChange={(value) => updateDraft({ dmsLatitude: value })}
                 testId="coordinate-input-dms-latitude"
                 value={draft.dmsLatitude}
               />
               <Field
                 label="Longitude DMS"
-                onChange={(value) => setDraft((current) => ({ ...current, dmsLongitude: value }))}
+                onChange={(value) => updateDraft({ dmsLongitude: value })}
                 testId="coordinate-input-dms-longitude"
                 value={draft.dmsLongitude}
               />
@@ -145,7 +144,7 @@ export function CoordinateConverterDialog() {
           {draft.mode === 'w3w' ? (
             <Field
               label="What3Words"
-              onChange={(value) => setDraft((current) => ({ ...current, w3wWords: value }))}
+              onChange={(value) => updateDraft({ w3wWords: value })}
               testId="coordinate-input-w3w"
               value={draft.w3wWords}
             />
@@ -158,10 +157,10 @@ export function CoordinateConverterDialog() {
               onClick={() => {
                 try {
                   const nextResult = convertCoordinates(draft)
-                  setResult(nextResult)
+                  updateResult(nextResult)
                   setError(null)
                 } catch (conversionError) {
-                  setResult(null)
+                  updateResult(null)
                   setError(
                     conversionError instanceof Error
                       ? conversionError.message
@@ -177,7 +176,7 @@ export function CoordinateConverterDialog() {
               className="sar-button px-4 py-2 text-sm font-semibold"
               onClick={() => {
                 setDraft(createCoordinateConverterDraft())
-                setResult(null)
+                updateResult(null)
                 setError(null)
                 setCopiedKind(null)
               }}
@@ -245,15 +244,34 @@ export function CoordinateConverterDialog() {
     </DialogOverlay>
   )
 
+  /** Invalidates the previous conversion whenever its input or mode changes. */
+  function updateDraft(patch: Partial<CoordinateConverterDraft>): void {
+    setDraft((current) => ({ ...current, ...patch }))
+    updateResult(null)
+    setCopiedKind(null)
+    setError(null)
+  }
+
+  /** Keeps async actions in sync with conversion updates before React renders. */
+  function updateResult(nextResult: CoordinateConversionResult | null): void {
+    resultRef.current = nextResult
+    setResult(nextResult)
+  }
+
+  /** Reports clipboard completion only while the copied conversion is current. */
   async function copyValue(kind: CoordinateClipboardKind): Promise<void> {
     if (result === null || typeof navigator === 'undefined' || navigator.clipboard === undefined) {
       return
     }
 
     await navigator.clipboard.writeText(formatCoordinateClipboardValue(result, kind))
+    if (resultRef.current !== result) {
+      return
+    }
     setCopiedKind(kind)
   }
 
+  /** Opens a marker only if the conversion survives the mission refresh unchanged. */
   async function createMarkerFromResult(): Promise<void> {
     if (
       result === null ||
@@ -266,10 +284,16 @@ export function CoordinateConverterDialog() {
 
     try {
       await markerController.refreshMission(missionId)
+      if (resultRef.current !== result) {
+        return
+      }
       markerController.beginCreateAt(result.latitude, result.longitude)
       setError(null)
       closeDialog()
     } catch (runtimeError) {
+      if (resultRef.current !== result) {
+        return
+      }
       setError(
         runtimeError instanceof Error
           ? runtimeError.message
