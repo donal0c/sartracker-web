@@ -763,6 +763,10 @@
               <tr><td><strong>EVIDENCE HEALTH</strong> (amber or red)</td><td>Rejected-position or other evidence is waiting to be saved, or could not be saved. Live positions still show. The warning stays until the evidence is saved or the storage problem is fixed; read its words and export a support bundle if it does not clear.</td></tr>
               <tr><td><strong>TRACKING REPLACEMENT EVIDENCE UNSETTLED</strong></td><td>An earlier connection has not finished saving its evidence. Keep the app open, check Diagnostics, and try <strong>Reconnect</strong>. It is not confirmed data loss, but do not ignore it because new positions are arriving.</td></tr>
               <tr><td><strong>Breadcrumb history is reconciling</strong></td><td>Catching up on older history. Current positions stay live.</td></tr>
+              <tr><td><strong>Breadcrumb history incomplete for</strong> a named device, with times (for example <em>10:05–10:35</em>)</td><td>That stretch of the device's trail could not be loaded from the tracking server and is <strong>missing from the map</strong>. The app keeps retrying about every five minutes and the warning clears when the stretch is filled. Until then do not read that gap as "nobody was there"; check with the team.</td></tr>
+              <tr><td><strong>DEVICE ROSTER INCOMPLETE</strong></td><td>The tracking server sent one or more device entries the app could not read, so a tracker may be missing from the map. Count your trackers against the list, and check the device list in Traccar.</td></tr>
+              <tr><td><strong>MISSION STORAGE REFUSED FIXES</strong></td><td>Some fixes arrived with a missing or invalid value (for example no time) and were not saved or drawn. All other fixes were saved. The number is the total for this mission and stays on screen. Tell an admin and export a support bundle after the mission.</td></tr>
+              <tr><td><strong>TRACKING SERVER REUSED POSITION IDS</strong></td><td>The tracking server sent a different fix under an id it had already used. The fix stored first was kept and the new one is not on the map. The server may have been reset or restored; check with whoever runs it, and check positions against your independent source.</td></tr>
             </tbody>
           </table>
           <p>
@@ -791,6 +795,7 @@
             <li><strong>Solid line</strong> draws each trail as a line. On very long routes the line may be simplified for speed; the app then shows <strong>Trail display simplified</strong> and how far the line may differ. The saved history is not simplified.</li>
             <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail is always on the map, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking tab says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking tab says so in red and the line still shows the whole trail.</li>
             <li>If you hide a person's trail in the Layers tab, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking tab says how many trails are hidden.</li>
+            <li>A fix that stands on its own (a device's only fix, or one fix between two silences of more than 30 minutes) is drawn as a small circle in the device's colour, because a line needs two places.</li>
             <li><strong>Breadcrumb size</strong> changes line width and dot size for all devices.</li>
           </ul>
           <p>
@@ -837,13 +842,18 @@
               <tr><td><strong>All mission history shown</strong></td><td>Complete for every selected participant and outing.</td></tr>
               <tr><td><strong>All selected history shown</strong></td><td>Complete for what is ticked, but you have left some people or outings out (see Layers below).</td></tr>
               <tr><td><strong>Participant history is still being added</strong></td><td>Wait. Live positions are unaffected. Finish stays refused until it completes.</td></tr>
-              <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>Loading failed or was interrupted. What is drawn is real but not the whole record. Press <strong>Retry</strong>. Do not treat it as the full history.</td></tr>
+              <tr><td><strong>Updating — the newest positions are being added to the history line</strong></td><td>Normal while people are moving. The earlier line is drawn; the count shows how many fixes are drawn so far. Nothing to do.</td></tr>
+              <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>The line is missing fixes and is not catching up on its own (stopped, failed, or no update for over 2 minutes). What is drawn is real but not the whole record. Press <strong>Retry</strong>. Do not treat it as the full history. If it says it is retrying automatically, it will keep trying.</td></tr>
               <tr><td><strong>Loaded history is shown, but completeness is not yet verified</strong></td><td>Everything may have loaded, but the final check has not passed. Press <strong>Retry</strong>.</td></tr>
             </tbody>
           </table>
           <p>
             Progress can go backwards (for example <em>0 of 0</em> briefly after a restart). A lower
             number is safer than a false 100%.
+          </p>
+          <p>
+            If the history line fails or falls behind while you are on the Tools or Layers tab, an amber
+            <strong>MISSION HISTORY</strong> warning appears above the tab. Press it to open Tracking.
           </p>
           <p>
             Under heavy tracking a check can lose the race with new positions and is retried every
