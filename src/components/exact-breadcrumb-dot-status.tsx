@@ -3,7 +3,7 @@ import { formatOperatorLocalTimestamp } from '../features/tracking/operator-time
 import {
   describeHiddenTrails,
   describeTrailLine,
-  resolveTrailLineVisibility,
+  type TrailDrawingSummary,
 } from '../features/tracking/trail-line-visibility'
 
 type ExactBreadcrumbDotStatusProps = {
@@ -19,33 +19,27 @@ type ExactBreadcrumbDotStatusProps = {
   readonly onEarlier: () => void
   readonly onLater: () => void
   readonly timeZone?: string
-  /** Devices in this mission whose trail is hidden on the Layers tab; their fixes are counted but not drawn. */
-  readonly hiddenTrailCount?: number
-  /** Devices in this mission that can have a trail; when all are hidden no line is drawn. */
-  readonly trailDeviceCount?: number
-  /** Effective trail visibility (Tracking group and Trails switch); false means nothing is drawn. */
-  readonly trailsVisible: boolean
+  /**
+   * What the map draws, from the same geometry and hidden-device list the
+   * renderers use (see summarizeTrailDrawing); never from the roster.
+   */
+  readonly trailDrawing: TrailDrawingSummary
 }
 
 /**
  * Renders the explicit scope and navigation state for exact breadcrumb dots.
  * It says what the map is actually drawing: the whole trail line, the line
- * for only the devices whose trail is shown, or nothing when trails are off.
+ * for only the devices whose trail is shown, nothing when trails are off, or
+ * that there is no trail line yet.
  * The dots are always described as one page of exact recorded fixes, so they
  * are never read as the whole trail [DON-338].
  */
 export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
-  const visibility = resolveTrailLineVisibility(
-    props.trailsVisible,
-    props.hiddenTrailCount ?? 0,
-    props.trailDeviceCount ?? 0,
-  )
+  const { line: visibility, dots, hiddenTrailCount } = props.trailDrawing
   const lineSentence = describeTrailLine(visibility)
   const nothingDrawn = visibility === 'switched-off' || visibility === 'all-hidden'
-  const trailLineAttribute = nothingDrawn ? 'off' : visibility
-  const hiddenTrailNote = visibility === 'partly-hidden'
-    ? describeHiddenTrails(props.hiddenTrailCount ?? 0)
-    : null
+  const trailLineAttribute = nothingDrawn ? 'off' : visibility === 'no-trail' ? 'none' : visibility
+  const hiddenTrailNote = nothingDrawn ? null : describeHiddenTrails(hiddenTrailCount)
   const hiddenTrailElement = hiddenTrailNote === null ? null : (
     <p className="mt-1 text-amber-200" data-testid="exact-breadcrumb-dots-hidden-trails">
       {hiddenTrailNote}
@@ -114,9 +108,9 @@ export function ExactBreadcrumbDotStatus(props: ExactBreadcrumbDotStatusProps) {
     ? nothingDrawn
       ? 'There are no exact recorded fixes yet.'
       : 'There are no exact recorded fixes to mark as dots yet.'
-    : visibility === 'drawn'
+    : dots === 'all'
       ? `The dots mark ${pageScope} exact recorded fixes${rangeText}.${pagingSentence}`
-      : visibility === 'partly-hidden'
+      : dots === 'some'
         ? `This page holds ${pageScope} exact recorded fixes${rangeText}. Dots are drawn only for devices whose trail is shown.${pagingSentence}`
         : `This page holds ${pageScope} exact recorded fixes${rangeText}. None are drawn while trails are not shown.${pagingSentence}`
 

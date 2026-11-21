@@ -8,6 +8,27 @@ import type {
   ExactBreadcrumbDotState,
 } from '../../src/features/tracking/exact-breadcrumb-dot-controller'
 import type { NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
+import {
+  summarizeTrailDrawing,
+  type TrailDrawingSummary,
+} from '../../src/features/tracking/trail-line-visibility'
+
+/** What the renderers would draw, from the same inputs they use. */
+function drawing(input: {
+  readonly trailsVisible?: boolean
+  readonly hidden?: readonly string[]
+  readonly line?: readonly string[]
+  readonly dot?: readonly string[]
+} = {}): TrailDrawingSummary {
+  const line = input.line ?? ['device-1']
+  return summarizeTrailDrawing({
+    trailsVisible: input.trailsVisible ?? true,
+    hiddenBreadcrumbDeviceIds: input.hidden ?? [],
+    lineDeviceIds: new Set(line),
+    // By default the exact page holds fixes from the same devices as the line.
+    dotDeviceIds: new Set(input.dot ?? line),
+  })
+}
 
 type ExactDotStatusProps = {
   readonly state:
@@ -24,9 +45,7 @@ type ExactDotStatusProps = {
   readonly onEarlier: () => void
   readonly onLater: () => void
   readonly timeZone?: string
-  readonly hiddenTrailCount?: number
-  readonly trailDeviceCount?: number
-  readonly trailsVisible: boolean
+  readonly trailDrawing: TrailDrawingSummary
 }
 
 let root: Root | null = null
@@ -58,7 +77,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier,
       onLater,
-      trailsVisible: true,
+      trailDrawing: drawing(),
       timeZone: 'Europe/Dublin',
     }))
 
@@ -86,7 +105,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
+      trailDrawing: drawing(),
     }))
 
     const alert = getElement('[data-testid="exact-breadcrumb-dots-unavailable"]')
@@ -105,7 +124,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       state: { status: 'loading', missionId: 'mission-a' } as never,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
+      trailDrawing: drawing(),
     }))
 
     expect(getElement('[data-testid="exact-breadcrumb-dots-loading"]').getAttribute('role')).toBe('status')
@@ -128,7 +147,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
+      trailDrawing: drawing(),
       timeZone: 'Europe/Dublin',
     }))
 
@@ -155,7 +174,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
+      trailDrawing: drawing(),
       timeZone: 'Europe/Dublin',
     }))
 
@@ -179,8 +198,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       state,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
-      hiddenTrailCount: 2,
+      trailDrawing: drawing({ line: ['a', 'b', 'c'], hidden: ['a', 'b'] }),
     }))
     expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBe(
       '2 devices have their trails hidden on the Layers tab. Their fixes are counted here but their lines and dots are not drawn.',
@@ -190,8 +208,7 @@ describe('ExactBreadcrumbDotStatus', () => {
       state,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
-      hiddenTrailCount: 0,
+      trailDrawing: drawing({ line: ['a', 'b', 'c'] }),
     })))
     expect(document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
   })
@@ -236,7 +253,7 @@ describe('ExactBreadcrumbDotStatus', () => {
         },
         onEarlier: () => controllerReference.current?.showEarlier(),
         onLater: () => controllerReference.current?.showLater(),
-        trailsVisible: true,
+        trailDrawing: drawing(),
         timeZone: 'Europe/Dublin',
       })
       if (root === null) {
@@ -345,7 +362,7 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
       onEarlier: vi.fn(),
       onLater: vi.fn(),
       timeZone: 'Europe/Dublin',
-      trailsVisible: false,
+      trailDrawing: drawing({ trailsVisible: false }),
     }))
     const readyNote = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
     expect(readyNote.getAttribute('data-trail-line')).toBe('off')
@@ -362,7 +379,7 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
         onEarlier: vi.fn(),
         onLater: vi.fn(),
         timeZone: 'Europe/Dublin',
-        trailsVisible: false,
+        trailDrawing: drawing({ trailsVisible: false }),
       })))
       const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
       expect(note.getAttribute('data-trail-line')).toBe('off')
@@ -380,9 +397,7 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
       onEarlier: vi.fn(),
       onLater: vi.fn(),
       timeZone: 'Europe/Dublin',
-      trailsVisible: true,
-      hiddenTrailCount: 3,
-      trailDeviceCount: 3,
+      trailDrawing: drawing({ line: ['a', 'b', 'c'], hidden: ['a', 'b', 'c'] }),
     }))
     const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
     expect(note.getAttribute('data-trail-line')).toBe('off')
@@ -398,9 +413,7 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
       onEarlier: vi.fn(),
       onLater: vi.fn(),
       timeZone: 'Europe/Dublin',
-      trailsVisible: true,
-      hiddenTrailCount: 1,
-      trailDeviceCount: 3,
+      trailDrawing: drawing({ line: ['a', 'b', 'c'], hidden: ['a'] }),
     }))
     const readyNote = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
     expect(readyNote.getAttribute('data-trail-line')).toBe('partly-hidden')
@@ -413,9 +426,7 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
         state,
         onEarlier: vi.fn(),
         onLater: vi.fn(),
-        trailsVisible: true,
-        hiddenTrailCount: 1,
-        trailDeviceCount: 3,
+        trailDrawing: drawing({ line: ['a', 'b', 'c'], hidden: ['a'] }),
       })))
       expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBe(
         '1 device has its trail hidden on the Layers tab. Its fixes are counted here but its line and dots are not drawn.',
@@ -426,15 +437,71 @@ describe('ExactBreadcrumbDotStatus trail visibility [DON-338]', () => {
     }
   })
 
+  it('never claims a trail line when there is no trail geometry yet, in any page state', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    const empty = drawing({ line: [], dot: [] })
+    const states = [
+      LOADING,
+      UNAVAILABLE,
+      { ...PAGED_READY, totalPositionCount: 0, pagePositionCount: 0, hasEarlier: false },
+    ]
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: states[0]!,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      trailDrawing: empty,
+    }))
+    for (const state of states) {
+      act(() => root?.render(React.createElement(ExactBreadcrumbDotStatus, {
+        state,
+        onEarlier: vi.fn(),
+        onLater: vi.fn(),
+        trailDrawing: empty,
+      })))
+      const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+      expect(note.getAttribute('data-trail-line')).toBe('none')
+      expect(note.textContent).toMatch(/^No trail line is on the map yet\./u)
+      expect(note.textContent).not.toContain('shows the whole trail')
+    }
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toBe(
+      'No trail line is on the map yet. There are no exact recorded fixes to mark as dots yet.',
+    )
+  })
+
+  it('judges hidden trails by the devices that have trail geometry, not by the roster', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    // Device A is on the roster with no fixes; device B has history but no roster entry.
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+      trailDrawing: drawing({ line: ['B'], dot: ['B'], hidden: ['A'] }),
+    }))
+    const note = getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note.getAttribute('data-trail-line')).toBe('drawn')
+    expect(note.textContent).toMatch(/^The line on the map shows the whole trail\. The dots mark 10,000 of 20,000/u)
+    expect(document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
+
+    act(() => root?.render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: PAGED_READY,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+      trailDrawing: drawing({ line: ['B'], dot: ['B'], hidden: ['A', 'B'] }),
+    })))
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toMatch(
+      /^Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map\./u,
+    )
+  })
+
   it('keeps the plain wording when every trail is drawn', async () => {
     const ExactBreadcrumbDotStatus = await loadStatusComponent()
     render(React.createElement(ExactBreadcrumbDotStatus, {
       state: PAGED_READY,
       onEarlier: vi.fn(),
       onLater: vi.fn(),
-      trailsVisible: true,
-      hiddenTrailCount: 0,
-      trailDeviceCount: 3,
+      trailDrawing: drawing({ line: ['a', 'b', 'c'] }),
     }))
     expect(getElement('[data-testid="exact-breadcrumb-dots-whole-trail-note"]').getAttribute('data-trail-line')).toBe('drawn')
     expect(document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
