@@ -6,6 +6,7 @@ import {
   formatCoordinateClipboardValue,
   type CoordinateClipboardKind,
   type CoordinateConversionResult,
+  type CoordinateConverterDraft,
   type CoordinateConverterMode,
 } from '../features/coordinates/coordinate-tool'
 import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-store'
@@ -86,10 +87,7 @@ export function CoordinateConverterDialog() {
                     checked={draft.mode === mode}
                     className="sr-only"
                     name="coordinate-mode"
-                    onChange={() => {
-                      setDraft((current) => ({ ...current, mode }))
-                      setError(null)
-                    }}
+                    onChange={() => updateDraft({ mode })}
                     type="radio"
                     value={mode}
                   />
@@ -102,7 +100,7 @@ export function CoordinateConverterDialog() {
           {draft.mode === 'ig' ? (
             <Field
               label="Irish Grid"
-              onChange={(value) => setDraft((current) => ({ ...current, irishGridRef: value }))}
+              onChange={(value) => updateDraft({ irishGridRef: value })}
               testId="coordinate-input-irish-grid-ref"
               value={draft.irishGridRef}
             />
@@ -112,13 +110,13 @@ export function CoordinateConverterDialog() {
             <section className="grid gap-4 md:grid-cols-2">
               <Field
                 label="Latitude"
-                onChange={(value) => setDraft((current) => ({ ...current, latitude: value }))}
+                onChange={(value) => updateDraft({ latitude: value })}
                 testId="coordinate-input-latitude"
                 value={draft.latitude}
               />
               <Field
                 label="Longitude"
-                onChange={(value) => setDraft((current) => ({ ...current, longitude: value }))}
+                onChange={(value) => updateDraft({ longitude: value })}
                 testId="coordinate-input-longitude"
                 value={draft.longitude}
               />
@@ -129,13 +127,13 @@ export function CoordinateConverterDialog() {
             <section className="grid gap-4 md:grid-cols-2">
               <Field
                 label="Latitude DMS"
-                onChange={(value) => setDraft((current) => ({ ...current, dmsLatitude: value }))}
+                onChange={(value) => updateDraft({ dmsLatitude: value })}
                 testId="coordinate-input-dms-latitude"
                 value={draft.dmsLatitude}
               />
               <Field
                 label="Longitude DMS"
-                onChange={(value) => setDraft((current) => ({ ...current, dmsLongitude: value }))}
+                onChange={(value) => updateDraft({ dmsLongitude: value })}
                 testId="coordinate-input-dms-longitude"
                 value={draft.dmsLongitude}
               />
@@ -145,7 +143,7 @@ export function CoordinateConverterDialog() {
           {draft.mode === 'w3w' ? (
             <Field
               label="What3Words"
-              onChange={(value) => setDraft((current) => ({ ...current, w3wWords: value }))}
+              onChange={(value) => updateDraft({ w3wWords: value })}
               testId="coordinate-input-w3w"
               value={draft.w3wWords}
             />
@@ -244,6 +242,14 @@ export function CoordinateConverterDialog() {
         </div>
     </DialogOverlay>
   )
+
+  /** Invalidates the previous conversion whenever its input or mode changes. */
+  function updateDraft(patch: Partial<CoordinateConverterDraft>): void {
+    setDraft((current) => ({ ...current, ...patch }))
+    setResult(null)
+    setCopiedKind(null)
+    setError(null)
+  }
 
   async function copyValue(kind: CoordinateClipboardKind): Promise<void> {
     if (result === null || typeof navigator === 'undefined' || navigator.clipboard === undefined) {

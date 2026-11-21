@@ -97,6 +97,61 @@ describe('CoordinateConverterDialog marker workflow', () => {
     )
   })
 
+  it('clears the result when the grid reference is edited after conversion (M-02)', async () => {
+    const controller = createController()
+    setUpActiveMission(controller)
+
+    render(React.createElement(CoordinateConverterDialog))
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 04015')
+    await act(async () => {
+      getButton('[data-testid="coordinate-convert-btn"]').click()
+    })
+    expect(document.querySelector('[data-testid="coordinate-create-marker-btn"]')).not.toBeNull()
+
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 05015')
+
+    expectNoStaleResultActions(controller)
+  })
+
+  it('clears the result when the input mode is switched after conversion (M-02)', async () => {
+    const controller = createController()
+    setUpActiveMission(controller)
+
+    render(React.createElement(CoordinateConverterDialog))
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 04015')
+    await act(async () => {
+      getButton('[data-testid="coordinate-convert-btn"]').click()
+    })
+    await act(async () => {
+      getElement('[data-testid="coordinate-mode-dd"] input').click()
+    })
+
+    expectNoStaleResultActions(controller)
+  })
+
+  it('acts on the corrected position once the edited input is converted again (M-02)', async () => {
+    const controller = createController()
+    setUpActiveMission(controller)
+
+    render(React.createElement(CoordinateConverterDialog))
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 04015')
+    await act(async () => {
+      getButton('[data-testid="coordinate-convert-btn"]').click()
+    })
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 05015')
+    await act(async () => {
+      getButton('[data-testid="coordinate-convert-btn"]').click()
+    })
+    await act(async () => {
+      getButton('[data-testid="coordinate-create-marker-btn"]').click()
+    })
+
+    expect(controller.beginCreateAt).toHaveBeenCalledTimes(1)
+    const [latitude] = controller.beginCreateAt.mock.calls[0] as [number, number]
+    // 1 km further north than Q 99842 04015 (52.179337).
+    expect(latitude).toBeGreaterThan(52.185)
+  })
+
   it('renders coordinate modes with distinct active and inactive tab chrome', async () => {
     useCoordinateToolStore.setState({ open: true })
 
@@ -122,6 +177,31 @@ describe('CoordinateConverterDialog marker workflow', () => {
     })
   }
 })
+
+function setUpActiveMission(controller: MarkerRuntimeController): void {
+  useCoordinateToolStore.setState({ open: true })
+  useMarkerStore.setState({ controller })
+  useMissionStore.setState({
+    phase: 'active',
+    currentMission: createMission('mission-1'),
+    recoverableMission: null,
+  })
+}
+
+/** A stale result must not be actionable: no result, no Go To, no Create Marker Here. */
+function expectNoStaleResultActions(controller: ReturnType<typeof createController>): void {
+  expect(document.querySelector('[data-testid="coordinate-result-ig"]')).toBeNull()
+  const createButton = document.querySelector('[data-testid="coordinate-create-marker-btn"]')
+  const goToButton = document.querySelector('[data-testid="coordinate-go-to-btn"]')
+  if (createButton instanceof HTMLButtonElement && !createButton.disabled) {
+    act(() => createButton.click())
+  }
+  if (goToButton instanceof HTMLButtonElement && !goToButton.disabled) {
+    act(() => goToButton.click())
+  }
+  expect(controller.beginCreateAt).not.toHaveBeenCalled()
+  expect(useMapTargetStore.getState().activeTarget).toBeNull()
+}
 
 function createController(): MarkerRuntimeController & {
   readonly refreshMission: ReturnType<typeof vi.fn>
