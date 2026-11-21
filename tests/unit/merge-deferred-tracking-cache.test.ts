@@ -26,4 +26,24 @@ describe('deferred tracking cache presentation merge', () => {
     expect(result.rawBreadcrumbsForPersistence).toEqual([liveFix])
     expect(result.breadcrumbMetadata).toBeUndefined()
   })
+  it('keeps a simplified cached trail disclosed as simplified after merging live rows [DON-338]', () => {
+    const cachedFix = { ...normalizeTraccarPosition(positions[0]!, 'cache'), id: 'cached', timestamp: '2026-01-01T00:00:00.000Z' }
+    const liveFix = { ...cachedFix, id: 'live', timestamp: '2026-01-01T01:00:00.000Z', data_origin: 'live' as const }
+    const deviceId = cachedFix.device_id
+    const result = mergeDeferredTrackingCache(
+      { devices: [], positions: [], breadcrumbs: [cachedFix], breadcrumbMetadata: {
+        totalObserved: 40, totalRetained: 1, deviceBudgets: [{
+          deviceId, retained: 1, sourceRetained: 40, total: 40, firstTimestamp: cachedFix.timestamp,
+          lastTimestamp: cachedFix.timestamp, truncated: true, geometryErrorBoundMetres: null,
+          targetGeometryErrorSatisfied: false,
+        }],
+      } },
+      { devices: [], positions: [], breadcrumbs: [liveFix] },
+    )
+    expect(result.breadcrumbMetadata).toMatchObject({ totalRetained: 2, totalObserved: 40 })
+    expect(result.breadcrumbMetadata?.deviceBudgets).toEqual([expect.objectContaining({
+      deviceId, retained: 2, total: 40, truncated: true, geometryErrorBoundMetres: null,
+      targetGeometryErrorSatisfied: false,
+    })])
+  })
 })

@@ -776,6 +776,39 @@ function retainDeviceTrailAcrossWindow(
   }
 }
 
+/** One device trail thinned to a budget by the live line's selector. */
+export type ThinnedDeviceTrail = {
+  readonly positions: readonly NormalizedTrackingPosition[]
+  /** 0 when nothing was dropped; null when no geometry bound is promised. */
+  readonly geometryErrorBoundMetres: number | null
+}
+
+/**
+ * Thins one device's trail to about `maxPositions` with the same selector the
+ * live line uses, so other boundaries (the restart cache) cannot invent or
+ * hide a break [DON-338]. The first and last fix, both sides of every silence
+ * over {@link BREADCRUMB_LINE_GAP_THRESHOLD_MS} and the continuity anchors are
+ * always kept, even when they exceed the budget. Input may be in any order;
+ * output is chronological.
+ */
+export function thinDeviceTrailToBudget(
+  positions: readonly NormalizedTrackingPosition[],
+  maxPositions: number,
+): ThinnedDeviceTrail {
+  const chronological = positions.map(decorateWithTimestamp)
+    .sort(compareTimestampedPositions)
+  // A budget below two would keep only the last fix and hide the route's start.
+  const retention = retainDeviceTrailAcrossWindow(
+    chronological,
+    Math.max(2, Math.floor(maxPositions)),
+  )
+  return {
+    positions: retention.positions.map((entry) => entry.position),
+    geometryErrorBoundMetres: retention.positions.length === chronological.length
+      ? 0 : retention.geometryErrorBoundMetres,
+  }
+}
+
 function normalizeSelectorWidth(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? value

@@ -2729,12 +2729,19 @@ describe('startTrackingRuntime', () => {
         readonly id: string
         readonly device_id: string
       }[]
+      readonly breadcrumb_metadata?: {
+        readonly deviceBudgets: readonly { readonly deviceId: string, readonly truncated: boolean }[]
+      }
     }
-    expect(cachedPayload.breadcrumbs).toHaveLength(5_000)
-    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '1'))
-      .toHaveLength(2_500)
-    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '2'))
-      .toHaveLength(2_500)
+    // Each device gets an even share; the live line's selector may keep fewer
+    // (a standstill compresses) but never drops a mandatory point [DON-338].
+    expect(cachedPayload.breadcrumbs.length).toBeLessThanOrEqual(5_000)
+    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '1').length)
+      .toBeLessThanOrEqual(2_500)
+    expect(cachedPayload.breadcrumbs.filter(({ device_id }) => device_id === '2').length)
+      .toBeLessThanOrEqual(2_500)
+    expect(cachedPayload.breadcrumb_metadata?.deviceBudgets.map(({ deviceId, truncated }) =>
+      [deviceId, truncated])).toEqual([['1', true], ['2', true]])
     expect(cachedPayload.breadcrumbs.map(({ id }) => id)).toEqual(
       expect.arrayContaining(['breadcrumb-0', 'breadcrumb-1', 'breadcrumb-5998', 'breadcrumb-5999']),
     )

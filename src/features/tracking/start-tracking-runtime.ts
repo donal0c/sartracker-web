@@ -4,6 +4,7 @@ import { createCurrentTransportFreshness } from './current-transport-freshness'
 import { mergeDeferredTrackingCache } from './merge-deferred-tracking-cache'
 import { HISTORY_PIECE_ROW_BUDGET } from './split-history-chunk'
 import {
+  createCachedTrackingSnapshot,
   limitTrackingCacheBreadcrumbs,
   parseTrackingCachePayload,
   serializeTrackingCachePayload,
@@ -1450,11 +1451,7 @@ export async function startTrackingRuntime(
       (cacheMatchesMission || cacheMatchesRecovery) &&
       isTrackingCacheUsable(cachedSnapshot.cached_at, now())) {
       const healthyCachedSnapshot = annotateTrackingSnapshotHealth(
-        {
-          devices: cachedSnapshot.devices,
-          positions: cachedSnapshot.positions,
-          breadcrumbs: cachedSnapshot.breadcrumbs,
-        },
+        createCachedTrackingSnapshot(cachedSnapshot),
         {
           now: now(),
           cacheAgeMs: calculateCacheAgeMs(cachedSnapshot.cached_at, now()),
@@ -1562,13 +1559,21 @@ export async function startTrackingRuntime(
     const cachedAt = now().toISOString()
     return trackingCacheWriteLane.enqueue(
       JSON.stringify([missionId, createTrackingCacheDataKey(snapshot)]),
-      async () => serializeTrackingCachePayload({
-        mission_id: missionId,
-        cached_at: cachedAt,
-        devices: snapshot.devices,
-        positions: snapshot.positions,
-        breadcrumbs: await limitTrackingCacheBreadcrumbs(snapshot.breadcrumbs),
-      }),
+      async () => {
+        // Thinned with the live line's rule; its simplification is persisted
+        // so a restore discloses it [DON-338].
+        const limited = await limitTrackingCacheBreadcrumbs(snapshot.breadcrumbs, {
+          metadata: snapshot.breadcrumbMetadata,
+        })
+        return serializeTrackingCachePayload({
+          mission_id: missionId,
+          cached_at: cachedAt,
+          devices: snapshot.devices,
+          positions: snapshot.positions,
+          breadcrumbs: limited.breadcrumbs,
+          ...(limited.metadata === undefined ? {} : { breadcrumb_metadata: limited.metadata }),
+        })
+      },
     )
   }
 
