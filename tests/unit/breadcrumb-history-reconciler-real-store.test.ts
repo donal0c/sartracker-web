@@ -9,6 +9,7 @@ import {
   createBreadcrumbHistoryReconciler,
   type BreadcrumbHistoryChunk,
   type BreadcrumbHistoryProgress,
+  type BreadcrumbHistoryReconcilerOptions,
 } from '../../src/features/tracking/breadcrumb-history-reconciler'
 import type {
   NormalizedTrackingDevice,
@@ -90,13 +91,16 @@ async function createRealStoreHarness(options: {
   readonly deviceCount: number
   readonly intervalMs: number
   readonly rule: RequestRule
+  readonly missionStartMs?: number
+  readonly reconcilerOptions?: Partial<BreadcrumbHistoryReconcilerOptions>
 }) {
+  const missionStartMs = options.missionStartMs ?? MISSION_START_MS
   userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-reconciler-real-store-'))
   const realStore = createElectronMissionStore({ userDataPath })
   store = realStore
   const mission = await realStore.createMission({
     name: 'Reconciler Real Store',
-    start_time: new Date(MISSION_START_MS).toISOString(),
+    start_time: new Date(missionStartMs).toISOString(),
   })
   const devices = Array.from({ length: options.deviceCount }, (_, index) => createDevice(index + 1))
   const fixesByDevice = new Map<string, ServerFix[]>()
@@ -109,19 +113,28 @@ async function createRealStoreHarness(options: {
       status: 'online',
     })
     const fixes: ServerFix[] = []
-    for (let fixMs = MISSION_START_MS; fixMs <= NOW_MS; fixMs += options.intervalMs) {
+    for (let fixMs = missionStartMs; fixMs <= NOW_MS; fixMs += options.intervalMs) {
       fixes.push({ id: `${device.device_id}-${fixMs}`, fixMs, serverMs: fixMs })
     }
     fixesByDevice.set(device.device_id, fixes)
   }
   const requests: FakeRequest[] = []
   const progressCalls: BreadcrumbHistoryProgress[] = []
+  const inFlightByDevice = new Map<string, number>()
+  const maxInFlightByDevice = new Map<string, number>()
   const fetchBreadcrumbs = async (deviceId: string, from: Date, to: Date): Promise<readonly NormalizedTrackingPosition[]> => {
     const fromMs = from.getTime()
     const toMs = to.getTime()
     const startedAtMs = Date.now()
+    const inFlight = (inFlightByDevice.get(deviceId) ?? 0) + 1
+    inFlightByDevice.set(deviceId, inFlight)
+    maxInFlightByDevice.set(deviceId, Math.max(maxInFlightByDevice.get(deviceId) ?? 0, inFlight))
     const { error, delayMs = 0 } = options.rule({ deviceId, fromMs, toMs })
-    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+    try {
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+    } finally {
+      inFlightByDevice.set(deviceId, (inFlightByDevice.get(deviceId) ?? 1) - 1)
+    }
     requests.push({ deviceId, startedAtMs, fromMs, toMs, failed: error !== null })
     if (error !== null) throw error
     const fixes = fixesByDevice.get(deviceId) ?? []
@@ -131,7 +144,7 @@ async function createRealStoreHarness(options: {
       .map((fix) => ({
         id: fix.id,
         device_id: deviceId,
-        lat: 52 + (fix.fixMs - MISSION_START_MS) / HOUR_MS * 1e-3,
+        lat: 52 + (fix.fixMs - missionStartMs) / HOUR_MS * 1e-3,
         lon: -9,
         altitude: null,
         speed: null,
@@ -176,11 +189,12 @@ async function createRealStoreHarness(options: {
     onProgress: (progress) => { progressCalls.push(progress) },
     shouldContinue: () => true,
     logger: { warn: vi.fn() },
+    ...options.reconcilerOptions,
   })
   const runFor = async (durationMs: number): Promise<void> => {
     const endMs = Date.now() + durationMs
     while (Date.now() < endMs) {
-      reconciler.reconcile({ devices, from: new Date(MISSION_START_MS), until: new Date(Date.now()) })
+      reconciler.reconcile({ devices, from: new Date(missionStartMs), until: new Date(Date.now()) })
       await vi.advanceTimersByTimeAsync(Math.min(POLL_MS, endMs - Date.now()))
     }
   }
@@ -200,6 +214,7 @@ async function createRealStoreHarness(options: {
   const storedCount = (deviceId: string): Promise<number> => realStore.countPositions(mission.id, deviceId)
   return {
     reconciler, requests, progressCalls, runFor, uploadLateBurst, serverFixCount, checkpointOf, storedCount,
+    maxInFlightByDevice,
   }
 }
 
@@ -239,10 +254,13 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
     // No published progress, in either phase, claims completion with a gap open.
     expect(harness.progressCalls.filter((call) => call.complete && call.historyGaps.length > 0)).toEqual([])
     expect(harness.progressCalls.some((call) => call.phase === 'initial' && call.complete)).toBe(false)
-    // The durable checkpoint stops at the gap: nothing past it is claimed reconciled.
+    // The durable checkpoint stops before the unfetchable minute: nothing past it is claimed
+    // reconciled. (A reported gap may start a little earlier than the bad minute, because it
+    // records whole failed windows.)
     const gapStartMs = Math.min(...progress.historyGaps.map((gap) => Date.parse(gap.from)))
+    expect(gapStartMs).toBeLessThanOrEqual(badFromMs)
     const checkpoint = await harness.checkpointOf('1')
-    expect(Date.parse(checkpoint!.reconciled_until)).toBeLessThanOrEqual(gapStartMs)
+    expect(Date.parse(checkpoint!.reconciled_until)).toBeLessThanOrEqual(badFromMs)
     expect(await harness.storedCount('1')).toBeLessThan(harness.serverFixCount('1'))
 
     server.broken = false
@@ -310,5 +328,74 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
     expect(progress.complete).toBe(false)
     expect(progress.failedDeviceNames).toContain('Tracker 1')
     expect(progress.recheckBacklog.some((range) => range.deviceId === '1')).toBe(true)
+  })
+
+  it('re-checks the oldest range of a long mission within a bounded number of ticks (round 3, item 1)', async () => {
+    // 36 h of history; each request takes 30 s and a device may spend 150 s per
+    // tick, so a tick re-reads 10 h: the 6 h recent window plus 4 h of older history.
+    const missionStartMs = NOW_MS - 36 * HOUR_MS
+    const server = { slow: false }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: MINUTE_MS,
+      missionStartMs,
+      reconcilerOptions: { antiEntropyDeviceTimeBudgetMs: 150 * SECOND_MS },
+      rule: () => ({ error: null, delayMs: server.slow ? 30 * SECOND_MS : 0 }),
+    })
+    await harness.runFor(POLL_MS)
+    expect(harness.reconciler.getProgress().complete).toBe(true)
+    server.slow = true
+    // A phone uploads one fix from the first hour of the mission.
+    harness.uploadLateBurst('1', missionStartMs + 30 * MINUTE_MS, missionStartMs + 30 * MINUTE_MS, MINUTE_MS)
+
+    // The reconciler's bound: 30 h of older history in 6 h passes chunks, 4 h
+    // re-read per tick, is ceil(30 / 6) x ceil(6 / 4) = 10 ticks per pass, and
+    // any range is reached within two passes.
+    const boundTicks = 20
+    let deliveredAfterTicks: number | null = null
+    for (let tick = 1; tick <= boundTicks && deliveredAfterTicks === null; tick += 1) {
+      await harness.runFor(TICK_MS)
+      if (await harness.storedCount('1') === harness.serverFixCount('1')) deliveredAfterTicks = tick
+    }
+    expect(deliveredAfterTicks).not.toBeNull()
+    expect(deliveredAfterTicks!).toBeLessThanOrEqual(boundTicks)
+  })
+
+  it('retries every slice of a merged gap, not only its still-failing first slice (round 3, items 2 and 3)', async () => {
+    // A 36 h mission keeps the older re-check pass away from the gap for
+    // several ticks, so only gap retries can fill its recovered part.
+    const missionStartMs = NOW_MS - 36 * HOUR_MS
+    const badFromMs = missionStartMs + 2 * HOUR_MS
+    const server = { brokenFromMs: badFromMs, brokenToMs: badFromMs + 20 * MINUTE_MS, delayMs: 0 }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: 10 * SECOND_MS,
+      missionStartMs,
+      rule: ({ fromMs, toMs }) => ({
+        error: fromMs < server.brokenToMs && toMs > server.brokenFromMs ? new Error(TOO_LARGE_MESSAGE) : null,
+        delayMs: server.delayMs,
+      }),
+    })
+    await harness.runFor(5 * MINUTE_MS)
+    const gaps = harness.reconciler.getProgress().historyGaps
+    expect(gaps).toHaveLength(1)
+    const gapFromMs = Date.parse(gaps[0]!.from)
+    const gapToMs = Date.parse(gaps[0]!.to)
+    expect(gapToMs - gapFromMs).toBeGreaterThan(10 * MINUTE_MS)
+
+    // The server recovers everywhere except the gap's first minute.
+    server.brokenFromMs = gapFromMs
+    server.brokenToMs = gapFromMs + MINUTE_MS
+    server.delayMs = SECOND_MS
+    await harness.runFor(3 * TICK_MS)
+
+    const remaining = harness.reconciler.getProgress().historyGaps
+    expect(remaining).toHaveLength(1)
+    // The still-failing head stays reported; the recovered remainder is filled.
+    expect(Date.parse(remaining[0]!.from)).toBeLessThanOrEqual(gapFromMs + MINUTE_MS)
+    expect(Date.parse(remaining[0]!.to)).toBeLessThanOrEqual(gapFromMs + 5 * MINUTE_MS)
+    expect(harness.reconciler.getProgress().complete).toBe(false)
+    // One request per device at a time, across the sweep and gap retries.
+    expect(harness.maxInFlightByDevice.get('1')).toBe(1)
   })
 })
