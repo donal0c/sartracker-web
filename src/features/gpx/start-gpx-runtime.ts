@@ -301,6 +301,8 @@ export async function startGpxRuntime(
         return null
       }
 
+      const missionId = existingImport.mission_id
+      const missionToken = missionGeneration
       const metadataJson = writeGpxImportColorMetadata(existingImport.metadata_json, color)
       const updatedImport = dependencies.gpxStore.updateGpxImportPresentation === undefined
         ? await dependencies.gpxStore.upsertGpxImport({
@@ -330,6 +332,7 @@ export async function startGpxRuntime(
         error: null,
       }
       publishRuntime()
+      await refreshMapAfterPresentationChange(missionId, missionToken)
       return updatedImport
     },
     addWatchedDirectory: async (directoryPath: string) => {
@@ -476,6 +479,7 @@ export async function startGpxRuntime(
     assignImportToOuting: async (importId, outingId, assignedBy) => {
       const missionId = state.activeMissionId
       const token = refreshToken
+      const missionToken = missionGeneration
       const existing = state.imports.find((entry) => entry.id === importId)
       if (missionId === null || existing?.mission_id !== missionId
         || dependencies.gpxStore.assignGpxImportToOuting === undefined) return null
@@ -495,6 +499,7 @@ export async function startGpxRuntime(
         error: null,
       }
       publishRuntime()
+      await refreshMapAfterPresentationChange(missionId, missionToken)
       return updated
     },
   }
@@ -818,6 +823,16 @@ export async function startGpxRuntime(
         error: appendErrorMessage(state.error, `The GPX list could not be re-read after the import stopped: ${toErrorMessage(error)}`),
       }
     }
+    await refreshMap(missionId, isCurrent)
+  }
+
+  /**
+   * A map read already in flight may hold the old colour or outing; starting a new read
+   * discards it, so the map cannot draw older metadata than the panel shows [DON-350].
+   */
+  async function refreshMapAfterPresentationChange(missionId: string, missionToken: number): Promise<void> {
+    const isCurrent = () => missionToken === missionGeneration && state.activeMissionId === missionId
+    if (!isCurrent()) return
     await refreshMap(missionId, isCurrent)
   }
 

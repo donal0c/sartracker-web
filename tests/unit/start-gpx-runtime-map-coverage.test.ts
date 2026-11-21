@@ -58,6 +58,58 @@ describe('GPX runtime map coverage and watched rescans [DON-350]', () => {
     expect(runtime.mapCoverageNotice).toBeNull()
   })
 
+  it('a map read still in flight does not put back a colour or outing the operator just saved [DON-350] [review]', async () => {
+    const applyRuntime = vi.fn()
+    const stored = new Map(thirty.map((entry) => [entry.id, entry]))
+    let releasePageTwo: () => void = () => undefined
+    let pageTwoRequested: () => void = () => undefined
+    const pageTwoAsked = new Promise<void>((resolve) => { pageTwoRequested = resolve })
+    let holdNextPageTwo = true
+    const current = () => [...stored.values()]
+    const store = pagedStore(thirty, {
+      listGpxMapProjectionPage: vi.fn().mockImplementation(async ({ cursor }: { readonly cursor?: string }) => {
+        // Each page reads the store as it is when that page is served.
+        const snapshot = current()
+        if (cursor === undefined) {
+          return { entries: snapshot.slice(0, 20), undrawn: [], totalActive: 30, truncated: false, nextCursor: 'map-2' }
+        }
+        if (holdNextPageTwo) {
+          holdNextPageTwo = false
+          pageTwoRequested()
+          await new Promise<void>((resolve) => { releasePageTwo = resolve })
+        }
+        return { entries: current().slice(20), undrawn: [], totalActive: 30, truncated: false, nextCursor: null }
+      }),
+      updateGpxImportPresentation: vi.fn().mockImplementation(async (input: { readonly id: string; readonly metadata_json: string }) => {
+        const updated = { ...stored.get(input.id)!, metadata_json: input.metadata_json }
+        stored.set(input.id, updated)
+        return updated
+      }),
+      assignGpxImportToOuting: vi.fn().mockImplementation(async (input: { readonly import_id: string; readonly outing_id: string }) => {
+        const updated = { ...stored.get(input.import_id)!, outing_id: input.outing_id }
+        stored.set(input.import_id, updated)
+        return updated
+      }),
+    })
+    const controller = await startGpxRuntime({ gpxStore: store, applyRuntime })
+    const refreshing = controller.refreshMission('mission-1')
+    await pageTwoAsked
+
+    // Page one of the map already holds team-00 with its old presentation.
+    const saved = await controller.updateImportColor('team-00', '#2563eb')
+    await controller.assignImportToOuting('team-01', 'outing-7')
+    releasePageTwo()
+    await refreshing
+
+    const runtime = lastRuntime(applyRuntime)
+    const panelEntry = runtime.imports.find((entry) => entry.id === 'team-00')
+    const mapEntry = runtime.mapImports.find((entry) => entry.id === 'team-00')
+    expect(panelEntry?.metadata_json).toBe(saved?.metadata_json)
+    expect(mapEntry?.metadata_json).toBe(saved?.metadata_json)
+    expect(runtime.mapImports.find((entry) => entry.id === 'team-01')?.outing_id).toBe('outing-7')
+    expect(runtime.mapImports).toHaveLength(30)
+  })
+
   it('tells the operator by name when a track cannot be drawn, and when the track cap is reached [M-87]', async () => {
     const applyRuntime = vi.fn()
     const store = pagedStore(thirty.slice(0, 3), {
