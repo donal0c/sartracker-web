@@ -1729,8 +1729,13 @@ describe('electron mission store', () => {
       changedPositionCount: 25_000,
       insertedPositionCount: 25_000,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      rejectedPositionCount: 0,
+      sourceIdentityConflictCount: 0,
+      missionRejectedPositionTotal: 0,
+      missionSourceIdentityConflictTotal: 0,
     })
-    expect(JSON.stringify(result).length).toBeLessThan(200)
+    // Bounded counts only, never the changed rows [DON-338 adds four counts].
+    expect(JSON.stringify(result).length).toBeLessThan(300)
     await expect(store.countPositions(mission.id)).resolves.toBe(25_000)
 
     const correction = {
@@ -1749,6 +1754,10 @@ describe('electron mission store', () => {
       changedPositionCount: 0,
       insertedPositionCount: 0,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      rejectedPositionCount: 0,
+      sourceIdentityConflictCount: 1,
+      missionRejectedPositionTotal: 0,
+      missionSourceIdentityConflictTotal: 1,
     })
     await expect(store.listIngestAnomalies(mission.id)).resolves.toEqual([
       expect.objectContaining({

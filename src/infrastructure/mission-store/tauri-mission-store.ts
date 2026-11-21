@@ -979,6 +979,18 @@ export type TrackingPositionsPersistenceAck = {
   readonly changedPositionCount: number
   readonly insertedPositionCount: number
   readonly skippedAmbiguousLegacyAdoptionCount: number
+  /**
+   * Rows refused in this call and recorded as 'rejected' ingest anomalies;
+   * the good rows of the call were committed [DON-338 STO-3]. Optional only
+   * for stores that predate it.
+   */
+  readonly rejectedPositionCount?: number
+  /** Reused source position ids in this call kept as conflicts [DON-338 STO-1]. */
+  readonly sourceIdentityConflictCount?: number
+  /** Distinct rows the store has refused in this mission. */
+  readonly missionRejectedPositionTotal?: number
+  /** Distinct reused-id observations kept as conflicts in this mission. */
+  readonly missionSourceIdentityConflictTotal?: number
 }
 
 export type UpsertMarkerInput = {

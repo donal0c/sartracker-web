@@ -49,6 +49,8 @@ const {
   listIngestAnomalies,
   recordConflictAnomaly,
   recordRejectedAnomaly,
+  countStoreWriteAnomalies,
+  recordStoreRejectedPosition,
   summarizeIngestAnomalies,
 } = require('./ingest-anomaly-ledger.cjs')
 const {
@@ -2622,9 +2624,11 @@ function createElectronMissionStore(options) {
         || (Array.isArray(input.requests) && input.requests.length > 0)
       const result = await runCoverageMutation(
         input.mission_id,
+        // The acknowledgement reports refused rows explicitly, so this is the
+        // one write path that commits the good rows around a refused one.
         () => hasCheckpoints
-          ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection)
-          : addPositionsBulk(db, input, false, coverageLedgerFaultInjection, true),
+          ? persistTrackingHistoryBatch(db, input, false, coverageLedgerFaultInjection, 'quarantine')
+          : addPositionsBulk(db, input, false, coverageLedgerFaultInjection, true, 'quarantine'),
       )
       await safeStorageDiagnostic(() =>
         storageDiagnostics?.recordInsertedPositions({
@@ -2640,6 +2644,10 @@ function createElectronMissionStore(options) {
         insertedPositionCount: result.insertedPositionCount,
         skippedAmbiguousLegacyAdoptionCount:
           result.skippedAmbiguousLegacyAdoptionCount,
+        rejectedPositionCount: result.rejectedPositionCount,
+        sourceIdentityConflictCount: result.sourceIdentityConflictCount,
+        missionRejectedPositionTotal: result.missionRejectedPositionTotal,
+        missionSourceIdentityConflictTotal: result.missionSourceIdentityConflictTotal,
       }
     },
     persistTrackingHistoryBatch: async (input) => {
@@ -8416,13 +8424,31 @@ function addPosition(db, input, coverageFaultInjection = {}) {
   return getById(db, 'positions', id, 'Position')
 }
 
+/**
+ * Writes one batch of positions in one transaction.
+ *
+ * Row refusals depend on `rowRejectionMode` [DON-338 STO-3]:
+ * - 'throw' (array APIs, whose result lists stored rows only and so cannot
+ *   report a partial acceptance): the first malformed row rolls back the
+ *   whole batch with an error naming the row.
+ * - 'quarantine' (the tracking acknowledgement API): a malformed row is
+ *   refused, recorded as a 'rejected' ingest anomaly in the same transaction
+ *   and counted in `rejectedPositionCount`; the good rows commit with it.
+ * A missing device or any storage failure still rolls back the whole batch.
+ * A reused source position id keeps the stored row, records a conflict
+ * anomaly and is counted in `sourceIdentityConflictCount` [STO-1].
+ */
 function addPositionsBulk(
   db,
   input,
   includePositions = true,
   coverageFaultInjection = {},
   requireFixTimeProvenance = false,
+  rowRejectionMode = 'throw',
 ) {
+  if (rowRejectionMode !== 'throw' && rowRejectionMode !== 'quarantine') {
+    throw new Error('Position row rejection mode is invalid.')
+  }
   ensureWritableMission(db, input.mission_id)
   const positions = Array.isArray(input.positions) ? input.positions : []
   if (positions.length === 0) {
@@ -8431,6 +8457,9 @@ function addPositionsBulk(
       changedPositionCount: 0,
       insertedPositionCount: 0,
       skippedAmbiguousLegacyAdoptionCount: 0,
+      rejectedPositionCount: 0,
+      sourceIdentityConflictCount: 0,
+      ...(rowRejectionMode === 'quarantine' ? countStoreWriteAnomalies(db, input.mission_id) : {}),
     }
   }
 
@@ -8462,32 +8491,41 @@ function addPositionsBulk(
   let changedPositionCount = 0
   let insertedPositionCount = 0
   let skippedAmbiguousLegacyAdoptionCount = 0
+  let rejectedPositionCount = 0
+  let sourceIdentityConflictCount = 0
   let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
   let legacyCandidates
+  let missionTotals = null
 
   const transaction = db.transaction(() => {
     const deviceObservations = createBulkDeviceObservationWriter((deviceId, timestamp) => {
       updateDevice.run(timestamp, timestamp, input.mission_id, deviceId)
     })
     const receivedAt = now()
-    for (const position of positions) {
-      validateLatLon(position.lat, position.lon, 'Position')
-      if (deviceExists.get(input.mission_id, position.device_id) === undefined) {
-        throw new Error(`Device not found: ${position.device_id}`)
+    for (const [positionIndex, position] of positions.entries()) {
+      if (deviceExists.get(input.mission_id, position?.device_id) === undefined) {
+        throw new Error(`Device not found: ${position?.device_id}`)
+      }
+      const validated = validateBulkPositionRow(position, requireFixTimeProvenance)
+      if (!validated.valid) {
+        if (rowRejectionMode === 'throw') {
+          throw new Error(
+            `Position ${positionIndex + 1} of ${positions.length} was refused: ${validated.message}`,
+          )
+        }
+        recordStoreRejectedPosition(db, {
+          missionId: input.mission_id,
+          reasonClass: validated.reasonClass,
+          receivedAt,
+          position,
+        })
+        rejectedPositionCount += 1
+        continue
       }
 
-      const timestamp = normalizePositionTimestamp(position.timestamp)
+      const { timestamp, sourcePositionId, timestampSource } = validated
       const dataOrigin = position.data_origin ?? 'live'
-      const sourcePositionId = normalizeSourcePositionId(
-        position.source_position_id,
-      )
-      const timestampSource = normalizePositionTimestampSource(position.timestamp_source)
-      if (requireFixTimeProvenance && timestampSource !== 'fix') {
-        throw new Error(
-          'Tracking evidence persistence requires authoritative Traccar fixTime provenance.',
-        )
-      }
       const normalizedPosition = {
         ...position,
         source_position_id: sourcePositionId,
@@ -8505,12 +8543,15 @@ function addPositionsBulk(
             incoming: normalizedPosition,
           })
           if (decision.decision === 'conflict') {
+            // Which row wins is unchanged pending the team's answer (Q4);
+            // the discarded observation is recorded and counted out loud.
             recordConflictAnomaly(db, {
               missionId: input.mission_id,
               sourcePositionId,
               incoming: normalizedPosition,
               receivedAt,
             })
+            sourceIdentityConflictCount += 1
           }
           if (existing.device_id === position.device_id) {
             if (decision.decision === 'duplicate' && timestampSource === 'fix') {
@@ -8603,6 +8644,12 @@ function addPositionsBulk(
       failAfterWrite: coverageFaultInjection.afterWrite === true,
     })
     if (replayEligibilityChanged) bumpMissionReplayGeneration(db, input.mission_id)
+    // Sourced fixes are re-sent on every poll, so per-call counts repeat; the
+    // acknowledgement also carries the mission's distinct totals, read in the
+    // same transaction, for the operator warning.
+    if (rowRejectionMode === 'quarantine') {
+      missionTotals = countStoreWriteAnomalies(db, input.mission_id)
+    }
   })
 
   transaction()
@@ -8611,7 +8658,55 @@ function addPositionsBulk(
     changedPositionCount,
     insertedPositionCount,
     skippedAmbiguousLegacyAdoptionCount,
+    rejectedPositionCount,
+    sourceIdentityConflictCount,
+    ...(missionTotals ?? {}),
   }
+}
+
+/**
+ * Validates one bulk position row before any write, returning its canonical
+ * values or a fixed reason class and operator-readable message.
+ */
+function validateBulkPositionRow(position, requireFixTimeProvenance) {
+  const refuse = (reasonClass, error) => ({
+    valid: false,
+    reasonClass,
+    message: error instanceof Error ? error.message : String(error),
+  })
+  try {
+    validateLatLon(position.lat, position.lon, 'Position')
+  } catch (error) {
+    return refuse('store_invalid_coordinates', error)
+  }
+  let timestamp
+  try {
+    timestamp = normalizePositionTimestamp(position.timestamp)
+  } catch (error) {
+    return refuse(
+      position.timestamp == null ? 'store_missing_fix_time' : 'store_invalid_fix_time',
+      error,
+    )
+  }
+  let sourcePositionId
+  try {
+    sourcePositionId = normalizeSourcePositionId(position.source_position_id)
+  } catch (error) {
+    return refuse('store_invalid_source_identity', error)
+  }
+  let timestampSource
+  try {
+    timestampSource = normalizePositionTimestampSource(position.timestamp_source)
+  } catch (error) {
+    return refuse('store_invalid_fix_time_provenance', error)
+  }
+  if (requireFixTimeProvenance && timestampSource !== 'fix') {
+    return refuse(
+      'store_missing_fix_time_provenance',
+      'Tracking evidence persistence requires authoritative Traccar fixTime provenance.',
+    )
+  }
+  return { valid: true, timestamp, sourcePositionId, timestampSource }
 }
 
 function persistTrackingHistoryBatch(
@@ -8619,6 +8714,7 @@ function persistTrackingHistoryBatch(
   input,
   includePositions = true,
   coverageFaultInjection = {},
+  rowRejectionMode = 'throw',
 ) {
   ensureWritableMission(db, input.mission_id)
   if (input.requests !== undefined && (!Array.isArray(input.requests) || input.requests.length > 1000)) throw new Error('History request targets must be a bounded list.')
@@ -8628,6 +8724,8 @@ function persistTrackingHistoryBatch(
     changedPositionCount: 0,
     insertedPositionCount: 0,
     skippedAmbiguousLegacyAdoptionCount: 0,
+    rejectedPositionCount: 0,
+    sourceIdentityConflictCount: 0,
   }
   const deviceExists = db.prepare(
     'SELECT id FROM devices WHERE mission_id = ? AND device_id = ?',
@@ -8651,7 +8749,7 @@ function persistTrackingHistoryBatch(
     const added = addPositionsBulk(db, {
       mission_id: input.mission_id,
       positions: Array.isArray(input.positions) ? input.positions : [],
-    }, includePositions, coverageFaultInjection, true)
+    }, includePositions, coverageFaultInjection, true, rowRejectionMode)
     positionResult = {
       ...added,
       skippedAmbiguousLegacyAdoptionCount:
@@ -8783,9 +8881,15 @@ function normalizeSourcePositionId(value) {
   return value.trim()
 }
 
+/**
+ * Returns the canonical observed time of one position. A missing time is
+ * refused: storing the receive time would invent a fix time [DON-338 STO-2].
+ */
 function normalizePositionTimestamp(value) {
   if (value == null) {
-    return now()
+    throw new Error(
+      'Position timestamp is required; a fix with no observed time is never stored with an invented time.',
+    )
   }
   if (!isStrictTrackingTimestamp(value)) {
     throw new Error('Position timestamp must be a valid ISO8601 date-time.')
