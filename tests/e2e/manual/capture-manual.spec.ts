@@ -563,15 +563,16 @@ test.describe('manual screenshots: settings and diagnostics', () => {
     await page.getByTestId('open-settings-workspace').click()
     const settings = page.getByTestId('settings-workspace')
     await settings.waitFor()
-    const sheet = { x: 672, y: 0, width: 768, height: 900 }
-    for (const [heading, name] of [
-      ['Coordinator Roster', 'settings-rosters'],
-      ['Data Sources', 'settings-data-sources'],
-      ['Weather Links', 'settings-weather-links'],
+    const sheet = { x: 416, y: 0, width: 1024, height: 900 }
+    for (const [section, name] of [
+      ['mission-defaults', 'settings-rosters'],
+      ['tracking-sources', 'settings-data-sources'],
+      ['mapping', 'settings-mapping'],
+      ['weather-links', 'settings-weather-links'],
+      ['advanced', 'settings-advanced'],
     ] as const) {
-      await settings.getByText(new RegExp(`^${heading}$`, 'iu')).first().evaluate((element) => {
-        element.scrollIntoView({ block: 'start' })
-      })
+      await page.getByTestId(`settings-section-${section}`).click()
+      await expect(settings).toHaveAttribute('data-active-section', section)
       await shot(page, name, sheet)
     }
     await page.keyboard.press('Escape')
