@@ -178,8 +178,11 @@ it.each(['devices', 'single-devices', 'positions', 'one-position', 'positions-bu
       maximumHeartbeatGapMs = Math.max(maximumHeartbeatGapMs, performance.now() - previousBeat)
       clearInterval(heartbeat)
       heartbeat = undefined
+      // The worker read the committed revision before the held write landed, so the
+      // catalog is served at that revision and names every chunk as moved [DON-338 COV-2].
       if (kind === 'coverage-stale') expect(outcome).toMatchObject({
-        error: null, value: { kind: 'stale', reason: 'coverage_revision_moved' },
+        error: null,
+        value: { moved: manifest.chunks.map(chunk => ({ key: chunk.key, contentRev: chunk.contentRev })) },
       })
       else if (kind === 'conflict-position') expect(outcome.error).toMatchObject({ message: expect.stringMatching(/owned by device tracker/) })
       else if (kind === 'finished-devices') expect(outcome.error).toMatchObject({ message: expect.stringMatching(/finished|writ|finaliz/i) })

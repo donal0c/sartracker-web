@@ -167,6 +167,15 @@ export type CoverageTileCatalog = {
     readonly key: CoverageChunkKey
     readonly contentRev: number
   }[]
+  /**
+   * Delivered chunks whose revision moved on while the catalog was built. Each
+   * is drawn honestly at the listed (older) revision and must be retried; it is
+   * never current [DON-338 COV-2].
+   */
+  readonly moved?: readonly {
+    readonly key: CoverageChunkKey
+    readonly contentRev: number
+  }[]
   /** Browser-validation payload only; native Electron catalogs never include it. */
   readonly browserHarnessGeoJson?: {
     readonly type: 'FeatureCollection'
