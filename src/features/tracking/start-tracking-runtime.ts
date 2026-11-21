@@ -50,7 +50,11 @@ import type {
   ParticipantBackfillCheckpoint,
   PersistTrackingHistoryBatchInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
-import { runParticipantBackfillPass } from '../participants/participant-backfill-runtime'
+import {
+  BACKFILL_CHUNK_MILLISECONDS,
+  runParticipantBackfillPass,
+} from '../participants/participant-backfill-runtime'
+import { classifyHistoryWindowFailure } from './breadcrumb-history-reconciler'
 import { createOperationalPositionRetention } from '../participants/operational-position-retention'
 import type { IngestEvidenceLossReason } from '../../domain/tracking-ingest-evidence'
 import {
@@ -65,6 +69,37 @@ import {
   type StoreWriteOutcome,
   type StoreWriteTotals,
 } from './store-write-outcome'
+
+const PARTICIPANT_BACKFILL_MIN_WINDOW_MS = 5 * 60 * 1_000
+const PARTICIPANT_BACKFILL_MAX_RETRY_DELAY_MS = 30_000
+const PARTICIPANT_BACKFILL_GROWTH_SUCCESS_COUNT = 4
+
+/** Per-checkpoint retry state for participant backfill, kept in memory only. */
+type ParticipantBackfillRetryState = {
+  failureCount: number
+  retryAtMs: number
+  windowMs: number
+  successCount: number
+}
+
+/** What one participant backfill pass leaves for the scheduler. */
+type ParticipantBackfillPassResult =
+  | { readonly kind: 'continue' }
+  | { readonly kind: 'idle' }
+  | { readonly kind: 'waiting'; readonly retryAtMs: number }
+
+/** Identifies one participant backfill checkpoint across passes. */
+function participantBackfillKey(checkpoint: ParticipantBackfillCheckpoint): string {
+  return `${checkpoint.mission_id}|${checkpoint.traccar_device_id}|${checkpoint.window_from}`
+}
+
+/** True when a write acknowledgement carries the store's write outcome counts. */
+function isStoreWriteOutcome(value: unknown): value is StoreWriteOutcome {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Partial<Record<keyof StoreWriteOutcome, unknown>>
+  return typeof candidate.rejectedPositionCount === 'number'
+    && typeof candidate.sourceIdentityConflictCount === 'number'
+}
 
 export type TrackingRuntimeConfig = {
   readonly baseUrl: string
@@ -441,6 +476,9 @@ export async function startTrackingRuntime(
     | null = null
   let participantBackfillInFlight = false
   let participantBackfillTask: Promise<void> | null = null
+  const participantBackfillRetryStates = new Map<string, ParticipantBackfillRetryState>()
+  let lastParticipantBackfillKey: string | null = null
+  let participantBackfillRetryTimer: ReturnType<typeof setTimeout> | null = null
   const participantScopeWaiters = new Set<() => void>()
   const participantScopeReadyTimeoutMs = dependencies.participantScopeReadyTimeoutMs
     ?? DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS
@@ -1244,6 +1282,8 @@ export async function startTrackingRuntime(
     },
     async () => {
       try {
+        if (participantBackfillRetryTimer !== null) clearTimeout(participantBackfillRetryTimer)
+        participantBackfillRetryTimer = null
         if (participantBackfillTask !== null) await participantBackfillTask
       } finally {
         participantBackfillAbortController.abort()
@@ -1545,10 +1585,16 @@ export async function startTrackingRuntime(
     }
   }
 
+  /**
+   * Starts the next participant backfill pass. Passes rotate across the
+   * mission's incomplete checkpoints, so one device whose history keeps
+   * failing waits out its own backoff while the others keep moving [DON-338].
+   */
   function scheduleParticipantBackfill(): void {
     if (
       dependencies.missionModelEnabled !== true ||
       participantBackfillInFlight ||
+      participantBackfillAbortController.signal.aborted ||
       dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
       dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
       (dependencies.missionStore.persistTrackingPositionsBulk === undefined &&
@@ -1557,9 +1603,9 @@ export async function startTrackingRuntime(
     ) return
 
     participantBackfillInFlight = true
-    let shouldScheduleNext = false
-    const task = runNextParticipantBackfillPass().then((didAdvance) => {
-      shouldScheduleNext = didAdvance
+    let result: ParticipantBackfillPassResult = { kind: 'idle' }
+    const task = runNextParticipantBackfillPass().then((passResult) => {
+      result = passResult
     }).catch((error) => {
       if (!participantBackfillAbortController.signal.aborted) {
         logger.warn('Participant history backfill pass failed; it will retry.', error)
@@ -1567,32 +1613,107 @@ export async function startTrackingRuntime(
     }).finally(() => {
       participantBackfillInFlight = false
       if (participantBackfillTask === task) participantBackfillTask = null
-      if (shouldScheduleNext && acceptingRuntimeUpdates &&
-        !participantBackfillAbortController.signal.aborted) {
+      if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return
+      if (result.kind === 'continue') {
         scheduleParticipantBackfill()
+      } else if (result.kind === 'waiting') {
+        scheduleParticipantBackfillRetry(result.retryAtMs)
       }
     })
     participantBackfillTask = task
   }
 
-  async function runNextParticipantBackfillPass(): Promise<boolean> {
+  /** Wakes participant backfill when the earliest backed-off checkpoint may retry. */
+  function scheduleParticipantBackfillRetry(retryAtMs: number): void {
+    if (participantBackfillRetryTimer !== null) return
+    participantBackfillRetryTimer = setTimeout(() => {
+      participantBackfillRetryTimer = null
+      scheduleParticipantBackfill()
+    }, Math.max(0, retryAtMs - Date.now()))
+  }
+
+  /**
+   * Picks the next incomplete checkpoint whose backoff has passed, after the
+   * one picked last, so every device gets its turn.
+   */
+  function selectParticipantBackfillCheckpoint(
+    checkpoints: readonly ParticipantBackfillCheckpoint[],
+    nowMs: number,
+  ): ParticipantBackfillCheckpoint | undefined {
+    const eligible = checkpoints
+      .filter((candidate) => candidate.completed !== 1 &&
+        (participantBackfillRetryStates.get(participantBackfillKey(candidate))?.retryAtMs ?? 0) <= nowMs)
+      .sort((left, right) => {
+        const leftKey = participantBackfillKey(left)
+        const rightKey = participantBackfillKey(right)
+        return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0
+      })
+    return eligible.find((candidate) =>
+      lastParticipantBackfillKey !== null && participantBackfillKey(candidate) > lastParticipantBackfillKey)
+      ?? eligible[0]
+  }
+
+  /**
+   * Records a failed pass for one checkpoint: backs it off, narrows its window
+   * when the reply was oversized or slow, and logs it. The durable cursor is
+   * untouched, so the failed range is neither claimed nor skipped.
+   */
+  function noteParticipantBackfillFailure(
+    checkpoint: ParticipantBackfillCheckpoint,
+    state: ParticipantBackfillRetryState,
+    error: unknown,
+  ): void {
+    state.failureCount += 1
+    state.successCount = 0
+    const retryDelayMs = Math.min(
+      1_000 * 2 ** (state.failureCount - 1),
+      PARTICIPANT_BACKFILL_MAX_RETRY_DELAY_MS,
+    )
+    state.retryAtMs = Date.now() + retryDelayMs
+    if (classifyHistoryWindowFailure(error) !== null) {
+      state.windowMs = Math.max(PARTICIPANT_BACKFILL_MIN_WINDOW_MS, Math.floor(state.windowMs / 2))
+    }
+    logger.warn('Participant history backfill failed for a device; other devices continue and it will retry.', {
+      deviceId: checkpoint.traccar_device_id,
+      reconciledUntil: checkpoint.reconciled_until,
+      windowTo: checkpoint.window_to,
+      failureCount: state.failureCount,
+      retryDelayMs,
+      windowMs: state.windowMs,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+
+  async function runNextParticipantBackfillPass(): Promise<ParticipantBackfillPassResult> {
     // Participant backfill consumes only durability acknowledgement, never returned rows.
     const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
       ?? dependencies.missionStore.persistTrackingHistoryBatch
-    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return false
+    if (!hasBreadcrumbClient(client) || persistChunk === undefined) return { kind: 'idle' }
     const activeMission = await dependencies.missionStore.getActiveMission()
-    if (activeMission === null) return false
+    if (activeMission === null) return { kind: 'idle' }
     const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
       activeMission.id,
     ) ?? []
-    const checkpoint = checkpoints.find((candidate) => candidate.completed !== 1)
-    if (checkpoint === undefined) return false
+    const incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
+    if (incomplete.length === 0) return { kind: 'idle' }
     if (dependencies.missionStore.listDevices !== undefined) {
       const devices = await dependencies.missionStore.listDevices(activeMission.id)
       const durableDeviceIds = new Set(devices.map((device) => device.device_id))
-      if (checkpoints.some((candidate) =>
-        candidate.completed !== 1 && !durableDeviceIds.has(candidate.traccar_device_id))) return false
+      if (incomplete.some((candidate) => !durableDeviceIds.has(candidate.traccar_device_id))) {
+        return { kind: 'idle' }
+      }
     }
+    const checkpoint = selectParticipantBackfillCheckpoint(checkpoints, Date.now())
+    if (checkpoint === undefined) {
+      const retryAtMs = Math.min(...incomplete.map((candidate) =>
+        participantBackfillRetryStates.get(participantBackfillKey(candidate))?.retryAtMs ?? 0))
+      return { kind: 'waiting', retryAtMs }
+    }
+    const key = participantBackfillKey(checkpoint)
+    lastParticipantBackfillKey = key
+    const state = participantBackfillRetryStates.get(key)
+      ?? { failureCount: 0, retryAtMs: 0, windowMs: BACKFILL_CHUNK_MILLISECONDS, successCount: 0 }
+    participantBackfillRetryStates.set(key, state)
     const observation = dependencies.beginMissionEvidenceObservation?.(
       checkpoint.mission_id,
     ) ?? { missionId: checkpoint.mission_id, complete: () => undefined }
@@ -1600,16 +1721,40 @@ export async function startTrackingRuntime(
       throw new Error('Participant history evidence scope closed before backfill admission.')
     }
     try {
-      await runParticipantBackfillPass({
-        checkpoint,
-        getBreadcrumbsWithReport: client.getBreadcrumbsWithReport,
-        ...(dependencies.recordBreadcrumbRejections === undefined
-          ? {}
-          : { recordRejections: dependencies.recordBreadcrumbRejections }),
-        persistChunk,
-        updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
-        signal: participantBackfillAbortController.signal,
-      })
+      try {
+        await runParticipantBackfillPass({
+          checkpoint,
+          getBreadcrumbsWithReport: client.getBreadcrumbsWithReport,
+          ...(dependencies.recordBreadcrumbRejections === undefined
+            ? {}
+            : { recordRejections: dependencies.recordBreadcrumbRejections }),
+          persistChunk: async (input) => {
+            const acknowledgement = await persistChunk(input)
+            // Refused fixes and reused ids reach the operator as on every other write path [DON-338].
+            if (isStoreWriteOutcome(acknowledgement)) {
+              applyStoreWriteOutcome(input.mission_id, acknowledgement)
+            }
+            return acknowledgement
+          },
+          updateCheckpoint: dependencies.missionStore.upsertParticipantBackfillCheckpoint!,
+          signal: participantBackfillAbortController.signal,
+          windowMs: state.windowMs,
+        })
+      } catch (error) {
+        if (participantBackfillAbortController.signal.aborted) throw error
+        noteParticipantBackfillFailure(checkpoint, state, error)
+        return { kind: 'continue' }
+      }
+      state.failureCount = 0
+      state.retryAtMs = 0
+      state.successCount += 1
+      if (
+        state.windowMs < BACKFILL_CHUNK_MILLISECONDS &&
+        state.successCount >= PARTICIPANT_BACKFILL_GROWTH_SUCCESS_COUNT
+      ) {
+        state.windowMs = Math.min(BACKFILL_CHUNK_MILLISECONDS, state.windowMs * 2)
+        state.successCount = 0
+      }
       const nextCheckpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
         checkpoint.mission_id,
       ) ?? []
@@ -1619,6 +1764,7 @@ export async function startTrackingRuntime(
       const checkpointAdvanced = nextCheckpoint !== undefined && (
         nextCheckpoint.completed !== checkpoint.completed ||
         nextCheckpoint.reconciled_until !== checkpoint.reconciled_until)
+      if (nextCheckpoint?.completed === 1) participantBackfillRetryStates.delete(key)
       const currentMission = await dependencies.missionStore.getActiveMission()
       if (
         acceptingRuntimeUpdates &&
@@ -1628,6 +1774,8 @@ export async function startTrackingRuntime(
         await dependencies.notifyParticipantBackfillChange?.(checkpoint.mission_id)
       }
       return checkpointAdvanced && nextCheckpoints.some((candidate) => candidate.completed !== 1)
+        ? { kind: 'continue' }
+        : { kind: 'idle' }
     } finally {
       observation.complete()
     }

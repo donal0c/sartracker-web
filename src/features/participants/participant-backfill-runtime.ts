@@ -8,7 +8,8 @@ import type {
 import type { CurrentPositionRejection } from '../tracking/ingest-health'
 import { HISTORY_PIECE_ROW_BUDGET } from '../tracking/split-history-chunk'
 
-const BACKFILL_CHUNK_MILLISECONDS = 2 * 60 * 60 * 1_000
+/** The widest participant-history window one pass reads. */
+export const BACKFILL_CHUNK_MILLISECONDS = 2 * 60 * 60 * 1_000
 
 type ParticipantBackfillPassDependencies = {
   readonly checkpoint: ParticipantBackfillCheckpoint
@@ -32,9 +33,11 @@ type ParticipantBackfillPassDependencies = {
     readonly completed: boolean
   }) => Promise<unknown>
   readonly signal?: AbortSignal
+  /** A narrower window after an oversized or slow reply; defaults to two hours. */
+  readonly windowMs?: number
 }
 
-/** Runs at most one fixed, resumable two-hour participant-history chunk. */
+/** Runs at most one resumable participant-history chunk, two hours unless narrowed. */
 export async function runParticipantBackfillPass(
   dependencies: ParticipantBackfillPassDependencies,
 ): Promise<void> {
@@ -45,7 +48,10 @@ export async function runParticipantBackfillPass(
   const from = new Date(checkpoint.reconciled_until)
   const windowTo = new Date(checkpoint.window_to)
   const to = new Date(Math.min(
-    from.getTime() + BACKFILL_CHUNK_MILLISECONDS,
+    from.getTime() + Math.min(
+      dependencies.windowMs ?? BACKFILL_CHUNK_MILLISECONDS,
+      BACKFILL_CHUNK_MILLISECONDS,
+    ),
     windowTo.getTime(),
   ))
   if (to.getTime() <= from.getTime()) {
