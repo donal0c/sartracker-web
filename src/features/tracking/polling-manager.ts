@@ -1156,12 +1156,14 @@ export function createPollingManager(
   }
 
   /**
-   * Waits for room in the mission evidence queue without going quiet. If the
-   * wait outlasts the larger of two poll intervals and half the stale
-   * threshold, the status gains a critical "live refresh suspended" warning and
-   * the last positions are re-published with their staleness re-evaluated, then
-   * again every poll interval until the wait ends. Nothing is retried or given
-   * up here: the wait itself is unchanged [DON-349 M-83].
+   * Waits for room in the mission evidence queue without going quiet. From
+   * the start of the wait the last positions are re-published every poll
+   * interval with their staleness re-evaluated, so a fix near expiry goes
+   * stale on time. If the wait outlasts the larger of two poll intervals and
+   * half the stale threshold, the status also gains a critical "live refresh
+   * suspended" warning, repeated every poll interval until the wait ends.
+   * Nothing is retried or given up here: the wait itself is unchanged
+   * [DON-349 M-83].
    *
    * @param wait starts the capacity wait
    * @param republishLastPositions re-publishes the last good snapshot with fresh health
@@ -1174,8 +1176,9 @@ export function createPollingManager(
     // The status showing when the park was first reported, if it was not a
     // healthy online one: its mode and warnings stay, with this one first.
     let statusBeforePark: TrackingConnectionStatus | null = null
+    const pollingActive = (): boolean => !stopping && (options.getPollingMode?.() ?? 'active') === 'active'
     const report = (): void => {
-      if (stopping || (options.getPollingMode?.() ?? 'active') !== 'active') return
+      if (!pollingActive()) return
       evidenceBackpressureActive = true
       republishLastPositions()
       if (lastSuccessAt !== null && consecutiveFailures === 0) {
@@ -1198,6 +1201,11 @@ export function createPollingManager(
         ],
       })
     }
+    // Staleness is re-evaluated every poll interval from the start of the
+    // wait; only the plain-words warning waits longer [DON-349 Codex review].
+    const refreshHealth = setInterval(() => {
+      if (pollingActive() && !evidenceBackpressureActive) republishLastPositions()
+    }, pollIntervalMs)
     let repeat: ReturnType<typeof setInterval> | null = null
     const first = setTimeout(() => {
       report()
@@ -1206,6 +1214,7 @@ export function createPollingManager(
     try {
       return await wait()
     } finally {
+      clearInterval(refreshHealth)
       clearTimeout(first)
       if (repeat !== null) clearInterval(repeat)
       evidenceBackpressureActive = false

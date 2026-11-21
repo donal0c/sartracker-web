@@ -155,6 +155,50 @@ describe('[DON-349] M-83: a long wait for evidence capacity is never silent', ()
     await poller.stop()
   })
 
+  it('marks a fix stale on time when it nears expiry just as the wait begins [DON-349 Codex review]', async () => {
+    // The fix is 4m55s old against a 5-minute threshold when the queue fills.
+    // It must go stale within a poll interval, not when the delayed warning
+    // first appears 150 seconds later.
+    const blockedWrite = new Promise<void>(() => undefined)
+    const queue = createDeferredMissionEvidenceQueue<number>({
+      capacity: 8,
+      beginObservation: (missionId) => ({ missionId, complete: () => undefined }),
+      persist: async () => { await blockedWrite },
+      markEvidenceLoss: vi.fn(),
+    })
+    for (let item = 0; item < 7; item += 1) expect(queue.enqueue('mission-a', item)).toBe(true)
+    queue.requestFlushMission('mission-a')
+    const nearExpiry = { ...FIX, timestamp: new Date(NOW_MS - 295_000).toISOString() }
+    const client = createClient()
+    vi.mocked(client.getCurrentPositions).mockResolvedValue([nearExpiry])
+    const statuses: TrackingConnectionStatus[] = []
+    const snapshots: TrackingSnapshot[] = []
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 300_000,
+      onSnapshot: (snapshot) => { snapshots.push(snapshot) },
+      onCurrentSnapshot: (snapshot) => {
+        snapshots.push(snapshot)
+        queue.enqueue('mission-a', 99)
+        queue.requestFlushMission('mission-a')
+      },
+      onStatusChange: (status) => { statuses.push(status) },
+      waitForCurrentEvidenceCapacity: (signal) => queue.waitForCapacity(signal),
+      reserveCurrentEvidenceCapacity: (signal) => queue.reserveCapacity(signal),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(snapshots.at(-1)!.positions.map((position) => position.device_cache_stale)).toEqual([false])
+
+    await vi.advanceTimersByTimeAsync(14_000)
+
+    expect(client.getCurrentPositions).toHaveBeenCalledTimes(1)
+    expect(snapshots.at(-1)!.positions.map((position) => position.device_cache_stale)).toEqual([true])
+    // The plain-words warning keeps its own, longer delay.
+    expect(statuses.flatMap((status) => status.warningCodes ?? [])).not.toContain('evidence_backpressure')
+    await poller.stop()
+  })
+
   it('does not warn while the evidence queue keeps draining normally', async () => {
     const queue = createDeferredMissionEvidenceQueue<number>({
       capacity: 8,
