@@ -5,6 +5,7 @@ import {
   calculateCacheAgeMs,
   isTrackingCacheUsable,
 } from '../../src/features/tracking/tracking-snapshot-health'
+import { selectNewestKnownFixes } from '../../src/features/tracking/newest-known-fix'
 import type { TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 
 const LIVE_SNAPSHOT: TrackingSnapshot = {
@@ -70,6 +71,22 @@ describe('tracking snapshot health', () => {
     })
     expect(caughtUp.positions[0]?.device_cache_stale).toBe(false)
     expect(caughtUp.positions[0]?.fix_time_ahead_of_clock).toBeUndefined()
+  })
+
+  it('flags a device whose newest breadcrumb is ahead of the clock, so the marker it wins is never Live [DON-349 M-06 review]', () => {
+    // A wrong 11:00 fix was stored; the tracker clock was then corrected and
+    // now reports 10:30. The 11:00 breadcrumb still wins marker selection.
+    const futureBreadcrumb = { ...LIVE_SNAPSHOT.positions[0]!, id: 'crumb-future', lat: 52.5, timestamp: '2026-04-06T11:00:00.000Z' }
+    const snapshot = annotateTrackingSnapshotHealth(
+      { ...LIVE_SNAPSHOT, breadcrumbs: [futureBreadcrumb] },
+      { now: new Date('2026-04-06T10:30:30.000Z'), deviceStaleThresholdMs: 5 * 60 * 1000 },
+    )
+
+    const [marker] = selectNewestKnownFixes(snapshot.positions, snapshot.breadcrumbs)
+    expect(marker?.id).toBe('crumb-future')
+    expect(marker?.device_cache_stale).toBe(true)
+    expect(marker?.fix_time_ahead_of_clock).toBe(true)
+    expect(snapshot.positions[0]?.fix_time_ahead_of_clock).toBe(true)
   })
 
   it('uses the operational five-minute stale threshold by default [DON-260]', () => {

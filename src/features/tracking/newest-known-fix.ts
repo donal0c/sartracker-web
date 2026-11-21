@@ -54,6 +54,21 @@ function getNewestBreadcrumbByDevice(
 }
 
 /**
+ * The newest usable breadcrumb fix time per device, in epoch milliseconds.
+ * Shares the cached index used for marker selection.
+ *
+ * @param breadcrumbs the breadcrumb history
+ * @returns fix time of each device's newest usable breadcrumb
+ */
+export function getNewestBreadcrumbMsByDevice(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+): ReadonlyMap<string, number> {
+  const msByDevice = new Map<string, number>()
+  for (const [deviceId, newest] of getNewestBreadcrumbByDevice(breadcrumbs)) msByDevice.set(deviceId, newest.ms)
+  return msByDevice
+}
+
+/**
  * Chooses, per device that has a current position, the newest usable fix across the
  * current-position response and the breadcrumb history.
  *
