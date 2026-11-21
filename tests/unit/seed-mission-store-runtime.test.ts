@@ -14,7 +14,8 @@ import {
   generateMissionStoreFixture,
   restartCheckpointDayForPoll,
 } from '../../build/seed-mission-store-runtime.js'
-import { createFixturePlan } from '../../build/seed-mission-store-lib.js'
+import { createFixturePlan, fieldShapeFix } from '../../build/seed-mission-store-lib.js'
+import { FIELD_SHAPE_MISSION_NAME } from '../../build/seed-mission-store-runtime.js'
 import {
   DEFAULT_STATIONARY_ATTENTION_CONFIG,
   evaluateStationaryAttention,
@@ -408,6 +409,49 @@ describe('breadcrumb programme fixture calibration [DON-272]', () => {
     expect(accuracies[Math.floor(accuracies.length / 2)]).toBe(3.8)
     expect(accuracies[Math.floor(accuracies.length * 0.9)]).toBe(10)
   })
+})
+
+describe('field-shape fixture through the production store [DON-338]', () => {
+  const { hasUnreconciledCoverageHistory } = require('../../electron/coverage-history-completeness.cjs') as {
+    hasUnreconciledCoverageHistory: (database: unknown, missionId: string, deviceIds: readonly string[]) => boolean
+  }
+
+  it('writes one 25,000-fix device with its dropout and late block, history reconciled and backfill complete', async () => {
+    const tempRoot = await makeTempRoot()
+    const outputPath = path.join(tempRoot, 'field-trail-25k.sqlite')
+    const generated = await generateMissionStoreFixture({ preset: 'field-trail-25k', outputPath, force: true })
+    expect(generated.manifest).toMatchObject({
+      generatorVersion: 7,
+      syntheticDataOnly: true,
+      preset: 'field-trail-25k',
+      workload: { mode: 'field-shape', realPositionRows: 25_000, deviceCount: 1 },
+      scenario: { syntheticCoordinatesOnly: true, acceptedPositionCount: 25_000 },
+    })
+    const plan = createFixturePlan('field-trail-25k')
+    const db = new Database(outputPath, { readonly: true })
+    try {
+      const mission = db.prepare('SELECT id, name, status, start_time FROM missions').all()
+      expect(mission).toEqual([expect.objectContaining({ name: FIELD_SHAPE_MISSION_NAME, status: 'active', start_time: '2026-01-10T06:00:00.000Z' })])
+      const missionId = mission[0].id as string
+      const rows = db.prepare(`SELECT source_position_id, lat, lon, timestamp, timestamp_source
+        FROM positions WHERE mission_id = ? ORDER BY timestamp`).all(missionId) as { source_position_id: string, lat: number, lon: number, timestamp: string, timestamp_source: string }[]
+      expect(rows).toHaveLength(25_000)
+      for (const index of [0, 8_999, 9_000, 15_000, 24_999]) {
+        const expected = fieldShapeFix(plan, 0, index)
+        expect(rows[index]).toEqual({ source_position_id: expected.sourcePositionId, lat: expected.lat, lon: expected.lon, timestamp: expected.timestamp, timestamp_source: 'fix' })
+      }
+      // The late block arrived after every newer fix: it holds the last 600 rowids.
+      const lastWritten = db.prepare('SELECT source_position_id FROM positions WHERE mission_id = ? ORDER BY rowid DESC LIMIT 600')
+        .pluck().all(missionId) as string[]
+      expect(lastWritten.every((id) => fieldShapeFix(plan, 0, Number(id) % 10_000_000).late)).toBe(true)
+      expect(readCoverageManifestSnapshot(db, { missionId }).backfillIncomplete).toBe(false)
+      expect(hasUnreconciledCoverageHistory(db, missionId, ['7001'])).toBe(false)
+      expect(db.prepare("SELECT COUNT(*) FROM mission_participants WHERE mission_id = ? AND kind = 'device'").pluck().get(missionId)).toBe(1)
+    } finally { db.close() }
+    await expect(sha256File(outputPath)).resolves.toBe(generated.manifest.database.sha256)
+    // A verified cache is reused rather than regenerated.
+    await expect(generateMissionStoreFixture({ preset: 'field-trail-25k', outputPath })).resolves.toMatchObject({ reused: true })
+  }, 120_000)
 })
 
 async function makeTempRoot(): Promise<string> {
