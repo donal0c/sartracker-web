@@ -11,6 +11,10 @@
  * - DON-288: launched without the test box's GPU workaround flag, the map must
  *   render, or the operator must see the message and "Restart with software
  *   rendering"; the button must relaunch the app with a drawn map and remember it.
+ * - DON-343 / DON-340 (team feedback, 21 November 2026): Settings opens as a
+ *   menu of five sections; a weather link saved there appears in the Weather
+ *   menu above the map and can be clicked; the main process refuses to open an
+ *   address that is not a saved weather link.
  */
 
 import { execFile } from 'node:child_process'
@@ -23,7 +27,7 @@ import { chromium } from 'playwright'
 import { FIELD_SHAPE_MISSION_NAME, generateMissionStoreFixture } from '../../../build/seed-mission-store-runtime.js'
 import { delay, launchApp } from '../lib/app.mjs'
 import { startMockTraccar } from '../lib/mock-traccar.mjs'
-import { archiveMission, bodyText, connectProvider, finishMission, resumeIfPrompted, startMission } from '../lib/operator.mjs'
+import { archiveMission, bodyText, closeWorkspace, connectProvider, finishMission, openSettingsSection, resumeIfPrompted, startMission } from '../lib/operator.mjs'
 import { describeMapNotDrawn, waitForMapDrawn } from '../lib/map-ready.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { STORE_FILE, withStore } from '../lib/store.mjs'
@@ -50,7 +54,73 @@ function wholeTrailCheck(id, preset) {
   }
 }
 
+/** The five Settings sections, in menu order [DON-343]. */
+const SETTINGS_SECTIONS = ['mission-defaults', 'tracking-sources', 'mapping', 'weather-links', 'advanced']
+
+/**
+ * DON-343 and DON-340 in the packaged app. Opening the saved link would start
+ * the system browser on the test box, so that one click stays a manual step;
+ * the allow-list is proved by asking the bridge for an unsaved address.
+ */
+async function runSettingsMenuAndWeatherLinks(ctx) {
+  const profile = path.join(ctx.runDir, 'profile-settings-weather')
+  const app = await launchApp(ctx, { profile, label: 'settings-weather' })
+  const t = (id) => app.page.getByTestId(id)
+  await t('open-settings-workspace').click()
+  const menu = t('settings-section-nav')
+  const hasMenu = await menu.waitFor({ timeout: 15_000 }).then(() => true, () => false)
+  expectProduct(hasMenu, `Settings did not open as a menu of sections (DON-343): ${(await bodyText(app.page)).slice(0, 200)}`)
+  for (const section of SETTINGS_SECTIONS) {
+    await t(`settings-section-${section}`).click()
+    const active = await t('settings-workspace').getAttribute('data-active-section')
+    expectProduct(active === section, `Choosing ${section} in the Settings menu showed ${active ?? 'nothing'}.`)
+  }
+  await app.shot('settings-advanced')
+
+  await openSettingsSection(app.page, 'weather-links')
+  await t('weather-link-add').click()
+  await t('weather-link-name-0').fill('Smoke weather')
+  await t('weather-link-url-0').fill('https://weather.example.invalid/forecast')
+  await t('settings-save').click()
+  const closed = await t('settings-save').waitFor({ state: 'detached', timeout: 20_000 }).then(() => true, () => false)
+  expectProduct(closed, `Save & Close did not complete after adding a weather link: ${(await bodyText(app.page)).slice(0, 200)}`)
+  await closeWorkspace(app.page)
+
+  await t('weather-menu-trigger').click()
+  const link = t('weather-link-open-0')
+  const shown = await link.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, () => false)
+  await app.shot('weather-menu-open')
+  expectProduct(shown, 'The saved weather link did not appear in the Weather menu (DON-340).')
+  const clickable = await link.evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const topmost = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    return box.width > 0 && box.height > 0 && topmost !== null && element.contains(topmost)
+  })
+  expectProduct(clickable, 'The Weather menu link is covered or clipped, so a click would not reach it (DON-340).')
+  await app.page.keyboard.press('Escape')
+
+  const refusal = await app.page.evaluate(async () => {
+    try {
+      await window.sartrackerElectron?.openExternalUrl?.('https://not-a-saved-link.example.invalid/')
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error)
+    }
+  })
+  expectProduct(refusal !== null && /not one of the weather links saved in Settings/u.test(refusal),
+    `The desktop bridge did not refuse an address that is not a saved weather link: ${refusal ?? 'it was opened'}.`)
+  await app.stop()
+  return 'Settings opened as a five-section menu and every section was reachable; the saved weather link showed in the Weather menu, unclipped and clickable; the bridge refused an unsaved address.'
+}
+
 export default [
+  {
+    check: 'Settings, secrets and support bundle',
+    id: 'don-343-settings-weather',
+    timeoutMs: 5 * 60_000,
+    manualSteps: ['Click a saved weather link in the Weather menu and confirm it opens in the system web browser (DON-340).'],
+    run: runSettingsMenuAndWeatherLinks,
+  },
   wholeTrailCheck('don-338-whole-trail', 'field-trail-25k'),
   wholeTrailCheck('don-338-many-devices', 'field-34-devices'),
   {

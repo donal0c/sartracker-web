@@ -18,6 +18,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 let startupWindowReady = false
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
+const { resolveAllowedWeatherUrl } = require('./external-url-policy.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { projectCoverageRendererFailure } = require('./coverage-renderer-failure.cjs')
@@ -1110,16 +1111,20 @@ function registerIpcHandlers(
     validateIpcSender(event)
     return fileSystem.openExternalPath(inputPath)
   })
-  ipcMain.handle(OPEN_EXTERNAL_URL_CHANNEL, (event, inputUrl) => {
+  ipcMain.handle(OPEN_EXTERNAL_URL_CHANNEL, async (event, inputUrl) => {
     validateIpcSender(event)
-    const normalized = (inputUrl ?? '').trim()
-    if (normalized === '') {
-      throw new Error('URL is required.')
+    try {
+      const settings = await settingsStore.loadAppSettings()
+      const allowedUrl = resolveAllowedWeatherUrl(inputUrl, settings.weather?.links ?? [])
+      await shell.openExternal(allowedUrl)
+    } catch (error) {
+      await runtimeLog.append({
+        level: 'warn',
+        event: 'external_url_open_failed',
+        fields: { reason: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
     }
-    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
-      throw new Error('URL scheme must be http:// or https://')
-    }
-    return shell.openExternal(normalized)
   })
   ipcMain.handle(FETCH_OFFICIAL_MAP_TILE_CHANNEL, (event, inputUrl) => {
     validateIpcSender(event)
