@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M9 measurement workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -27,7 +27,7 @@ test.describe('M9 measurement workflows', () => {
     await clickMap(page, { x: 820, y: 300 })
 
     await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
-    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Open')
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
     await expect(page.getByTestId('measurement-list')).toContainText(/km|m/)
     await expect(page.getByTestId('measurement-list')).toContainText('°')

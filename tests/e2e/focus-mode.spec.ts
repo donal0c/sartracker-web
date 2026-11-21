@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.describe('M24 focus mode parity', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await page.evaluate(() => {
       window.localStorage.removeItem('sartracker:focus-mode-active')
     })

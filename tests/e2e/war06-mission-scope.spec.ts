@@ -9,7 +9,7 @@ type BrowserRepairControl = {
 }
 
 test('keeps online status and identifies cached rows after partial live hydration [DON-267 Claude review]', async ({ page }, testInfo) => {
-  await page.goto('/?missionHarness=1')
+  await page.goto('/?missionHarness=1&classicLayout=1')
   await page.getByTestId('mission-name-input').fill('WAR06 Mixed Recovery')
   await page.getByTestId('mission-start-btn').click()
   await expect(page.getByTestId('mission-control')).toContainText('active')
@@ -74,7 +74,7 @@ test('keeps online status and identifies cached rows after partial live hydratio
 
 for (const route of ['delayed history', 'participant hydration'] as const) {
   test(`rejects old mission ${route} while showing fresh selected current positions [DON-267]`, async ({ page }, testInfo) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await expect(page.getByTestId('app-title')).toBeVisible()
     await page.getByTestId('mission-name-input').fill('WAR06 Mission A')
     await page.getByTestId('mission-start-btn').click()

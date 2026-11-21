@@ -23,7 +23,7 @@ test.describe('browser-harness Tauri IPC isolation', () => {
       return route.continue()
     })
 
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
     await page.waitForSelector('canvas', { timeout: 15000 })
 

@@ -13,7 +13,7 @@ test.describe('performance sweep regressions', () => {
     // assertions below are unchanged; only the budget is widened for CI.
     test.setTimeout(180_000)
 
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
     await page.waitForSelector('canvas', { timeout: 15000 })
     await page.getByTestId('mission-name-input').fill('Large Tracking Performance Mission')

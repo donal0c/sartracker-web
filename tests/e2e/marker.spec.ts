@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M6 marker workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
     await page.getByTestId('mission-name-input').fill('Marker Mission')

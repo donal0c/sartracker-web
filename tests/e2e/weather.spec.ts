@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('A3.9 weather links menu', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
   })
 

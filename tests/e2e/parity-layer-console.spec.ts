@@ -89,7 +89,7 @@ test.describe('Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-
   test.setTimeout(30_000)
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
     await page.getByTestId('mission-name-input').fill('Console Controls')
     await page.getByTestId('mission-start-btn').click()

@@ -4,7 +4,7 @@ import { openMissionSections } from './mission-sections'
 
 /** Creates the deterministic participant, outing, and Unassigned coverage scenario. */
 export async function seedCoverageMission(page: Page): Promise<void> {
-  await page.goto('/?missionHarness=1&missionModel=1&coverage=1')
+  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1&coverage=1')
   await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
   await page.waitForSelector('canvas', { timeout: 20_000 })
   await page.evaluate(async () => {

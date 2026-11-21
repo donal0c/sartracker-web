@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/?missionHarness=1')
+  await page.goto('/?missionHarness=1&classicLayout=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.getByTestId('mission-name-input').fill('UI feedback mission')
   await page.getByTestId('mission-start-btn').click()
@@ -63,7 +63,7 @@ test('Map Tools chevron changes expansion without opening marker placement', asy
   await page.getByTestId('drawing-toolbar-expand').locator('svg').click()
   await expect(page.getByTestId('drawing-toolbar-collapse')).toBeVisible()
   await expect(page.getByTestId('marker-dialog')).toBeHidden()
-  await expect(page.getByTestId('drawing-toolbar-active-mode')).toHaveText('Select')
+  await expect(page.getByTestId('drawing-toolbar-active-mode')).toHaveText('Open')
   await page.getByTestId('drawing-toolbar-collapse').click()
   await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
   await expect(page.getByTestId('marker-dialog')).toBeHidden()

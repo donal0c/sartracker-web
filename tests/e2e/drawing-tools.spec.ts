@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M8 drawing workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
     await page.getByTestId('mission-name-input').fill('Drawing Mission')
@@ -131,7 +131,7 @@ test.describe('M8 drawing workflows', () => {
 
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await page.keyboard.press('Escape')
-    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Open')
 
     const drawings = await readMissionDrawings(page)
     expect(drawings.some((drawing) => drawing.name === 'Sector North' && drawing.type === 'search_sector')).toBe(true)

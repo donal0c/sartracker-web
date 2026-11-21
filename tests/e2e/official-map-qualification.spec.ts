@@ -15,7 +15,7 @@ test('official map readiness follows checked tiles, movement, and package remova
   await page.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, route => route.fulfill({
     status: 200, contentType: 'image/png', body: Buffer.from(NO_COVERAGE_TILE_BASE64, 'base64'),
   }))
-  await page.goto('/?missionHarness=1')
+  await page.goto('/?missionHarness=1&classicLayout=1')
   await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
   await expect(page.locator('canvas').first()).toBeVisible()
   await page.evaluate(({defaults, mapPackage, png}) => {

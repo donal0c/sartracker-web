@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('keeps a re-added group visibly pending until every selected member completes [DON-271]', async ({ page }) => {
-  await page.goto('/?missionHarness=1&missionModel=1')
+  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
   await page.getByTestId('app-title').waitFor()
   await page.evaluate(async () => {
     await window.__SARTRACKER_BROWSER_HARNESS__!.setParticipantDiscovery({
@@ -57,7 +57,7 @@ test('keeps a re-added group visibly pending until every selected member complet
 })
 
 test('shows unknown legacy group scope and keeps Finish closed [DON-271]', async ({ page }) => {
-  await page.goto('/?missionHarness=1&missionModel=1')
+  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
   await page.getByTestId('app-title').waitFor()
   await page.evaluate(async () => {
     await window.__SARTRACKER_BROWSER_HARNESS__!.setParticipantDiscovery({

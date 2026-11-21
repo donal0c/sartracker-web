@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M2 map shell', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
   })
@@ -731,7 +731,7 @@ test.describe('M2 map shell', () => {
     await reloadButton.click()
 
     await expect(page).toHaveURL(/\/$/)
-    expect(page.url()).not.toContain('missionHarness=1')
+    expect(page.url()).not.toContain('missionHarness=1&classicLayout=1')
   })
 })
 
@@ -782,7 +782,7 @@ test.describe('stored map choice across restarts [DON-304]', () => {
   })
 
   test('explains why a stored Discovery map was not restored and keeps the choice', async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
 
     const notice = page.getByTestId('map-startup-notice')
     await expect(notice).toBeVisible({ timeout: 15000 })
@@ -794,7 +794,7 @@ test.describe('stored map choice across restarts [DON-304]', () => {
   })
 
   test('the Leaflet fallback does not overwrite a stored official map choice', async ({ page }) => {
-    await page.goto('/?missionHarness=1&mapRenderer=leaflet')
+    await page.goto('/?missionHarness=1&classicLayout=1&mapRenderer=leaflet')
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible({ timeout: 15000 })
     await page.waitForTimeout(500)
 

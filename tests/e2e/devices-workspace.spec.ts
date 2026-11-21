@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -498,7 +498,7 @@ test.describe('Operational tracking overlay readiness [DON-263]', () => {
     })
 
     try {
-      await page.goto('/?missionHarness=1')
+      await page.goto('/?missionHarness=1&classicLayout=1')
       await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
       await page.waitForSelector('canvas', { timeout: 15_000 })
       await page.getByTestId('mission-name-input').fill('Pending Basemap Mission')
