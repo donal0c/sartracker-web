@@ -331,7 +331,13 @@ export function createPollingManager(
     { readonly rosterObservationId: string, readonly complete: boolean }
   >()
   let rosterFetchSequence = 0
+  // Roster progress for the latest poll: refreshing, unavailable, or the
+  // incomplete-roster warning when that poll's roster answered.
   let latestRosterWarning: TrackingWarning | null = null
+  // The last settled roster problem ("a tracker may be missing"). A pending
+  // or failed refresh proves nothing new, so only a complete roster response
+  // clears it; it shows on active, paused and offline statuses [DON-338].
+  let settledRosterProblem: TrackingWarning | null = null
   let rosterRefreshInFlight: Promise<DeviceRosterNormalizationResult> | null = null
   let latestCurrentPositions: readonly NormalizedTrackingPosition[] = []
   const pendingHistoryRenderPositions: NormalizedTrackingPosition[] = []
@@ -636,7 +642,7 @@ export function createPollingManager(
       if (lastSuccessAt !== null && consecutiveFailures === 0) {
         publishOnlineStatusIfActive(combineTrackingWarnings(
           // History progress must not wipe a roster warning (ING-4 [DON-338]).
-          latestRosterWarning,
+          ...getRosterWarnings(latestRosterWarning, true),
           breadcrumbStatusWarning,
           breadcrumbIngestWarning,
         ))
@@ -897,6 +903,27 @@ export function createPollingManager(
   }
 
   /**
+   * The roster warnings for a status: the latest roster progress (unless it
+   * repeats the settled problem, or is a transient "refreshing" the status
+   * leaves out), then the settled roster problem.
+   *
+   * @param progress the latest poll's roster warning
+   * @param includeRefreshing whether a "refreshing" notice belongs on this status
+   * @returns the warnings in display order; null entries are skipped later
+   */
+  function getRosterWarnings(
+    progress: TrackingWarning | null,
+    includeRefreshing: boolean,
+  ): readonly (TrackingWarning | null)[] {
+    const shownProgress = progress === null ||
+      progress.text === settledRosterProblem?.text ||
+      (progress.code === 'roster_refreshing' && !includeRefreshing)
+      ? null
+      : progress
+    return [shownProgress, settledRosterProblem]
+  }
+
+  /**
    * Unresolved warnings about the trail and roster still on the map: the
    * roster warning (not a transient "refreshing"), the history warning and
    * rejected history rows. A paused or offline status must keep them for as
@@ -908,7 +935,7 @@ export function createPollingManager(
   function getDisplayedTrailWarnings(retry: HistoryRetryState): readonly (TrackingWarning | null)[] {
     const historyWarning = retry === 'retrying' ? breadcrumbStatusWarning : breadcrumbStatusWarningWhileSuspended
     return [
-      latestRosterWarning?.code === 'roster_refreshing' ? null : latestRosterWarning,
+      ...getRosterWarnings(latestRosterWarning, false),
       historyWarning?.code === 'connection_restored' ? null : historyWarning,
       breadcrumbIngestWarning,
     ]
@@ -1129,28 +1156,30 @@ export function createPollingManager(
    * the next poll [DON-338]. Skipped for a stopped, superseded or failing
    * poller; while paused it can only re-publish the paused status.
    *
-   * @param previousRosterWarning the roster warning before this roster settled
+   * @param previousRosterText the composed roster warning text before this roster settled
    * @param requestGeneration the lifecycle generation that started the request
    * @param requestHistoryResetKey the mission the request was started for
    */
   function publishSettledRosterStatus(
-    previousRosterWarning: TrackingWarning | null,
+    previousRosterText: string | null,
     requestGeneration: number,
     requestHistoryResetKey: string | null,
   ): void {
-    if (
-      previousRosterWarning?.code === latestRosterWarning?.code &&
-      previousRosterWarning?.text === latestRosterWarning?.text
-    ) return
+    if (previousRosterText === composedRosterText()) return
     if (requestGeneration !== lifecycleGeneration || requestHistoryResetKey !== activeHistoryResetKey) return
     if (lastSuccessAt === null || consecutiveFailures !== 0) return
     publishOnlineStatusIfActive(combineTrackingWarnings(
-      latestRosterWarning,
+      ...getRosterWarnings(latestRosterWarning, true),
       breadcrumbIngestWarning,
       !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
         ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
         : breadcrumbStatusWarning,
     ))
+  }
+
+  /** The roster part of an active status, to tell whether a settle changed it. */
+  function composedRosterText(): string | null {
+    return combineTrackingWarnings(...getRosterWarnings(latestRosterWarning, true)).warning
   }
 
   /** Reuses one detached roster request so slow metadata cannot accumulate. */
@@ -1178,9 +1207,10 @@ export function createPollingManager(
       latestParticipantRosterAuthoritative = result.complete
       // A roster that settles after the poll's grace period replaces
       // "refreshing"; an incomplete one must keep warning (ING-4 [DON-338]).
-      const previousRosterWarning = latestRosterWarning
+      const previousRosterText = composedRosterText()
       latestRosterWarning = createIncompleteRosterWarning(result)
-      publishSettledRosterStatus(previousRosterWarning, requestGeneration, requestHistoryResetKey)
+      settledRosterProblem = latestRosterWarning
+      publishSettledRosterStatus(previousRosterText, requestGeneration, requestHistoryResetKey)
     }, () => undefined).finally(() => {
       if (rosterRefreshInFlight === request) rosterRefreshInFlight = null
     })
@@ -1447,7 +1477,7 @@ export function createPollingManager(
       }
       // The current-fix render above may await; a pause meanwhile wins.
       publishOnlineStatusIfActive(combineTrackingWarnings(
-        currentPositionResult.rosterWarning,
+        ...getRosterWarnings(currentPositionResult.rosterWarning, true),
         createRejectedCurrentPositionWarning(currentPositionResult.rejected),
         breadcrumbIngestWarning,
         recovered
@@ -1586,7 +1616,7 @@ export function createPollingManager(
       })
       if (canPublishHistoryStatus(request)) {
         publishOnlineStatusIfActive(combineTrackingWarnings(
-          latestRosterWarning,
+          ...getRosterWarnings(latestRosterWarning, true),
           breadcrumbStatusWarning,
           breadcrumbIngestWarning,
         ))
@@ -1778,7 +1808,7 @@ export function createPollingManager(
     // replaced by "online" (the poll sequence only moves once a poll runs).
     if (canPublishHistoryStatus(request)) {
       publishOnlineStatusIfActive(combineTrackingWarnings(
-        latestRosterWarning,
+        ...getRosterWarnings(latestRosterWarning, true),
         breadcrumbIngestWarning,
         breadcrumbStatusWarning,
       ))
