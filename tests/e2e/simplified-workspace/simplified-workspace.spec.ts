@@ -160,24 +160,29 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-trail-6')).toBeChecked()
     })
 
-    test('a participant warning brings Mission back and it cannot be closed until it clears', async ({ page }) => {
+    test('a participant warning opens Mission and stays on the Mission button, without locking Tracking', async ({ page }) => {
+    const setRosterError = (message: string | null) => page.evaluate(async (value) => {
+      const path = '/src/features/participants/participant-store.ts'
+      const { useParticipantStore } = await import(path)
+      useParticipantStore.setState({ rosterError: value })
+    }, message)
     await open(page)
     await startMission(page)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeHidden()
-    await page.evaluate(async () => {
-      const path = '/src/features/participants/participant-store.ts'
-      const { useParticipantStore } = await import(path)
-      useParticipantStore.setState({ rosterError: 'Could not read the Traccar groups.' })
-    })
+    await expect(page.getByTestId('ws-mission-attention')).toHaveCount(0)
+
+    await setRosterError('Could not read the Traccar groups.')
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
-    await expect(page.getByTestId('ws-mission-close')).toBeDisabled()
     await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'true')
-    await page.evaluate(async () => {
-      const path = '/src/features/participants/participant-store.ts'
-      const { useParticipantStore } = await import(path)
-      useParticipantStore.setState({ rosterError: null })
-    })
-    await expect(page.getByTestId('ws-mission-close')).toBeEnabled()
+    await expect(page.getByTestId('ws-mission-attention')).toBeVisible()
+
+    // The operator can still reach Tracking (for example Reconnect); the warning stays on the Mission button.
+    await page.getByTestId('ws-tracking-headline').click()
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+    await expect(page.getByTestId('ws-mission-attention')).toBeVisible()
+
+    await setRosterError(null)
+    await expect(page.getByTestId('ws-mission-attention')).toHaveCount(0)
   })
 
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {

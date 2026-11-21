@@ -48,7 +48,7 @@ type MissionControlPanelProps = {
   /**
    * Simplified workspace only: true while something in Mission needs the
    * operator (a failed Start, a participant or outing warning, an archive that
-   * needs recovery), so the workspace keeps Mission open and undismissable.
+   * needs recovery), so the workspace opens Mission and badges its button.
    */
   readonly onAttentionChange?: (needed: boolean) => void
   /** Simplified workspace: plain words, clocks live in the top bar, Outings tucked away. */
@@ -142,8 +142,15 @@ export function MissionControlPanel({
   const outingSection = useOutingSectionSummary()
   const outingNeedsAttention = outingSection.attention.length > 0
   const archiveNeedsRecovery = phase === 'idle' && governanceMission?.storage_state === 'recovery_required'
+  // Participant warnings count only during a mission: on the new-mission screen
+  // the card is already open, and an empty roster must not badge anything.
+  // Normal progress ("history still loading", and "no participants selected"
+  // while Start is still saving them) holds the section open inside Mission
+  // but does not pull Mission open or badge it.
+  const participantNeedsAttention = sectionsCollapsible &&
+    participantSection.attention.some((reason) => !PARTICIPANT_PROGRESS_REASONS.has(reason))
   const attentionNeeded = simplified && (
-    startError !== null || participantSection.attention.length > 0 || outingNeedsAttention || archiveNeedsRecovery
+    startError !== null || participantNeedsAttention || outingNeedsAttention || archiveNeedsRecovery
   )
   useLayoutEffect(() => { onAttentionChange?.(attentionNeeded) }, [attentionNeeded, onAttentionChange])
   const canMinimizeToMast =
@@ -732,6 +739,9 @@ function MissionActionError({ message }: { readonly message: string }) {
     </p>
   )
 }
+
+/** Participant section reasons that are normal progress, not a problem for the operator. */
+const PARTICIPANT_PROGRESS_REASONS: ReadonlySet<string> = new Set(['history still loading', 'no participants selected'])
 
 /**
  * Simplified start screen: the last finished mission's archive and unlock card

@@ -50,9 +50,16 @@ export function useWorkspacePanels(input: {
     setSetupCardOpen(true)
   }, [phase])
 
-  // A decision, failure or warning in Mission always forces it back into view.
+  // A decision or failed action always forces Mission back into view.
+  const missionForced = decisionOpen || actionError !== null
+  // A warning in Mission opens it once and stays on the Mission button until it
+  // clears, but never locks the operator out of Tracking (Reconnect) or the map.
   const [missionAttention, setMissionAttention] = useState(false)
-  const missionForced = decisionOpen || actionError !== null || missionAttention
+  useEffect(() => {
+    if (!missionAttention) return
+    setSetupCardOpen(true)
+    setTemporary('mission')
+  }, [missionAttention])
   // Tracking opens before a mission too: troubleshooting must not need a mission first.
   const visible: BasePanel | TemporaryPanel | null = !running
     ? (temporary === 'tracking' ? 'tracking' : null)
@@ -92,6 +99,7 @@ export function useWorkspacePanels(input: {
     <>
       <WorkspaceTopBar
         headline={headline}
+        missionAttention={missionAttention}
         missionOpen={missionVisible}
         onOpenTracking={() => setTemporary('tracking')}
         onToggleMission={() => {

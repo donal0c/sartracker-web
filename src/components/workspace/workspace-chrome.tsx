@@ -44,8 +44,11 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
   )
 }
 
-/** Mission name and the active search clock (Sar_4); Since start is in the Mission panel. */
-function MissionSummary(props: { readonly onOpen: () => void; readonly open: boolean }) {
+/**
+ * Mission name and the active search clock (Sar_4); Since start is in the
+ * Mission panel. A warning inside Mission is badged here until it clears.
+ */
+function MissionSummary(props: { readonly attention: boolean; readonly onOpen: () => void; readonly open: boolean }) {
   const mission = useMissionStore((state) => state.currentMission)
   const recoverableMission = useMissionStore((state) => state.recoverableMission)
   const phase = useMissionStore((state) => state.phase)
@@ -64,6 +67,7 @@ function MissionSummary(props: { readonly onOpen: () => void; readonly open: boo
       >
         <span className={`ws-mission-phase ws-phase-${phase}`} data-testid="ws-mission-phase">{phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Mission ▾ · Running' : phase === 'paused' ? 'Mission ▾ · PAUSED' : 'Mission ▾ · Needs resuming'}</span>
         <span className="ws-mission-name" data-testid="current-mission-name">{shownName}</span>
+        {props.attention ? <span className="ws-badge" data-testid="ws-mission-attention" role="status">⚠ Needs attention</span> : null}
       </button>
       {mission === null ? null : (
         <div className="ws-clocks" data-testid="ws-clocks">
@@ -110,6 +114,7 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
 /** A single shallow row: mission, trust in the map, panels, and little else. */
 export function WorkspaceTopBar(props: {
   readonly headline: TrackingHeadline
+  readonly missionAttention: boolean
   readonly missionOpen: boolean
   readonly onToggleMission: () => void
   readonly onOpenTracking: () => void
@@ -121,7 +126,7 @@ export function WorkspaceTopBar(props: {
     <header className="ws-top-bar" data-testid="ws-top-bar">
       <img alt="Mountain Rescue team logo" className="ws-logo" src="./brand/kmrt-logo-compact.png" />
       <h1 className="sr-only" data-testid="app-title">SAR Tracker</h1>
-      <MissionSummary onOpen={props.onToggleMission} open={props.missionOpen} />
+      <MissionSummary attention={props.missionAttention} onOpen={props.onToggleMission} open={props.missionOpen} />
       <TrackingHeadlineButton headline={props.headline} onOpen={props.onOpenTracking} />
       <div className="ws-bar-actions">
         {props.panelButtons}

@@ -57,7 +57,11 @@ export async function setLayerSubtreeVisibility(input: {
     const hiddenAncestors = findAncestorNodeIds(input.root, node.id)
       .filter((id) => findCatalogNode(input.root, id)?.isVisible === false || isHiddenGroup(id))
     if (hiddenAncestors.length === 0) return
-    applyVisibilityForNodeIds(input.root, hiddenAncestors, true, useLayerVisibilityStore.getState())
+    // Only the group flag goes through the runtime store: applying a layer node
+    // there would also show every hidden person under it. The layer node itself
+    // is persisted alone, so other people's own hidden choices are kept.
+    const hiddenGroups = hiddenAncestors.filter((id) => GROUP_KEY_BY_NODE_ID[id] !== undefined)
+    applyVisibilityForNodeIds(input.root, hiddenGroups, true, useLayerVisibilityStore.getState())
     await input.controller.setNodeVisibilities(hiddenAncestors, true)
   }
 }

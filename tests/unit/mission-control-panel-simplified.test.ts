@@ -72,6 +72,21 @@ describe('MissionControlPanel in the simplified workspace', () => {
     expect(onAttentionChange).toHaveBeenLastCalledWith(true)
   })
 
+  it('does not raise participant attention on the new-mission screen', async () => {
+    // The setup card is already open there; an empty roster must not lock or badge anything.
+    mocks.model = createModel({ phase: 'idle', currentMission: null, canStart: true })
+    mocks.participantAttention = ['roster error']
+    const onAttentionChange = await renderPanel()
+    expect(onAttentionChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('does not raise attention for normal progress such as history still loading', async () => {
+    mocks.model = createModel({ phase: 'active' })
+    mocks.participantAttention = ['history still loading', 'no participants selected']
+    const onAttentionChange = await renderPanel()
+    expect(onAttentionChange).toHaveBeenLastCalledWith(false)
+  })
+
   it('stays calm when nothing needs the operator', async () => {
     mocks.model = createModel({ phase: 'active' })
     const onAttentionChange = await renderPanel()
