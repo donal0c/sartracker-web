@@ -112,3 +112,60 @@ describe('DON-338: Retry makes the map re-apply a stalled catalog or filter', ()
     controller.stop()
   })
 })
+
+describe('DON-338: the worker cause holds for its whole recovery episode', () => {
+  const OUT_OF_MEMORY = { code: 'coverage-worker-out-of-memory' } as const
+
+  /** A tile of the given stage's catalog rejecting, as the dead worker's outstanding tiles do. */
+  function tileFailure(stage: number) {
+    return {
+      missionId: 'mission-1',
+      periodKey: 'outing\u0000outing-1',
+      revisionDigest: `stage-${stage}`,
+      activationId: `stage-${stage}`,
+      message: 'Coverage tile delivery failed',
+    }
+  }
+
+  it('keeps out-of-memory when an outstanding tile then fails generically', async () => {
+    vi.useFakeTimers()
+    const { controller, deliverSelection } = harness()
+    await loadComplete(controller)
+
+    controller.notifyRendererUnavailable('Coverage tile worker is unavailable.', OUT_OF_MEMORY)
+    controller.notifyRendererFailure(tileFailure(1))
+    expect(active(controller.getState())).toMatchObject({
+      status: 'error', lastErrorClass: 'worker_out_of_memory', updating: true,
+    })
+
+    // The secondary failure did not start a new episode: the first attempt
+    // still runs on the first backoff step and recovers.
+    await vi.advanceTimersByTimeAsync(250)
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(active(controller.getState()).status).toBe('complete')
+    controller.stop()
+  })
+
+  it('keeps out-of-memory when a recovery load fails generically, and clears it once one succeeds', async () => {
+    vi.useFakeTimers()
+    const { controller, deliverSelection } = harness({ failDelivery: (call) => call === 2 })
+    await loadComplete(controller)
+
+    controller.notifyRendererUnavailable('Coverage tile worker is unavailable.', OUT_OF_MEMORY)
+    await vi.advanceTimersByTimeAsync(250)
+    expect(deliverSelection).toHaveBeenCalledTimes(2)
+    expect(active(controller.getState())).toMatchObject({ status: 'error', lastErrorClass: 'worker_out_of_memory' })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(active(controller.getState()).status).toBe('complete')
+
+    // A new, unrelated failure after recovery is its own cause.
+    controller.notifyRendererFailure(tileFailure(2))
+    const later = active(controller.getState())
+    expect(later.status).toBe('error')
+    expect(later.lastErrorClass).not.toBe('worker_out_of_memory')
+    controller.stop()
+  })
+})
