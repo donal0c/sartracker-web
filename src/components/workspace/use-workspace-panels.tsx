@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import { countPeopleNeedingAttention } from '../../features/workspace/people-model'
+import { persistFullMap, readStoredFullMap } from '../../features/workspace/full-map-preference'
 import { panelOpenByDefault, panelSide, type PanelArrangement } from '../../features/workspace/panel-arrangement'
 import { useTrackingHeadline } from '../../features/workspace/tracking-headline'
 import { useMissionStore } from '../../features/mission/mission-store'
@@ -37,10 +38,18 @@ export function useWorkspacePanels(input: {
   const people = usePeopleRows()
   const attentionCount = countPeopleNeedingAttention(people)
 
-  const defaultBase = useCallback((): BasePanel | null => (panelOpenByDefault(arrangement) ? 'people' : null), [arrangement])
-  const [base, setBase] = useState<BasePanel | null>(defaultBase)
+  // The operator's last Full map choice wins over the arrangement's default.
+  const defaultBase = useCallback(
+    (): BasePanel | null => (readStoredFullMap() || !panelOpenByDefault(arrangement) ? null : 'people'),
+    [arrangement],
+  )
+  const [base, setBaseState] = useState<BasePanel | null>(defaultBase)
+  const setBase = useCallback((next: BasePanel | null) => {
+    persistFullMap(next === null)
+    setBaseState(next)
+  }, [])
   const [temporary, setTemporary] = useState<TemporaryPanel | null>(null)
-  useEffect(() => { setBase(defaultBase()) }, [defaultBase])
+  useEffect(() => { setBaseState(defaultBase()) }, [defaultBase])
 
   const running = phase === 'active' || phase === 'paused'
   const isSetup = phase === 'idle' || phase === 'recovery'

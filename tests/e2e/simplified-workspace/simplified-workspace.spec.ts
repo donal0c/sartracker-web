@@ -318,6 +318,29 @@ test.describe('Start screen', () => {
     await expect(page.getByTestId('current-mission-name')).toHaveText('Exercise Bravo')
   })
 
+  test('Full map is remembered after a reload, as Focus Mode was', async ({ page }) => {
+    await open(page)
+    await page.getByTestId('mission-name-input').fill('Exercise Delta')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await showPeople(page)
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+
+    await open(page)
+    await page.getByTestId('start-screen-resume-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+
+    // Show panel is remembered the same way.
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-people-panel')).toBeVisible()
+    await open(page)
+    await page.getByTestId('start-screen-resume-btn').click()
+    await expect(page.getByTestId('ws-people-panel')).toBeVisible()
+  })
+
   test('starting new instead of resuming asks first, then keeps the old record', async ({ page }) => {
     await open(page)
     await page.getByTestId('mission-name-input').fill('Exercise Charlie')
