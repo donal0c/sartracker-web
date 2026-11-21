@@ -121,6 +121,40 @@ describe('[DON-349] M-83: a long wait for evidence capacity is never silent', ()
     expect(parked.statuses.at(-1)!.warningCodes ?? []).not.toContain('evidence_backpressure')
   })
 
+  it('never reports online while parked before any successful poll [DON-349 coordinator review]', async () => {
+    // The queue is already full when tracking starts, so the very first poll
+    // parks before it has fetched anything.
+    const blockedWrite = new Promise<void>(() => undefined)
+    const queue = createDeferredMissionEvidenceQueue<number>({
+      capacity: 8,
+      beginObservation: (missionId) => ({ missionId, complete: () => undefined }),
+      persist: async () => { await blockedWrite },
+      markEvidenceLoss: vi.fn(),
+    })
+    for (let item = 0; item < 8; item += 1) expect(queue.enqueue('mission-a', item)).toBe(true)
+    queue.requestFlushMission('mission-a')
+    const statuses: TrackingConnectionStatus[] = []
+    const client = createClient()
+    const poller = createPollingManager(client, {
+      intervalMs: 5_000,
+      staleThresholdMs: 60_000,
+      onSnapshot: vi.fn(),
+      onStatusChange: (status) => { statuses.push(status) },
+      waitForCurrentEvidenceCapacity: (signal) => queue.waitForCapacity(signal),
+      reserveCurrentEvidenceCapacity: (signal) => queue.reserveCapacity(signal),
+    })
+    poller.start()
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(client.getCurrentPositions).not.toHaveBeenCalled()
+    const latest = statuses.at(-1)!
+    expect(latest.mode).not.toBe('online')
+    expect(latest.warningCodes).toContain('evidence_backpressure')
+    expect(statuses.filter((status) => status.warningCodes?.includes('evidence_backpressure'))
+      .every((status) => status.mode !== 'online')).toBe(true)
+    await poller.stop()
+  })
+
   it('does not warn while the evidence queue keeps draining normally', async () => {
     const queue = createDeferredMissionEvidenceQueue<number>({
       capacity: 8,

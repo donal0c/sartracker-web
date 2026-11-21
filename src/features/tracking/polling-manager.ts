@@ -1171,11 +1171,32 @@ export function createPollingManager(
     wait: () => Promise<T>,
     republishLastPositions: () => void,
   ): Promise<T> {
+    // The status showing when the park was first reported, if it was not a
+    // healthy online one: its mode and warnings stay, with this one first.
+    let statusBeforePark: TrackingConnectionStatus | null = null
     const report = (): void => {
       if (stopping || (options.getPollingMode?.() ?? 'active') !== 'active') return
       evidenceBackpressureActive = true
       republishLastPositions()
-      publishOnlineStatusIfActive(lastOnlineWarnings)
+      if (lastSuccessAt !== null && consecutiveFailures === 0) {
+        publishOnlineStatusIfActive(lastOnlineWarnings)
+        return
+      }
+      // Never online before a successful poll or while polls are failing:
+      // an offline status stays offline [DON-349 coordinator review].
+      statusBeforePark ??= lastPublishedStatus ?? { mode: 'idle', consecutiveFailures, recovered: false, lastSuccessAt, warning: null }
+      publishStatus({
+        mode: statusBeforePark.mode === 'online' ? 'idle' : statusBeforePark.mode,
+        warning: [EVIDENCE_BACKPRESSURE_WARNING.text, statusBeforePark.warning].filter((text): text is string => text !== null).join(' '),
+        warningCodes: [
+          EVIDENCE_BACKPRESSURE_WARNING.code,
+          ...(statusBeforePark.warning === null
+            ? []
+            : statusBeforePark.warningCodes !== undefined && statusBeforePark.warningCodes.length > 0
+              ? statusBeforePark.warningCodes
+              : ['unclassified' as const]),
+        ],
+      })
     }
     let repeat: ReturnType<typeof setInterval> | null = null
     const first = setTimeout(() => {
