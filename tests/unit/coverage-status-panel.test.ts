@@ -213,16 +213,15 @@ const WAITING_REASONS: readonly {
   readonly options: { readonly blockers?: readonly string[]; readonly pendingInvalidation?: boolean; readonly backfillIncomplete?: boolean }
   readonly waitingTestId: string
   readonly clause: string
-  readonly retryCanHelp: boolean
 }[] = [
-  { name: 'renderer_detached', options: { blockers: ['renderer_detached'] }, waitingTestId: 'coverage-renderer-detached', clause: 'while reattaching to the map', retryCanHelp: false },
-  { name: 'renderer_filter_pending', options: { blockers: ['renderer_filter_pending'] }, waitingTestId: 'coverage-filter-pending', clause: 'while applying the selected history filter', retryCanHelp: false },
-  { name: 'pending_invalidation blocker', options: { blockers: ['pending_invalidation'] }, waitingTestId: 'coverage-reorganizing', clause: 'while updating outing assignment', retryCanHelp: true },
-  { name: 'manifest pendingInvalidation', options: { pendingInvalidation: true }, waitingTestId: 'coverage-reorganizing', clause: 'while updating outing assignment', retryCanHelp: true },
-  { name: 'backfill_incomplete blocker', options: { blockers: ['backfill_incomplete'] }, waitingTestId: 'coverage-backfill', clause: 'while adding participant history', retryCanHelp: true },
-  { name: 'manifest backfillIncomplete', options: { backfillIncomplete: true }, waitingTestId: 'coverage-backfill', clause: 'while adding participant history', retryCanHelp: true },
-  { name: 'renderer_evidence_pending', options: { blockers: ['renderer_evidence_pending'] }, waitingTestId: 'coverage-evidence-pending', clause: 'while waiting for anomaly evidence to be saved', retryCanHelp: true },
-  { name: 'ingest_outbox_pending', options: { blockers: ['ingest_outbox_pending'] }, waitingTestId: 'coverage-degraded', clause: 'while waiting for new positions to be saved', retryCanHelp: true },
+  { name: 'renderer_detached', options: { blockers: ['renderer_detached'] }, waitingTestId: 'coverage-renderer-detached', clause: 'while reattaching to the map' },
+  { name: 'renderer_filter_pending', options: { blockers: ['renderer_filter_pending'] }, waitingTestId: 'coverage-filter-pending', clause: 'while applying the selected history filter' },
+  { name: 'pending_invalidation blocker', options: { blockers: ['pending_invalidation'] }, waitingTestId: 'coverage-reorganizing', clause: 'while updating outing assignment' },
+  { name: 'manifest pendingInvalidation', options: { pendingInvalidation: true }, waitingTestId: 'coverage-reorganizing', clause: 'while updating outing assignment' },
+  { name: 'backfill_incomplete blocker', options: { blockers: ['backfill_incomplete'] }, waitingTestId: 'coverage-backfill', clause: 'while adding participant history' },
+  { name: 'manifest backfillIncomplete', options: { backfillIncomplete: true }, waitingTestId: 'coverage-backfill', clause: 'while adding participant history' },
+  { name: 'renderer_evidence_pending', options: { blockers: ['renderer_evidence_pending'] }, waitingTestId: 'coverage-evidence-pending', clause: 'while waiting for anomaly evidence to be saved' },
+  { name: 'ingest_outbox_pending', options: { blockers: ['ingest_outbox_pending'] }, waitingTestId: 'coverage-degraded', clause: 'while waiting for new positions to be saved' },
 ]
 
 describe('DON-338 REN-3: a stall or failure outranks every temporary waiting message', () => {
@@ -236,16 +235,13 @@ describe('DON-338 REN-3: a stall or failure outranks every temporary waiting mes
       expect(stalled).toContain(`History line stalled — it has not updated for over 2 minutes ${reason.clause}.`)
       expect(stalled).toContain('The line may be missing recent positions or be out of date.')
       expect(stalled).toContain('Current positions remain live.')
-      if (reason.retryCanHelp) {
-        expect(stalled).toContain('Press Retry.')
-        click('coverage-retry')
-        expect(onRetry).toHaveBeenCalledOnce()
-      } else {
-        // Retry re-reads saved history but cannot make the map reattach or
-        // apply the filter, so no dead button is offered.
-        expect(stalled).toContain('Retry cannot fix this. Check saved positions with Inspect exact fixes.')
-        expect(host.querySelector('[data-testid="coverage-retry"]')).toBeNull()
-      }
+      // Retry re-reads saved history and, for a stalled map, re-stages the
+      // catalog so the map reattaches and re-applies the filter
+      // (don-338-coverage-recovery.test.ts proves both recover).
+      expect(stalled).toContain('Press Retry.')
+      expect(stalled).not.toContain('Retry cannot fix this')
+      click('coverage-retry')
+      expect(onRetry).toHaveBeenCalledOnce()
     })
 
     it(`shows a failure, not the waiting message, while waiting on ${reason.name}`, () => {

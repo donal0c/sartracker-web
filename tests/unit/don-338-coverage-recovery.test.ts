@@ -169,3 +169,45 @@ describe('DON-338: the history line recovers after the tile worker dies', () => 
     controller.stop()
   })
 })
+
+describe('DON-338: Retry makes the map re-apply a stalled catalog or filter', () => {
+  it('recovers a detached map once the map can draw again', async () => {
+    vi.useFakeTimers()
+    const { controller, map } = harness()
+    await loadComplete(controller)
+
+    map.working = false
+    controller.notifyRendererDetached()
+    expect(active(controller.getState()).blockers).toContain('renderer_detached')
+    map.working = true
+
+    await controller.resume()
+    await vi.advanceTimersByTimeAsync(0)
+    const recovered = active(controller.getState())
+    expect(recovered.blockers ?? []).not.toContain('renderer_detached')
+    expect(recovered.status).toBe('complete')
+    controller.stop()
+  })
+
+  it('recovers a history filter the map never applied', async () => {
+    vi.useFakeTimers()
+    const { controller, map } = harness()
+    await loadComplete(controller)
+
+    map.working = false
+    map.omissions = { omittedDeviceIds: ['device-b'], omittedPeriodKeys: [] }
+    await controller.updateContext({
+      missionId: 'mission-1', rendererGeneration: 'r1', omittedDeviceIds: ['device-b'],
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(active(controller.getState()).blockers).toContain('renderer_filter_pending')
+    map.working = true
+
+    await controller.resume()
+    await vi.advanceTimersByTimeAsync(0)
+    const recovered = active(controller.getState())
+    expect(recovered.blockers ?? []).not.toContain('renderer_filter_pending')
+    expect(recovered).toMatchObject({ status: 'complete', totalFixCount: 5 })
+    controller.stop()
+  })
+})

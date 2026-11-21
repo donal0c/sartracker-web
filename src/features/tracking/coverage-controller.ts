@@ -201,6 +201,8 @@ export function createCoverageController(input: {
   let contextUpdateSequence = 0
   let appliedSelectionKeySet: string | null = expectedSelectionKeySet(null, context)
   let cancelRequested = false
+  /** Set by an operator Retry that re-staged the catalog; the map's acknowledgement then verifies with a load. */
+  let verifyAfterReapply = false
   let rendererFailureDuringFinalization: Error | null = null
   let rendererFailureEpoch = 0
   let rendererRecoveryEpoch: number | null = null
@@ -246,7 +248,10 @@ export function createCoverageController(input: {
         next.status === 'complete'
         ? 'partial'
         : next.status
-      if (status === 'complete') lastAdvanceAtMs = monotonicNow()
+      if (status === 'complete') {
+        lastAdvanceAtMs = monotonicNow()
+        verifyAfterReapply = false
+      }
       state = {
         ...next,
         latestObservedChangeSeq,
@@ -400,6 +405,7 @@ export function createCoverageController(input: {
     scheduledRendererRecovery = null
     rendererFailureDuringFinalization = null
     pendingCatalogRelease = null
+    verifyAfterReapply = false
     drawnCounts.clear()
     publish({ status: 'inactive' })
   }
@@ -894,6 +900,28 @@ export function createCoverageController(input: {
     }).catch(() => undefined)
   }
 
+  /**
+   * Operator Retry for a stalled map: when the map never reattached the
+   * finalized catalog or never applied the selected filter, re-stage the same
+   * catalog under a fresh object identity. The overlay hook re-runs on that
+   * identity, reinstalls the sources, re-acknowledges the selection and the
+   * catalog, and a verifying load follows [DON-338].
+   */
+  const reapplyFinalizedCatalog = (): void => {
+    if (stopped || state.status === 'inactive' || finalizedCatalog === null) return
+    const blockers = state.blockers ?? []
+    if (!blockers.includes('renderer_detached') && !blockers.includes('renderer_filter_pending')) return
+    if (!isCurrentCatalog(state, finalizedCatalog)) return
+    const fresh: CoverageTileCatalog = { ...finalizedCatalog }
+    if (
+      rendererDetachedCompleteCatalog !== null &&
+      isSameCatalog(rendererDetachedCompleteCatalog, fresh)
+    ) rendererDetachedCompleteCatalog = fresh
+    finalizedCatalog = fresh
+    verifyAfterReapply = true
+    publish({ ...state, tileCatalog: fresh })
+  }
+
   const restoreRendererAttachment = (): void => {
     if (state.status !== 'partial' || !state.blockers?.includes('renderer_detached')) return
     const restoreComplete = rendererDetachedCompleteCatalog !== null &&
@@ -903,12 +931,21 @@ export function createCoverageController(input: {
       !refreshRequested
     rendererDetached = false
     rendererDetachedCompleteCatalog = null
+    const verify = verifyAfterReapply
+    verifyAfterReapply = false
     const blockers = state.blockers.filter((blocker) => blocker !== 'renderer_detached')
     publish({
       ...state,
       status: restoreComplete && blockers.length === 0 ? 'complete' : 'partial',
       blockers,
     })
+    // publish() may still downgrade Complete (for example a pending filter).
+    if (verify && !isCoverageComplete()) void requestRefresh()
+  }
+
+  /** Reads the current status without control-flow narrowing from an earlier guard. */
+  function isCoverageComplete(): boolean {
+    return state.status === 'complete'
   }
 
   /** Waits until an irreversible catalog finalization settles. */
@@ -1077,6 +1114,7 @@ export function createCoverageController(input: {
     if (identityChanged) automaticRendererRecoveryAvailable = true
     if (identityChanged) automaticRendererRecoveryAttempts = 0
     if (identityChanged) scheduledRendererRecovery = null
+    if (identityChanged) verifyAfterReapply = false
     if (identityChanged) rendererFailureDuringFinalization = null
     if (identityChanged) {
       drawnCounts.clear()
@@ -1250,6 +1288,8 @@ export function createCoverageController(input: {
       await waitForCatalogFinalization()
       if (stopped || resumeSequence !== contextUpdateSequence) return
       await applyDesiredContext(true, true)
+      if (stopped || resumeSequence !== contextUpdateSequence) return
+      reapplyFinalizedCatalog()
     },
     stop: () => {
       stopped = true
