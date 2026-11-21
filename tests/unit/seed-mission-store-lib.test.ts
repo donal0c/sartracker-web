@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  FIELD_COUNT_LIMITS,
+  FIELD_SHAPE_FIXTURE_GENERATOR_VERSION,
   FIXTURE_GENERATOR_VERSION,
   LEGACY_FIXTURE_GENERATOR_VERSION,
   buildFixtureManifest,
   createBreadcrumbProgrammeScenario,
   createDeterministicId,
+  createFieldShapeScenario,
   createFixturePlan,
+  fieldShapeFix,
+  fieldShapeWriteBatches,
   fixtureManifestPath,
   fixtureGeneratorVersionForPlan,
   listFixturePresets,
@@ -297,5 +302,87 @@ describe('mission-store fixture identity and manifest [DON-242]', () => {
       participant_backfill_checkpoints: 2,
       ingest_anomalies: 5,
     })
+  })
+})
+
+describe('field-shape fixture plans beyond every count limit [DON-338]', () => {
+  type FieldDevice = { deviceId: string, fixCount: number, cadenceMs: number, gap: unknown, lateBlock: unknown }
+  const devicesOf = (preset: string) => (createFixturePlan(preset) as unknown as { fieldDevices: FieldDevice[] }).fieldDevices
+
+  it('lists the field-shape presets and marks them with their own generator version', () => {
+    expect(listFixturePresets()).toEqual(expect.arrayContaining(['field-trail-12k', 'field-trail-25k', 'field-34-devices']))
+    for (const preset of ['field-trail-12k', 'field-trail-25k', 'field-34-devices']) {
+      const plan = createFixturePlan(preset)
+      expect(plan.mode).toBe('field-shape')
+      expect(fixtureGeneratorVersionForPlan(plan)).toBe(FIELD_SHAPE_FIXTURE_GENERATOR_VERSION)
+      expect(parseSeedMissionStoreArgs(['--preset', preset, '--output', '/tmp/x.sqlite']).preset).toBe(preset)
+    }
+  })
+
+  it('puts one device past the exact-dot page and the live-line cap, the earlier fixtures stopped at 9,600', () => {
+    for (const [preset, fixCount] of [['field-trail-12k', 12_000], ['field-trail-25k', 25_000], ['field-34-devices', 14_400]] as const) {
+      const busiest = Math.max(...devicesOf(preset).map((device) => device.fixCount))
+      expect(busiest).toBe(fixCount)
+      expect(busiest).toBeGreaterThan(FIELD_COUNT_LIMITS.exactDotPage)
+      expect(busiest).toBeGreaterThan(FIELD_COUNT_LIMITS.liveLinePerDevice)
+      expect(devicesOf(preset)[0]!.cadenceMs).toBe(3_000)
+    }
+  })
+
+  it('models the team shape: 34 devices over 12 hours, pooled well past the dot page', () => {
+    const plan = createFixturePlan('field-34-devices')
+    expect(plan.deviceCount).toBe(34)
+    expect(plan.positionCount).toBe(14_400 + 33 * 4_320)
+    expect(plan.positionCount).toBeGreaterThan(10 * FIELD_COUNT_LIMITS.exactDotPage)
+    expect(plan.durationDays! * 24).toBeGreaterThanOrEqual(12)
+  })
+
+  it('places a dropout over the 30-minute line break and a late block longer than one write batch', () => {
+    const plan = createFixturePlan('field-trail-25k')
+    const scenario = createFieldShapeScenario(plan)
+    const device = scenario.devices[0]!
+    expect(Date.parse(device.gap!.to) - Date.parse(device.gap!.from)).toBeGreaterThan(FIELD_COUNT_LIMITS.lineBreakMs)
+    expect(device.lateBlock!.fixCount).toBeGreaterThan(FIELD_COUNT_LIMITS.writeBatchRows)
+    expect(device.lateBlock!.delayMs).toBeGreaterThanOrEqual(FIELD_COUNT_LIMITS.historyWindowMs)
+    expect(Date.parse(device.lastTimestamp) - Date.parse(device.firstTimestamp)).toBeGreaterThan(20 * 60 * 60 * 1000)
+    const many = createFieldShapeScenario(createFixturePlan('field-34-devices'))
+    expect(many.devices.filter((entry) => entry.gap !== null)).toHaveLength(1)
+    expect(many.devices.filter((entry) => entry.lateBlock !== null)).toHaveLength(1)
+  })
+
+  it('generates deterministic, synthetic, strictly time-ordered fixes with a visible jump across the gap', () => {
+    const plan = createFixturePlan('field-trail-25k')
+    expect(fieldShapeFix(plan, 0, 8_999)).toEqual(fieldShapeFix(createFixturePlan('field-trail-25k'), 0, 8_999))
+    let previous = fieldShapeFix(plan, 0, 0)
+    expect(previous.timestamp).toBe('2026-01-10T06:00:03.000Z')
+    for (let index = 1; index < 25_000; index += 1) {
+      const fix = fieldShapeFix(plan, 0, index)
+      expect(Date.parse(fix.timestamp)).toBeGreaterThan(Date.parse(previous.timestamp))
+      previous = fix
+    }
+    const before = fieldShapeFix(plan, 0, 8_999)
+    const after = fieldShapeFix(plan, 0, 9_000)
+    expect(Date.parse(after.timestamp) - Date.parse(before.timestamp)).toBe(45 * 60 * 1000 + 3_000)
+    expect(after.lat - before.lat).toBeGreaterThan(0.008) // about a kilometre walked unseen
+    expect(() => fieldShapeFix(plan, 0, 25_000)).toThrow(/outside/u)
+    expect(() => fieldShapeFix(plan, 1, 0)).toThrow(/not in this plan/u)
+  })
+
+  it('delivers every fix exactly once in batches of at most 256, late blocks after everything newer', () => {
+    const plan = createFixturePlan('field-trail-25k')
+    const seen = new Set<string>()
+    let sawLate = false
+    for (const batch of fieldShapeWriteBatches(plan)) {
+      expect(batch.length).toBeLessThanOrEqual(FIELD_COUNT_LIMITS.writeBatchRows)
+      for (const fix of batch) {
+        if (fix.late) sawLate = true
+        else expect(sawLate, 'a prompt fix was delivered after a late one').toBe(false)
+        expect(seen.has(fix.sourcePositionId)).toBe(false)
+        seen.add(fix.sourcePositionId)
+      }
+    }
+    expect(seen.size).toBe(25_000)
+    expect(sawLate).toBe(true)
+    expect(() => fieldShapeWriteBatches(createFixturePlan('small')).next()).toThrow(/field-shape plan/u)
   })
 })
