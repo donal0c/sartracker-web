@@ -4,6 +4,7 @@ import type {
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import {
+  appendTreatmentUpdate,
   buildMarkerSaveInput,
   changeMarkerDraftType,
   createMarkerDraftAtCoordinate,
@@ -29,6 +30,8 @@ export type MarkerRuntimeController = {
   readonly beginCreateFromDraft: (draft: MarkerDraft) => void
   readonly beginEdit: (markerId: string) => void
   readonly updateDraft: (patch: Partial<MarkerDraft>) => void
+  readonly updatePendingTreatmentUpdate: (text: string) => void
+  readonly dismissError: () => void
   readonly changeDraftType: (type: MarkerDraft['type']) => void
   readonly attachEvidence: (file: File) => Promise<void>
   readonly clearAttachment: () => void
@@ -37,6 +40,7 @@ export type MarkerRuntimeController = {
   readonly deleteEditingMarker: () => Promise<boolean>
 }
 
+/** Owns mission marker loading and each create/edit draft session. */
 export async function startMarkerRuntime(
   dependencies: StartMarkerRuntimeDependencies,
 ): Promise<MarkerRuntimeController> {
@@ -45,7 +49,9 @@ export async function startMarkerRuntime(
   let loading = false
   let saving = false
   let error: string | null = null
+  let loadError: string | null = null
   let dialog: MarkerDialogState | null = null
+  let dialogSessionId = 0
   let refreshToken = 0
 
   publishRuntime()
@@ -56,6 +62,7 @@ export async function startMarkerRuntime(
       activeMissionId = missionId
       dialog = null
       error = null
+      loadError = null
 
       if (missionId === null) {
         markers = []
@@ -79,7 +86,8 @@ export async function startMarkerRuntime(
         }
 
         markers = []
-        error = toErrorMessage(runtimeError)
+        loadError = toErrorMessage(runtimeError)
+        recordBeginOrLoadFailure('marker_load_failed')
       } finally {
         if (isCurrentRefresh(token, missionId)) {
           loading = false
@@ -102,11 +110,12 @@ export async function startMarkerRuntime(
       } catch (runtimeError) {
         dialog = null
         error = toErrorMessage(runtimeError)
+        recordBeginOrLoadFailure('marker_create_begin_failed')
         publishRuntime()
         return
       }
 
-      dialog = { mode: 'create', draft }
+      dialog = createDialog('create', draft)
       error = null
       publishRuntime()
     },
@@ -115,7 +124,7 @@ export async function startMarkerRuntime(
         return
       }
 
-      dialog = { mode: 'create', draft }
+      dialog = createDialog('create', draft)
       error = null
       publishRuntime()
     },
@@ -123,6 +132,7 @@ export async function startMarkerRuntime(
       const marker = markers.find((candidate) => candidate.id === markerId)
       if (marker === undefined) {
         error = `Marker not found: ${markerId}`
+        recordBeginOrLoadFailure('marker_edit_begin_failed')
         publishRuntime()
         return
       }
@@ -136,11 +146,12 @@ export async function startMarkerRuntime(
       } catch (runtimeError) {
         dialog = null
         error = toErrorMessage(runtimeError)
+        recordBeginOrLoadFailure('marker_edit_begin_failed')
         publishRuntime()
         return
       }
 
-      dialog = { mode: 'edit', draft }
+      dialog = createDialog('edit', draft)
       error = null
       publishRuntime()
     },
@@ -156,6 +167,15 @@ export async function startMarkerRuntime(
           ...patch,
         },
       }
+      publishRuntime()
+    },
+    updatePendingTreatmentUpdate: (text) => {
+      if (dialog === null || saving) return
+      dialog = { ...dialog, pendingTreatmentUpdate: text }
+      publishRuntime()
+    },
+    dismissError: () => {
+      error = null
       publishRuntime()
     },
     changeDraftType: (type) => {
@@ -235,6 +255,25 @@ export async function startMarkerRuntime(
         return null
       }
 
+      let draft = dialog.draft
+      if (draft.type === 'casualty' && dialog.pendingTreatmentUpdate.trim() !== '') {
+        try {
+          draft = {
+            ...draft,
+            treatment: appendTreatmentUpdate({
+              existingTreatment: draft.treatment,
+              note: dialog.pendingTreatmentUpdate,
+              timestamp: new Date(),
+              updatedBy: draft.updatedBy,
+            }),
+          }
+        } catch (runtimeError) {
+          error = `The New Treatment Update could not be added: ${toErrorMessage(runtimeError)} Shorten it or press Add Update after fixing the log, then Save.`
+          publishRuntime()
+          return null
+        }
+      }
+
       saving = true
       error = null
       publishRuntime()
@@ -243,8 +282,8 @@ export async function startMarkerRuntime(
         const marker = await dependencies.markerStore.upsertMarker(
           buildMarkerSaveInput({
             missionId: activeMissionId,
-            displayOrder: dialog.draft.displayOrder ?? getNextDisplayOrder(markers),
-            draft: dialog.draft,
+            displayOrder: draft.displayOrder ?? getNextDisplayOrder(markers),
+            draft,
           }),
         )
 
@@ -304,6 +343,23 @@ export async function startMarkerRuntime(
     },
   }
 
+  /** Captures a baseline and assigns a new identity for every opened dialog. */
+  function createDialog(mode: MarkerDialogState['mode'], draft: MarkerDraft): MarkerDialogState {
+    return {
+      sessionId: ++dialogSessionId,
+      mode,
+      draft,
+      baselineDraft: { ...draft, coordinates: { ...draft.coordinates } },
+      pendingTreatmentUpdate: '',
+    }
+  }
+
+  /** Records failure kind only; raw exceptions may contain locations or personal details. */
+  function recordBeginOrLoadFailure(event: string): void {
+    void dependencies.recordDiagnosticEvent?.({ level: 'error', category: 'marker', event })
+  }
+
+  /** Publishes the current runtime snapshot to the renderer. */
   function publishRuntime(): void {
     dependencies.applyRuntime({
       activeMissionId,
@@ -311,6 +367,7 @@ export async function startMarkerRuntime(
       loading,
       saving,
       error,
+      loadError,
       dialog,
     })
   }

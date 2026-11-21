@@ -1,6 +1,7 @@
-import { useState, type HTMLAttributes } from 'react'
+import { useLayoutEffect, useRef, useState, type HTMLAttributes } from 'react'
 
-import { useMarkerStore } from '../features/markers/marker-store'
+import { isMarkerDialogDirty, useMarkerStore, type MarkerDialogState } from '../features/markers/marker-store'
+import type { MarkerRuntimeController } from '../features/markers/start-marker-runtime'
 import {
   appendTreatmentUpdate,
   getCasualtyValidationErrors,
@@ -35,23 +36,46 @@ const MARKER_TYPE_OPTIONS: readonly { value: MarkerType; label: string }[] = [
 export function MarkerDialog() {
   const dialog = useMarkerStore((state) => state.dialog)
   const controller = useMarkerStore((state) => state.controller)
+  if (dialog === null || controller === null) return null
+
+  return <MarkerDialogBody controller={controller} dialog={dialog} key={dialog.sessionId} />
+}
+
+/** Keeps transient form messages and confirmations inside one opened draft session. */
+function MarkerDialogBody({ dialog, controller }: {
+  readonly dialog: MarkerDialogState
+  readonly controller: MarkerRuntimeController
+}) {
   const saving = useMarkerStore((state) => state.saving)
   const runtimeError = useMarkerStore((state) => state.error)
-  const [treatmentUpdate, setTreatmentUpdate] = useState('')
+  const treatmentUpdate = dialog.pendingTreatmentUpdate
   const [treatmentAppendError, setTreatmentAppendError] = useState<string | null>(null)
   const [deleteConfirmForId, setDeleteConfirmForId] = useState<string | null>(null)
-  const currentDraftId = dialog?.draft.id ?? null
+  const [discardConfirmationVisible, setDiscardConfirmationVisible] = useState(false)
+  const keepEditingRef = useRef<HTMLButtonElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const currentDraftId = dialog.draft.id
   const deleteConfirmationVisible = deleteConfirmForId !== null && deleteConfirmForId === currentDraftId
   const showDeleteConfirmation = () => setDeleteConfirmForId(currentDraftId)
   const hideDeleteConfirmation = () => setDeleteConfirmForId(null)
 
-  if (dialog === null || controller === null) {
-    return null
-  }
+  useLayoutEffect(() => {
+    if (discardConfirmationVisible) keepEditingRef.current?.focus()
+  }, [discardConfirmationVisible])
+
+  /** Requires an explicit discard whenever the draft or pending treatment text changed. */
   const closeDialog = (): void => {
-    setTreatmentUpdate('')
-    setTreatmentAppendError(null)
-    controller.closeDialog()
+    if (saving) return
+    if (isMarkerDialogDirty(dialog)) {
+      setDiscardConfirmationVisible(true)
+    } else {
+      controller.closeDialog()
+    }
+  }
+  /** Returns keyboard focus to the form after cancelling discard confirmation. */
+  const keepEditing = (): void => {
+    setDiscardConfirmationVisible(false)
+    closeButtonRef.current?.focus()
   }
   const draft = dialog.draft
   const casualtyErrors = getCasualtyValidationErrors(draft)
@@ -67,6 +91,10 @@ export function MarkerDialog() {
     <DialogOverlay
       labelledBy={MARKER_DIALOG_TITLE_ID}
       onClose={closeDialog}
+      onEscape={() => {
+        if (discardConfirmationVisible) keepEditing()
+        else closeDialog()
+      }}
       open={dialog !== null}
       panelClassName="max-h-[calc(100vh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-5 shadow-2xl shadow-black/40"
       testId="marker-dialog"
@@ -83,6 +111,7 @@ export function MarkerDialog() {
           data-testid="marker-close-btn"
           disabled={saving}
           onClick={closeDialog}
+          ref={closeButtonRef}
           type="button"
         >
           Close
@@ -308,7 +337,7 @@ export function MarkerDialog() {
                     maxLength={2_000}
                     onChange={(value) => {
                       setTreatmentAppendError(null)
-                      setTreatmentUpdate(value)
+                      controller.updatePendingTreatmentUpdate(value)
                     }}
                     testId="marker-treatment-update-input"
                     value={treatmentUpdate}
@@ -326,7 +355,7 @@ export function MarkerDialog() {
                           updatedBy: draft.updatedBy,
                         })
                         controller.updateDraft({ treatment })
-                        setTreatmentUpdate('')
+                        controller.updatePendingTreatmentUpdate('')
                         setTreatmentAppendError(null)
                       } catch (error) {
                         setTreatmentAppendError(
@@ -348,8 +377,6 @@ export function MarkerDialog() {
               Casualty markers require Name, Casualty Status, and Evacuation Priority before placement.
             </p>
           ) : null}
-
-          {runtimeError !== null ? <p className="text-sm text-rose-300">{runtimeError}</p> : null}
 
           <section className="mb-16 rounded-2xl border border-stone-800 bg-stone-950/40 p-3">
             <div className="flex items-center justify-between gap-3">
@@ -392,7 +419,42 @@ export function MarkerDialog() {
             </p>
           </section>
 
-          <div className="sticky bottom-0 -mx-5 -mb-5 flex justify-between gap-3 border-t border-stone-700 bg-stone-900/95 px-5 py-3 shadow-[0_-18px_36px_rgba(0,0,0,0.42)] backdrop-blur">
+          <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-wrap justify-between gap-3 border-t border-stone-700 bg-stone-900/95 px-5 py-3 shadow-[0_-18px_36px_rgba(0,0,0,0.42)] backdrop-blur">
+            {runtimeError !== null ? <p className="w-full text-sm text-rose-300" role="alert">{runtimeError}</p> : null}
+            {discardConfirmationVisible ? (
+              <div
+                className="w-full rounded-xl border border-amber-300/40 bg-stone-950 p-3 text-sm text-amber-100"
+                data-testid="marker-discard-confirmation"
+                role="alert"
+              >
+                <p>Discard unsaved changes to this marker? Unsaved treatment updates will be lost.</p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-2 text-sm text-rose-50 disabled:opacity-50"
+                    data-testid="marker-discard-confirm-btn"
+                    disabled={saving}
+                    onClick={() => controller.closeDialog()}
+                    type="button"
+                  >
+                    Discard changes
+                  </button>
+                  <button
+                    className="rounded-lg border border-stone-500 bg-stone-900 px-3 py-2 text-sm text-stone-100"
+                    data-testid="marker-discard-keep-btn"
+                    onClick={keepEditing}
+                    ref={keepEditingRef}
+                    type="button"
+                  >
+                    Keep editing
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {draft.type === 'casualty' && treatmentUpdate.trim() !== '' ? (
+              <p className="w-full text-sm text-emerald-100" data-testid="marker-treatment-pending-note">
+                The New Treatment Update will be added on Save.
+              </p>
+            ) : null}
             <div>
               {dialog.mode === 'edit' ? (
                 deleteConfirmationVisible ? (
@@ -450,7 +512,9 @@ export function MarkerDialog() {
                 className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100 disabled:opacity-50"
                 data-testid="marker-save-btn"
                 disabled={saving || hasCasualtyErrors || treatmentLogSizeError !== null}
-                onClick={() => void controller.saveDraft()}
+                onClick={() => void controller.saveDraft().catch(() => {
+                  // The runtime keeps the draft and displays the save error above.
+                })}
                 type="button"
               >
                 {saving ? 'Saving...' : 'Save'}

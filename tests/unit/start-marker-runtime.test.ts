@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
 import { startMarkerRuntime } from '../../src/features/markers/start-marker-runtime'
+import { createMarkerDraftAtCoordinate } from '../../src/features/markers/marker-draft'
 
 const MARKER: Marker = {
   id: 'marker-1',
@@ -192,9 +193,29 @@ describe('startMarkerRuntime', () => {
         activeMissionId: 'mission-1',
         markers: [],
         loading: false,
-        error: 'marker load failed',
+        loadError: 'marker load failed',
       }),
     )
+  })
+
+  it('keeps a load failure when a valid marker draft is opened [DON-348 M-68]', async () => {
+    const applyRuntime = vi.fn()
+    const runtime = await startMarkerRuntime({
+      markerStore: createMarkerStoreStub({
+        listMarkers: vi.fn().mockRejectedValue(new Error('marker load failed')),
+      }),
+      attachmentStore: { ingest: vi.fn() },
+      applyRuntime,
+    })
+    await runtime.refreshMission('mission-1')
+
+    runtime.beginCreateFromDraft(createMarkerDraftAtCoordinate(52.0602, -9.5048))
+
+    expect(applyRuntime).toHaveBeenLastCalledWith(expect.objectContaining({
+      loadError: 'marker load failed',
+      error: null,
+      dialog: expect.objectContaining({ mode: 'create' }),
+    }))
   })
 
   it('keeps the dialog open and reports an error when delete fails', async () => {

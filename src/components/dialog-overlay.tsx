@@ -16,6 +16,8 @@ type DialogOverlayProps = {
   readonly describedBy?: string
   /** Called when Escape or the backdrop requests dismissal. */
   readonly onClose: () => void
+  /** Optional Escape policy; other dismissal requests still use onClose. */
+  readonly onEscape?: () => void
   /** Test id for the root overlay. */
   readonly testId: string
   /** Panel width classes. */
@@ -35,6 +37,7 @@ export function DialogOverlay({
   labelledBy,
   describedBy,
   onClose,
+  onEscape,
   testId,
   panelClassName = 'max-w-3xl',
   overlayClassName = 'z-40',
@@ -72,7 +75,8 @@ export function DialogOverlay({
       event.preventDefault()
       event.stopPropagation()
       event.nativeEvent.stopImmediatePropagation()
-      onClose()
+      if (onEscape !== undefined) onEscape()
+      else onClose()
       return
     }
 

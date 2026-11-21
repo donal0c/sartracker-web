@@ -5,8 +5,11 @@ import type { MarkerDraft } from './marker-draft'
 import type { MarkerRuntimeController } from './start-marker-runtime'
 
 export type MarkerDialogState = {
+  readonly sessionId: number
   readonly mode: 'create' | 'edit'
   readonly draft: MarkerDraft
+  readonly baselineDraft: MarkerDraft
+  readonly pendingTreatmentUpdate: string
 }
 
 export type MarkerRuntimeState = {
@@ -15,6 +18,7 @@ export type MarkerRuntimeState = {
   readonly loading: boolean
   readonly saving: boolean
   readonly error: string | null
+  readonly loadError: string | null
   readonly dialog: MarkerDialogState | null
 }
 
@@ -30,6 +34,7 @@ const EMPTY_MARKER_RUNTIME: MarkerRuntimeState = {
   loading: false,
   saving: false,
   error: null,
+  loadError: null,
   dialog: null,
 }
 
@@ -46,4 +51,18 @@ export function applyMarkerRuntime(runtime: MarkerRuntimeState): void {
 
 export function applyMarkerController(controller: MarkerRuntimeController): void {
   useMarkerStore.setState({ controller })
+}
+
+/** Compares every draft field by value against the opening snapshot, including coordinates. */
+export function isMarkerDialogDirty(dialog: MarkerDialogState): boolean {
+  if (dialog.pendingTreatmentUpdate !== '') return true
+
+  const { draft, baselineDraft } = dialog
+  return (Object.keys(draft) as (keyof MarkerDraft)[]).some((field) => {
+    if (field === 'coordinates') {
+      return (Object.keys(draft.coordinates) as (keyof MarkerDraft['coordinates'])[])
+        .some((coordinate) => draft.coordinates[coordinate] !== baselineDraft.coordinates[coordinate])
+    }
+    return draft[field] !== baselineDraft[field]
+  })
 }
