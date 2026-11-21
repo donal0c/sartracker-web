@@ -10,6 +10,7 @@ export type TrackingWarningCode =
   | 'history_incomplete'
   | 'history_loading'
   | 'history_reconciling'
+  | 'history_recheck_behind'
   | 'history_refresh_failed'
   | 'history_rows_rejected'
   | 'history_storage_failed'

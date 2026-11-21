@@ -76,6 +76,15 @@ export type TrackingBreadcrumbReconciliationEntry = {
   readonly pendingDeviceCount: number
   readonly failedDeviceCount: number
   readonly elapsedMs: number
+  /** Re-check ranges still to be re-read (device id and range only) [DON-338]. */
+  readonly recheckBacklog?: readonly TrackingRecheckBacklogRange[]
+}
+
+/** One device range the 5-minute re-check has not re-read yet. */
+export type TrackingRecheckBacklogRange = {
+  readonly deviceId: string
+  readonly from: string
+  readonly to: string
 }
 
 export type TrackingPollLedgerEntry =
@@ -241,6 +250,23 @@ function describeIncidentCoverage(
   return 'inside retained range'
 }
 
+/** Keeps the well-formed re-check backlog ranges of a ledger entry, if any. */
+function normalizeRecheckBacklog(
+  input: unknown,
+): { readonly recheckBacklog?: readonly TrackingRecheckBacklogRange[] } {
+  if (!Array.isArray(input)) return {}
+  const ranges: TrackingRecheckBacklogRange[] = []
+  for (const entry of input as readonly unknown[]) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const range = entry as Record<string, unknown>
+    const from = normalizeTimestamp(range.from)
+    const to = normalizeTimestamp(range.to)
+    if (typeof range.deviceId !== 'string' || from === null || to === null) continue
+    ranges.push({ deviceId: range.deviceId, from, to })
+  }
+  return { recheckBacklog: ranges }
+}
+
 function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEntry | null {
   if (typeof input !== 'object' || input === null) {
     return null
@@ -288,6 +314,7 @@ function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEnt
       pendingDeviceCount: counts[4]!,
       failedDeviceCount: counts[5]!,
       elapsedMs: counts[6]!,
+      ...normalizeRecheckBacklog(candidate.recheckBacklog),
     }
   }
   const phase = normalizePhase(candidate.phase)

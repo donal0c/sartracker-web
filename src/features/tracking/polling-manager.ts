@@ -29,6 +29,7 @@ import type {
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
 import {
   describeHistoryGapsForOperator,
+  describeRecheckBacklogForOperator,
   historyRetryClause,
   type HistoryRetryState,
   listNamesBounded,
@@ -229,6 +230,12 @@ export type CanonicalBreadcrumbSeed = {
 }
 
 const DEFAULT_MAX_BACKOFF_MS = 60_000
+// The reconciler's default 5-minute re-check interval, used when none is given.
+const DEFAULT_HISTORY_RECHECK_INTERVAL_MS = 5 * 60 * 1000
+// A re-check backlog that clears within a tick or two is normal after a
+// burst. A device is named only once its backlog has been outstanding,
+// without emptying, for this many re-check intervals [DON-338].
+const RECHECK_BACKLOG_WARNING_INTERVALS = 2
 const DEFAULT_POLL_INTERVAL_MS = 30_000
 const MIN_POLL_INTERVAL_MS = 5_000
 const MAX_POLL_INTERVAL_MS = 3_600_000
@@ -312,6 +319,11 @@ export function createPollingManager(
   let initialSeedAbortController: AbortController | null = null
   let breadcrumbFetchCompleted = false
   let breadcrumbStatusWarning: TrackingWarning | null = null
+  // When each device's re-check backlog was first reported without emptying
+  // since, and the warning naming devices behind for too long [DON-338].
+  const recheckBacklogSinceMsByDevice = new Map<string, number>()
+  let recheckBacklogWarning: TrackingWarning | null = null
+  let recheckBacklogWarningWhileSuspended: TrackingWarning | null = null
   // The same history warning worded for suspended live tracking (paused or
   // recovery), when nothing is retried. Shown on the paused status [DON-338].
   let breadcrumbStatusWarningWhileSuspended: TrackingWarning | null = null
@@ -601,8 +613,11 @@ export function createPollingManager(
           pendingDeviceCount: progress.pendingDeviceCount,
           failedDeviceCount: progress.failedDeviceCount,
           elapsedMs: progress.elapsedMs,
+          // Device ids and ranges only: diagnostics never carry device names.
+          recheckBacklog: progress.recheckBacklog.map(({ deviceId, from, to }) => ({ deviceId, from, to })),
         })
       }
+      updateRecheckBacklogWarning(progress.recheckBacklog)
       // "Every window tried" (no pending device) is not "complete": an open
       // history gap keeps complete false and the gap warning up. Only the
       // forced flush and the canonical reload use the weaker signal, so an
@@ -644,6 +659,7 @@ export function createPollingManager(
           // History progress must not wipe a roster warning (ING-4 [DON-338]).
           ...getRosterWarnings(latestRosterWarning, true),
           breadcrumbStatusWarning,
+          recheckBacklogWarning,
           breadcrumbIngestWarning,
         ))
       }
@@ -903,6 +919,35 @@ export function createPollingManager(
   }
 
   /**
+   * Tracks how long each device's re-check backlog has been outstanding and
+   * names, in plain words, the devices behind for at least
+   * RECHECK_BACKLOG_WARNING_INTERVALS re-check intervals. The warning clears
+   * when their backlog empties [DON-338].
+   *
+   * @param backlog the re-check ranges still to be re-read, from the reconciler
+   */
+  function updateRecheckBacklogWarning(backlog: BreadcrumbHistoryProgress['recheckBacklog']): void {
+    const nowMs = now().getTime()
+    const behind = new Set(backlog.map((range) => range.deviceId))
+    for (const deviceId of [...recheckBacklogSinceMsByDevice.keys()]) {
+      if (!behind.has(deviceId)) recheckBacklogSinceMsByDevice.delete(deviceId)
+    }
+    for (const deviceId of behind) {
+      if (!recheckBacklogSinceMsByDevice.has(deviceId)) recheckBacklogSinceMsByDevice.set(deviceId, nowMs)
+    }
+    const thresholdMs = RECHECK_BACKLOG_WARNING_INTERVALS *
+      (options.historyAntiEntropyIntervalMs ?? DEFAULT_HISTORY_RECHECK_INTERVAL_MS)
+    const overdue = backlog.filter((range) =>
+      nowMs - (recheckBacklogSinceMsByDevice.get(range.deviceId) ?? nowMs) >= thresholdMs)
+    const retrying = describeRecheckBacklogForOperator(overdue, nowMs, undefined, 'retrying')
+    const suspended = describeRecheckBacklogForOperator(overdue, nowMs, undefined, 'suspended')
+    recheckBacklogWarning = retrying === null ? null : { code: 'history_recheck_behind', text: retrying }
+    recheckBacklogWarningWhileSuspended = suspended === null
+      ? null
+      : { code: 'history_recheck_behind', text: suspended }
+  }
+
+  /**
    * The roster warnings for a status: the latest roster progress (unless it
    * repeats the settled problem, or is a transient "refreshing" the status
    * leaves out), then the settled roster problem.
@@ -937,6 +982,7 @@ export function createPollingManager(
     return [
       ...getRosterWarnings(latestRosterWarning, false),
       historyWarning?.code === 'connection_restored' ? null : historyWarning,
+      retry === 'retrying' ? recheckBacklogWarning : recheckBacklogWarningWhileSuspended,
       breadcrumbIngestWarning,
     ]
   }
@@ -1174,6 +1220,7 @@ export function createPollingManager(
       !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
         ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
         : breadcrumbStatusWarning,
+      recheckBacklogWarning,
     ))
   }
 
@@ -1256,6 +1303,9 @@ export function createPollingManager(
         breadcrumbFetchCompleted = false
         breadcrumbStatusWarning = null
         breadcrumbStatusWarningWhileSuspended = null
+        recheckBacklogSinceMsByDevice.clear()
+        recheckBacklogWarning = null
+        recheckBacklogWarningWhileSuspended = null
         latestAntiEntropyFailedNames = []
         breadcrumbIngestWarning = null
         latestRosterWarning = null
@@ -1485,6 +1535,7 @@ export function createPollingManager(
           : !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
             ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
             : breadcrumbStatusWarning,
+        recheckBacklogWarning,
       ), recovered)
       const completedAt = now().toISOString()
       options.onPollDiagnostic?.({
@@ -1618,6 +1669,7 @@ export function createPollingManager(
         publishOnlineStatusIfActive(combineTrackingWarnings(
           ...getRosterWarnings(latestRosterWarning, true),
           breadcrumbStatusWarning,
+          recheckBacklogWarning,
           breadcrumbIngestWarning,
         ))
       }
@@ -1811,6 +1863,7 @@ export function createPollingManager(
         ...getRosterWarnings(latestRosterWarning, true),
         breadcrumbIngestWarning,
         breadcrumbStatusWarning,
+        recheckBacklogWarning,
       ))
     }
 
