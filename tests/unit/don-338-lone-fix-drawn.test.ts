@@ -15,7 +15,7 @@ import type {
 } from '../../src/features/tracking/tracking-types'
 import {
   createDrawingRecorderMap,
-  readDrawnFeatures,
+  readDrawnFeaturesAtEveryOperatorZoom,
   TRAIL_DRAWING_LAYER_IDS,
   type DrawingRecorderMap,
   type RecordedFeature,
@@ -101,7 +101,7 @@ function findFixesNotDrawnOnWebGlMap(
 ): readonly string[] {
   const key = (lon: number, lat: number) => `${lon.toFixed(7)}:${lat.toFixed(7)}`
   const drawn = new Set<string>()
-  for (const { feature } of readDrawnFeatures(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
+  for (const { feature } of readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
     if (feature.geometry.type === 'LineString') {
       for (const [lon, lat] of feature.geometry.coordinates as readonly (readonly [number, number])[]) {
         drawn.add(key(lon, lat))
@@ -199,7 +199,7 @@ describe('[DON-338] LIV-5 lone fixes stay on the live trail', () => {
   it('applies trail visibility and hidden-device filters to lone fixes exactly as to the line', () => {
     const route = createRoute()
     const drawnDevices = (map: DrawingRecorderMap, layerId: string) =>
-      [...new Set(readDrawnFeatures(map, { layerIds: [layerId] })
+      [...new Set(readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: [layerId] })
         .map(({ feature }) => feature.properties.deviceId))].sort()
 
     const shownMap = createRecordingMap()
@@ -214,7 +214,7 @@ describe('[DON-338] LIV-5 lone fixes stay on the live trail', () => {
 
     const offMap = createRecordingMap()
     syncTrackingOverlay(offMap as never, createSnapshot(route), [], [], false)
-    expect(readDrawnFeatures(offMap, { layerIds: TRAIL_DRAWING_LAYER_IDS })).toEqual([])
+    expect(readDrawnFeaturesAtEveryOperatorZoom(offMap, { layerIds: TRAIL_DRAWING_LAYER_IDS })).toEqual([])
   })
 
   it('keeps lone fixes correct through incremental source diffs as fixes arrive', () => {
@@ -294,7 +294,7 @@ describe('[DON-338] LIV-5 lone fixes stay on the live trail', () => {
     }
     expect(map.incrementalUpdates, 'device removal must go through the incremental diff').toBeGreaterThan(0)
     expect(
-      readDrawnFeatures(map, { layerIds: [LONE_FIX_LAYER_ID] })
+      readDrawnFeaturesAtEveryOperatorZoom(map, { layerIds: [LONE_FIX_LAYER_ID] })
         .map(({ feature }) => feature.properties.deviceId)
         .sort(),
     ).toEqual(['searcher', 'solo', 'still'])
