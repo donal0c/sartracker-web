@@ -36,11 +36,11 @@ import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryRequestInput,
   TrackingHistoryChunkPersistenceResult,
-  TrackingHistoryRefusals,
+  TrackingHistoryStoreAnswer,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
 } from './polling-manager'
-import { readRefusedSourcePositions } from './store-refused-positions'
+import { readRefusedSourcePositions, withoutRefusedPositions } from './store-refused-positions'
 import { recordHistoryAdmissionFailure, recoverHistoryAdmission } from './coverage-store'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
 import type {
@@ -167,7 +167,8 @@ type TrackingRuntimePollerFactory = (
     readonly persistHistoryRequest?: (input: TrackingHistoryRequestInput) => Promise<void>
     readonly persistHistoryChunks?: (
       inputs: readonly TrackingHistoryChunkPersistenceInput[],
-    ) => Promise<TrackingHistoryRefusals | void>
+    ) => Promise<TrackingHistoryStoreAnswer>
+    readonly onTrailStoreAgreementChange?: (awaitingAgreement: boolean) => void
     readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
   },
 ) => TrackingRuntimePoller
@@ -463,6 +464,10 @@ export async function startTrackingRuntime(
   let trackingCacheReadWarningActive = false
   let cachedOperationalDataWarning: string | null = null
   let missionPersistenceWarningActive = false
+  // The poller's live trail may be missing fixes a write committed without a
+  // confirmed answer; the storage warning stays until it has re-read the
+  // store [DON-338 round 10].
+  let trailAwaitingStoreAgreement = false
   // Distinct fixes the store refused and reused Traccar ids it kept as
   // conflicts, for the active mission [DON-338 STO-1, STO-3].
   let storeWriteTotals: StoreWriteTotals | null = null
@@ -692,6 +697,14 @@ export async function startTrackingRuntime(
     )
   }
   const hooks: Parameters<TrackingRuntimePollerFactory>[1] = {
+    onTrailStoreAgreementChange: (awaitingAgreement) => {
+      if (
+        runtimeGeneration !== activeTrackingRuntimeGeneration ||
+        trailAwaitingStoreAgreement === awaitingAgreement
+      ) return
+      trailAwaitingStoreAgreement = awaitingAgreement
+      refreshTrackingStatus()
+    },
     persistHistoryRequest: async (input) => {
       if (!acceptingRuntimeUpdates) throw new Error('Tracking generation stopped before history request recording.')
       let requestedFrom = input.historyFrom
@@ -777,9 +790,9 @@ export async function startTrackingRuntime(
       : {
           persistHistoryChunks: async (
             inputs: readonly TrackingHistoryChunkPersistenceInput[],
-          ): Promise<TrackingHistoryRefusals> => {
+          ): Promise<TrackingHistoryStoreAnswer> => {
             let changedPositionCount = 0
-            let refusedPositions: readonly NormalizedTrackingPosition[] = []
+            let keptPositions: readonly NormalizedTrackingPosition[] = []
             try {
               await enqueueTrackingPersistence(runtimeGeneration, async () => {
                 const firstInput = inputs[0]
@@ -843,9 +856,13 @@ export async function startTrackingRuntime(
                   })
                   applyStoreWriteOutcome(activeMission.id, persisted)
                   changedPositionCount = persisted.changedPositionCount
-                  // A missing or malformed answer fails this write, so
-                  // nothing from it is drawn [DON-338].
-                  refusedPositions = readRefusedSourcePositions(persisted, sentPositions)
+                  // Only what was sent and kept may be drawn; a missing or
+                  // malformed answer fails this write, so nothing from it is
+                  // drawn [DON-338].
+                  keptPositions = withoutRefusedPositions(
+                    sentPositions,
+                    readRefusedSourcePositions(persisted, sentPositions),
+                  )
                   return
                 }
                 const persisted = await dependencies.missionStore.persistTrackingHistoryBatch?.({
@@ -856,6 +873,9 @@ export async function startTrackingRuntime(
                 changedPositionCount = Array.isArray(persisted)
                   ? persisted.length
                   : positions.length
+                // A legacy writer names no refused rows; never reached in the
+                // Electron app, whose bridge always offers the bulk writer.
+                keptPositions = sentPositions
               })
               dependencies.notifyDurablePositionChange?.(changedPositionCount)
               if (
@@ -865,7 +885,7 @@ export async function startTrackingRuntime(
                 missionPersistenceWarningActive = false
                 refreshTrackingStatus()
               }
-              return { refusedPositions }
+              return { keptPositions }
             } catch (error) {
               await retainMissionPersistenceFailure(
                 error,
@@ -880,7 +900,7 @@ export async function startTrackingRuntime(
       input: TrackingHistoryChunkPersistenceInput,
     ): Promise<TrackingHistoryChunkPersistenceResult> => {
       let changedPositionCount = 0
-      let refusedPositions: readonly NormalizedTrackingPosition[] = []
+      let keptPositions: readonly NormalizedTrackingPosition[] = []
       try {
         await enqueueTrackingPersistence(runtimeGeneration, async () => {
           const activeMission = await dependencies.missionStore.getActiveMission()
@@ -894,6 +914,10 @@ export async function startTrackingRuntime(
           }
           await waitForParticipantScopeReady(input.expectedMissionId)
           const scopedInput = scopeHistoryPersistenceInput(input)
+          // Legacy writers below name no refused rows, so what they were sent
+          // is what they kept. The Electron bridge always offers the bulk
+          // writer, so the app never reaches them [DON-338 round 10].
+          const legacyKept: readonly NormalizedTrackingPosition[] = scopedInput.positions
           const positions = scopedInput.positions.map((position) => ({
             source_position_id: position.id,
             device_id: position.device_id,
@@ -925,9 +949,13 @@ export async function startTrackingRuntime(
             })
             applyStoreWriteOutcome(activeMission.id, persisted)
             changedPositionCount = persisted.changedPositionCount
-            // A missing or malformed answer fails this write, so nothing
-            // from it is drawn [DON-338].
-            refusedPositions = readRefusedSourcePositions(persisted, scopedInput.positions)
+            // Only what was sent and kept may be drawn; a missing or
+            // malformed answer fails this write, so nothing from it is drawn
+            // [DON-338].
+            keptPositions = withoutRefusedPositions(
+              scopedInput.positions,
+              readRefusedSourcePositions(persisted, scopedInput.positions),
+            )
             return
           }
           if (
@@ -946,6 +974,7 @@ export async function startTrackingRuntime(
                   }],
             })
             changedPositionCount = Array.isArray(persisted) ? persisted.length : 0
+            keptPositions = legacyKept
             return
           }
           if (positions.length === 0) {
@@ -959,6 +988,7 @@ export async function startTrackingRuntime(
             changedPositionCount = Array.isArray(persisted)
               ? persisted.length
               : positions.length
+            keptPositions = legacyKept
             return
           }
           for (const position of positions) {
@@ -968,6 +998,7 @@ export async function startTrackingRuntime(
             })
             changedPositionCount += 1
           }
+          keptPositions = legacyKept
         })
         if (
           runtimeGeneration === activeTrackingRuntimeGeneration &&
@@ -977,7 +1008,7 @@ export async function startTrackingRuntime(
           refreshTrackingStatus()
         }
         dependencies.notifyDurablePositionChange?.(changedPositionCount)
-        return { changed: changedPositionCount > 0, refusedPositions }
+        return { changed: changedPositionCount > 0, keptPositions }
       } catch (error) {
         await retainMissionPersistenceFailure(
           error,
@@ -1179,8 +1210,17 @@ export async function startTrackingRuntime(
       onStatusChange: (status) => {
         if (generation === pollerGeneration) hooks.onStatusChange(status)
       },
+      onTrailStoreAgreementChange: (awaitingAgreement) => {
+        if (generation === pollerGeneration) hooks.onTrailStoreAgreementChange?.(awaitingAgreement)
+      },
     })
     pollerGeneration = generation
+    // A new poller seeds its trail from the store, so a read-back the retired
+    // one still owed is no longer needed.
+    if (trailAwaitingStoreAgreement) {
+      trailAwaitingStoreAgreement = false
+      refreshTrackingStatus()
+    }
     return candidate
   }
 
@@ -1981,7 +2021,7 @@ export async function startTrackingRuntime(
         ? { code: 'cache_unreadable', text: 'Tracking cache could not be read; waiting for fresh current positions.' } : null,
       cachedOperationalDataWarning === null ? null
         : { code: 'cached_operational_data', text: cachedOperationalDataWarning },
-      missionPersistenceWarningActive
+      missionPersistenceWarningActive || trailAwaitingStoreAgreement
         ? {
             code: 'mission_storage_failed',
             text: 'MISSION BREADCRUMB STORAGE FAILED — current fixes remain visible, but new trail history may not survive restart.',

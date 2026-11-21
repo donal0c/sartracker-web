@@ -9,6 +9,9 @@
 // sent so the live trail never draws a refused fix. A missing or malformed
 // list is a persistence failure, never "nothing was refused".
 
+import type { TrackingHistoryStoreAnswer } from './polling-manager'
+import type { NormalizedTrackingPosition } from './tracking-types'
+
 /** One refused row as it crosses the IPC boundary from the mission store. */
 export type RefusedSourceIdentityConflict = {
   /** Zero-based position of the row in the batch the runtime sent. */
@@ -114,4 +117,37 @@ export function withoutRefusedPositions<Observation>(
   if (refused.length === 0) return positions
   const refusedSet = new Set(refused)
   return positions.filter((position) => !refusedSet.has(position))
+}
+
+/**
+ * Returns the observations of `positions` that the store confirmed it kept:
+ * sent in a write it answered, and not refused. Matched by object identity,
+ * so an observation withheld from the write (outside the participation
+ * scope, without a verified fix time, or for any other pre-write reason) is
+ * never held for the live trail, even when it shares a provider id with a
+ * kept one [DON-338 round 10].
+ *
+ * @param positions the observations one fetch produced
+ * @param kept the observations the store kept, as returned by the tracking runtime
+ * @returns the kept observations of `positions`, in their original order
+ */
+export function onlyKeptPositions<Observation>(
+  positions: readonly Observation[],
+  kept: readonly Observation[],
+): readonly Observation[] {
+  if (kept.length === 0) return []
+  const keptSet = new Set(kept)
+  return positions.filter((position) => keptSet.has(position))
+}
+
+/**
+ * Reads the kept observations from a persistence port's answer. A port that
+ * answered without the list confirmed nothing, so nothing is kept for the
+ * trail (fail closed) [DON-338 round 10].
+ */
+export function readKeptPositions(
+  answer: TrackingHistoryStoreAnswer | null | undefined | void,
+): readonly NormalizedTrackingPosition[] {
+  const kept: unknown = answer === null || answer === undefined ? undefined : answer.keptPositions
+  return Array.isArray(kept) ? kept as readonly NormalizedTrackingPosition[] : []
 }

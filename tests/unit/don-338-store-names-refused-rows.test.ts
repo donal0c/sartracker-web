@@ -3,8 +3,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { deserialize, serialize } from 'node:v8'
+import { readFileSync } from 'node:fs'
+import { runInNewContext } from 'node:vm'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { readRefusedSourcePositions } from '../../src/features/tracking/store-refused-positions'
 
@@ -231,4 +233,37 @@ describe('[DON-338] the refused-row list survives the IPC contract and is valida
         .toThrow(/Mission storage did not confirm which trail fixes it refused/)
     })
   }
+})
+
+describe('[DON-338] round 10: the packaged Electron trail path always uses the answering bulk writer', () => {
+  /** Runs the real sandbox preload and returns the mission-store bridge it exposes to the renderer. */
+  function exposedMissionStore(): Readonly<Record<string, unknown>> {
+    let bridge: Readonly<Record<string, unknown>> | undefined
+    runInNewContext(readFileSync('electron/preload.cjs', 'utf8'), {
+      process: { platform: 'linux' },
+      TextEncoder,
+      require: (specifier: string) => {
+        if (specifier !== 'electron') throw new Error(`Unexpected preload require: ${specifier}`)
+        return {
+          contextBridge: { exposeInMainWorld: (_name: string, exposed: Readonly<Record<string, unknown>>) => { bridge = exposed } },
+          ipcRenderer: { invoke: vi.fn(), sendSync: vi.fn(() => ({ ok: true })), on: vi.fn(), removeListener: vi.fn(), send: vi.fn() },
+        }
+      },
+      window: { addEventListener: vi.fn() },
+    })
+    return bridge?.missionStore as Readonly<Record<string, unknown>>
+  }
+
+  it('exposes persistTrackingPositionsBulk, which the runtime prefers over every legacy writer such as addPosition', () => {
+    // The runtime's history writers try persistTrackingPositionsBulk first and
+    // reach persistTrackingHistoryBatch, addPositionsBulk or addPosition only
+    // when it is absent (start-tracking-runtime.ts). The Electron bridge always
+    // offers it, so the legacy Tauri addPosition path is unreachable for the
+    // trail in the packaged app; tracking-store-write-integrity-runtime.test.ts
+    // drives that choice with an addPosition that fails if called.
+    const missionStore = exposedMissionStore()
+    expect(typeof missionStore.persistTrackingPositionsBulk).toBe('function')
+    // The canonical reload that restores agreement after an unconfirmed write.
+    expect(typeof missionStore.startBreadcrumbQuery).toBe('function')
+  })
 })

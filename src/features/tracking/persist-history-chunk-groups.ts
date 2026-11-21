@@ -1,8 +1,9 @@
 import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryChunkPersistenceResult,
-  TrackingHistoryRefusals,
+  TrackingHistoryStoreAnswer,
 } from './polling-manager'
+import { readKeptPositions } from './store-refused-positions'
 import type { NormalizedTrackingPosition } from './tracking-types'
 import { HISTORY_PIECE_ROW_BUDGET, persistHistoryChunkInPieces } from './split-history-chunk'
 
@@ -22,18 +23,19 @@ type PersistHistoryChunkGroupsOptions = {
   readonly inputs: readonly TrackingHistoryChunkPersistenceInput[]
   readonly persistGroup: (
     inputs: readonly TrackingHistoryChunkPersistenceInput[],
-  ) => Promise<TrackingHistoryRefusals | void>
+  ) => Promise<TrackingHistoryStoreAnswer>
   readonly persistChunk?: (input: TrackingHistoryChunkPersistenceInput) => Promise<TrackingHistoryChunkPersistenceResult>
   /**
-   * Called once per acknowledged chunk. `refusedPositions` holds the
-   * observations the store refused in the write that carried it (for a group
-   * write, every refused observation of the group, matched by identity).
+   * Called once per acknowledged chunk. `keptPositions` holds the
+   * observations the store kept in the write that carried it (for a group
+   * write, every kept observation of the group; the caller matches its own
+   * chunk's observations by identity).
    */
   readonly onAcknowledged: (
     input: TrackingHistoryChunkPersistenceInput,
     index: number,
     result: TrackingHistoryChunkPersistenceResult | null,
-    refusedPositions: readonly NormalizedTrackingPosition[],
+    keptPositions: readonly NormalizedTrackingPosition[],
   ) => void
   readonly yieldBetweenGroups: () => Promise<void>
 }
@@ -53,10 +55,10 @@ export async function persistHistoryChunkGroups(
   function acknowledge(
     entry: ChunkEntry,
     result: TrackingHistoryChunkPersistenceResult | null,
-    refusedPositions: readonly NormalizedTrackingPosition[] = result?.refusedPositions ?? [],
+    keptPositions: readonly NormalizedTrackingPosition[] = readKeptPositions(result),
   ): PromiseSettledResult<void> {
     try {
-      options.onAcknowledged(entry.input, entry.index, result, refusedPositions)
+      options.onAcknowledged(entry.input, entry.index, result, keptPositions)
       return { status: 'fulfilled', value: undefined }
     } catch (reason) {
       return { status: 'rejected', reason }
@@ -83,14 +85,14 @@ export async function persistHistoryChunkGroups(
       continue
     }
     let groupFailure: { readonly reason: unknown } | undefined
-    let groupRefusals: readonly NormalizedTrackingPosition[] = []
+    let groupKept: readonly NormalizedTrackingPosition[] = []
     try {
-      groupRefusals = (await options.persistGroup(group.map(({ input }) => input)))?.refusedPositions ?? []
+      groupKept = readKeptPositions(await options.persistGroup(group.map(({ input }) => input)))
     } catch (reason) {
       groupFailure = { reason }
     }
     if (groupFailure === undefined) {
-      for (const entry of group) results[entry.index] = acknowledge(entry, null, groupRefusals)
+      for (const entry of group) results[entry.index] = acknowledge(entry, null, groupKept)
       continue
     }
     if (group.length === 1 && options.persistChunk === undefined) {
@@ -99,19 +101,19 @@ export async function persistHistoryChunkGroups(
     }
     await Promise.all(group.map(async (entry) => {
       let result: TrackingHistoryChunkPersistenceResult | null = null
-      let refusals: readonly NormalizedTrackingPosition[] = []
+      let kept: readonly NormalizedTrackingPosition[] = []
       try {
         if (options.persistChunk !== undefined) {
           result = await options.persistChunk(entry.input)
-          refusals = result.refusedPositions ?? []
+          kept = readKeptPositions(result)
         } else {
-          refusals = (await options.persistGroup([entry.input]))?.refusedPositions ?? []
+          kept = readKeptPositions(await options.persistGroup([entry.input]))
         }
       } catch (reason) {
         results[entry.index] = { status: 'rejected', reason }
         return
       }
-      results[entry.index] = acknowledge(entry, result, refusals)
+      results[entry.index] = acknowledge(entry, result, kept)
     }))
   }
   return results
