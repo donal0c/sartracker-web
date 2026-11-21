@@ -204,6 +204,57 @@ describe('GPX runtime map coverage and watched rescans [DON-350]', () => {
     expect(lastRuntime(applyRuntime).error).toContain('/watch-big holds more than 1000 GPX files')
   })
 
+  it('when a middle chunk of a large watched folder fails, says what imported, what failed and what was not tried [M-40] [coordinator 1]', async () => {
+    const applyRuntime = vi.fn()
+    const paths = Array.from({ length: 250 }, (_unused, index) => `/watch/track-${index}.gpx`)
+    const importGpxEvidencePaths = vi.fn()
+      .mockResolvedValueOnce({ imports: [{ id: 'a' }, { id: 'b' }, { id: 'c' }], unchanged: [], failures: [], dispatchDurationMs: 1 })
+      .mockRejectedValueOnce(new Error('GPX evidence import worker stopped responding for 120 s and was stopped. 37 of 100 GPX files were imported before it stopped; 63 are listed as import issues for review.'))
+      .mockResolvedValue({ imports: [], unchanged: [], failures: [], dispatchDurationMs: 1 })
+    const controller = await startGpxRuntime({
+      gpxStore: pagedStore([], { importGpxEvidencePaths }),
+      watchSource: {
+        listDirectoryFiles: vi.fn(),
+        listDirectoryPaths: vi.fn(),
+        listWatchedDirectoryPaths: vi.fn().mockResolvedValue({ paths, omittedCount: 7 }),
+      },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-1')
+    await expect(controller.addWatchedDirectory('/watch')).rejects.toThrow(/stopped responding/u)
+
+    // Stops after the failed chunk: a stalled worker is likely to stall again.
+    expect(importGpxEvidencePaths).toHaveBeenCalledTimes(2)
+    const error = lastRuntime(applyRuntime).error ?? ''
+    expect(error).toContain('37 of 100 GPX files were imported')
+    expect(error).toContain('Of 250 GPX files in this import, 100 finished before the stop (3 imported or updated); 50 were not tried.')
+    // The over-limit warning survives the failure.
+    expect(error).toContain('/watch holds more than 1000 GPX files')
+    expect(lastRuntime(applyRuntime).importing).toBe(false)
+  })
+
+  it('a watched rescan whose import throws still names the folder\'s omitted files [M-40] [coordinator 1]', async () => {
+    const applyRuntime = vi.fn()
+    const importGpxEvidencePaths = vi.fn()
+      .mockResolvedValueOnce({ imports: [], unchanged: [], failures: [], dispatchDurationMs: 1 })
+      .mockRejectedValue(new Error('Import worker crashed.'))
+    const controller = await startGpxRuntime({
+      gpxStore: pagedStore([], { importGpxEvidencePaths }),
+      watchSource: {
+        listDirectoryFiles: vi.fn(),
+        listDirectoryPaths: vi.fn(),
+        listWatchedDirectoryPaths: vi.fn().mockResolvedValue({ paths: ['/watch/a.gpx'], omittedCount: 4 }),
+      },
+      applyRuntime,
+    })
+    await controller.refreshMission('mission-1')
+    await controller.addWatchedDirectory('/watch')
+    await controller.rescanWatchedDirectories()
+    const error = lastRuntime(applyRuntime).error ?? ''
+    expect(error).toContain('Import worker crashed')
+    expect(error).toContain('/watch holds more than 1000 GPX files')
+  })
+
   it('re-reads the list, issues and map when a native import is stopped part way [M-36]', async () => {
     const applyRuntime = vi.fn()
     const importGpxEvidencePaths = vi.fn().mockRejectedValue(new Error(

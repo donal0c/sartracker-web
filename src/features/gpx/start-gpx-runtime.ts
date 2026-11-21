@@ -368,9 +368,12 @@ export async function startGpxRuntime(
         if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
           return operationResult('stale')
         }
-        const result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
-        publishScanNotices([describeOmittedWatchedFiles(normalizedPath, listing.omittedCount)], missionId, missionToken)
-        return result
+        try {
+          return await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
+        } finally {
+          // Files beyond the listing cap were never sent, whatever happened to the ones that were [coordinator 1].
+          publishScanNotices([describeOmittedWatchedFiles(normalizedPath, listing.omittedCount)], missionId, missionToken)
+        }
       }
       const files = await dependencies.watchSource.listDirectoryFiles(normalizedPath)
       if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
@@ -413,8 +416,9 @@ export async function startGpxRuntime(
           if (canListWatchedPaths()) {
             const listing = await listWatchedPaths(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
-            result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
+            // Recorded before the import, so a failed import cannot drop the over-limit warning.
             omissions.push(describeOmittedWatchedFiles(directoryPath, listing.omittedCount))
+            result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
           } else {
             const files = await dependencies.watchSource.listDirectoryFiles(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
@@ -696,15 +700,31 @@ export async function startGpxRuntime(
     const isCurrent = () => missionToken === missionGeneration && state.activeMissionId === missionId
     const imports: { readonly id: string; readonly revision_sequence?: number }[] = []
     const nativeFailures: { readonly sourcePath: string; readonly reason: string }[] = []
+    let finishedPaths = 0
     try {
       // One admitted import, sent in store-sized chunks, so a large watched folder is not refused [M-40].
+      // A chunk that throws stops the rest: a stalled or crashed worker is likely to fail again, and
+      // the error then says exactly which files finished and which were never tried.
       for (let start = 0; start < paths.length; start += NATIVE_IMPORT_CHUNK) {
-        const result = await importNativePaths({
-          missionId,
-          paths: paths.slice(start, start + NATIVE_IMPORT_CHUNK),
-          ...(source.skipRetiredSources ? { skipRetiredSources: true } : {}),
-        })
+        const chunk = paths.slice(start, start + NATIVE_IMPORT_CHUNK)
+        let result
+        try {
+          result = await importNativePaths({
+            missionId,
+            paths: chunk,
+            ...(source.skipRetiredSources ? { skipRetiredSources: true } : {}),
+          })
+        } catch (error) {
+          throw describeStoppedChunk(error, {
+            total: paths.length,
+            finished: finishedPaths,
+            imported: imports.length,
+            failed: nativeFailures.length,
+            stopped: chunk.length,
+          })
+        }
         if (!isCurrent()) return operationResult('stale')
+        finishedPaths += chunk.length
         imports.push(...result.imports)
         if ('failures' in result && Array.isArray(result.failures)) nativeFailures.push(...result.failures)
       }
@@ -993,6 +1013,35 @@ function describeOperationFailures(failures: readonly GpxImportOperationFailure[
 }
 
 /** Says, in words, that a watched folder holds more files than are watched; null when none are left out. */
+type StoppedChunkProgress = {
+  readonly total: number
+  readonly finished: number
+  readonly imported: number
+  readonly failed: number
+  readonly stopped: number
+}
+
+/**
+ * Adds the whole-import picture to a chunk's failure: which files finished, which were in the
+ * stopped chunk (its own message says how far it got) and which were never tried [DON-350] [M-40].
+ */
+function describeStoppedChunk(error: unknown, progress: StoppedChunkProgress): unknown {
+  // A single-chunk import is fully described by the store's own message.
+  if (progress.total <= progress.stopped) return error
+  const notTried = progress.total - progress.finished - progress.stopped
+  const finished = progress.finished === 0
+    ? 'it stopped in the first part'
+    : `${progress.finished} finished before the stop (${progress.imported} imported or updated`
+      + `${progress.failed > 0 ? `, ${progress.failed} failed` : ''})`
+  const cause = toErrorMessage(error).replace(/\.?$/u, '.')
+  const described = new Error(
+    `${cause} Of ${progress.total} GPX files in this import, ${finished}; `
+      + `${notTried} ${notTried === 1 ? 'was' : 'were'} not tried. Import or rescan again to try them.`,
+  )
+  if (error instanceof Error) described.name = error.name
+  return described
+}
+
 function describeOmittedWatchedFiles(directoryPath: string, omittedCount: number): string | null {
   if (omittedCount <= 0) return null
   return `Watched folder ${directoryPath} holds more than ${WATCHED_LISTING_LIMIT} GPX files; `
