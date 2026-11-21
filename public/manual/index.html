@@ -844,6 +844,7 @@
               <tr><td><strong>Participant history is still being added</strong></td><td>Wait. Live positions are unaffected. Finish stays refused until it completes.</td></tr>
               <tr><td><strong>Updating — the newest positions are being added to the history line</strong></td><td>Normal while people are moving. The earlier line is drawn; the count shows how many fixes are drawn so far. Nothing to do.</td></tr>
               <tr><td><strong>History incomplete — showing loaded coverage</strong></td><td>The line is missing fixes and is not catching up on its own (stopped, failed, or no update for over 2 minutes). What is drawn is real but not the whole record. Press <strong>Retry</strong>. Do not treat it as the full history. If it says it is retrying automatically, it will keep trying.</td></tr>
+              <tr><td><strong>Reason: the history builder ran out of memory</strong></td><td>This mission's history is too large for the part of the app that builds the whole-history line, so that line may stay missing. Saved positions are safe and current positions stay live. Use <strong>Inspect exact fixes</strong> to check saved positions, and report it.</td></tr>
               <tr><td><strong>Loaded history is shown, but completeness is not yet verified</strong></td><td>Everything may have loaded, but the final check has not passed. Press <strong>Retry</strong>.</td></tr>
             </tbody>
           </table>
