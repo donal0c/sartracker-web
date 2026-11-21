@@ -45,11 +45,12 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   const stalled = !failed && summary.stalled
   // Retry re-reads saved history and, for a stalled map, re-stages the
   // catalog so the map reattaches and re-applies the filter.
-  // Attention notices stand beside any waiting or stall message, never behind
-  // one: they say why history cannot be called complete [DON-338]. A stall
-  // already names positions waiting to be saved, so that alone is not repeated.
-  const degradedShown = blockers.has('ingest_health_degraded') || (outboxPending && !stalled)
-  const attentionShown = !failed && (rendererEvidenceDegraded || degradedShown || historyUnreconciled)
+  // Attention notices stand beside any failure, waiting or stall message,
+  // never behind one: they say why history cannot be called complete, and
+  // rebuilding the line does not fix them [DON-338]. Positions waiting to be
+  // saved are already covered by a stall or failure, so that alone is not repeated.
+  const degradedShown = blockers.has('ingest_health_degraded') || (outboxPending && !stalled && !failed)
+  const attentionShown = rendererEvidenceDegraded || degradedShown || historyUnreconciled
   const showRetry = failed || stalled ||
     (summary.kind === 'behind' && !stalled &&
       !evidenceBlocked && !rendererDetached && !rendererFilterPending)
@@ -116,7 +117,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               History incomplete — showing loaded coverage. Press Retry to load the rest.
             </p>
           ) : null}
-          {failed ? null : (
+          {attentionShown ? (
             <>
               {rendererEvidenceDegraded ? (
                 <p className="mt-1" data-testid="coverage-evidence-degraded">
@@ -136,7 +137,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
                 </p>
               ) : null}
             </>
-          )}
+          ) : null}
           {props.state.status === 'error' ? (
             <p className="mt-1" data-testid="coverage-error">
               History incomplete — {rendererDetached
