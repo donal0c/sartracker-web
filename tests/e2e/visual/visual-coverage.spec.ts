@@ -108,7 +108,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     const panel = page.getByTestId('coverage-status-panel')
     await expect(panel).toContainText('History incomplete')
     await expect(panel).toContainText('completeness is not yet verified')
-    await expect(panel).toContainText('Reason: timeout')
+    await expect(panel).toContainText('Reason: loading took too long')
     await expect(page.getByTestId('coverage-progress')).toHaveCount(0)
     await expect(page.getByTestId('coverage-retry')).toBeVisible()
 
@@ -120,13 +120,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this SAR Tracker mission-history claim-failure state:
 1. The panel clearly says history is incomplete.
 2. It explicitly says completeness is not yet verified.
-3. It gives timeout as the reason and offers a clear Retry action.
+3. It gives the reason in plain words (loading took too long) and offers a clear Retry action.
 4. It does not show a progress bar or claim all mission history is shown.
 5. The exact-fix inspection action remains available.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'incomplete and completeness-unverified wording is visible',
-        'timeout reason and Retry are visible',
+        'the plain-words timeout reason and Retry are visible',
         'no progress bar is rendered at equal delivered and total counts',
       ],
     })
