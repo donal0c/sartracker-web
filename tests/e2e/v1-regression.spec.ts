@@ -342,6 +342,14 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
   })
 })
 
+/** How many current positions the tracking store holds (the old mast's FIX value). */
+async function countTrackedPositions(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+    return useTrackingStore.getState().snapshot.positions.length
+  })
+}
+
 // The old mast cell is gone (DON-341); the top bar's tracking line replaced it and keeps the same rule.
 test.describe('Tracking line never reads as a positions/stale ratio (sartracker-web-zq9)', () => {
   test.setTimeout(45_000)
@@ -390,10 +398,15 @@ test.describe('Tracking line never reads as a positions/stale ratio (sartracker-
     await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is running, with something to check.')
     // Exactly one stale position (was STALE 1), named once in the issue list.
     await expect(page.getByTestId('ws-tracking-happened').locator('li', { hasText: 'out of date' })).toHaveText(['1 position out of date'])
-    // Three fixes (was FIX 3): all three people listed with a position on the map.
+    // Exactly three fixes (was FIX 3): three positions held, and each person shows
+    // a position age rather than "No position yet" (a tick shows even without a fix).
+    expect(await countTrackedPositions(page)).toBe(3)
     await openWorkspacePanel(page, 'people')
     await expect(page.getByTestId('ws-people-count')).toHaveText('3')
-    for (const id of ['d1', 'd2', 'd3']) await expect(page.getByTestId(`ws-position-${id}`)).toBeVisible()
+    for (const id of ['d1', 'd2', 'd3']) {
+      await expect(page.getByTestId(`ws-person-status-${id}`)).toContainText(/position \d/iu)
+      await expect(page.getByTestId(`ws-person-status-${id}`)).not.toContainText('No position yet')
+    }
   })
 
   test('idle state shows no ratio chrome', async ({ page }) => {
@@ -407,7 +420,8 @@ test.describe('Tracking line never reads as a positions/stale ratio (sartracker-
     expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
     // Connection state (was IDLE): nothing is connected before a mission starts.
     await expect(cell).toContainText('Tracking not connected')
-    // No fixes and nothing stale (was FIX 0, STALE 0): no roster to count, nothing out of date.
+    // No fixes and nothing stale (was FIX 0, STALE 0): no positions held, no roster, nothing out of date.
+    expect(await countTrackedPositions(page)).toBe(0)
     await expect(page.getByTestId('ws-toggle-people')).toHaveText('People')
     await expect(page.getByTestId('ws-toggle-people')).toBeDisabled()
     await openWorkspacePanel(page, 'tracking')
