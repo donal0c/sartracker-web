@@ -358,7 +358,11 @@ function normalizeAuthorizedCoverageCatalogInput(database, value) {
       descriptor.key.period_kind,
       descriptor.key.period_id,
     )
-    if (row === undefined || row.content_rev !== descriptor.contentRev) {
+    // A chunk that moved on since the renderer read it may still be served at the
+    // revision the tile worker already holds; the worker refuses to build any
+    // other revision, and the result names it as moved [DON-338 COV-2]. A
+    // missing chunk or a revision the ledger never reached is not a live race.
+    if (row === undefined || row.content_rev < descriptor.contentRev) {
       throw createCoverageRevisionMovedError('Coverage catalog chunk does not match its current revision.')
     }
   }
@@ -2524,18 +2528,20 @@ function createElectronMissionStore(options) {
           await coverageTileRunner.discardCatalog({ stageId: result.stageId })
           throw error
         }
-        const rejectedChunks = new Set(appliedBuilds.rejectedChunkKeys)
-        if (rejectedChunks.size > 0) {
-          await coverageTileRunner.discardCatalog({ stageId: result.stageId })
-          const error = new Error('chunk-stale: coverage tile catalog changed during apply')
-          error.code = 'chunk-stale'
-          throw error
-        }
+        // Every build matches the exact manifest summary for its requested
+        // revision (asserted above) and the worker reads no other revision, so a
+        // build the ledger now rejects is honest geometry for an older revision.
+        // Serve it, name it as moved, and leave its built revision untouched,
+        // rather than holding back every other period [DON-338 COV-2].
+        const movedChunkKeys = new Set(appliedBuilds.rejectedChunkKeys)
         return {
           activationId: result.stageId,
           missionId: normalizedInput.missionId,
           periods: result.periods,
           delivered: result.delivered,
+          moved: result.delivered
+            .filter((entry) => movedChunkKeys.has(createCoverageChunkIdentity(entry.key)))
+            .map((entry) => ({ key: { ...entry.key }, contentRev: entry.contentRev })),
         }
       },
     ),

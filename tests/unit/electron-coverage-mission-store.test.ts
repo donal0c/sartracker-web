@@ -190,6 +190,7 @@ type CoverageMissionStore = {
       readonly revisionDigest: string
     }[]
     readonly delivered: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
+    readonly moved?: readonly { readonly key: CoverageKey; readonly contentRev: number }[]
   }>
   readonly activateCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
   readonly finalizeCoverageTileCatalog: (input: { readonly activationId: string }) => Promise<boolean>
@@ -584,9 +585,43 @@ describe('Electron coverage mission-store orchestration', () => {
         timestamp_source: 'fix',
       }],
     })
-    await expect(store.syncCoverageTileCatalog({
+    // The drawn revision is still served, and named as moved rather than current [DON-338 COV-2].
+    const movedCatalog = await store.syncCoverageTileCatalog({
       missionId: mission.id,
       chunks: secondChunks,
+    }, 'real-worker-moved-sync')
+    const movedOpenChunk = secondChunks.find((chunk) => chunk.key.period_kind === 'outing')!
+    expect(movedCatalog.moved).toEqual([{ key: movedOpenChunk.key, contentRev: movedOpenChunk.contentRev }])
+    expect(movedCatalog.delivered).toHaveLength(secondChunks.length)
+    expect(movedCatalog.delivered).toEqual(expect.arrayContaining(secondChunks))
+    await store.discardCoverageTileCatalog({ activationId: movedCatalog.activationId })
+    // A moved revision the worker never built is still refused as a whole: nothing is built from moved data.
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-5',
+        device_id: 'device-1',
+        lat: 52.04,
+        lon: -9.74,
+        timestamp: '2026-08-24T09:08:00.000Z',
+        timestamp_source: 'fix',
+      }],
+    })
+    const unbuiltManifest = await store.readCoverageManifest(mission.id, 'real-worker-manifest-unbuilt')
+    await store.addPositionsBulk({
+      mission_id: mission.id,
+      positions: [{
+        source_position_id: 'source-6',
+        device_id: 'device-1',
+        lat: 52.05,
+        lon: -9.75,
+        timestamp: '2026-08-24T09:09:00.000Z',
+        timestamp_source: 'fix',
+      }],
+    })
+    await expect(store.syncCoverageTileCatalog({
+      missionId: mission.id,
+      chunks: unbuiltManifest.chunks.map((chunk) => ({ key: chunk.key, contentRev: chunk.contentRev })),
     }, 'real-worker-stale-sync')).resolves.toMatchObject({
       kind: 'stale', reason: 'coverage_revision_moved', changeSeq: expect.any(Number),
     })
@@ -1403,7 +1438,7 @@ describe('Electron coverage mission-store orchestration', () => {
     }, { signal: expect.any(AbortSignal) })
   })
 
-  it('discards a staged tile catalog when a live write rejects its build metadata', async () => {
+  it('serves a staged tile catalog at its built revision and names the chunk a live write moved during the build [DON-338 COV-2]', async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'sartracker-coverage-store-'))
     const commitCatalog = vi.fn().mockResolvedValue(true)
     const discardCatalog = vi.fn().mockResolvedValue(true)
@@ -1444,13 +1479,19 @@ describe('Electron coverage mission-store orchestration', () => {
     await expect(store.syncCoverageTileCatalog({
       missionId: mission.id,
       chunks: [{ key: chunk.key, contentRev: chunk.contentRev }],
-    }, 'tiles-race')).resolves.toMatchObject({
-      kind: 'stale', reason: 'coverage_revision_moved', changeSeq: expect.any(Number),
+    }, 'tiles-race')).resolves.toEqual({
+      activationId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
+      missionId: mission.id,
+      periods: coveragePeriodsFor(mission.id, chunk.key, chunk.contentRev),
+      delivered: [{ key: chunk.key, contentRev: chunk.contentRev }],
+      moved: [{ key: chunk.key, contentRev: chunk.contentRev }],
     })
-    expect(discardCatalog).toHaveBeenCalledWith({
-      stageId: 'coverage-stage-00000000-0000-4000-8000-000000000002-1',
-    })
+    // The geometry is honest for the revision it names; the ledger never records it as built for the newer one.
+    expect(discardCatalog).not.toHaveBeenCalled()
     expect(commitCatalog).not.toHaveBeenCalled()
+    const after = await store.readCoverageManifest(mission.id, 'manifest-after-race')
+    expect(after.chunks[0]!.contentRev).toBeGreaterThan(chunk.contentRev)
+    expect(after.chunks[0]!.builtRev).not.toBe(after.chunks[0]!.contentRev)
   })
 
   it('cancels a catalog build without terminating the worker serving retained coverage', async () => {
