@@ -129,6 +129,7 @@ describe('one blank roster listing through the real poller [DON-300]', () => {
         addPosition: vi.fn().mockResolvedValue(undefined),
         persistTrackingPositionsBulk: vi.fn(async (input: { positions: readonly unknown[] }) => ({
           insertedCount: input.positions.length, duplicateCount: 0, changedPositionCount: input.positions.length,
+          sourceIdentityConflictCount: 0, refusedSourceIdentityConflicts: [],
         })),
       },
       applySnapshot: vi.fn(),

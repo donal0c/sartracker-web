@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createPollingManager, type TrackingPollerClient } from '../../src/features/tracking/polling-manager'
+import { createPollingManager, type TrackingHistoryChunkPersistenceInput, type TrackingPollerClient } from '../../src/features/tracking/polling-manager'
 import { describeRecheckBacklogForOperator } from '../../src/features/tracking/history-gap-warning'
 import type {
   NormalizedTrackingDevice,
@@ -85,7 +85,8 @@ describe('[DON-338] re-check backlog warning through the real poller and reconci
       getPollingMode: () => mission.pollingMode,
       getInitialBreadcrumbFrom: () => new Date(START_MS),
       getInitialBreadcrumbs: async () => [],
-      persistHistoryChunk: vi.fn().mockResolvedValue({ changed: false }),
+      // Answers as the store does: every observation sent was kept [DON-338].
+      persistHistoryChunk: vi.fn(async (input: TrackingHistoryChunkPersistenceInput) => ({ changed: false, keptPositions: input.positions })),
       onSnapshot: vi.fn(),
       onStatusChange,
       onPollDiagnostic,
