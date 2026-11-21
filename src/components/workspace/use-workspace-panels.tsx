@@ -65,8 +65,9 @@ export function useWorkspacePanels(input: {
     setSetupPanel(null)
   }, [phase])
 
-  // A decision or failed action always forces Mission back into view.
-  const missionForced = decisionOpen || actionError !== null
+  // An open decision (for example the Finish confirmation) holds Mission in view.
+  // A failed action does not: it is flagged below, so Tracking (Reconnect) stays reachable.
+  const missionForced = decisionOpen
   // Before Start the card is Mission itself. As on the old screen, it cannot be
   // closed while a mission waits to be resumed or a finished mission's archive
   // controls are showing (selectWorkspaceHideBlockedReason).
@@ -75,7 +76,10 @@ export function useWorkspacePanels(input: {
     : null
   // A warning in Mission opens it once and stays on the Mission button until it
   // clears, but never locks the operator out of Tracking (Reconnect) or the map.
-  const [missionAttention, setMissionAttention] = useState(false)
+  const [panelAttention, setMissionAttention] = useState(false)
+  // A refused or failed mission action (for example Finish while history is
+  // still loading) counts as a warning until the operator clears it.
+  const missionAttention = panelAttention || actionError !== null
   useEffect(() => {
     if (!missionAttention) return
     setSetupCardOpen(true)

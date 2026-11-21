@@ -185,6 +185,37 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('ws-mission-attention')).toHaveCount(0)
   })
 
+  test('a refused Finish stays on the Mission button but never blocks Tracking (Reconnect)', async ({ page }) => {
+    await open(page)
+    await page.getByTestId('mission-name-input').fill('Refused Finish')
+    await page.getByTestId('mission-offset-input').fill('2')
+    await page.getByTestId('participant-group-picker').getByLabel(/Rescue Team/).check()
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await expect(page.getByTestId('participant-backfill-status').first()).toContainText('pending')
+
+    // Finish is refused while participant history is still loading.
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+    // Cancelling the dialog keeps the refusal on screen and flagged on the Mission button.
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByTestId('mission-finish-dialog')).toBeHidden()
+    await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+    await expect(page.getByTestId('ws-mission-attention')).toBeVisible()
+
+    // Tracking still opens, and the refusal stays flagged on the Mission button.
+    await page.getByTestId('ws-tracking-headline').click()
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+    await expect(page.getByTestId('mission-control')).toBeHidden()
+    await expect(page.getByTestId('ws-mission-attention')).toBeVisible()
+
+    // Opening Mission again shows the refusal in words.
+    await page.getByTestId('ws-mission-button').click()
+    await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)
