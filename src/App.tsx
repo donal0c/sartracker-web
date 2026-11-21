@@ -33,6 +33,7 @@ import { SimplifiedWorkspace } from './components/workspace/simplified-workspace
 import { DESKTOP_PANEL_ARRANGEMENT } from './features/workspace/panel-arrangement'
 import { shouldUseClassicLayoutFixture } from './features/workspace/classic-layout-fixture'
 import { WeatherMenu } from './components/weather-menu'
+import { LazyScreenBoundary } from './components/lazy-screen-boundary'
 import { scopeAutosaveWarningToMission } from './features/persistence/autosave-warning-scope'
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 
@@ -136,7 +137,7 @@ function App() {
       <MissionReviewRuntimeBridge />
 
       {classicLayoutFixture ? (
-        <Suspense fallback={null}>
+        <LazyScreenBoundary screen="Old screen test fixture">
           <ClassicLayoutFixture
             actionError={missionActionError}
             browserTestingMode={browserTestingMode}
@@ -148,7 +149,7 @@ function App() {
               <RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive={focusModeActive} />
             )}
           />
-        </Suspense>
+        </LazyScreenBoundary>
       ) : (
         <SimplifiedWorkspace
           actionError={missionActionError}
@@ -166,19 +167,18 @@ function App() {
       <DrawingDialog />
       <CoordinateConverterDialog />
       <MarkerDialog />
-      {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded. */}
-      <Suspense fallback={null}>
-        <DevicesWorkspace />
-        <MissionReviewWorkspace />
-        <DiagnosticsWorkspace />
-      </Suspense>
-      <Suspense fallback={null}>
+      {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
+          A screen whose code fails to load shows a message; the rest of the app stays up. */}
+      <LazyScreenBoundary screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary screen="Mission review"><MissionReviewWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary screen="Settings">
         <SettingsWorkspace
           focusTarget={settingsFocusTarget}
           onClose={closeSettingsWorkspace}
           open={settingsOpen}
         />
-      </Suspense>
+      </LazyScreenBoundary>
     </main>
   )
 }
