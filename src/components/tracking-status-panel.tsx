@@ -8,8 +8,9 @@ import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcr
 import { useTrackingStyleStore } from '../features/tracking/tracking-style-store'
 import { ExactBreadcrumbDotStatus } from './exact-breadcrumb-dot-status'
 import {
+  collectTrailDeviceIds,
   describeTrailLineNotDrawn,
-  resolveTrailLineVisibility,
+  summarizeTrailDrawing,
 } from '../features/tracking/trail-line-visibility'
 import { useIngestHealthStore } from '../features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../features/tracking/stationary-attention-store'
@@ -77,14 +78,25 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
     Object.values(state.byDevice).filter((attention) => attention.state === 'attention').length,
   )
   const exactBreadcrumbDotState = props.exactBreadcrumbDotState ?? storedExactBreadcrumbDotState
-  const trailDeviceIds = useMemo(
-    () => collectTrailDeviceIds(snapshot.devices, snapshot.breadcrumbMetadata?.deviceBudgets ?? []),
-    [snapshot.devices, snapshot.breadcrumbMetadata],
+  // Judge what is drawn from the renderers' own geometry inputs, never the roster:
+  // the line comes from the live trail, the dots from the exact page [DON-338].
+  const lineDeviceIds = useMemo(
+    () => collectTrailDeviceIds(snapshot.breadcrumbs),
+    [snapshot.breadcrumbs],
   )
-  // Only devices in this mission count; a stale hidden id must not claim a trail is hidden.
-  const hiddenTrailCount = hiddenBreadcrumbDeviceIds.filter((deviceId) => trailDeviceIds.has(deviceId)).length
-  const trailLineVisibility = resolveTrailLineVisibility(trailsVisible, hiddenTrailCount, trailDeviceIds.size)
-  const trailLineNotDrawnSentence = describeTrailLineNotDrawn(trailLineVisibility)
+  const dotDeviceIds = useMemo(
+    () => collectTrailDeviceIds(
+      exactBreadcrumbDotState.status === 'ready' && 'positions' in exactBreadcrumbDotState
+        ? exactBreadcrumbDotState.positions
+        : [],
+    ),
+    [exactBreadcrumbDotState],
+  )
+  const trailDrawing = useMemo(
+    () => summarizeTrailDrawing({ trailsVisible, hiddenBreadcrumbDeviceIds, lineDeviceIds, dotDeviceIds }),
+    [trailsVisible, hiddenBreadcrumbDeviceIds, lineDeviceIds, dotDeviceIds],
+  )
+  const trailLineNotDrawnSentence = describeTrailLineNotDrawn(trailDrawing.line)
   const staleDeviceCount = snapshot.positions.filter((position) => position.device_cache_stale).length
   const unverifiedFixTimePositions = snapshot.positions.filter(
     (position) => position.fix_time_unverified === true,
@@ -260,9 +272,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       {breadcrumbTrailMode === 'dots' ? (
         <ExactBreadcrumbDotStatus
           state={exactBreadcrumbDotState}
-          hiddenTrailCount={hiddenTrailCount}
-          trailDeviceCount={trailDeviceIds.size}
-          trailsVisible={trailsVisible}
+          trailDrawing={trailDrawing}
           onEarlier={
             props.onExactBreadcrumbDotsEarlier ??
             (() => exactBreadcrumbDotController?.showEarlier())
@@ -427,15 +437,4 @@ function TrackingStatusMessage(props: {
       {props.children}
     </p>
   )
-}
-
-/** Device ids that can have a trail in this snapshot: known devices plus devices with retained fixes. */
-function collectTrailDeviceIds(
-  devices: readonly { readonly device_id: string }[],
-  deviceBudgets: readonly { readonly deviceId: string }[],
-): ReadonlySet<string> {
-  const ids = new Set<string>()
-  for (const device of devices) ids.add(device.device_id)
-  for (const budget of deviceBudgets) ids.add(budget.deviceId)
-  return ids
 }

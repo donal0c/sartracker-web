@@ -8,6 +8,7 @@ import {
   resolveBreadcrumbDotOverlaySnapshot,
   type ExactBreadcrumbDotState,
 } from '../tracking/exact-breadcrumb-dot-controller'
+import { isBreadcrumbTrailDrawnForDevice } from '../tracking/trail-line-visibility'
 import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
 import {
@@ -136,10 +137,7 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
     const properties = feature.properties ?? {}
     const deviceId = readStringProperty(properties, 'deviceId')
     if (feature.geometry.type === 'LineString') {
-      if (
-        !input.breadcrumbsVisible ||
-        (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
-      ) {
+      if (!isBreadcrumbTrailDrawnForDevice(deviceId, input.breadcrumbsVisible, hiddenBreadcrumbDeviceIds)) {
         continue
       }
       L.polyline(toLatLngs(feature.geometry.coordinates), {
@@ -154,10 +152,7 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
       if (readStringProperty(properties, 'featureKind') === 'breadcrumbLoneFix') {
         // A lone fix the trail line cannot draw [LIV-5]: a trail point in the
         // trail colour, never a current-position marker, never labelled.
-        if (
-          !input.breadcrumbsVisible ||
-          (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
-        ) {
+        if (!isBreadcrumbTrailDrawnForDevice(deviceId, input.breadcrumbsVisible, hiddenBreadcrumbDeviceIds)) {
           continue
         }
         L.circleMarker(toLatLng(feature.geometry.coordinates), {
@@ -172,10 +167,7 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
       }
 
       if (readStringProperty(properties, 'featureKind') === 'breadcrumb') {
-        if (
-          !input.breadcrumbsVisible ||
-          (deviceId !== null && hiddenBreadcrumbDeviceIds.has(deviceId))
-        ) {
+        if (!isBreadcrumbTrailDrawnForDevice(deviceId, input.breadcrumbsVisible, hiddenBreadcrumbDeviceIds)) {
           continue
         }
 
