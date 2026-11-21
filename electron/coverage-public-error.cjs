@@ -11,6 +11,7 @@
 const PUBLIC = Object.freeze({
   cancelled: 'coverage-cancelled: Coverage request was cancelled.',
   aborted: 'Coverage request was cancelled.',
+  workerAborted: 'Coverage worker request was cancelled.',
   chunkStale: 'chunk-stale: coverage chunk revision changed',
   revisionMoved: 'coverage-revision-moved: Coverage history changed while it was read.',
   timeout: 'Coverage request timed out.',
@@ -26,8 +27,9 @@ const PUBLIC_COVERAGE_ERROR_MESSAGES = Object.freeze(Object.values(PUBLIC))
 
 /**
  * Converts any coverage RPC failure into one allow-listed public error.
- * Cancellation keeps its AbortError name, and the coverage-cancelled prefix
- * only when the raw error had it, so renderer cancellation is unchanged.
+ * The error name is kept as it was, and cancellation keeps the
+ * coverage-cancelled prefix and the worker token only where the raw error had
+ * them, so renderer cancellation and classification are unchanged.
  * @param {unknown} error
  * @returns {Error & { code?: string }}
  */
@@ -37,8 +39,13 @@ function toPublicCoverageError(error) {
   const code = typeof error?.code === 'string' ? error.code : ''
   const lower = message.toLowerCase()
 
-  if (message.includes('coverage-cancelled:')) return publicError(PUBLIC.cancelled, { name: 'AbortError' })
-  if (name === 'AbortError') return publicError(PUBLIC.aborted, { name: 'AbortError' })
+  const abortName = name === 'AbortError' ? { name: 'AbortError' } : {}
+  if (message.includes('coverage-cancelled:')) return publicError(PUBLIC.cancelled, abortName)
+  if (name === 'AbortError') {
+    // The query runner's "Coverage query worker was cancelled." classifies as
+    // a worker failure after IPC; keep that token [DON-338].
+    return publicError(lower.includes('worker') ? PUBLIC.workerAborted : PUBLIC.aborted, abortName)
+  }
   if (code === 'chunk-stale' || lower.includes('chunk-stale')) {
     return publicError(PUBLIC.chunkStale, { code: 'chunk-stale' })
   }
