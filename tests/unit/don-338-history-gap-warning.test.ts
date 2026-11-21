@@ -145,7 +145,7 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
 
   /** Starts a poller whose history fetches fail per `server`, polling every 30 minutes. */
   function startPoller(
-    server: { mode: 'ok' | 'gap' | 'down' },
+    server: { mode: 'ok' | 'gap' | 'down'; hold?: Promise<void> },
     mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false },
   ) {
     const onStatusChange = vi.fn()
@@ -159,6 +159,7 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
         return [] as readonly NormalizedTrackingPosition[]
       }),
       getBreadcrumbs: vi.fn(async (_deviceId: string, from: Date, to: Date) => {
+        if (server.hold !== undefined) await server.hold
         const fromMs = from.getTime()
         const toMs = to.getTime()
         if (server.mode === 'gap' && fromMs <= BAD_TO_MS && toMs >= BAD_FROM_MS) {
@@ -189,7 +190,11 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
       readonly warning: string | null
       readonly warningCodes?: readonly string[]
     } | undefined
-    return { poller, latest }
+    const all = () => onStatusChange.mock.calls.map((call) => (call as unknown as [{
+      readonly mode: string
+      readonly warning: string | null
+    }])[0])
+    return { poller, latest, all }
   }
 
   it('raises a re-check failure when the re-check publishes, not at the next poll, then clears it', async () => {
@@ -265,6 +270,64 @@ describe('[DON-338] history gap warning through the real poller and reconciler',
       /^OFFLINE MODE — no current positions received for this mission\. DEVICE ROSTER INCOMPLETE — 1 device entry from Traccar could not be read, so a tracker may be missing from the map\. Check the device list in Traccar\. Breadcrumb history incomplete for Alpha: \d\d:\d\d–\d\d:\d\d could not be loaded from Traccar and is missing from the map; still retrying\.$/u,
     )
     expect(latest()?.warningCodes).toEqual(['offline_no_positions', 'roster_unavailable', 'history_incomplete'])
+    poller.stop()
+  })
+
+  it('never publishes "online" when a re-check in flight at pause settles, and reports the gap on resume', async () => {
+    const server: { mode: 'ok' | 'gap' | 'down'; hold?: Promise<void> } = { mode: 'ok' }
+    const mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false }
+    const { poller, latest, all } = startPoller(server, mission)
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(latest()?.mode).toBe('online')
+
+    let release = (): void => undefined
+    server.mode = 'gap'
+    server.hold = new Promise<void>((resolve) => { release = resolve })
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+    const beforePause = all().length
+
+    // Paused before any poll has seen it: the settling re-check is the only
+    // possible publisher, and the reconciler stops reporting once paused.
+    mission.pollingMode = 'paused'
+    server.hold = undefined
+    release()
+    await vi.advanceTimersByTimeAsync(60 * 1000)
+    expect(all().slice(beforePause).filter((status) => status.mode === 'online')).toEqual([])
+
+    // On resume the re-check runs again and names the gap.
+    mission.pollingMode = 'active'
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+    expect(latest()?.mode).toBe('online')
+    expect(latest()?.warning ?? '').toMatch(/Breadcrumb history incomplete for Alpha: .* still retrying\./u)
+    poller.stop()
+  })
+
+  it('keeps an already published paused status when a re-check in flight at pause settles', async () => {
+    const server: { mode: 'ok' | 'gap' | 'down'; hold?: Promise<void> } = { mode: 'ok' }
+    const mission: { pollingMode: 'active' | 'paused'; currentFixesDown: boolean } = { pollingMode: 'active', currentFixesDown: false }
+    const { poller, latest, all } = startPoller(server, mission)
+    poller.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    let release = (): void => undefined
+    server.mode = 'gap'
+    server.hold = new Promise<void>((resolve) => { release = resolve })
+    await vi.advanceTimersByTimeAsync(6 * 60 * 1000)
+
+    mission.pollingMode = 'paused'
+    poller.requestPollNow()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(latest()?.mode).toBe('idle')
+    const pausedAt = all().length
+
+    server.hold = undefined
+    release()
+    await vi.advanceTimersByTimeAsync(60 * 1000)
+    expect(all().slice(pausedAt).filter((status) => status.mode === 'online')).toEqual([])
+    expect(latest()?.mode).toBe('idle')
+    expect(latest()?.warning ?? '').toMatch(/^Live refresh suspended while mission is paused\./u)
     poller.stop()
   })
 })

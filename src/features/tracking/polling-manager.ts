@@ -623,15 +623,12 @@ export function createPollingManager(
         { ...warningContext, retry: 'suspended' },
       )
       if (lastSuccessAt !== null && consecutiveFailures === 0) {
-        publishStatus({
-          mode: 'online',
-          ...combineTrackingWarnings(
-            // History progress must not wipe a roster warning (ING-4 [DON-338]).
-            latestRosterWarning,
-            breadcrumbStatusWarning,
-            breadcrumbIngestWarning,
-          ),
-        })
+        publishOnlineStatusIfActive(combineTrackingWarnings(
+          // History progress must not wipe a roster warning (ING-4 [DON-338]).
+          latestRosterWarning,
+          breadcrumbStatusWarning,
+          breadcrumbIngestWarning,
+        ))
       }
     },
     ...(options.historyAntiEntropyIntervalMs === undefined
@@ -850,15 +847,42 @@ export function createPollingManager(
     })
   }
 
+  // The last status handed to the UI, so a non-active status is re-published
+  // only when its text changes [DON-338].
+  let lastPublishedStatus: TrackingConnectionStatus | null = null
   const publishStatus = (overrides: Partial<TrackingConnectionStatus> = {}) => {
-    options.onStatusChange({
+    const status: TrackingConnectionStatus = {
       mode: 'idle',
       consecutiveFailures,
       recovered: false,
       lastSuccessAt,
       warning: null,
       ...overrides,
-    })
+    }
+    lastPublishedStatus = status
+    options.onStatusChange(status)
+  }
+
+  /**
+   * Publishes an "online" status from work that may settle after the mission
+   * stopped being active (history progress, history completion or failure, a
+   * late roster, a slow current-fix render). While paused or idle it never
+   * publishes "online": the stored warnings are already updated by the
+   * caller, and the inactive status is re-published only if its text changed,
+   * so a paused status never gives way to "online" [DON-338].
+   *
+   * @param warnings the online status warnings, used only while active
+   * @param recovered whether the online status reports a restored connection
+   */
+  function publishOnlineStatusIfActive(warnings: TrackingWarningFields, recovered = false): void {
+    const pollingMode = options.getPollingMode?.() ?? 'active'
+    if (pollingMode === 'active') {
+      publishStatus({ mode: 'online', recovered, ...warnings })
+      return
+    }
+    const inactive = getInactiveMissionWarning(pollingMode)
+    if (lastPublishedStatus?.mode === 'idle' && lastPublishedStatus.warning === inactive.warning) return
+    publishStatus({ mode: 'idle', ...inactive })
   }
 
   /**
@@ -1091,8 +1115,8 @@ export function createPollingManager(
    * Publishes the status when a detached roster settles with a different
    * warning. Without this, a roster that lands after the current fixes and
    * history have both published would stay "refreshing" (or unwarned) until
-   * the next poll [DON-338]. Skipped for a stopped, superseded, paused or
-   * failing poller, whose own status must not be replaced by "online".
+   * the next poll [DON-338]. Skipped for a stopped, superseded or failing
+   * poller; while paused it can only re-publish the paused status.
    *
    * @param previousRosterWarning the roster warning before this roster settled
    * @param requestGeneration the lifecycle generation that started the request
@@ -1108,18 +1132,14 @@ export function createPollingManager(
       previousRosterWarning?.text === latestRosterWarning?.text
     ) return
     if (requestGeneration !== lifecycleGeneration || requestHistoryResetKey !== activeHistoryResetKey) return
-    if ((options.getPollingMode?.() ?? 'active') !== 'active') return
     if (lastSuccessAt === null || consecutiveFailures !== 0) return
-    publishStatus({
-      mode: 'online',
-      ...combineTrackingWarnings(
-        latestRosterWarning,
-        breadcrumbIngestWarning,
-        !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
-          ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
-          : breadcrumbStatusWarning,
-      ),
-    })
+    publishOnlineStatusIfActive(combineTrackingWarnings(
+      latestRosterWarning,
+      breadcrumbIngestWarning,
+      !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
+        ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
+        : breadcrumbStatusWarning,
+    ))
   }
 
   /** Reuses one detached roster request so slow metadata cannot accumulate. */
@@ -1414,20 +1434,17 @@ export function createPollingManager(
         }
         settleCurrentPositionObservation(!missionEvidenceTransferred)
       }
-      publishStatus({
-        mode: 'online',
-        recovered,
-        ...combineTrackingWarnings(
-          currentPositionResult.rosterWarning,
-          createRejectedCurrentPositionWarning(currentPositionResult.rejected),
-          breadcrumbIngestWarning,
-          recovered
-            ? { code: 'connection_restored', text: 'CONNECTION RESTORED' }
-            : !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
-              ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
-              : breadcrumbStatusWarning,
-        ),
-      })
+      // The current-fix render above may await; a pause meanwhile wins.
+      publishOnlineStatusIfActive(combineTrackingWarnings(
+        currentPositionResult.rosterWarning,
+        createRejectedCurrentPositionWarning(currentPositionResult.rejected),
+        breadcrumbIngestWarning,
+        recovered
+          ? { code: 'connection_restored', text: 'CONNECTION RESTORED' }
+          : !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
+            ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
+            : breadcrumbStatusWarning,
+      ), recovered)
       const completedAt = now().toISOString()
       options.onPollDiagnostic?.({
         ts: completedAt,
@@ -1557,14 +1574,11 @@ export function createPollingManager(
         failureKind: classifyTrackingFailure(error),
       })
       if (canPublishHistoryStatus(request)) {
-        publishStatus({
-          mode: 'online',
-          ...combineTrackingWarnings(
-            latestRosterWarning,
-            breadcrumbStatusWarning,
-            breadcrumbIngestWarning,
-          ),
-        })
+        publishOnlineStatusIfActive(combineTrackingWarnings(
+          latestRosterWarning,
+          breadcrumbStatusWarning,
+          breadcrumbIngestWarning,
+        ))
       }
       const completedAt = now().toISOString()
       options.onPollDiagnostic?.({
@@ -1749,15 +1763,14 @@ export function createPollingManager(
       completionProgress,
       { ...completionContext, retry: 'suspended' },
     )
+    // The history render above may await; a pause meanwhile must not be
+    // replaced by "online" (the poll sequence only moves once a poll runs).
     if (canPublishHistoryStatus(request)) {
-      publishStatus({
-        mode: 'online',
-        ...combineTrackingWarnings(
-          latestRosterWarning,
-          breadcrumbIngestWarning,
-          breadcrumbStatusWarning,
-        ),
-      })
+      publishOnlineStatusIfActive(combineTrackingWarnings(
+        latestRosterWarning,
+        breadcrumbIngestWarning,
+        breadcrumbStatusWarning,
+      ))
     }
 
     const completedAt = now().toISOString()
