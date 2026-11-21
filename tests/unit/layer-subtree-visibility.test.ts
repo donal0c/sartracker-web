@@ -6,7 +6,7 @@ import {
   TRACKING_DEVICES_LAYER_NODE_ID,
   TRACKING_GROUP_NODE_ID,
 } from '../../src/features/layers/layer-catalog-ids'
-import { queueLayerSubtreeVisibility, setLayerSubtreeVisibility } from '../../src/features/layers/layer-subtree-visibility'
+import { queueLayerSubtreeVisibility, setLayerSubtreeVisibility, StaleLayerVisibilityChangeError } from '../../src/features/layers/layer-subtree-visibility'
 import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 
 const root = buildLayerCatalogTree({
@@ -95,8 +95,11 @@ describe('switching a layer on in the simplified workspace [DON-341]', () => {
  * A fake catalog runtime: each write is held until released, then saved and the
  * catalog rebuilt from what was saved, as the real runtime does.
  */
-function heldCatalog(options: { readonly failWhen?: (ids: readonly string[], visible: boolean) => boolean } = {}) {
-  const saved = new Map<string, boolean>([[TRACKING_DEVICES_LAYER_NODE_ID, false]])
+function heldCatalog(options: {
+  readonly failWhen?: (ids: readonly string[], visible: boolean) => boolean
+  readonly initial?: ReadonlyArray<readonly [string, boolean]>
+} = {}) {
+  const saved = new Map<string, boolean>(options.initial ?? [[TRACKING_DEVICES_LAYER_NODE_ID, false]])
   const pending: Array<() => void> = []
   const build = () => buildLayerCatalogTree({
     missionId: 'mission-1', devices: [device('1'), device('2')], markers: [], drawings: [], helicopters: [],
@@ -125,15 +128,15 @@ function heldCatalog(options: { readonly failWhen?: (ids: readonly string[], vis
       next()
     }
   }
-  return { controller: { setNodeVisibilities } as never, readRoot: () => root, saved, releaseAll }
+  return { controller: { setNodeVisibilities } as never, setNodeVisibilities, readRoot: () => root, saved, releaseAll }
 }
 
 describe('People visibility writes [DON-341]', () => {
   it('two people ticked before the first reveal is saved both stay shown, now and after reopening', async () => {
     useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1', '2'] })
     const catalog = heldCatalog()
-    const first = queueLayerSubtreeVisibility({ readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
-    const second = queueLayerSubtreeVisibility({ readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('2'), visible: true, revealAncestors: true })
+    const first = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
+    const second = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('2'), visible: true, revealAncestors: true })
     await catalog.releaseAll()
     await Promise.all([first, second])
 
@@ -146,12 +149,50 @@ describe('People visibility writes [DON-341]', () => {
   it('a failed save is reported, and the map goes back to what was saved', async () => {
     useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1', '2'] })
     const catalog = heldCatalog({ failWhen: (ids, visible) => visible && ids.includes(TRACKING_DEVICES_LAYER_NODE_ID) })
-    const reveal = queueLayerSubtreeVisibility({ readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
+    const reveal = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
     const outcome = reveal.then(() => 'saved', (error: unknown) => error instanceof Error ? error.message : 'failed')
     await catalog.releaseAll()
 
     expect(await outcome).toBe('disk unavailable')
     // The Current Location layer was never saved visible, so nobody shows as visible.
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(expect.arrayContaining(['1', '2']))
+  })
+
+  it('a failed save puts back each person as saved: shown people shown, hidden people hidden', async () => {
+    // Location layer shown, person 1 shown, person 2 saved hidden.
+    useLayerVisibilityStore.setState({ hiddenDeviceIds: ['2'] })
+    const catalog = heldCatalog({
+      initial: [[TRACKING_DEVICES_LAYER_NODE_ID, true], [getDeviceFeatureNodeId('2'), false]],
+      failWhen: () => true,
+    })
+    const hideEveryone = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: TRACKING_DEVICES_LAYER_NODE_ID, visible: false, revealAncestors: true })
+    const outcome = hideEveryone.then(() => 'saved', () => 'failed')
+    await catalog.releaseAll()
+
+    expect(await outcome).toBe('failed')
+    expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['2'])
+  })
+
+  it('changes queued for one mission never touch the next mission', async () => {
+    useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1', '2'] })
+    const catalog = heldCatalog()
+    let missionId = 'mission-1'
+    const readMissionId = () => missionId
+    // A reveal that needs several saves, and a second change queued behind it.
+    const reveal = queueLayerSubtreeVisibility({ readMissionId, readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
+    const queued = queueLayerSubtreeVisibility({ readMissionId, readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('2'), visible: true, revealAncestors: true })
+    const outcomes = Promise.all([reveal, queued].map((change) => change.then(() => 'saved', (error: unknown) => error)))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The operator finishes the mission and starts a new one while the first save is held.
+    missionId = 'mission-2'
+    useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1', '2'] })
+    await catalog.releaseAll()
+
+    const [first, second] = await outcomes
+    expect(first).toBeInstanceOf(StaleLayerVisibilityChangeError)
+    expect(second).toBeInstanceOf(StaleLayerVisibilityChangeError)
+    // Only the save already under way reached the store; nothing after it ran.
+    expect(catalog.setNodeVisibilities).toHaveBeenCalledTimes(1)
+    expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['1', '2'])
   })
 })

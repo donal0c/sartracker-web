@@ -9,7 +9,7 @@ import {
 import { useLayerCatalogStore } from '../../features/layers/layer-catalog-store'
 import { findCatalogNode } from '../../features/layers/layer-catalog-tree'
 import { getLayerVisibilityCheckboxState } from '../../features/layers/layer-panel-model'
-import { queueLayerSubtreeVisibility } from '../../features/layers/layer-subtree-visibility'
+import { queueLayerSubtreeVisibility, StaleLayerVisibilityChangeError } from '../../features/layers/layer-subtree-visibility'
 import { useLayerVisibilityStore } from '../../features/layers/layer-visibility-store'
 import type { PersonRow } from '../../features/workspace/people-model'
 import { useMapTargetStore } from '../../features/map/map-target-store'
@@ -46,17 +46,20 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
 
   const [visibilityError, setVisibilityError] = useState<string | null>(null)
   const setVisible = (nodeId: string, visible: boolean) => {
-    setVisibilityError(null)
     // Tracking is not listed in Layers here, so switching on must also undo a hidden Tracking group.
     // Changes are saved one at a time against the catalog as last saved; a failed
-    // save puts the ticks back to what was saved and says so here.
+    // save puts the ticks back to what was saved and says so here. The queue
+    // finishes changes in order, so the alert always reflects the latest one.
     queueLayerSubtreeVisibility({
+      readMissionId: () => useMissionStore.getState().currentMission?.id ?? null,
       readRoot: () => useLayerCatalogStore.getState().root,
       controller,
       nodeId,
       visible,
       revealAncestors: true,
-    }).catch((error: unknown) => {
+    }).then(() => setVisibilityError(null), (error: unknown) => {
+      // A change made in a mission that has since closed was not applied; nothing to fix here.
+      if (error instanceof StaleLayerVisibilityChangeError) return
       const reason = error instanceof Error ? error.message : 'unknown error'
       setVisibilityError(`Who is shown on the map could not be saved (${reason}). The ticks show what was saved. Try again; if it keeps failing, open More, then Diagnostics.`)
     })

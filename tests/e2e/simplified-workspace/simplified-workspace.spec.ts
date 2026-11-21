@@ -180,6 +180,36 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('ws-position-5')).toBeChecked()
   })
 
+  test('a failed show or hide followed by one that saves leaves no stale alert in People', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await showPeople(page)
+    await expect(page.getByTestId('ws-position-5')).toBeChecked()
+    // The first visibility write fails after a delay; later writes save normally.
+    await page.evaluate(async () => {
+      const { useLayerCatalogStore } = await import('/src/features/layers/layer-catalog-store.ts')
+      const controller = useLayerCatalogStore.getState().controller
+      if (controller === null) throw new Error('Layer catalog is not running.')
+      let calls = 0
+      useLayerCatalogStore.setState({
+        controller: {
+          ...controller,
+          setNodeVisibilities: (ids, visible) => {
+            calls += 1
+            if (calls === 1) return new Promise((_resolve, reject) => setTimeout(() => reject(new Error('disk unavailable')), 400))
+            return controller.setNodeVisibilities(ids, visible)
+          },
+        },
+      })
+    })
+    // Off, then on again while the first save is still pending.
+    await page.getByTestId('ws-position-5').click()
+    await page.getByTestId('ws-position-5').click()
+    await page.waitForTimeout(800)
+    await expect(page.getByTestId('ws-people-visibility-error')).toHaveCount(0)
+    await expect(page.getByTestId('ws-position-5')).toBeChecked()
+  })
+
   test('a participant warning opens Mission and stays on the Mission button, without locking Tracking', async ({ page }) => {
     const setRosterError = (message: string | null) => page.evaluate(async (value) => {
       const path = '/src/features/participants/participant-store.ts'
