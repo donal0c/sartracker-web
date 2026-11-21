@@ -207,6 +207,36 @@ describe('SettingsWorkspace', () => {
       expect(reloadSettings).toHaveBeenCalledWith({ forceConnect: false })
     })
 
+    it('will not confirm a stop-tracking save once the draft has become invalid', async () => {
+      const onClose = vi.fn()
+      const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+      arrangeDefaults({
+        ...DEFAULT_APP_SETTINGS,
+        dataSource: { ...DEFAULT_APP_SETTINGS.dataSource, providerType: 'traccar_http', baseUrl: 'https://traccar.example.org', secretPresent: true, email: 'ops@example.org' },
+      })
+      mocks.getAppRuntimeController.mockReturnValue({ reloadSettings: vi.fn(), isTrackingConnected: () => true, dispose: vi.fn() })
+      render(React.createElement(SettingsWorkspace, { open: true, onClose }))
+      await waitForEnabledButton('[data-testid="settings-save"]')
+      await act(async () => {
+        ;(await waitForInput('[data-testid="settings-auto-refresh-enabled"]')).click()
+      })
+      await act(async () => {
+        getButton('[data-testid="settings-save"]').click()
+      })
+      expect(document.querySelector('[data-testid="settings-stop-tracking-confirmation"]')).not.toBeNull()
+
+      setInputValue(await waitForInput('[data-testid="settings-provider-url"]'), 'not-a-url')
+      const confirm = getButton('[data-testid="settings-stop-tracking-confirm"]')
+      expect(confirm.disabled).toBe(true)
+      await act(async () => {
+        confirm.click()
+      })
+      await flushMicrotasks()
+
+      expect(mocks.saveAppSettings).not.toHaveBeenCalled()
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
     it('keeps the settings open when the operator chooses to keep editing', async () => {
       const onClose = vi.fn()
       const { SettingsWorkspace } = await import('../../src/components/settings-workspace')

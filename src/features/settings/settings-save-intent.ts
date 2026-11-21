@@ -16,7 +16,9 @@ export function describeTrackingStopOnSave(draft: AppSettingsDraft): string | nu
   if (!draft.missionDefaults.autoRefreshEnabled) {
     return 'Auto-refresh is switched off.'
   }
-  if (draft.dataSource.clearSecret && draft.dataSource.secretInput.trim() === '') {
+  // Clearing wins over a typed replacement when the store saves, so a typed
+  // secret does not keep tracking alive.
+  if (draft.dataSource.clearSecret) {
     return 'The stored Traccar password or token will be cleared.'
   }
   return null

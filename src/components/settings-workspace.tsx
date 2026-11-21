@@ -265,8 +265,9 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
                     Keep Editing
                   </button>
                   <button
-                    className="border border-rose-400/60 bg-rose-900/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-rose-50"
+                    className="border border-rose-400/60 bg-rose-900/80 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-rose-50 disabled:opacity-40"
                     data-testid="settings-stop-tracking-confirm"
+                    disabled={saving || hasValidationErrors}
                     onClick={() => {
                       const confirmed = pendingTrackingStop
                       setPendingTrackingStop(null)
@@ -448,7 +449,7 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
    * has closed, never only logged.
    */
   async function saveAndApply(forceConnect: boolean): Promise<void> {
-    if (draft === null) {
+    if (draft === null || saving || hasValidationErrors) {
       return
     }
 

@@ -8,6 +8,7 @@ import {
 } from '../../src/features/settings/settings-sections'
 import { DEFAULT_APP_SETTINGS, createSettingsDraft } from '../../src/features/settings/settings-types'
 import { validateSettingsDraft } from '../../src/features/settings/settings-validation'
+import { describeTrackingStopOnSave } from '../../src/features/settings/settings-save-intent'
 
 describe('Settings sections [DON-343]', () => {
   it('lists the five sections the team asked for, in their order', () => {
@@ -52,5 +53,28 @@ describe('Settings sections [DON-343]', () => {
     expect(counts['weather-links']).toBe(2)
     expect(counts.advanced).toBe(1)
     expect(counts['tracking-sources']).toBe(0)
+  })
+})
+
+describe('describeTrackingStopOnSave [DON-352, audit M-67]', () => {
+  const liveDraft = () => {
+    const draft = createSettingsDraft({
+      ...DEFAULT_APP_SETTINGS,
+      dataSource: { ...DEFAULT_APP_SETTINGS.dataSource, providerType: 'traccar_http', secretPresent: true },
+      missionDefaults: { ...DEFAULT_APP_SETTINGS.missionDefaults, autoRefreshEnabled: true },
+    })
+    return draft
+  }
+
+  it('warns when clearing the stored secret even if a replacement was typed, because clearing wins on save', () => {
+    const draft = liveDraft()
+    const clearing = { ...draft, dataSource: { ...draft.dataSource, clearSecret: true, secretInput: 'replacement' } }
+    expect(describeTrackingStopOnSave(clearing)).toBe('The stored Traccar password or token will be cleared.')
+  })
+
+  it('does not warn for a plain secret replacement', () => {
+    const draft = liveDraft()
+    const replacing = { ...draft, dataSource: { ...draft.dataSource, clearSecret: false, secretInput: 'replacement' } }
+    expect(describeTrackingStopOnSave(replacing)).toBeNull()
   })
 })
