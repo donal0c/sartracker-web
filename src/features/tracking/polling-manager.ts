@@ -1252,6 +1252,11 @@ export function createPollingManager(
         latestDevices,
       )
       latestParticipantRosterAuthoritative = result.complete
+      // A roster answer requested for an earlier lifecycle or mission must not
+      // set (or clear) the missing-tracker warning of the current one [DON-338].
+      if (requestGeneration !== lifecycleGeneration || requestHistoryResetKey !== activeHistoryResetKey) {
+        return
+      }
       // A roster that settles after the poll's grace period replaces
       // "refreshing"; an incomplete one must keep warning (ING-4 [DON-338]).
       const previousRosterText = composedRosterText()
@@ -1309,6 +1314,7 @@ export function createPollingManager(
         latestAntiEntropyFailedNames = []
         breadcrumbIngestWarning = null
         latestRosterWarning = null
+        settledRosterProblem = null
         latestBreadcrumbTimestampByDevice.clear()
         historyReconciler.reset()
         lastGoodSnapshot = null
@@ -2042,6 +2048,8 @@ export function createPollingManager(
     lifecycleGeneration += 1
     historyReconciler.reset()
     latestAntiEntropyFailedNames = []
+    latestRosterWarning = null
+    settledRosterProblem = null
     canonicalizationSequence += 1
     canonicalizationRefreshPending = false
     initialCatchUpSettled = 'pending'
