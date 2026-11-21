@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { openMissionSections } from '../helpers/mission-sections'
+import { closeMissionPanel, openWorkspacePanel } from '../helpers/workspace-panels'
 
 const OUT_DIR = join(process.cwd(), 'public', 'manual', 'assets')
 
@@ -75,7 +76,7 @@ async function dialogPanel(page: Page, testId: string): Promise<Locator> {
 /** Opens the browser harness with the mission model on and waits for the map to draw. */
 async function openHarness(page: Page): Promise<void> {
   // coverage=1 turns on the Mission History coverage view, which packaged builds have by default.
-  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1&coverage=1')
+  await page.goto('/?missionHarness=1&missionModel=1&coverage=1')
   await page.getByTestId('app-title').waitFor({ timeout: 20_000 })
   await page.waitForSelector('canvas', { timeout: 20_000 })
   await page.waitForTimeout(2_500)
@@ -219,7 +220,7 @@ async function startDemoMission(page: Page, name = 'Coomloughra Search'): Promis
   await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
   await page.getByTestId('participant-device-picker').getByText('Charlie Team', { exact: true }).click()
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-control')).toContainText('active')
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   await injectTracking(page)
   await completeParticipantBackfill(page)
 }
@@ -259,7 +260,7 @@ test.describe('manual screenshots: running a mission', () => {
     })
 
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await injectTracking(page)
     await completeParticipantBackfill(page)
     await shot(page, 'app-shell')
@@ -271,9 +272,9 @@ test.describe('manual screenshots: running a mission', () => {
       await shot(page, 'mission-participants-open', page.getByTestId('mission-control-dock'))
       await page.getByTestId('mission-participants-section-toggle').click()
       await shot(page, 'tracking-tab', page.getByTestId('sidebar-tab-content'))
-      await page.getByTestId('sidebar-tab-layers').click()
+      await openWorkspacePanel(page, 'layers')
       await shot(page, 'layers-tab', page.getByTestId('sidebar-tab-content'))
-      await page.getByTestId('sidebar-tab-tracking').click()
+      await openWorkspacePanel(page, 'tracking')
     })
 
     await page.getByTestId('open-devices-workspace').click()
@@ -384,7 +385,7 @@ test.describe('manual screenshots: warnings, outings, history, pause', () => {
       await shot(page, 'mission-paused-controls', page.getByTestId('mission-control-dock'))
     })
     await page.getByTestId('mission-paused-banner-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     // Restart recovery.
     await page.reload()
@@ -456,7 +457,7 @@ test.describe('manual screenshots: finish, archive and lock', () => {
     await seedRoster(page)
     await page.getByTestId('mission-name-input').fill('Gap of Dunloe Training')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await finishMission(page)
     await confirmFinish(page)
     await withTallWindow(page, async () => {
@@ -608,12 +609,12 @@ test.describe('manual screenshots: GPX, helicopters, measuring, grid references,
       }])
     })
     await withTallWindow(page, async () => {
-      await page.getByTestId('sidebar-tab-tools').click()
+      await openWorkspacePanel(page, 'tools')
       await shot(page, 'tools-tab', page.getByTestId('sidebar-tab-content'))
       await page.getByTestId('helicopter-add-slot').click()
       await page.getByTestId('helicopter-panel').scrollIntoViewIfNeeded()
       await shot(page, 'helicopter-panel', page.getByTestId('helicopter-panel'))
-      await page.getByTestId('sidebar-tab-tracking').click()
+      await openWorkspacePanel(page, 'tracking')
     })
 
     // Measurement: Map Tools -> Measure -> two clicks.
@@ -635,7 +636,7 @@ test.describe('manual screenshots: GPX, helicopters, measuring, grid references,
     await page.getByTestId('drawing-toolbar-collapse').click()
 
     // Minimised Mission Control.
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await closeMissionPanel(page)
     await page.getByTestId('compact-mission-strip').waitFor()
     await shot(page, 'mission-control-minimized', { x: 0, y: 0, width: 1440, height: 260 })
     await page.getByTestId('compact-mission-restore').click()

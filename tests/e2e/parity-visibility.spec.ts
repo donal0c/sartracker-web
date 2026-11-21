@@ -12,6 +12,7 @@
  * If the visibility store does not update after a tree toggle, the map cannot change.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { closeMissionPanel, openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 async function waitForShell(page: Page) {
   const title = page.getByTestId('app-title')
@@ -389,16 +390,17 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await expect.poll(async () => (await readVisibilityState(page)).hiddenDeviceIds).toEqual(['bravo'])
     await expect(page.getByTestId('layer-visibility-layer-tracking-devices')).toHaveJSProperty('indeterminate', true)
     await expect(page.getByTestId('persistent-tracking-health')).toContainText('Current-location display disabled for 1 device')
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await closeMissionPanel(page)
     await page.screenshot({ path: 'tmp/pr15-remediation-visibility.png', fullPage: true })
     await page.getByTestId('compact-mission-restore').click()
     await page.reload()
     await waitForShell(page)
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedVisibilityTestData(page)
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-all-btn').click()
     await expect(page.getByTestId('layer-visibility-feature-device-alpha')).toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
@@ -416,14 +418,16 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
       const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
       return useTrackingStore.getState().snapshot.positions.some((position) => position.device_id === 'new-without-fix')
     })).toBe(false)
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
     await page.getByTestId('mission-name-input').fill('Separate visibility mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await resyncTrackingSnapshot(page)
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-all-btn').click()
     await expect(page.getByTestId('layer-visibility-feature-device-bravo')).toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo')).toBeChecked()
@@ -431,11 +435,12 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
   test.setTimeout(45_000)
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Visibility Test')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedVisibilityTestData(page)
     // Wait for the catalog runtime to ingest the seeded data and surface the
     // expected device/marker/drawing nodes. State-based wait keeps the test
@@ -463,7 +468,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
           'feature:drawing:drawing-line-1',
         ]),
       )
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
   })
 
   test('LPV-240: per-device tracking visibility toggle propagates to visibility store', async ({

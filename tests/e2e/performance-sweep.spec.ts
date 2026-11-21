@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 test.describe('performance sweep regressions', () => {
   test('large tracking mission avoids unchanged tracking source updates on idle [DON-210 DON-212]', async ({
@@ -13,12 +14,13 @@ test.describe('performance sweep regressions', () => {
     // assertions below are unchanged; only the budget is widened for CI.
     test.setTimeout(180_000)
 
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Large Tracking Performance Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await seedLargeTrackingSnapshot(page, { positionOffset: 0 })
 

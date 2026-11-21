@@ -1,15 +1,17 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('BCP-01 current-position ingest health', () => {
   test.use({ timezoneId: 'Europe/Dublin' })
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('BCP-01 Ingest Health')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('keeps valid fixes visible beside rejection, roster, and unverified-time warnings [DON-267]', async ({
@@ -62,6 +64,7 @@ test.describe('BCP-01 current-position ingest health', () => {
       ])
     })
 
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText(
       'Last success22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
     )
@@ -137,6 +140,7 @@ test.describe('BCP-01 current-position ingest health', () => {
         affectedDeviceCount: 1, conflictDeviceIds: ['alpha'],
       })
     })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions remain live')
     await expect(page.getByTestId('position-conflict-warning')).toContainText('first accepted fix remains displayed')
   })

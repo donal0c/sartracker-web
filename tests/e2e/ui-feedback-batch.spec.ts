@@ -1,15 +1,18 @@
 import { expect, test } from '@playwright/test'
+import { closeMissionPanel, openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('UI feedback mission')
   await page.getByTestId('mission-start-btn').click()
+  await openMissionPanel(page)
   await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
 })
 
 test('Focus retains tracking health on every tab and minimized mission can be reviewed and restored', async ({ page }) => {
-  await page.getByTestId('mission-control-collapse-btn').click()
+  await closeMissionPanel(page)
   await page.getByTestId('focus-mode-toggle').click()
   await expect(page.getByTestId('mission-control')).toBeHidden()
   await expect(page.getByTestId('compact-mission-strip')).toContainText('UI feedback mission')
@@ -42,11 +45,12 @@ test('Focus retains tracking health on every tab and minimized mission can be re
   await expect(page.getByRole('heading', { name: 'Audit Workspace', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await page.getByTestId('compact-mission-restore').click()
+  await openMissionPanel(page)
   await expect(page.getByTestId('mission-control')).toBeVisible()
 })
 
 test('Layer collapse returns map width and keyboard restore preserves the layer search', async ({ page }) => {
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   await page.getByTestId('layer-tree-search').fill('test search')
   const before = await page.getByTestId('map-container').boundingBox()
   await page.getByTestId('layer-panel-toggle').click()
@@ -72,16 +76,17 @@ test('Map Tools chevron changes expansion without opening marker placement', asy
 test('upgrade from a collapsed legacy layer panel retains reachable tree controls', async ({ page }) => {
   await page.evaluate(() => localStorage.setItem('sartracker:layer-tree-ui', JSON.stringify({ state: { panelExpanded: false, expandedNodeIds: [], showHidden: true }, version: 0 })))
   await page.reload()
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   await expect(page.getByTestId('layer-tree-search')).toBeVisible()
   await expect(page.getByTestId('layer-panel-toggle')).toHaveText('Collapse')
 })
 
 test('an open End Mission decision cannot be minimized or hidden by rail collapse', async ({ page }) => {
+  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
   await expect(page.getByTestId('mission-control-collapse-btn')).toBeHidden()
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   await expect(page.getByTestId('layer-panel-toggle')).toBeDisabled()
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('mission-finish-dialog')).toBeHidden()
@@ -89,13 +94,14 @@ test('an open End Mission decision cannot be minimized or hidden by rail collaps
 })
 
 test('pause protection clears the collapse latch instead of hiding controls again on Resume', async ({ page }) => {
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   await page.getByTestId('layer-panel-toggle').click()
   await page.evaluate(async () => {
     const path = '/src/features/mission/mission-store.ts'
     const { useMissionStore } = await import(path)
     await useMissionStore.getState().controller.pauseMission()
   })
+  await openMissionPanel(page)
   await expect(page.getByTestId('mission-paused-banner')).toBeVisible()
   await page.getByTestId('mission-paused-banner-resume-btn').click()
   await expect(page.getByTestId('mission-control')).toBeVisible()
@@ -104,7 +110,7 @@ test('pause protection clears the collapse latch instead of hiding controls agai
 
 for (const transition of ['recovery', 'idle'] as const) {
   test(`minimization is not inherited after ${transition} returns to the same mission`, async ({ page }) => {
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await closeMissionPanel(page)
     await page.evaluate(async (phase) => {
       const path = '/src/features/mission/mission-store.ts'
       const { useMissionStore } = await import(path)
@@ -112,6 +118,7 @@ for (const transition of ['recovery', 'idle'] as const) {
       Object.assign(window, { testOriginalMission: mission })
       useMissionStore.setState({ phase, currentMission: null, recoverableMission: phase === 'recovery' ? mission : null })
     }, transition)
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-control')).toBeVisible()
     await page.evaluate(async () => {
       const path = '/src/features/mission/mission-store.ts'
@@ -131,7 +138,7 @@ test('high contrast is operator accessible and survives reload', async ({ page }
 })
 
 test('brightened secondary controls retain their hover affordance', async ({ page }) => {
-  await page.getByTestId('sidebar-tab-tools').click()
+  await openWorkspacePanel(page, 'tools')
   await page.getByTestId('helicopter-add-slot').click()
   const button = page.getByTestId('helicopter-hide-empty-slots')
   await expect(button).toBeVisible()
@@ -151,8 +158,9 @@ test('pending pause failure survives minimization and cannot be hidden by rail c
       Object.assign(window, { rejectTestPause: () => reject(new Error('Test pause failed')) })
     }) } })
   })
+  await openMissionPanel(page)
   await page.getByTestId('mission-pause-resume-btn').click()
-  await page.getByTestId('mission-control-collapse-btn').click()
+  await closeMissionPanel(page)
   await expect(page.getByTestId('mission-control')).toBeHidden()
   await page.evaluate(() => (window as Window & { rejectTestPause: () => void }).rejectTestPause())
   await expect(page.getByTestId('mission-action-error')).toContainText('Test pause failed')
@@ -168,7 +176,7 @@ test('archive recovery cannot be hidden by collapsing an idle rail', async ({ pa
     const mission = useMissionStore.getState().currentMission
     useMissionStore.setState({ phase: 'idle', currentMission: null, governanceMission: { ...mission, status: 'finalized', storage_state: 'recovery_required' } })
   })
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   await expect(page.getByTestId('layer-panel-toggle')).toBeDisabled()
   await expect(page.getByTestId('mission-storage-state')).toContainText('recovery_required')
 })
@@ -195,6 +203,7 @@ test('a rejected admin roster can be retried without leaving hide controls locke
   await expect.poll(() => page.evaluate(() => (window as Window & {
     testRosterAvailability: { calls: number }
   }).testRosterAvailability.calls)).toBeGreaterThan(0)
+  await openMissionPanel(page)
   await page.getByTestId('mission-unlock-btn').click()
   await expect(page.getByText('Test roster unavailable', { exact: true })).toBeVisible()
   await page.evaluate(() => {
@@ -210,12 +219,13 @@ test('a rejected admin roster can be retried without leaving hide controls locke
     useMissionStore.setState({ phase: 'active', currentMission: (window as Window & { testOriginalMission: unknown }).testOriginalMission, governanceMission: null })
   })
   await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   await expect(page.getByTestId('layer-panel-toggle')).toBeEnabled()
 })
 
 test('paused alarm and Resume retain the uncapped dock at 1280x720 in both modes', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 })
+  await openMissionPanel(page)
   await page.getByTestId('mission-pause-resume-btn').click()
   for (const focus of [false, true]) {
     if (focus) await page.getByTestId('focus-mode-toggle').click()

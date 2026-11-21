@@ -1,13 +1,15 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M8 drawing workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Drawing Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await page.getByTestId('drawing-toolbar-expand').click()
   })
 
@@ -257,7 +259,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-text-label-text-input').fill('Updated Landing Zone')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-panel').scrollIntoViewIfNeeded()
     await page.getByTestId('layer-tree-search').fill('Updated Landing')
     await expect(page.getByText('Text Labels')).toBeVisible()
@@ -289,6 +291,7 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
     const moved = await readTextLabelCoordinates(page, 'Landing Zone West Ridge')
     await page.reload()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
     await expect.poll(async () => readTextLabelCoordinates(page, 'Landing Zone West Ridge')).toEqual(moved)
@@ -314,6 +317,7 @@ test.describe('M8 drawing workflows', () => {
     expect(box).not.toBeNull()
 
     await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
 
     const workspaceBox = await page.getByTestId('mission-review-workspace').boundingBox()
@@ -348,7 +352,7 @@ test.describe('M8 drawing workflows', () => {
     let drawings = await readMissionDrawings(page)
     expect(drawings.some((drawing) => drawing.name === 'Edited Name' && drawing.type === 'line')).toBe(true)
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-tree-search').fill('Edited Name')
     await page.getByTestId('layer-tree').getByRole('button', { name: 'Edited Name' }).click()
     await page.getByTestId('layer-edit-drawing-btn').click()

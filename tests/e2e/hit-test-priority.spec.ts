@@ -1,16 +1,18 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 test.describe('B6 hit-test priority', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Hit Test Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('marker stacked inside a polygon wins the click (priority: marker > drawing)', async ({ page }) => {

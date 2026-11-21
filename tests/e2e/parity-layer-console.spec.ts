@@ -3,6 +3,7 @@
  * and LPV-065 (expand all) layer console controls.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 async function waitForShell(page: Page) {
   const title = page.getByTestId('app-title')
@@ -89,14 +90,15 @@ test.describe('Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-
   test.setTimeout(30_000)
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Console Controls')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedLayerData(page)
     await page.waitForTimeout(500)
-    await page.getByTestId('sidebar-tab-layers').click({ force: true })
+    await openWorkspacePanel(page, 'layers')
   })
 
   test('LPV-063: show-hidden toggle filters hidden items from tree', async ({ page }) => {

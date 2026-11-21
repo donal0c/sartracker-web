@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 test.describe('M21 diagnostics workspace', () => {
   test.beforeEach(async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -12,9 +13,10 @@ test.describe('M21 diagnostics workspace', () => {
   test('opens diagnostics, copies the support report, exports it, and repairs layer metadata', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Diagnostics Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(() => {
       window.localStorage.setItem(
@@ -169,9 +171,10 @@ test.describe('M21 diagnostics workspace', () => {
   test('includes per-device breadcrumb render budget details in copied diagnostics [DON-159]', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Breadcrumb Diagnostics')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(async () => {
       const harness = window.__SARTRACKER_BROWSER_HARNESS__

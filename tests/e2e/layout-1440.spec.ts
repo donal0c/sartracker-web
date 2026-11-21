@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openParticipantPickers } from './helpers/workspace-panels'
 
 // DON-300 manual-pass items at the common 1440 x 900 laptop size.
 test.use({ viewport: { width: 1440, height: 900 } })
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
+  await page.goto('/?missionHarness=1&missionModel=1')
   await page.getByTestId('app-title').waitFor()
 })
 
@@ -63,6 +64,7 @@ async function startMission(
   offsetHours = '0',
 ): Promise<void> {
   await seedRoster(page)
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('Layout mission')
   await page.getByTestId('mission-offset-input').fill(offsetHours)
   await select(page)
@@ -109,6 +111,7 @@ async function completeHistory(page: import('@playwright/test').Page): Promise<v
 }
 
 const pickCharlie = async (page: import('@playwright/test').Page) => {
+  await openParticipantPickers(page)
   await page.getByTestId('participant-device-picker').getByText('Charlie Team', { exact: true }).click()
 }
 
@@ -130,6 +133,7 @@ test('opens a folded section on request and keeps adding a participant possible 
   await startMission(page, pickCharlie)
   await completeHistory(page)
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'false')
+  await openMissionPanel(page)
   await page.getByTestId('mission-participants-section-toggle').click()
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'true')
   await expect(page.getByTestId('participant-add-btn')).toBeVisible()
@@ -142,6 +146,7 @@ test('folding a section keeps an unfinished entry and its error [DON-300]', asyn
   await completeHistory(page)
   const toggle = page.getByTestId('mission-participants-section-toggle')
   await toggle.click()
+  await openMissionPanel(page)
   await page.getByTestId('participant-add-ref').selectOption({ index: 1 })
   await page.getByTestId('participant-history-start-custom').check()
   await page.getByTestId('participant-add-btn').click()
@@ -183,6 +188,7 @@ test('keeps every folded summary to one line, even for a long outing name [DON-3
   const toggle = page.getByTestId('mission-outings-section-toggle')
   await toggle.click()
   const label = "Night search of the Hag's Glen and the Devil's Ladder approaches"
+  await openMissionPanel(page)
   await page.getByTestId('outing-label-input').fill(label)
   await page.getByTestId('outing-start-btn').click()
   await toggle.click()
@@ -195,6 +201,7 @@ test('shows Pause and Finish from the top after Start, even when setup was scrol
   // CI flake: the operator (or Playwright) scrolled Mission Control down to
   // reach Start, and the dock stayed scrolled with Pause/Finish cut off.
   await seedRoster(page)
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('Layout mission')
   await page.getByTestId('mission-offset-input').fill('0')
   const dock = page.getByTestId('mission-control-dock')
@@ -216,6 +223,7 @@ test.describe('a warning keeps Participants open, with Pause and Finish still in
 
   test('history still loading', async ({ page }) => {
     await startMission(page, async (target) => {
+      await openParticipantPickers(page)
       await target.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
     }, '2')
     await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')

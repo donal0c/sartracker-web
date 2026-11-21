@@ -106,3 +106,13 @@ export async function openParticipantPickers(page: Page): Promise<void> {
     }
   }
 }
+
+/**
+ * Closes the Mission panel if it is open, as the old Minimise did; the mission
+ * stays named in the top bar.
+ */
+export async function closeMissionPanel(page: Page): Promise<void> {
+  const close = page.getByTestId('ws-mission-close')
+  if (await close.isVisible()) await close.click()
+  await expect(page.getByTestId('mission-control')).toBeHidden()
+}

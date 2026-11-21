@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M12 settings workspace', () => {
   test.beforeEach(async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -86,14 +87,16 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Live Tracking Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('online')
     await expect(page.getByTestId('tracking-status')).toContainText('1')
     await page.getByTestId('open-devices-workspace').click()
@@ -113,10 +116,12 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-auto-refresh-interval').fill('5')
     await page.getByTestId('settings-save').click()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Tracking Diagnostic Mission')
     await page.getByTestId('mission-start-btn').click()
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
     await expect.poll(server.getSuccessfulSessionRequestCount).toBeGreaterThanOrEqual(2)
 
@@ -160,14 +165,16 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Cursor Boundary Mission')
     await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
 
     await expect
@@ -223,22 +230,26 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Connected Finish Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('online')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('idle')
     await expect(page.getByTestId('tracking-status')).toContainText('Waiting for an active mission.')
     await expect(page.getByTestId('tracking-status')).toContainText('0')
@@ -266,10 +277,11 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Large History Mission')
     await page.getByTestId('mission-offset-input').fill('48')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
@@ -281,6 +293,7 @@ test.describe('M12 settings workspace', () => {
     // generous waits (matching the 15s settings-hide wait above) instead of
     // Playwright's default 5s assertion/poll timeout; the assertions
     // themselves are unchanged.
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
     await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
     if (breadcrumbCount > 5_000) {

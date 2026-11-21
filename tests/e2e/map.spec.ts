@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M2 map shell', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
   })
@@ -195,9 +196,10 @@ test.describe('M2 map shell', () => {
   })
 
   test('DON-264 keeps a persistent marker overlay warning visible until verified recovery', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Overlay Warning Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(() => {
       type TestMap = {
@@ -241,7 +243,7 @@ test.describe('M2 map shell', () => {
     try {
       await expect(warning).toBeVisible({ timeout: 5_000 })
       await expect(warning).toContainText(/Markers overlay may be missing or stale.*retrying/iu)
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
       await expect(page.getByTestId('mission-control')).not.toContainText('complete')
       const failedDiagnostics = await page.evaluate(() => {
         const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
@@ -301,7 +303,7 @@ test.describe('M2 map shell', () => {
       })
       expect(recoveredDiagnostics).toHaveLength(1)
       expect(recoveredDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
       await expect(page.getByTestId('mission-control')).not.toContainText('complete')
     } finally {
       await page.evaluate(() => {
@@ -535,9 +537,10 @@ test.describe('M2 map shell', () => {
   test('preserves operator camera when the first tracking update arrives [DON-185]', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Tracking Camera Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     const operatorView = {
       center: [-10.45, 51.55] as [number, number],
@@ -631,6 +634,7 @@ test.describe('M2 map shell', () => {
   })
 
   test('shows the operator-facing tracking status panel', async ({ page }) => {
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toBeVisible()
     await expect(page.getByTestId('tracking-status')).toContainText('Tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('idle')
@@ -638,9 +642,10 @@ test.describe('M2 map shell', () => {
   })
 
   test('shows the mission control panel shell', async ({ page }) => {
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-control')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toContainText('Mission Control')
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
 
@@ -731,7 +736,7 @@ test.describe('M2 map shell', () => {
     await reloadButton.click()
 
     await expect(page).toHaveURL(/\/$/)
-    expect(page.url()).not.toContain('missionHarness=1&classicLayout=1')
+    expect(page.url()).not.toContain('missionHarness=1')
   })
 })
 
@@ -782,7 +787,7 @@ test.describe('stored map choice across restarts [DON-304]', () => {
   })
 
   test('explains why a stored Discovery map was not restored and keeps the choice', async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
 
     const notice = page.getByTestId('map-startup-notice')
     await expect(notice).toBeVisible({ timeout: 15000 })
@@ -794,7 +799,7 @@ test.describe('stored map choice across restarts [DON-304]', () => {
   })
 
   test('the Leaflet fallback does not overwrite a stored official map choice', async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1&mapRenderer=leaflet')
+    await page.goto('/?missionHarness=1&mapRenderer=leaflet')
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible({ timeout: 15000 })
     await page.waitForTimeout(500)
 

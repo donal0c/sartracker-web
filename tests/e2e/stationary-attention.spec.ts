@@ -1,16 +1,19 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('Stationary attention [DON-269]', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Stationary Attention')
     await page.getByTestId('mission-start-btn').click()
   })
 
   test('highlights, acknowledges, and clears attention without hiding the current fix', async ({ page }) => {
     await inject(page, 52.0, 52.00001)
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('stationary-attention-summary')).toContainText('1 device needs stationary attention')
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('device-attention-alpha')).toContainText('Stationary Attention')
@@ -41,6 +44,7 @@ test.describe('Stationary attention [DON-269]', () => {
       }, settled)
     }
     await route(false)
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('stationary-attention-summary')).toHaveCount(0)
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('device-attention-alpha')).toHaveCount(0)

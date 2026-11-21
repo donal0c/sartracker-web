@@ -1,19 +1,21 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M17 layer tree workflows', () => {
   test.use({ timezoneId: 'Europe/Dublin' })
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Layer Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedLayerPanelData(page)
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
   })
 
   test('renders the nested layer tree and inspection workspace', async ({ page }) => {
@@ -166,10 +168,11 @@ test.describe('M17 layer tree workflows', () => {
 
     await page.reload()
     await waitForShell(page)
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Resume' }).click()
     await seedLayerPanelData(page)
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
 
     await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-marker-marker-1')).not.toBeChecked()

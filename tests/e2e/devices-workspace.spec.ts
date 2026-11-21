@@ -1,15 +1,17 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Devices Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedTrackingWorkspace(page)
   })
 
@@ -195,6 +197,7 @@ test.describe('M19 devices workspace', () => {
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
     await expect(page.getByTestId('devices-inspector-title')).toContainText('Bravo Team')
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
 
@@ -498,12 +501,13 @@ test.describe('Operational tracking overlay readiness [DON-263]', () => {
     })
 
     try {
-      await page.goto('/?missionHarness=1&classicLayout=1')
+      await page.goto('/?missionHarness=1')
       await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
       await page.waitForSelector('canvas', { timeout: 15_000 })
+      await openMissionPanel(page)
       await page.getByTestId('mission-name-input').fill('Pending Basemap Mission')
       await page.getByTestId('mission-start-btn').click()
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
       await seedTrackingWorkspace(page)
 
       await expect.poll(() => heldTileCount).toBeGreaterThan(0)

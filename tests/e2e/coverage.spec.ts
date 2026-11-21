@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { seedCoverageMission } from './helpers/coverage-test-setup'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('complete mission-history coverage [DON-275]', () => {
   test('keeps renderer failure visible during live changes and recovers promptly [DON-325]', async ({ page }, testInfo) => {
@@ -156,7 +157,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await seedCoverageMission(page)
     await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown')
     const before = await readCoverageLayerFilters(page)
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-all-btn').click()
     await page.getByTestId('layer-visibility-layer-tracking-breadcrumbs').uncheck()
     await expect(page.getByTestId('layer-visibility-feature-coverage-device-alpha')).toBeChecked()
@@ -164,7 +165,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     expect(await readCoverageLayerFilters(page)).toEqual(before)
     await page.getByTestId('layer-visibility-group-tracking').uncheck()
     expect(await readCoverageLayerFilters(page)).toEqual(before)
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown')
   })
   test('shows all mission history by default and keeps live positions independent of omissions', async ({ page }) => {
@@ -174,7 +175,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await expect(coverageStatus).toContainText('All mission history shown')
     await expect(coverageStatus).not.toContainText('History incomplete')
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-all-btn').click()
     await expect(page.getByTestId('layer-row-group-coverage')).toContainText('Mission History')
     await expect(page.getByTestId('layer-row-feature-coverage-device-alpha')).toBeVisible()
@@ -185,7 +186,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     const trackingFilterBefore = await readMapLayerFilter(page, 'tracking-devices-circle')
     await page.getByTestId('layer-visibility-feature-coverage-device-alpha').click()
 
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(coverageStatus).toContainText('All selected history shown')
     await expect(coverageStatus).toContainText('1 device omitted')
     const trackingFilterAfter = await readMapLayerFilter(page, 'tracking-devices-circle')
@@ -193,16 +194,16 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     expect(JSON.stringify(await readCoverageLayerFilters(page))).toContain('alpha')
     await expect(page.getByTestId('tracking-counters')).toContainText('2')
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-visibility-feature-coverage-period-unassigned-00').click()
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(coverageStatus).toContainText('1 device, Outside outings omitted')
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.locator(
       '[data-testid^="layer-visibility-feature-coverage-period-outing-00"]',
     ).first().click()
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(coverageStatus).toContainText(
       '1 device, 1 outing, Outside outings omitted',
     )
@@ -266,6 +267,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     })
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-control').getByRole('button', { name: 'Resume' }).click()
     await expect(page.getByTestId('coverage-progress-text')).toHaveText(/^0 of \d+ fixes$/u)
     await page.evaluate(() => {
@@ -295,13 +297,14 @@ test.describe('complete mission-history coverage [DON-275]', () => {
   })
 
   test('leaves the existing browser surface unchanged while the coverage flag is off', async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
+    await page.goto('/?missionHarness=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Coverage Flag Off')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByTestId('coverage-status-panel')).toHaveCount(0)
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await expect(page.getByTestId('layer-row-group-coverage')).toHaveCount(0)
   })
 })

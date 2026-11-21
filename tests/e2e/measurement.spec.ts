@@ -1,21 +1,23 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M9 measurement workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Measurement Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('creates multiple measurements and clears them manually', async ({ page }) => {
     await expect(page.getByTestId('measurement-panel')).toBeHidden()
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('measurement-panel')).toBeHidden()
 
     await page.getByTestId('drawing-tool-measure').click()
@@ -60,13 +62,14 @@ test.describe('M9 measurement workflows', () => {
     await clickMap(page, { x: 820, y: 300 })
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await expect(page.getByTestId('measurement-count')).toHaveText('0')
     await expect(page.getByTestId('drawing-tool-measure')).toBeDisabled()
   })
@@ -120,7 +123,7 @@ test.describe('M9 measurement workflows', () => {
       .toBeGreaterThan(0)
 
     await hideMapToolsGroup(page)
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await expect
       .poll(async () => (await readVisibilityState(page)).drawingTypeVisibility.line)
@@ -156,7 +159,7 @@ async function rightClickMap(
 }
 
 async function hideMapToolsGroup(page: import('@playwright/test').Page) {
-  await page.getByTestId('sidebar-tab-layers').click()
+  await openWorkspacePanel(page, 'layers')
   const showHiddenInput = page.getByTestId('layer-show-hidden-toggle').locator('input')
   if (!(await showHiddenInput.isChecked())) {
     await page.getByTestId('layer-show-hidden-toggle').click()

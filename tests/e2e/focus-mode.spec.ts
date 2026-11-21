@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M24 focus mode parity', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await page.evaluate(() => {
       window.localStorage.removeItem('sartracker:focus-mode-active')
     })
@@ -29,6 +30,7 @@ test.describe('M24 focus mode parity', () => {
     await expect(page.getByTestId('focus-sidebar-tab-layers')).toBeVisible()
 
     // Mission control remains accessible in focus mode
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-control')).toBeVisible()
 
     await moveOverMap(page)
@@ -51,24 +53,27 @@ test.describe('M24 focus mode parity', () => {
   })
 
   test('preserves mission recovery, tracking awareness, and drawing workflows', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Focus Mode Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('focus-mode-toggle').click()
     await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
     await expect(page.getByTestId('mission-control')).toContainText('Focus Mode Mission')
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await injectMockTracking(page)
     await page.getByTestId('focus-sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('tracking-status')).toContainText('online')
     await expect(page.getByTestId('tracking-status')).toContainText('2')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
     await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-line').click({ force: true })
@@ -86,16 +91,17 @@ test.describe('M24 focus mode parity', () => {
     await page.reload()
     await waitForShell(page)
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
     await page.getByRole('button', { name: 'Resume' }).click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
   })
 })
