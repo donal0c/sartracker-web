@@ -271,6 +271,15 @@ const HISTORY_PUBLISH_DELAY_MS = 100
 // beyond the cap (at least four poll intervals) [DON-349 P-6].
 const OWED_RELOAD_SPACING_BASE_MS = 5_000
 const OWED_RELOAD_SPACING_MAX_MS = 60_000
+/**
+ * Operator text when the poll loop is parked waiting for room in the mission
+ * evidence queue. It names "live refresh suspended" so every view treats it as
+ * a critical trust warning [DON-349 M-83].
+ */
+const EVIDENCE_BACKPRESSURE_WARNING: TrackingWarning = {
+  code: 'evidence_backpressure',
+  text: 'LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record, so the map is no longer updating. Treat team positions as old until this clears.',
+}
 const HISTORY_PERSISTENCE_BATCH_LIMIT = 5_000
 const HISTORY_TRANSPORT_MAX_CONCURRENCY = 8
 // Reconciler history (initial catch-up and sweep together) may hold at most
@@ -330,6 +339,8 @@ export function createPollingManager(
   let running = false
   let pollInFlight = false
   let evidenceCapacityWait: AbortController | null = null
+  let evidenceBackpressureActive = false
+  let lastOnlineWarnings: TrackingWarningFields = { warning: null, warningCodes: [] }
   let currentPollSequence = 0
   let immediatePollRequested = false
   const activeHistoryTasksByMission = new Map<string | null, HistoryRefreshTask>()
@@ -1090,12 +1101,80 @@ export function createPollingManager(
   function publishOnlineStatusIfActive(warnings: TrackingWarningFields, recovered = false): void {
     const pollingMode = options.getPollingMode?.() ?? 'active'
     if (pollingMode === 'active') {
-      publishStatus({ mode: 'online', recovered, ...warnings })
+      lastOnlineWarnings = warnings
+      publishStatus({
+        mode: 'online',
+        recovered,
+        ...(evidenceBackpressureActive
+          ? {
+              warning: [EVIDENCE_BACKPRESSURE_WARNING.text, warnings.warning].filter((text): text is string => text !== null).join(' '),
+              warningCodes: [EVIDENCE_BACKPRESSURE_WARNING.code, ...warnings.warningCodes],
+            }
+          : warnings),
+      })
       return
     }
     const inactive = getInactiveMissionWarning(pollingMode)
     if (lastPublishedStatus?.mode === 'idle' && lastPublishedStatus.warning === inactive.warning) return
     publishStatus({ mode: 'idle', ...inactive })
+  }
+
+  /**
+   * Re-publishes the last good snapshot with each position's staleness
+   * re-evaluated against the current time, so positions held while the poll
+   * loop is parked go stale on schedule [DON-349 M-83].
+   *
+   * @param historyResetKey the mission scope of the parked poll
+   */
+  function republishLastGoodSnapshot(historyResetKey: string | null): void {
+    if (lastGoodSnapshot === null) return
+    options.onSnapshot(
+      annotateTrackingSnapshotHealth(lastGoodSnapshot, {
+        now: now(),
+        deviceStaleThresholdMs: options.staleThresholdMs,
+      }),
+      {
+        historyResetKey,
+        missionEvidenceId: null,
+        ...rosterAuthorityContext(lastGoodSnapshot.devices, latestParticipantRosterAuthoritative),
+      },
+    )
+  }
+
+  /**
+   * Waits for room in the mission evidence queue without going quiet. If the
+   * wait outlasts the larger of two poll intervals and half the stale
+   * threshold, the status gains a critical "live refresh suspended" warning and
+   * the last positions are re-published with their staleness re-evaluated, then
+   * again every poll interval until the wait ends. Nothing is retried or given
+   * up here: the wait itself is unchanged [DON-349 M-83].
+   *
+   * @param wait starts the capacity wait
+   * @param republishLastPositions re-publishes the last good snapshot with fresh health
+   * @returns what the wait returns
+   */
+  async function waitForEvidenceCapacityVisibly<T>(
+    wait: () => Promise<T>,
+    republishLastPositions: () => void,
+  ): Promise<T> {
+    const report = (): void => {
+      if (stopping || (options.getPollingMode?.() ?? 'active') !== 'active') return
+      evidenceBackpressureActive = true
+      republishLastPositions()
+      publishOnlineStatusIfActive(lastOnlineWarnings)
+    }
+    let repeat: ReturnType<typeof setInterval> | null = null
+    const first = setTimeout(() => {
+      report()
+      repeat = setInterval(report, pollIntervalMs)
+    }, Math.max(2 * pollIntervalMs, Math.floor(options.staleThresholdMs / 2)))
+    try {
+      return await wait()
+    } finally {
+      clearTimeout(first)
+      if (repeat !== null) clearInterval(repeat)
+      evidenceBackpressureActive = false
+    }
   }
 
   /**
@@ -1586,10 +1665,17 @@ export function createPollingManager(
         const controller = new AbortController()
         evidenceCapacityWait = controller
         try {
-          if (options.reserveCurrentEvidenceCapacity !== undefined) {
-            releaseEvidenceCapacity = await options.reserveCurrentEvidenceCapacity(controller.signal)
+          const reserve = options.reserveCurrentEvidenceCapacity
+          if (reserve !== undefined) {
+            releaseEvidenceCapacity = await waitForEvidenceCapacityVisibly(
+              () => reserve(controller.signal),
+              () => republishLastGoodSnapshot(pollHistoryResetKey),
+            )
           } else {
-            await options.waitForCurrentEvidenceCapacity?.(controller.signal)
+            await waitForEvidenceCapacityVisibly(
+              async () => { await options.waitForCurrentEvidenceCapacity?.(controller.signal) },
+              () => republishLastGoodSnapshot(pollHistoryResetKey),
+            )
           }
         } catch (error) {
           if (!controller.signal.aborted) throw error
@@ -1795,8 +1881,12 @@ export function createPollingManager(
       if (options.waitForCurrentEvidenceCapacity !== undefined) {
         const controller = new AbortController()
         evidenceCapacityWait = controller
+        const waitForCapacity = options.waitForCurrentEvidenceCapacity
         try {
-          await options.waitForCurrentEvidenceCapacity(controller.signal)
+          await waitForEvidenceCapacityVisibly(
+            () => waitForCapacity(controller.signal),
+            () => republishLastGoodSnapshot(pollHistoryResetKey),
+          )
         } finally {
           if (evidenceCapacityWait === controller) evidenceCapacityWait = null
         }
