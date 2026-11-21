@@ -28,6 +28,10 @@ import type {
 } from '../diagnostics/tracking-poll-ledger'
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
 import {
+  describeHistoryGapsForOperator,
+  listNamesBounded,
+} from './history-gap-warning'
+import {
   createIncompleteRosterWarning,
   fetchRosterAndCurrentPositions,
 } from './current-position-poll'
@@ -306,6 +310,10 @@ export function createPollingManager(
   let initialSeedAbortController: AbortController | null = null
   let breadcrumbFetchCompleted = false
   let breadcrumbStatusWarning: TrackingWarning | null = null
+  // Devices the latest 5-minute re-check could not sweep. Initial-phase
+  // progress does not list them, so they are kept here until the next re-check
+  // reports [DON-338].
+  let latestAntiEntropyFailedNames: readonly string[] = []
   let breadcrumbIngestWarning: TrackingWarning | null = null
   const latestBreadcrumbTimestampByDevice = new Map<string, string>()
   let latestDevices: readonly NormalizedTrackingDevice[] = []
@@ -591,10 +599,18 @@ export function createPollingManager(
       } else if (progress.complete) {
         flushHistorySnapshot(true, true)
       }
+      // A failure or gap found by the 5-minute re-check is raised when that
+      // re-check reports, and cleared when it is filled; not deferred to the
+      // next poll [DON-338].
       if (progress.phase === 'anti_entropy') {
-        return
+        latestAntiEntropyFailedNames = progress.failedDeviceNames
       }
-      breadcrumbStatusWarning = createHistoryReconciliationWarning(progress)
+      breadcrumbStatusWarning = createHistoryReconciliationWarning(
+        progress.phase === 'anti_entropy'
+          ? { ...historyReconciler.getProgress(), historyGaps: progress.historyGaps }
+          : progress,
+        { nowMs: now().getTime(), extraFailedNames: latestAntiEntropyFailedNames },
+      )
       if (lastSuccessAt !== null && consecutiveFailures === 0) {
         publishStatus({
           mode: 'online',
@@ -1105,6 +1121,7 @@ export function createPollingManager(
         }
         breadcrumbFetchCompleted = false
         breadcrumbStatusWarning = null
+        latestAntiEntropyFailedNames = []
         breadcrumbIngestWarning = null
         latestRosterWarning = null
         latestBreadcrumbTimestampByDevice.clear()
@@ -1642,6 +1659,7 @@ export function createPollingManager(
       false,
       seedState,
       historyReconciler.getProgress(),
+      { nowMs: now().getTime(), extraFailedNames: latestAntiEntropyFailedNames },
     )
     if (canPublishHistoryStatus(request)) {
       publishStatus({
@@ -1649,12 +1667,7 @@ export function createPollingManager(
         ...combineTrackingWarnings(
           latestRosterWarning,
           breadcrumbIngestWarning,
-          createBreadcrumbCompletionWarning(
-            breadcrumbFetch,
-            false,
-            seedState,
-            historyReconciler.getProgress(),
-          ),
+          breadcrumbStatusWarning,
         ),
       })
     }
@@ -1833,6 +1846,7 @@ export function createPollingManager(
     running = false
     lifecycleGeneration += 1
     historyReconciler.reset()
+    latestAntiEntropyFailedNames = []
     canonicalizationSequence += 1
     canonicalizationRefreshPending = false
     initialReconciliationComplete = false
@@ -2220,11 +2234,20 @@ function createBreadcrumbIngestWarning(rejectedCount: number): TrackingWarning {
   }
 }
 
+/** What the history warning needs beyond the reconciler's progress. */
+type HistoryWarningContext = {
+  /** The current time, which decides whether a gap's date is shown. */
+  readonly nowMs: number
+  /** Failed devices the progress itself does not list (re-check failures). */
+  readonly extraFailedNames: readonly string[]
+}
+
 function createBreadcrumbCompletionWarning(
   result: BreadcrumbFetchResult,
   recovered: boolean,
   seedState: InitialBreadcrumbSeedState,
   historyProgress: BreadcrumbHistoryProgress,
+  context: HistoryWarningContext,
 ): TrackingWarning | null {
   if (seedState === 'failed') {
     return {
@@ -2232,41 +2255,70 @@ function createBreadcrumbCompletionWarning(
       text: 'Breadcrumb history could not be loaded from mission storage; current fixes remain live.',
     }
   }
-  if (result.failedDeviceCount > 0) {
+  if (result.failedDeviceCount > 0 && historyProgress.historyGaps.length === 0) {
     return {
       code: 'history_incomplete',
-      text: `Breadcrumb history incomplete for ${result.failedDeviceNames.join(
-        ', ',
+      text: `Breadcrumb history incomplete for ${listNamesBounded(
+        mergeNames(result.failedDeviceNames, context.extraFailedNames),
       )}; current fixes remain live.`,
     }
   }
-  const reconciliationWarning = createHistoryReconciliationWarning(historyProgress)
+  const reconciliationWarning = createHistoryReconciliationWarning(historyProgress, {
+    ...context,
+    extraFailedNames: mergeNames(result.failedDeviceNames, context.extraFailedNames),
+  })
   if (reconciliationWarning !== null) {
     return reconciliationWarning
   }
   return recovered ? { code: 'connection_restored', text: 'CONNECTION RESTORED' } : null
 }
 
+/**
+ * Builds the history warning. Unfetchable ranges are named with device and
+ * local time range [DON-338]; other failing devices are named after them;
+ * otherwise devices still catching up are listed.
+ */
 function createHistoryReconciliationWarning(
   progress: BreadcrumbHistoryProgress,
+  context: HistoryWarningContext,
 ): TrackingWarning | null {
-  if (progress.failedDeviceNames.length > 0) {
+  const failedNames = mergeNames(progress.failedDeviceNames, context.extraFailedNames)
+  const gapSentence = describeHistoryGapsForOperator(progress.historyGaps, context.nowMs)
+  if (gapSentence !== null) {
+    const gapNames = new Set(progress.historyGaps.map((gap) => gap.deviceName))
+    const otherFailed = failedNames.filter((name) => !gapNames.has(name))
     return {
       code: 'history_incomplete',
-      text: `Breadcrumb history incomplete for ${progress.failedDeviceNames.join(
-      ', ',
-    )}; retrying while current fixes remain live.`,
+      text: otherFailed.length === 0
+        ? gapSentence
+        : `${gapSentence} Breadcrumb history also incomplete for ${listNamesBounded(
+          otherFailed,
+        )}; retrying while current fixes remain live.`,
+    }
+  }
+  if (failedNames.length > 0) {
+    return {
+      code: 'history_incomplete',
+      text: `Breadcrumb history incomplete for ${listNamesBounded(
+        failedNames,
+      )}; retrying while current fixes remain live.`,
     }
   }
   if (progress.pendingDeviceNames.length > 0) {
     return {
       code: 'history_reconciling',
-      text: `Breadcrumb history is reconciling for ${progress.pendingDeviceNames.join(
-      ', ',
-    )}; current fixes remain live.`,
+      text: `Breadcrumb history is reconciling for ${listNamesBounded(
+        progress.pendingDeviceNames,
+      )}; current fixes remain live.`,
     }
   }
   return null
+}
+
+/** Joins two name lists in order without repeating a name. */
+function mergeNames(first: readonly string[], second: readonly string[]): readonly string[] {
+  if (second.length === 0) return first
+  return [...new Set([...first, ...second])]
 }
 
 type BreadcrumbDeviceWindow = {
