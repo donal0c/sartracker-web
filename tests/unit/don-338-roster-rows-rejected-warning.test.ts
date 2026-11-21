@@ -457,5 +457,40 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
       expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
       await poller.stop()
     })
+
+    it('ignores mission A\'s first roster answer after switching A → B → A', async () => {
+      // R1 (mission A) answers complete [1] late; after B and back to A, R2
+      // answered incomplete [1, 2]. R1 must not shrink the list or clear the
+      // warning, even though lifecycle and mission match again.
+      const COMPLETE_ONE: RosterAnswer = { accepted: [DEVICES[0]!], complete: true, rejectedCount: 0 }
+      const INCOMPLETE_BOTH: RosterAnswer = { accepted: DEVICES, complete: false, rejectedCount: 1 }
+      const getDevicesWithReport = vi.fn()
+        .mockImplementationOnce(late(COMPLETE_ONE, 20_000))
+        .mockImplementationOnce(never)
+        .mockResolvedValueOnce(INCOMPLETE_BOTH)
+        .mockImplementation(never)
+      const { poller, state, statuses, snapshots, historyRequests } = startCapturingPoller(getDevicesWithReport)
+      await vi.advanceTimersByTimeAsync(1_000)
+      state.mission = 'mission-b'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(1_000)
+      state.mission = 'mission-a'
+      poller.requestPollNow()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(getDevicesWithReport).toHaveBeenCalledTimes(3)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+
+      await vi.advanceTimersByTimeAsync(17_500) // R1 answers at 20 s
+      const r1AnsweredAtMs = Date.now()
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      const laterA = snapshots.filter((snapshot) => snapshot.mission === 'mission-a' && snapshot.atMs > r1AnsweredAtMs)
+      expect(laterA.length).toBeGreaterThan(0)
+      expect(laterA.every((snapshot) => snapshot.deviceIds.join(',') === '1,2')).toBe(true)
+      expect(statuses.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+      expect(historyRequests.filter((request) => request.mission === 'mission-a' && request.atMs > r1AnsweredAtMs)
+        .map((request) => request.deviceId)).toContain('2')
+      await poller.stop()
+    })
   })
 })
