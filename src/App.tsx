@@ -7,6 +7,8 @@ import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { DevicesWorkspace } from './components/devices-workspace'
 import { OperationalSidebar } from './components/operational-sidebar'
+import { useSidebarTabs } from './components/use-sidebar-tabs'
+import { CoverageAttentionIndicator } from './components/coverage-attention-indicator'
 import { FocusModeToggle } from './components/focus-mode-toggle'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
@@ -98,6 +100,10 @@ function App() {
     railCollapseBlockedReason,
   )
   const effectiveRailCollapsed = workspace.collapsed
+  const sidebarTabs = useSidebarTabs(focusModeActive)
+  // The history warning lives in the awareness strip, outside the collapsible
+  // sidebar, whenever the full Tracking panel is not on screen [DON-338 REN-6].
+  const trackingPanelHidden = effectiveRailCollapsed || sidebarTabs.activeTab !== 'tracking'
   const missionControlMinimized =
     missionPhase === 'active' &&
     missionActionError === null &&
@@ -150,6 +156,10 @@ function App() {
       <div className="sar-awareness-strip">
         {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={workspace.restore} />}
         <PersistentTrackingHealth />
+        {trackingPanelHidden && <CoverageAttentionIndicator onOpenTracking={() => {
+          workspace.restoreRail()
+          sidebarTabs.setActiveTab('tracking')
+        }} />}
         <ThemeToggle />
         {effectiveRailCollapsed && <button ref={restoreWorkspaceRef} className="sar-button px-3 py-2 text-xs font-bold" data-testid="restore-workspace" onClick={() => {
           workspace.restoreRail()
@@ -180,6 +190,7 @@ function App() {
 
         <OperationalSidebar
           focusModeActive={focusModeActive}
+          tabs={sidebarTabs}
           collapsed={effectiveRailCollapsed}
           minimized={missionControlMinimized}
           collapseDisabledReason={railCollapseBlockedReason}
