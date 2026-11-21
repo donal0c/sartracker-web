@@ -6,6 +6,7 @@ import { CoordinateBar } from './coordinate-bar'
 import { BasemapSwitcher } from './basemap-switcher'
 import { DrawingToolbar } from './drawing-toolbar'
 import { FocusModeCoordinateMirror } from './focus-mode-coordinate-mirror'
+import { GpxMapCoverageNotice } from './gpx-map-coverage-notice'
 import { MapDegradedAlert } from './map-degraded-alert'
 import { MapScaleReadout } from './map-scale-readout'
 import { MapRendererUnavailable } from './map-renderer-unavailable'
@@ -75,6 +76,7 @@ function MapLibreMapView() {
       <DrawingToolbar />
       <div className="h-full w-full" data-testid="map-container" ref={containerRef} />
       <MapDegradedAlert mapHealth={mapHealth} offlineReadiness={offlineMapReadiness} />
+      <GpxMapCoverageNotice />
       <MapScaleReadout mapRef={mapRef} />
       {!focusModeActive ? (
         <CoordinateBar

@@ -18,7 +18,7 @@ type UseMapGpxOverlaysOptions = {
  * Keeps GPX overlays synchronized with the current style and layer visibility.
  */
 export function useMapGpxOverlays(options: UseMapGpxOverlaysOptions): void {
-  const imports = useGpxStore((state) => state.imports)
+  const imports = useGpxStore((state) => state.mapImports)
   const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenImportIds = useLayerVisibilityStore((state) => state.hiddenGpxImportIds)
 

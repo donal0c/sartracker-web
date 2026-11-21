@@ -1,11 +1,13 @@
 import type {
   GpxImportIssue,
+  GpxMapProjectionPage,
   GpxTrackImport,
   Outing,
   UpsertGpxTrackImportInput,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { writeGpxImportColorMetadata } from './gpx-style'
 import { digestGpxSource, parseGpxFile } from './gpx-parser'
+import { describeGpxMapCoverage, describeListPageMapCoverage, readGpxMapProjection } from './read-gpx-map-projection'
 
 type GpxStoreBoundary = {
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
@@ -17,6 +19,10 @@ type GpxStoreBoundary = {
     readonly entries: readonly GpxTrackImport[]
     readonly nextCursor: string | null
   }>
+  readonly listGpxMapProjectionPage?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+  }) => Promise<GpxMapProjectionPage>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly updateGpxImportPresentation?: (input: {
     readonly id: string
@@ -40,16 +46,31 @@ type GpxStoreBoundary = {
     readonly paths: readonly string[]
     readonly skipRetiredSources?: boolean
   }) => Promise<{
-    readonly imports: readonly { readonly id: string }[]
+    readonly imports: readonly { readonly id: string; readonly revision_sequence?: number }[]
+    /** Watched paths whose bytes match their live import; nothing was written for them [DON-350]. */
+    readonly unchanged?: readonly string[]
     readonly failures?: readonly { readonly sourcePath: string; readonly reason: string }[]
     readonly dispatchDurationMs: number
   }>
 }
 
+/** A watched folder's GPX paths, bounded; omittedCount says how many were left out [DON-350] [M-40]. */
+export type WatchedGpxDirectoryListing = {
+  readonly paths: readonly string[]
+  readonly omittedCount: number
+}
+
 type GpxWatchSourceBoundary = {
   readonly listDirectoryFiles: (directoryPath: string) => Promise<readonly GpxImportFileInput[]>
   readonly listDirectoryPaths?: (directoryPath: string) => Promise<readonly string[]>
+  /** Lists a watched folder without the 100-file Import Folder cap [DON-350] [M-40]. */
+  readonly listWatchedDirectoryPaths?: (directoryPath: string) => Promise<WatchedGpxDirectoryListing>
 }
+
+/** The store accepts at most this many paths per native import call. */
+const NATIVE_IMPORT_CHUNK = 100
+/** Matches MAX_WATCHED_GPX_LISTING_PATHS in electron/file-system.cjs. */
+const WATCHED_LISTING_LIMIT = 1_000
 
 export type GpxImportFileInput = {
   readonly sourcePath: string
@@ -87,6 +108,12 @@ export type GpxRuntimeState = {
   readonly outings: readonly Outing[]
   readonly watchedDirectories: readonly string[]
   readonly importIssues: readonly GpxImportIssue[]
+  /** Every active import the map draws, thinned by the store to one mission-wide budget [DON-350] [M-87]. */
+  readonly mapImports: readonly GpxTrackImport[]
+  /** Active imports in the mission, drawn or not. */
+  readonly mapImportTotal: number
+  /** Operator words when the map does not show every imported track, or could not be refreshed. */
+  readonly mapCoverageNotice: string | null
   /** One bounded projection window; additional imports are never silently implied absent. */
   readonly importPageNumber: number
   readonly hasMoreImports: boolean
@@ -125,6 +152,9 @@ const EMPTY_RUNTIME: GpxRuntimeState = {
   outings: [],
   watchedDirectories: [],
   importIssues: [],
+  mapImports: [],
+  mapImportTotal: 0,
+  mapCoverageNotice: null,
   importPageNumber: 1,
   hasMoreImports: false,
   loadingMoreImports: false,
@@ -143,6 +173,7 @@ export async function startGpxRuntime(
   let importPublication = 0
   let importErrorRevision = 0
   let nextImportCursor: string | null = null
+  let mapRefreshToken = 0
 
   publishRuntime()
 
@@ -162,6 +193,9 @@ export async function startGpxRuntime(
         outings: missionId === previousMissionId ? state.outings : [],
         watchedDirectories: missionId === previousMissionId ? state.watchedDirectories : [],
         importIssues: missionId === previousMissionId ? state.importIssues : [],
+        mapImports: missionId === previousMissionId ? state.mapImports : [],
+        mapImportTotal: missionId === previousMissionId ? state.mapImportTotal : 0,
+        mapCoverageNotice: missionId === previousMissionId ? state.mapCoverageNotice : null,
         importPageNumber: missionId === previousMissionId ? state.importPageNumber : 1,
         hasMoreImports: missionId === previousMissionId ? state.hasMoreImports : false,
         loadingMoreImports: false,
@@ -174,12 +208,16 @@ export async function startGpxRuntime(
 
       if (missionId === null) {
         nextImportCursor = null
+        mapRefreshToken += 1
         state = {
           ...state,
           imports: [],
           outings: [],
           watchedDirectories: [],
           importIssues: [],
+          mapImports: [],
+          mapImportTotal: 0,
+          mapCoverageNotice: null,
           importPageNumber: 1,
           hasMoreImports: false,
           loadingMoreImports: false,
@@ -222,6 +260,7 @@ export async function startGpxRuntime(
             : state.error,
         }
         publishRuntime()
+        await refreshMap(missionId, () => token === refreshToken && state.activeMissionId === missionId)
       } catch (error) {
         if (token !== refreshToken || state.activeMissionId !== missionId) {
           return
@@ -241,6 +280,7 @@ export async function startGpxRuntime(
           error: appendErrorMessage(state.error, toErrorMessage(error)),
         }
         publishRuntime()
+        await refreshMap(missionId, () => token === refreshToken && state.activeMissionId === missionId)
       }
     },
     loadNextImports: async () => {
@@ -283,6 +323,10 @@ export async function startGpxRuntime(
         imports: state.imports.map((entry) =>
           entry.id === updatedImport.id ? updatedImport : entry,
         ),
+        // The map keeps its thinned geometry; only the presentation changes.
+        mapImports: state.mapImports.map((entry) =>
+          entry.id === updatedImport.id ? { ...entry, metadata_json: updatedImport.metadata_json } : entry,
+        ),
         error: null,
       }
       publishRuntime()
@@ -308,15 +352,25 @@ export async function startGpxRuntime(
       const missionId = state.activeMissionId
       const missionToken = missionGeneration
 
-      if (
-        dependencies.gpxStore.importGpxEvidencePaths !== undefined
-        && dependencies.watchSource.listDirectoryPaths !== undefined
-      ) {
-        const paths = await dependencies.watchSource.listDirectoryPaths(normalizedPath)
+      if (canListWatchedPaths()) {
+        let listing: WatchedGpxDirectoryListing
+        try {
+          listing = await listWatchedPaths(normalizedPath)
+        } catch (error) {
+          if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
+            return operationResult('stale')
+          }
+          const failure = { fileName: normalizedPath, reason: toErrorMessage(error) }
+          state = { ...state, error: appendErrorMessage(state.error, describeWatchedFolderFailure(failure)) }
+          publishRuntime()
+          return operationResult('failed', [], [failure])
+        }
         if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
           return operationResult('stale')
         }
-        return await importPathsIntoRuntime(paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
+        const result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
+        publishOmittedWatchedFiles(normalizedPath, listing.omittedCount, missionId, missionToken)
+        return result
       }
       const files = await dependencies.watchSource.listDirectoryFiles(normalizedPath)
       if (missionId === null || missionToken !== missionGeneration || state.activeMissionId !== missionId) {
@@ -350,62 +404,44 @@ export async function startGpxRuntime(
       const imported: GpxImportResult[] = []
       const failures: GpxImportOperationFailure[] = []
       let hadFailure = false
-      let currentDirectory = 'watched folder scan'
-      try {
-        for (const directoryPath of state.watchedDirectories) {
-          currentDirectory = directoryPath
-          if (
-            dependencies.gpxStore.importGpxEvidencePaths !== undefined
-            && dependencies.watchSource.listDirectoryPaths !== undefined
-          ) {
-            const paths = await dependencies.watchSource.listDirectoryPaths(directoryPath)
+      // One folder that cannot be listed or imported must not stop the others [DON-350] [M-40].
+      for (const directoryPath of state.watchedDirectories) {
+        try {
+          let result: GpxImportOperationResult
+          if (canListWatchedPaths()) {
+            const listing = await listWatchedPaths(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
-            const result = await importPathsIntoRuntime(
-              paths,
-              missionId,
-              missionToken,
-              WATCHED_FOLDER_SCAN,
-            )
-            imported.push(...result.imports)
-            if (result.failures !== undefined) failures.push(...result.failures)
-            hadFailure ||= result.outcome === 'failed'
-            if (result.outcome === 'refused' || result.outcome === 'stale') {
-              return operationResult(result.outcome, imported, failures)
-            }
+            result = await importPathsIntoRuntime(listing.paths, missionId, missionToken, WATCHED_FOLDER_SCAN)
+            publishOmittedWatchedFiles(directoryPath, listing.omittedCount, missionId, missionToken)
           } else {
             const files = await dependencies.watchSource.listDirectoryFiles(directoryPath)
             if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale', imported, failures)
-            const result = await importFilesIntoRuntime(files, missionId, missionToken)
-            imported.push(...result.imports)
-            if (result.failures !== undefined) failures.push(...result.failures)
-            hadFailure ||= result.outcome === 'failed'
-            if (result.outcome === 'refused' || result.outcome === 'stale') {
-              return operationResult(result.outcome, imported, failures)
-            }
+            result = await importFilesIntoRuntime(files, missionId, missionToken)
           }
+          imported.push(...result.imports)
+          if (result.failures !== undefined) failures.push(...result.failures)
+          hadFailure ||= result.outcome === 'failed'
+          if (result.outcome === 'refused' || result.outcome === 'stale') {
+            return operationResult(result.outcome, imported, failures)
+          }
+        } catch (error) {
+          if (missionToken !== missionGeneration || state.activeMissionId !== missionId) {
+            return operationResult('stale', imported, failures)
+          }
+          failures.push({ fileName: directoryPath, reason: toErrorMessage(error) })
+          hadFailure = true
         }
-
-        if (failures.length > 0 && missionToken === missionGeneration && state.activeMissionId === missionId) {
-          state = { ...state, error: appendErrorMessage(state.error, describeOperationFailures(failures)) }
-          publishRuntime()
-        }
-        return operationResult(
-          imported.length > 0 ? 'imported' : hadFailure ? 'failed' : 'empty',
-          imported,
-          failures,
-        )
-      } catch (error) {
-        if (missionToken !== missionGeneration || state.activeMissionId !== missionId) {
-          return operationResult('stale', imported, failures)
-        }
-        const scanFailure = { fileName: currentDirectory, reason: toErrorMessage(error) }
-        state = {
-          ...state,
-          error: appendErrorMessage(state.error, scanFailure.reason),
-        }
-        publishRuntime()
-        return operationResult('failed', imported, [...failures, scanFailure])
       }
+
+      if (failures.length > 0 && missionToken === missionGeneration && state.activeMissionId === missionId) {
+        state = { ...state, error: appendErrorMessage(state.error, describeOperationFailures(failures)) }
+        publishRuntime()
+      }
+      return operationResult(
+        imported.length > 0 ? 'imported' : hadFailure ? 'failed' : 'empty',
+        imported,
+        failures,
+      )
     },
     deleteImport: async (importId: string) => {
       const missionId = state.activeMissionId
@@ -423,9 +459,11 @@ export async function startGpxRuntime(
       state = {
         ...state,
         imports: state.imports.filter((entry) => entry.id !== importId),
+        mapImports: state.mapImports.filter((entry) => entry.id !== importId),
         loadingMoreImports: false,
       }
       publishRuntime()
+      await refreshMap(missionId, () => missionToken === missionGeneration && state.activeMissionId === missionId)
       return true
     },
     assignImportToOuting: async (importId, outingId, assignedBy) => {
@@ -443,6 +481,10 @@ export async function startGpxRuntime(
       state = {
         ...state,
         imports: state.imports.map((entry) => entry.id === updated.id ? updated : entry),
+        mapImports: state.mapImports.map((entry) =>
+          entry.id === updated.id
+            ? { ...entry, ...(updated.outing_id === undefined ? {} : { outing_id: updated.outing_id }) }
+            : entry),
         error: null,
       }
       publishRuntime()
@@ -591,6 +633,9 @@ export async function startGpxRuntime(
         error: describeRendererImportFailures(failures),
       }
       publishRuntime()
+      if (projectionChanged) {
+        await refreshMap(missionId, () => missionToken === missionGeneration && state.activeMissionId === missionId)
+      }
       return operationResult(
         imported.length > 0 ? 'imported' : failures.length > 0 ? 'failed' : 'empty',
         imported,
@@ -635,7 +680,8 @@ export async function startGpxRuntime(
       )
     }
     if (paths.length === 0) return operationResult('empty')
-    if (dependencies.gpxStore.importGpxEvidencePaths === undefined) {
+    const importNativePaths = dependencies.gpxStore.importGpxEvidencePaths
+    if (importNativePaths === undefined) {
       return operationResult('failed', [], [{
         fileName: 'GPX path import',
         reason: 'Native GPX path import is unavailable in this runtime.',
@@ -644,26 +690,32 @@ export async function startGpxRuntime(
     if (!admitImport()) return operationResult('refused')
     state = { ...state, importing: true, error: null }
     publishRuntime()
+    const isCurrent = () => missionToken === missionGeneration && state.activeMissionId === missionId
+    const imports: { readonly id: string; readonly revision_sequence?: number }[] = []
+    const nativeFailures: { readonly sourcePath: string; readonly reason: string }[] = []
     try {
-      const result = await dependencies.gpxStore.importGpxEvidencePaths({
-        missionId,
-        paths,
-        ...(source.skipRetiredSources ? { skipRetiredSources: true } : {}),
-      })
-      if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale')
-      const [importPage, issuePage] = await Promise.all([
-        readGpxImportProjectionPage(
+      // One admitted import, sent in store-sized chunks, so a large watched folder is not refused [M-40].
+      for (let start = 0; start < paths.length; start += NATIVE_IMPORT_CHUNK) {
+        const result = await importNativePaths({
           missionId,
-          undefined,
-          () => missionToken === missionGeneration && state.activeMissionId === missionId,
-        ),
+          paths: paths.slice(start, start + NATIVE_IMPORT_CHUNK),
+          ...(source.skipRetiredSources ? { skipRetiredSources: true } : {}),
+        })
+        if (!isCurrent()) return operationResult('stale')
+        imports.push(...result.imports)
+        if ('failures' in result && Array.isArray(result.failures)) nativeFailures.push(...result.failures)
+      }
+      // Only a new identity or a new revision changes what is shown; an unchanged rescan keeps the page [M-37].
+      const projectionChanged = changesProjection(imports)
+      const [importPage, issuePage] = await Promise.all([
+        projectionChanged
+          ? readGpxImportProjectionPage(missionId, undefined, isCurrent)
+          : Promise.resolve(null),
         dependencies.gpxStore.listGpxImportIssues?.({ missionId, limit: 100 })
           ?? Promise.resolve({ entries: [], nextCursor: null }),
       ])
-      if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale')
-      const failures = 'failures' in result && Array.isArray(result.failures) ? result.failures : []
-      const projectionChanged = result.imports.length > 0
-      if (projectionChanged) {
+      if (!isCurrent()) return operationResult('stale')
+      if (importPage !== null) {
         importPublication += 1
         nextImportCursor = importPage.nextCursor
       }
@@ -671,33 +723,141 @@ export async function startGpxRuntime(
       state = {
         ...state,
         importing: false,
-        imports: projectionChanged ? importPage.entries : state.imports,
-        importPageNumber: projectionChanged ? 1 : state.importPageNumber,
-        hasMoreImports: projectionChanged ? importPage.nextCursor !== null : state.hasMoreImports,
+        imports: importPage !== null ? importPage.entries : state.imports,
+        importPageNumber: importPage !== null ? 1 : state.importPageNumber,
+        hasMoreImports: importPage !== null ? importPage.nextCursor !== null : state.hasMoreImports,
         loadingMoreImports: false,
         importIssues: issuePage.entries,
         hasMoreImportIssues: issuePage.nextCursor !== null,
         error: describeImportIssues(issuePage.entries.length, issuePage.nextCursor)
-          ?? (failures.length === 0
+          ?? (nativeFailures.length === 0
             ? null
-            : `${failures.length} GPX file${failures.length === 1 ? '' : 's'} could not be imported. Exact failure provenance was retained.`),
+            : `${nativeFailures.length} GPX file${nativeFailures.length === 1 ? '' : 's'} could not be imported. Exact failure provenance was retained.`),
       }
       publishRuntime()
+      if (projectionChanged) await refreshMap(missionId, isCurrent)
       return operationResult(
-        result.imports.length > 0 ? 'imported' : failures.length > 0 ? 'failed' : 'empty',
-        result.imports,
-        failures.map((failure) => ({
+        imports.length > 0 ? 'imported' : nativeFailures.length > 0 ? 'failed' : 'empty',
+        imports,
+        nativeFailures.map((failure) => ({
           fileName: fileNameFromPath(failure.sourcePath),
           reason: failure.reason,
         })),
       )
     } catch (error) {
-      if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return operationResult('stale')
+      if (!isCurrent()) return operationResult('stale')
+      // A stopped import may have committed some files and listed the rest as issues: re-read
+      // what the store now holds before reporting, so nothing imported is hidden [DON-350] [M-36].
+      await rereadAfterFailedImport(missionId, isCurrent)
+      if (!isCurrent()) return operationResult('stale')
       state = { ...state, importing: false, loadingMoreImports: false, error: toErrorMessage(error) }
       importErrorRevision += 1
       publishRuntime()
       throw error
     }
+  }
+
+  /** True when a returned import is new to the map or carries a different revision. */
+  function changesProjection(
+    imports: readonly { readonly id: string; readonly revision_sequence?: number }[],
+  ): boolean {
+    const known = new Map(state.mapImports.map((entry) => [entry.id, entry.revision_sequence]))
+    return imports.some((entry) => {
+      if (!known.has(entry.id)) return true
+      const revision = known.get(entry.id)
+      return revision === undefined || entry.revision_sequence === undefined || revision !== entry.revision_sequence
+    })
+  }
+
+  /** Best-effort re-read of list, issues and map after a failed native import; its own failure stays visible. */
+  async function rereadAfterFailedImport(missionId: string, isCurrent: () => boolean): Promise<void> {
+    try {
+      const [importPage, issuePage] = await Promise.all([
+        readGpxImportProjectionPage(missionId, undefined, isCurrent),
+        dependencies.gpxStore.listGpxImportIssues?.({ missionId, limit: 100 })
+          ?? Promise.resolve({ entries: [], nextCursor: null }),
+      ])
+      if (!isCurrent()) return
+      importPublication += 1
+      nextImportCursor = importPage.nextCursor
+      state = {
+        ...state,
+        imports: importPage.entries,
+        importPageNumber: 1,
+        hasMoreImports: importPage.nextCursor !== null,
+        importIssues: issuePage.entries,
+        hasMoreImportIssues: issuePage.nextCursor !== null,
+      }
+    } catch (error) {
+      if (!isCurrent()) return
+      state = {
+        ...state,
+        error: appendErrorMessage(state.error, `The GPX list could not be re-read after the import stopped: ${toErrorMessage(error)}`),
+      }
+    }
+    await refreshMap(missionId, isCurrent)
+  }
+
+  /**
+   * Re-reads the whole map projection. On failure the last map stays drawn and the operator is told,
+   * so a track never disappears without words [DON-350] [M-87].
+   */
+  async function refreshMap(missionId: string, isCurrent: () => boolean): Promise<void> {
+    const listMapPage = dependencies.gpxStore.listGpxMapProjectionPage
+    if (listMapPage === undefined) return
+    const token = ++mapRefreshToken
+    const stillCurrent = () => token === mapRefreshToken && isCurrent()
+    try {
+      const projection = await readGpxMapProjection({ listGpxMapProjectionPage: listMapPage }, missionId, stillCurrent)
+      if (projection === null || !stillCurrent()) return
+      state = {
+        ...state,
+        mapImports: projection.entries,
+        mapImportTotal: projection.totalActive,
+        mapCoverageNotice: describeGpxMapCoverage(projection),
+      }
+    } catch (error) {
+      if (!stillCurrent()) return
+      const shown = state.mapImports.length
+      state = {
+        ...state,
+        mapCoverageNotice: `The GPX map could not be refreshed: ${toErrorMessage(error).replace(/\.+$/u, '')}. `
+          + `It still shows the ${shown} track${shown === 1 ? '' : 's'} from the last successful read; newer imports may be missing. `
+          + 'Every track is still listed in the GPX panel.',
+      }
+    }
+    publishRuntime()
+  }
+
+  function canListWatchedPaths(): boolean {
+    return dependencies.gpxStore.importGpxEvidencePaths !== undefined
+      && (dependencies.watchSource?.listWatchedDirectoryPaths !== undefined
+        || dependencies.watchSource?.listDirectoryPaths !== undefined)
+  }
+
+  /** Prefers the watched-folder listing, which is not capped at Import Folder's 100 files [M-40]. */
+  async function listWatchedPaths(directoryPath: string): Promise<WatchedGpxDirectoryListing> {
+    const source = dependencies.watchSource
+    if (source?.listWatchedDirectoryPaths !== undefined) return await source.listWatchedDirectoryPaths(directoryPath)
+    if (source?.listDirectoryPaths !== undefined) {
+      return { paths: await source.listDirectoryPaths(directoryPath), omittedCount: 0 }
+    }
+    throw new Error('Watched GPX folder listing is unavailable in this runtime.')
+  }
+
+  /** Says, in words, that a watched folder holds more files than are watched. */
+  function publishOmittedWatchedFiles(
+    directoryPath: string,
+    omittedCount: number,
+    missionId: string,
+    missionToken: number,
+  ): void {
+    if (omittedCount <= 0 || missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+    const notice = `Watched folder ${directoryPath} holds more than ${WATCHED_LISTING_LIMIT} GPX files; `
+      + `only the ${WATCHED_LISTING_LIMIT} most recently changed are watched and ${omittedCount} are not. `
+      + 'Move older files to another folder.'
+    state = { ...state, error: appendErrorMessage(state.error, notice) }
+    publishRuntime()
   }
 
   /** Keeps a rejected selection visible while the admitted operation is active. */
@@ -716,6 +876,18 @@ export async function startGpxRuntime(
 
   /** Publishes the current runtime state without retaining a stale admission notice. */
   function publishRuntime(): void {
+    if (dependencies.gpxStore.listGpxMapProjectionPage === undefined && state.mapImports !== state.imports) {
+      // Without a map projection the map can draw only the visible page, and says so [DON-350].
+      state = {
+        ...state,
+        mapImports: state.imports,
+        mapImportTotal: state.imports.length,
+        mapCoverageNotice: describeListPageMapCoverage(
+          state.imports.length,
+          state.hasMoreImports || state.importPageNumber > 1,
+        ),
+      }
+    }
     dependencies.applyRuntime(state)
   }
 
@@ -820,6 +992,11 @@ function describeOperationFailures(failures: readonly GpxImportOperationFailure[
     ? ` ${failures.length - details.length} additional failure${failures.length - details.length === 1 ? '' : 's'} were not shown.`
     : ''
   return `${failures.length} GPX file${failures.length === 1 ? '' : 's'} could not be imported during this rescan: ${details.join('; ')}.${suffix}`
+}
+
+/** Names a watched folder that could not be listed, in words a volunteer can act on. */
+function describeWatchedFolderFailure(failure: GpxImportOperationFailure): string {
+  return `Watched folder ${failure.fileName} could not be read: ${failure.reason.replace(/\.+$/u, '')}. Check the folder is still connected, then select it again.`
 }
 
 /** Extracts a display-safe file name from a native source path. */

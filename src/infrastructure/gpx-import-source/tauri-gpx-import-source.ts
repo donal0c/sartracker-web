@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
 
-import type { GpxImportFileInput } from '../../features/gpx/start-gpx-runtime'
+import type { GpxImportFileInput, WatchedGpxDirectoryListing } from '../../features/gpx/start-gpx-runtime'
 
 export type GpxImportSource = {
   readonly chooseFilePaths: () => Promise<readonly string[]>
@@ -9,6 +9,8 @@ export type GpxImportSource = {
   readonly readFiles: (paths: readonly string[]) => Promise<readonly GpxImportFileInput[]>
   readonly listDirectoryFiles: (directoryPath: string) => Promise<readonly GpxImportFileInput[]>
   readonly listDirectoryPaths?: (directoryPath: string) => Promise<readonly string[]>
+  /** A watched folder's listing: not held to the 100-file selection cap [DON-350]. */
+  readonly listWatchedDirectoryPaths?: (directoryPath: string) => Promise<WatchedGpxDirectoryListing>
 }
 
 /**
