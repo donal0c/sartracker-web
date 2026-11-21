@@ -29,7 +29,7 @@ export function useMapMarkerInteractions(
   const markerController = useMarkerStore((state) => state.controller)
   const markerState = useMarkerStore((state) => state.markers)
   const drawings = useDrawingStore((state) => state.drawings)
-  const gpxImports = useGpxStore((state) => state.imports)
+  const gpxImports = useGpxStore((state) => state.mapImports)
   const interactionMode = useMapInteractionMode()
   const missionPhase = useMissionStore((state) => state.phase)
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)

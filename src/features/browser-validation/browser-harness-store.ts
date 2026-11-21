@@ -6,6 +6,7 @@ import type {
   Device,
   Drawing,
   FinalizeMissionResult,
+  GpxMapProjectionPage,
   GpxTrackImport,
   Helicopter,
   Marker,
@@ -405,6 +406,10 @@ export type BrowserHarnessStore = {
     readonly entries: readonly GpxTrackImport[]
     readonly nextCursor: string | null
   }>
+  readonly listGpxMapProjectionPage: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+  }) => Promise<GpxMapProjectionPage>
   readonly upsertGpxImport: (input: UpsertGpxTrackImportInput) => Promise<GpxTrackImport>
   readonly updateGpxImportPresentation: (input: {
     readonly id: string
@@ -2449,6 +2454,21 @@ export function getBrowserHarnessStore(): BrowserHarnessStore {
         nextCursor: page.length > limit && finalEntry !== undefined
           ? encodeBrowserGpxProjectionCursor(missionId, finalEntry)
           : null,
+      }
+    },
+    // Browser stand-in for the mission-wide map projection: one page, the same 512-track cap [DON-350].
+    listGpxMapProjectionPage: async (input) => {
+      const missionId = normalizeBrowserGpxProjectionContext(input.missionId)
+      if (input.cursor !== undefined) throw new Error('Browser GPX map projection has a single page.')
+      const active = state.gpxImports
+        .filter((entry) => entry.mission_id === missionId && entry.retired_at == null)
+        .sort(compareBrowserGpxProjectionOrder)
+      return {
+        entries: active.slice(0, 512).map(stripBrowserGpxRetainedBytes),
+        undrawn: [],
+        totalActive: active.length,
+        truncated: active.length > 512,
+        nextCursor: null,
       }
     },
     upsertGpxImport: async (input) => {

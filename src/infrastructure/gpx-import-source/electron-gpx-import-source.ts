@@ -15,6 +15,8 @@ export function createElectronGpxImportSource(): GpxImportSource {
     },
     listDirectoryPaths: (directoryPath) =>
       getBridge().listGpxDirectoryPaths(directoryPath),
+    listWatchedDirectoryPaths: (directoryPath) =>
+      getBridge().listWatchedGpxDirectoryPaths(directoryPath),
   }
 }
 

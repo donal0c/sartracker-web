@@ -39,7 +39,7 @@ export function useMapDrawingInteractions(
   const dialog = useDrawingStore((state) => state.dialog)
   const drawings = useDrawingStore((state) => state.drawings)
   const markers = useMarkerStore((state) => state.markers)
-  const gpxImports = useGpxStore((state) => state.imports)
+  const gpxImports = useGpxStore((state) => state.mapImports)
   const interactionMode = useMapInteractionMode()
   const currentMissionId = useMissionStore((state) => state.currentMission?.id ?? null)
   const missionPhase = useMissionStore((state) => state.phase)

@@ -25,8 +25,15 @@ if (parentPort === null) throw new Error('GPX evidence worker requires a parent 
 
 async function run() {
   let database
-  /** Waits outside every GPX transaction while foreground writes are admitted. */
-  const beforeWrite = () => waitForForegroundWrites(workerData.foregroundWriterBuffer)
+  /**
+   * Reports that the worker is alive, then waits outside every GPX transaction
+   * while foreground writes are admitted. The runner treats silence as a stall,
+   * so a large batch is never mistaken for a hung one [DON-350] [M-36].
+   */
+  const beforeWrite = () => {
+    postHeartbeat()
+    return waitForForegroundWrites(workerData.foregroundWriterBuffer)
+  }
   try {
     const envelope = validateGpxImportEnvelope(workerData)
     const databasePath = normalizeRawGpxPath(workerData.databasePath, 'GPX database path')
@@ -47,6 +54,7 @@ async function run() {
     for (const [index, sourcePath] of envelope.paths.entries()) {
       let normalizedPath = sourcePath
       let sourceBytes = null
+      postHeartbeat()
       try {
         normalizedPath = validatePath(sourcePath)
         if (workerData.receiptsStarted !== true) {
@@ -58,7 +66,7 @@ async function run() {
             fileName: path.basename(normalizedPath),
           })
         }
-        pauseForForcedKill('pending')
+        pauseForForcedKill('pending', index)
         sourceBytes = await readBoundedGpxSource(normalizedPath)
         const contentSha256 = createHash('sha256').update(sourceBytes).digest('hex')
         // A watched scan reaches a retired path only when its bytes changed.
@@ -78,7 +86,7 @@ async function run() {
           contentSha256,
           sourceBytesBase64,
         })
-        pauseForForcedKill('retained')
+        pauseForForcedKill('retained', index)
         const decoded = new TextDecoder('utf-8', { fatal: true }).decode(sourceBytes)
         const parsed = parseGpxEvidence(decoded, path.basename(normalizedPath), scalarParsers)
         const stored = await upsertGpxEvidenceChunked(database, {
@@ -310,9 +318,16 @@ function validatePath(value) {
   return path.normalize(normalized)
 }
 
+/** Tells the runner this worker is still making progress. */
+function postHeartbeat() {
+  parentPort.postMessage({ type: 'heartbeat' })
+}
+
 /** Holds the worker at one durable boundary until the forced-kill harness terminates the process. */
-function pauseForForcedKill(phase) {
+function pauseForForcedKill(phase, index) {
   if (workerData.pauseAfter !== phase) return
+  if (workerData.pauseAtPathIndex !== null && workerData.pauseAtPathIndex !== undefined
+    && workerData.pauseAtPathIndex !== index) return
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
 }
 

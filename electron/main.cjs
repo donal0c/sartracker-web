@@ -98,6 +98,7 @@ const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official
 const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
 const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
+const LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-watched-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
@@ -220,6 +221,7 @@ const MISSION_STORE_CHANNELS = {
   deleteGpxImport: 'sartracker:mission-store:delete-gpx-import',
   listGpxImportRevisions: 'sartracker:mission-store:list-gpx-import-revisions',
   listGpxImportRevisionPage: 'sartracker:mission-store:list-gpx-import-revision-page',
+  listGpxMapProjectionPage: 'sartracker:mission-store:list-gpx-map-projection-page',
   importGpxEvidencePaths: 'sartracker:mission-store:import-gpx-evidence-paths',
   updateGpxImportPresentation: 'sartracker:mission-store:update-gpx-import-presentation',
   upsertSearchArea: 'sartracker:mission-store:upsert-search-area',
@@ -1086,6 +1088,10 @@ function registerIpcHandlers(
   ipcMain.handle(LIST_GPX_DIRECTORY_PATHS_CHANNEL, (event, directoryPath) => {
     validateIpcSender(event)
     return fileSystem.listGpxDirectoryPaths(directoryPath)
+  })
+  ipcMain.handle(LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL, (event, directoryPath) => {
+    validateIpcSender(event)
+    return fileSystem.listWatchedGpxDirectoryPaths(directoryPath)
   })
   ipcMain.handle(INGEST_MARKER_ATTACHMENT_CHANNEL, (event, input) => {
     validateIpcSender(event)

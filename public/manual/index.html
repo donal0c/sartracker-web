@@ -1113,8 +1113,9 @@
           </figure>
           <h3>GPX tracks</h3>
           <ul>
-            <li><strong>Import Files</strong> and <strong>Import Folder</strong> add tracks. <strong>Watch Folder</strong> imports new files as they appear, and <strong>Rescan Watches</strong> checks again. These need the desktop app.</li>
-            <li>A newly imported track is shown on the map straight away. A track you hid yourself stays hidden. The panel summary says how many tracks are listed and how many are on the map, for example <em>5 listed · 4 on map, 1 hidden in Layers</em>.</li>
+            <li><strong>Import Files</strong> and <strong>Import Folder</strong> add tracks. <strong>Watch Folder</strong> imports new files as they appear, and <strong>Rescan Watches</strong> checks again. These need the desktop app. A watched folder is checked every 30 seconds; files that have not changed are skipped, and the list stays on the page you are reading.</li>
+            <li>A newly imported track is shown on the map straight away. A track you hid yourself stays hidden. The panel summary says how many tracks are listed and how many are on the map, for example <em>5 listed · 4 on map, 1 hidden in Layers</em>. The list shows 25 tracks per page, but the map draws every track in the mission, not only the page you are reading.</li>
+            <li>With many tracks, each one is drawn with less detail so they all fit. If the map still cannot draw every track (more than 512, or a track with too many separate pieces), a yellow notice on the map says <em>Map shows X of Y imported GPX tracks</em> and names the ones left out; the panel summary adds <em>N not drawn</em> and those rows say <strong>Not drawn on map</strong>. If the map could not be refreshed, the notice says so and the map keeps the tracks it last drew.</li>
             <li>Each track's row says <strong>On map</strong>, or <strong>Hidden on map</strong> with the reason (<em>GPX Tracks is off in Layers</em> or <em>this track is off in Layers</em>) and a <strong>Show on map</strong> button. A listed track is not necessarily drawn: check this line if you cannot find a track.</li>
             <li>If showing a track could not be saved, the row says <strong>On map, but not saved (may be hidden after a restart)</strong> with a <strong>Save again</strong> button.</li>
             <li>Each imported track has its own colour. <strong>Retire</strong> takes it off the map but keeps the record; the retired track stays in the mission history and Replay.</li>
@@ -1123,7 +1124,8 @@
             <li>A renamed copy of a retired file imports as a separate, new track.</li>
             <li>Points with no time are kept as <em>static</em> evidence and are not placed at an invented time.</li>
             <li>To link a track to an outing, type the coordinator's name in <strong>Coordinator name for outing assignments</strong>, then choose the outing on the track's row.</li>
-            <li>Limits: 8 MiB per file and 100 files at a time. A bad file is refused with a reason and reported, never shown as a clean import. Wait for one import to finish before starting another.</li>
+            <li>If an import stops part way (for example the import stops responding), the files already imported stay, the rest are listed under import issues for review, and the message says how many were imported. For a large watched folder, which is sent in parts of 100, the import stops at the failed part and the message also says how many files were never tried; rescan or import again to try them. Finish works without restarting.</li>
+            <li>Limits: 8 MiB per file and 100 files at a time for Import Files and Import Folder. A watched folder can hold up to 1000 GPX files; beyond that only the 1000 most recently changed are watched and a message says how many are not. Move older files to another folder. A bad file is refused with a reason and reported, never shown as a clean import. Wait for one import to finish before starting another.</li>
             <li>Finish and Archive are held back while a GPX import is unfinished.</li>
           </ul>
           <h3>Helicopters</h3>
