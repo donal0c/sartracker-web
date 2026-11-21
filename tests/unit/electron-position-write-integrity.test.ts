@@ -27,6 +27,11 @@ type TrackingAck = {
   readonly sourceIdentityConflictCount: number
   readonly missionRejectedPositionTotal: number
   readonly missionSourceIdentityConflictTotal: number
+  readonly refusedSourceIdentityConflicts: readonly {
+    readonly index: number
+    readonly device_id: string
+    readonly source_position_id: string
+  }[]
 }
 
 type Anomaly = {
@@ -153,6 +158,8 @@ describe('mission store position write integrity [DON-338]', () => {
       sourceIdentityConflictCount: 0,
       missionRejectedPositionTotal: 1,
       missionSourceIdentityConflictTotal: 0,
+      // A malformed row is not a source-id conflict, so it is not named here.
+      refusedSourceIdentityConflicts: [],
     })
     const stored = await opened.store.listPositions(opened.missionId)
     expect(stored.map((row) => row.source_position_id).sort()).toEqual(['source-0', 'source-2'])
@@ -315,6 +322,8 @@ describe('mission store position write integrity [DON-338]', () => {
       sourceIdentityConflictCount: 1,
       missionRejectedPositionTotal: 0,
       missionSourceIdentityConflictTotal: 1,
+      // The refused row is named by its batch index and identity as sent [DON-338 round 9].
+      refusedSourceIdentityConflicts: [{ index: 0, device_id: 'tracker-1', source_position_id: 'reused-0' }],
     })
     const stored = await opened.store.listPositions(opened.missionId)
     expect(stored.find((row) => row.source_position_id === 'reused-0')).toMatchObject({

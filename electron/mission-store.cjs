@@ -2655,6 +2655,9 @@ function createElectronMissionStore(options) {
         sourceIdentityConflictCount: result.sourceIdentityConflictCount,
         missionRejectedPositionTotal: result.missionRejectedPositionTotal,
         missionSourceIdentityConflictTotal: result.missionSourceIdentityConflictTotal,
+        // Which rows of this batch were refused as source-id conflicts, so
+        // the live trail never draws them [DON-338].
+        refusedSourceIdentityConflicts: result.refusedSourceIdentityConflicts,
       }
     },
     persistTrackingHistoryBatch: async (input) => {
@@ -8444,6 +8447,11 @@ function addPosition(db, input, coverageFaultInjection = {}) {
  * A missing device or any storage failure still rolls back the whole batch.
  * A reused source position id keeps the stored row, records a conflict
  * anomaly and is counted in `sourceIdentityConflictCount` [STO-1].
+ * `refusedSourceIdentityConflicts` names each such refused row by its index
+ * in this batch, its device id and its source position id exactly as sent,
+ * so the tracking runtime keeps those observations off the live trail. It
+ * carries no content of the refused row and never describes the kept row
+ * [DON-338]. At most one entry per row, so it is bounded by the batch size.
  */
 function addPositionsBulk(
   db,
@@ -8466,6 +8474,7 @@ function addPositionsBulk(
       skippedAmbiguousLegacyAdoptionCount: 0,
       rejectedPositionCount: 0,
       sourceIdentityConflictCount: 0,
+      refusedSourceIdentityConflicts: [],
       ...(rowRejectionMode === 'quarantine' ? countStoreWriteAnomalies(db, input.mission_id) : {}),
     }
   }
@@ -8500,6 +8509,7 @@ function addPositionsBulk(
   let skippedAmbiguousLegacyAdoptionCount = 0
   let rejectedPositionCount = 0
   let sourceIdentityConflictCount = 0
+  const refusedSourceIdentityConflicts = []
   let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
   let legacyCandidates
@@ -8559,6 +8569,11 @@ function addPositionsBulk(
               receivedAt,
             })
             sourceIdentityConflictCount += 1
+            refusedSourceIdentityConflicts.push({
+              index: positionIndex,
+              device_id: position.device_id,
+              source_position_id: position.source_position_id,
+            })
           }
           if (existing.device_id === position.device_id) {
             if (decision.decision === 'duplicate' && timestampSource === 'fix') {
@@ -8667,6 +8682,7 @@ function addPositionsBulk(
     skippedAmbiguousLegacyAdoptionCount,
     rejectedPositionCount,
     sourceIdentityConflictCount,
+    refusedSourceIdentityConflicts,
     ...(missionTotals ?? {}),
   }
 }
@@ -8733,6 +8749,7 @@ function persistTrackingHistoryBatch(
     skippedAmbiguousLegacyAdoptionCount: 0,
     rejectedPositionCount: 0,
     sourceIdentityConflictCount: 0,
+    refusedSourceIdentityConflicts: [],
   }
   const deviceExists = db.prepare(
     'SELECT id FROM devices WHERE mission_id = ? AND device_id = ?',

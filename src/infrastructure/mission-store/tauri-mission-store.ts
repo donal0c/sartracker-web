@@ -1000,6 +1000,17 @@ export type TrackingPositionsPersistenceAck = {
   readonly missionRejectedPositionTotal?: number
   /** Distinct reused-id observations kept as conflicts in this mission. */
   readonly missionSourceIdentityConflictTotal?: number
+  /**
+   * Each row of this call refused as a source-id conflict: its index in the
+   * batch, and its device id and source position id exactly as sent. No
+   * content of the refused row and nothing about the kept row [DON-338].
+   * The tracking runtime validates it on receipt.
+   */
+  readonly refusedSourceIdentityConflicts: readonly {
+    readonly index: number
+    readonly device_id: string
+    readonly source_position_id: string
+  }[]
 }
 
 export type UpsertMarkerInput = {

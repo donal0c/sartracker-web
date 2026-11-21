@@ -36,9 +36,11 @@ import type {
   TrackingHistoryChunkPersistenceInput,
   TrackingHistoryRequestInput,
   TrackingHistoryChunkPersistenceResult,
+  TrackingHistoryRefusals,
   TrackingMissionEvidenceTransfer,
   TrackingSnapshotContext,
 } from './polling-manager'
+import { readRefusedSourcePositions } from './store-refused-positions'
 import { recordHistoryAdmissionFailure, recoverHistoryAdmission } from './coverage-store'
 import type { BreadcrumbSelectionMetadata } from './breadcrumb-accumulator'
 import type {
@@ -165,7 +167,7 @@ type TrackingRuntimePollerFactory = (
     readonly persistHistoryRequest?: (input: TrackingHistoryRequestInput) => Promise<void>
     readonly persistHistoryChunks?: (
       inputs: readonly TrackingHistoryChunkPersistenceInput[],
-    ) => Promise<void>
+    ) => Promise<TrackingHistoryRefusals | void>
     readonly onPollDiagnostic: (entry: TrackingPollLedgerEntry) => void
   },
 ) => TrackingRuntimePoller
@@ -775,8 +777,9 @@ export async function startTrackingRuntime(
       : {
           persistHistoryChunks: async (
             inputs: readonly TrackingHistoryChunkPersistenceInput[],
-          ): Promise<void> => {
+          ): Promise<TrackingHistoryRefusals> => {
             let changedPositionCount = 0
+            let refusedPositions: readonly NormalizedTrackingPosition[] = []
             try {
               await enqueueTrackingPersistence(runtimeGeneration, async () => {
                 const firstInput = inputs[0]
@@ -804,6 +807,7 @@ export async function startTrackingRuntime(
                 }
                 await waitForParticipantScopeReady(firstInput.expectedMissionId)
                 const scopedInputs = inputs.map(scopeHistoryPersistenceInput)
+                const sentPositions = scopedInputs.flatMap(({ positions: scopedPositions }) => scopedPositions)
                 const positions = scopedInputs.flatMap(({ positions: scopedPositions }) =>
                   scopedPositions.map((position) => ({
                     source_position_id: position.id,
@@ -839,6 +843,9 @@ export async function startTrackingRuntime(
                   })
                   applyStoreWriteOutcome(activeMission.id, persisted)
                   changedPositionCount = persisted.changedPositionCount
+                  // A missing or malformed answer fails this write, so
+                  // nothing from it is drawn [DON-338].
+                  refusedPositions = readRefusedSourcePositions(persisted, sentPositions)
                   return
                 }
                 const persisted = await dependencies.missionStore.persistTrackingHistoryBatch?.({
@@ -858,6 +865,7 @@ export async function startTrackingRuntime(
                 missionPersistenceWarningActive = false
                 refreshTrackingStatus()
               }
+              return { refusedPositions }
             } catch (error) {
               await retainMissionPersistenceFailure(
                 error,
@@ -872,6 +880,7 @@ export async function startTrackingRuntime(
       input: TrackingHistoryChunkPersistenceInput,
     ): Promise<TrackingHistoryChunkPersistenceResult> => {
       let changedPositionCount = 0
+      let refusedPositions: readonly NormalizedTrackingPosition[] = []
       try {
         await enqueueTrackingPersistence(runtimeGeneration, async () => {
           const activeMission = await dependencies.missionStore.getActiveMission()
@@ -916,6 +925,9 @@ export async function startTrackingRuntime(
             })
             applyStoreWriteOutcome(activeMission.id, persisted)
             changedPositionCount = persisted.changedPositionCount
+            // A missing or malformed answer fails this write, so nothing
+            // from it is drawn [DON-338].
+            refusedPositions = readRefusedSourcePositions(persisted, scopedInput.positions)
             return
           }
           if (
@@ -965,7 +977,7 @@ export async function startTrackingRuntime(
           refreshTrackingStatus()
         }
         dependencies.notifyDurablePositionChange?.(changedPositionCount)
-        return { changed: changedPositionCount > 0 }
+        return { changed: changedPositionCount > 0, refusedPositions }
       } catch (error) {
         await retainMissionPersistenceFailure(
           error,
