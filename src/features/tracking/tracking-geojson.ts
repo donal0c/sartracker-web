@@ -1,5 +1,6 @@
 import type { Feature, FeatureCollection, Geometry, LineString, Point } from 'geojson'
 
+import { BREADCRUMB_LINE_GAP_THRESHOLD_MS } from './breadcrumb-accumulator'
 import { selectNewestKnownFixes } from './newest-known-fix'
 import { createTrailSegments } from './trail-segmentation'
 import { createDeviceColor } from './tracking-color'
@@ -10,7 +11,8 @@ import {
 import type { NormalizedTrackingPosition, TrackingSnapshot } from './tracking-types'
 import type { DeviceStationaryAttention } from './stationary-attention-store'
 
-export const DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
+/** The live line's 30-minute break rule; owned by the accumulator so thinning preserves it. */
+export const DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS = BREADCRUMB_LINE_GAP_THRESHOLD_MS
 
 type GeoJsonPointFeature = Feature<
   Point,

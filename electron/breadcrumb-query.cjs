@@ -10,6 +10,9 @@ const BASE_SPATIAL_BUCKET_WIDTH_DEGREES =
   Math.SQRT2 /
   METRES_PER_DEGREE_AT_EQUATOR
 const MAX_SELECTOR_ITERATIONS = 2_048
+// The live line's break rule: src/features/tracking/breadcrumb-accumulator.ts
+// BREADCRUMB_LINE_GAP_THRESHOLD_MS. A unit test keeps the two equal.
+const BREADCRUMB_LINE_GAP_THRESHOLD_MS = 30 * 60 * 1000
 const SQLITE_ROW_ID_PARAMETER_CHUNK = 500
 const ROW_ID_INDEX = 0
 const SOURCE_POSITION_ID_INDEX = 1
@@ -201,6 +204,17 @@ function retainCompactPositionRowsAcrossWindow(
   }
 }
 
+/**
+ * Visits every fix the thinned projection keeps, in time order: both ends of
+ * each spatiotemporal-cell visit, both sides of every real silence longer than
+ * BREADCRUMB_LINE_GAP_THRESHOLD_MS, and inside a long visit (a standstill) the
+ * last fix before the spacing would exceed that threshold. Consecutive kept
+ * fixes are therefore further apart than the threshold only where the stored
+ * fixes are, so thinning never invents or removes a line break
+ * (LIV-4 [DON-338]). Mirrors the live accumulator's selector.
+ *
+ * Returns true as soon as retainPosition asks to stop.
+ */
 function scanCompactRunBoundaries(
   chronological,
   deviceId,
@@ -209,35 +223,39 @@ function scanCompactRunBoundaries(
   retainPosition,
 ) {
   let runBucket = null
-  let runFirst = null
   let runLast = null
+  let runLastMs = 0
+  let lastRetained = null
+  let lastRetainedMs = 0
 
-  const retainRun = () => {
-    if (runFirst !== null && runLast !== null) {
-      if (retainPosition(runFirst, deviceId) || retainPosition(runLast, deviceId)) {
-        return true
-      }
-    }
-    return false
+  const retain = (position, timestampMs) => {
+    if (position === lastRetained) return false
+    lastRetained = position
+    lastRetainedMs = timestampMs
+    return retainPosition(position, deviceId)
   }
 
   for (const position of chronological) {
+    const timestampMs = Date.parse(position[TIMESTAMP_INDEX])
     const bucket = createCompactSpatiotemporalBucketKey(
       position,
-      Date.parse(position[TIMESTAMP_INDEX]),
+      timestampMs,
       bucketWidthMs,
       spatialBucketWidthDegrees,
     )
-    if (bucket !== runBucket) {
-      if (retainRun()) {
-        return true
-      }
+    if (runLast === null || bucket !== runBucket) {
+      if (runLast !== null && retain(runLast, runLastMs)) return true
+      if (retain(position, timestampMs)) return true
       runBucket = bucket
-      runFirst = position
+    } else if (timestampMs - runLastMs > BREADCRUMB_LINE_GAP_THRESHOLD_MS) {
+      if (retain(runLast, runLastMs) || retain(position, timestampMs)) return true
+    } else if (timestampMs - lastRetainedMs > BREADCRUMB_LINE_GAP_THRESHOLD_MS) {
+      if (retain(runLast, runLastMs)) return true
     }
     runLast = position
+    runLastMs = timestampMs
   }
-  return retainRun()
+  return runLast !== null && retain(runLast, runLastMs)
 }
 
 function countCompactCandidateIdentities(
@@ -402,6 +420,7 @@ function createStoredPositionIdentityKey(position) {
 }
 
 module.exports = {
+  BREADCRUMB_LINE_GAP_THRESHOLD_MS,
   listBreadcrumbPositions,
   retainCompactPositionRowsAcrossWindow,
 }
