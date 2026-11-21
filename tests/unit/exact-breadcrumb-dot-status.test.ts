@@ -24,6 +24,7 @@ type ExactDotStatusProps = {
   readonly onEarlier: () => void
   readonly onLater: () => void
   readonly timeZone?: string
+  readonly hiddenTrailCount?: number
 }
 
 let root: Root | null = null
@@ -61,6 +62,9 @@ describe('ExactBreadcrumbDotStatus', () => {
     expect(getText('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBe(
       'Exact fix inspection — showing 10,000 of 10,001 — 22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
     )
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toBe(
+      'The line on the map shows the whole trail. The dots mark 10,000 of 10,001 exact recorded fixes, at 22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin). Use Earlier and Later to move through the rest.',
+    )
     const earlier = getButton('[data-testid="exact-breadcrumb-dots-earlier"]')
     const later = getButton('[data-testid="exact-breadcrumb-dots-later"]')
     expect(earlier.disabled).toBe(false)
@@ -70,12 +74,12 @@ describe('ExactBreadcrumbDotStatus', () => {
     expect(onLater).not.toHaveBeenCalled()
   })
 
-  it('shows exact-dot failure visibly without implying line representatives are dots', async () => {
+  it('shows exact-dot failure visibly, says the line still shows the whole trail, and never implies line representatives are dots', async () => {
     const ExactBreadcrumbDotStatus = await loadStatusComponent()
     render(React.createElement(ExactBreadcrumbDotStatus, {
       state: {
         status: 'unavailable',
-        message: 'Exact breadcrumb dots are unavailable. No representative dots are shown.',
+        message: 'Exact breadcrumb dots are unavailable: the recorded fixes could not be loaded. Simplified points are never shown as dots.',
       },
       onEarlier: vi.fn(),
       onLater: vi.fn(),
@@ -84,8 +88,103 @@ describe('ExactBreadcrumbDotStatus', () => {
     const alert = getElement('[data-testid="exact-breadcrumb-dots-unavailable"]')
     expect(alert.getAttribute('role')).toBe('alert')
     expect(alert.textContent).toContain('Exact breadcrumb dots are unavailable')
-    expect(alert.textContent).toContain('No representative dots are shown')
+    expect(alert.textContent).toContain('Simplified points are never shown as dots')
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toBe(
+      'The line on the map shows the whole trail. No dots are drawn until the exact fixes load.',
+    )
     expect(document.querySelector('[data-testid="exact-breadcrumb-dot-page-summary"]')).toBeNull()
+  })
+
+  it('says the line shows the whole trail while the exact page loads [DON-338]', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: { status: 'loading', missionId: 'mission-a' } as never,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+    }))
+
+    expect(getElement('[data-testid="exact-breadcrumb-dots-loading"]').getAttribute('role')).toBe('status')
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toBe(
+      'The line on the map shows the whole trail. Loading exact recorded fixes to mark as dots…',
+    )
+  })
+
+  it('states the page, total and time range in plain words for a trail longer than one page [DON-338]', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: {
+        status: 'ready',
+        totalPositionCount: 25_123,
+        pagePositionCount: 10_000,
+        fromTimestamp: '2026-08-08T09:00:00.000Z',
+        toTimestamp: '2026-08-08T17:20:00.000Z',
+        hasEarlier: true,
+        hasLater: true,
+      },
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+    }))
+
+    const note = getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note).toBe(
+      'The line on the map shows the whole trail. The dots mark 10,000 of 25,123 exact recorded fixes, from 08/08/2026, 10:00:00 GMT+01:00 (Europe/Dublin) to 08/08/2026, 18:20:00 GMT+01:00 (Europe/Dublin). Use Earlier and Later to move through the rest.',
+    )
+    expect(note).not.toMatch(/dots (show|are) the (whole|full) trail/iu)
+    expect(getButton('[data-testid="exact-breadcrumb-dots-earlier"]').disabled).toBe(false)
+    expect(getButton('[data-testid="exact-breadcrumb-dots-later"]').disabled).toBe(false)
+  })
+
+  it('says every exact fix is marked when one page holds them all', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state: {
+        status: 'ready',
+        totalPositionCount: 1_234,
+        pagePositionCount: 1_234,
+        fromTimestamp: '2026-08-08T09:00:00.000Z',
+        toTimestamp: '2026-08-08T10:00:00.000Z',
+        hasEarlier: false,
+        hasLater: false,
+      },
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      timeZone: 'Europe/Dublin',
+    }))
+
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toBe(
+      'The line on the map shows the whole trail. The dots mark all 1,234 exact recorded fixes, from 08/08/2026, 10:00:00 GMT+01:00 (Europe/Dublin) to 08/08/2026, 11:00:00 GMT+01:00 (Europe/Dublin).',
+    )
+  })
+
+  it('warns that hidden trails are counted but not drawn [LIV-2]', async () => {
+    const ExactBreadcrumbDotStatus = await loadStatusComponent()
+    const state = {
+      status: 'ready' as const,
+      totalPositionCount: 20_000,
+      pagePositionCount: 10_000,
+      fromTimestamp: '2026-08-08T09:00:00.000Z',
+      toTimestamp: '2026-08-08T10:00:00.000Z',
+      hasEarlier: true,
+      hasLater: false,
+    }
+    render(React.createElement(ExactBreadcrumbDotStatus, {
+      state,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      hiddenTrailCount: 2,
+    }))
+    expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBe(
+      '2 devices have their trails hidden on the Layers tab. Their fixes are counted here but their lines and dots are not drawn.',
+    )
+
+    act(() => root?.render(React.createElement(ExactBreadcrumbDotStatus, {
+      state,
+      onEarlier: vi.fn(),
+      onLater: vi.fn(),
+      hiddenTrailCount: 0,
+    })))
+    expect(document.querySelector('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toBeNull()
   })
 
   it('honors an immediate operator Earlier click at the ready publication boundary', async () => {

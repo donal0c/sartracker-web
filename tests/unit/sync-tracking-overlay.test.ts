@@ -488,7 +488,7 @@ describe('tracking overlay marker configuration', () => {
       expect(dots.paint?.['circle-stroke-opacity']).toBeLessThanOrEqual(0.55)
     })
 
-    it('supports breadcrumb-dot mode without rendering the solid line trail', async () => {
+    it('keeps the whole-trail line and its casing visible underneath exact dots in breadcrumb-dot mode [DON-338]', async () => {
       map = createMockMap()
       const { syncTrackingOverlay } = await import(
         '../../src/features/tracking/sync-tracking-overlay'
@@ -509,18 +509,64 @@ describe('tracking overlay marker configuration', () => {
       )
 
       const dots = getExactBreadcrumbDotsLayer(map)
-      const lineFilter = map.setFilter.mock.calls.find(
-        ([layerId]) => layerId === 'tracking-breadcrumbs-line',
-      )?.[1]
+      const lineFilter = map.getFilter('tracking-breadcrumbs-line')
       const dotsFilter = map.getFilter('tracking-breadcrumbs-dots')
+      const casingFilter = map.getFilter('tracking-breadcrumbs-casing')
 
       expect(dots.paint?.['circle-radius']).toBe(4)
       expect(dots.paint?.['circle-color']).toEqual(['get', 'color'])
-      expect(JSON.stringify(lineFilter)).toContain('__hidden__')
+      expect(JSON.stringify(lineFilter)).not.toContain('__hidden__')
+      expect(JSON.stringify(lineFilter)).toContain('breadcrumbLine')
+      expect(JSON.stringify(casingFilter)).not.toContain('__hidden__')
+      expect(JSON.stringify(casingFilter)).toContain('breadcrumbLine')
       expect(JSON.stringify(dotsFilter)).toContain('breadcrumb')
+      expect(JSON.stringify(dotsFilter)).not.toContain('__hidden__')
+      const layerOrder = [...map.layers.keys()]
+      expect(layerOrder.indexOf('tracking-breadcrumbs-line')).toBeLessThan(
+        layerOrder.indexOf('tracking-breadcrumbs-dots'),
+      )
     })
 
-    it('keeps tracking data unchanged and feeds the dedicated dot source only from the ready exact page', async () => {
+    it('hides both the trail line and the exact dots when trails are switched off in breadcrumb-dot mode', async () => {
+      map = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+
+      syncTrackingOverlay(
+        map as never,
+        { devices: [], positions: [], breadcrumbs: [] },
+        [],
+        [],
+        false,
+        { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+      )
+
+      expect(JSON.stringify(map.getFilter('tracking-breadcrumbs-line'))).toContain('__hidden__')
+      expect(JSON.stringify(map.getFilter('tracking-breadcrumbs-casing'))).toContain('__hidden__')
+      expect(JSON.stringify(map.getFilter('tracking-breadcrumbs-dots'))).toContain('__hidden__')
+    })
+
+    it('applies a hidden trail to both its line and its exact dots in breadcrumb-dot mode', async () => {
+      map = createMockMap()
+      const { syncTrackingOverlay } = await import(
+        '../../src/features/tracking/sync-tracking-overlay'
+      )
+
+      syncTrackingOverlay(
+        map as never,
+        { devices: [], positions: [], breadcrumbs: [] },
+        [],
+        ['device-hidden'],
+        true,
+        { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'dots' },
+      )
+
+      expect(JSON.stringify(map.getFilter('tracking-breadcrumbs-line'))).toContain('device-hidden')
+      expect(JSON.stringify(map.getFilter('tracking-breadcrumbs-dots'))).toContain('device-hidden')
+    })
+
+    it('draws the same whole-trail line in both modes and feeds the dedicated dot source only from the ready exact page', async () => {
       const baselineMap = createMockMap()
       const exactMap = createMockMap()
       const { syncTrackingOverlay } = await import(
@@ -571,7 +617,7 @@ describe('tracking overlay marker configuration', () => {
         [],
         [],
         true,
-        style as never,
+        { ...style, breadcrumbTrailMode: 'line' } as never,
       )
 
       syncWithExactDots(
@@ -599,6 +645,11 @@ describe('tracking overlay marker configuration', () => {
       )
       expect(
         getSourceData(exactMap, 'tracking').features?.filter(
+          (feature) => feature.properties?.featureKind === 'breadcrumbLine',
+        ),
+      ).toHaveLength(1)
+      expect(
+        getSourceData(exactMap, 'tracking').features?.filter(
           (feature) =>
             feature.geometry?.type === 'Point' &&
             feature.properties?.featureKind === 'breadcrumb',
@@ -616,7 +667,7 @@ describe('tracking overlay marker configuration', () => {
     })
 
     it.each(['loading', 'unavailable'] as const)(
-      'empties the dedicated exact source while %s and never exposes line representatives as dots',
+      'keeps the trail line drawn and empties the dedicated exact source while %s, never exposing line representatives as dots',
       async (status) => {
         map = createMockMap()
         const { syncTrackingOverlay } = await import(
@@ -641,9 +692,16 @@ describe('tracking overlay marker configuration', () => {
           device_cache_stale: false,
         }
 
+        const representativeLater = {
+          ...representative,
+          id: 'representative-2',
+          lat: 52.001,
+          timestamp: '2026-08-08T00:00:05.000Z',
+        }
+
         syncWithExactDots(
           map as never,
-          { devices: [], positions: [], breadcrumbs: [representative] },
+          { devices: [], positions: [], breadcrumbs: [representative, representativeLater] },
           [],
           [],
           true,
@@ -663,6 +721,15 @@ describe('tracking overlay marker configuration', () => {
         expect(getExactBreadcrumbDotsLayer(map).source).toBe(
           'tracking-breadcrumb-dots-exact',
         )
+        // LIV-3: a loading or failed dot page never takes the trail off the map.
+        const trackingFeatures = getSourceData(map, 'tracking').features ?? []
+        expect(
+          trackingFeatures.filter((feature) => feature.properties?.featureKind === 'breadcrumbLine'),
+        ).toHaveLength(1)
+        expect(
+          trackingFeatures.filter((feature) => feature.properties?.featureKind === 'breadcrumb'),
+        ).toEqual([])
+        expect(JSON.stringify(map.getFilter('tracking-breadcrumbs-line'))).not.toContain('__hidden__')
       },
     )
 

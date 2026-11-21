@@ -789,8 +789,9 @@
           <h3>Breadcrumbs: line or dots</h3>
           <ul>
             <li><strong>Solid line</strong> draws each trail as a line. On very long routes the line may be simplified for speed; the app then shows <strong>Trail display simplified</strong> and how far the line may differ. The saved history is not simplified.</li>
-            <li><strong>Breadcrumb dots</strong> shows every real fix as a dot. If there are more than 10,000, the Tracking tab shows one page at a time with <strong>Earlier</strong> and <strong>Later</strong>. A page never uses samples in place of real fixes.</li>
-            <li><strong>Breadcrumb size</strong> changes line width or dot size for all devices.</li>
+            <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail is always on the map, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking tab says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking tab says so in red and the line still shows the whole trail.</li>
+            <li>If you hide a person's trail in the Layers tab, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking tab says how many trails are hidden.</li>
+            <li><strong>Breadcrumb size</strong> changes line width and dot size for all devices.</li>
           </ul>
           <p>
             To hide only a current-position dot or only a trail, use the <a href="#layers">Layers tab</a>.
@@ -867,7 +868,7 @@
             first, about every 35 minutes on a 48-hour mission.
           </p>
           <ul>
-            <li><strong>Inspect exact fixes</strong> switches to the paged breadcrumb dots view (see above).</li>
+            <li><strong>Inspect exact fixes</strong> switches to Breadcrumb dots: the line stays and real fixes are marked on top of it, a page at a time (see above).</li>
             <li>In <strong>Layers</strong>, the <strong>Mission History</strong> checkboxes can leave out a person, a named outing, or <strong>Outside outings</strong> (fixes that fall in no outing). This only changes what is drawn; it deletes and changes nothing, and it does not hide anyone's live marker.</li>
             <li>Devices that were never picked as participants stay out of mission evidence and the mission map.</li>
           </ul>

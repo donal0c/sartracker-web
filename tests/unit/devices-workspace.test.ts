@@ -301,12 +301,19 @@ describe('DevicesWorkspace', () => {
     click('[data-testid="breadcrumb-mode-dots"]')
 
     expect(useTrackingStyleStore.getState().breadcrumbTrailMode).toBe('dots')
-    expect(getText('[data-testid="breadcrumb-size-label"]')).toContain('dot diameter')
+    expect(getText('[data-testid="breadcrumb-size-label"]')).toContain('dot diameter and trail width')
+    // DON-338: the dots mode must never read as replacing the whole trail.
+    expect(getText('[data-testid="breadcrumb-mode-description"]')).toBe(
+      'The line still shows the whole trail. Dots mark exact recorded fixes on top of it, up to 10,000 at a time. The Tracking tab says which fixes are marked and has Earlier and Later to move through them.',
+    )
 
     click('[data-testid="breadcrumb-mode-line"]')
 
     expect(useTrackingStyleStore.getState().breadcrumbTrailMode).toBe('line')
     expect(getText('[data-testid="breadcrumb-size-label"]')).toContain('trail width')
+    expect(getText('[data-testid="breadcrumb-mode-description"]')).toBe(
+      'The line shows the whole trail of each device.',
+    )
   })
 
   function render(element: React.ReactElement): void {
