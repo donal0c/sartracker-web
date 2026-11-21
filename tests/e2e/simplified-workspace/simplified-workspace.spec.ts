@@ -160,7 +160,27 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-trail-6')).toBeChecked()
     })
 
-    test('a participant warning opens Mission and stays on the Mission button, without locking Tracking', async ({ page }) => {
+    test('a show or hide that cannot be saved says so in People and leaves the tick as saved', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await showPeople(page)
+    await expect(page.getByTestId('ws-position-5')).toBeChecked()
+    // The mission store refuses the next visibility write.
+    await page.evaluate(async () => {
+      const { useLayerCatalogStore } = await import('/src/features/layers/layer-catalog-store.ts')
+      const state = useLayerCatalogStore.getState()
+      const controller = state.controller
+      if (controller === null) throw new Error('Layer catalog is not running.')
+      useLayerCatalogStore.setState({ controller: { ...controller, setNodeVisibilities: () => Promise.reject(new Error('disk unavailable')) } })
+    })
+    // A plain click: the tick goes back to what was saved as soon as the save fails.
+    await page.getByTestId('ws-position-5').click()
+    await expect(page.getByTestId('ws-people-visibility-error')).toContainText('could not be saved')
+    await expect(page.getByTestId('ws-people-visibility-error')).toContainText('disk unavailable')
+    await expect(page.getByTestId('ws-position-5')).toBeChecked()
+  })
+
+  test('a participant warning opens Mission and stays on the Mission button, without locking Tracking', async ({ page }) => {
     const setRosterError = (message: string | null) => page.evaluate(async (value) => {
       const path = '/src/features/participants/participant-store.ts'
       const { useParticipantStore } = await import(path)

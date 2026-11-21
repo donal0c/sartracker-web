@@ -9,7 +9,7 @@ import {
 import { useLayerCatalogStore } from '../../features/layers/layer-catalog-store'
 import { findCatalogNode } from '../../features/layers/layer-catalog-tree'
 import { getLayerVisibilityCheckboxState } from '../../features/layers/layer-panel-model'
-import { setLayerSubtreeVisibility } from '../../features/layers/layer-subtree-visibility'
+import { queueLayerSubtreeVisibility } from '../../features/layers/layer-subtree-visibility'
 import { useLayerVisibilityStore } from '../../features/layers/layer-visibility-store'
 import type { PersonRow } from '../../features/workspace/people-model'
 import { useMapTargetStore } from '../../features/map/map-target-store'
@@ -44,9 +44,22 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
     return needle === '' ? props.people : props.people.filter((person) => person.name.toLowerCase().includes(needle))
   }, [props.people, query])
 
+  const [visibilityError, setVisibilityError] = useState<string | null>(null)
   const setVisible = (nodeId: string, visible: boolean) => {
+    setVisibilityError(null)
     // Tracking is not listed in Layers here, so switching on must also undo a hidden Tracking group.
-    void setLayerSubtreeVisibility({ root, controller, nodeId, visible, revealAncestors: true })
+    // Changes are saved one at a time against the catalog as last saved; a failed
+    // save puts the ticks back to what was saved and says so here.
+    queueLayerSubtreeVisibility({
+      readRoot: () => useLayerCatalogStore.getState().root,
+      controller,
+      nodeId,
+      visible,
+      revealAncestors: true,
+    }).catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : 'unknown error'
+      setVisibilityError(`Who is shown on the map could not be saved (${reason}). The ticks show what was saved. Try again; if it keeps failing, open More, then Diagnostics.`)
+    })
   }
   const allState = (nodeId: string) => {
     const node = findCatalogNode(root, nodeId)
@@ -62,6 +75,11 @@ export function PeoplePanel(props: { readonly people: readonly PersonRow[]; read
           All devices
         </button>
       </PanelHead>
+      {visibilityError === null ? null : (
+        <p className="sar-inline-alert mx-3 my-2 p-2 text-[13px] text-amber-100" data-testid="ws-people-visibility-error" role="alert">
+          {visibilityError}
+        </p>
+      )}
 
       <div className="ws-people-grid ws-people-all" data-testid="ws-people-all">
         <span>Everyone</span>

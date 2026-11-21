@@ -31,6 +31,8 @@ export async function setLayerSubtreeVisibility(input: {
   readonly nodeId: string
   readonly visible: boolean
   readonly revealAncestors?: boolean
+  /** The catalog as last saved; used to undo a failed save on the map. */
+  readonly readRoot?: () => LayerCatalogRootNode
 }): Promise<void> {
   const node = findCatalogNode(input.root, input.nodeId)
   if (node === null) return
@@ -46,6 +48,48 @@ export async function setLayerSubtreeVisibility(input: {
     return
   }
   if (input.controller === null) return
+  const touched = new Set<string>(nodeIds)
+  try {
+    await applyAndPersist(input, node.id, nodeIds, touched)
+  } catch (error) {
+    // A failed save must not look saved: put the map back to what was saved.
+    if (input.readRoot !== undefined) reconcileWithSaved(input.readRoot(), touched)
+    throw error
+  }
+}
+
+let visibilityQueue: Promise<void> = Promise.resolve()
+
+/**
+ * Runs visibility changes one at a time, each against the catalog as last
+ * saved. Two people ticked in quick succession would otherwise each capture the
+ * hidden layer and save the other person hidden [DON-341]. Rejects when a save
+ * fails, after the map is put back to what was saved.
+ */
+export function queueLayerSubtreeVisibility(input: {
+  readonly readRoot: () => LayerCatalogRootNode
+  readonly controller: LayerCatalogController | null
+  readonly nodeId: string
+  readonly visible: boolean
+  readonly revealAncestors?: boolean
+}): Promise<void> {
+  const run = visibilityQueue.then(() => setLayerSubtreeVisibility({ ...input, root: input.readRoot() }))
+  visibilityQueue = run.catch(() => undefined)
+  return run
+}
+
+async function applyAndPersist(
+  input: {
+    readonly root: LayerCatalogRootNode
+    readonly controller: LayerCatalogController | null
+    readonly visible: boolean
+    readonly revealAncestors?: boolean
+  },
+  nodeId: string,
+  nodeIds: readonly string[],
+  touched: Set<string>,
+): Promise<void> {
+  if (input.controller === null) return
   applyVisibilityForNodeIds(
     input.root,
     nodeIds,
@@ -54,7 +98,7 @@ export async function setLayerSubtreeVisibility(input: {
   )
   await input.controller.setNodeVisibilities(nodeIds, input.visible)
   if (input.visible && input.revealAncestors === true) {
-    const hiddenAncestors = findAncestorNodeIds(input.root, node.id)
+    const hiddenAncestors = findAncestorNodeIds(input.root, nodeId)
       .filter((id) => findCatalogNode(input.root, id)?.isVisible === false || isHiddenGroup(id))
     if (hiddenAncestors.length === 0) return
     // Only the group flag goes through the runtime store: applying a layer node
@@ -71,10 +115,30 @@ export async function setLayerSubtreeVisibility(input: {
         const layer = findCatalogNode(input.root, id)
         return layer === null ? [] : getNodeChildren(layer).map((child) => child.id).filter((childId) => !shown.has(childId))
       })
+    for (const id of [...siblingIds, ...hiddenAncestors]) touched.add(id)
     if (siblingIds.length > 0) await input.controller.setNodeVisibilities(siblingIds, false)
     applyVisibilityForNodeIds(input.root, hiddenGroups, true, useLayerVisibilityStore.getState())
     await input.controller.setNodeVisibilities(hiddenAncestors, true)
   }
+}
+
+/**
+ * Sets the runtime visibility of each touched node to what the saved catalog
+ * says: a node shows only when it and every group and layer above it are shown.
+ */
+function reconcileWithSaved(saved: LayerCatalogRootNode, touched: ReadonlySet<string>): void {
+  const store = useLayerVisibilityStore.getState()
+  const shown: string[] = []
+  const hidden: string[] = []
+  for (const id of touched) {
+    const node = findCatalogNode(saved, id)
+    if (node === null) continue
+    const effective = node.isVisible && findAncestorNodeIds(saved, id)
+      .every((ancestorId) => findCatalogNode(saved, ancestorId)?.isVisible !== false)
+    ;(effective ? shown : hidden).push(id)
+  }
+  if (hidden.length > 0) applyVisibilityForNodeIds(saved, hidden, false, store)
+  if (shown.length > 0) applyVisibilityForNodeIds(saved, shown, true, useLayerVisibilityStore.getState())
 }
 
 /** The group and layer nodes above a node, nearest last; never the root. */
