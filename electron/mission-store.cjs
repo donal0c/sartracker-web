@@ -3,6 +3,7 @@ const fsSync = require('node:fs')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
 const { readBoundedGpxSource } = require('./gpx-source-reader.cjs')
+const { canTrustGpxStatFingerprint } = require('./gpx-watched-fingerprint.cjs')
 
 const Database = require('better-sqlite3')
 const { createBulkDeviceObservationWriter } = require('./bulk-device-observations.cjs')
@@ -11996,7 +11997,10 @@ async function isUnchangedLiveGpxSource(db, missionId, sourcePath, fingerprints)
   const known = fingerprints?.get(key)
   // Change time moves on every write and cannot be set back by sync tools, unlike the
   // modified time; the cache is also re-verified by hashing at least every few minutes.
+  // Coarse timestamps (FAT/exFAT SD cards) or a write in the same tick as the last hash
+  // cannot prove the bytes are unchanged, so those files are always re-hashed.
   if (known !== undefined && sameGpxFileIdentity(known, stat)
+    && canTrustGpxStatFingerprint(known, known.verifiedAt)
     && Date.now() - known.verifiedAt < WATCHED_GPX_REHASH_INTERVAL_MS
     && known.contentSha256 === live) {
     return true
