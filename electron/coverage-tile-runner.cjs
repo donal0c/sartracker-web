@@ -151,6 +151,7 @@ function createCoverageTileRunner(input) {
     finalizeCatalog: (payload, options) => request('finalize-catalog', payload, options),
     discardCatalog: (payload, options) => request('discard-catalog', payload, options),
     readTile: (payload, options) => request('read-tile', payload, options),
+    readDiagnostics: (options) => request('read-diagnostics', {}, options),
     invalidateWorker: async (error) => {
       const activeWorker = worker
       if (activeWorker === null) return

@@ -1,6 +1,7 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createHash, randomUUID } = require('node:crypto')
+const v8 = require('node:v8')
 const { parentPort, workerData } = require('node:worker_threads')
 
 const Database = require('better-sqlite3')
@@ -38,13 +39,14 @@ const TILE_INDEX_OPTIONS = Object.freeze({
 // geojson-vt caches every tile it drills below its pre-built index, forever,
 // which exhausted the worker heap (COV-1). Drill-downs here run on a throwaway
 // copy of the index state instead; only clipped sources at these zoom levels
-// are kept, in a least-recently-used cache bounded by fix count.
+// are kept, in a least-recently-used cache bounded by the fixes its entries
+// retain and by its entry count (empty-tile entries included). Entries of an
+// index are released as soon as no catalog can serve that index any more.
 const SOURCE_CACHE_LEVELS = Object.freeze([10, 12, 14])
 const DEFAULT_SOURCE_CACHE_POINTS = 2_000_000
-const sourceCacheBudgetPoints = Number.isInteger(workerData?.tuning?.sourceCachePoints) &&
-  workerData.tuning.sourceCachePoints >= 0
-  ? workerData.tuning.sourceCachePoints
-  : DEFAULT_SOURCE_CACHE_POINTS
+const DEFAULT_SOURCE_CACHE_ENTRIES = 8_192
+const sourceCacheBudgetPoints = readTuningLimit('sourceCachePoints', DEFAULT_SOURCE_CACHE_POINTS)
+const sourceCacheBudgetEntries = readTuningLimit('sourceCacheEntries', DEFAULT_SOURCE_CACHE_ENTRIES)
 
 if (parentPort === null) throw new Error('Coverage tile worker requires a parent port.')
 
@@ -62,6 +64,7 @@ const workerGeneration = randomUUID()
 let cacheBytes = 0
 let failCatalogCommitOnce = workerData.faultInjection?.failCatalogCommitOnce === true
 const sourceCache = new Map()
+const sourceCacheKeysByIndexId = new Map()
 let sourceCachePoints = 0
 let nextTileIndexId = 0
 const cancelledRequestIds = new Set()
@@ -79,6 +82,7 @@ parentPort.on('message', (message) => {
     }
     if (stagedCatalog?.requestId === message.targetRequestId) {
       stagedCatalog = null
+      releaseRetiredSourceCacheEntries()
       return
     }
     if (queuedCatalogRequestIds.has(message.targetRequestId)) {
@@ -121,6 +125,7 @@ async function execute(message) {
   if (message.type === 'finalize-catalog') return finalizeCatalog(message)
   if (message.type === 'discard-catalog') return discardCatalog(message)
   if (message.type === 'read-tile') return readTile(message)
+  if (message.type === 'read-diagnostics') return readDiagnostics()
   if (message.type === 'close') {
     database.close()
     parentPort.close()
@@ -261,6 +266,7 @@ async function commitCatalog(message) {
     return true
   } catch (error) {
     stagedCatalog = null
+    releaseRetiredSourceCacheEntries()
     throw error
   }
 }
@@ -275,6 +281,7 @@ async function finalizeCatalog(message) {
   }
   activatedCatalog = null
   finalizedCatalogStageId = message.stageId
+  releaseRetiredSourceCacheEntries()
   return true
 }
 
@@ -282,6 +289,7 @@ async function finalizeCatalog(message) {
 function discardCatalog(message) {
   if (stagedCatalog?.stageId === message.stageId) {
     stagedCatalog = null
+    releaseRetiredSourceCacheEntries()
     return true
   }
   if (stagedCatalog === null && activatedCatalog === null) return true
@@ -290,6 +298,7 @@ function discardCatalog(message) {
   chunksByKey = activation.predecessor.chunksByKey
   indexesByPeriod = activation.predecessor.indexesByPeriod
   activatedCatalog = null
+  releaseRetiredSourceCacheEntries()
   return true
 }
 
@@ -418,29 +427,23 @@ function createChunkTileIndex(features) {
  * tiles it derives are identical; the copy holds 24 bytes per fix and lives
  * outside the JavaScript heap.
  * @param {{type: string, geometry: number[] & {size?: number, start?: number, end?: number}}} feature
- * @returns {number} fixes newly copied
+ * @returns {number} fixes this feature's geometry retains (shared or not)
  */
 function compactSourceGeometry(feature) {
   if (feature.type === 'LineString' || feature.type === 'Point' || feature.type === 'MultiPoint') {
-    const copied = countCopiedFixes(feature.geometry)
     feature.geometry = compactCoordinates(feature.geometry)
-    return copied
+    return feature.geometry.length / 3
   }
   if (feature.type === 'MultiLineString') {
     // Clipping a line that leaves and re-enters a tile yields several parts.
-    let copied = 0
+    let retained = 0
     for (let part = 0; part < feature.geometry.length; part += 1) {
-      copied += countCopiedFixes(feature.geometry[part])
       feature.geometry[part] = compactCoordinates(feature.geometry[part])
+      retained += feature.geometry[part].length / 3
     }
-    return copied
+    return retained
   }
   throw new Error(`Coverage tile index has an unexpected ${feature.type} source geometry.`)
-}
-
-/** Fixes a compaction will newly copy (shared, already compact arrays cost nothing). */
-function countCopiedFixes(coordinates) {
-  return coordinates instanceof Float64Array ? 0 : coordinates.length / 3
 }
 
 /** Copies one flat [x, y, importance, ...] array, keeping its line metrics. */
@@ -619,14 +622,106 @@ function readCachedSource(tileIndex, start, level, x, y) {
     for (const feature of tile.source) points += compactSourceGeometry(feature)
     next = createDrillStart(level, x, y, tile)
   }
-  sourceCache.set(key, { start: next, points })
-  sourceCachePoints += points
-  for (const [cachedKey, cached] of sourceCache) {
-    if (sourceCachePoints <= sourceCacheBudgetPoints || cachedKey === key) break
-    sourceCache.delete(cachedKey)
-    sourceCachePoints -= cached.points
-  }
+  setSourceCacheEntry(key, tileIndex.id, { start: next, points })
   return next
+}
+
+/**
+ * Inserts one cache entry, then evicts least-recently-used entries until both
+ * the retained-fix budget and the entry budget hold. The new entry is kept
+ * even when it alone exceeds the budget, so the current read can complete.
+ */
+function setSourceCacheEntry(key, indexId, entry) {
+  sourceCache.set(key, { ...entry, indexId })
+  sourceCachePoints += entry.points
+  let keys = sourceCacheKeysByIndexId.get(indexId)
+  if (keys === undefined) {
+    keys = new Set()
+    sourceCacheKeysByIndexId.set(indexId, keys)
+  }
+  keys.add(key)
+  for (const cachedKey of sourceCache.keys()) {
+    if (cachedKey === key) break
+    if (sourceCachePoints <= sourceCacheBudgetPoints &&
+      sourceCache.size <= sourceCacheBudgetEntries) break
+    deleteSourceCacheEntry(cachedKey)
+  }
+}
+
+/** Removes one cache entry and its charge. */
+function deleteSourceCacheEntry(key) {
+  const cached = sourceCache.get(key)
+  if (cached === undefined) return
+  sourceCache.delete(key)
+  sourceCachePoints -= cached.points
+  const keys = sourceCacheKeysByIndexId.get(cached.indexId)
+  keys?.delete(key)
+  if (keys?.size === 0) sourceCacheKeysByIndexId.delete(cached.indexId)
+}
+
+/**
+ * Releases every cache entry of an index that no catalog (active, staged or
+ * retained predecessor) can serve any more, so a replaced chunk revision's
+ * geometry is never kept alive by the cache and is never served again.
+ */
+function releaseRetiredSourceCacheEntries() {
+  const live = collectServableIndexIds()
+  for (const [indexId, keys] of [...sourceCacheKeysByIndexId]) {
+    if (live.has(indexId)) continue
+    for (const key of [...keys]) deleteSourceCacheEntry(key)
+  }
+}
+
+/** Index ids reachable from any catalog a tile can still be served from. */
+function collectServableIndexIds() {
+  const live = new Set()
+  const add = (chunks) => {
+    for (const chunk of chunks?.values() ?? []) {
+      if (chunk.tileIndex !== null) live.add(chunk.tileIndex.id)
+    }
+  }
+  add(chunksByKey)
+  add(stagedCatalog?.nextChunksByKey)
+  add(activatedCatalog?.predecessor.chunksByKey)
+  return live
+}
+
+/** Read-only cache and heap figures for diagnostics and memory tests. */
+function readDiagnostics() {
+  const heap = v8.getHeapStatistics()
+  const live = collectServableIndexIds()
+  return {
+    sourceCacheEntries: sourceCache.size,
+    sourceCachePoints,
+    sourceCacheRetainedPoints: countRetainedSourceCachePoints(),
+    sourceCacheBudgetPoints,
+    sourceCacheBudgetEntries,
+    sourceCacheIndexIds: [...sourceCacheKeysByIndexId.keys()],
+    servableIndexIds: [...live],
+    usedHeapBytes: heap.used_heap_size,
+    externalBytes: heap.external_memory ?? null,
+  }
+}
+
+/**
+ * Recounts, independently of the running charge, the fixes every cache entry
+ * retains, so tests can prove the charge matches what is actually kept alive.
+ */
+function countRetainedSourceCachePoints() {
+  let retained = 0
+  for (const cached of sourceCache.values()) {
+    for (const feature of cached.start?.source ?? []) {
+      const parts = feature.type === 'MultiLineString' ? feature.geometry : [feature.geometry]
+      for (const part of parts) retained += part.length / 3
+    }
+  }
+  return retained
+}
+
+/** Reads a non-negative integer limit from workerData.tuning. */
+function readTuningLimit(name, fallback) {
+  const value = workerData?.tuning?.[name]
+  return Number.isInteger(value) && value >= 0 ? value : fallback
 }
 
 /** geojson-vt's internal tile key (src/index.js toID). */

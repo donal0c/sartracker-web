@@ -208,7 +208,21 @@ export type CoverageTileRunner = {
     readonly x: number
     readonly y: number
   }) => Promise<Uint8Array | null>
+  readonly readDiagnostics: () => Promise<CoverageWorkerDiagnostics>
   readonly close: () => Promise<void>
+}
+
+/** Read-only source-cache and heap figures reported by the worker. */
+export type CoverageWorkerDiagnostics = {
+  readonly sourceCacheEntries: number
+  readonly sourceCachePoints: number
+  readonly sourceCacheRetainedPoints: number
+  readonly sourceCacheBudgetPoints: number
+  readonly sourceCacheBudgetEntries: number
+  readonly sourceCacheIndexIds: readonly number[]
+  readonly servableIndexIds: readonly number[]
+  readonly usedHeapBytes: number
+  readonly externalBytes: number | null
 }
 
 /** Starts the production runner, which spawns the real worker under the mission heap limit. */
@@ -217,7 +231,7 @@ export function createRealCoverageTileRunner(input: {
   readonly cacheDirectory: string
   readonly onFailure?: (error: Error & { code?: string }) => void
   readonly faultInjection?: FaultInjection
-  readonly tuning?: { readonly sourceCachePoints?: number }
+  readonly tuning?: { readonly sourceCachePoints?: number; readonly sourceCacheEntries?: number }
   readonly timeoutMs?: number
 }): CoverageTileRunner {
   const { createCoverageTileRunner } = require('../../electron/coverage-tile-runner.cjs') as {
