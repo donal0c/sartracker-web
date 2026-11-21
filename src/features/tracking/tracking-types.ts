@@ -38,6 +38,11 @@ export type NormalizedTrackingPosition = {
   readonly timestamp_source?: TrackingTimestampSource
   /** True when Traccar fixTime was unavailable and a non-authoritative live clock was used. */
   readonly fix_time_unverified?: boolean
+  /**
+   * Display health only, set by the clock check: the fix time is more than the
+   * clock-skew tolerance ahead of this laptop's clock. Never stored [DON-349].
+   */
+  readonly fix_time_ahead_of_clock?: boolean
   readonly source: string | null
   readonly data_origin: TrackingDataOrigin
   readonly cache_age_seconds: number | null

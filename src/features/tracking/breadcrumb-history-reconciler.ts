@@ -183,8 +183,13 @@ type LaneSlice = {
   readonly failedInTurn: number
 }
 
-/** The re-check lanes a device's turn rotates through. The initial lane is the catch-up drain. */
-const RECHECK_LANES = ['recent', 'older', 'gap'] as const
+/**
+ * The re-check lanes a device's turn rotates through. The initial lane is the
+ * catch-up drain. The rejoin lane re-reads, oldest first, history the catch-up
+ * fetched past a gap, so the store's contiguous checkpoint can follow it once
+ * the gap is filled [DON-349 P-1].
+ */
+const RECHECK_LANES = ['recent', 'older', 'gap', 'rejoin'] as const
 
 /**
  * One device's queued re-check work. Kept by device id, so it survives
@@ -301,6 +306,11 @@ export function createBreadcrumbHistoryReconciler(
   let retryTimer: ReturnType<typeof setTimeout> | null = null
   let antiEntropyTimer: ReturnType<typeof setTimeout> | null = null
   const lanesByDeviceId = new Map<string, DeviceLanes>()
+  // Where each device's rejoin walk resumes: the start of the earliest gap
+  // the initial catch-up stepped over. The store only advances its checkpoint
+  // from a window that starts at or before it, so history fetched past a gap
+  // must be re-read in order once the gap is filled [DON-349 P-1].
+  const rejoinCursorMsByDeviceId = new Map<string, number>()
   // One FIFO admission lock per device id for every request: initial
   // catch-up, recent and older re-check and gap retries. It is not tied to a
   // job object or a generation, so it holds across suspend, resume and range
@@ -693,6 +703,10 @@ export function createBreadcrumbHistoryReconciler(
       phase: 'initial',
       reason,
     }, job.minWindowFailureCount, error)
+    rejoinCursorMsByDeviceId.set(
+      job.deviceId,
+      Math.min(rejoinCursorMsByDeviceId.get(job.deviceId) ?? Number.POSITIVE_INFINITY, fromMs),
+    )
     job.cursorMs = toMs
     job.minWindowFailureCount = 0
     job.failureCount = 0
@@ -1004,7 +1018,7 @@ export function createBreadcrumbHistoryReconciler(
   function scheduleAntiEntropy(): void {
     if (
       antiEntropyTimer !== null ||
-      (completedDevicesById.size === 0 && gapsByDeviceId.size === 0 && lanesByDeviceId.size === 0) ||
+      (completedDevicesById.size === 0 && gapsByDeviceId.size === 0 && lanesByDeviceId.size === 0 && rejoinCursorMsByDeviceId.size === 0) ||
       !options.shouldContinue()
     ) {
       return
@@ -1170,6 +1184,101 @@ export function createBreadcrumbHistoryReconciler(
     return 'done'
   }
 
+  /**
+   * The next rejoin window for the device, or null when there is none to make
+   * now. The walk waits at the start of any gap at or before its cursor,
+   * because the store's checkpoint cannot pass an unfilled gap, and never
+   * jumps one: a gap can be filled from its far end first, and the checkpoint
+   * then stops where the gap's last slice was filled. It ends
+   * at the device's newest fetched time: the catch-up cursor while the device
+   * is still catching up, otherwise the newest time it has been read to.
+   */
+  const nextRejoinWindow = (lanes: DeviceLanes): TimeRange | null => {
+    const cursorMs = rejoinCursorMsByDeviceId.get(lanes.deviceId)
+    if (cursorMs === undefined) return null
+    const job = jobsByDeviceId.get(lanes.deviceId)
+    const targetMs = job?.cursorMs ?? completedDevicesById.get(lanes.deviceId)?.latestAvailableTargetMs
+    if (targetMs === undefined) return null
+    if (cursorMs >= targetMs) {
+      if (job === undefined) rejoinCursorMsByDeviceId.delete(lanes.deviceId)
+      return null
+    }
+    const gaps = gapsByDeviceId.get(lanes.deviceId) ?? []
+    if (gaps.some((gap) => gap.fromMs <= cursorMs)) return null
+    const nextGap = gaps.find((gap) => gap.toMs > cursorMs)
+    const toMs = Math.min(cursorMs + lanes.windowMs, targetMs, nextGap?.fromMs ?? Number.POSITIVE_INFINITY)
+    return { fromMs: cursorMs, toMs }
+  }
+
+  /**
+   * Re-reads one rejoin window and commits it so the store's checkpoint moves
+   * forward through it. An oversized or slow reply halves the width; at the
+   * smallest width the window becomes a gap and the walk waits for it. Any
+   * other fetch failure leaves the cursor for the next turn. A persistence
+   * failure stops the turn [DON-349 P-1].
+   */
+  const fetchRejoinWindow = async (
+    lanes: DeviceLanes,
+    window: TimeRange,
+    isCurrent: () => boolean,
+  ): Promise<TurnRequestOutcome> => {
+    let positions: readonly NormalizedTrackingPosition[]
+    try {
+      const fetched = await fetchUnderLock(lanes.deviceId, window.fromMs, window.toMs, isCurrent)
+      if (fetched === null) return 'stop'
+      positions = fetched
+    } catch (error) {
+      if (!isCurrent()) return 'stop'
+      const reason = classifyHistoryWindowFailure(error)
+      if (reason === null) {
+        markAntiEntropyFailed(lanes, error)
+        return 'failed'
+      }
+      lanes.successCount = 0
+      if (window.toMs - window.fromMs > minWindowMs) {
+        lanes.windowMs = Math.max(minWindowMs, Math.floor((window.toMs - window.fromMs) / 2))
+        return 'narrowed'
+      }
+      recordHistoryGap({
+        deviceId: lanes.deviceId,
+        deviceName: lanes.deviceName,
+        historyFromMs: historyFromFor(lanes.deviceId, window.fromMs),
+        fromMs: window.fromMs,
+        toMs: window.toMs,
+        phase: 'anti_entropy',
+        reason,
+      }, 1, error)
+      // The walk waits at the new gap's start until it is filled.
+      return 'done'
+    }
+    if (!isCurrent()) return 'stop'
+    try {
+      await options.onChunk({
+        phase: 'anti_entropy',
+        deviceId: lanes.deviceId,
+        deviceName: lanes.deviceName,
+        historyFrom: new Date(historyFromFor(lanes.deviceId, window.fromMs)),
+        from: new Date(window.fromMs),
+        to: new Date(window.toMs),
+        positions,
+      })
+    } catch (error) {
+      if (isCurrent()) markAntiEntropyFailed(lanes, error)
+      return 'stop'
+    }
+    if (!isCurrent()) return 'stop'
+    if (rejoinCursorMsByDeviceId.get(lanes.deviceId) === window.fromMs) {
+      rejoinCursorMsByDeviceId.set(lanes.deviceId, window.toMs)
+    }
+    clearHistoryGapsCoveredBy(lanes.deviceId, window.fromMs, window.toMs)
+    lanes.successCount += 1
+    if (lanes.windowMs < chunkMs && lanes.successCount >= WINDOW_GROWTH_SUCCESS_COUNT) {
+      lanes.windowMs = Math.min(chunkMs, lanes.windowMs * 2)
+      lanes.successCount = 0
+    }
+    return 'done'
+  }
+
   /** The history start a device's checkpoint is keyed by; a gap keeps its own. */
   const historyFromFor = (deviceId: string, fallbackMs: number): number =>
     completedDevicesById.get(deviceId)?.missionStartMs
@@ -1303,6 +1412,7 @@ export function createBreadcrumbHistoryReconciler(
     const deviceName = known?.deviceName
       ?? completedDevicesById.get(deviceId)?.deviceName
       ?? gapsByDeviceId.get(deviceId)?.[0]?.deviceName
+      ?? (rejoinCursorMsByDeviceId.has(deviceId) ? jobsByDeviceId.get(deviceId)?.deviceName : undefined)
     if (deviceName === undefined) return
     const lanes = known ?? lanesFor(deviceId, deviceName)
     const isCurrent = (): boolean =>
@@ -1314,6 +1424,7 @@ export function createBreadcrumbHistoryReconciler(
     let requestCount = 0
     let failed = false
     const triedGapSlices = new Set<number>()
+    let rejoinFailedThisTurn = false
     let laneIndex = lanes.nextLaneIndex
     let idleLanes = 0
     while (isCurrent() && idleLanes < RECHECK_LANES.length) {
@@ -1332,6 +1443,18 @@ export function createBreadcrumbHistoryReconciler(
         lanes.nextLaneIndex = laneIndex
         requestCount += 1
         outcome = await fetchGapSlice(lanes, next.gap, next.window, isCurrent)
+      } else if (lane === 'rejoin') {
+        const window = rejoinFailedThisTurn ? null : nextRejoinWindow(lanes)
+        if (window === null) {
+          idleLanes += 1
+          continue
+        }
+        idleLanes = 0
+        lanes.nextLaneIndex = laneIndex
+        requestCount += 1
+        outcome = await fetchRejoinWindow(lanes, window, isCurrent)
+        // A failed rejoin window waits for the next turn; the other lanes go on.
+        if (outcome === 'failed') rejoinFailedThisTurn = true
       } else {
         const head = lanes[lane][0]
         if (head === undefined || head.failedInTurn === turn) {
@@ -1423,6 +1546,7 @@ export function createBreadcrumbHistoryReconciler(
       ...completedDevicesById.keys(),
       ...lanesByDeviceId.keys(),
       ...gapsByDeviceId.keys(),
+      ...rejoinCursorMsByDeviceId.keys(),
     ])]
       .sort(compareStringsByCodeUnit)
       .filter((deviceId) => turnsInFlight.get(deviceId) !== batchGeneration)
@@ -1494,6 +1618,11 @@ export function createBreadcrumbHistoryReconciler(
       for (const deviceId of lanesByDeviceId.keys()) {
         if (!selectedDeviceIds.has(deviceId)) {
           lanesByDeviceId.delete(deviceId)
+        }
+      }
+      for (const deviceId of rejoinCursorMsByDeviceId.keys()) {
+        if (!selectedDeviceIds.has(deviceId)) {
+          rejoinCursorMsByDeviceId.delete(deviceId)
         }
       }
       for (let index = deviceQueue.length - 1; index >= 0; index -= 1) {
@@ -1643,6 +1772,7 @@ export function createBreadcrumbHistoryReconciler(
       antiEntropyFailedDeviceIds.clear()
       gapsByDeviceId.clear()
       lanesByDeviceId.clear()
+      rejoinCursorMsByDeviceId.clear()
       missionEpoch += 1
       initialCompletionWithheld = false
       deviceQueue.length = 0

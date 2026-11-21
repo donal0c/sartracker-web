@@ -894,6 +894,7 @@ describe('positionsEqual field discrimination [DON-240]', () => {
     timestamp: '2026-04-06T10:00:05.000Z',
     timestamp_source: 'fix',
     fix_time_unverified: false,
+    fix_time_ahead_of_clock: false,
     source: 'live',
     data_origin: 'live',
     cache_age_seconds: 0,

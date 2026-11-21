@@ -1075,3 +1075,93 @@ describe('[DON-338] round 11: every unconfirmed trail write is owed a store relo
     expect(latestLineIds(scenario.started)).not.toContain('20')
   })
 })
+
+describe('[DON-349] P-6: a lasting store fault does not reload the whole trail on every poll', () => {
+  it('spaces the reloads owed by repeated failed writes, keeps awaiting agreement while the fault lasts, and reloads within a minute once writes succeed again', async () => {
+    const { realStore, missionId } = await openRealStore()
+    const persistence = persistHistoryLikeRuntime(realStore, missionId)
+    const fault = { on: false }
+    const canonical = canonicalReadsFromStore(realStore, missionId)
+    const agreement: boolean[] = []
+    const started = startPoller(
+      { responses: [], respond: () => [FIX_18] },
+      {
+        // A fault that repeats on every write and commits nothing, like a full disk.
+        persistHistoryChunk: async (input) => {
+          if (fault.on) throw new Error('database or disk is full')
+          return persistence.persistHistoryChunk(input)
+        },
+        getCanonicalBreadcrumbs: canonical.getCanonicalBreadcrumbs,
+        historyAntiEntropyIntervalMs: 60_000,
+        onTrailStoreAgreementChange: (awaiting) => { agreement.push(awaiting) },
+      },
+    )
+    await advanceUntil(() => started.historyRequests() >= 2, 5_000)
+    fault.on = true
+    const readsBeforeFault = canonical.begun()
+
+    // Ten minutes of 5-second polls, every write failing.
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    const reloadsDuringFault = canonical.begun() - readsBeforeFault
+
+    // Bounded: well under one reload per poll (120 polls), but never given up.
+    expect(reloadsDuringFault).toBeGreaterThanOrEqual(2)
+    expect(reloadsDuringFault).toBeLessThanOrEqual(15)
+    // The line still awaits agreement with the store while writes keep failing.
+    expect(agreement.at(-1)).toBe(true)
+
+    fault.on = false
+    const readsAfterFault = canonical.begun()
+    // At most one capped cooldown (60 s) plus a poll before the owed reload.
+    await vi.advanceTimersByTimeAsync(65_000)
+
+    // Asserted before stop, because stop forgets the awaited agreement itself.
+    expect(canonical.begun()).toBeGreaterThan(readsAfterFault)
+    expect(agreement.at(-1)).toBe(false)
+    expect(latestLineIds(started)).toContain('18')
+    await started.poller.stop()
+  })
+
+  it('spaces owed reloads the same way when the store read fails too', async () => {
+    const { realStore, missionId } = await openRealStore()
+    const persistence = persistHistoryLikeRuntime(realStore, missionId)
+    const fault = { on: false }
+    const canonical = canonicalReadsFromStore(realStore, missionId)
+    let failedReads = 0
+    const agreement: boolean[] = []
+    const started = startPoller(
+      { responses: [], respond: () => [FIX_18] },
+      {
+        persistHistoryChunk: async (input) => {
+          if (fault.on) throw new Error('database or disk is full')
+          return persistence.persistHistoryChunk(input)
+        },
+        // The same fault fails every reload from the store.
+        getCanonicalBreadcrumbs: async (...args) => {
+          if (fault.on) {
+            failedReads += 1
+            throw new Error('database or disk is full')
+          }
+          return canonical.getCanonicalBreadcrumbs(...args)
+        },
+        historyAntiEntropyIntervalMs: 60_000,
+        onTrailStoreAgreementChange: (awaiting) => { agreement.push(awaiting) },
+      },
+    )
+    await advanceUntil(() => started.historyRequests() >= 2, 5_000)
+    fault.on = true
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+
+    // A 5-second retry would make 120 attempts; spaced reloads stay bounded but continue.
+    expect(failedReads).toBeGreaterThanOrEqual(2)
+    expect(failedReads).toBeLessThanOrEqual(15)
+    expect(agreement.at(-1)).toBe(true)
+
+    fault.on = false
+    await vi.advanceTimersByTimeAsync(65_000)
+    expect(agreement.at(-1)).toBe(false)
+    expect(latestLineIds(started)).toContain('18')
+    await started.poller.stop()
+  })
+})

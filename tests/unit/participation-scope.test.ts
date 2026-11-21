@@ -220,6 +220,22 @@ describe('participation scope [DON-271]', () => {
     }, '2026-08-20T11:05:00.000Z').positions).toEqual([])
   })
 
+  it('keeps a current marker whose fix time is only ahead of a slow laptop clock [DON-349 M-06]', () => {
+    // The fix falls inside the participant window but is ahead of this
+    // laptop's clock. Being ahead is labelled, not treated as expired.
+    const scope = createParticipationScope({
+      participants: [participant({
+        traccar_device_id: '11', effective_from: '2026-08-20T10:58:00.000Z',
+      })],
+      membershipEvents: [],
+    })
+    const ahead = { ...position('11', '2026-08-20T10:59:00.000Z'), device_cache_stale: true, fix_time_ahead_of_clock: true }
+
+    expect(scope.filterSnapshot({
+      devices: [device('11')], positions: [ahead], breadcrumbs: [],
+    }, '2026-08-20T10:55:00.000Z').positions).toEqual([ahead])
+  })
+
   it('uses persisted membership sequence for equal-time append ordering', () => {
     const scope = createParticipationScope({
       participants: [participant({
