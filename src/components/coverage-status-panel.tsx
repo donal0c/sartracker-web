@@ -25,8 +25,8 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
     blockers.has('pending_invalidation')
   const backfill = props.state.manifest?.backfillIncomplete === true ||
     blockers.has('backfill_incomplete')
-  const degraded = blockers.has('ingest_health_degraded') ||
-    blockers.has('ingest_outbox_pending')
+  const outboxPending = blockers.has('ingest_outbox_pending')
+  const degraded = blockers.has('ingest_health_degraded') || outboxPending
   const rendererEvidencePending = blockers.has('renderer_evidence_pending')
   const rendererEvidenceDegraded = blockers.has('renderer_evidence_degraded')
   const rendererDetached = blockers.has('renderer_detached')
@@ -38,6 +38,18 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
     summary.drawnFixCount >= summary.totalFixCount
   const omissions = props.omittedDeviceCount + props.omittedOutingCount +
     (props.unassignedOmitted ? 1 : 0)
+  // A failure or a stall outranks every temporary waiting message: the
+  // operator must not read "still working" when the line has stopped
+  // [DON-338 REN-3].
+  const failed = props.state.status === 'error'
+  const stalled = !failed && summary.stalled
+  // Retry re-reads saved history. It cannot make the map reattach or apply a
+  // filter when nothing new arrived, so it is not offered for those stalls.
+  const retryCannotHelpStall = rendererDetached || rendererFilterPending
+  const showRetry = failed ||
+    (stalled && !retryCannotHelpStall) ||
+    (summary.kind === 'behind' && !stalled &&
+      !evidenceBlocked && !rendererDetached && !rendererFilterPending)
 
   return (
     <section
@@ -48,7 +60,20 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
       <div className="flex flex-col items-start gap-3">
         <div>
           <p className="font-bold uppercase tracking-[0.08em]">Mission history coverage</p>
-          {rendererDetached ? (
+          {failed ? null : stalled ? (
+            <p className="mt-1 font-bold" data-testid="coverage-stalled">
+              History line stalled — it has not updated for over {formatStallMinutes()}
+              {describeStallContext({
+                rendererDetached, rendererFilterPending, reorganizing, backfill,
+                rendererEvidencePending, outboxPending,
+              })}.
+              {' '}The line may be missing recent positions or be out of date.
+              {' '}Current positions remain live.
+              {retryCannotHelpStall
+                ? ' Retry cannot fix this. Check saved positions with Inspect exact fixes.'
+                : ' Press Retry.'}
+            </p>
+          ) : rendererDetached ? (
             <p className="mt-1" data-testid="coverage-renderer-detached">
               Coverage is being reattached to the map. Current positions remain live.
             </p>
@@ -102,10 +127,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
             </p>
           ) : summary.kind === 'behind' ? (
             <p className="mt-1" data-testid="coverage-partial">
-              History incomplete — showing loaded coverage.
-              {summary.stalled
-                ? ` The history line has not updated for over ${formatStallMinutes()}. Press Retry.`
-                : ' Press Retry to load the rest.'}
+              History incomplete — showing loaded coverage. Press Retry to load the rest.
             </p>
           ) : null}
           {props.state.status === 'error' ? (
@@ -127,8 +149,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
             </p>
           ) : null}
         </div>
-        {(summary.kind === 'behind' || summary.kind === 'failed') &&
-        !evidenceBlocked && !rendererDetached && !rendererFilterPending ? (
+        {showRetry ? (
           <button
             className="sar-button px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.08em]"
             data-testid="coverage-retry"
@@ -239,6 +260,24 @@ function describeErrorClass(value: CoverageErrorClass): string {
     case 'cancelled': return 'loading was stopped'
     case 'unknown': return 'an unexpected error'
   }
+}
+
+/** Names what a stalled line was waiting for, as a clause after "for over N minutes". */
+function describeStallContext(waiting: {
+  readonly rendererDetached: boolean
+  readonly rendererFilterPending: boolean
+  readonly reorganizing: boolean
+  readonly backfill: boolean
+  readonly rendererEvidencePending: boolean
+  readonly outboxPending: boolean
+}): string {
+  if (waiting.rendererDetached) return ' while reattaching to the map'
+  if (waiting.rendererFilterPending) return ' while applying the selected history filter'
+  if (waiting.reorganizing) return ' while updating outing assignment'
+  if (waiting.backfill) return ' while adding participant history'
+  if (waiting.rendererEvidencePending) return ' while waiting for anomaly evidence to be saved'
+  if (waiting.outboxPending) return ' while waiting for new positions to be saved'
+  return ''
 }
 
 /** Formats the stall interval for the operator, for example "2 minutes". */

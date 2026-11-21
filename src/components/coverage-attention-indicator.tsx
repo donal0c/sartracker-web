@@ -8,9 +8,10 @@ import { selectCoverageStateForMission } from '../features/tracking/mission-cove
 import { useMissionStore } from '../features/mission/mission-store'
 
 /**
- * Compact, always-visible warning that the mission history line is failed or
- * incomplete, for operators who are not on the Tracking tab. Renders nothing
- * while the line is up to date or catching up normally [DON-338 REN-6].
+ * Compact warning in the awareness strip that the mission history line is
+ * failed, stalled or incomplete, shown whenever the full Tracking panel is off
+ * screen (sidebar collapsed or another tab open). Renders nothing while the
+ * line is up to date or catching up normally [DON-338 REN-6].
  */
 export function CoverageAttentionIndicator(props: { readonly onOpenTracking: () => void }) {
   const coverageState = useCoverageStore((state) => state.state)
@@ -21,7 +22,7 @@ export function CoverageAttentionIndicator(props: { readonly onOpenTracking: () 
   return (
     <button
       aria-live="polite"
-      className="mx-5 mb-2 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-left text-xs font-medium leading-relaxed text-amber-100"
+      className="sar-status-chip-warning max-w-[32rem] border-l-4 px-3 py-2 text-left text-xs font-bold leading-snug"
       data-testid="coverage-attention-indicator"
       onClick={props.onOpenTracking}
       type="button"
@@ -39,7 +40,7 @@ function describeAttention(summary: CoverageStatusSummary): string {
   }
   if (summary.stalled) {
     const minutes = Math.round(COVERAGE_CATCH_UP_STALL_MS / 60_000)
-    return `MISSION HISTORY — the history line has not updated for over ${minutes} minutes and is missing recent positions.`
+    return `MISSION HISTORY — the history line has not updated for over ${minutes} minutes and may be missing recent positions or be out of date.`
   }
   return 'MISSION HISTORY — the history line is incomplete. Do not treat it as the full record.'
 }

@@ -1,15 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useMissionStore } from '../features/mission/mission-store'
 
-import { CoverageAttentionIndicator } from './coverage-attention-indicator'
 import { FocusModeToggle } from './focus-mode-toggle'
 import { DeferredGpxImportPanel } from './deferred-gpx-import-panel'
 import { HelicopterPanel } from './helicopter-panel'
 import { LayerFilterPanel } from './layer-filter-panel'
 import { MissionControlPanel } from './mission-control-panel'
 import { TrackingStatusPanel } from './tracking-status-panel'
-
-type FocusSidebarTab = 'tracking' | 'tools' | 'layers'
+import type { FocusSidebarTab, SidebarTabs } from './use-sidebar-tabs'
 
 const FOCUS_SIDEBAR_TABS: readonly { readonly id: FocusSidebarTab; readonly label: string }[] = [
   { id: 'tracking', label: 'Tracking' },
@@ -20,8 +18,10 @@ const FOCUS_SIDEBAR_TABS: readonly { readonly id: FocusSidebarTab; readonly labe
 /**
  * Shares a stable mission-control owner across normal, Focus and hidden presentations.
  */
-export function OperationalSidebar({ focusModeActive, collapsed = false, minimized = false, collapseDisabledReason, onActionErrorChange, onDecisionOpenChange, onMinimizedChange, onCollapseWorkspace }: {
+export function OperationalSidebar({ focusModeActive, tabs, collapsed = false, minimized = false, collapseDisabledReason, onActionErrorChange, onDecisionOpenChange, onMinimizedChange, onCollapseWorkspace }: {
   readonly focusModeActive: boolean
+  /** Layout-owned tab selection, so controls outside the sidebar can open Tracking. */
+  readonly tabs: SidebarTabs
   readonly collapseDisabledReason: string | null
   readonly onActionErrorChange: (error: string | null) => void
   readonly onDecisionOpenChange: (open: boolean) => void
@@ -30,10 +30,7 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
   readonly onMinimizedChange: (minimized: boolean) => void
   readonly onCollapseWorkspace: () => void
 }) {
-  const [focusTab, setFocusTab] = useState<FocusSidebarTab>('layers')
-  const [normalTab, setNormalTab] = useState<FocusSidebarTab>('tracking')
-  const activeTab = focusModeActive ? focusTab : normalTab
-  const setActiveTab = focusModeActive ? setFocusTab : setNormalTab
+  const { activeTab, setActiveTab } = tabs
   const prefix = focusModeActive ? 'focus-sidebar' : 'sidebar'
   const phase = useMissionStore((state) => state.phase)
   const missionDockRef = useRef<HTMLDivElement>(null)
@@ -116,12 +113,6 @@ export function OperationalSidebar({ focusModeActive, collapsed = false, minimiz
           ))}
         </div>
       </div>
-
-      {/* A failed or incomplete mission history line must be visible on every
-          tab; full detail stays on Tracking [DON-338 REN-6]. */}
-      {activeTab === 'tracking' ? null : (
-        <CoverageAttentionIndicator onOpenTracking={() => setActiveTab('tracking')} />
-      )}
 
       {/* Tab content — fills remaining height */}
       <div
