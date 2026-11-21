@@ -16,6 +16,7 @@ import {
   cleanupOwnedProcess,
   createBreadcrumbPublicationTimingEvidence,
   createBreadcrumbReconciliationDeadlineEvidence,
+  createOracleBreadcrumbFeatureCollection,
   createPersistedBreadcrumbEvidence,
   createRenderedBreadcrumbEvidence,
   MAX_RENDERED_EXACT_DOT_COORDINATE_ERROR_METRES,
@@ -28,6 +29,7 @@ import {
   parseExactBreadcrumbDotPageSummary,
   exactBreadcrumbDotPageSummaryMatches,
   processExited,
+  renderedOracleCoordinatesMatchRetainedIdentities,
   readCompactBreadcrumbMilestoneEvidenceInRenderer,
   summarizeBreadcrumbRequestLedger,
 } from '../../build/electron-breadcrumb-36h-proof-lib.js'
@@ -38,6 +40,8 @@ import {
   createBreadcrumb36HourSourceDatabase,
 } from '../../build/breadcrumb-36h-mock-traccar.js'
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
+import { createBreadcrumbFeatureCollection } from '../../src/features/tracking/tracking-geojson'
+import type { NormalizedTrackingPosition } from '../../src/features/tracking/tracking-types'
 
 describe('live tracking line source evidence', () => {
   const exact = { type: 'FeatureCollection', features: [{ type: 'Feature',
@@ -649,6 +653,93 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
     })
   })
 
+  it('counts lone trail fixes in rendered evidence, so deleting one changes the evidence [DON-338]', () => {
+    const line = {
+      type: 'Feature',
+      properties: { featureKind: 'breadcrumbLine', deviceId: '1' },
+      geometry: { type: 'LineString', coordinates: [[-9.1, 52.1], [-9.11, 52.11]] },
+    }
+    const lone = {
+      type: 'Feature',
+      properties: { featureKind: 'breadcrumbLoneFix', deviceId: '1' },
+      geometry: { type: 'Point', coordinates: [-9.3, 52.3] },
+    }
+    const withLone = createRenderedBreadcrumbEvidence({ type: 'FeatureCollection', features: [line, lone] })
+    const withoutLone = createRenderedBreadcrumbEvidence({ type: 'FeatureCollection', features: [line] })
+
+    expect(withLone).toMatchObject({ featureCount: 2, coordinateCount: 3, deviceCoordinateCounts: { '1': 3 } })
+    expect(withLone.coordinateSha256).not.toBe(withoutLone.coordinateSha256)
+    expect(withLone.deviceCoordinateSha256['1']).not.toBe(withoutLone.deviceCoordinateSha256['1'])
+  })
+
+  it('builds the line oracle exactly as production draws lone and stationary fixes [DON-338]', () => {
+    const gapMs = 30 * 60_000
+    const start = Date.parse('2026-08-08T00:00:00.000Z')
+    const at = (deviceId: string, id: string, ms: number, lat: number, lon = -9.1) => ({
+      id,
+      source_position_id: id,
+      device_id: deviceId,
+      lat,
+      lon,
+      timestamp: new Date(ms).toISOString(),
+    })
+    const route = [
+      at('1', 'r0', start, 52.1),
+      at('1', 'r1', start + 10_000, 52.1001),
+      // 31-minute silences either side: a lone fix.
+      at('1', 'lone', start + 10_000 + 31 * 60_000, 52.11),
+      at('1', 'r2', start + 10_000 + 62 * 60_000, 52.12),
+      at('1', 'r3', start + 20_000 + 62 * 60_000, 52.1201),
+    ]
+    const solo = [at('2', 'solo', start, 52.2, -9.2)]
+    // Stationary: two fixes at one place, a zero-length segment.
+    const still = [at('3', 's0', start, 52.3, -9.3), at('3', 's1', start + 10_000, 52.3, -9.3)]
+    const oracleEvidence = (positions: readonly ReturnType<typeof at>[]) => {
+      const byDevice = new Map<string, ReturnType<typeof at>[]>()
+      for (const position of positions) {
+        byDevice.set(position.device_id, [...(byDevice.get(position.device_id) ?? []), position])
+      }
+      return createRenderedBreadcrumbEvidence(createOracleBreadcrumbFeatureCollection(byDevice, gapMs))
+    }
+    const productionEvidence = (positions: readonly ReturnType<typeof at>[]) =>
+      createRenderedBreadcrumbEvidence(createBreadcrumbFeatureCollection({
+        devices: [],
+        positions: [],
+        breadcrumbs: positions.map((position): NormalizedTrackingPosition => ({
+          id: position.id,
+          device_id: position.device_id,
+          lat: position.lat,
+          lon: position.lon,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: position.timestamp,
+          source: 'traccar',
+          data_origin: 'live',
+          cache_age_seconds: null,
+          device_cache_stale: false,
+        })),
+      }, gapMs))
+
+    const all = [...route, ...solo, ...still]
+    expect(oracleEvidence(all)).toEqual(productionEvidence(all))
+    expect(oracleEvidence(all)).toMatchObject({
+      featureCount: 5,
+      deviceCoordinateCounts: { '1': 5, '2': 1, '3': 1 },
+    })
+
+    // Control: deleting an isolated fix, or a whole stationary segment, changes
+    // the evidence. (Deleting one of two fixes at the same spot draws the same
+    // point, so it rightly leaves the geometry evidence unchanged.)
+    for (const deletedIds of [['lone'], ['solo'], ['s0', 's1']]) {
+      const remaining = all.filter((position) => !deletedIds.includes(position.id))
+      expect(oracleEvidence(remaining).coordinateSha256, `deleting ${deletedIds.join(', ')}`)
+        .not.toBe(oracleEvidence(all).coordinateSha256)
+      expect(oracleEvidence(remaining)).toEqual(productionEvidence(remaining))
+    }
+  })
+
   it('derives the canonical bounded render oracle with the production CJS selector', () => {
     const profile = createBreadcrumb36HourProfile()
     const window = {
@@ -669,7 +760,23 @@ describe('packaged Electron 36-hour breadcrumb proof helpers', () => {
         deviceCount: 32,
       },
     })
-    expect(first.retainedIdentityCount).toBe(first.rendered.coordinateCount)
+    // Device 1 stands still for this whole window: its 3,517 retained fixes are
+    // one zero-length segment, drawn as a single lone-fix point [DON-338].
+    expect(first.devices.find((device) => device.deviceId === '1')).toMatchObject({
+      retainedPositionCount: 3_517,
+      coordinateCount: 1,
+    })
+    expect(first.rendered.coordinateCount).toBe(first.retainedIdentityCount - 3_516)
+    expect(first.devices.filter((device) => device.deviceId !== '1')
+      .every((device) => device.coordinateCount === device.retainedPositionCount)).toBe(true)
+    // The verdict's consistency check accounts for the stationary collapse and
+    // still catches a single missing coordinate.
+    expect(first.stationaryCollapsedPositionCount).toBe(3_516)
+    expect(renderedOracleCoordinatesMatchRetainedIdentities(first)).toBe(true)
+    expect(renderedOracleCoordinatesMatchRetainedIdentities({
+      ...first,
+      rendered: { ...first.rendered, coordinateCount: first.rendered.coordinateCount - 1 },
+    })).toBe(false)
     expect(first.dotRendered).toMatchObject({
       featureCount: first.retainedIdentityCount,
       coordinateCount: first.retainedIdentityCount,

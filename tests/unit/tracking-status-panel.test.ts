@@ -10,6 +10,7 @@ import { useTrackingStyleStore } from '../../src/features/tracking/tracking-styl
 import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-store'
 import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
 import { useCoverageStore } from '../../src/features/tracking/coverage-store'
+import { useLayerVisibilityStore } from '../../src/features/layers/layer-visibility-store'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { Mission } from '../../src/infrastructure/mission-store/tauri-mission-store'
 
@@ -45,6 +46,7 @@ describe('TrackingStatusPanel', () => {
     useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState())
     useCoverageStore.setState(useCoverageStore.getInitialState())
     useMissionStore.setState(useMissionStore.getInitialState())
+    useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
@@ -418,6 +420,85 @@ describe('TrackingStatusPanel', () => {
 
     expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
       'Displayed route error may be up to 43 metres for this route',
+    )
+  })
+
+  it.each([
+    ['Trails switched off', () => useLayerVisibilityStore.setState({ breadcrumbsVisible: false })],
+    ['Tracking group switched off', () => useLayerVisibilityStore.setState((state) => ({
+      groupVisibility: { ...state.groupVisibility, tracking: false },
+    }))],
+  ] as const)('never says a trail line is on the map when %s [DON-338]', (_label, switchOff) => {
+    seedSimplifiedLineMetadata()
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    switchOff()
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: {
+        status: 'ready',
+        totalPositionCount: 10_001,
+        pagePositionCount: 10_000,
+        fromTimestamp: '2026-08-08T00:00:00.000Z',
+        toTimestamp: '2026-08-09T12:00:00.000Z',
+        hasEarlier: true,
+        hasLater: false,
+      },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+
+    const note = getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')
+    expect(note).not.toContain('shows the whole trail')
+    expect(note).not.toContain('The dots mark')
+    expect(note).toContain('no trail line or dots are drawn on the map')
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'of at least 12,000 known fixes across the full route.',
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trails are switched off on the Layers tab, so this line is not drawn on the map.',
+    )
+
+    act(() => useTrackingStyleStore.setState({ breadcrumbTrailMode: 'line' }))
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Trails are switched off on the Layers tab, so this line is not drawn on the map.',
+    )
+  })
+
+  it('counts only hidden trails of devices in this mission and says when every trail is hidden [DON-338]', () => {
+    seedSimplifiedLineMetadata()
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        devices: [
+          { device_id: 'tracker-1', name: 'One', status: 'online', last_seen: null, unique_id: null, category: null },
+          { device_id: 'tracker-2', name: 'Two', status: 'online', last_seen: null, unique_id: null, category: null },
+        ],
+      },
+    }))
+    useTrackingStyleStore.setState({ breadcrumbTrailMode: 'dots' })
+    useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['tracker-1', 'gone-device'] })
+    const Panel = TrackingStatusPanel as React.ComponentType<{
+      readonly exactBreadcrumbDotState: unknown
+      readonly onExactBreadcrumbDotsEarlier: () => void
+      readonly onExactBreadcrumbDotsLater: () => void
+    }>
+    render(React.createElement(Panel, {
+      exactBreadcrumbDotState: { status: 'loading', missionId: 'mission-1' },
+      onExactBreadcrumbDotsEarlier: () => undefined,
+      onExactBreadcrumbDotsLater: () => undefined,
+    }))
+    expect(getText('[data-testid="exact-breadcrumb-dots-hidden-trails"]')).toMatch(/^1 device has its trail hidden/u)
+
+    act(() => useLayerVisibilityStore.setState({ hiddenBreadcrumbDeviceIds: ['tracker-1', 'tracker-2'] }))
+    expect(getText('[data-testid="exact-breadcrumb-dots-whole-trail-note"]')).toMatch(
+      /^Every device has its trail hidden on the Layers tab, so no trail line or dots are drawn on the map\./u,
+    )
+    expect(getText('[data-testid="breadcrumb-display-summary"]')).toContain(
+      'Every device has its trail hidden on the Layers tab, so this line is not drawn on the map.',
     )
   })
 

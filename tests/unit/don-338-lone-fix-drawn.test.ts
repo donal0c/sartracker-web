@@ -13,6 +13,13 @@ import type {
   NormalizedTrackingPosition,
   TrackingSnapshot,
 } from '../../src/features/tracking/tracking-types'
+import {
+  createDrawingRecorderMap,
+  readDrawnFeatures,
+  TRAIL_DRAWING_LAYER_IDS,
+  type DrawingRecorderMap,
+  type RecordedFeature,
+} from '../support/maplibre-drawn-features'
 
 /**
  * LIV-5 [DON-338]: a lone fix (a one-point trail segment between two silences
@@ -82,117 +89,42 @@ function createSnapshot(breadcrumbs: readonly NormalizedTrackingPosition[]): Tra
   return { devices: [], positions: [], breadcrumbs }
 }
 
-type RecordedFeature = {
-  readonly id?: string | number
-  readonly geometry: { readonly type: string; readonly coordinates: unknown }
-  readonly properties: { readonly featureKind?: string; readonly deviceId?: string; readonly color?: string }
-}
+const createRecordingMap = createDrawingRecorderMap
 
-type RecordedLayer = {
-  readonly id: string
-  readonly type: string
-  readonly source: string
-  filter?: unknown
-  readonly layout?: Record<string, unknown>
-  paint?: Record<string, unknown>
-}
-
-/** Records MapLibre sources and layers, applying incremental diffs by feature ID. */
-function createRecordingMap() {
-  const layers = new Map<string, RecordedLayer>()
-  const sourceData = new Map<string, RecordedFeature[]>()
-  let incrementalUpdates = 0
-  const handles = new Map<string, unknown>()
-  return {
-    layers,
-    sourceData,
-    get incrementalUpdates() {
-      return incrementalUpdates
-    },
-    getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
-    // A stable handle per source, as MapLibre returns, so incremental diffs are used.
-    getSource: (id: string) => {
-      if (!sourceData.has(id)) return undefined
-      const existing = handles.get(id)
-      if (existing !== undefined) return existing
-      const handle = {
-            setData: (data: { features: RecordedFeature[] }) => {
-              sourceData.set(id, [...data.features])
-            },
-            updateData: (diff: { remove?: (string | number)[]; add?: RecordedFeature[] }) => {
-              incrementalUpdates += 1
-              const removed = new Set(diff.remove ?? [])
-              const current = (sourceData.get(id) ?? []).filter(
-                (feature) => feature.id === undefined || !removed.has(feature.id),
-              )
-              for (const feature of diff.add ?? []) {
-                if (current.some((existing) => existing.id === feature.id)) {
-                  throw new Error(`Duplicate feature id added: ${String(feature.id)}`)
-                }
-                current.push(feature)
-              }
-              sourceData.set(id, current)
-            },
-          }
-      handles.set(id, handle)
-      return handle
-    },
-    addLayer: (spec: RecordedLayer) => {
-      layers.set(spec.id, spec)
-    },
-    addSource: (id: string, config: { data: { features: RecordedFeature[] } }) => {
-      sourceData.set(id, [...config.data.features])
-    },
-    getFilter: (id: string) => layers.get(id)?.filter,
-    getPaintProperty: (id: string, property: string) => layers.get(id)?.paint?.[property],
-    setFilter: (id: string, filter: unknown) => {
-      const layer = layers.get(id)
-      if (layer !== undefined) layer.filter = filter
-    },
-    setPaintProperty: (id: string, property: string, value: unknown) => {
-      const layer = layers.get(id)
-      if (layer !== undefined) layer.paint = { ...(layer.paint ?? {}), [property]: value }
-    },
-  }
-}
-
-/** Returns fixes of the route that no visible trail geometry on the tracking source draws. */
+/**
+ * Returns fixes of the route that no visible trail layer draws: a trail layer
+ * must exist, be visible and have a filter that accepts the feature.
+ */
 function findFixesNotDrawnOnWebGlMap(
-  map: ReturnType<typeof createRecordingMap>,
+  map: DrawingRecorderMap,
   fixes: readonly NormalizedTrackingPosition[],
 ): readonly string[] {
-  const features = map.sourceData.get('tracking') ?? []
-  const lineLayer = map.layers.get('tracking-breadcrumbs-line')
-  const loneLayer = map.layers.get(LONE_FIX_LAYER_ID)
-  const lineVisible = lineLayer !== undefined && !JSON.stringify(lineLayer.filter).includes('__hidden__')
-  const loneVisible = loneLayer !== undefined &&
-    loneLayer.source === 'tracking' &&
-    JSON.stringify(loneLayer.filter).includes(LONE_FIX_KIND) &&
-    !JSON.stringify(loneLayer.filter).includes('__hidden__')
   const key = (lon: number, lat: number) => `${lon.toFixed(7)}:${lat.toFixed(7)}`
   const drawn = new Set<string>()
-  for (const feature of features) {
-    if (
-      lineVisible &&
-      feature.properties.featureKind === 'breadcrumbLine' &&
-      feature.geometry.type === 'LineString'
-    ) {
-      const coordinates = feature.geometry.coordinates as readonly (readonly [number, number])[]
-      const distinct = new Set(coordinates.map(([lon, lat]) => key(lon, lat)))
-      // MapLibre draws nothing for a zero-length line.
-      if (distinct.size < 2) continue
-      for (const entry of distinct) drawn.add(entry)
-    }
-    if (
-      loneVisible &&
-      feature.properties.featureKind === LONE_FIX_KIND &&
-      feature.geometry.type === 'Point'
-    ) {
+  for (const { feature } of readDrawnFeatures(map, { layerIds: TRAIL_DRAWING_LAYER_IDS })) {
+    if (feature.geometry.type === 'LineString') {
+      for (const [lon, lat] of feature.geometry.coordinates as readonly (readonly [number, number])[]) {
+        drawn.add(key(lon, lat))
+      }
+    } else if (feature.geometry.type === 'Point') {
       const [lon, lat] = feature.geometry.coordinates as readonly [number, number]
       drawn.add(key(lon, lat))
     }
   }
   return fixes.filter((position) => !drawn.has(key(position.lon, position.lat))).map((position) => position.id)
+}
+
+/** The sorted full-rebuild description of a snapshot, for comparison with incremental state. */
+function describeFullBuild(
+  breadcrumbs: readonly NormalizedTrackingPosition[],
+  style: { readonly deviceColors: Record<string, string>; readonly breadcrumbSize: number; readonly breadcrumbTrailMode: BreadcrumbTrailMode },
+): readonly string[] {
+  const fullBuild = createTrackingFeatureCollection(
+    createSnapshot(breadcrumbs),
+    DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
+    style,
+  )
+  return describeSource(fullBuild.features as unknown as RecordedFeature[])
 }
 
 /** Sorted (id, kind, geometry) triples for comparing incremental and full builds. */
@@ -257,7 +189,7 @@ describe('[DON-338] LIV-5 lone fixes stay on the live trail', () => {
       ]) {
         expect(JSON.stringify(map.layers.get(markerLayerId)?.filter)).not.toContain(LONE_FIX_KIND)
       }
-      const layerOrder = [...map.layers.keys()]
+      const layerOrder = map.layerOrder
       expect(layerOrder.indexOf(LONE_FIX_LAYER_ID)).toBeLessThan(
         layerOrder.indexOf('tracking-devices-circle'),
       )
@@ -266,13 +198,23 @@ describe('[DON-338] LIV-5 lone fixes stay on the live trail', () => {
 
   it('applies trail visibility and hidden-device filters to lone fixes exactly as to the line', () => {
     const route = createRoute()
+    const drawnDevices = (map: DrawingRecorderMap, layerId: string) =>
+      [...new Set(readDrawnFeatures(map, { layerIds: [layerId] })
+        .map(({ feature }) => feature.properties.deviceId))].sort()
+
+    const shownMap = createRecordingMap()
+    syncTrackingOverlay(shownMap as never, createSnapshot(route), [], [], true)
+    expect(drawnDevices(shownMap, LONE_FIX_LAYER_ID)).toEqual(['searcher', 'solo', 'still'])
+    expect(findFixesNotDrawnOnWebGlMap(shownMap, route)).toEqual([])
+
     const hiddenMap = createRecordingMap()
     syncTrackingOverlay(hiddenMap as never, createSnapshot(route), [], ['searcher'], true)
-    expect(JSON.stringify(hiddenMap.getFilter(LONE_FIX_LAYER_ID))).toContain('searcher')
+    expect(drawnDevices(hiddenMap, LONE_FIX_LAYER_ID)).toEqual(['solo', 'still'])
+    expect(drawnDevices(hiddenMap, 'tracking-breadcrumbs-line')).toEqual([])
 
     const offMap = createRecordingMap()
     syncTrackingOverlay(offMap as never, createSnapshot(route), [], [], false)
-    expect(JSON.stringify(offMap.getFilter(LONE_FIX_LAYER_ID))).toContain('__hidden__')
+    expect(readDrawnFeatures(offMap, { layerIds: TRAIL_DRAWING_LAYER_IDS })).toEqual([])
   })
 
   it('keeps lone fixes correct through incremental source diffs as fixes arrive', () => {
@@ -310,6 +252,52 @@ describe('[DON-338] LIV-5 lone fixes stay on the live trail', () => {
       }
       expect(map.incrementalUpdates).toBeGreaterThan(0)
     }
+  })
+
+  it('keeps lone fixes correct when an earlier segment arrives late and segment indexes shift', () => {
+    const route = createRoute()
+    const style = { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'line' as const }
+    // A fix recorded 40 minutes before the searcher's first fix, delivered late:
+    // it becomes the device's first segment, so every later segment index shifts.
+    const lateEarly = fix('searcher', 'late-early', START_MS - 40 * 60_000, 53.19)
+    // A late fix 40 minutes after the still device's last fix: a new lone segment at the end.
+    const lateStill = fix('still', 'late-still', START_MS + 15_000 + 40 * 60_000, 53.61, -6.0)
+    const sequences: (readonly (readonly NormalizedTrackingPosition[])[])[] = [
+      [route, [...route, lateEarly]],
+      [route, [lateEarly, ...route]],
+      [route, [...route, lateEarly], [...route, lateEarly, lateStill]],
+      [route, [...route, lateEarly], route],
+    ]
+    for (const sequence of sequences) {
+      const map = createRecordingMap()
+      for (const breadcrumbs of sequence) {
+        syncTrackingOverlay(map as never, createSnapshot(breadcrumbs), [], [], true, style)
+        expect(describeSource(map.sourceData.get('tracking') ?? []))
+          .toEqual(describeFullBuild(breadcrumbs, style))
+        expect(findFixesNotDrawnOnWebGlMap(map, breadcrumbs)).toEqual([])
+      }
+      expect(map.incrementalUpdates, 'the late segment must go through the incremental diff').toBeGreaterThan(0)
+    }
+  })
+
+  it('removes a device\'s lone fixes when the device leaves the snapshot', () => {
+    const route = createRoute()
+    const style = { deviceColors: {}, breadcrumbSize: 8, breadcrumbTrailMode: 'line' as const }
+    const withoutSolo = route.filter((position) => position.device_id !== 'solo')
+    const searcherOnly = route.filter((position) => position.device_id === 'searcher')
+    const map = createRecordingMap()
+    for (const breadcrumbs of [route, withoutSolo, searcherOnly, route]) {
+      syncTrackingOverlay(map as never, createSnapshot(breadcrumbs), [], [], true, style)
+      expect(describeSource(map.sourceData.get('tracking') ?? []))
+        .toEqual(describeFullBuild(breadcrumbs, style))
+      expect(findFixesNotDrawnOnWebGlMap(map, breadcrumbs)).toEqual([])
+    }
+    expect(map.incrementalUpdates, 'device removal must go through the incremental diff').toBeGreaterThan(0)
+    expect(
+      readDrawnFeatures(map, { layerIds: [LONE_FIX_LAYER_ID] })
+        .map(({ feature }) => feature.properties.deviceId)
+        .sort(),
+    ).toEqual(['searcher', 'solo', 'still'])
   })
 
   it.each<BreadcrumbTrailMode>(['line', 'dots'])(

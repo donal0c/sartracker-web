@@ -16,6 +16,11 @@ import type {
   NormalizedTrackingPosition,
   TrackingSnapshot,
 } from '../../src/features/tracking/tracking-types'
+import {
+  createDrawingRecorderMap,
+  readDrawnFeatures,
+  type DrawingRecorderMap,
+} from '../support/maplibre-drawn-features'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -112,15 +117,18 @@ describe('[DOTS-CONTRACT] whole trail line always drawn, exact Breadcrumb dots p
         activeDeviceIds: [],
       })
 
+      // One map for the whole sequence, as in the app, so stale layers or
+      // sources left by an earlier state are caught.
+      const map = createDrawingRecorderMap()
       const loading = published.find((state) => state.status === 'loading')
       assertCondition(loading !== undefined, 'controller did not publish a loading state')
-      assertWholeTrailDrawn(renderOverlay(liveSnapshot, loading), fixes, 'loading')
+      assertWholeTrailDrawn(renderOverlay(liveSnapshot, loading, map), fixes, 'loading')
 
       const pageSizes: number[] = []
       const seen = new Set<string>()
       let state = await waitForReady(controller, null)
       while (true) {
-        const map = renderOverlay(liveSnapshot, state)
+        renderOverlay(liveSnapshot, state, map)
         assertWholeTrailDrawn(map, fixes, `page ending ${state.toTimestamp}`)
         assertExactDotsOnly(map, state)
         assertCondition(state.totalPositionCount === fixes.length, 'page total disagrees with truth')
@@ -136,17 +144,26 @@ describe('[DOTS-CONTRACT] whole trail line always drawn, exact Breadcrumb dots p
 
       controller.showLater()
       const later = await waitForReady(controller, state.fromTimestamp)
-      assertWholeTrailDrawn(renderOverlay(liveSnapshot, later), fixes, 'after Later')
+      assertWholeTrailDrawn(renderOverlay(liveSnapshot, later, map), fixes, 'after Later')
+      assertExactDotsOnly(map, later)
+
+      assertWholeTrailDrawn(
+        renderOverlay(liveSnapshot, { status: 'loading', missionId: MISSION_ID }, map),
+        fixes,
+        'loading after Later',
+      )
+      expect(readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
 
       assertWholeTrailDrawn(
         renderOverlay(liveSnapshot, {
           status: 'unavailable',
           missionId: MISSION_ID,
           message: 'Exact breadcrumb dots are unavailable. No representative dots are shown.',
-        }),
+        }, map),
         fixes,
         'unavailable',
       )
+      expect(readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] })).toHaveLength(0)
       controller.stop()
     } finally {
       database.close()
@@ -163,6 +180,21 @@ describe('[DOTS-CONTRACT] whole trail line always drawn, exact Breadcrumb dots p
     const lineHidden = renderOverlay(liveSnapshot, { status: 'inactive' })
     lineHidden.setFilter('tracking-breadcrumbs-line', ['==', ['get', 'deviceId'], '__hidden__'])
     expect(() => assertWholeTrailDrawn(lineHidden, fixes, 'line hidden'))
+      .toThrow(/DOTS_CONTRACT_VIOLATION/u)
+
+    // A filter that names breadcrumbLine but can never match a line feature.
+    const lineFilteredOut = renderOverlay(liveSnapshot, { status: 'inactive' })
+    lineFilteredOut.setFilter('tracking-breadcrumbs-line', [
+      'all',
+      ['==', ['get', 'featureKind'], 'breadcrumbLine'],
+      ['==', ['geometry-type'], 'Point'],
+    ])
+    expect(() => assertWholeTrailDrawn(lineFilteredOut, fixes, 'line filtered out'))
+      .toThrow(/DOTS_CONTRACT_VIOLATION/u)
+
+    const lineInvisible = renderOverlay(liveSnapshot, { status: 'inactive' })
+    lineInvisible.setLayoutProperty('tracking-breadcrumbs-line', 'visibility', 'none')
+    expect(() => assertWholeTrailDrawn(lineInvisible, fixes, 'line layout hidden'))
       .toThrow(/DOTS_CONTRACT_VIOLATION/u)
   })
 
@@ -295,81 +327,31 @@ async function waitForReady(
   return state
 }
 
-type RecordedFeature = {
-  readonly id?: string | number
-  readonly geometry: {
-    readonly type: string
-    readonly coordinates: readonly number[] | readonly (readonly number[])[]
-  }
-  readonly properties: { readonly featureKind?: string; readonly deviceId?: string }
-}
-
-/** Runs the production map-overlay sync against a recorder of MapLibre sources and filters. */
-function renderOverlay(snapshot: TrackingSnapshot, state: ExactBreadcrumbDotState) {
-  const map = createRecordingMap()
+/** Runs the production map-overlay sync against a drawing recorder, reusing `map` when given. */
+function renderOverlay(
+  snapshot: TrackingSnapshot,
+  state: ExactBreadcrumbDotState,
+  map: DrawingRecorderMap = createDrawingRecorderMap(),
+): DrawingRecorderMap {
   syncTrackingOverlay(map as never, snapshot, [], [], true, DOTS_STYLE, state)
   return map
 }
 
-/** Records the GeoJSON and filters handed to MapLibre; draws nothing. */
-function createRecordingMap() {
-  const layers = new Map<string, { id: string; source?: string; filter?: unknown; paint?: Record<string, unknown> }>()
-  const sourceData = new Map<string, { features: RecordedFeature[] }>()
-  return {
-    layers,
-    sourceData,
-    getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
-    getSource: (id: string) =>
-      sourceData.has(id)
-        ? {
-            setData: (data: { features: RecordedFeature[] }) => {
-              sourceData.set(id, data)
-            },
-            updateData: () => {
-              throw new Error('Incremental source updates are not expected on a fresh map.')
-            },
-          }
-        : undefined,
-    addLayer: (spec: { id: string; source?: string; filter?: unknown; paint?: Record<string, unknown> }) => {
-      layers.set(spec.id, spec)
-    },
-    addSource: (id: string, config: { data: { features: RecordedFeature[] } }) => {
-      sourceData.set(id, config.data)
-    },
-    getFilter: (id: string) => layers.get(id)?.filter,
-    getPaintProperty: (id: string, property: string) => layers.get(id)?.paint?.[property],
-    setFilter: (id: string, filter: unknown) => {
-      const layer = layers.get(id)
-      if (layer !== undefined) layer.filter = filter
-    },
-    setPaintProperty: (id: string, property: string, value: unknown) => {
-      const layer = layers.get(id)
-      if (layer !== undefined) layer.paint = { ...(layer.paint ?? {}), [property]: value }
-    },
-  }
-}
-
 /**
- * Rule 1: every stored fix lies on a visible whole-trail line. The trail runs
- * due north, so a fix is covered when a visible line feature spans its latitude.
+ * Rule 1: every stored fix lies on a line the trail line layer actually draws:
+ * the layer exists, is visible, and its filter (evaluated by MapLibre's own
+ * style-spec) accepts the line feature. The trail runs due north, so a fix is
+ * covered when a drawn line spans its latitude.
  */
 function assertWholeTrailDrawn(
-  map: ReturnType<typeof createRecordingMap>,
+  map: DrawingRecorderMap,
   fixes: readonly NormalizedTrackingPosition[],
   label: string,
 ): void {
-  const lineLayer = map.layers.get('tracking-breadcrumbs-line')
-  assertCondition(lineLayer !== undefined, `${label}: trail line layer missing`)
-  const lineFilter = JSON.stringify(lineLayer.filter)
-  assertCondition(
-    !lineFilter.includes('__hidden__') && lineFilter.includes('breadcrumbLine'),
-    `${label}: trail line layer is hidden`,
-  )
-  const lineSource = map.sourceData.get(lineLayer.source ?? '')
-  const spans = (lineSource?.features ?? [])
-    .filter((feature) =>
-      feature.properties.featureKind === 'breadcrumbLine' &&
-      feature.geometry.type === 'LineString')
+  assertCondition(map.layers.has('tracking-breadcrumbs-line'), `${label}: trail line layer missing`)
+  const spans = readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-line'] })
+    .map(({ feature }) => feature)
+    .filter((feature) => feature.geometry.type === 'LineString')
     .map((feature) => {
       const latitudes = (feature.geometry.coordinates as readonly (readonly number[])[])
         .map((coordinate) => coordinate[1]!)
@@ -383,22 +365,21 @@ function assertWholeTrailDrawn(
 
 /** Rule 2: the dot layer draws exactly the ready page's stored fixes and nothing else. */
 function assertExactDotsOnly(
-  map: ReturnType<typeof createRecordingMap>,
+  map: DrawingRecorderMap,
   state: Extract<ExactBreadcrumbDotState, { readonly status: 'ready' }>,
 ): void {
-  const dotLayer = map.layers.get('tracking-breadcrumbs-dots')
-  assertCondition(dotLayer !== undefined, 'dot layer missing')
-  const dotFeatures = map.sourceData.get(dotLayer.source ?? '')?.features ?? []
+  assertCondition(map.layers.has('tracking-breadcrumbs-dots'), 'dot layer missing')
+  const dotFeatures = readDrawnFeatures(map, { layerIds: ['tracking-breadcrumbs-dots'] })
+    .map(({ feature }) => feature)
   const expected = createExactBreadcrumbDotFeatureCollection(state.positions).features
   assertCondition(
     exactJson(dotFeatures.map((feature) => [feature.id, feature.geometry.coordinates])) ===
       exactJson(expected.map((feature) => [feature.id, feature.geometry.coordinates])),
     'dot layer is not exactly the stored page',
   )
-  const representativePoints = [...map.sourceData.entries()]
-    .filter(([sourceId]) => sourceId !== dotLayer.source)
-    .flatMap(([, data]) => data.features)
-    .filter((feature) => feature.properties.featureKind === 'breadcrumb')
+  const representativePoints = readDrawnFeatures(map)
+    .filter(({ layerId, feature }) =>
+      layerId !== 'tracking-breadcrumbs-dots' && feature.properties.featureKind === 'breadcrumb')
   assertCondition(representativePoints.length === 0, 'simplified trail points are drawn as dots')
 }
 
