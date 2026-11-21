@@ -32,6 +32,7 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     ['DON-338 history gap warning while paused', '<em>retries resume when live tracking resumes</em>'],
     ['DON-338 history gap across a clock change', '<em>01:50 (UTC+1)–01:10 (UTC+0)</em>'],
     ['DON-338 history builder out of memory', '<strong>Reason: the history builder ran out of memory</strong>'],
+    ['DON-338 history re-check running behind', '<strong>Breadcrumb history re-check is running behind for</strong> a named device, with times'],
     ['DON-338 history line stalled', '<strong>History line stalled</strong> message means the line has not changed'],
     ['DON-338 lone fix', 'is drawn as a small circle in the device\'s colour'],
   ])('%s', (_change, text) => {
