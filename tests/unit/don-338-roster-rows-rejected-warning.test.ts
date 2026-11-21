@@ -101,6 +101,7 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
     async function runPoller(
       getDevicesWithReport: TrackingPollerClient['getDevicesWithReport'],
       breadcrumbDelayMs = 0,
+      getPollingMode: () => 'active' | 'paused' = () => 'active',
     ) {
       const client: TrackingPollerClient = {
         authenticate: vi.fn().mockResolvedValue(undefined),
@@ -111,10 +112,12 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
           setTimeout(() => resolve(BREADCRUMBS), breadcrumbDelayMs)
         })),
       }
-      const onStatusChange = vi.fn()
+      const publishedAt: number[] = []
+      const onStatusChange = vi.fn(() => { publishedAt.push(Date.now()) })
       const poller = createPollingManager(client, {
         intervalMs: 5_000,
         staleThresholdMs: 60 * 60 * 1000,
+        getPollingMode,
         getInitialBreadcrumbFrom: () => new Date('2026-04-04T10:00:00.000Z'),
         onSnapshot: vi.fn(),
         onStatusChange,
@@ -125,7 +128,10 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
       await vi.advanceTimersByTimeAsync(1_000)
       poller.stop()
       return onStatusChange.mock.calls
-        .map((call) => call[0] as { readonly warning: string | null; readonly mode: string })
+        .map((call, index) => ({
+          ...(call as unknown as [{ readonly warning: string | null; readonly mode: string }])[0],
+          publishedAtMs: publishedAt[index] ?? Number.NaN,
+        }))
     }
 
     it('shows the warning on the online status when the roster answers in time', async () => {
@@ -155,6 +161,44 @@ describe('[DON-338] ING-4 dropped roster rows raise a roster warning', () => {
       expect(statuses.some((status) => (status.warning ?? '').includes('refreshing device roster'))).toBe(true)
       const online = statuses.filter((status) => status.mode === 'online')
       expect(online.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+    })
+
+    /** A roster that answers incomplete only after `delayMs`. */
+    function slowIncompleteRoster(delayMs: number) {
+      return vi.fn(() => new Promise<{
+        readonly accepted: readonly NormalizedTrackingDevice[]
+        readonly complete: boolean
+        readonly rejectedCount: number
+      }>((resolve) => {
+        setTimeout(() => resolve({ accepted: [DEVICES[0]!], complete: false, rejectedCount: 1 }), delayMs)
+      }))
+    }
+
+    it('publishes the warning when a slow roster settles after current fixes and history have both finished', async () => {
+      // History answers at once, so the last status before the roster lands
+      // says "refreshing". Nothing else publishes until the next poll: the
+      // roster settling must publish its own warning.
+      const statuses = await runPoller(slowIncompleteRoster(400), 0)
+      const online = statuses.filter((status) => status.mode === 'online')
+      const settledAt = statuses.findIndex((status) => (status.warning ?? '').includes(ONE_UNREADABLE))
+      const lastRefreshing = statuses.findLastIndex((status) => (status.warning ?? '').includes('refreshing device roster'))
+      expect(lastRefreshing).toBeGreaterThanOrEqual(0)
+      expect(settledAt).toBeGreaterThan(lastRefreshing)
+      expect(online.at(-1)?.warning ?? '').toContain(ONE_UNREADABLE)
+      expect(online.at(-1)?.warning ?? '').not.toContain('refreshing device roster')
+    })
+
+    it('does not publish an online status when a slow roster settles while the mission is paused', async () => {
+      let mode: 'active' | 'paused' = 'active'
+      let pausedAtMs = Number.POSITIVE_INFINITY
+      const pauseAfterFirstPoll = setTimeout(() => {
+        mode = 'paused'
+        pausedAtMs = Date.now()
+      }, 100)
+      const statuses = await runPoller(slowIncompleteRoster(400), 0, () => mode)
+      clearTimeout(pauseAfterFirstPoll)
+      expect(statuses.some((status) => status.publishedAtMs < pausedAtMs)).toBe(true)
+      expect(statuses.filter((status) => status.publishedAtMs >= pausedAtMs && status.mode === 'online')).toEqual([])
     })
   })
 })

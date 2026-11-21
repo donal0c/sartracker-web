@@ -4677,10 +4677,12 @@ describe('polling manager', () => {
 
       slowCurrentPoll.resolve([])
       await vi.advanceTimersByTimeAsync(0)
+      // History was still loading when the mission paused: the paused status
+      // keeps saying so, without claiming loading continues [DON-338].
       expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'idle',
-        warning: 'Live refresh suspended while mission is paused.',
-        warningCodes: ['mission_paused'],
+        warning: 'Live refresh suspended while mission is paused. Breadcrumb history is reconciling for Donal Phone, Team Lead; loading resumes when live tracking resumes.',
+        warningCodes: ['mission_paused', 'history_reconciling'],
       }))
     } finally {
       slowCurrentPoll.resolve([])

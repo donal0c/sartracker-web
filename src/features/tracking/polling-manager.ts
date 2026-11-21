@@ -29,6 +29,8 @@ import type {
 import { classifyTrackingFailure } from '../diagnostics/tracking-poll-ledger'
 import {
   describeHistoryGapsForOperator,
+  historyRetryClause,
+  type HistoryRetryState,
   listNamesBounded,
 } from './history-gap-warning'
 import {
@@ -310,6 +312,9 @@ export function createPollingManager(
   let initialSeedAbortController: AbortController | null = null
   let breadcrumbFetchCompleted = false
   let breadcrumbStatusWarning: TrackingWarning | null = null
+  // The same history warning worded for suspended live tracking (paused or
+  // recovery), when nothing is retried. Shown on the paused status [DON-338].
+  let breadcrumbStatusWarningWhileSuspended: TrackingWarning | null = null
   // Devices the latest 5-minute re-check could not sweep. Initial-phase
   // progress does not list them, so they are kept here until the next re-check
   // reports [DON-338].
@@ -605,11 +610,17 @@ export function createPollingManager(
       if (progress.phase === 'anti_entropy') {
         latestAntiEntropyFailedNames = progress.failedDeviceNames
       }
+      const warningProgress = progress.phase === 'anti_entropy'
+        ? { ...historyReconciler.getProgress(), historyGaps: progress.historyGaps }
+        : progress
+      const warningContext = { nowMs: now().getTime(), extraFailedNames: latestAntiEntropyFailedNames }
       breadcrumbStatusWarning = createHistoryReconciliationWarning(
-        progress.phase === 'anti_entropy'
-          ? { ...historyReconciler.getProgress(), historyGaps: progress.historyGaps }
-          : progress,
-        { nowMs: now().getTime(), extraFailedNames: latestAntiEntropyFailedNames },
+        warningProgress,
+        { ...warningContext, retry: 'retrying' },
+      )
+      breadcrumbStatusWarningWhileSuspended = createHistoryReconciliationWarning(
+        warningProgress,
+        { ...warningContext, retry: 'suspended' },
       )
       if (lastSuccessAt !== null && consecutiveFailures === 0) {
         publishStatus({
@@ -850,17 +861,40 @@ export function createPollingManager(
     })
   }
 
-  /** Returns the operator warning for a non-active polling mode. */
+  /**
+   * Unresolved warnings about the trail and roster still on the map: the
+   * roster warning (not a transient "refreshing"), the history warning and
+   * rejected history rows. A paused or offline status must keep them for as
+   * long as that trail is shown [DON-338].
+   *
+   * @param retry whether history retries are running; picks the wording
+   * @returns the warnings in display order; null entries are skipped later
+   */
+  function getDisplayedTrailWarnings(retry: HistoryRetryState): readonly (TrackingWarning | null)[] {
+    const historyWarning = retry === 'retrying' ? breadcrumbStatusWarning : breadcrumbStatusWarningWhileSuspended
+    return [
+      latestRosterWarning?.code === 'roster_refreshing' ? null : latestRosterWarning,
+      historyWarning?.code === 'connection_restored' ? null : historyWarning,
+      breadcrumbIngestWarning,
+    ]
+  }
+
+  /**
+   * Returns the operator warning for a non-active polling mode. A paused
+   * mission keeps its trail on the map, so its unresolved trail and roster
+   * warnings follow the pause notice; a mission-less idle state shows none.
+   */
   function getInactiveMissionWarning(pollingMode: 'paused' | 'idle'): TrackingWarningFields {
     const code = pollingMode === 'paused' ? 'mission_paused' : 'mission_waiting'
-    const supplied = options.getInactiveWarning?.(pollingMode)
-    if (supplied) return combineTrackingWarnings(supplied)
-    return combineTrackingWarnings({
+    const notice = options.getInactiveWarning?.(pollingMode) ?? {
       code,
       text: pollingMode === 'paused'
         ? 'Live refresh suspended while mission is paused.'
         : 'Waiting for an active mission.',
-    })
+    }
+    return pollingMode === 'paused'
+      ? combineTrackingWarnings(notice, ...getDisplayedTrailWarnings('suspended'))
+      : combineTrackingWarnings(notice)
   }
 
   /** Reports rejected current rows after position publication and contains UI failures. */
@@ -1053,6 +1087,41 @@ export function createPollingManager(
     return { rosterObservationId: fetch.rosterObservationId }
   }
 
+  /**
+   * Publishes the status when a detached roster settles with a different
+   * warning. Without this, a roster that lands after the current fixes and
+   * history have both published would stay "refreshing" (or unwarned) until
+   * the next poll [DON-338]. Skipped for a stopped, superseded, paused or
+   * failing poller, whose own status must not be replaced by "online".
+   *
+   * @param previousRosterWarning the roster warning before this roster settled
+   * @param requestGeneration the lifecycle generation that started the request
+   * @param requestHistoryResetKey the mission the request was started for
+   */
+  function publishSettledRosterStatus(
+    previousRosterWarning: TrackingWarning | null,
+    requestGeneration: number,
+    requestHistoryResetKey: string | null,
+  ): void {
+    if (
+      previousRosterWarning?.code === latestRosterWarning?.code &&
+      previousRosterWarning?.text === latestRosterWarning?.text
+    ) return
+    if (requestGeneration !== lifecycleGeneration || requestHistoryResetKey !== activeHistoryResetKey) return
+    if ((options.getPollingMode?.() ?? 'active') !== 'active') return
+    if (lastSuccessAt === null || consecutiveFailures !== 0) return
+    publishStatus({
+      mode: 'online',
+      ...combineTrackingWarnings(
+        latestRosterWarning,
+        breadcrumbIngestWarning,
+        !breadcrumbFetchCompleted && breadcrumbPositions.length === 0
+          ? { code: 'history_loading', text: 'Current fixes loaded; loading breadcrumb history.' }
+          : breadcrumbStatusWarning,
+      ),
+    })
+  }
+
   /** Reuses one detached roster request so slow metadata cannot accumulate. */
   function getRosterRefresh(): Promise<DeviceRosterNormalizationResult> {
     if (rosterRefreshInFlight !== null) return rosterRefreshInFlight
@@ -1066,6 +1135,8 @@ export function createPollingManager(
       return { ...result, accepted }
     })
     rosterRefreshInFlight = request
+    const requestGeneration = lifecycleGeneration
+    const requestHistoryResetKey = activeHistoryResetKey
     void request.then((result) => {
       if (!running || stopping) return
       latestDevices = resolveCurrentPositionDevices(
@@ -1076,7 +1147,9 @@ export function createPollingManager(
       latestParticipantRosterAuthoritative = result.complete
       // A roster that settles after the poll's grace period replaces
       // "refreshing"; an incomplete one must keep warning (ING-4 [DON-338]).
+      const previousRosterWarning = latestRosterWarning
       latestRosterWarning = createIncompleteRosterWarning(result)
+      publishSettledRosterStatus(previousRosterWarning, requestGeneration, requestHistoryResetKey)
     }, () => undefined).finally(() => {
       if (rosterRefreshInFlight === request) rosterRefreshInFlight = null
     })
@@ -1121,6 +1194,7 @@ export function createPollingManager(
         }
         breadcrumbFetchCompleted = false
         breadcrumbStatusWarning = null
+        breadcrumbStatusWarningWhileSuspended = null
         latestAntiEntropyFailedNames = []
         breadcrumbIngestWarning = null
         latestRosterWarning = null
@@ -1435,7 +1509,8 @@ export function createPollingManager(
           ? { code: 'auth_failed', text: 'TRACKING AUTHENTICATION FAILED — check Traccar credentials.' }
           : lastGoodSnapshot !== null && lastGoodSnapshot.positions.length > 0
             ? { code: 'offline_last_known', text: 'OFFLINE MODE — showing last known positions.' }
-            : { code: 'offline_no_positions', text: 'OFFLINE MODE — no current positions received for this mission.' }),
+            : { code: 'offline_no_positions', text: 'OFFLINE MODE — no current positions received for this mission.' },
+          ...getDisplayedTrailWarnings('retrying')),
       })
 
       const unboundedDelay = (options.retryBaseMs ?? 1_000) * 2 ** (consecutiveFailures - 1)
@@ -1473,6 +1548,10 @@ export function createPollingManager(
       breadcrumbStatusWarning = {
         code: 'history_refresh_failed',
         text: 'BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.',
+      }
+      breadcrumbStatusWarningWhileSuspended = {
+        code: 'history_refresh_failed',
+        text: 'BREADCRUMB HISTORY REFRESH FAILED — exact history will retry when live tracking resumes.',
       }
       logger.warn('Tracking breadcrumb refresh failed.', {
         failureKind: classifyTrackingFailure(error),
@@ -1654,12 +1733,21 @@ export function createPollingManager(
       }
     }
     breadcrumbFetchCompleted = true
+    const completionProgress = historyReconciler.getProgress()
+    const completionContext = { nowMs: now().getTime(), extraFailedNames: latestAntiEntropyFailedNames }
     breadcrumbStatusWarning = createBreadcrumbCompletionWarning(
       breadcrumbFetch,
       false,
       seedState,
-      historyReconciler.getProgress(),
-      { nowMs: now().getTime(), extraFailedNames: latestAntiEntropyFailedNames },
+      completionProgress,
+      { ...completionContext, retry: 'retrying' },
+    )
+    breadcrumbStatusWarningWhileSuspended = createBreadcrumbCompletionWarning(
+      breadcrumbFetch,
+      false,
+      seedState,
+      completionProgress,
+      { ...completionContext, retry: 'suspended' },
     )
     if (canPublishHistoryStatus(request)) {
       publishStatus({
@@ -2240,7 +2328,20 @@ type HistoryWarningContext = {
   readonly nowMs: number
   /** Failed devices the progress itself does not list (re-check failures). */
   readonly extraFailedNames: readonly string[]
+  /** Whether history retries are running, or suspended with live tracking. */
+  readonly retry: HistoryRetryState
 }
+
+/** The closing clause for a history warning about devices that still fail. */
+function failedHistoryClause(retry: HistoryRetryState): string {
+  return historyRetryClause(retry, 'retrying while current fixes remain live')
+}
+
+/**
+ * Builds the history warning shown once a breadcrumb fetch completes: storage
+ * failure first, then failed devices, then reconciliation, then a restored
+ * connection (never claimed while live tracking is suspended).
+ */
 
 function createBreadcrumbCompletionWarning(
   result: BreadcrumbFetchResult,
@@ -2252,7 +2353,9 @@ function createBreadcrumbCompletionWarning(
   if (seedState === 'failed') {
     return {
       code: 'history_storage_failed',
-      text: 'Breadcrumb history could not be loaded from mission storage; current fixes remain live.',
+      text: context.retry === 'retrying'
+        ? 'Breadcrumb history could not be loaded from mission storage; current fixes remain live.'
+        : 'Breadcrumb history could not be loaded from mission storage.',
     }
   }
   if (result.failedDeviceCount > 0 && historyProgress.historyGaps.length === 0) {
@@ -2260,7 +2363,7 @@ function createBreadcrumbCompletionWarning(
       code: 'history_incomplete',
       text: `Breadcrumb history incomplete for ${listNamesBounded(
         mergeNames(result.failedDeviceNames, context.extraFailedNames),
-      )}; current fixes remain live.`,
+      )}; ${historyRetryClause(context.retry, 'current fixes remain live')}.`,
     }
   }
   const reconciliationWarning = createHistoryReconciliationWarning(historyProgress, {
@@ -2270,7 +2373,9 @@ function createBreadcrumbCompletionWarning(
   if (reconciliationWarning !== null) {
     return reconciliationWarning
   }
-  return recovered ? { code: 'connection_restored', text: 'CONNECTION RESTORED' } : null
+  return recovered && context.retry === 'retrying'
+    ? { code: 'connection_restored', text: 'CONNECTION RESTORED' }
+    : null
 }
 
 /**
@@ -2283,7 +2388,12 @@ function createHistoryReconciliationWarning(
   context: HistoryWarningContext,
 ): TrackingWarning | null {
   const failedNames = mergeNames(progress.failedDeviceNames, context.extraFailedNames)
-  const gapSentence = describeHistoryGapsForOperator(progress.historyGaps, context.nowMs)
+  const gapSentence = describeHistoryGapsForOperator(
+    progress.historyGaps,
+    context.nowMs,
+    undefined,
+    context.retry,
+  )
   if (gapSentence !== null) {
     const gapNames = new Set(progress.historyGaps.map((gap) => gap.deviceName))
     const otherFailed = failedNames.filter((name) => !gapNames.has(name))
@@ -2293,7 +2403,7 @@ function createHistoryReconciliationWarning(
         ? gapSentence
         : `${gapSentence} Breadcrumb history also incomplete for ${listNamesBounded(
           otherFailed,
-        )}; retrying while current fixes remain live.`,
+        )}; ${failedHistoryClause(context.retry)}.`,
     }
   }
   if (failedNames.length > 0) {
@@ -2301,7 +2411,7 @@ function createHistoryReconciliationWarning(
       code: 'history_incomplete',
       text: `Breadcrumb history incomplete for ${listNamesBounded(
         failedNames,
-      )}; retrying while current fixes remain live.`,
+      )}; ${failedHistoryClause(context.retry)}.`,
     }
   }
   if (progress.pendingDeviceNames.length > 0) {
@@ -2309,7 +2419,9 @@ function createHistoryReconciliationWarning(
       code: 'history_reconciling',
       text: `Breadcrumb history is reconciling for ${listNamesBounded(
         progress.pendingDeviceNames,
-      )}; current fixes remain live.`,
+      )}; ${context.retry === 'retrying'
+        ? 'current fixes remain live'
+        : 'loading resumes when live tracking resumes'}.`,
     }
   }
   return null
