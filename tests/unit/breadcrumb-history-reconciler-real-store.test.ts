@@ -274,6 +274,32 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
     expect(await harness.storedCount('1')).toBe(harness.serverFixCount('1'))
   })
 
+  it('[DON-349] P-1: the store checkpoint catches up to now after an initial catch-up gap is filled', async () => {
+    // A failed window during the first catch-up records a gap and moves on.
+    // Once the gap is filled the store's contiguous checkpoint must rejoin the
+    // live edge, not creep forward one re-check window per tick hours behind.
+    const badFromMs = MISSION_START_MS + 2 * HOUR_MS + MINUTE_MS
+    const badToMs = badFromMs + MINUTE_MS
+    const server = { broken: true }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: 10 * SECOND_MS,
+      rule: ({ fromMs, toMs }) => ({
+        error: server.broken && fromMs <= badToMs && toMs >= badFromMs ? new Error(TOO_LARGE_MESSAGE) : null,
+      }),
+    })
+    await harness.runFor(15 * MINUTE_MS)
+    const whileBroken = await harness.checkpointOf('1')
+    expect(Date.parse(whileBroken!.reconciled_until)).toBeLessThanOrEqual(badToMs)
+
+    server.broken = false
+    await harness.runFor(12 * TICK_MS)
+
+    const checkpoint = await harness.checkpointOf('1')
+    expect(Date.parse(checkpoint!.reconciled_until)).toBeGreaterThanOrEqual(Date.now() - 2 * TICK_MS)
+    expect(await harness.storedCount('1')).toBe(harness.serverFixCount('1'))
+  })
+
   it('does not report the re-check complete while a re-check gap is unfilled (finding 1)', async () => {
     const server = { broken: false }
     const badFromMs = NOW_MS - 3 * HOUR_MS
