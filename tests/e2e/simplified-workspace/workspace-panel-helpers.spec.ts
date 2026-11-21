@@ -24,15 +24,17 @@ async function startMission(page: Page): Promise<void> {
 }
 
 test.describe('Workspace panel helpers', () => {
-  test('before a mission, Mission and Tracking open, and People says it needs a running mission', async ({ page }) => {
+  test('before a mission, Mission, Tracking, Layers and tools open, and People says it needs a running mission', async ({ page }) => {
     await openApp(page)
 
     await openMissionPanel(page)
     await openMissionPanel(page)
     await expect(page.getByTestId(WORKSPACE_PANEL_TEST_IDS.mission)).toBeVisible()
 
-    await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId(WORKSPACE_PANEL_TEST_IDS.tracking)).toBeVisible()
+    for (const panel of ['tracking', 'layers', 'tools', 'layers', 'tracking'] as const) {
+      await openWorkspacePanel(page, panel)
+      await expect(page.getByTestId(WORKSPACE_PANEL_TEST_IDS[panel])).toBeVisible()
+    }
 
     await expect(openWorkspacePanel(page, 'people')).rejects.toThrow(/running mission/)
   })

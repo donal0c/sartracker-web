@@ -12,8 +12,11 @@ export const WORKSPACE_PANEL_TEST_IDS: Readonly<Record<WorkspacePanel, string>> 
   tools: 'ws-tools-panel',
 }
 
-/** People, Layers and the tools sit on top-bar buttons that appear only once a mission runs. */
-const NEEDS_RUNNING_MISSION: ReadonlySet<WorkspacePanel> = new Set(['people', 'layers', 'tools'])
+/**
+ * People is the running mission's roster: its button is greyed out before Start,
+ * in recovery and after Finish. Layers, the tools and Tracking open in every phase.
+ */
+const NEEDS_RUNNING_MISSION: ReadonlySet<WorkspacePanel> = new Set(['people'])
 
 /**
  * Opens Mission Control the way an operator does: the Mission button in the top
@@ -33,7 +36,7 @@ export async function openWorkspacePanel(page: Page, panel: WorkspacePanel): Pro
   const target = page.getByTestId(WORKSPACE_PANEL_TEST_IDS[panel])
   if (await target.isVisible()) return
 
-  if (NEEDS_RUNNING_MISSION.has(panel) && await page.getByTestId('ws-toggle-people').count() === 0) {
+  if (NEEDS_RUNNING_MISSION.has(panel) && await page.getByTestId(`ws-toggle-${panel}`).isDisabled()) {
     throw new Error(`The ${panel} panel needs a running mission; start or resume one first.`)
   }
 
