@@ -563,7 +563,7 @@ export function createBreadcrumbHistoryReconciler(
     if (!isCurrentJob(job, drainGeneration)) {
       return
     }
-    const reason = classifyWindowFailure(error)
+    const reason = classifyHistoryWindowFailure(error)
     if (reason === null) {
       markJobFailed(job, drainGeneration, error)
       return
@@ -1019,7 +1019,7 @@ export function createBreadcrumbHistoryReconciler(
         if (!isCurrentCompletedDevice(device, batchGeneration)) {
           return
         }
-        const reason = classifyWindowFailure(error)
+        const reason = classifyHistoryWindowFailure(error)
         if (reason === null) {
           markAntiEntropyFailed(device, error)
           return
@@ -1142,7 +1142,7 @@ export function createBreadcrumbHistoryReconciler(
       }
       gap.attempts += 1
       gap.lastError = describeError(error)
-      gap.reason = classifyWindowFailure(error) ?? gap.reason
+      gap.reason = classifyHistoryWindowFailure(error) ?? gap.reason
       options.logger.warn('Tracking breadcrumb history gap is still unfetchable.', {
         deviceId,
         deviceName,
@@ -1495,9 +1495,10 @@ function describeError(error: unknown): string {
 /**
  * Classifies a fetch failure a smaller window can fix: the proxy's size limit
  * or a timeout. Anything else (server error, network down, authentication)
- * returns null and is retried unchanged with backoff.
+ * returns null and is retried unchanged with backoff. Shared with the
+ * participant history backfill.
  */
-function classifyWindowFailure(error: unknown): BreadcrumbHistoryGapReason | null {
+export function classifyHistoryWindowFailure(error: unknown): BreadcrumbHistoryGapReason | null {
   const message = describeError(error)
   if (/too large/iu.test(message)) {
     return 'oversized'
