@@ -433,6 +433,7 @@ export function createPollingManager(
   let owedReloadSpacingMs = 0
   let owedReloadCooldownTimer: ReturnType<typeof setTimeout> | null = null
   let unconfirmedWriteDuringCooldown = false
+  let owedReloadFailedDuringCooldown = false
   // How far initial catch-up has settled for the selected devices: every
   // window tried ('attempted', possibly with an open history gap) or truly
   // complete. Each step runs the forced flush and canonical reload once, so a
@@ -546,8 +547,9 @@ export function createPollingManager(
   /**
    * Starts the cooldown after an owed reload began. It doubles from the base
    * (two poll intervals, so a fault that fails every poll lands inside it)
-   * up to the cap. When it ends, a cooldown without an unconfirmed write
-   * resets the spacing, and any reload still owed is requested [DON-349 P-6].
+   * up to the cap. When it ends, a cooldown with neither an unconfirmed write
+   * nor a failed owed reload resets the spacing, and any reload still owed is
+   * requested [DON-349 P-6].
    */
   function startOwedReloadCooldown(): void {
     const baseMs = Math.max(OWED_RELOAD_SPACING_BASE_MS, 2 * pollIntervalMs)
@@ -556,9 +558,10 @@ export function createPollingManager(
       ? baseMs
       : Math.min(capMs, owedReloadSpacingMs * 2)
     unconfirmedWriteDuringCooldown = false
+    owedReloadFailedDuringCooldown = false
     owedReloadCooldownTimer = scheduleTimeout(() => {
       owedReloadCooldownTimer = null
-      if (!unconfirmedWriteDuringCooldown) owedReloadSpacingMs = 0
+      if (!unconfirmedWriteDuringCooldown && !owedReloadFailedDuringCooldown) owedReloadSpacingMs = 0
       requestOwedTrailReload()
     }, owedReloadSpacingMs)
   }
@@ -571,6 +574,7 @@ export function createPollingManager(
     }
     owedReloadSpacingMs = 0
     unconfirmedWriteDuringCooldown = false
+    owedReloadFailedDuringCooldown = false
   }
 
   /**
@@ -974,9 +978,19 @@ export function createPollingManager(
         activeHistoryResetKey === historyResetKey &&
         isHistoryReconciliationCurrent()
       ) {
+        if (trailAwaitsStoreAgreement()) {
+          // An owed reload retries through the owed-reload spacing, so a fault
+          // that fails reads as well as writes is not re-read every 5 s. The
+          // retry is never dropped: the cooldown's end requests it [DON-349 P-6].
+          if (owedReloadCooldownTimer !== null) {
+            owedReloadFailedDuringCooldown = true
+            return
+          }
+        }
         canonicalizationRetryTimer = scheduleTimeout(() => {
           canonicalizationRetryTimer = null
-          requestCanonicalization()
+          if (trailAwaitsStoreAgreement()) requestOwedTrailReload()
+          else requestCanonicalization()
         }, 5_000)
       }
     }).finally(() => {
