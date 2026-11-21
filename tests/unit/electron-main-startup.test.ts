@@ -1098,6 +1098,70 @@ describe('Electron main startup', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
+  /** Loads main with a configured Traccar provider and returns its proxy handler. */
+  async function loadConfiguredTraccarProxy(): Promise<(event: unknown, input: unknown) => Promise<unknown>> {
+    seedSettings({
+      dataSource: {
+        providerType: 'traccar_http',
+        baseUrl: 'https://traccar.example.test',
+        authMode: 'basic',
+        email: 'operator',
+      },
+    })
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') {
+        return electronMock
+      }
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+    require('../../electron/main.cjs')
+    await vi.waitFor(() => expect(electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:traccar-http-request',
+    )?.[1]).toEqual(expect.any(Function)))
+    return electronMock.ipcMain.handle.mock.calls.find(
+      ([channel]) => channel === 'sartracker:traccar-http-request',
+    )?.[1]
+  }
+
+  it('stops reading an unsized Traccar reply as soon as it passes the size limit [DON-338]', async () => {
+    let pulledChunks = 0
+    const megabyte = new Uint8Array(1024 * 1024).fill(0x20)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulledChunks += 1
+        if (pulledChunks > 50) controller.close()
+        else controller.enqueue(megabyte)
+      },
+    }), { status: 200 }))
+    const traccarHandler = await loadConfiguredTraccarProxy()
+
+    await expect(traccarHandler(createPackagedSenderEvent(), {
+      url: 'https://traccar.example.test/api/positions',
+      method: 'GET',
+      headers: {},
+      timeoutMs: null,
+    })).rejects.toThrow(/Traccar response is too large/)
+    // 5 MiB limit: the reader stops within a chunk or two of it, not at 50 MiB.
+    expect(pulledChunks).toBeLessThanOrEqual(8)
+  })
+
+  it('reports a Traccar proxy timeout in words the history catch-up can act on [DON-338]', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new DOMException('This operation was aborted', 'AbortError'))
+      }, { once: true })
+    }))
+    const traccarHandler = await loadConfiguredTraccarProxy()
+
+    await expect(traccarHandler(createPackagedSenderEvent(), {
+      url: 'https://traccar.example.test/api/positions',
+      method: 'GET',
+      headers: {},
+      timeoutMs: 50,
+    })).rejects.toThrow('Traccar request timed out after 50 ms.')
+  })
+
   it('runs failed imports inside the official map mutation guard [DON-7]', async () => {
     const officialMapProxy = { close: vi.fn(), fetchOfficialMapTile: vi.fn(), invalidateSettings: vi.fn(),
       withPackageMutation: vi.fn((operation: () => Promise<unknown>) => operation()) }
