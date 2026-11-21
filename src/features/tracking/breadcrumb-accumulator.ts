@@ -11,6 +11,7 @@ import {
   type BreadcrumbIdentityIndex,
 } from './breadcrumb-identity-index'
 import { compareStringsByCodeUnit } from '../../lib/deterministic-string-order'
+import { storeKeepsHeldPosition } from './store-first-kept-position'
 
 // Keep each live device trail bounded independently while preserving the shape
 // of the full requested window. A high-frequency tracker must not evict another
@@ -375,18 +376,30 @@ function mergePosition(
     if (positionsEqual(existingEntry.position, entry.position)) {
       return false
     }
+    // DON-338: the mission store keeps the first saved row for a position id
+    // and refuses a later one with different content. The line draws what the
+    // store kept, so a refused conflict never replaces or moves a vertex.
+    if (
+      storeKeepsHeldPosition(
+        existingEntry.position,
+        existingEntry.timestampMs,
+        entry.position,
+        entry.timestampMs,
+      )
+    ) {
+      return false
+    }
     replaceExistingPosition(deviceState, key, entry)
     return true
   }
 
   if (deviceState.seenIdentities.has(entry.position)) {
-    // The source identity was seen before compaction but is not currently a
-    // bucket representative. Reconsider it so a corrected timestamp/coordinate
-    // can become visible, without counting a reconciliation repeat as new.
-    deviceState.byKey.set(key, entry)
-    const insertionIndex = findInsertionIndex(deviceState.chronological, entry)
-    deviceState.chronological.splice(insertionIndex, 0, entry)
-    return true
+    // The identity was already seen and compaction dropped it from the drawn
+    // representatives. Its first content is no longer held, so a re-send
+    // cannot be told apart from a conflict the store refused [DON-338]. It is
+    // neither redrawn nor counted again: an identical re-send changes nothing
+    // the store holds, and a conflicting one is refused by the store.
+    return false
   }
 
   const legacyKey =
