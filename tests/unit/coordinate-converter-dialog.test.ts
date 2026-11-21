@@ -152,6 +152,37 @@ describe('CoordinateConverterDialog marker workflow', () => {
     expect(latitude).toBeGreaterThan(52.185)
   })
 
+  it('does not open the marker at the old position when the input is edited during the mission refresh (M-02 review)', async () => {
+    const controller = createController()
+    let finishRefresh: () => void = () => undefined
+    controller.refreshMission.mockImplementation(
+      () => new Promise<void>((resolve) => {
+        finishRefresh = resolve
+      }),
+    )
+    setUpActiveMission(controller)
+
+    render(React.createElement(CoordinateConverterDialog))
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 04015')
+    await act(async () => {
+      getButton('[data-testid="coordinate-convert-btn"]').click()
+    })
+    await act(async () => {
+      getButton('[data-testid="coordinate-create-marker-btn"]').click()
+    })
+    expect(controller.refreshMission).toHaveBeenCalledWith('mission-1')
+
+    // The caller corrects the reference while the mission refresh is still running.
+    setInputValue('[data-testid="coordinate-input-irish-grid-ref"]', 'Q 99842 05015')
+    await act(async () => {
+      finishRefresh()
+    })
+
+    expect(controller.beginCreateAt).not.toHaveBeenCalled()
+    expect(useCoordinateToolStore.getState().open).toBe(true)
+    expect(getElement('[data-testid="coordinate-input-irish-grid-ref"]')).toHaveProperty('value', 'Q 99842 05015')
+  })
+
   it('renders coordinate modes with distinct active and inactive tab chrome', async () => {
     useCoordinateToolStore.setState({ open: true })
 

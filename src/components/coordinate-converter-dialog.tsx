@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   convertCoordinates,
@@ -29,6 +29,7 @@ export function CoordinateConverterDialog() {
   const missionPhase = useMissionStore((state) => state.phase)
   const [draft, setDraft] = useState(createCoordinateConverterDraft)
   const [result, setResult] = useState<CoordinateConversionResult | null>(null)
+  const resultRef = useRef<CoordinateConversionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copiedKind, setCopiedKind] = useState<CoordinateClipboardKind | null>(null)
   const markerCreationDisabled =
@@ -40,7 +41,7 @@ export function CoordinateConverterDialog() {
     }
 
     setDraft(createCoordinateConverterDraft())
-    setResult(null)
+    updateResult(null)
     setError(null)
     setCopiedKind(null)
   }, [open])
@@ -156,10 +157,10 @@ export function CoordinateConverterDialog() {
               onClick={() => {
                 try {
                   const nextResult = convertCoordinates(draft)
-                  setResult(nextResult)
+                  updateResult(nextResult)
                   setError(null)
                 } catch (conversionError) {
-                  setResult(null)
+                  updateResult(null)
                   setError(
                     conversionError instanceof Error
                       ? conversionError.message
@@ -175,7 +176,7 @@ export function CoordinateConverterDialog() {
               className="sar-button px-4 py-2 text-sm font-semibold"
               onClick={() => {
                 setDraft(createCoordinateConverterDraft())
-                setResult(null)
+                updateResult(null)
                 setError(null)
                 setCopiedKind(null)
               }}
@@ -246,20 +247,31 @@ export function CoordinateConverterDialog() {
   /** Invalidates the previous conversion whenever its input or mode changes. */
   function updateDraft(patch: Partial<CoordinateConverterDraft>): void {
     setDraft((current) => ({ ...current, ...patch }))
-    setResult(null)
+    updateResult(null)
     setCopiedKind(null)
     setError(null)
   }
 
+  /** Keeps async actions in sync with conversion updates before React renders. */
+  function updateResult(nextResult: CoordinateConversionResult | null): void {
+    resultRef.current = nextResult
+    setResult(nextResult)
+  }
+
+  /** Reports clipboard completion only while the copied conversion is current. */
   async function copyValue(kind: CoordinateClipboardKind): Promise<void> {
     if (result === null || typeof navigator === 'undefined' || navigator.clipboard === undefined) {
       return
     }
 
     await navigator.clipboard.writeText(formatCoordinateClipboardValue(result, kind))
+    if (resultRef.current !== result) {
+      return
+    }
     setCopiedKind(kind)
   }
 
+  /** Opens a marker only if the conversion survives the mission refresh unchanged. */
   async function createMarkerFromResult(): Promise<void> {
     if (
       result === null ||
@@ -272,10 +284,16 @@ export function CoordinateConverterDialog() {
 
     try {
       await markerController.refreshMission(missionId)
+      if (resultRef.current !== result) {
+        return
+      }
       markerController.beginCreateAt(result.latitude, result.longitude)
       setError(null)
       closeDialog()
     } catch (runtimeError) {
+      if (resultRef.current !== result) {
+        return
+      }
       setError(
         runtimeError instanceof Error
           ? runtimeError.message
