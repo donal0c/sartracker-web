@@ -398,4 +398,120 @@ describe('history catch-up against the real mission store [DON-338 review]', () 
     // One request per device at a time, across the sweep and gap retries.
     expect(harness.maxInFlightByDevice.get('1')).toBe(1)
   })
+
+  // Round 4: four schedules that starved or overlapped under the staged tick.
+  // Each runs the real reconciler into the real store.
+
+  it('reaches the middle of the recent window for a dense device (round 4, defect 1)', async () => {
+    // Replies over 5 minutes are too large, so every re-check request is 5 minutes
+    // wide; each takes 10 s and a device may spend 150 s per tick.
+    const missionStartMs = NOW_MS - 12 * HOUR_MS
+    const server = { slow: false }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: MINUTE_MS,
+      missionStartMs,
+      reconcilerOptions: {
+        antiEntropyRecentWindowMs: 3 * HOUR_MS,
+        antiEntropyDeviceTimeBudgetMs: 150 * SECOND_MS,
+      },
+      rule: ({ fromMs, toMs }) => ({
+        error: toMs - fromMs > 5 * MINUTE_MS ? new Error(TOO_LARGE_MESSAGE) : null,
+        delayMs: server.slow ? 10 * SECOND_MS : 0,
+      }),
+    })
+    await harness.runFor(5 * MINUTE_MS)
+    expect(harness.reconciler.getProgress().phase).toBe('anti_entropy')
+    server.slow = true
+    await harness.runFor(TICK_MS)
+    // A phone uploads one fix from the middle of the 3 h recent window.
+    harness.uploadLateBurst('1', Date.now() - 90 * MINUTE_MS, Date.now() - 90 * MINUTE_MS, MINUTE_MS)
+
+    // Bound: about 14 requests per turn over two lanes is at least 7 per lane;
+    // with one narrowing retry per four successes, 36 recent slices take at
+    // most ceil(36 / 5) = 8 turns, one turn per tick.
+    const boundTicks = 8
+    let deliveredAfterTicks: number | null = null
+    for (let tick = 1; tick <= boundTicks && deliveredAfterTicks === null; tick += 1) {
+      await harness.runFor(TICK_MS)
+      if (await harness.storedCount('1') === harness.serverFixCount('1')) deliveredAfterTicks = tick
+    }
+    expect(deliveredAfterTicks).not.toBeNull()
+    expect(harness.maxInFlightByDevice.get('1')).toBe(1)
+  })
+
+  it('retries a recovered gap while another initial window keeps failing (round 4, defect 2)', async () => {
+    const gapMs = MISSION_START_MS + 2 * HOUR_MS + MINUTE_MS
+    const brokenMs = MISSION_START_MS + 8 * HOUR_MS
+    const server = { gapBroken: true }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: 10 * SECOND_MS,
+      rule: ({ fromMs, toMs }) => {
+        if (server.gapBroken && fromMs <= gapMs + MINUTE_MS && toMs >= gapMs) return { error: new Error(TOO_LARGE_MESSAGE) }
+        if (fromMs <= brokenMs + MINUTE_MS && toMs >= brokenMs) return { error: new Error('Traccar HTTP 500 Internal Server Error') }
+        return { error: null }
+      },
+    })
+    await harness.runFor(5 * MINUTE_MS)
+    expect(harness.reconciler.getProgress().historyGaps).toHaveLength(1)
+    expect(harness.reconciler.getProgress().phase).toBe('initial')
+
+    server.gapBroken = false
+    await harness.runFor(2 * TICK_MS + POLL_MS)
+
+    const progress = harness.reconciler.getProgress()
+    expect(progress.historyGaps).toEqual([])
+    // The still-failing initial window stays visible.
+    expect(progress.complete).toBe(false)
+    expect(progress.failedDeviceNames).toContain('Tracker 1')
+    expect(harness.maxInFlightByDevice.get('1')).toBe(1)
+  })
+
+  it('keeps re-checking older history and gaps while the recent window fails (round 4, defect 3)', async () => {
+    const gapMs = MISSION_START_MS + 2 * HOUR_MS + MINUTE_MS
+    const server = { gapBroken: true, recentBrokenFromMs: Number.POSITIVE_INFINITY }
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: 10 * SECOND_MS,
+      rule: ({ fromMs, toMs }) => {
+        if (server.gapBroken && fromMs <= gapMs + MINUTE_MS && toMs >= gapMs) return { error: new Error(TOO_LARGE_MESSAGE) }
+        if (toMs > server.recentBrokenFromMs) return { error: new Error('Traccar HTTP 500 Internal Server Error') }
+        return { error: null }
+      },
+    })
+    await harness.runFor(5 * MINUTE_MS)
+    expect(harness.reconciler.getProgress().historyGaps).toHaveLength(1)
+
+    server.gapBroken = false
+    server.recentBrokenFromMs = Date.now() - 2 * HOUR_MS
+    const lateFixMs = MISSION_START_MS + 4 * HOUR_MS
+    harness.uploadLateBurst('1', lateFixMs, lateFixMs, MINUTE_MS)
+    await harness.runFor(3 * TICK_MS + POLL_MS)
+
+    const progress = harness.reconciler.getProgress()
+    expect(progress.historyGaps).toEqual([])
+    expect(await harness.storedCount('1')).toBe(harness.serverFixCount('1'))
+    // The failing recent window stays visible, never claimed.
+    expect(progress.complete).toBe(false)
+    expect(progress.failedDeviceNames).toContain('Tracker 1')
+    expect(progress.recheckBacklog.length).toBeGreaterThan(0)
+  })
+
+  it('never overlaps initial requests after suspend and range expansion (round 4, defect 4)', async () => {
+    const harness = await createRealStoreHarness({
+      deviceCount: 1,
+      intervalMs: 10 * SECOND_MS,
+      rule: () => ({ error: null, delayMs: 20 * SECOND_MS }),
+    })
+    const devices = [createDevice(1)]
+    harness.reconciler.reconcile({ devices, from: new Date(MISSION_START_MS), until: new Date(Date.now()) })
+    await vi.advanceTimersByTimeAsync(SECOND_MS)
+    harness.reconciler.suspend()
+    // Resume with an earlier mission start: the device's job is replaced.
+    harness.reconciler.reconcile({ devices, from: new Date(MISSION_START_MS - 2 * HOUR_MS), until: new Date(Date.now()) })
+    await vi.advanceTimersByTimeAsync(2 * MINUTE_MS)
+
+    expect(harness.maxInFlightByDevice.get('1')).toBe(1)
+  })
 })
