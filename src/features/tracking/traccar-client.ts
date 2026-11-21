@@ -53,6 +53,11 @@ export type DeviceRosterNormalizationResult = {
   readonly accepted: readonly NormalizedTrackingDevice[]
   /** False when any server row was rejected during normalization. */
   readonly complete: boolean
+  /**
+   * How many server rows could not be read and were left out of `accepted`.
+   * Optional because older roster sources only report `complete`.
+   */
+  readonly rejectedCount?: number
 }
 
 type TraccarClient = {
@@ -323,7 +328,11 @@ export function createTraccarClient(
       logger,
       normalize: (device) => normalizeTraccarDevice(device as RawDeviceInput),
     })
-    return { accepted: result.accepted, complete: result.droppedCount === 0 }
+    return {
+      accepted: result.accepted,
+      complete: result.droppedCount === 0,
+      rejectedCount: result.droppedCount,
+    }
   }
 
   /** Fetches exact history with bounded structured evidence for every rejected row. */
