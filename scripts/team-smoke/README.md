@@ -31,6 +31,15 @@ node scripts/team-smoke/run.mjs \
   blocked. The native picker is answered by the app's test-only
   `SARTRACKER_ELECTRON_TEST_OFFICIAL_MAP_PACKAGE_PATH` hook; import and
   verification are the product's own. Never pass a package into the repo.
+- `don-338-whole-trail` (one device, 25,000 fixes) and `don-338-many-devices`
+  (34 devices, one with 14,400 fixes) seed a synthetic field-shape mission
+  through the production store (`build/seed-mission-store-lib.js` presets
+  `field-trail-25k`, `field-34-devices`), open it, wait for "All mission history
+  shown", choose Breadcrumb dots and press Earlier. After each step they read
+  the drawn map features and FAIL naming any stretch of stored fixes not on the
+  drawn trail (DON-338, SAR-FIELD-002). Selectors live in `WHOLE_TRAIL_UI`
+  (`lib/whole-trail.mjs`); every wait is bounded. Run alone with
+  `--only don-338-whole-trail,don-338-many-devices`.
 - `--only lifecycle,tracking` runs selected checks. Check ids are printed with
   every result.
 - Over SSH it borrows the logged-in desktop display automatically. Start long
