@@ -198,6 +198,22 @@ describe('coverage status panel [DON-275]', () => {
     expect(host.textContent).toContain('Press Retry.')
   })
 
+  it('DON-338: explains an out-of-memory history builder in words a volunteer can act on', () => {
+    render(state('error', { lastErrorClass: 'worker_out_of_memory', updating: true }))
+    expect(host.querySelector('[data-testid="coverage-error"]')?.textContent).toBe(
+      'History incomplete — showing loaded coverage. Reason: the history builder ran out of memory. ' +
+      'Retrying automatically; press Retry to try now.',
+    )
+    expect(host.querySelector('[data-testid="coverage-out-of-memory"]')?.textContent).toBe(
+      'This mission\'s history is too large for the history builder, so the whole-history line may stay missing. ' +
+      'Saved positions are safe and current positions remain live. Use Inspect exact fixes to check saved positions.',
+    )
+
+    render(state('error', { lastErrorClass: 'worker', updating: true }))
+    expect(host.querySelector('[data-testid="coverage-out-of-memory"]')).toBeNull()
+    expect(host.textContent).toContain('Reason: the history builder stopped.')
+  })
+
   it('never describes a plain coverage failure as still loading', () => {
     render(state('error', { lastErrorClass: 'timeout' }))
 
@@ -291,7 +307,7 @@ function state(
     readonly blockers?: readonly string[]
     readonly pendingInvalidation?: boolean
     readonly backfillIncomplete?: boolean
-    readonly lastErrorClass?: 'timeout' | 'worker'
+    readonly lastErrorClass?: 'timeout' | 'worker' | 'worker_out_of_memory'
     readonly drawnFixCount?: number
     readonly updating?: boolean
     readonly stalled?: boolean

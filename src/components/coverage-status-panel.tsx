@@ -138,6 +138,13 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
                 : ' Press Retry.'}
             </p>
           ) : null}
+          {failed && props.state.lastErrorClass === 'worker_out_of_memory' ? (
+            <p className="mt-1" data-testid="coverage-out-of-memory">
+              This mission&apos;s history is too large for the history builder, so the whole-history
+              line may stay missing. Saved positions are safe and current positions remain live.
+              Use Inspect exact fixes to check saved positions.
+            </p>
+          ) : null}
           {completenessUnverified && !progressUntrusted ? (
             <p className="mt-1" data-testid="coverage-completeness-unverified">
               Loaded history is shown, but completeness is not yet verified.
@@ -249,6 +256,7 @@ function describeErrorClass(value: CoverageErrorClass): string {
   switch (value) {
     case 'timeout': return 'loading took too long'
     case 'worker': return 'the history builder stopped'
+    case 'worker_out_of_memory': return 'the history builder ran out of memory'
     case 'chunk_stale': return 'new positions kept arriving while it loaded'
     case 'runtime_unavailable': return 'the history service is not available'
     case 'malformed_sequence': return 'saved history returned an invalid update'

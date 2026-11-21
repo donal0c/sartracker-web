@@ -145,6 +145,7 @@ const {
 } = require('./coverage-query-result-envelope.cjs')
 const { normalizeCoverageTileAddress } = require('./coverage-tile-address.cjs')
 const { createCoverageTileRunner } = require('./coverage-tile-runner.cjs')
+const { projectCoverageRendererFailure } = require('./coverage-renderer-failure.cjs')
 const {
   assertCoverageBuildCoverage,
   assertCoverageBuildSummaries,
@@ -570,7 +571,7 @@ function createElectronMissionStore(options) {
   const coverageTileRunner = options.coverageTileRunner ?? createCoverageTileRunner({
     databasePath,
     cacheDirectory: path.join(options.userDataPath, COVERAGE_TILE_CACHE_DIRECTORY_NAME),
-    onFailure: () => options.onCoverageRendererFailed?.(),
+    onFailure: (error) => options.onCoverageRendererFailed?.(projectCoverageRendererFailure(error)),
   })
   const onCoverageChanged = options.onCoverageChanged ?? (() => undefined)
   const coveragePerformanceByMission = new Map()

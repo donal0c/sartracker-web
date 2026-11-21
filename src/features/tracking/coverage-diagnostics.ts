@@ -7,6 +7,7 @@ export type CoverageErrorClass =
   | 'runtime_unavailable'
   | 'timeout'
   | 'worker'
+  | 'worker_out_of_memory'
   | 'unknown'
 
 export type CoverageDiagnostics = {
@@ -71,6 +72,10 @@ export function requireCoverageSequence(value: unknown, source: string): asserts
 export function classifyCoverageError(error: unknown): CoverageErrorClass {
   const message = error instanceof Error ? error.message.toLowerCase() : ''
   if (isCoverageCancellation(error)) return 'cancelled'
+  // An allow-listed code from the main process, never parsed from text [DON-338].
+  if ((error as { readonly code?: unknown } | null)?.code === 'coverage-worker-out-of-memory') {
+    return 'worker_out_of_memory'
+  }
   if (message.includes(MALFORMED_SEQUENCE_PREFIX)) return 'malformed_sequence'
   if (message.includes('chunk-stale') || message.includes('coverage-revision-moved:')) return 'chunk_stale'
   if (message.includes('timed out') || message.includes('timeout')) return 'timeout'
