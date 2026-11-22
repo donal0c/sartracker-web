@@ -44,6 +44,17 @@ describe('tracking headline', () => {
     mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null, ...overrides,
   })
 
+  it('never shows the top-bar tracking cell as OK while a warning is published online [M-22]', () => {
+    for (const warning of [
+      'MISSION BREADCRUMB STORAGE FAILED — new trail history will not survive a restart.',
+      'TRACKING FALLBACK CACHE UPDATE FAILED — positions are live but will not be kept offline.',
+    ]) {
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', status: status({ warning }) })
+      expect(headline.tone).not.toBe('ok')
+      expect(headline.text).not.toBe('Tracking OK')
+    }
+  })
+
   it('names each problem in short words before the reassuring sentence [DON-261]', () => {
     const headline = describeTrackingHeadline({
       ...base, phase: 'active', ingestRejected: 1,

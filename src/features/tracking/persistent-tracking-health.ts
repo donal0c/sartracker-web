@@ -13,3 +13,48 @@ export function describeTrackingHealth(status: TrackingConnectionStatus, phase: 
   if (freshness.length > 0) return { label: `Tracking connected · ${freshness.join(' · ')}`, tone: 'warning' }
   return { label: 'Tracking connected', tone: status.warning === null ? 'success' : 'warning' }
 }
+
+export type TrackingFeedTone = 'success' | 'warning' | 'alert' | 'neutral'
+
+/**
+ * Names stale and unverified positions in plain words, or null when there are none.
+ *
+ * @param staleCount positions older than the stale threshold (5 min)
+ * @param unverifiedCount positions whose fix time could not be verified
+ * @returns for example 'Feed connected · 2 positions out of date (older than 5 min)'
+ */
+export function describeTrackingFreshness(staleCount: number, unverifiedCount: number): string | null {
+  const parts = [
+    staleCount > 0 ? `${staleCount} ${staleCount === 1 ? 'position' : 'positions'} out of date (older than 5 min)` : null,
+    unverifiedCount > 0 ? `${unverifiedCount} position ${unverifiedCount === 1 ? 'time' : 'times'} not verified` : null,
+  ].filter((part): part is string => part !== null)
+  return parts.length === 0 ? null : `Feed connected · ${parts.join(' · ')}`
+}
+
+/**
+ * The one rule for calling the tracking feed healthy, shared by the Tracking
+ * status panel and the Devices header [M-20]: online, no published warning,
+ * and every position fresh and verified. A reachable feed delivering old
+ * positions is never shown in green.
+ *
+ * @param status the runtime's connection status
+ * @param staleCount positions older than the stale threshold
+ * @param unverifiedCount positions whose fix time could not be verified
+ * @param healthyText the surface's own words for a healthy feed
+ * @returns the sentence to show and its tone
+ */
+export function describeTrackingFeed(
+  status: Pick<TrackingConnectionStatus, 'mode' | 'warning'>,
+  staleCount: number,
+  unverifiedCount: number,
+  healthyText: string,
+): { readonly headline: string; readonly tone: TrackingFeedTone } {
+  if (status.warning !== null) {
+    return { headline: status.warning, tone: status.mode === 'offline' || isCriticalTrackingTrustWarning(status.warning) ? 'alert' : 'warning' }
+  }
+  if (status.mode === 'offline') return { headline: 'Tracking offline.', tone: 'alert' }
+  if (status.mode !== 'online') return { headline: 'Tracking not connected.', tone: 'neutral' }
+  const freshness = describeTrackingFreshness(staleCount, unverifiedCount)
+  if (freshness !== null) return { headline: freshness, tone: 'warning' }
+  return { headline: healthyText, tone: 'success' }
+}

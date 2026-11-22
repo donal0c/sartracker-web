@@ -49,6 +49,26 @@ describe('TrackingStatusPanel', () => {
     useLayerVisibilityStore.setState(useLayerVisibilityStore.getInitialState())
   })
 
+  it('does not call the stream healthy in green while every position is stale [M-20]', () => {
+    useTrackingStore.setState({
+      snapshot: {
+        devices: [{ device_id: 'alpha', name: 'Alpha', status: 'online', last_seen: null, unique_id: null, category: null }],
+        positions: [{
+          id: 'p1', device_id: 'alpha', lat: 52, lon: -9.7, altitude: null, speed: null, battery: null, accuracy: null,
+          timestamp: '2026-04-10T11:00:00.000Z', source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: true,
+        }],
+        breadcrumbs: [],
+      },
+      status: { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: '2026-04-10T12:00:00.000Z', warning: null },
+    })
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(host!.textContent).not.toContain('Telemetry stream healthy')
+    expect(getElement('[data-testid="tracking-mode-chip"]').className).not.toContain('sar-status-chip-success')
+    expect(getText('[data-testid="tracking-warning"]')).toContain('1 position out of date')
+  })
+
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {
     useTrackingStore.setState({
       status: {

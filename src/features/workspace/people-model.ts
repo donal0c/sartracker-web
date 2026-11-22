@@ -1,4 +1,4 @@
-import type { DeviceWorkspaceRow } from '../tracking/device-workspace-model'
+import { sourceProvenance, type DeviceWorkspaceRow } from '../tracking/device-workspace-model'
 
 export type PersonTone = 'ok' | 'attention' | 'muted'
 
@@ -56,14 +56,14 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConf
   const confirmedMs = lastConfirmedAt === null ? Number.NaN : Date.parse(lastConfirmedAt)
   const fixMs = row.fixTime === null ? Number.NaN : Date.parse(row.fixTime)
   const quietBeforeStop = !live && confirmedMs - fixMs > OUT_OF_DATE_BEFORE_STOP_MS
-  if (!live || row.sourceDisplay === 'Last known') notes.push(quietBeforeStop ? `Already out of date when updates stopped, position ${age}` : `Last known position ${age}`)
+  if (!live || sourceProvenance(row) === 'Last known') notes.push(quietBeforeStop ? `Already out of date when updates stopped, position ${age}` : `Last known position ${age}`)
   else if (row.status === 'offline') notes.push(`Offline, position ${age}`)
   else if (row.status === 'unknown') notes.push(`Not confirmed, position ${age}`)
   else if (row.stale || row.sourceDisplay === 'Stale') notes.push(`Out of date, position ${age}`)
   if (row.fixTimeUnverified) notes.push('position time not verified')
   if (row.ingestWarning !== null) notes.push('bad position report rejected')
   if (notes.length > 0) {
-    const ownProblem = quietBeforeStop || row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
+    const ownProblem = quietBeforeStop || row.fixTimeUnverified || row.ingestWarning !== null || (live && sourceProvenance(row) !== 'Last known')
     const urgency = row.stationaryAttention ? (row.attentionAcknowledged ? 1 : 0) : ownProblem ? 2 : SHARED_OUTAGE_URGENCY
     return { statusText: notes.join(' · '), tone: 'attention', urgency }
   }

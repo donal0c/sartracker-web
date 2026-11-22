@@ -145,11 +145,13 @@ function DevicesWorkspaceContent(props: {
                   </p>
                   <p
                     className={`mt-1 text-sm font-semibold ${
-                      summary.mode === 'online'
+                      summary.tone === 'success'
                         ? 'text-emerald-300'
-                        : summary.mode === 'offline'
-                          ? 'text-amber-300'
-                          : 'text-stone-300'
+                        : summary.tone === 'alert'
+                          ? 'text-rose-300'
+                          : summary.tone === 'warning'
+                            ? 'text-amber-300'
+                            : 'text-stone-300'
                     }`}
                     data-testid="devices-tracking-mode"
                   >
@@ -165,11 +167,17 @@ function DevicesWorkspaceContent(props: {
               </div>
               <p
                 className={`text-sm ${
-                  summary.warning === null ? 'text-emerald-200 italic' : 'text-amber-200'
+                  summary.tone === 'success'
+                    ? 'text-emerald-200 italic'
+                    : summary.tone === 'alert'
+                      ? 'text-rose-200'
+                      : summary.tone === 'warning'
+                        ? 'text-amber-200'
+                        : 'text-stone-300'
                 }`}
                 data-testid="devices-tracking-warning"
               >
-                {summary.warning ?? 'Tracking feed healthy.'}
+                {summary.headline}
               </p>
               {error !== null ? (
                 <p className="text-sm text-rose-300" data-testid="devices-refresh-error">
@@ -544,7 +552,8 @@ function DeviceRow(props: {
       />
       <span
         className={`font-semibold uppercase ${
-          props.row.status === 'online'
+          // A stale position must not read as reporting now in green [M-21].
+          props.row.status === 'online' && !props.row.stale
             ? 'text-emerald-300'
             : props.row.status === 'offline'
               ? 'text-amber-300'
@@ -562,7 +571,7 @@ function DeviceRow(props: {
       </span>
       <span
         className={`text-xs font-semibold ${
-          props.row.sourceDisplay === 'Stale'
+          props.row.stale
             ? 'text-rose-300'
             : props.row.sourceDisplay === 'Cache'
               ? 'text-amber-300'

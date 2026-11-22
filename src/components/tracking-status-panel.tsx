@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { resolveMissionHistoryOmissions } from '../features/layers/breadcrumb-coverage-visibility'
 import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
+import { describeTrackingFreshness } from '../features/tracking/persistent-tracking-health'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
@@ -132,9 +133,15 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
   const historyTransfer = status.savedHistoryTransfer?.missionId === missionId ? status.savedHistoryTransfer : undefined
   const modeLabel = getTrackingModeLabel(status.mode, status.warning)
+  // Online with old or unverified positions is not healthy: same rule as the
+  // Devices header and the top bar [M-20].
+  const freshnessWarning = describeTrackingFreshness(staleDeviceCount, unverifiedFixTimeCount)
+  const feedHealthy = status.mode === 'online' && !criticalTrustWarning && status.warning === null && freshnessWarning === null
   const modeChipClassName =
-    status.mode === 'online' && !criticalTrustWarning
+    feedHealthy
       ? 'sar-status-chip-success'
+      : status.mode === 'online' && !criticalTrustWarning
+        ? 'sar-status-chip-warning'
       : status.mode === 'offline' || criticalTrustWarning
         ? 'sar-status-chip-alert'
         : 'sar-status-chip-neutral'
@@ -159,8 +166,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         >
           <div
             className={`h-2 w-2 rounded-full ${
-              status.mode === 'online' && !criticalTrustWarning
+              feedHealthy
                 ? 'bg-emerald-300'
+                : status.mode === 'online' && !criticalTrustWarning
+                  ? 'bg-amber-300'
                 : status.mode === 'offline' || criticalTrustWarning
                   ? 'bg-red-200 animate-pulse shadow-[0_0_10px_rgba(248,113,113,0.85)]'
                   : 'bg-stone-300'
@@ -173,7 +182,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
       {simplified ? null : <div className="mb-4 flex">
         <button
           className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
-          aria-describedby={status.warning === null ? undefined : 'tracking-status-message'}
+          aria-describedby={status.warning === null && freshnessWarning === null ? undefined : 'tracking-status-message'}
           data-testid="open-devices-workspace"
           onClick={() => openWorkspace()}
           type="button"
@@ -186,6 +195,9 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         <TrackingStatusMessage tone={criticalTrustWarning ? 'critical' : 'warning'}>
           {status.warning}
         </TrackingStatusMessage>
+      )}
+      {status.warning !== null || freshnessWarning === null || simplified ? null : (
+        <TrackingStatusMessage tone="warning">{freshnessWarning}</TrackingStatusMessage>
       )}
 
       {historyTransfer === undefined ? null : (
@@ -359,7 +371,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
             {formatOperatorLocalTimestamp(status.lastSuccessAt)}
           </span>
         </div>
-        {status.warning === null ? (
+        {feedHealthy ? (
           <TrackingStatusMessage tone="healthy">
             Telemetry stream healthy
           </TrackingStatusMessage>

@@ -87,7 +87,8 @@ describe('device workspace model', () => {
     )
     expect(rows[0]).toMatchObject({
       deviceId: 'alpha',
-      sourceDisplay: 'Fix time ahead of laptop clock',
+      // Marked stale so it is never live; the label says both [M-21].
+      sourceDisplay: 'Stale · Fix time ahead of laptop clock',
       stale: true,
     })
   })
@@ -146,10 +147,59 @@ describe('device workspace model', () => {
 
     expect(rows[0]).toMatchObject({
       deviceId: 'alpha',
-      sourceDisplay: 'Fix time unverified',
+      // A stale fix stays visibly stale whatever its time provenance [M-21].
+      sourceDisplay: 'Stale · Fix time unverified',
       fixTimeUnverified: true,
       ingestWarning: '1 position row rejected — invalid coordinates.',
     })
+  })
+
+  it('keeps a stale fix visibly stale when its time is unverified or tracking is offline [M-21]', () => {
+    const hourOld = (overrides: Partial<TrackingSnapshot['positions'][number]>) => ({
+      ...SNAPSHOT.positions[0]!, data_origin: 'live' as const, device_cache_stale: true, ...overrides,
+    })
+    const unverifiedOnline = buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [hourOld({ fix_time_unverified: true }), SNAPSHOT.positions[1]!] }, [], undefined, {}, 'online',
+    ).find((row) => row.deviceId === 'alpha')!
+    expect(unverifiedOnline.sourceDisplay).toMatch(/Stale/)
+    expect(unverifiedOnline.sourceDisplay).toMatch(/unverified/)
+    expect(unverifiedOnline.stale).toBe(true)
+
+    const staleOffline = buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [hourOld({}), SNAPSHOT.positions[1]!] }, [], undefined, {}, 'offline',
+    ).find((row) => row.deviceId === 'alpha')!
+    const freshOffline = buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [hourOld({ device_cache_stale: false }), SNAPSHOT.positions[1]!] }, [], undefined, {}, 'offline',
+    ).find((row) => row.deviceId === 'alpha')!
+    expect(staleOffline.sourceDisplay).toBe('Stale · Last known')
+    expect(freshOffline.sourceDisplay).toBe('Last known')
+  })
+
+  it('never calls the feed healthy while positions are stale or unverified [M-20]', () => {
+    const online: TrackingConnectionStatus = { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null }
+    const staleRows = buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: SNAPSHOT.positions.map((position) => ({ ...position, device_cache_stale: true })) }, [],
+    )
+    const stale = buildDeviceWorkspaceSummary(staleRows, online)
+    expect(stale.headline).not.toBe('Tracking feed healthy.')
+    expect(stale.headline).toContain('2 positions out of date')
+    expect(stale.tone).toBe('warning')
+
+    const unverified = buildDeviceWorkspaceSummary(buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [{ ...SNAPSHOT.positions[0]!, fix_time_unverified: true }] }, [],
+    ), online)
+    expect(unverified.tone).toBe('warning')
+    expect(unverified.headline).toContain('1 position time not verified')
+
+    const fresh = buildDeviceWorkspaceSummary(buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [SNAPSHOT.positions[0]!] }, [],
+    ), online)
+    expect(fresh).toMatchObject({ headline: 'Tracking feed healthy.', tone: 'success' })
+
+    const warned = buildDeviceWorkspaceSummary(buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [SNAPSHOT.positions[0]!] }, [],
+    ), { ...online, warning: 'MISSION BREADCRUMB STORAGE FAILED — new trail history will not survive a restart.' })
+    expect(warned).toMatchObject({ headline: 'MISSION BREADCRUMB STORAGE FAILED — new trail history will not survive a restart.', tone: 'warning' })
   })
 
   it('adds derived stationary attention without changing fix truth [DON-269]', () => {
