@@ -346,7 +346,9 @@ export async function runWholeTrailWorkflow(ctx, preset) {
 
   // Earlier: the operator looks for the rest of the trail.
   const earlier = t(WHOLE_TRAIL_UI.earlier)
-  if (await earlier.isVisible().catch(() => false) && await earlier.isEnabled().catch(() => false)) {
+  // Locator errors propagate (NOT TESTED); only a confirmed absent or disabled
+  // Earlier reaches the one-page count guard below.
+  if (await earlier.isVisible() && await earlier.isEnabled()) {
     await earlier.click()
     const earlierPage = await waitForDotPage(app.page, firstPage)
     await shotAfter(app, 'dots-earlier', verifyWholeTrailDrawn(app.page, stored, { step: `Breadcrumb dots after Earlier ("${earlierPage}")`, names }))

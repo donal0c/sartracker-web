@@ -21,6 +21,7 @@ import {
   missionPhase,
   placeMarker,
   resumeIfPrompted,
+  returnReplayToLive,
   startMission,
   switchBasemap,
 } from '../lib/operator.mjs'
@@ -339,11 +340,11 @@ export default [
       const state = (await t('mission-replay-reconstructed-state').innerText().catch(() => '')).replace(/\s+/gu, ' ')
       const replayError = await t('mission-replay-error').innerText().catch(() => null)
       await app.shot('replay')
-      await t('mission-replay-return-live').click().catch(() => {})
-      await delay(1000)
+      const leftReplay = await returnReplayToLive(app.page)
       await closeWorkspace(app.page)
       const phase = await missionPhase(app.page)
       expectProduct(replayError === null && state !== '', `Replay did not reconstruct state: ${replayError ?? 'empty state'}.`)
+      expectProduct(leftReplay === 'live', `Return to Live / now did not bring back the live map context (${leftReplay}).`)
       expectProduct(/ACTIVE/i.test(phase), `Live mission became ${phase} after replay.`)
       const basemaps = []
       for (const name of ['ESRI Satellite', 'OpenStreetMap', 'ESRI World Topo', 'OpenTopoMap']) {
