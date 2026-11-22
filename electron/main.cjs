@@ -2112,6 +2112,9 @@ function windowRecoveryAllowed() {
 function restoreOperationalWindow() {
   if (operationalWindowRestore !== null) return operationalWindowRestore
   const restore = (async () => {
+    // Only the fence this restore waited for may be cleared: a crash while the
+    // restore is in flight installs a newer fence that must still hold [DON-359].
+    const awaitedFence = electronRuntimeContext.archiveReviewRendererLossFence
     await awaitArchiveReviewRendererLossFence()
     await electronRuntimeContext.rendererTeardownCoordinator
       ?.ensureUnexpectedRendererLossFenced()
@@ -2122,7 +2125,9 @@ function restoreOperationalWindow() {
       electronRuntimeContext.rendererTeardownCoordinator,
       electronRuntimeContext.archiveReviewSessionManager,
     )
-    electronRuntimeContext.archiveReviewRendererLossFence = null
+    if (electronRuntimeContext.archiveReviewRendererLossFence === awaitedFence) {
+      electronRuntimeContext.archiveReviewRendererLossFence = null
+    }
     return window
   })()
   operationalWindowRestore = restore

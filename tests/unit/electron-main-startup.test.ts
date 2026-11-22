@@ -3311,7 +3311,10 @@ describe('Electron main startup', () => {
 
   describe('renderer crash recovery [M-45]', () => {
     /** Loads main with in-memory logs and returns the first window's crash handler. */
-    async function loadWithRendererCrash(platform: NodeJS.Platform) {
+    async function loadWithRendererCrash(
+      platform: NodeJS.Platform,
+      sessionManager?: ReturnType<typeof archiveReviewSessionManagerStub>,
+    ) {
       Object.defineProperty(process, 'platform', { value: platform })
       const processOn = vi.spyOn(process, 'on')
       const electronMock = createElectronMock(vi.fn(), undefined, true)
@@ -3327,6 +3330,12 @@ describe('Electron main startup', () => {
         }
         if (request === './renderer-teardown-coordinator.cjs') {
           return { createRendererTeardownCoordinator: () => coordinator }
+        }
+        if (sessionManager !== undefined && request === './archive-review-sessions.cjs') {
+          return { createArchiveReviewSessionManager: vi.fn(() => sessionManager) }
+        }
+        if (sessionManager !== undefined && request === './archive-review-ipc.cjs') {
+          return { registerArchiveReviewIpcHandlers: vi.fn() }
         }
         return originalLoad(request, parent, isMain)
       }) as typeof Module._load
@@ -3422,6 +3431,38 @@ describe('Electron main startup', () => {
       expect(logs.runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
         event: 'renderer_window_recovery_superseded',
       }))
+    })
+
+    it('keeps a newer crash\'s archive cleanup fence when an older restore finishes [DON-359]', async () => {
+      const secondSenderCleanup = deferred()
+      const sessionManager = {
+        ...archiveReviewSessionManagerStub(),
+        closeForSender: vi.fn((senderId: number) =>
+          (senderId === 2 ? secondSenderCleanup.promise : Promise.resolve())),
+      }
+      const { electronMock, coordinator, crashWindow } = await loadWithRendererCrash('linux', sessionManager)
+      const firstReplacementReady = deferred()
+      coordinator.markRendererAvailable
+        .mockImplementationOnce(() => firstReplacementReady.promise)
+      await vi.waitFor(() => expect(crashWindow(0)).toBeTypeOf('function'))
+
+      crashWindow(0)({}, { reason: 'crashed', exitCode: 11 })
+      await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2))
+      // Each window has its own renderer, so its archive plaintext has its own sender.
+      electronMock.BrowserWindow.mock.results[1]!.value.webContents.id = 2
+      await vi.waitFor(() => expect(coordinator.markRendererAvailable).toHaveBeenCalled())
+      crashWindow(1)({}, { reason: 'oom', exitCode: 137 })
+      expect(sessionManager.closeForSender).toHaveBeenCalledWith(2)
+      firstReplacementReady.resolve()
+
+      await new Promise((settle) => setTimeout(settle, 50))
+      // The second sender's plaintext is not swept yet: no window may open.
+      expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2)
+      expect(reopenNotices(electronMock)).toBe(0)
+
+      secondSenderCleanup.resolve()
+      await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(3))
+      await vi.waitFor(() => expect(reopenNotices(electronMock)).toBe(1))
     })
 
     it('reopens the map window on Linux with a notice instead of quitting silently', async () => {
