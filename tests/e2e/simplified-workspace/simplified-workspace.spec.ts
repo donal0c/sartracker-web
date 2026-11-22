@@ -11,6 +11,8 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { openWorkspacePanel } from '../helpers/workspace-panels'
+
 const SHOTS = process.env.LAYOUT_SHOTS
 if (SHOTS !== undefined) mkdirSync(SHOTS, { recursive: true })
 
@@ -115,8 +117,7 @@ async function startMission(page: Page, options: { readonly defaultGroupSet?: bo
 }
 
 async function showPeople(page: Page): Promise<void> {
-  if (await page.getByTestId('ws-people-panel').count() === 0) await page.getByTestId('ws-toggle-people').click()
-  await expect(page.getByTestId('ws-people-panel')).toBeVisible()
+  await openWorkspacePanel(page, 'people')
 }
 
 test.describe('Simplified workspace', () => {
