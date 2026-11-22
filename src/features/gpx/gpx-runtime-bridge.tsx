@@ -15,6 +15,7 @@ export function GpxRuntimeBridge() {
   const missionPhase = useMissionStore((state) => state.phase)
   const controller = useGpxStore((state) => state.controller)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
+  const watchResumePending = useGpxStore((state) => state.watchResumePending)
   const outingRevision = useOutingStore((state) => state.outings
     .map((outing) => `${outing.id}:${outing.updated_at}`)
     .join('|'))
@@ -26,6 +27,18 @@ export function GpxRuntimeBridge() {
 
     void controller.refreshMission(missionId)
   }, [controller, missionId, outingRevision])
+
+  // Watches restored after a restart are scanned straight away, not after the first interval [DON-337].
+  useEffect(() => {
+    if (
+      controller === null ||
+      !watchResumePending ||
+      (missionPhase !== 'active' && missionPhase !== 'paused')
+    ) {
+      return
+    }
+    void controller.resumeWatchedDirectories()
+  }, [controller, missionPhase, watchResumePending])
 
   useEffect(() => {
     if (

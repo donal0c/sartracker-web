@@ -1,7 +1,8 @@
 const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
 const path = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
+const { syncDirectoryDurably, writeFileDurably } = require('./durable-file.cjs')
 const {
   MAX_GPX_IMPORT_PATH_LENGTH,
   MAX_GPX_IMPORT_PATHS,
@@ -9,7 +10,8 @@ const {
   normalizeRawGpxPath,
 } = require('./gpx-import-envelope.cjs')
 
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+// One size bound for ingest and archive custody [M-41].
+const { MAX_ATTACHMENT_BYTES } = require('./archive-attachments.cjs')
 /**
  * Paths one watched-folder listing returns. A watch is not an operator
  * selection, so it is not held to the 100-file selection cap; beyond this
@@ -179,6 +181,17 @@ function createElectronFileSystem(options) {
       assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
       return listWatchedGpxDirectoryPaths(normalizedDirectoryPath)
     },
+    /** Throws unless the operator chose this folder (or one above it) in this session [DON-337]. */
+    assertWatchableGpxDirectory: (directoryPath) => {
+      assertAllowedPath(normalizeRawGpxPath(directoryPath, 'Watched GPX folder'), 'Watched GPX folder')
+    },
+    /**
+     * Re-allows a folder the operator chose before a restart. Only the main
+     * process calls this, with paths it saved itself [DON-337].
+     */
+    restoreWatchedGpxDirectory: (directoryPath) => {
+      allowDirectory(normalizeRawGpxPath(directoryPath, 'Watched GPX folder'))
+    },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
       const fileName = normalizeAttachmentFileName(input.fileName)
@@ -197,10 +210,33 @@ function createElectronFileSystem(options) {
           missionId,
           'attachments',
         )
-        await fs.mkdir(attachmentDirectory, { recursive: true })
-        const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
-        await writeFileAtomically(destinationPath, bytes)
-        return destinationPath
+        const attachmentId = randomUUID()
+        const storedName = `${attachmentId}-${fileName}`
+        const destinationPath = path.join(attachmentDirectory, storedName)
+        try {
+          await makeDirectoryDurably(attachmentDirectory, options.userDataPath)
+          // The store commits a durable reference as soon as this resolves, so
+          // the bytes and the directory entry are flushed first; a power cut
+          // must never leave a committed reference to an empty or missing file
+          // [M-41].
+          await writeFileDurably(destinationPath, bytes)
+        } catch (error) {
+          await fs.rm(destinationPath, { force: true }).catch(() => undefined)
+          throw createAttachmentWriteError(error)
+        }
+        return {
+          attachmentPath: destinationPath,
+          // v2 custody lets the archive catch a damaged file instead of
+          // sealing whatever bytes are on disk at finish [M-41].
+          custody: {
+            custody_version: 2,
+            attachment_id: attachmentId,
+            size_bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            relative_path: `missions/${missionId}/attachments/${storedName}`,
+            display_name: fileName,
+          },
+        }
       }, async (attachmentPath) => {
         await fs.rm(attachmentPath, { force: true })
       })
@@ -400,10 +436,43 @@ function getOfficialMapPackageExtensionError(sourcePath) {
   return 'Official map package must be a .mbtiles file.'
 }
 
-async function writeFileAtomically(destinationPath, bytes) {
-  const temporaryPath = `${destinationPath}.tmp-${process.pid}-${Date.now()}`
-  await fs.writeFile(temporaryPath, bytes)
-  await fs.rename(temporaryPath, destinationPath)
+/**
+ * Creates a directory and its missing parents below rootPath, then flushes the
+ * parent entry of every level from rootPath down, so a new attachment folder
+ * survives a power cut together with the file written into it [M-41]. Every
+ * level is flushed on every call, not only the ones this call created: a
+ * retry after a failed flush finds the folders already made and must still
+ * make them durable.
+ */
+async function makeDirectoryDurably(directoryPath, rootPath) {
+  await fs.mkdir(directoryPath, { recursive: true })
+  const levels = []
+  for (
+    let current = path.resolve(directoryPath);
+    current !== path.resolve(rootPath) && path.dirname(current) !== current;
+    current = path.dirname(current)
+  ) {
+    levels.push(current)
+  }
+  for (const level of levels.reverse()) {
+    await syncDirectoryDurably(path.dirname(level))
+  }
+}
+
+/**
+ * Turns a low-level write or flush failure into words a volunteer can act on,
+ * and logs the error code and system call (never paths or bytes) [M-41].
+ */
+function createAttachmentWriteError(cause) {
+  const code = typeof cause?.code === 'string' ? cause.code : 'UNKNOWN'
+  const syscall = typeof cause?.syscall === 'string' ? cause.syscall : 'unknown'
+  console.error(`Marker attachment write failed before it was recorded (code ${code}, syscall ${syscall}).`)
+  const error = new Error(
+    'Attachment could not be saved safely to this laptop, so it was not added to the mission. Check the laptop has free disk space, then attach the file again. If it keeps failing, tell your technical lead.',
+  )
+  error.name = 'AttachmentWriteError'
+  error.code = 'ATTACHMENT_WRITE_FAILED'
+  return error
 }
 
 module.exports = {

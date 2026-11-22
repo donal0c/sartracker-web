@@ -4,6 +4,8 @@ const { randomUUID } = require('node:crypto')
 
 /**
  * Atomically replaces one file and durably orders both its contents and name.
+ * `options.mode` sets the new file's mode (default 0o600, subject to umask);
+ * `options.beforeRename(temporaryPath)` runs after the fsync, before the rename.
  */
 async function writeFileDurably(filePath, contents, options = {}) {
   const fileSystem = options.fileSystem ?? fs
@@ -13,12 +15,13 @@ async function writeFileDurably(filePath, contents, options = {}) {
   let handle
   try {
     try {
-      handle = await fileSystem.open(temporaryPath, 'wx', 0o600)
+      handle = await fileSystem.open(temporaryPath, 'wx', options.mode ?? 0o600)
       await handle.writeFile(contents, 'utf8')
       await handle.sync()
     } finally {
       await handle?.close()
     }
+    if (typeof options.beforeRename === 'function') await options.beforeRename(temporaryPath)
     await fileSystem.rename(temporaryPath, filePath)
     await syncDirectoryDurably(path.dirname(filePath), { fileSystem, platform })
   } catch (error) {

@@ -1,4 +1,4 @@
-import type { WatchedGpxDirectoryListing } from '../gpx/start-gpx-runtime'
+import type { GpxWatchedFolderStoreBoundary, WatchedGpxDirectoryListing } from '../gpx/start-gpx-runtime'
 import type { MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { MarkerAttachmentBoundary } from '../../infrastructure/marker-attachment-store/marker-attachment-boundary'
 import {
@@ -118,6 +118,8 @@ export type CoreFeatureRuntimeOptions = {
   readonly attachmentAdapter: MarkerAttachmentBoundary
   readonly missionModelEnabled?: boolean
   readonly gpxWatchSource?: GpxWatchSource
+  /** Keeps watched GPX folders across a restart; Electron only [DON-337]. */
+  readonly gpxWatchedFolderStore?: GpxWatchedFolderStoreBoundary
   readonly requestAutosaveSync?: (reason: AutosaveSyncReason) => Promise<void>
   readonly now?: () => Date
   readonly startMissionRuntime?: typeof startMissionRuntime
@@ -267,6 +269,9 @@ export async function startCoreFeatureRuntimes(
     applyRuntime: applyGpxRuntime,
     ...(options.gpxWatchSource !== undefined
       ? { watchSource: options.gpxWatchSource }
+      : {}),
+    ...(options.gpxWatchedFolderStore !== undefined
+      ? { watchedFolderStore: options.gpxWatchedFolderStore }
       : {}),
   })
   applyGpxController(gpxRuntimeController)

@@ -30,4 +30,20 @@ describe('Electron marker attachment adapter', () => {
       bytesBase64: 'aW1hZ2UgYnl0ZXM=',
     })
   })
+
+  it('shows the main-process refusal without the Electron IPC wrapper [M-41]', async () => {
+    const plain = 'Attachment could not be saved safely to this laptop, so it was not added to the mission.'
+    vi.stubGlobal('window', {
+      sartrackerElectron: {
+        ingestMarkerAttachment: vi.fn().mockRejectedValue(new Error(
+          `Error invoking remote method 'sartracker:file-system:ingest-marker-attachment': Error: ${plain}`,
+        )),
+      },
+    })
+
+    await expect(electronMarkerAttachmentAdapter.ingest(
+      'mission-1',
+      new File(['image bytes'], 'photo.jpg'),
+    )).rejects.toThrow(new Error(plain))
+  })
 })
