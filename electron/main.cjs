@@ -1890,6 +1890,7 @@ async function startElectronApp(startupWatchdog) {
     validateIpcSender,
     watchedFolderStore: createGpxWatchedFolderStore({ userDataPath }),
     fileSystem,
+    logEvent: (entry) => runtimeLog.append(entry),
   })
   await createWindow(
     crashLog,

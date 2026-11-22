@@ -30,7 +30,7 @@ const { registerGpxWatchedFolderHandlers } = require('../../electron/gpx-watched
 
 type Bridge = {
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
-  readonly loadWatchedGpxFolders: (missionId: string) => Promise<{ readonly paths: readonly string[] }>
+  readonly loadWatchedGpxFolders: (missionId: string) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
   readonly saveWatchedGpxFolders: (input: unknown) => Promise<{ readonly paths: readonly string[] }>
 }
 
@@ -43,7 +43,7 @@ afterEach(async () => {
  * Starts one "app run": a fresh main-process file system, store and handlers on
  * the same profile, reached through the real sandboxed preload.
  */
-function startAppRun(userDataPath: string, chosenDirectory: string | null) {
+function startAppRun(userDataPath: string, chosenDirectory: string | null, logged: unknown[] = []) {
   const handlers = new Map<string, Handler>()
   const fileSystem = createElectronFileSystem({
     userDataPath,
@@ -57,6 +57,7 @@ function startAppRun(userDataPath: string, chosenDirectory: string | null) {
     validateIpcSender: () => undefined,
     watchedFolderStore: createGpxWatchedFolderStore({ userDataPath }),
     fileSystem,
+    logEvent: async (entry: unknown) => { logged.push(entry) },
   })
   let bridge: Bridge | undefined
   runInNewContext(readFileSync('electron/preload.cjs', 'utf8'), {
@@ -116,6 +117,22 @@ describe('watched GPX folders through IPC across a restart [DON-337]', () => {
       .rejects.toThrow(/not under an allowed/u)
     const afterRestart = startAppRun(userDataPath, null)
     await expect(afterRestart.bridge.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: [] })
+  })
+
+  it('logs a structured warning for every failed load or save, without folder paths [DON-337 review]', async () => {
+    const userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-watch-profile-'))
+    const elsewhere = await mkdtemp(path.join(tmpdir(), 'sartracker-watch-elsewhere-'))
+    directories.push(userDataPath, elsewhere)
+    const logged: unknown[] = []
+    const run = startAppRun(userDataPath, null, logged)
+    await expect(run.bridge.saveWatchedGpxFolders({ missionId: 'mission-1', paths: [elsewhere] })).rejects.toThrow()
+    await writeFile(path.join(userDataPath, 'gpx-watched-folders.json'), '{broken', 'utf8')
+    await expect(run.bridge.loadWatchedGpxFolders('mission-1')).rejects.toThrow(/could not be read/u)
+    expect(logged).toEqual([
+      { level: 'warn', event: 'gpx_watched_folders_save_failed', fields: { folderCount: 1, reason: expect.stringMatching(/not under an allowed/u) } },
+      { level: 'warn', event: 'gpx_watched_folders_load_failed', fields: { reason: expect.stringMatching(/damaged/u) } },
+    ])
+    expect(JSON.stringify(logged)).not.toContain(elsewhere)
   })
 
   it('rejects malformed requests in the preload before they reach the main process', async () => {

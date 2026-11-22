@@ -13,30 +13,82 @@ const LOAD_WATCHED_GPX_FOLDERS_CHANNEL = 'sartracker:load-watched-gpx-folders'
 const SAVE_WATCHED_GPX_FOLDERS_CHANNEL = 'sartracker:save-watched-gpx-folders'
 
 /**
- * Registers the load and save handlers.
+ * Registers the load and save handlers. Each failure is logged as a structured
+ * warning (folder count and reason, never folder paths) before it reaches the
+ * renderer, which shows it to the operator.
  * @param {{
  *   ipcMain: { handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void },
  *   validateIpcSender: (event: unknown) => void,
- *   watchedFolderStore: { loadWatchedGpxFolders: (missionId: unknown) => Promise<{ paths: string[] }>, saveWatchedGpxFolders: (input: unknown) => Promise<{ paths: string[] }> },
+ *   watchedFolderStore: { loadWatchedGpxFolders: (missionId: unknown) => Promise<{ paths: string[], warning?: string }>, saveWatchedGpxFolders: (input: unknown) => Promise<{ paths: string[] }> },
  *   fileSystem: { assertWatchableGpxDirectory: (path: string) => void, restoreWatchedGpxDirectory: (path: string) => void },
+ *   logEvent: (entry: { level: 'warn', event: string, fields: Record<string, unknown> }) => Promise<unknown> | unknown,
  * }} options
  */
 function registerGpxWatchedFolderHandlers(options) {
-  const { ipcMain, validateIpcSender, watchedFolderStore, fileSystem } = options
+  const { ipcMain, validateIpcSender, watchedFolderStore, fileSystem, logEvent } = options
+
+  /**
+   * Logs without letting a logging failure hide the original error.
+   * @param {string} event
+   * @param {Record<string, unknown>} fields
+   */
+  async function warn(event, fields) {
+    try {
+      await logEvent({ level: 'warn', event, fields })
+    } catch {
+      // The operator still sees the original error in the renderer.
+    }
+  }
+
   ipcMain.handle(LOAD_WATCHED_GPX_FOLDERS_CHANNEL, async (event, missionId) => {
     validateIpcSender(event)
-    const saved = await watchedFolderStore.loadWatchedGpxFolders(missionId)
-    for (const directoryPath of saved.paths) fileSystem.restoreWatchedGpxDirectory(directoryPath)
+    let saved = { paths: [] }
+    try {
+      saved = await watchedFolderStore.loadWatchedGpxFolders(missionId)
+      for (const directoryPath of saved.paths) fileSystem.restoreWatchedGpxDirectory(directoryPath)
+    } catch (error) {
+      await warn('gpx_watched_folders_load_failed', { reason: redactPaths(describeError(error), saved.paths) })
+      throw error
+    }
+    if (saved.warning !== undefined) {
+      await warn('gpx_watched_folders_restored_from_backup', { folderCount: saved.paths.length })
+    }
     return saved
   })
   ipcMain.handle(SAVE_WATCHED_GPX_FOLDERS_CHANNEL, async (event, input) => {
     validateIpcSender(event)
     const paths = typeof input === 'object' && input !== null && Array.isArray(input.paths) ? input.paths : null
-    if (paths !== null) {
-      for (const directoryPath of paths) fileSystem.assertWatchableGpxDirectory(directoryPath)
+    try {
+      if (paths !== null) {
+        for (const directoryPath of paths) fileSystem.assertWatchableGpxDirectory(directoryPath)
+      }
+      return await watchedFolderStore.saveWatchedGpxFolders(input)
+    } catch (error) {
+      await warn('gpx_watched_folders_save_failed', {
+        folderCount: paths === null ? null : paths.length,
+        reason: redactPaths(describeError(error), paths ?? []),
+      })
+      throw error
     }
-    return await watchedFolderStore.saveWatchedGpxFolders(input)
   })
+}
+
+/**
+ * Replaces folder paths in a message, so logs never carry machine paths.
+ * @param {string} message
+ * @param {readonly unknown[]} paths
+ */
+function redactPaths(message, paths) {
+  let redacted = message
+  for (const entry of paths) {
+    if (typeof entry === 'string' && entry.length > 0) redacted = redacted.split(entry).join('<folder>')
+  }
+  return redacted
+}
+
+/** @param {unknown} error */
+function describeError(error) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 module.exports = {

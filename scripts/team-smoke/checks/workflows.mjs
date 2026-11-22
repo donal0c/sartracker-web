@@ -89,13 +89,16 @@ async function checkWatchResumedAfterRelaunch(app, profile, missionId, watchDire
  * walk, so "on the map" means rendered, not only stored [DON-319]. A missing
  * map handle is a tool error, not a product result.
  */
-async function drawnGpxSegments(page) {
-  const count = () => page.evaluate(() => {
+async function drawnGpxSegments(page, importId) {
+  // Count only the given import when named: the DON-337 watch imports more
+  // copies of the same walk, which must not stand in for it [DON-319].
+  const count = () => page.evaluate((onlyImportId) => {
     const map = window.__SARTRACKER_MAP__
     if (map === undefined) throw new Error('The map handle is not available; GPX drawing cannot be checked.')
     if (map.getLayer('mission-gpx-imports-line') === undefined) return 0
-    return map.queryRenderedFeatures({ layers: ['mission-gpx-imports-line'] }).length
-  })
+    return map.queryRenderedFeatures({ layers: ['mission-gpx-imports-line'] })
+      .filter((feature) => onlyImportId === undefined || feature.properties?.gpxImportId === onlyImportId).length
+  }, importId)
   await page.evaluate(() => window.__SARTRACKER_MAP__?.jumpTo({ center: [-9.6971, 51.9729], zoom: 14 }))
   let drawn = 0
   for (let attempt = 0; attempt < 10 && drawn === 0; attempt += 1) {
@@ -333,9 +336,9 @@ export default [
       await app.shot('markers-gpx-relaunch')
       const watchFindings = await checkWatchResumedAfterRelaunch(app, profile, savedWatch.missionId, watchDirectory, beforeRelaunchFile)
       findings.push(...watchFindings)
-      if (await drawnGpxSegments(app.page) === 0) findings.push('the imported GPX track was not drawn after a relaunch (DON-319)')
+      if (await drawnGpxSegments(app.page, importId) === 0) findings.push('the imported GPX track was not drawn after a relaunch (DON-319)')
       const basemap = await switchBasemap(app.page)
-      if (await drawnGpxSegments(app.page) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
+      if (await drawnGpxSegments(app.page, importId) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
       await openWorkspacePanel(app.page, 'layers')
       await app.page.getByTestId('layer-visibility-group-gpx-tracks').uncheck()
       const hiddenDrawn = await drawnGpxSegments(app.page)
@@ -349,7 +352,7 @@ export default [
         findings.push(`a GPX track hidden in Layers was not described as hidden: summary "${summary}", track "${trackState}" (DON-319)`)
       }
       await app.page.getByTestId(`gpx-show-on-map-${importId}`).click()
-      if (await drawnGpxSegments(app.page) === 0) findings.push('"Show on map" did not draw the hidden GPX track again (DON-319)')
+      if (await drawnGpxSegments(app.page, importId) === 0) findings.push('"Show on map" did not draw the hidden GPX track again (DON-319)')
       await app.stop()
       expectProduct(findings.length === 0, `${findings.join('; ')}.`)
       const markers = withStore(profile, (db) => db.prepare('SELECT name FROM markers').all().map((row) => row.name))

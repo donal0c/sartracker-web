@@ -10,7 +10,7 @@ import {
 function createSavedWatches(initial: Record<string, readonly string[]> = {}) {
   const saved = new Map<string, readonly string[]>(Object.entries(initial))
   const store: GpxWatchedFolderStoreBoundary = {
-    loadWatchedFolders: vi.fn(async (missionId: string) => saved.get(missionId) ?? []),
+    loadWatchedFolders: vi.fn(async (missionId: string) => ({ paths: saved.get(missionId) ?? [], warning: null })),
     saveWatchedFolders: vi.fn(async (missionId: string, paths: readonly string[]) => {
       saved.set(missionId, [...paths])
     }),
@@ -135,7 +135,7 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
 
   it('warns that a new watch will be forgotten after a restart when it cannot be saved', async () => {
     const store: GpxWatchedFolderStoreBoundary = {
-      loadWatchedFolders: vi.fn().mockResolvedValue([]),
+      loadWatchedFolders: vi.fn().mockResolvedValue({ paths: [], warning: null }),
       saveWatchedFolders: vi.fn().mockRejectedValue(new Error('Disk full.')),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
@@ -151,8 +151,8 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
   it('does not apply saved watches that arrive after the mission changed', async () => {
     let releaseLoad: (paths: readonly string[]) => void = () => undefined
     const store: GpxWatchedFolderStoreBoundary = {
-      loadWatchedFolders: vi.fn().mockImplementationOnce(() => new Promise<readonly string[]>((resolve) => { releaseLoad = resolve }))
-        .mockResolvedValue([]),
+      loadWatchedFolders: vi.fn().mockImplementationOnce(() => new Promise((resolve) => { releaseLoad = (paths) => resolve({ paths, warning: null }) }))
+        .mockResolvedValue({ paths: [], warning: null }),
       saveWatchedFolders: vi.fn().mockResolvedValue(undefined),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
@@ -162,5 +162,60 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
     await first
     expect(runtime.state()?.activeMissionId).toBe('mission-2')
     expect(runtime.state()?.watchedDirectories).toEqual([])
+  })
+
+  it('saves the restored folders too when a folder is added while restoration is still loading [review]', async () => {
+    const saved = new Map<string, readonly string[]>([['mission-1', ['/field/a']]])
+    let releaseLoad: () => void = () => undefined
+    const store: GpxWatchedFolderStoreBoundary = {
+      loadWatchedFolders: vi.fn(() => new Promise<{ paths: readonly string[]; warning: null }>((resolve) => {
+        releaseLoad = () => resolve({ paths: saved.get('mission-1') ?? [], warning: null })
+      })),
+      saveWatchedFolders: vi.fn(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]) }),
+    }
+    const runtime = await startRuntime({ watchedFolderStore: store })
+    const opening = runtime.controller.refreshMission('mission-1')
+    await vi.waitFor(() => expect(store.loadWatchedFolders).toHaveBeenCalled())
+    const adding = runtime.controller.addWatchedDirectory('/field/b')
+    releaseLoad()
+    await Promise.all([opening, adding])
+    expect(runtime.state()?.watchedDirectories).toEqual(['/field/a', '/field/b'])
+    expect(saved.get('mission-1')).toEqual(['/field/a', '/field/b'])
+  })
+
+  it('retries the save when the operator chooses an already watched folder after a failed save [review]', async () => {
+    const saved = new Map<string, readonly string[]>()
+    const store: GpxWatchedFolderStoreBoundary = {
+      loadWatchedFolders: vi.fn().mockResolvedValue({ paths: [], warning: null }),
+      saveWatchedFolders: vi.fn()
+        .mockRejectedValueOnce(new Error('Disk full.'))
+        .mockImplementation(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]) }),
+    }
+    const runtime = await startRuntime({ watchedFolderStore: store })
+    await runtime.controller.refreshMission('mission-1')
+    await runtime.controller.addWatchedDirectory('/field/drop')
+    expect(runtime.state()?.watchNotice?.tone).toBe('problem')
+    await runtime.controller.addWatchedDirectory('/field/drop')
+    expect(store.saveWatchedFolders).toHaveBeenCalledTimes(2)
+    expect(saved.get('mission-1')).toEqual(['/field/drop'])
+    expect(runtime.state()?.watchNotice).toBeNull()
+    expect(runtime.state()?.watchedDirectories).toEqual(['/field/drop'])
+  })
+
+  it('says when saved watches were restored from the backup copy [review]', async () => {
+    const store: GpxWatchedFolderStoreBoundary = {
+      loadWatchedFolders: vi.fn().mockResolvedValue({
+        paths: ['/field/drop'],
+        warning: 'The saved watched-folder list was damaged or missing and was restored from its backup copy. Check the Watched Folders list.',
+      }),
+      saveWatchedFolders: vi.fn().mockResolvedValue(undefined),
+    }
+    const runtime = await startRuntime({ watchedFolderStore: store })
+    await runtime.controller.refreshMission('mission-1')
+    expect(runtime.state()?.watchedDirectories).toEqual(['/field/drop'])
+    expect(runtime.state()?.watchNotice).toEqual({
+      tone: 'problem',
+      message: 'Resumed watching 1 folder saved for this mission. New GPX files there will import automatically. The saved watched-folder list was damaged or missing and was restored from its backup copy. Check the Watched Folders list.',
+    })
   })
 })

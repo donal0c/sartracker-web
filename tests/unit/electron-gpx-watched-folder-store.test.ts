@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -8,13 +8,20 @@ import { afterEach, describe, expect, it } from 'vitest'
 const require = createRequire(import.meta.url)
 
 type WatchedFolderStore = {
-  readonly loadWatchedGpxFolders: (missionId: unknown) => Promise<{ readonly paths: readonly string[] }>
+  readonly loadWatchedGpxFolders: (missionId: unknown) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
   readonly saveWatchedGpxFolders: (input: unknown) => Promise<{ readonly paths: readonly string[] }>
 }
 
-const { createGpxWatchedFolderStore, WATCHED_FOLDERS_FILE_NAME } = require('../../electron/gpx-watched-folder-store.cjs') as {
+const {
+  createGpxWatchedFolderStore,
+  WATCHED_FOLDERS_FILE_NAME,
+  WATCHED_FOLDERS_BACKUP_FILE_NAME,
+  WATCHED_FOLDERS_AUDIT_FILE_NAME,
+} = require('../../electron/gpx-watched-folder-store.cjs') as {
   readonly createGpxWatchedFolderStore: (options: { readonly userDataPath: string }) => WatchedFolderStore
   readonly WATCHED_FOLDERS_FILE_NAME: string
+  readonly WATCHED_FOLDERS_BACKUP_FILE_NAME: string
+  readonly WATCHED_FOLDERS_AUDIT_FILE_NAME: string
 }
 
 const directories: string[] = []
@@ -125,5 +132,71 @@ describe('GPX watched-folder store mission keys [DON-337]', () => {
     const afterRestart = createGpxWatchedFolderStore({ userDataPath })
     await expect(afterRestart.loadWatchedGpxFolders('__proto__')).resolves.toEqual({ paths: ['/drop/a'] })
     await expect(afterRestart.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: [] })
+  })
+})
+
+describe('GPX watched-folder store protections [DON-337 review]', () => {
+  it('refuses to replace a file it could not read, so other missions keep their watches', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-2', paths: ['/drop/other'] })
+    const filePath = path.join(userDataPath, WATCHED_FOLDERS_FILE_NAME)
+    const before = await readFile(filePath, 'utf8')
+    await chmod(filePath, 0o000)
+    try {
+      await expect(store.loadWatchedGpxFolders('mission-1')).rejects.toThrow(/could not be opened/u)
+      await expect(store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] }))
+        .rejects.toThrow(/could not be read, so nothing was changed/u)
+    } finally {
+      await chmod(filePath, 0o600)
+    }
+    await expect(readFile(filePath, 'utf8')).resolves.toBe(before)
+    await expect(createGpxWatchedFolderStore({ userDataPath }).loadWatchedGpxFolders('mission-2'))
+      .resolves.toEqual({ paths: ['/drop/other'] })
+  })
+
+  it('recovers every mission from the backup mirror when the main file is damaged, and says so', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-2', paths: ['/drop/b'] })
+    await expect(readFile(path.join(userDataPath, WATCHED_FOLDERS_BACKUP_FILE_NAME), 'utf8')).resolves.toContain('/drop/b')
+    await writeFile(path.join(userDataPath, WATCHED_FOLDERS_FILE_NAME), '{"version":1,"miss', 'utf8')
+
+    const afterRestart = createGpxWatchedFolderStore({ userDataPath })
+    const loaded = await afterRestart.loadWatchedGpxFolders('mission-2')
+    expect(loaded.paths).toEqual(['/drop/b'])
+    expect(loaded.warning).toMatch(/damaged.*backup copy/u)
+    // Saving one mission keeps the other recovered from the mirror.
+    await afterRestart.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a', '/drop/c'] })
+    await expect(afterRestart.loadWatchedGpxFolders('mission-2')).resolves.toEqual({ paths: ['/drop/b'] })
+    expect((await readdir(userDataPath)).some((name) => name.startsWith(`${WATCHED_FOLDERS_FILE_NAME}.damaged-`))).toBe(true)
+  })
+
+  it('records every added and removed folder in an append-only audit journal', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a', '/drop/b'] })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/b'] })
+    const lines = (await readFile(path.join(userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME), 'utf8'))
+      .trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
+    expect(lines.map(({ event, missionId, added, removed }) => ({ event, missionId, added, removed }))).toEqual([
+      { event: 'gpx_watched_folders_changed', missionId: 'mission-1', added: ['/drop/a'], removed: [] },
+      { event: 'gpx_watched_folders_changed', missionId: 'mission-1', added: ['/drop/b'], removed: [] },
+      { event: 'gpx_watched_folders_changed', missionId: 'mission-1', added: [], removed: ['/drop/a'] },
+    ])
+    expect(lines.every((line) => typeof line.at === 'string')).toBe(true)
+  })
+
+  it('refuses the save when the audit record cannot be written, leaving the list unchanged', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })
+    await rm(path.join(userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME))
+    await mkdir(path.join(userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME))
+    await expect(store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a', '/drop/b'] }))
+      .rejects.toThrow(/change record could not be written/u)
+    await expect(store.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: ['/drop/a'] })
   })
 })

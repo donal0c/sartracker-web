@@ -7,7 +7,10 @@ import type { GpxWatchedFolderStoreBoundary } from '../../features/gpx/start-gpx
  */
 export function createElectronGpxWatchedFolderStore(): GpxWatchedFolderStoreBoundary {
   return {
-    loadWatchedFolders: async (missionId) => (await getBridge().loadWatchedGpxFolders(missionId)).paths,
+    loadWatchedFolders: async (missionId) => {
+      const saved = await getBridge().loadWatchedGpxFolders(missionId)
+      return { paths: saved.paths, warning: saved.warning ?? null }
+    },
     saveWatchedFolders: async (missionId, paths) => {
       await getBridge().saveWatchedGpxFolders({ missionId, paths })
     },

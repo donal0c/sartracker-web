@@ -6,8 +6,11 @@
  * the profile beside settings rather than in the mission database or archive.
  *
  * Writes are atomic (temp file, fsync, rename, directory fsync) and serialised.
- * A damaged file is refused loudly on read; the next save keeps a copy aside
- * before replacing it, so nothing is silently discarded.
+ * Every change is first appended to an audit journal; the main file is then
+ * replaced and copied to one atomic backup mirror. A file that cannot be read
+ * (an I/O error) is never replaced. A file confirmed damaged is recovered
+ * from the mirror when the mirror is good, and set aside before the next save
+ * replaces it, so nothing is silently discarded.
  */
 
 const fs = require('node:fs/promises')
@@ -15,6 +18,8 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 
 const WATCHED_FOLDERS_FILE_NAME = 'gpx-watched-folders.json'
+const WATCHED_FOLDERS_BACKUP_FILE_NAME = 'gpx-watched-folders.backup.json'
+const WATCHED_FOLDERS_AUDIT_FILE_NAME = 'gpx-watched-folders-audit.jsonl'
 const WATCHED_FOLDERS_FILE_VERSION = 1
 const MAX_WATCHED_FOLDERS_PER_MISSION = 50
 const MAX_FOLDER_PATH_LENGTH = 4096
@@ -26,6 +31,8 @@ const MAX_MISSION_ID_LENGTH = 200
  */
 function createGpxWatchedFolderStore(options) {
   const filePath = path.join(options.userDataPath, WATCHED_FOLDERS_FILE_NAME)
+  const backupPath = path.join(options.userDataPath, WATCHED_FOLDERS_BACKUP_FILE_NAME)
+  const auditPath = path.join(options.userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME)
   let queue = Promise.resolve()
 
   /**
@@ -40,17 +47,40 @@ function createGpxWatchedFolderStore(options) {
     return result
   }
 
+  /**
+   * Reads the main file, falling back to the mirror only when the main file is
+   * confirmed damaged (or missing while a mirror exists).
+   * @returns {Promise<{ status: 'ok', missions: Record<string, { paths: string[], updatedAt?: string }>, recoveredFromBackup: boolean, mainDamaged: boolean } | { status: 'damaged' | 'newer' | 'unreadable', message: string }>}
+   */
+  async function readCurrent() {
+    const main = await readWatchedFoldersFile(filePath)
+    if (main.status === 'ok' && !main.missing) return { status: 'ok', missions: main.missions, recoveredFromBackup: false, mainDamaged: false }
+    if (main.status === 'newer' || main.status === 'unreadable') return main
+    const backup = await readWatchedFoldersFile(backupPath)
+    // An unreadable mirror might be the only good copy: never overwrite it.
+    if (backup.status === 'unreadable') return backup
+    if (backup.status === 'ok' && !backup.missing) {
+      return { status: 'ok', missions: backup.missions, recoveredFromBackup: true, mainDamaged: main.status === 'damaged' }
+    }
+    if (main.status === 'ok') return { status: 'ok', missions: main.missions, recoveredFromBackup: false, mainDamaged: false }
+    return main
+  }
+
   return {
     /**
      * Returns the folders saved for a mission; none when nothing was saved.
+     * `warning` says when they were recovered from the backup mirror.
      * @param {unknown} missionId
-     * @returns {Promise<{ paths: string[] }>}
+     * @returns {Promise<{ paths: string[], warning?: string }>}
      */
     loadWatchedGpxFolders: (missionId) => serialise(async () => {
       const id = readMissionId(missionId)
-      const file = await readWatchedFoldersFile(filePath)
+      const file = await readCurrent()
       if (file.status !== 'ok') throw new Error(file.message)
-      return { paths: [...(file.missions[id]?.paths ?? [])] }
+      const paths = [...(file.missions[id]?.paths ?? [])]
+      return file.recoveredFromBackup
+        ? { paths, warning: 'The saved watched-folder list was damaged or missing and was restored from its backup copy. Check the Watched Folders list.' }
+        : { paths }
     }),
     /**
      * Replaces the folders saved for a mission. An empty list forgets them.
@@ -59,9 +89,12 @@ function createGpxWatchedFolderStore(options) {
      */
     saveWatchedGpxFolders: (input) => serialise(async () => {
       const { missionId, paths } = readSaveInput(input)
-      const file = await readWatchedFoldersFile(filePath)
+      const file = await readCurrent()
       if (file.status === 'newer') throw new Error(file.message)
-      if (file.status === 'damaged') await keepDamagedCopy(filePath)
+      if (file.status === 'unreadable') {
+        throw new Error(`The saved watched-folder list could not be read, so nothing was changed: ${file.reason}.`)
+      }
+      const previous = file.status === 'ok' ? (file.missions[missionId]?.paths ?? []) : []
       // Null-prototype maps: a mission id such as "__proto__" stays an ordinary key.
       const next = Object.assign(Object.create(null), file.status === 'ok' ? file.missions : {})
       if (paths.length === 0) {
@@ -69,24 +102,50 @@ function createGpxWatchedFolderStore(options) {
       } else {
         next[missionId] = { paths, updatedAt: new Date().toISOString() }
       }
-      await writeJsonDurably(filePath, { version: WATCHED_FOLDERS_FILE_VERSION, missions: next })
+      const at = new Date().toISOString()
+      const change = {
+        at,
+        event: 'gpx_watched_folders_changed',
+        missionId,
+        added: paths.filter((entry) => !previous.includes(entry)),
+        removed: previous.filter((entry) => !paths.includes(entry)),
+        ...(file.status === 'damaged' ? { previousFile: 'damaged_set_aside' } : {}),
+        ...(file.status === 'ok' && file.recoveredFromBackup ? { previousFile: 'restored_from_backup' } : {}),
+      }
+      // The change is recorded before anything is replaced; no record, no change.
+      try {
+        await appendLineDurably(auditPath, change)
+      } catch (error) {
+        throw new Error(`The watched-folder change record could not be written, so the list was not changed: ${describeError(error)}.`)
+      }
+      if (file.status === 'damaged' || (file.status === 'ok' && file.mainDamaged)) await keepDamagedCopy(filePath)
+      const payload = { version: WATCHED_FOLDERS_FILE_VERSION, missions: next }
+      await writeJsonDurably(filePath, payload)
+      await writeJsonDurably(backupPath, payload)
       return { paths: [...paths] }
     }),
   }
 }
 
 /**
- * Reads and checks the file. A missing file is an empty store.
+ * Reads and checks the file. A missing file is an empty store. An I/O error
+ * is "unreadable" (the file may be fine, so it must not be replaced); only
+ * contents that parse wrongly are "damaged".
  * @param {string} filePath
- * @returns {Promise<{ status: 'ok', missions: Record<string, { paths: string[], updatedAt?: string }> } | { status: 'damaged' | 'newer', message: string }>}
+ * @returns {Promise<{ status: 'ok', missing: boolean, missions: Record<string, { paths: string[], updatedAt?: string }> } | { status: 'damaged' | 'newer', message: string } | { status: 'unreadable', message: string, reason: string }>}
  */
 async function readWatchedFoldersFile(filePath) {
   let contents
   try {
     contents = await fs.readFile(filePath, 'utf8')
   } catch (error) {
-    if (error && error.code === 'ENOENT') return { status: 'ok', missions: Object.create(null) }
-    return { status: 'damaged', message: damagedMessage(`the file could not be opened (${describeError(error)})`) }
+    if (error && error.code === 'ENOENT') return { status: 'ok', missing: true, missions: Object.create(null) }
+    const reason = `the file could not be opened (${describeError(error)})`
+    return {
+      status: 'unreadable',
+      reason,
+      message: `Saved watched GPX folders could not be read: ${reason}. No folders are being watched for this mission. Check the profile folder's permissions or disk, then reopen the mission; until then new watches cannot be saved.`,
+    }
   }
   let parsed
   try {
@@ -116,7 +175,7 @@ async function readWatchedFoldersFile(filePath) {
       return { status: 'damaged', message: damagedMessage('the file is damaged') }
     }
   }
-  return { status: 'ok', missions }
+  return { status: 'ok', missing: false, missions }
 }
 
 /** @param {string} reason */
@@ -134,6 +193,22 @@ async function keepDamagedCopy(filePath) {
     await fs.rename(filePath, `${filePath}.damaged-${stamp}`)
   } catch (error) {
     if (!error || error.code !== 'ENOENT') throw error
+  }
+}
+
+/**
+ * Appends one JSON line and flushes it, so a recorded change survives a crash.
+ * @param {string} filePath
+ * @param {unknown} entry
+ */
+async function appendLineDurably(filePath, entry) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  const handle = await fs.open(filePath, 'a')
+  try {
+    await handle.appendFile(`${JSON.stringify(entry)}\n`, 'utf8')
+    await handle.sync()
+  } finally {
+    await handle.close()
   }
 }
 
@@ -228,5 +303,7 @@ function describeError(error) {
 module.exports = {
   createGpxWatchedFolderStore,
   WATCHED_FOLDERS_FILE_NAME,
+  WATCHED_FOLDERS_BACKUP_FILE_NAME,
+  WATCHED_FOLDERS_AUDIT_FILE_NAME,
   MAX_WATCHED_FOLDERS_PER_MISSION,
 }
