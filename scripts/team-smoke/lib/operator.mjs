@@ -195,7 +195,12 @@ export async function placeMarker(page, { name, x, y, type, attachment }) {
   const t = byId(page)
   await t('map-container').click({ position: { x, y } })
   await delay(700)
-  if (type !== undefined) await t(`marker-type-${type}`).check({ force: true })
+  if (type !== undefined) {
+    // The radio is visually hidden by design; the operator presses its label.
+    const radio = t(`marker-type-${type}`)
+    await radio.locator('xpath=..').click()
+    if (!await radio.isChecked()) throw new Error(`Pressing the ${type} marker type did not select it.`)
+  }
   await t('marker-name-input').fill(name)
   if (attachment !== undefined) {
     await t('marker-attachment-input').setInputFiles(attachment)
@@ -302,20 +307,26 @@ export async function switchBasemap(page) {
 
 /**
  * Leaves Replay with "Return to Live / now" and waits for the live map
- * context. A click failure propagates (NOT TESTED); only a Replay that stays
- * on screen after the click is reported as 'stuck'.
+ * context. A click failure propagates (NOT TESTED). Replay on screen without
+ * the button, or still on screen after the click, is 'stuck'; 'not-in-replay'
+ * means the live context was already shown.
  *
  * @param {import('playwright').Page} page the app window
  * @param {{ timeoutMs?: number }} [options] how long to wait for the live state
  * @returns {Promise<'live' | 'not-in-replay' | 'stuck'>} what the operator saw
  */
 export async function returnReplayToLive(page, { timeoutMs = 10_000 } = {}) {
+  const workspace = page.getByTestId('mission-replay-workspace')
+  const replayShown = workspace.getByText('Replay — data known at selected time', { exact: true })
   const button = page.getByTestId('mission-replay-return-live')
-  if (!await button.isVisible()) return 'not-in-replay'
+  if (!await button.isVisible()) {
+    if (await replayShown.isVisible()) return 'stuck'
+    return 'not-in-replay'
+  }
   await button.click()
   try {
     await button.waitFor({ state: 'hidden', timeout: timeoutMs })
-    await page.getByTestId('mission-replay-workspace').getByText('Live map context', { exact: true })
+    await workspace.getByText('Live map context', { exact: true })
       .waitFor({ state: 'visible', timeout: timeoutMs })
   } catch (error) {
     if (error?.name === 'TimeoutError') return 'stuck'

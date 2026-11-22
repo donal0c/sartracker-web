@@ -129,10 +129,10 @@ async function drawSearchArea(page, name) {
   await page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
   await page.getByTestId('drawing-tool-search_area').click()
   for (const position of [{ x: 440, y: 220 }, { x: 620, y: 220 }, { x: 540, y: 360 }]) {
-    await canvas.click({ position, force: true })
+    await canvas.click({ position })
     await delay(300)
   }
-  await canvas.click({ position: { x: 540, y: 360 }, button: 'right', force: true })
+  await canvas.click({ position: { x: 540, y: 360 }, button: 'right' })
   await page.getByTestId('drawing-dialog').waitFor({ timeout: 10_000 })
   await page.getByTestId('drawing-name-input').fill(name)
   await page.getByTestId('drawing-save-btn').click()
@@ -144,7 +144,7 @@ async function drawSearchArea(page, name) {
 /** Places a casualty marker, first confirming save is blocked until required fields are set. */
 export async function placeCasualty(page, { name, x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-dialog').getByText('Casualty', { exact: true }).click()
   await t('marker-name-input').fill(name)
@@ -159,7 +159,7 @@ export async function placeCasualty(page, { name, x, y }) {
 /** Opens the marker at a point and deletes it through the two-stage confirmation. */
 async function deleteMarkerAt(page, { x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-delete-btn').click()
   const confirmationShown = await t('marker-delete-confirmation').isVisible()
@@ -501,9 +501,9 @@ export default [
       const canvas = app.page.locator('.maplibregl-canvas').first()
       await app.page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
       await app.page.getByTestId('drawing-tool-measure').click()
-      await canvas.click({ position: { x: 680, y: 240 }, force: true })
+      await canvas.click({ position: { x: 680, y: 240 } })
       await delay(400)
-      await canvas.click({ position: { x: 820, y: 300 }, force: true })
+      await canvas.click({ position: { x: 820, y: 300 } })
       await delay(1500)
       const measured = (await app.page.getByTestId('measurement-count').innerText().catch(() => '0')).trim()
       await app.shot('measure-after-relaunch')
@@ -528,7 +528,7 @@ export default [
       const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
       await app.shot('replay-day-1')
       const leftReplay = await returnReplayToLive(app.page)
-      if (leftReplay === 'stuck') findings.push('Return to Live / now did not bring back the live map context')
+      if (leftReplay !== 'live') findings.push(`Return to Live / now did not bring back the live map context (${leftReplay})`)
       await closeWorkspace(app.page)
       if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       // Replay folds evidence at max(fixTime, recorded_at), so history fetched by
