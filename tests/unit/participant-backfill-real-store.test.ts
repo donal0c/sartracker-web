@@ -92,12 +92,14 @@ function historyFix(deviceId: string, timestampMs: number, id: string, lat = 52)
  */
 async function startBackfill(
   getBreadcrumbsWithReport: (deviceId: string, from: Date, to: Date) => Promise<BreadcrumbNormalizationResult>,
+  deviceIdsWithoutRecord: readonly string[] = [],
 ): Promise<{
   readonly missionId: string
   readonly realStore: RealStore
   readonly windowFromMs: number
   readonly statuses: TrackingConnectionStatus[]
   readonly warn: ReturnType<typeof vi.fn>
+  readonly requestBackfillPass: () => void
 }> {
   userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-participant-backfill-'))
   const realStore = createElectronMissionStore({ userDataPath })
@@ -107,10 +109,12 @@ async function startBackfill(
     name: 'Participant Backfill Real Store',
     start_time: new Date(windowFromMs).toISOString(),
   })
-  for (const deviceId of ['1', '2']) {
-    await realStore.upsertDevice({
-      mission_id: mission.id, device_id: deviceId, name: `Tracker ${deviceId}`, color: '#ff0000', status: 'online',
-    })
+  for (const deviceId of ['1', '2', ...deviceIdsWithoutRecord]) {
+    if (!deviceIdsWithoutRecord.includes(deviceId)) {
+      await realStore.upsertDevice({
+        mission_id: mission.id, device_id: deviceId, name: `Tracker ${deviceId}`, color: '#ff0000', status: 'online',
+      })
+    }
     await realStore.upsertParticipantBackfillCheckpoint({
       mission_id: mission.id,
       traccar_device_id: deviceId,
@@ -161,7 +165,14 @@ async function startBackfill(
   })
   scopeStatus = 'ready'
   notifyScopeChanged?.('status')
-  return { missionId: mission.id, realStore, windowFromMs, statuses, warn }
+  return {
+    missionId: mission.id,
+    realStore,
+    windowFromMs,
+    statuses,
+    warn,
+    requestBackfillPass: () => notifyScopeChanged?.('status'),
+  }
 }
 
 /** The durable checkpoint for one device. */
@@ -213,5 +224,60 @@ describe('participant history backfill with the real mission store [DON-338]', (
     // Unchanged behaviour (open decision): the checkpoint still moves past a refused fix.
     expect((await checkpointOf(runtime.realStore, runtime.missionId, '1'))?.completed).toBe(1)
     await expect(runtime.realStore.countPositions(runtime.missionId)).resolves.toBe(2)
+  })
+
+  it('backfills the other devices while one participant device has no mission record yet (M-34)', async () => {
+    const calls: string[] = []
+    const runtime = await startBackfill(async (deviceId, from) => {
+      calls.push(deviceId)
+      return { accepted: [historyFix(deviceId, from.getTime() + 60_000, `${deviceId}-a`)], rejected: [] }
+    }, ['3'])
+
+    await vi.waitFor(async () => {
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '1'))?.completed).toBe(1)
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '2'))?.completed).toBe(1)
+    }, { timeout: 3_000 })
+    // The device with no record is not fetched, stays incomplete, and is named in the log.
+    expect(calls).not.toContain('3')
+    expect((await checkpointOf(runtime.realStore, runtime.missionId, '3'))?.completed).toBe(0)
+    expect(runtime.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/no mission device record/i),
+      expect.objectContaining({ deviceIds: ['3'] }),
+    )
+  })
+
+  it('keeps a warning naming the device whose history cannot be downloaded, and clears it once the device is recorded (M-34)', async () => {
+    const runtime = await startBackfill(async (deviceId, from) => ({
+      accepted: [historyFix(deviceId, from.getTime() + 60_000, `${deviceId}-a`)],
+      rejected: [],
+    }), ['3'])
+
+    await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes)
+      .toContain('participant_history_unavailable'), { timeout: 3_000 })
+    const warned = runtime.statuses.at(-1)!.warning!
+    expect(warned).toMatch(/PARTICIPANT HISTORY UNAVAILABLE/u)
+    expect(warned).toMatch(/device 3\b/u)
+    expect(warned).toMatch(/Finish/u)
+    expect(warned).toMatch(/add it as a participant again/iu)
+    // Still shown after the other devices finish: it does not fade with them.
+    await vi.waitFor(async () => {
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '1'))?.completed).toBe(1)
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '2'))?.completed).toBe(1)
+    }, { timeout: 3_000 })
+    runtime.requestBackfillPass()
+    await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes)
+      .toContain('participant_history_unavailable'))
+
+    // Recovery: the device is recorded (as a live poll would), and its history downloads.
+    await runtime.realStore.upsertDevice({
+      mission_id: runtime.missionId, device_id: '3', name: 'Tracker 3', color: '#ff0000', status: 'online',
+    })
+    runtime.requestBackfillPass()
+    await vi.waitFor(async () => {
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '3'))?.completed).toBe(1)
+    }, { timeout: 3_000 })
+    await vi.waitFor(() => expect(runtime.statuses.at(-1)?.warningCodes ?? [])
+      .not.toContain('participant_history_unavailable'))
+    await expect(runtime.realStore.countPositions(runtime.missionId, '3')).resolves.toBe(1)
   })
 })

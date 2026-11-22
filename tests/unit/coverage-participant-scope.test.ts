@@ -84,6 +84,49 @@ describe('coverage participant scope [DON-275]', () => {
       'discovery-only',
     ])
   })
+
+  it('keeps the device record for a participant removed before its first saved poll, so its in-window fixes can be stored (M-34)', () => {
+    const removed: MissionParticipant = {
+      ...participant('removed'),
+      effective_from: '2026-08-24T10:59:50.000Z',
+      removed_at: '2026-08-24T11:00:10.000Z',
+    }
+    const snapshot: TrackingSnapshot = {
+      devices: [device('removed', 'Removed Tracker'), device('selected', 'Selected Team')],
+      positions: [position('removed', 'removed-current'), position('selected', 'selected-current')],
+      breadcrumbs: [],
+    }
+    const scope = createParticipationScope({
+      participants: [removed, participant('selected')],
+      membershipEvents: [],
+    })
+
+    const evidence = scope.filterEvidenceSnapshot(snapshot, '2026-08-24T11:00:40.000Z')
+
+    expect(evidence.positions.map((fix) => fix.device_id)).toEqual(['removed', 'selected'])
+    expect(evidence.devices.map((entry) => entry.device_id)).toEqual(['removed', 'selected'])
+  })
+
+  it('still keeps a device with no participation and no retained evidence out of the evidence devices', () => {
+    const removed: MissionParticipant = {
+      ...participant('removed'),
+      effective_from: '2026-08-24T10:00:00.000Z',
+      removed_at: '2026-08-24T10:10:00.000Z',
+    }
+    const snapshot: TrackingSnapshot = {
+      devices: [device('removed', 'Removed Tracker'), device('selected', 'Selected Team')],
+      positions: [position('removed', 'removed-current'), position('selected', 'selected-current')],
+      breadcrumbs: [],
+    }
+    const scope = createParticipationScope({
+      participants: [removed, participant('selected')],
+      membershipEvents: [],
+    })
+
+    const evidence = scope.filterEvidenceSnapshot(snapshot, '2026-08-24T12:00:00.000Z')
+
+    expect(evidence.devices.map((entry) => entry.device_id)).toEqual(['selected'])
+  })
 })
 
 function participant(deviceId: string): MissionParticipant {
