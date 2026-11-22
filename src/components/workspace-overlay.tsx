@@ -7,7 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
-import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal } from './modal-workspace-registry'
+import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal, reportModalWorkspaceRefusal } from './modal-workspace-registry'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls immediate mount and unmount. */
@@ -58,12 +58,13 @@ export function WorkspaceOverlay({
       return
     }
 
-    // At most one known nesting, and never over a workspace asking a question:
-    // a refused open is closed again before it paints, and said in the console.
+    // At most one known nesting, and never over a waiting question: a refused
+    // open is closed again before it paints, and the question says why.
     const refusal = docked ? null : modalWorkspaceOpenRefusal(labelledBy)
     if (refusal !== null) {
       refusedRef.current = true
       console.error(`Workspace "${labelledBy}" was not opened: ${refusal}.`)
+      reportModalWorkspaceRefusal(labelledBy)
       onCloseRef.current()
       return
     }

@@ -659,6 +659,93 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
   })
 
+  test('a pending Finish question stays in view: Settings does not open over it, and says so', async ({ page }) => {
+    // Was: Settings opened over the Finish question, and Escape then cancelled
+    // the hidden question instead of closing Settings.
+    await open(page)
+    await startMission(page)
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    const finish = page.getByTestId('mission-finish-dialog')
+    await expect(finish).toBeVisible()
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(finish).toBeVisible()
+    await expect(finish).toContainText('Settings did not open')
+    expect(await finish.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true)
+
+    // Escape answers the question in view (Cancel); then Settings opens as usual.
+    await page.keyboard.press('Escape')
+    await expect(finish).toHaveCount(0)
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+  })
+
+  test('docked Review stays open through a slow Finish, and waits for Settings to close before it fills the screen', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    // Hold the next Finish until the test releases it, as a slow disk would.
+    await page.evaluate(async () => {
+      const { getBrowserHarnessStore } = await import('/src/features/browser-validation/browser-harness-store.ts')
+      const store = getBrowserHarnessStore() as unknown as { finishMission: (id: string) => Promise<unknown> }
+      const original = store.finishMission.bind(store)
+      const holder = window as unknown as { releaseFinish?: () => void }
+      const gate = new Promise<void>((resolve) => { holder.releaseFinish = resolve })
+      store.finishMission = async (id) => { await gate; return original(id) }
+    })
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('ws-open-review').click()
+    const review = page.getByTestId('mission-review-workspace')
+    await expect(review).toBeVisible()
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+
+    // Finish while Review is docked; Settings is refused, visibly, while Finish is saving.
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('mission-finish-dialog')).toContainText('Settings did not open')
+    await expect(review).toBeVisible()
+
+    await page.evaluate(() => { (window as unknown as { releaseFinish?: () => void }).releaseFinish?.() })
+    await expect(page.getByTestId('ws-mission-phase')).not.toContainText('Running')
+    await expect(review).toBeVisible()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(1)
+  })
+
+  test('if the mission ends while Settings is open over docked Review, Review stays open and fills the screen after Settings closes', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('ws-open-review').click()
+    const review = page.getByTestId('mission-review-workspace')
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+
+    // The mission ends from outside this screen while Settings is open.
+    await page.evaluate(async () => {
+      const { useMissionStore } = await import('/src/features/mission/mission-store.ts')
+      await useMissionStore.getState().controller?.finishMission()
+    })
+    await expect(page.getByTestId('ws-mission-phase')).not.toContainText('Running')
+    await page.waitForTimeout(300)
+    await expect(review).toBeAttached()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(1)
+
+    await page.getByRole('dialog', { name: 'Operational Settings' }).getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(review).toBeVisible()
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toHaveCount(0)
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(1)
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)
