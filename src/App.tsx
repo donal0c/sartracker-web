@@ -14,10 +14,6 @@ import { MeasurementRuntimeBridge } from './features/measurements/measurement-ru
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
 import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
 import { useSettingsWorkspaceStore } from './features/settings/settings-workspace-store'
-import { useDeviceWorkspaceStore } from './features/tracking/device-workspace-store'
-import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
-import { useMissionReviewWorkspaceStore } from './features/mission-review/mission-review-workspace-store'
-import { MODAL_WORKSPACE_TITLE_IDS } from './lib/modal-workspace-registry'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
 import { useMissionStore } from './features/mission/mission-store'
@@ -39,31 +35,17 @@ import { DESKTOP_PANEL_ARRANGEMENT } from './features/workspace/panel-arrangemen
 import { shouldUseClassicLayoutFixture } from './features/workspace/classic-layout-fixture'
 import { WeatherMenu } from './components/weather-menu'
 import { LazyScreenBoundary } from './components/lazy-screen-boundary'
+// The modal screens load with the app, not on demand: from local disk the
+// split saved nothing worth having, and a press made while split code was
+// still arriving looked ignored (DON-229). The app is not shown until this
+// code is here, so a press always opens the real screen at once.
+import { SettingsWorkspace } from './components/settings-workspace'
+import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
+import { DevicesWorkspace } from './components/devices-workspace'
+import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { scopeAutosaveWarningToMission } from './features/persistence/autosave-warning-scope'
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 
-// Settings stays mounted so its open/close behaviour is unchanged; only its
-// code is split out of the default application chunk.
-const SettingsWorkspace = lazy(async () => {
-  const module = await import('./components/settings-workspace')
-
-  return { default: module.SettingsWorkspace }
-})
-const DiagnosticsWorkspace = lazy(async () => {
-  const module = await import('./components/diagnostics-workspace')
-
-  return { default: module.DiagnosticsWorkspace }
-})
-const DevicesWorkspace = lazy(async () => {
-  const module = await import('./components/devices-workspace')
-
-  return { default: module.DevicesWorkspace }
-})
-const MissionReviewWorkspace = lazy(async () => {
-  const module = await import('./components/mission-review-workspace')
-
-  return { default: module.MissionReviewWorkspace }
-})
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
 
@@ -82,13 +64,6 @@ function App() {
   const settingsOpen = useSettingsWorkspaceStore((state) => state.open)
   const settingsFocusTarget = useSettingsWorkspaceStore((state) => state.focusTarget)
   const closeSettingsWorkspace = useSettingsWorkspaceStore((state) => state.closeWorkspace)
-  const devicesOpen = useDeviceWorkspaceStore((state) => state.open)
-  const closeDevicesWorkspace = useDeviceWorkspaceStore((state) => state.closeWorkspace)
-  const diagnosticsOpen = useDiagnosticsWorkspaceStore((state) => state.open)
-  const closeDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.closeWorkspace)
-  const reviewOpen = useMissionReviewWorkspaceStore((state) => state.open)
-  const closeReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.closeWorkspace)
-  const missionPhase = useMissionStore((state) => state.phase)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
   const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
   const handleMissionActionError = useCallback((error: string | null) => {
@@ -180,27 +155,14 @@ function App() {
       <CoordinateConverterDialog />
       <MarkerDialog />
       <MarkerStatusBanner />
-      {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
-          A press made before the code arrives says "Opening …" at once (DON-229).
-          A screen whose code fails to load shows a message; the rest of the app stays up. */}
-      <LazyScreenBoundary request={{ open: devicesOpen, titleId: MODAL_WORKSPACE_TITLE_IDS.devices, onCancel: closeDevicesWorkspace }} screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary
-        request={{
-          open: reviewOpen,
-          titleId: MODAL_WORKSPACE_TITLE_IDS.review,
-          onCancel: closeReviewWorkspace,
-          docked: missionPhase === 'active' || missionPhase === 'paused',
-        }}
-        screen="Mission review"
-      ><MissionReviewWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary request={{ open: diagnosticsOpen, titleId: MODAL_WORKSPACE_TITLE_IDS.diagnostics, onCancel: closeDiagnosticsWorkspace }} screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary request={{ open: settingsOpen, titleId: MODAL_WORKSPACE_TITLE_IDS.settings, onCancel: closeSettingsWorkspace }} screen="Settings">
-        <SettingsWorkspace
-          focusTarget={settingsFocusTarget}
-          onClose={closeSettingsWorkspace}
-          open={settingsOpen}
-        />
-      </LazyScreenBoundary>
+      <DevicesWorkspace />
+      <MissionReviewWorkspace />
+      <DiagnosticsWorkspace />
+      <SettingsWorkspace
+        focusTarget={settingsFocusTarget}
+        onClose={closeSettingsWorkspace}
+        open={settingsOpen}
+      />
     </main>
   )
 }

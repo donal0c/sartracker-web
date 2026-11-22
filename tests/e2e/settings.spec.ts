@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { openMissionPanel, openMissionReview, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
+import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
 
 test.describe('M12 settings workspace', () => {
   test.beforeEach(async ({ context, page }) => {
@@ -108,12 +108,9 @@ test.describe('M12 settings workspace', () => {
   }) => {
     const server = await routeControllableTraccar(page)
 
-    // One press. Settings' code is fetched when the app shell appears, so on a
-    // slow dev server it may still be arriving: the press is kept and the
-    // screen says "Opening Settings…" until then. Readiness is that code
-    // loading, so wait for Settings itself rather than pressing again.
+    // One press: Settings' code loads with the app, so the first press opens it.
     await page.getByTestId('open-settings-workspace').click()
-    await expect(page.getByTestId('settings-workspace')).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
     await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
     await page.getByTestId('settings-provider-email').fill('apiuser')
@@ -496,111 +493,22 @@ async function routeTraccarSuccess(
   })
 }
 
-test.describe('Settings pressed while its code is still loading', () => {
-  test('says so at once, then opens Settings, without a second press [DON-229]', async ({ page }) => {
-    // Settings' code is fetched when the app shell first appears, so a press
-    // just after start can land before it arrives. In CI that press looked
-    // ignored: Settings drew nothing until the code came.
-    let release: () => void = () => undefined
-    const held = new Promise<void>((resolve) => { release = resolve })
+test.describe('Settings pressed as soon as the app appears', () => {
+  test('opens on the first press, even when its code was slow to arrive [DON-229]', async ({ page }) => {
+    // In CI a press just after start looked ignored: Settings' code was split
+    // out and still arriving, so nothing drew. The modal screens now load
+    // with the app, so the app is not shown until their code is here and a
+    // press always opens the real screen at once. Delay Settings' code well
+    // beyond the time allowed for it to open after the press.
     await page.route(/\/src\/components\/settings-workspace\.tsx/, async (route) => {
-      await held
+      await new Promise((resolve) => setTimeout(resolve, 3_000))
       await route.continue()
     })
     await page.goto('/?missionHarness=1')
-    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker', { timeout: 20_000 })
 
     await page.getByTestId('open-settings-workspace').click()
-    const loading = page.getByTestId('lazy-screen-loading')
-    await expect(loading).toHaveText('Opening Settings…')
-    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
-
-    release()
-    await expect(page.getByTestId('settings-workspace')).toBeVisible()
-    await expect(loading).toHaveCount(0)
-  })
-})
-
-test.describe('Settings asked for, then left, while its code is still loading', () => {
-  async function holdSettingsCode(page: Page): Promise<() => void> {
-    let release: () => void = () => undefined
-    const held = new Promise<void>((resolve) => { release = resolve })
-    await page.route(/\/src\/components\/settings-workspace\.tsx/, async (route) => {
-      await held
-      await route.continue()
-    })
-    return release
-  }
-
-  async function settingsRequested(page: Page): Promise<boolean> {
-    return page.evaluate(async () => {
-      const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
-      return useSettingsWorkspaceStore.getState().open
-    })
-  }
-
-  test('the alarm\'s What to do cancels a pending Settings, which then never opens over the advice [DON-229]', async ({ page }) => {
-    const release = await holdSettingsCode(page)
-    await page.goto('/?missionHarness=1')
-    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
-    await page.evaluate(async () => {
-      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
-      applyTrackingStatus({ mode: 'offline', consecutiveFailures: 1, recovered: false, lastSuccessAt: null, warning: 'OFFLINE MODE — no current positions received for this mission.' })
-    })
-    await expect(page.getByTestId('ws-alarm-details')).toBeVisible()
-
-    await page.getByTestId('open-settings-workspace').click()
-    await expect(page.getByTestId('lazy-screen-loading')).toHaveText('Opening Settings…')
-    await page.getByTestId('ws-alarm-details').click()
-    await expect(page.getByTestId('lazy-screen-loading')).toHaveCount(0)
-    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
-    expect(await settingsRequested(page)).toBe(false)
-
-    const arrived = page.waitForResponse(/\/src\/components\/settings-workspace\.tsx/)
-    release()
-    await arrived
-    await page.evaluate(() => new Promise((resolve) => window.setTimeout(resolve, 300)))
-    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
-    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
-  })
-
-  test('Escape cancels a pending Settings, which then stays closed [DON-229]', async ({ page }) => {
-    const release = await holdSettingsCode(page)
-    await page.goto('/?missionHarness=1')
-    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
-
-    await page.getByTestId('open-settings-workspace').click()
-    await expect(page.getByTestId('lazy-screen-loading')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('lazy-screen-loading')).toHaveCount(0)
-    expect(await settingsRequested(page)).toBe(false)
-
-    const arrived = page.waitForResponse(/\/src\/components\/settings-workspace\.tsx/)
-    release()
-    await arrived
-    await page.evaluate(() => new Promise((resolve) => window.setTimeout(resolve, 300)))
-    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
-  })
-
-  test('Review pressed while its code is loading says so, then opens [DON-229]', async ({ page }) => {
-    let release: () => void = () => undefined
-    const held = new Promise<void>((resolve) => { release = resolve })
-    await page.route(/\/src\/components\/mission-review-workspace\.tsx/, async (route) => {
-      await held
-      await route.continue()
-    })
-    await page.goto('/?missionHarness=1')
-    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
-    await openMissionPanel(page)
-    await page.getByTestId('mission-name-input').fill('Review Loading Mission')
-    await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
-
-    await openMissionReview(page)
-    await expect(page.getByTestId('lazy-screen-loading')).toHaveText('Opening Mission review…')
-    release()
-    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
-    await expect(page.getByTestId('lazy-screen-loading')).toHaveCount(0)
+    await expect(page.getByTestId('settings-workspace')).toBeVisible({ timeout: 1_000 })
   })
 })
 

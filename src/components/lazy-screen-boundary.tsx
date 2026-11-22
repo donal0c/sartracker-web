@@ -1,22 +1,6 @@
 import { Component, Suspense, type ErrorInfo, type ReactNode } from 'react'
 
 import { recordDiagnosticEvent } from '../features/diagnostics/diagnostic-event-log'
-import { WorkspaceOverlay } from './workspace-overlay'
-
-/**
- * The operator's request for an on-demand screen, so a press made while its
- * code loads is answered at once and can be left like the screen itself.
- */
-export type LazyScreenRequest = {
-  /** True once the operator has asked for the screen. */
-  readonly open: boolean
-  /** The screen's title id, so the waiting shell holds its place among open workspaces. */
-  readonly titleId: string
-  /** Withdraws the request (Escape, Cancel, the backdrop, or What to do in the alarm). */
-  readonly onCancel: () => void
-  /** Beside a live mission Review covers nothing, and neither does its waiting shell. */
-  readonly docked?: boolean
-}
 
 type LazyScreenBoundaryState = { readonly error: Error | null }
 
@@ -26,12 +10,7 @@ type LazyScreenBoundaryState = { readonly error: Error | null }
  * replaced by a plain message; the top bar, alarms and banners stay up.
  */
 export class LazyScreenBoundary extends Component<
-  {
-    readonly screen: string
-    /** The operator's request for this screen; without it nothing shows while the code loads. */
-    readonly request?: LazyScreenRequest
-    readonly children: ReactNode
-  },
+  { readonly screen: string; readonly children: ReactNode },
   LazyScreenBoundaryState
 > {
   override state: LazyScreenBoundaryState = { error: null }
@@ -57,11 +36,7 @@ export class LazyScreenBoundary extends Component<
 
   override render() {
     if (this.state.error === null) {
-      return (
-        <Suspense fallback={this.props.request?.open === true ? <LazyScreenLoading request={this.props.request} screen={this.props.screen} /> : null}>
-          {this.props.children}
-        </Suspense>
-      )
+      return <Suspense fallback={null}>{this.props.children}</Suspense>
     }
     return (
       <div
@@ -79,27 +54,4 @@ export class LazyScreenBoundary extends Component<
       </div>
     )
   }
-}
-
-/**
- * Shown when a screen was asked for before its code arrived (DON-229). Without
- * it the press looked ignored. It is a workspace in its own right: it takes the
- * screen's place among open workspaces, so nothing else opens under it, and
- * Escape, Cancel or What to do in the alarm withdraw the request, so the
- * screen does not open later over whatever the operator moved on to.
- */
-function LazyScreenLoading(props: { readonly screen: string; readonly request: LazyScreenRequest }) {
-  const { request } = props
-  return (
-    <WorkspaceOverlay docked={request.docked === true} labelledBy={request.titleId} maxWidth="max-w-md" onClose={request.onCancel} open>
-      <div className="flex items-center justify-between gap-4 p-5">
-        <h2 className="text-base font-bold" data-screen={props.screen} data-testid="lazy-screen-loading" id={request.titleId} role="status">
-          Opening {props.screen}…
-        </h2>
-        <button className="sar-button px-3 py-1 text-sm" data-testid="lazy-screen-loading-cancel" onClick={request.onCancel} type="button">
-          Cancel
-        </button>
-      </div>
-    </WorkspaceOverlay>
-  )
 }
