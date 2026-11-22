@@ -382,6 +382,36 @@ describe('startTrackingRuntime', () => {
     stop()
   })
 
+  it('tags an unreadable saved credential so the top bar can say to re-enter it [DON-353]', async () => {
+    const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+    const idleStatus = vi.fn()
+    await startTrackingRuntime({
+      config: null, createClient: vi.fn(), createPoller: vi.fn(),
+      cache: { read: vi.fn(), write: vi.fn() }, missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(), applyStatus: idleStatus,
+      idleWarning: warning, idleWarningCode: 'tracking_credentials_unreadable',
+      now: () => new Date('2026-04-06T10:35:00.000Z'),
+    })
+    expect(idleStatus).toHaveBeenLastCalledWith(expect.objectContaining({
+      mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'],
+    }))
+
+    // The same when a Settings reload loses the credential while tracking runs.
+    const liveStatus = vi.fn()
+    const live = {
+      config: { baseUrl: 'http://test:8082' }, createClient: vi.fn().mockReturnValue({}),
+      createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn() }),
+      cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() }, missionStore: createMissionStoreStub(),
+      applySnapshot: vi.fn(), applyStatus: liveStatus, now: () => new Date('2026-04-06T10:35:00.000Z'),
+    }
+    const stop = await startTrackingRuntime(live)
+    await stop.reconfigure!({ ...live, config: null, idleWarning: warning, idleWarningCode: 'tracking_credentials_unreadable' })
+    expect(liveStatus).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'],
+    }))
+    await stop()
+  })
+
   // Regression for `sartracker-web-el9`: when a non-null tracking config arrives at
   // bootstrap (provider=traccar_http, auto_connect=true, secret present in OS keychain),
   // the runtime must construct AND start the poller. Without this assertion, a regression

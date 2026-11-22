@@ -23,6 +23,9 @@ export const PROBLEM_RANK = {
   cache: 50,
 } as const
 
+/** The problem word for a saved tracking password or token that must be entered again. */
+export const CREDENTIAL_REENTRY_WORD = 'Re-enter tracking password'
+
 /** A short problem word and how urgent it is. */
 export type RankedProblem = { readonly word: string; readonly rank: number }
 
@@ -50,6 +53,7 @@ const WARNING_LABELS: Readonly<Record<TrackingWarningCode, RankedProblem | null>
   roster_refreshing: null,
   roster_unavailable: { word: 'Roster unavailable', rank: PROBLEM_RANK.roster },
   tracking_not_configured: { word: 'Not configured', rank: PROBLEM_RANK.connection + 3 },
+  tracking_credentials_unreadable: { word: CREDENTIAL_REENTRY_WORD, rank: PROBLEM_RANK.connection },
   tracking_reconnecting: { word: 'Reconnecting', rank: PROBLEM_RANK.connection + 2 },
   tracking_reconnect_failed: { word: 'Reconnect failed', rank: PROBLEM_RANK.connection + 1 },
   evidence_custody_unsettled: { word: 'Record unsettled', rank: PROBLEM_RANK.record + 2 },

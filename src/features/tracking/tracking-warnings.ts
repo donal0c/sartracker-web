@@ -23,6 +23,8 @@ export type TrackingWarningCode =
   | 'roster_refreshing'
   | 'roster_unavailable'
   | 'tracking_not_configured'
+  /** The saved tracking password or token cannot be used and must be entered again in Settings. */
+  | 'tracking_credentials_unreadable'
   | 'tracking_reconnecting'
   | 'tracking_reconnect_failed'
   | 'evidence_custody_unsettled'

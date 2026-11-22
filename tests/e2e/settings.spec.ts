@@ -10,6 +10,71 @@ test.describe('M12 settings workspace', () => {
     await expect(title).toContainText('SAR Tracker')
   })
 
+  test('says to re-enter an unreadable tracking password and opens Settings at Tracking sources [DON-353]', async ({ page }) => {
+    // The old layout's warning said what to do; the new top bar hid it behind
+    // a neutral "Tracking not connected" until the Tracking panel was opened.
+    const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+    // The harness injects tracking into a mission, as when the password stops working mid-mission.
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Credential check')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    // The runtime keeps the positions already received when the password stops working.
+    await injectCredentialLoss(page, warning)
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+    // Tracking has stopped completely mid-mission: the alarm, not an amber notice.
+    await expect(headline.getByTestId('ws-tracking-problems')).toHaveText(/^TRACKING LOST · Re-enter tracking password/)
+    await expect(headline).toHaveAttribute('aria-label', /Settings/)
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    await expect(page.getByTestId('ws-alarm')).toContainText('password or token')
+
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText(warning)
+    await expect(page.getByTestId('ws-tracking-map')).toContainText('They may not be where people are now.')
+    await expect(page.getByTestId('ws-tracking-advice')).toContainText('Tracking sources')
+    // Reconnecting cannot help until the password is entered again.
+    await expect(page.getByTestId('ws-reconnect')).toHaveCount(0)
+    await page.getByTestId('ws-open-tracking-settings').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.getByTestId('settings-section-tracking-sources')).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('clears the password warning only once a replacement password connects [DON-353]', async ({ page }) => {
+    const server = await routeControllableTraccar(page)
+    server.setAvailable(false)
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Credential recovery')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await injectCredentialLoss(page, 'Stored Traccar credentials are damaged. Tracking is disabled; re-enter the password or token in Settings.')
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+
+    // A replacement password saved while the server cannot be reached: the
+    // reload fails, so tracking must not read as OK.
+    await openWorkspacePanel(page, 'tracking')
+    await page.getByTestId('ws-open-tracking-settings').click()
+    await page.getByRole('button', { name: 'Traccar HTTP' }).click()
+    await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
+    await page.getByTestId('settings-provider-email').fill('apiuser')
+    await page.getByTestId('settings-provider-secret').fill('apiuser')
+    await page.getByTestId('settings-auto-refresh-interval').fill('5')
+    await page.getByTestId('settings-save-connect').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(headline).toHaveAttribute('data-condition', /^(lost|disconnected)$/u, { timeout: 15_000 })
+    await expect(page.getByTestId('ws-tracking-problems')).not.toContainText('Re-enter tracking password')
+
+    // The server comes back: positions arrive and the warning and button are gone.
+    server.setAvailable(true)
+    await expectTrackingOnline(page, 60_000)
+    await expect(page.getByTestId('ws-alarm')).toHaveCount(0)
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-open-tracking-settings')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-happened')).not.toContainText('re-enter the password')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
+  })
+
   test('opens the workspace and validates Traccar provider inputs', async ({ page }) => {
     await page.getByTestId('open-settings-workspace').click()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
@@ -699,6 +764,24 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
 }
 
 /** The old ONLINE chip: the top bar's tracking headline says positions are arriving. */
+/** Puts the state the runtime reaches when a saved password stops working mid-mission: idle, with the positions already received. */
+async function injectCredentialLoss(page: Page, warning: string) {
+  await page.evaluate(async (text) => {
+    await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot(
+      {
+        devices: [{ device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: new Date().toISOString(), unique_id: null, category: null }],
+        positions: [{
+          id: 'pos-alpha', device_id: 'alpha', lat: 51.99917, lon: -9.74406, altitude: null, speed: 0, battery: 82, accuracy: null,
+          timestamp: new Date().toISOString(), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false,
+        }],
+        breadcrumbs: [],
+      },
+      { mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: text,
+        warningCodes: ['tracking_credentials_unreadable'] },
+    )
+  }, warning)
+}
+
 async function expectTrackingOnline(page: Page, timeout?: number) {
   await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', /^(ok|attention)$/, timeout === undefined ? undefined : { timeout })
 }

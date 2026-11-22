@@ -24,6 +24,8 @@ const UNREADABLE_CREDENTIAL_MESSAGE =
   'Stored Traccar credentials could not be read. Tracking is disabled; check the local profile permissions and re-enter the password or token in Settings.'
 const MISMATCHED_CREDENTIAL_MESSAGE =
   'Stored Traccar credentials do not match the saved provider settings. Tracking is disabled; re-enter the password or token in Settings.'
+const DAMAGED_CREDENTIAL_MESSAGE =
+  'Stored Traccar credentials are damaged. Tracking is disabled; re-enter the password or token in Settings.'
 const PROVIDER_URL_CREDENTIALS_ERROR =
   'Provider URL must not include embedded credentials. Enter credentials in the authentication fields.'
 const DEFAULT_INTERVAL_SECONDS = 30
@@ -182,6 +184,10 @@ function createElectronSettingsStore(options) {
       secretResult,
       forceConnect,
     })
+    // The saved password or token is unreadable, undecryptable or from another
+    // save: say so by code, so the top bar can ask for it again (DON-353).
+    const credentialsUnreadable =
+      secretResult.unsafeReason !== undefined && disabledReason === secretResult.unsafeReason
     const shouldConnect =
       disabledReason === undefined &&
       persisted.dataSource.providerType === 'traccar_http' &&
@@ -206,6 +212,7 @@ function createElectronSettingsStore(options) {
         ? createTrackingConfig(persisted.dataSource, secretResult.value)
         : null,
       ...(disabledReason === undefined ? {} : { trackingDisabledReason: disabledReason }),
+      ...(credentialsUnreadable ? { trackingDisabledCode: 'tracking_credentials_unreadable' } : {}),
     }
   }
 
@@ -269,7 +276,7 @@ function createElectronSettingsStore(options) {
     }
     const entry = credentials.traccar?.[authMode]
     if (entry !== undefined) {
-      if (!credentialGenerationMatches(entry.generation, expectedGeneration)) {
+      if (!isCredentialEntry(entry) || !credentialGenerationMatches(entry.generation, expectedGeneration)) {
         return false
       }
       return typeof entry.secret === 'string' && entry.secret !== ''
@@ -296,13 +303,25 @@ function createElectronSettingsStore(options) {
     }
     const entry = credentials.traccar?.[authMode]
     if (entry !== undefined) {
+      // Only an object entry can be paired with these settings at all.
+      if (!isCredentialEntry(entry)) {
+        return { value: null, unsafeReason: DAMAGED_CREDENTIAL_MESSAGE }
+      }
       if (!credentialGenerationMatches(entry.generation, expectedGeneration)) {
         return { value: null, unsafeReason: MISMATCHED_CREDENTIAL_MESSAGE }
       }
       // App-owned entry is authoritative. An explicit null means the operator
       // cleared the secret; do not migrate from the legacy file.
-      const secret = typeof entry.secret === 'string' && entry.secret !== '' ? entry.secret : null
-      return { value: secret }
+      if (entry.secret === null) {
+        return { value: null }
+      }
+      if (typeof entry.secret === 'string' && entry.secret !== '') {
+        return { value: entry.secret }
+      }
+      // writeCredential stores only a non-empty string or null. Anything else
+      // (a number, an empty string, no secret at all) is damage, which must
+      // ask for the secret again rather than read as never configured (DON-353).
+      return { value: null, unsafeReason: DAMAGED_CREDENTIAL_MESSAGE }
     }
 
     if (readCredentialGeneration(expectedGeneration) !== undefined) {
@@ -485,6 +504,17 @@ function readAdminRosterHistory(value) {
  * migration; corruption must remain distinguishable and disable tracking so a
  * stale legacy credential can never be resurrected.
  */
+/**
+ * Whether a stored credential entry has the object shape writeCredential
+ * writes; its secret is checked separately.
+ *
+ * @param {unknown} entry one authMode entry from credentials.json
+ * @returns {boolean} true for a plain object entry
+ */
+function isCredentialEntry(entry) {
+  return typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+}
+
 async function readCredentials(credentialsPath) {
   let raw
   try {
