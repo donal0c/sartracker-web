@@ -59,6 +59,9 @@ export type TrackingSourceUpdateWatchOptions = {
 
 const MESSAGE_LIMIT = 200
 
+/** Shown when the source has no events to watch, so failures could go unseen. */
+export const UNWATCHABLE_SOURCE_MESSAGE = 'the map tracking source cannot report failed updates'
+
 /**
  * Reads a source error event's message, whatever shape it has.
  *
@@ -105,6 +108,13 @@ export function watchTrackingSourceUpdates(
   source: UpdateEventedSource,
   options: TrackingSourceUpdateWatchOptions,
 ): TrackingSourceUpdateWatch {
+  // Without its events a rejected update would go unseen. Never skip the
+  // watch quietly: report it, so the alarm says the map may be out of date.
+  if (typeof source.on !== 'function' || typeof source.off !== 'function') {
+    options.onFailure(UNWATCHABLE_SOURCE_MESSAGE)
+    return { needsFullResync: () => true, noteFullResync: () => {}, stop: () => {} }
+  }
+
   let dispatches = 0
   let failed = options.startFailed
   // Dispatch count at the moment the full replacement was sent; null while

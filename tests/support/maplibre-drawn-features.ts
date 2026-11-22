@@ -12,6 +12,8 @@ import {
   TRACKING_BREADCRUMB_LONE_FIX_LAYER_ID,
 } from '../../src/features/tracking/sync-tracking-overlay'
 
+import { createFakeSourceEvents } from './fake-source-events'
+
 /**
  * A MapLibre stand-in for unit tests that records sources and layers and can
  * say which features a layer would actually draw [DON-338].
@@ -92,11 +94,16 @@ export function createDrawingRecorderMap() {
       return incrementalUpdates
     },
     getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
+    // Tiles are drawn at once: nothing is ever left loading [DON-357].
+    refreshTiles: () => {},
+    isSourceLoaded: () => true,
     getSource: (id: string) => {
       if (!sourceData.has(id)) return undefined
       const existing = handles.get(id)
       if (existing !== undefined) return existing
       const handle = {
+        // The tracking sync watches the source for rejected updates [DON-357].
+        ...createFakeSourceEvents(),
         setData: (data: { readonly features: readonly RecordedFeature[] }) => {
           sourceData.set(id, [...data.features])
         },

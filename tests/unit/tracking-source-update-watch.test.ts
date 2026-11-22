@@ -208,6 +208,19 @@ describe('tracking source update watch [DON-357]', () => {
     expect(watch.needsFullResync()).toBe(true)
   })
 
+  it('raises a visible failure, never a silent skip, when the source cannot be watched', () => {
+    const onFailure = vi.fn()
+    const onRecovered = vi.fn()
+    const unwatchable = {} as Parameters<typeof watchTrackingSourceUpdates>[0]
+    const watch = watchTrackingSourceUpdates(unwatchable, {
+      startFailed: false, tiles: { refresh: vi.fn(), settled: () => true }, onFailure, onRecovered,
+    })
+    expect(onFailure).toHaveBeenCalledWith(expect.stringContaining('cannot report failed updates'))
+    expect(onRecovered).not.toHaveBeenCalled()
+    expect(watch.needsFullResync()).toBe(true)
+    expect(() => watch.stop()).not.toThrow()
+  })
+
   it('stops listening when stopped', () => {
     const { source, watch } = setup()
     expect(source.listenerCount()).toBeGreaterThan(0)

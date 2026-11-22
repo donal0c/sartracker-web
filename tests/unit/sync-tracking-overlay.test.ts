@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+import { createFakeSourceEvents } from '../support/fake-source-events'
+
 /**
  * Tests for tracking overlay layer configuration.
  *
@@ -21,25 +23,12 @@ type LayerSpec = {
   layout?: Record<string, unknown>
 }
 
-type MockSourceListener = (event: unknown) => void
-
 /** A GeoJSON source handle that also carries MapLibre's source events. */
 function createMockSourceHandle() {
-  const listeners = new Map<string, Set<MockSourceListener>>()
   return {
+    ...createFakeSourceEvents(),
     setData: vi.fn(),
     updateData: vi.fn(),
-    on: vi.fn((type: string, listener: MockSourceListener) => {
-      const set = listeners.get(type) ?? new Set<MockSourceListener>()
-      set.add(listener)
-      listeners.set(type, set)
-    }),
-    off: vi.fn((type: string, listener: MockSourceListener) => {
-      listeners.get(type)?.delete(listener)
-    }),
-    fire(type: string, event: Record<string, unknown> = {}) {
-      for (const listener of listeners.get(type) ?? []) listener({ type, ...event })
-    },
   }
 }
 type MockSourceHandle = ReturnType<typeof createMockSourceHandle>
