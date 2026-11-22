@@ -62,7 +62,11 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-auto-refresh-interval').fill('5')
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
-    await expect(headline).toHaveAttribute('data-condition', /^(lost|disconnected)$/u, { timeout: 15_000 })
+    // The outage is established by a real failed request, then shown as
+    // TRACKING LOST with the alarm, before the server comes back.
+    await expect.poll(server.getUnavailableResponseCount, { timeout: 15_000 }).toBeGreaterThan(0)
+    await expect(headline).toHaveAttribute('data-condition', 'lost', { timeout: 15_000 })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
     await expect(page.getByTestId('ws-tracking-problems')).not.toContainText('Re-enter tracking password')
 
     // The server comes back: positions arrive and the warning and button are gone.
@@ -581,10 +585,12 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
   const currentFixTime = new Date().toISOString()
   let available = true
   let successfulSessionRequestCount = 0
+  let unavailableResponseCount = 0
   const fulfill = async (
     route: import('@playwright/test').Route,
     body: unknown,
   ) => {
+    if (!available) unavailableResponseCount += 1
     await route.fulfill({
       status: available ? 200 : 503,
       statusText: available ? 'OK' : 'Service Unavailable',
@@ -626,6 +632,8 @@ async function routeControllableTraccar(page: import('@playwright/test').Page) {
       available = next
     },
     getSuccessfulSessionRequestCount: () => successfulSessionRequestCount,
+    /** How many requests were answered 503 while the server was unavailable. */
+    getUnavailableResponseCount: () => unavailableResponseCount,
   }
 }
 
