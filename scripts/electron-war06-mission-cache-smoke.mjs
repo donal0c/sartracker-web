@@ -21,7 +21,6 @@ import { extractFile } from '@electron/asar'
 import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 import { closeWorkspace, confirmFinishMission, openDevicesWorkspace, selectParticipants } from './operator-controls.mjs'
 import {
-  installTrackingErrorCapture,
   MAX_UNOBSERVED_GAP_MS,
   readTrackingSourceInPage,
   summarizeSurfaceSamples,
@@ -557,10 +556,10 @@ async function launchPackaged(appPath, profile, label, report) {
     launch.diagnostics.processStderr.push(sanitizeDiagnosticText(String(chunk)))
     if (launch.diagnostics.processStderr.length > 40) launch.diagnostics.processStderr.shift()
   })
-  // Before any page script: every map the renderer publishes is watched for
-  // tracking-source errors from then on. A window that loaded before this
-  // reads as uncaptured, which is blind, so the probe fails loudly at startup.
-  await launch.app.context().addInitScript(installTrackingErrorCapture)
+  // No init script: Playwright cannot get one into a packaged app's first
+  // window before it loads. The renderer reports the tracking source's errors
+  // itself from the moment the map is created; a map without that report reads
+  // as uncaptured, which is blind, so the probe fails loudly.
   launch.page = await launch.app.firstWindow()
   launch.page.on('console', (message) => {
     if (message.type() === 'error') launch.diagnostics.consoleErrors.push(sanitizeDiagnosticText(message.text()))
@@ -719,6 +718,8 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
     // untrustworthy; a healthy run never has one.
     assert.deepEqual(reportExtra.surfaceSamples.trackingSourceErrors, [],
       `${phase}: ${reportExtra.surfaceSamples.trackingSourceErrors.join('; ')}. The map's positions could not be trusted after that.`)
+    assert.equal(reportExtra.surfaceSamples.uncapturedCount, 0,
+      `${phase}: the renderer was not reporting tracking-source errors for ${reportExtra.surfaceSamples.uncapturedCount} readings, so a failed update could have been missed.`)
     reportExtra.savedTrackingHidden = await readSavedTrackingHidden(launch.page, missionId)
   }
   const result = {
@@ -867,6 +868,10 @@ function startSurfaceObserver(page) {
         // Failure first: a ready reading before it does not outweigh it.
         const failure = samples.find((sample) => sample.state === 'failed')
         if (failure !== undefined) throw new Error(`Before the probe acted, ${failure.map?.reason ?? 'the tracking source reported an error'}.`)
+        // The packaged renderer must report tracking-source errors from map
+        // creation; without that report no reading can be trusted.
+        const uncaptured = samples.find((sample) => sample.state === 'uncaptured')
+        if (uncaptured !== undefined) throw new Error(`Before the probe acted, ${uncaptured.map?.reason ?? 'the renderer was not reporting tracking-source errors'}.`)
         if (samples.some((sample) => sample.readable === true)) return
         if (!observing || Date.now() > deadline) {
           const last = samples.at(-1)
