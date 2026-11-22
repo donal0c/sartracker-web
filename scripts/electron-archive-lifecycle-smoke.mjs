@@ -1413,7 +1413,7 @@ async function startLivenessMission(page, expectedDeviceId) {
       throw new Error(`Archive-lifecycle liveness mission did not receive one mock device: ${error instanceof Error ? error.message : String(error)}`)
     })
   }
-  await page.getByTestId('mission-start-btn').click({ force: true })
+  await page.getByTestId('mission-start-btn').click()
   const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
   if (missionModelEnabled) {
     await openMissionSection(page, 'participants')

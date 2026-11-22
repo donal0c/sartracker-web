@@ -1233,7 +1233,7 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   await performLaunchOwnedHarnessClick(
     launch,
     'mission-start-btn',
-    () => launch.page.getByTestId('mission-start-btn').click({ force: true }),
+    () => launch.page.getByTestId('mission-start-btn').click(),
   )
   await waitForActiveMission(launch.page, 30_000)
   if (missionModelEnabled) {
@@ -1540,14 +1540,14 @@ async function runPriorityFaultEvidence({
     await toggle.waitFor({ state: 'visible', timeout: 5_000 })
     const before = await toggle.isChecked()
     const hideStartedAt = performance.now()
-    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click({ force: true }))
+    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click())
     await page.waitForFunction(() => document.querySelector('[data-testid="device-visibility-1"]')?.matches(':checked') === false)
     visibility.push({ deviceId: '1', action: 'hide', checkedBefore: before, checkedAfter: false, durationMs: performance.now() - hideStartedAt })
     const showStartedAt = performance.now()
-    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click({ force: true }))
+    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click())
     await page.waitForFunction(() => document.querySelector('[data-testid="device-visibility-1"]')?.matches(':checked') === true)
     visibility.push({ deviceId: '1', action: 'show', checkedBefore: false, checkedAfter: true, durationMs: performance.now() - showStartedAt })
-    await performLaunchOwnedHarnessClick(launch, 'workspace-close-btn', () => page.getByTestId('workspace-close-btn').click({ force: true }))
+    await performLaunchOwnedHarnessClick(launch, 'workspace-close-btn', () => page.getByTestId('workspace-close-btn').click())
     await page.getByTestId('devices-workspace').waitFor({ state: 'hidden', timeout: 5_000 })
 
     mockServer.setCurrentMode('offline')
