@@ -71,7 +71,6 @@ body {
   margin: 0;
 }
 
-.sar-persistent-health { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.35rem 0.6rem; font-size: 12px; }
 .sar-device-list-scroll { scrollbar-gutter: stable; }
 .sar-device-grid { min-width: 59.5rem; }
 .sar-devices-inspector { padding: 1rem; }
