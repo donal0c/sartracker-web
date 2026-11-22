@@ -63,9 +63,7 @@ async function main() {
     if (await session.page.getByText('Runtime startup failed').isVisible().catch(() => false)) {
       throw new Error('Packaged settings probe reached the runtime fault shell.')
     }
-    const warning = session.page.getByTestId('tracking-warning')
-    await warning.waitFor({ state: 'attached', timeout: 15_000 })
-    const warningText = (await warning.textContent())?.trim() ?? ''
+    const warningText = await readTrackingWarning(session.page)
     if (warningText !== WARNING_TEXT) {
       throw new Error('Packaged settings probe did not expose the expected undecryptable-secret recovery warning.')
     }
@@ -180,7 +178,37 @@ async function main() {
     await writeJson(path.join(evidenceDir, 'receipt.json'), report)
   }
 
-  if (failures.length > 0) process.exitCode = 1
+  if (failures.length > 0) {
+    // The receipt holds the failures too, but a bare exit 1 in CI told nobody why.
+    for (const failure of failures) console.error(`C16 failed: ${failure}`)
+    process.exitCode = 1
+  }
+}
+
+/**
+ * Reads the undecryptable-credential warning where the operator finds it in the
+ * new layout (DON-341): the top bar says tracking is not connected, and the
+ * Tracking panel it opens lists the full sentence under "What has happened".
+ * Returns the matching line, or the panel's lines joined if none matches.
+ */
+async function readTrackingWarning(page) {
+  const headline = page.getByTestId('ws-tracking-headline')
+  await headline.waitFor({ state: 'visible', timeout: 15_000 })
+  const headlineText = (await headline.innerText()).trim()
+  if (/Tracking OK/u.test(headlineText)) {
+    throw new Error('Packaged settings probe found the top bar saying tracking is OK with undecryptable credentials.')
+  }
+  const happened = page.getByTestId('ws-tracking-happened')
+  if (!await happened.isVisible()) await headline.click()
+  await happened.waitFor({ state: 'visible', timeout: 15_000 })
+  const deadline = Date.now() + 15_000
+  let lines = []
+  while (Date.now() < deadline) {
+    lines = (await happened.locator('li').allTextContents()).map((line) => line.trim())
+    if (lines.includes(WARNING_TEXT)) return WARNING_TEXT
+    await page.waitForTimeout(250)
+  }
+  return lines.join(' | ')
 }
 
 /** Create the bounded receipt envelope before any packaged process is started. */
