@@ -42,6 +42,7 @@ import {
 import { startRenderTraceDiagnostics } from '../build/electron-render-trace-diagnostics.js'
 import { startArchiveLaunch } from './qualification/archive-launch.mjs'
 import { openMissionSection } from './mission-sections.mjs'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const { readCleanupFailureDiagnosticFromMessage } = require(
@@ -1435,10 +1436,8 @@ async function resumeLivenessMission(
   expectedDeviceId,
   participantScopeRequired,
 ) {
-  const recoveryDialog = page.getByTestId('mission-recovery-dialog')
-  await recoveryDialog.waitFor({ state: 'visible', timeout: 30_000 })
-  await recoveryDialog.getByRole('button', { name: 'Resume' }).click({ force: true })
-  await recoveryDialog.waitFor({ state: 'hidden', timeout: 30_000 })
+  // The Resume card (DON-342); it not appearing, or staying, fails.
+  await resumeThroughRecoveryPrompt(page, { timeoutMs: 30_000 })
   const mission = await waitForActiveMission(
     page,
     LIVENESS_MISSION_NAME,

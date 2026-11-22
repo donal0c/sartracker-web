@@ -35,6 +35,7 @@ import {
   runBounded,
 } from '../build/electron-repair-train-d-smoke-lib.js'
 import { openMissionSection } from './mission-sections.mjs'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -1040,12 +1041,8 @@ async function ensureMissionActive(page, missionId) {
     'mission state to hydrate after packaged restart',
   )
   if (state.active?.id === missionId && state.active.status === 'active') return
-  const dialog = page.getByTestId('mission-recovery-dialog')
-  await boundedPageAction(page, () => dialog.waitFor({ state: 'visible' }), 'show mission recovery dialog')
-  await boundedPageAction(page,
-    () => dialog.getByRole('button', { name: 'Resume', exact: true }).click(),
-    'resume recovered mission',
-  )
+  // The Resume card (DON-342); it not appearing, or staying, fails.
+  await boundedPageAction(page, () => resumeThroughRecoveryPrompt(page, { timeoutMs: CONDITION_TIMEOUT_MS }), 'resume recovered mission')
   await waitForValue(
     () => readActiveMission(page),
     (value) => value?.id === missionId && value.status === 'active',

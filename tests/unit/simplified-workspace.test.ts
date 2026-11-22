@@ -151,6 +151,10 @@ describe('tracking headline', () => {
     })
     expect(recordToo.condition).toBe('credentials')
     expect(recordToo.lastReceivedShown).toBe(false)
+    // ...and the failed record is still named, in the words and in the issues.
+    expect(recordToo.problems).toContain('Record not saved')
+    expect(recordToo.issues).toContain('Mission record not fully saved')
+    expect(recordToo.text).toContain('Mission record not fully saved')
   })
 
 

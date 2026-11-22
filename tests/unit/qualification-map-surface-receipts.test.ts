@@ -62,7 +62,18 @@ function validReport() {
       marker: { id: marker.id, hiddenObserved: true, restored: true, sourceRetained: true },
       drawing: { id: drawing.id, hiddenObserved: true, restored: true, sourceRetained: true },
     },
-    focus: { before: false, activeObserved: true, coordinateMirrorVisible: true, restored: true },
+    recovery: { missionId: 'mission-c14', storeStatus: 'active', rendererPhase: 'active' },
+    fullMap: {
+      panelOpenBefore: true,
+      canvasWidthBefore: 1070,
+      panelsClosed: true,
+      viewportWidth: 1440,
+      canvasWidthAfter: 1440,
+      sideWidthAfter: 0,
+      pointerInput: true,
+      coordinateReadout: '52.10000° N, 9.40000° W',
+      restored: true,
+    },
     overlayFailure: {
       attempted: true,
       throwHookHit: true,
@@ -161,6 +172,56 @@ describe('C14 map surface receipts', () => {
     const report = validReport()
     report.visibility.marker.sourceRetained = false
     expect(() => validateMapSurface(report)).toThrow(/source|visibility/i)
+  })
+
+  it('rejects a recovery that brought back another mission [DON-353]', () => {
+    const report = validReport()
+    report.recovery.missionId = 'mission-other'
+    expect(() => validateMapSurface(report)).toThrow(/recover/i)
+  })
+
+  it('rejects a recovery that left the mission paused or not running in the renderer [DON-353]', () => {
+    const paused = validReport()
+    paused.recovery.storeStatus = 'paused'
+    expect(() => validateMapSurface(paused)).toThrow(/recover/i)
+    const renderer = validReport()
+    renderer.recovery.rendererPhase = 'paused'
+    expect(() => validateMapSurface(renderer)).toThrow(/recover/i)
+    const missing = validReport() as Record<string, unknown>
+    delete missing.recovery
+    expect(() => validateMapSurface(missing)).toThrow(/recover/i)
+  })
+
+  it('rejects Full map evidence where the map did not take the freed width [DON-353]', () => {
+    const narrow = validReport()
+    narrow.fullMap.canvasWidthAfter = 1070
+    expect(() => validateMapSurface(narrow)).toThrow(/Full map/)
+    const panelLeft = validReport()
+    panelLeft.fullMap.sideWidthAfter = 370
+    expect(() => validateMapSurface(panelLeft)).toThrow(/Full map/)
+    const noPanelBefore = validReport()
+    noPanelBefore.fullMap.panelOpenBefore = false
+    expect(() => validateMapSurface(noPanelBefore)).toThrow(/Full map/)
+  })
+
+  it('rejects Full map evidence without pointer input, a coordinate readout or a restored panel [DON-353]', () => {
+    for (const change of [
+      (report: ReturnType<typeof validReport>) => { report.fullMap.pointerInput = false },
+      (report: ReturnType<typeof validReport>) => { report.fullMap.coordinateReadout = 'Move over the map' },
+      (report: ReturnType<typeof validReport>) => { report.fullMap.restored = false },
+      (report: ReturnType<typeof validReport>) => { report.fullMap.panelsClosed = false },
+    ]) {
+      const report = validReport()
+      change(report)
+      expect(() => validateMapSurface(report)).toThrow(/Full map/)
+    }
+  })
+
+  it('rejects the retired Focus mode evidence shape [DON-353]', () => {
+    const report = validReport() as Record<string, unknown>
+    delete report.fullMap
+    report.focus = { before: false, activeObserved: true, coordinateMirrorVisible: true, restored: true }
+    expect(() => validateMapSurface(report)).toThrow(/Full map/)
   })
 
   it('rejects development harness evidence for the candidate package contract', () => {
