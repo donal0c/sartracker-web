@@ -20,6 +20,9 @@
  *   A rejected worker update leaves loaded() true and the old payload in
  *   place, so nothing read from the source afterwards can be trusted. This
  *   never happens in a healthy run, so it fails the probe with the error text.
+ * - `uncaptured`: the map was published before the error capture
+ *   (installTrackingErrorCapture) was installed, so an early error could have
+ *   been missed.
  * - `not-drawn`: no map or no tracking source.
  * - `unreadable`: the source exists but could not be read, or the read threw.
  *
@@ -39,6 +42,43 @@
 export const MAX_UNOBSERVED_GAP_MS = 2_000
 
 /**
+ * Watches every map the renderer publishes for tracking-source errors, from
+ * the moment it is published. Runs as an init script, before the app's code:
+ * use-map-instance.ts assigns window.__SARTRACKER_MAP__ in the same effect that
+ * creates the map, and the tracking source is added only after the style loads,
+ * so the listener is attached before the source exists, on every map,
+ * including one recreated after teardown. Self-contained, because Playwright
+ * sends its source text to the page.
+ *
+ * The accessor lives on the window's prototype, so the product's own
+ * `delete window.__SARTRACKER_MAP__` on teardown cannot remove it; a map the
+ * product has removed reads as no map, as before.
+ */
+export function installTrackingErrorCapture() {
+  if (window.__WAR06_ERROR_CAPTURE__ === true) return
+  window.__WAR06_ERROR_CAPTURE__ = true
+  const errors = (window.__WAR06_TRACKING_SOURCE_ERRORS__ ??= [])
+  const watched = (window.__WAR06_WATCHED_MAPS__ ??= new WeakSet())
+  const watch = (map) => {
+    if (map === undefined || map === null || watched.has(map) || typeof map.on !== 'function') return
+    watched.add(map)
+    // A source's error reaches the map with its sourceId.
+    map.on('error', (event) => {
+      if (event?.sourceId !== 'tracking') return
+      errors.push(String(event?.error?.message ?? event?.error ?? 'unknown error').slice(0, 200))
+    })
+  }
+  // A map already published here was created before this ran, so it stays
+  // unwatched and is never trusted.
+  let current
+  Object.defineProperty(Object.getPrototypeOf(window), '__SARTRACKER_MAP__', {
+    configurable: true,
+    get: () => (current?._removed === true ? undefined : current),
+    set: (map) => { watch(map); current = map },
+  })
+}
+
+/**
  * Reads the map's tracking source in the renderer, with whether tracking is
  * shown on the map. A reading is ready only if the source had no update
  * pending both before and after the read, the same source was there
@@ -55,16 +95,10 @@ export async function readTrackingSourceInPage() {
     : { state: 'failed', reason: `the tracking source reported an error: ${errors[0]}`, errors: [...errors] }
   const map = window.__SARTRACKER_MAP__
   if (map === undefined || map === null) return failed() ?? { state: 'not-drawn', reason: 'no map' }
-  // A source's error reaches the map with its sourceId. Watch each map once,
-  // and keep every error for the rest of the observation.
-  if (map.__war06TrackingErrorWatch !== true && typeof map.on === 'function') {
-    map.__war06TrackingErrorWatch = true
-    map.on('error', (event) => {
-      if (event?.sourceId !== 'tracking') return
-      errors.push(String(event?.error?.message ?? event?.error ?? 'unknown error').slice(0, 200))
-    })
-  }
   if (failed() !== null) return failed()
+  if (window.__WAR06_WATCHED_MAPS__?.has(map) !== true) {
+    return { state: 'uncaptured', reason: 'this map was published before its errors were watched, so an early failed update could be missed' }
+  }
   const source = map.getSource('tracking')
   if (source === undefined || source === null) return { state: 'not-drawn', reason: 'no tracking source' }
   // Read before and after the data, so a change while reading cannot confirm

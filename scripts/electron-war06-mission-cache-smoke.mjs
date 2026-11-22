@@ -21,6 +21,7 @@ import { extractFile } from '@electron/asar'
 import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 import { closeWorkspace, confirmFinishMission, openDevicesWorkspace, selectParticipants } from './operator-controls.mjs'
 import {
+  installTrackingErrorCapture,
   MAX_UNOBSERVED_GAP_MS,
   readTrackingSourceInPage,
   summarizeSurfaceSamples,
@@ -556,6 +557,10 @@ async function launchPackaged(appPath, profile, label, report) {
     launch.diagnostics.processStderr.push(sanitizeDiagnosticText(String(chunk)))
     if (launch.diagnostics.processStderr.length > 40) launch.diagnostics.processStderr.shift()
   })
+  // Before any page script: every map the renderer publishes is watched for
+  // tracking-source errors from then on. A window that loaded before this
+  // reads as uncaptured, which is blind, so the probe fails loudly at startup.
+  await launch.app.context().addInitScript(installTrackingErrorCapture)
   launch.page = await launch.app.firstWindow()
   launch.page.on('console', (message) => {
     if (message.type() === 'error') launch.diagnostics.consoleErrors.push(sanitizeDiagnosticText(message.text()))
@@ -858,9 +863,11 @@ function startSurfaceObserver(page) {
   return {
     async waitForReady(timeoutMs) {
       const deadline = Date.now() + timeoutMs
-      while (!samples.some((sample) => sample.readable === true)) {
+      for (;;) {
+        // Failure first: a ready reading before it does not outweigh it.
         const failure = samples.find((sample) => sample.state === 'failed')
         if (failure !== undefined) throw new Error(`Before the probe acted, ${failure.map?.reason ?? 'the tracking source reported an error'}.`)
+        if (samples.some((sample) => sample.readable === true)) return
         if (!observing || Date.now() > deadline) {
           const last = samples.at(-1)
           throw new Error(`The map gave no ready reading within ${timeoutMs} ms of launch (last: ${last?.state ?? 'none'}${last?.map?.reason === undefined ? '' : `, ${last.map.reason}`}), so nothing it shows could be proven.`)

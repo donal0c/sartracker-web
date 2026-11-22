@@ -1,6 +1,27 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { readTrackingSourceInPage, summarizeSurfaceSamples, trackingNodesHiddenInCatalog } from '../../scripts/war06-surface-observation.mjs'
+import {
+  installTrackingErrorCapture,
+  readTrackingSourceInPage,
+  summarizeSurfaceSamples,
+  trackingNodesHiddenInCatalog,
+} from '../../scripts/war06-surface-observation.mjs'
+
+/**
+ * Stands in for the renderer window: a fresh object with its own prototype
+ * (like Window.prototype), the probe's init script installed first, then the
+ * given properties assigned as the product assigns them. Fake maps get a no-op
+ * `on` so the capture can watch them.
+ */
+function pageWindow(props: Record<string, unknown> = {}): Record<string, unknown> {
+  const page = Object.create({}) as Record<string, unknown>
+  ;(globalThis as unknown as { window?: unknown }).window = page
+  installTrackingErrorCapture()
+  const map = props.__SARTRACKER_MAP__ as Record<string, unknown> | undefined
+  if (map !== undefined && typeof map.on !== 'function') map.on = () => undefined
+  Object.assign(page, props)
+  return page
+}
 
 /** A ready reading of zero, read from `at` to `doneAt`. */
 const zero = (at: number, doneAt = at + 10) => ({ state: 'ready', at, doneAt, currentFixCount: 0, cachedDeviceCount: 0 })
@@ -101,7 +122,7 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
   const win = globalThis as unknown as { window?: unknown }
   afterEach(() => { delete win.window })
   const withMap = (map: unknown, trackingVisible: unknown = true) => {
-    win.window = { __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: trackingVisible }
+    pageWindow({ __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: trackingVisible })
   }
   const features = [
     { properties: { featureKind: 'device', dataOrigin: 'cache', attention: true } },
@@ -112,7 +133,7 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
   const sourceMap = { getSource: () => stableSource }
 
   it('no map is not drawn, not a zero', async () => {
-    win.window = {}
+    pageWindow()
     expect(await readTrackingSourceInPage()).toEqual({ state: 'not-drawn', reason: 'no map' })
   })
 
@@ -143,7 +164,7 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
   })
 
   it('unknown tracking visibility is unconfirmed, never ready', async () => {
-    win.window = { __SARTRACKER_MAP__: sourceMap }
+    pageWindow({ __SARTRACKER_MAP__: sourceMap })
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unconfirmed', fixes: 2 })
   })
 })
@@ -171,9 +192,9 @@ describe('WAR-06 pending source updates [DON-353]', () => {
 
   it('a pending update is blind, not a zero; once it completes the reading is ready', async () => {
     const source = delayedSource()
-    win.window = { __SARTRACKER_MAP__: { getSource: () => source } }
+    const page = pageWindow({ __SARTRACKER_MAP__: { getSource: () => source } })
     source.updateData({ features: [device] })
-    win.window.__SARTRACKER_TRACKING_VISIBLE__ = true
+    page.__SARTRACKER_TRACKING_VISIBLE__ = true
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'pending', fixes: 0 })
     source.finishUpdate()
     expect(await readTrackingSourceInPage()).toEqual({ state: 'ready', fixes: 1, cache: 0, attention: 0 })
@@ -182,7 +203,7 @@ describe('WAR-06 pending source updates [DON-353]', () => {
   it('an update that starts during the read is blind', async () => {
     const source = delayedSource()
     const map = { getSource: () => source }
-    win.window = { __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: true }
+    pageWindow({ __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: true })
     const read = source.getData
     source.getData = () => { source.updateData({ features: [device] }); return read() }
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'pending' })
@@ -190,21 +211,20 @@ describe('WAR-06 pending source updates [DON-353]', () => {
 
   it('a source replaced during the read is unreadable', async () => {
     let current = { loaded: () => true, getData: () => { current = { ...current }; return Promise.resolve({ features: [] }) } }
-    win.window = { __SARTRACKER_MAP__: { getSource: () => current }, __SARTRACKER_TRACKING_VISIBLE__: true }
+    pageWindow({ __SARTRACKER_MAP__: { getSource: () => current }, __SARTRACKER_TRACKING_VISIBLE__: true })
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unreadable' })
   })
 
   it('a visibility report that changes during the read is not ready', async () => {
-    const window = { __SARTRACKER_MAP__: {}, __SARTRACKER_TRACKING_VISIBLE__: true } as Record<string, unknown>
-    const changing = { loaded: () => true, getData: () => { window.__SARTRACKER_TRACKING_VISIBLE__ = false; return Promise.resolve({ features: [] }) } }
-    window.__SARTRACKER_MAP__ = { getSource: () => changing }
-    win.window = window
+    const page = pageWindow({ __SARTRACKER_TRACKING_VISIBLE__: true })
+    const changing = { loaded: () => true, getData: () => { page.__SARTRACKER_TRACKING_VISIBLE__ = false; return Promise.resolve({ features: [] }) } }
+    page.__SARTRACKER_MAP__ = { getSource: () => changing, on: () => undefined }
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'hidden' })
   })
 
   it('a source that cannot say whether an update is pending is blind', async () => {
     const silent = { getData: () => Promise.resolve({ features: [] }) }
-    win.window = { __SARTRACKER_MAP__: { getSource: () => silent }, __SARTRACKER_TRACKING_VISIBLE__: true }
+    pageWindow({ __SARTRACKER_MAP__: { getSource: () => silent }, __SARTRACKER_TRACKING_VISIBLE__: true })
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'pending' })
   })
 
@@ -248,7 +268,7 @@ describe('WAR-06 failed source updates [DON-353]', () => {
         map.fire('error', { ...event, sourceId: 'tracking' })
       },
     })
-    win.window = { __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: true }
+    pageWindow({ __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: true })
     return { map, source }
   }
 
@@ -275,6 +295,37 @@ describe('WAR-06 failed source updates [DON-353]', () => {
     await readTrackingSourceInPage()
     map.fire('error', { error: new Error('tile 404'), sourceId: 'basemap' })
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'ready' })
+  })
+
+  it('a rejection before the first sample still fails the first reading', async () => {
+    const { source } = rejectingSetup()
+    source.updateData()
+    source.rejectUpdate('rejected before anyone looked')
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'failed', reason: expect.stringContaining('rejected before anyone looked') })
+  })
+
+  it('a recreated map is watched from the moment it is published', async () => {
+    const { map } = rejectingSetup()
+    const page = (globalThis as unknown as { window: Record<string, unknown> }).window
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'ready' })
+    // As use-map-instance.ts does on teardown and remount.
+    Object.assign(map, { _removed: true })
+    delete page.__SARTRACKER_MAP__
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'not-drawn', reason: 'no map' })
+    const next = evented({ getSource: (): unknown => nextSource })
+    const nextSource = { loaded: () => true, getData: () => Promise.resolve({ features: [] }) }
+    page.__SARTRACKER_MAP__ = next
+    next.fire('error', { error: new Error('rejected on the new map'), sourceId: 'tracking' })
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'failed', reason: expect.stringContaining('rejected on the new map') })
+  })
+
+  it('a map published before the capture was installed is never trusted', async () => {
+    const page = Object.create({}) as Record<string, unknown>
+    ;(globalThis as unknown as { window?: unknown }).window = page
+    page.__SARTRACKER_MAP__ = evented({ getSource: () => ({ loaded: () => true, getData: () => Promise.resolve({ features: [] }) }) })
+    page.__SARTRACKER_TRACKING_VISIBLE__ = true
+    installTrackingErrorCapture()
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'uncaptured' })
   })
 
   it('a failed reading fails the summary with the error text', () => {
