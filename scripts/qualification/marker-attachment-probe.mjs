@@ -287,7 +287,7 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
     throw new Error('C12 marker probe requires exact expected source head and tree bindings.')
   }
   await waitForMarkersReady(page)
-  await page.getByTestId('sidebar-tab-tools').click()
+  // The new layout (DON-341) has no sidebar tabs: Map tools sits on the map.
   await page.getByTestId('drawing-toolbar-expand').click()
   await page.getByTestId('drawing-tool-marker_at_grid').click({ force: true })
   await page.getByTestId('marker-at-grid-panel').waitFor({ state: 'visible' })
@@ -295,16 +295,30 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
   await page.getByTestId('marker-at-grid-create-btn').click()
   await page.getByTestId('marker-dialog').waitFor({ state: 'visible' })
   await page.getByTestId('marker-dialog').getByRole('button', { name: 'Cancel' }).click()
-  await page.getByTestId('sidebar-tab-layers').click()
-  await page.getByTestId('layer-refresh-btn').click()
-  await page.getByTestId('layer-expand-all-btn').click()
+  // Layers opens from the top bar; its tree updates on its own and lists the
+  // Map tools groups open, so each marker is found by name (DON-341).
+  const layerTree = page.getByTestId('layer-tree')
+  if (!await layerTree.isVisible()) await page.getByTestId('ws-toggle-layers').click()
+  await layerTree.waitFor({ state: 'visible' })
+  const layerSearch = page.getByTestId('layer-tree-search')
   for (const markerKind of MARKER_KINDS) {
-    const markerRow = page.getByTestId('layer-tree').getByText(`C12 ${markerKind} edited`, { exact: true })
+    await layerSearch.fill(`C12 ${markerKind} edited`)
+    const markerRow = layerTree.getByText(`C12 ${markerKind} edited`, { exact: true })
     await markerRow.waitFor({ timeout: 60_000 })
     await markerRow.scrollIntoViewIfNeeded()
     await markerRow.screenshot({ path: path.join(options.evidence, `marker-attachment-${markerKind}.png`) })
   }
-  const layerTree = page.getByTestId('layer-tree')
+  await layerSearch.fill('')
+  // Search opens the branches it matches, so also prove the ordinary tree:
+  // with the search empty, open any folded heading as an operator would and
+  // find each edited marker by name, once.
+  await expandFoldedLayerHeadings(layerTree)
+  for (const markerKind of MARKER_KINDS) {
+    const markerRow = layerTree.getByText(`C12 ${markerKind} edited`, { exact: true })
+    await markerRow.waitFor({ state: 'visible', timeout: 30_000 })
+    const count = await markerRow.count()
+    if (count !== 1) throw new Error(`C12 unfiltered layer tree shows "C12 ${markerKind} edited" ${count} times; expected once.`)
+  }
   await layerTree.evaluate((element) => { element.scrollTop = element.scrollHeight })
   await layerTree.screenshot({ path: path.join(options.evidence, 'marker-attachment-layer-tree.png') })
   await page.screenshot({ path: path.join(options.evidence, 'marker-attachment-markers.png'), fullPage: true })
@@ -580,4 +594,19 @@ function assertInsideProfile(candidate, profile) {
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error('C12 custody path escaped the owned disposable profile.')
   }
+}
+
+/**
+ * Opens every folded heading in the Layers tree with its own expand control,
+ * as the old Expand All button did (DON-341 removed that button).
+ *
+ * @param {import('playwright').Locator} layerTree the Layers tree
+ */
+async function expandFoldedLayerHeadings(layerTree) {
+  const folded = layerTree.locator('[data-testid^="layer-expand-"]', { hasText: '▸' })
+  for (let opened = 0; opened < 500; opened += 1) {
+    if (await folded.count() === 0) return
+    await folded.first().click()
+  }
+  throw new Error('C12 Layers tree still had folded headings after 500 clicks.')
 }
