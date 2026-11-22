@@ -11,6 +11,7 @@ import Database from 'better-sqlite3'
 
 import { delay, launchApp, observeStartup } from '../lib/app.mjs'
 import { missionPhase, startMission } from '../lib/operator.mjs'
+import { openWorkspacePanel } from '../../workspace-panels.mjs'
 import { expectProduct } from '../lib/results.mjs'
 import { STORE_FILE, storeFileHashes } from '../lib/store.mjs'
 
@@ -76,11 +77,18 @@ export default [
         basic: { encrypted: Buffer.from('not-valid-electron-safe-storage-ciphertext').toString('base64') },
       }))
       const app = await launchApp(ctx, { profile, label: 'bad-credential' })
-      const warning = app.page.getByTestId('tracking-warning')
-      await warning.waitFor({ state: 'attached', timeout: 20_000 })
-      const text = (await warning.textContent())?.trim()
+      // The top bar names the credential problem; the Tracking panel gives
+      // the re-enter-password words (DON-341).
+      const headline = app.page.getByTestId('ws-tracking-headline')
+      await headline.waitFor({ state: 'visible', timeout: 20_000 })
+      const condition = await app.page.waitForFunction(() =>
+        document.querySelector('[data-testid="ws-tracking-headline"]')?.getAttribute('data-condition') === 'credentials',
+      undefined, { timeout: 20_000 }).then(() => 'credentials', async () => headline.getAttribute('data-condition'))
+      await openWorkspacePanel(app.page, 'tracking')
+      const text = (await app.page.getByTestId('ws-tracking-panel').innerText()).replace(/\s+/gu, ' ').trim()
       await app.shot('shell')
-      expectProduct(text === BAD_SECRET_WARNING, `Tracking warning was "${text}".`)
+      expectProduct(condition === 'credentials', `Tracking headline condition was "${condition}", not "credentials".`)
+      expectProduct(text.includes(BAD_SECRET_WARNING), `Tracking panel did not show the re-enter-password warning: "${text.slice(0, 200)}".`)
       await app.stop()
       return 'Reached the shell; tracking disabled with the re-enter-password warning.'
     },

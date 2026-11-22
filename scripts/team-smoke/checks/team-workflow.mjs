@@ -16,6 +16,7 @@ import { delay, launchApp } from '../lib/app.mjs'
 import {
   closeWorkspace, connectProvider, finishMission, openMissionSection, openSettingsSection, startMission, waitForBasemapLabel,
 } from '../lib/operator.mjs'
+import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { isRetryableStoreRead } from '../lib/live-recording.mjs'
 import { missionFixes } from '../lib/store.mjs'
@@ -221,6 +222,7 @@ export default [
       // "Know where people are".
       await delay(20_000)
       const status = await trackingStatus(app.page)
+      await openWorkspacePanel(app.page, 'people')
       await t('open-devices-workspace').click()
       await delay(1500)
       const roster = await t('device-list-scroll').innerText()
@@ -240,7 +242,8 @@ export default [
         return (await store.listGroupMembershipEvents(mission.id)).filter((event) => event.change === 'left').length
       })
       const visibleNotices = () => t('participant-membership-notice').allInnerTexts().catch(() => [])
-      await t('sidebar-tab-tracking').click().catch(() => {})
+      await openParticipantPickers(app.page)
+      await openMissionSection(app.page, 'participants')
       const noticesBefore = new Set(await visibleNotices())
       const seenNotices = new Set()
       const leftBefore = await leftEvents()
@@ -275,12 +278,12 @@ export default [
         if (replay.tileFailure !== null) findings.push(`Replay Discovery tiles did not load: "${replay.tileFailure}"`)
       }
 
-      // "F11 with Focus mode": Focus Mode here; F11 is a manual step.
-      await t('focus-mode-toggle').click()
-      await delay(1500)
+      // "F11 with Focus mode": Full map here; F11 is a manual step.
+      await t('ws-full-map').click()
+      await app.page.getByTestId('ws-full-map').filter({ hasText: 'Show panel' }).waitFor({ timeout: 5000 })
       await app.shot('focus-mode')
-      await t('focus-mode-toggle').click()
-      await delay(1000)
+      await t('ws-full-map').click()
+      await app.page.getByTestId('ws-full-map').filter({ hasText: 'Full map' }).waitFor({ timeout: 5000 })
 
       // "Open topo and satellite maps also vital".
       for (const name of ['OpenTopoMap', 'ESRI Satellite']) {
@@ -300,7 +303,7 @@ export default [
       expectProduct(findings.length === 0, findings.join('; '))
       if (notTested.length > 0) throw new NotTested(`${notTested.join('; ')}. Other steps passed: ${total} KMRT fixes exact.`)
       return `SAR-QA-025 replay: one blank KMRT roster recorded no "left" and no notice; ${total} KMRT fixes equal the provider from the ${ROLL_BACK_HOURS} h mission start; ${notes.join('; ')}; `
-        + `coordinates converted; casualty stored; Focus Mode; OpenTopoMap and satellite selected; tracking "${status.slice(0, 80)}".`
+        + `coordinates converted; casualty stored; Full map; OpenTopoMap and satellite selected; tracking "${status.slice(0, 80)}".`
     },
   },
 ]
@@ -311,7 +314,7 @@ export default [
  */
 async function replayBasemap(app) {
   const page = app.page
-  await page.getByTestId('open-mission-review-workspace').click()
+  await openMissionReview(page)
   await page.getByRole('button', { name: 'Replay', exact: true }).click()
   await page.getByTestId('mission-replay-seek').click()
   const canvas = page.getByTestId('mission-replay-map-canvas')
