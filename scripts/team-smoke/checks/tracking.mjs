@@ -444,12 +444,16 @@ export default [
       await requireEvidenceHealthy('SIGKILL')
       await requireLive('resumed after SIGKILL', 100_000)
 
-      // Renderer crash closes the app by design; relaunch and resume.
+      // A renderer crash reopens the map window with a notice [M-45]. Give it
+      // time to do so, then kill and relaunch: the next launch must still
+      // report the crash, because the reopened window never cleans the session.
       const session = await app.page.context().newCDPSession(app.page)
       void session.send('Page.crash').catch(() => {})
       await Promise.race([app.exited, delay(20_000)])
       await app.kill()
       app = await launchApp(ctx, { profile, label: 'lifecycle-3-after-renderer-crash' })
+      const crashStateAfterRendererCrash = await app.page.evaluate(() => window.sartrackerElectron.readCrashRecoveryState())
+      if (crashStateAfterRendererCrash?.uncleanShutdown !== true) findings.push('a renderer crash was not reported as an unexpected shutdown on the next launch')
       expectProduct(await resumeIfPrompted(app.page), 'No recovery prompt after renderer crash.')
       expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE after resuming from renderer crash.')
       await requireEvidenceHealthy('a renderer crash')

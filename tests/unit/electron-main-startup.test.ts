@@ -661,13 +661,12 @@ describe('Electron main startup', () => {
     await vi.waitFor(() => expect(sessionManager.closeForSender).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalled())
 
-    electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
-    const activateHandler = electronMock.app.on.mock.calls.find(
-      ([eventName]) => eventName === 'activate',
-    )?.[1]
-    await activateHandler()
-
+    // The automatic crash recovery [M-45] retries the cleanup before it opens
+    // the replacement window.
+    await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2))
     expect(sessionManager.closeForSender).toHaveBeenCalledTimes(2)
+    expect(sessionManager.closeForSender.mock.invocationCallOrder[1])
+      .toBeLessThan(rendererTeardownCoordinator.markRendererAvailable.mock.invocationCallOrder[1] ?? Infinity)
     expect(sessionManager.closeForSender).toHaveBeenNthCalledWith(2, 1)
     expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2)
     expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledTimes(2)
@@ -3307,6 +3306,161 @@ describe('Electron main startup', () => {
     await vi.waitFor(() => {
       expect(readFileSync(path.join(testUserDataPath, 'logs', 'runtime.log'), 'utf8'))
         .toContain('renderer_restore_blocked')
+    })
+  })
+
+  describe('renderer crash recovery [M-45]', () => {
+    /** Loads main with in-memory logs and returns the first window's crash handler. */
+    async function loadWithRendererCrash(platform: NodeJS.Platform) {
+      Object.defineProperty(process, 'platform', { value: platform })
+      const electronMock = createElectronMock(vi.fn(), undefined, true)
+      const logs = createInMemoryStartupLogs()
+      const coordinator = rendererTeardownCoordinatorStub()
+      Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+        if (request === 'electron') return electronMock
+        if (request === './crash-log.cjs') {
+          return { ...originalLoad(request, parent, isMain), createCrashLog: () => logs.crashLog }
+        }
+        if (request === './runtime-log.cjs') {
+          return { ...originalLoad(request, parent, isMain), createRuntimeLog: () => logs.runtimeLog }
+        }
+        if (request === './renderer-teardown-coordinator.cjs') {
+          return { createRendererTeardownCoordinator: () => coordinator }
+        }
+        return originalLoad(request, parent, isMain)
+      }) as typeof Module._load
+      require('../../electron/main.cjs')
+      await vi.waitFor(() => {
+        expect(electronMock.app.on).toHaveBeenCalledWith('before-quit', expect.any(Function))
+      })
+      const handlerFor = (eventName: string) => electronMock.app.on.mock.calls.find(
+        ([name]) => name === eventName,
+      )?.[1]
+      const crashWindow = (index: number) => {
+        const window = electronMock.BrowserWindow.mock.results[index]?.value
+        return window.webContents.on.mock.calls.find(
+          ([eventName]: [string]) => eventName === 'render-process-gone',
+        )?.[1] as (event: unknown, details: { reason: string, exitCode: number }) => void
+      }
+      electronMock.BrowserWindow.getAllWindows.mockReturnValue([])
+      return { electronMock, logs, coordinator, handlerFor, crashWindow }
+    }
+
+    it('reopens the map window on Linux with a notice instead of quitting silently', async () => {
+      const { electronMock, logs, coordinator, handlerFor, crashWindow } =
+        await loadWithRendererCrash('linux')
+
+      crashWindow(0)({}, { reason: 'oom', exitCode: 137 })
+      handlerFor('window-all-closed')()
+
+      expect(electronMock.app.quit).not.toHaveBeenCalled()
+      await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2))
+      expect(coordinator.ensureUnexpectedRendererLossFenced).toHaveBeenCalled()
+      await vi.waitFor(() => expect(electronMock.dialog.showMessageBox).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'warning',
+          message: expect.stringContaining('ran out of memory'),
+          detail: expect.stringContaining('check that tracking is live'),
+        }),
+      ))
+      expect(logs.runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'renderer_window_recovered',
+        fields: expect.objectContaining({ reason: 'oom' }),
+      }))
+    })
+
+    it('never records a renderer-crash session as a clean exit, even after recovery', async () => {
+      const { electronMock, logs, handlerFor, crashWindow } = await loadWithRendererCrash('linux')
+
+      crashWindow(0)({}, { reason: 'crashed', exitCode: 11 })
+      await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2))
+      handlerFor('before-quit')({ preventDefault: vi.fn() })
+
+      await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
+      expect(logs.crashLog.markCleanExit).not.toHaveBeenCalled()
+    })
+
+    it('does not reopen a window when the crash happens during an app quit', async () => {
+      const { electronMock, logs, handlerFor, crashWindow } = await loadWithRendererCrash('linux')
+
+      handlerFor('before-quit')({ preventDefault: vi.fn() })
+      crashWindow(0)({}, { reason: 'crashed', exitCode: 11 })
+
+      await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(0))
+      expect(electronMock.BrowserWindow).toHaveBeenCalledOnce()
+      expect(logs.crashLog.markCleanExit).not.toHaveBeenCalled()
+    })
+
+    it('stops reopening after repeated crashes and says so before closing', async () => {
+      const { electronMock, logs, crashWindow } = await loadWithRendererCrash('linux')
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        crashWindow(attempt)({}, { reason: 'crashed', exitCode: 11 })
+        await vi.waitFor(() =>
+          expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(attempt + 2))
+      }
+      crashWindow(3)({}, { reason: 'crashed', exitCode: 11 })
+
+      await vi.waitFor(() => expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+        'SAR Tracker map window keeps crashing',
+        expect.stringContaining('Start SAR Tracker again'),
+      ))
+      expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(4)
+      await vi.waitFor(() => expect(electronMock.app.quit).toHaveBeenCalled())
+      expect(logs.runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'renderer_window_recovery_limit_reached',
+      }))
+    })
+
+    it('also reopens the window on macOS without waiting for a dock click', async () => {
+      const { electronMock, crashWindow } = await loadWithRendererCrash('darwin')
+
+      crashWindow(0)({}, { reason: 'killed', exitCode: 9 })
+
+      await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledTimes(2))
+      await vi.waitFor(() => expect(electronMock.dialog.showMessageBox).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('was stopped') }),
+      ))
+    })
+  })
+
+  describe('fatal fault relaunch target [M-46]', () => {
+    afterEach(() => {
+      delete process.env.APPIMAGE
+    })
+
+    /** Triggers the fatal handler and waits for the exit decision. */
+    async function triggerFatal() {
+      const processOn = vi.spyOn(process, 'on').mockImplementation(() => process)
+      const electronMock = createElectronMock(vi.fn(), undefined, true)
+      Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+        if (request === 'electron') return electronMock
+        return originalLoad(request, parent, isMain)
+      }) as typeof Module._load
+      require('../../electron/main.cjs')
+      const handler = await findFatalHandler(processOn, 'uncaughtException')
+      handler(new Error('fatal'))
+      await vi.waitFor(() => expect(electronMock.app.exit).toHaveBeenCalledWith(1))
+      return electronMock
+    }
+
+    it('relaunches the AppImage file itself after a fatal fault', async () => {
+      process.env.APPIMAGE = '/home/team/SAR-Tracker.AppImage'
+
+      const electronMock = await triggerFatal()
+
+      expect(electronMock.app.relaunch).toHaveBeenCalledWith({
+        execPath: '/home/team/SAR-Tracker.AppImage',
+        args: process.argv.slice(1),
+      })
+    })
+
+    it('relaunches the current executable when not running from an AppImage', async () => {
+      delete process.env.APPIMAGE
+
+      const electronMock = await triggerFatal()
+
+      expect(electronMock.app.relaunch).toHaveBeenCalledWith()
     })
   })
 })
