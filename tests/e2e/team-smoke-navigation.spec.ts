@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { missionPhase, openMissionSection, outageWarning, trackingStatus } from '../../scripts/team-smoke/lib/operator.mjs'
+import { missionPhase, openMissionSection, outageWarning, returnReplayToLive, trackingStatus } from '../../scripts/team-smoke/lib/operator.mjs'
 import { moreMenuItem, openMissionReview, openParticipantPickers, pressPauseResume } from '../../scripts/workspace-panels.mjs'
 
 /**
@@ -60,7 +60,20 @@ test.describe('team-smoke navigation helpers [DON-353]', () => {
     await expect(await moreMenuItem(page, 'open-diagnostics-workspace')).toBeVisible()
     await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    // Return to Live is required to leave Replay, not clicked on a best-effort basis.
+    expect(await returnReplayToLive(page)).toBe('not-in-replay')
+    await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await page.getByTestId('mission-replay-seek').click()
+    await expect(page.getByTestId('mission-replay-return-live')).toBeVisible()
+    expect(await returnReplayToLive(page)).toBe('live')
     await page.getByTestId('workspace-close-btn').click()
+
+    // The map tools the smoke uses take an ordinary click, not a forced one.
+    await page.getByTestId('drawing-toolbar-expand').click().catch(() => undefined)
+    await page.getByTestId('drawing-tool-measure').click({ timeout: 5_000 })
+    await page.getByTestId('drawing-tool-search_area').click({ timeout: 5_000 })
+    await page.keyboard.press('Escape')
 
     // An unreadable phase is an error, never an empty value that compares equal.
     await page.evaluate(() => document.querySelector('[data-testid="ws-mission-phase"]')?.remove())

@@ -193,7 +193,7 @@ export async function resumeIfPrompted(page, timeoutMs = 20_000) {
  */
 export async function placeMarker(page, { name, x, y, type, attachment }) {
   const t = byId(page)
-  await t('map-container').click({ position: { x, y }, force: true })
+  await t('map-container').click({ position: { x, y } })
   await delay(700)
   if (type !== undefined) await t(`marker-type-${type}`).check({ force: true })
   await t('marker-name-input').fill(name)
@@ -298,4 +298,28 @@ export async function switchBasemap(page) {
   const after = (await toggle.innerText()).replace(/\s+/gu, ' ')
   if (after === before) throw new Error(`The basemap stayed "${before}" after choosing ${other.id}.`)
   return after
+}
+
+/**
+ * Leaves Replay with "Return to Live / now" and waits for the live map
+ * context. A click failure propagates (NOT TESTED); only a Replay that stays
+ * on screen after the click is reported as 'stuck'.
+ *
+ * @param {import('playwright').Page} page the app window
+ * @param {{ timeoutMs?: number }} [options] how long to wait for the live state
+ * @returns {Promise<'live' | 'not-in-replay' | 'stuck'>} what the operator saw
+ */
+export async function returnReplayToLive(page, { timeoutMs = 10_000 } = {}) {
+  const button = page.getByTestId('mission-replay-return-live')
+  if (!await button.isVisible()) return 'not-in-replay'
+  await button.click()
+  try {
+    await button.waitFor({ state: 'hidden', timeout: timeoutMs })
+    await page.getByTestId('mission-replay-workspace').getByText('Live map context', { exact: true })
+      .waitFor({ state: 'visible', timeout: timeoutMs })
+  } catch (error) {
+    if (error?.name === 'TimeoutError') return 'stuck'
+    throw error
+  }
+  return 'live'
 }

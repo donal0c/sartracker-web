@@ -102,7 +102,10 @@ export default [
       if (remedyShown) {
         await remedy.click()
         const settingsOpened = await app.page.getByTestId('settings-provider-secret')
-          .waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, () => false)
+          .waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, (error) => {
+            if (error?.name === 'TimeoutError') return false
+            throw error
+          })
         expectProduct(settingsOpened, 'Open Settings did not open the tracking password field.')
         await closeWorkspace(app.page)
       }

@@ -22,7 +22,7 @@ import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
 import {
-  ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
+  ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission, returnReplayToLive,
   missionPhase, openMissionSection, outageWarning, placeMarker, resumeIfPrompted, startMission, trackingStatus,
 } from '../lib/operator.mjs'
 import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
@@ -127,7 +127,7 @@ export async function waitForBackfill(page, budgetMs) {
 async function drawSearchArea(page, name) {
   const canvas = page.locator('.maplibregl-canvas').first()
   await page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
-  await page.getByTestId('drawing-tool-search_area').click({ force: true })
+  await page.getByTestId('drawing-tool-search_area').click()
   for (const position of [{ x: 440, y: 220 }, { x: 620, y: 220 }, { x: 540, y: 360 }]) {
     await canvas.click({ position, force: true })
     await delay(300)
@@ -500,7 +500,7 @@ export default [
       // Map Tools after a relaunch on a lived-in catalog (DON-118): Measure must work.
       const canvas = app.page.locator('.maplibregl-canvas').first()
       await app.page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
-      await app.page.getByTestId('drawing-tool-measure').click({ force: true })
+      await app.page.getByTestId('drawing-tool-measure').click()
       await canvas.click({ position: { x: 680, y: 240 }, force: true })
       await delay(400)
       await canvas.click({ position: { x: 820, y: 300 }, force: true })
@@ -527,8 +527,8 @@ export default [
       const replayError = await app.page.getByTestId('mission-replay-error').innerText().catch(() => null)
       const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
       await app.shot('replay-day-1')
-      await app.page.getByTestId('mission-replay-return-live').click().catch(() => {})
-      await delay(1000)
+      const leftReplay = await returnReplayToLive(app.page)
+      if (leftReplay === 'stuck') findings.push('Return to Live / now did not bring back the live map context')
       await closeWorkspace(app.page)
       if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       // Replay folds evidence at max(fixTime, recorded_at), so history fetched by
