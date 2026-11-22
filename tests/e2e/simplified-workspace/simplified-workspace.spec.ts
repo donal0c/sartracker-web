@@ -185,29 +185,43 @@ test.describe('Simplified workspace', () => {
     await startMission(page)
     await showPeople(page)
     await expect(page.getByTestId('ws-position-5')).toBeChecked()
-    // The first visibility write fails after a delay; later writes save normally.
+    // The first visibility write is held until the test fails it; later writes save normally.
     await page.evaluate(async () => {
       const { useLayerCatalogStore } = await import('/src/features/layers/layer-catalog-store.ts')
       const controller = useLayerCatalogStore.getState().controller
       if (controller === null) throw new Error('Layer catalog is not running.')
+      const probe = window as unknown as { __failFirstWrite?: () => void }
       let calls = 0
       useLayerCatalogStore.setState({
         controller: {
           ...controller,
           setNodeVisibilities: (ids, visible) => {
             calls += 1
-            if (calls === 1) return new Promise((_resolve, reject) => setTimeout(() => reject(new Error('disk unavailable')), 400))
+            if (calls === 1) {
+              return new Promise((_resolve, reject) => { probe.__failFirstWrite = () => reject(new Error('disk unavailable')) })
+            }
             return controller.setNodeVisibilities(ids, visible)
           },
         },
       })
     })
-    // Off, then on again while the first save is still pending.
-    await page.getByTestId('ws-position-5').click()
-    await page.getByTestId('ws-position-5').click()
-    await page.waitForTimeout(800)
+    const tick = page.getByTestId('ws-position-5')
+    // Off: the map hides the person at once while the save is held.
+    await tick.click()
+    await expect(tick).not.toBeChecked()
+    await page.waitForFunction(() => typeof (window as unknown as { __failFirstWrite?: unknown }).__failFirstWrite === 'function')
+    // On again while the first save is still pending: this change waits behind it.
+    await tick.click()
+    // Now the first save fails, and the queued show saves.
+    await page.evaluate(() => (window as unknown as { __failFirstWrite: () => void }).__failFirstWrite())
+    // Wait on what was saved, not on time: person 5 is saved shown.
+    await expect.poll(() => page.evaluate(async () => {
+      const { useLayerCatalogStore } = await import('/src/features/layers/layer-catalog-store.ts')
+      const entry = useLayerCatalogStore.getState().metadataEntries.find((item) => item.nodeId === 'feature:device:5')
+      return entry?.isVisible ?? null
+    })).toBe(true)
+    await expect(tick).toBeChecked()
     await expect(page.getByTestId('ws-people-visibility-error')).toHaveCount(0)
-    await expect(page.getByTestId('ws-position-5')).toBeChecked()
   })
 
   test('a participant warning opens Mission and stays on the Mission button, without locking Tracking', async ({ page }) => {
