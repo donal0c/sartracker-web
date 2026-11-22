@@ -512,6 +512,7 @@ const EVENT_TITLES: Record<
   mission_resumed: { title: 'Mission Resumed', description: 'Mission resumed.' },
   mission_finished: { title: 'Mission Finished', description: 'Mission finished.' },
   mission_backup_synced: { title: 'Backup Synced', description: 'Backup snapshot refreshed.' },
+  mission_backup_integrity_failed: { title: 'Backup Refused', description: 'A backup copy failed its integrity check; the last good backup was kept.' },
   mission_archived: { title: 'Archive Created', description: null },
   mission_finalize_requested: { title: 'Finalize Requested', description: 'Mission finalization requested.' },
   mission_archive_succeeded: { title: 'Archive Succeeded', description: null },

@@ -24,6 +24,7 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
   record: { happened: 'Part of the mission record could not be saved.', map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
   recovery: { happened: 'A mission was interrupted and has not been resumed.', map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
   credentials: { happened: 'Tracking cannot connect: the saved tracking password or token cannot be used on this computer.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the tracking password or token again, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
+  settings: { happened: 'Tracking cannot connect: the saved settings file was damaged, so SAR Tracker set it aside and started with default settings.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the Traccar server, user and password again, check the rosters and maps, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
   disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
 }
 
@@ -260,7 +261,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
         >
           {reconnecting ? 'Reconnecting…' : 'Reconnect'}
         </button> : null}
-        {headline.condition === 'credentials' ? <button
+        {headline.condition === 'credentials' || headline.condition === 'settings' ? <button
           className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
           data-testid="ws-open-tracking-settings"
           onClick={() => openSettings()}

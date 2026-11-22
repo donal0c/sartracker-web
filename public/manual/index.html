@@ -664,7 +664,11 @@
           <p>
             <strong>Pause</strong> stops the <strong>Active</strong> search timer; <strong>Elapsed</strong>
             keeps running. <strong>While paused, live position refresh is suspended</strong>, so the
-            map does not update. Press <strong>Resume</strong> to carry on.
+            map does not update. Press <strong>Resume</strong> to carry on. While paused, each person
+            reads <em>Last known position</em> (or <em>No position yet</em>). The amber number on the
+            <strong>People</strong> button counts only people with a problem of their own, such as
+            someone already out of date or reported offline before the pause, or with no position yet;
+            the red strip covers everyone else.
           </p>
 
           <h3 id="mission-finish">Finish</h3>
@@ -697,6 +701,7 @@
             <li>The gap between the interruption and your choice counts as paused time, and Review records it as an automatic pause after an unexpected shutdown.</li>
             <li><strong>Start a new mission instead</strong> asks first: <em>Finish it, start new</em> finishes the unfinished mission (its record is kept and can still be reviewed) and opens the new-mission screen. <em>Go back</em> changes nothing. Use it only if the unfinished mission is <em>not</em> the current incident.</li>
             <li>Keep <strong>one</strong> mission open across a multi-day search, even if the app or computer is closed overnight. Finish only at stand-down. Do not start a new mission each day to save space.</li>
+            <li>If closing takes a long time, SAR Tracker asks <strong>SAR Tracker is not responding</strong>. <em>Wait</em> gives the map window more time to save the latest track points. <em>Close now</em> closes anyway (during a reload the button reads <em>Reload now</em>); any track points not yet saved for the active mission are shown as possibly missing. If even that question cannot be shown, SAR Tracker shows an error and keeps waiting; force quit only if it stays stuck.</li>
           </ul>
         </section>
 
@@ -1048,7 +1053,7 @@
             <li>Closing a marker with unsaved changes asks before discarding them. Choose <strong>Keep editing</strong> to continue or <strong>Discard changes</strong> to close without saving.</li>
             <li>Marker load or placement failures show a warning banner over the map. For a load failure, press <strong>Retry</strong>; markers on the map may be incomplete until the load succeeds.</li>
             <li><strong>Map label size</strong> changes the text on the map. Casualty labels start larger.</li>
-            <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app.</li>
+            <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app. If the app says the attachment <em>could not be saved safely</em>, it was not added: free some disk space and attach the file again.</li>
             <li><strong>Retire</strong> asks twice (<strong>Retire</strong>, then <strong>Retire Marker</strong>; <strong>Keep</strong> cancels). A retired marker leaves the map but its history stays in the record.</li>
             <li>If a marker sits on top of a drawing, clicking selects the <strong>marker</strong>. To edit the drawing underneath, use the Layers panel.</li>
             <li>To place a marker from a grid reference instead of a click, use <a href="#tools"><strong>Marker at GR</strong></a>, or <strong>Create Marker Here</strong> in the <a href="#map">coordinate converter</a>.</li>
@@ -1117,6 +1122,7 @@
           <h3>GPX tracks</h3>
           <ul>
             <li><strong>Import Files</strong> and <strong>Import Folder</strong> add tracks. <strong>Watch Folder</strong> imports new files as they appear, and <strong>Rescan Watches</strong> checks again. These need the desktop app. A watched folder is checked every 30 seconds; files that have not changed are skipped, and the list stays on the page you are reading.</li>
+            <li>Watched folders are saved with the mission on this computer. After a restart, reopening the mission resumes them and says <em>Resumed watching N folders saved for this mission</em>; files dropped in while SAR Tracker was closed are imported straight away. If a watched folder cannot be opened (for example a USB drive is not connected), a red message names the folder and says new files there are not being imported: reconnect it and press <strong>Rescan Watches</strong>, or <strong>Remove</strong> it. If the saved list was damaged and was restored from its backup copy, a red message says so; check the Watched Folders list. If the saved list cannot be read or saved, a red message says so; choose the folder again with <strong>Watch Folder</strong> to retry. If the list was saved but its backup copy could not be updated, a red message says so: the folders are still watched after a restart, but check the disk and free space; the backup is retried on the next change.</li>
             <li>A newly imported track is shown on the map straight away. A track you hid yourself stays hidden. The panel summary says how many tracks are listed and how many are on the map, for example <em>5 listed · 4 on map, 1 hidden in Layers</em>. The list shows 25 tracks per page, but the map draws every track in the mission, not only the page you are reading.</li>
             <li>With many tracks, each one is drawn with less detail so they all fit. If the map still cannot draw every track (more than 512, or a track with too many separate pieces), a yellow notice on the map says <em>Map shows X of Y imported GPX tracks</em> and names the ones left out; the panel summary adds <em>N not drawn</em> and those rows say <strong>Not drawn on map</strong>. If the map could not be refreshed, the notice says so and the map keeps the tracks it last drew.</li>
             <li>Each track's row says <strong>On map</strong>, or <strong>Hidden on map</strong> with the reason (<em>GPX Tracks is off in Layers</em> or <em>this track is off in Layers</em>) and a <strong>Show on map</strong> button. A listed track is not necessarily drawn: check this line if you cannot find a track.</li>
@@ -1443,7 +1449,7 @@
             <li><strong>Copy Report</strong> and <strong>Export Report</strong> give the readable report shown at the bottom of the page. Every report and bundle starts with the SAR Tracker version. A very long report is cut at about 1 MB and says so at the end.</li>
             <li>If the app closed unexpectedly last time, an amber notice at the top of Diagnostics offers a direct <strong>Export Support Bundle</strong> button. It never blocks an active mission.</li>
             <li>Bundles are saved on this computer only. Nothing is sent anywhere automatically. In the browser test copy the bundle holds only a basic environment snapshot.</li>
-            <li>A small amber <strong>Autosave warning</strong> in the top bar means the automatic backup is stale or failed. Keep the app open and export a bundle. A backup that fails around Start, Pause, Resume, Finish, Archive or Unlock shows a persistent alert below the top bar; do not treat the backup as current until it clears.</li>
+            <li>A small amber <strong>Autosave warning</strong> in the top bar means the automatic backup is stale or failed. Keep the app open and export a bundle. A backup that fails around Start, Pause, Resume, Finish, Archive or Unlock shows a persistent alert below the top bar; do not treat the backup as current until it clears. <strong>Disk nearly full</strong> means the backup paused itself so live tracking keeps room to save; free disk space on the laptop and it resumes on its own. <strong>Mission backup refused … integrity check</strong> means the new copy was damaged, so the last good backup was kept: keep the app open and tell your technical lead.</li>
           </ul>
 
           <h3>If SAR Tracker freezes (Linux)</h3>
@@ -1478,6 +1484,7 @@
             <li><strong>SAR Tracker is finishing a backup</strong> or <strong>SAR Tracker is still closing</strong> after you close it: a backup copy or background task was still running. Mission data already recorded is safe. Press OK and wait; SAR Tracker closes by itself when the work finishes. Do not start it again until it has closed (starting it just repeats the message). If it is still running after 10 minutes, restart the computer; the mission reopens normally.</li>
             <li>A database made by a newer version is refused with <strong>SAR Tracker could not start</strong>. Install a matching build; do not downgrade the profile in place.</li>
             <li>If SAR Tracker cannot write to its data folder (for example the folder belongs to another user, was copied with the wrong owner, or the disk is full), it shows a <strong>SAR Tracker could not start</strong> window naming the folder and what to check, then closes. Nothing in the folder is changed. Fix the permission or free space, then start the app again.</li>
+            <li>If the top bar says <strong>Re-enter settings</strong> and Settings opens with a <strong>Saved settings could not be read</strong> notice, the settings file was damaged (often after a power cut). SAR Tracker kept the damaged file aside (named <code>settings.json.corrupt-…</code> in the data folder) and started with default settings, so tracking is off. Open Settings, enter the Traccar server, user and password again, check the rosters and maps, and press Save, Connect &amp; Close. Do not delete the kept file; the maintainer may need it.</li>
             <li>Only one SAR Tracker runs at a time. If you see two windows, close the extra one.</li>
             <li>Log files: Linux <code>~/.config/sartracker-web/logs/</code> and <code>crashes/</code>; macOS <code>~/Library/Application Support/sartracker-web/</code>; Windows <code>%APPDATA%\sartracker-web\</code>.</li>
           </ul>

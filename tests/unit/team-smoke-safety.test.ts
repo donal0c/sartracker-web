@@ -151,6 +151,11 @@ describe('team smoke incomplete evidence', () => {
     const check = workflows.find(entry => entry.id === 'markers-gpx')
     expect(check?.manualSteps?.join(' ')).toMatch(/drawn straight after Import Files.*watched-folder/iu)
   })
+  it('leaves adding a watch through the native folder picker to a hand check [DON-337]', () => {
+    // The smoke saves the watch through the bridge, then relaunches and requires it resumed.
+    const check = workflows.find(entry => entry.id === 'markers-gpx')
+    expect(check?.manualSteps?.join(' ')).toMatch(/Watch Folder \(native picker\), restart.*Resumed watching/iu)
+  })
   it('allows a fully automated completed check to pass', () => {
     expect(completedCheck({ id: 'fully-automated' }, 'Exact comparison succeeded')).toEqual({
       result: 'PASS', evidence: 'Exact comparison succeeded',

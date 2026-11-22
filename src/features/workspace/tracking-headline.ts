@@ -11,7 +11,7 @@ import { useStationaryAttentionStore } from '../tracking/stationary-attention-st
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
-import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, type RankedProblem } from './tracking-problem-labels'
+import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
 
 const MAP_NOT_UPDATING_ISSUE = 'Map is not showing the latest positions'
 const MAP_NOT_UPDATING_WORD = 'Map not updating'
@@ -35,7 +35,7 @@ export function useLastConfirmedAt(): string | null {
   return rememberLastConfirmedAt(missionId, reported)
 }
 
-export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'disconnected' | 'attention'
+export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'disconnected' | 'attention'
 
 export type TrackingHeadline = {
   /** The condition that decides the advice, so a pause is not told to check the internet. */
@@ -152,16 +152,22 @@ export function describeTrackingHeadline(input: {
   // running or paused mission tracking has stopped completely, so it is also
   // the alarm; it comes before pause and record so their advice cannot hide
   // the fix (DON-353).
-  const credentialsUnusable = status.mode !== 'online' && status.warningCodes?.includes('tracking_credentials_unreadable') === true
-  const credentialAdvice = 're-enter the tracking password or token in Settings'
+  // Damaged saved settings (M-47) are handled the same way, with their own fix.
+  const reentry = status.mode === 'online'
+    ? null
+    : status.warningCodes?.includes('tracking_settings_unreadable') === true
+      ? { condition: 'settings' as const, remedy: SETTINGS_REENTRY_WORD, advice: 're-enter the Traccar settings in Settings', cause: 'the saved settings were damaged and set aside' }
+      : status.warningCodes?.includes('tracking_credentials_unreadable') === true
+        ? { condition: 'credentials' as const, remedy: CREDENTIAL_REENTRY_WORD, advice: 're-enter the tracking password or token in Settings', cause: 'the saved tracking password or token cannot be used' }
+        : null
   const lastReceivedShown = positions.length > 0
-  if (credentialsUnusable && (phase === 'active' || paused)) {
+  if (reentry !== null && (phase === 'active' || paused)) {
     const lead = paused ? 'MISSION PAUSED' : 'TRACKING LOST'
-    const advice = `${lead}: ${credentialAdvice}`
+    const advice = `${lead}: ${reentry.advice}`
     return {
-      condition: 'credentials', tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true, remedy: CREDENTIAL_REENTRY_WORD,
+      condition: reentry.condition, tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true, remedy: reentry.remedy,
       detail: conditions === '' ? advice : `${advice} · ${conditions}`,
-      alarm: `${lead}: the saved tracking password or token cannot be used; positions on the map may not be current`,
+      alarm: `${lead}: ${reentry.cause}; positions on the map may not be current`,
       issues, lastReceivedShown,
     }
   }
@@ -180,9 +186,9 @@ export function describeTrackingHeadline(input: {
   if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
   // Before a mission starts amber is enough: nobody relies on the map yet.
-  if (credentialsUnusable) {
-    const advice = `Tracking not connected: ${credentialAdvice}`
-    return { condition: 'credentials', tone: 'warning', text: prefixed(advice), problems, remedy: CREDENTIAL_REENTRY_WORD, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
+  if (reentry !== null) {
+    const advice = `Tracking not connected: ${reentry.advice}`
+    return { condition: reentry.condition, tone: 'warning', text: prefixed(advice), problems, remedy: reentry.remedy, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
   }
   if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', problems: ['Tracking not connected'], detail: '', issues }
   if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, problems, detail: summary, issues }
