@@ -24,7 +24,10 @@ const {
 } = require('./mission-review-read-query-runner.cjs')
 const { runMissionReplayInWorker } = require('./mission-replay-runner.cjs')
 const { runSearchOperationPageInWorker } = require('./search-operations-page-runner.cjs')
-const { runSqliteBackupInWorker } = require('./sqlite-backup-runner.cjs')
+const {
+  runSqliteBackupInWorker,
+  runSqliteIntegrityCheckInWorker,
+} = require('./sqlite-backup-runner.cjs')
 const { cleanupBackupTemporaryFiles } = require('./backup-temporary-cleanup.cjs')
 const { runGpxEvidenceImportInWorker } = require('./gpx-evidence-import-runner.cjs')
 const {
@@ -5895,6 +5898,9 @@ async function syncBackup(
     await safeStorageDiagnostic(() =>
       operation === null ? undefined : storageDiagnostics.started(operation),
     )
+    stage = 'space_preflight'
+    await assertBackupFreeSpace(databasePath, backupPath, faultInjection)
+    stage = 'started'
     await runSqliteBackupInWorker({
       sourcePath: databasePath,
       targetPath: temporaryPath,
@@ -5918,6 +5924,22 @@ async function syncBackup(
     await safeStorageDiagnostic(() =>
       operation === null ? undefined : storageDiagnostics.phase(operation, stage),
     )
+    if (faultInjection.corruptTemporaryBtreePageBeforeIntegrityCheck === true) {
+      await corruptSqliteMiddlePage(temporaryPath)
+    }
+    // The header check above cannot see a damaged page, and the online backup
+    // copies pages byte for byte. Only a copy that passes integrity_check
+    // (pages and every index against its rows) may replace the single mirror,
+    // or a corrupt primary would overwrite the last good copy [M-44].
+    stage = 'integrity_check_started'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
+    await runSqliteIntegrityCheckInWorker({ targetPath: temporaryPath })
+    stage = 'integrity_checked'
+    await safeStorageDiagnostic(() =>
+      operation === null ? undefined : storageDiagnostics.phase(operation, stage),
+    )
     await fs.rename(temporaryPath, backupPath)
     stage = 'renamed'
     await safeStorageDiagnostic(() =>
@@ -5931,6 +5953,19 @@ async function syncBackup(
       operation === null ? undefined : storageDiagnostics.completed(operation),
     )
   } catch (error) {
+    // Free the temporary copy's disk space before anything else [M-42]. A
+    // cleanup failure is logged on its own and never replaces the refusal or
+    // skips its diagnostics, log and audit event [M-44].
+    try {
+      if (faultInjection.failTemporaryCleanup === true) {
+        throw new Error('Injected temporary backup cleanup failure.')
+      }
+      await removeSqliteFileSet(temporaryPath)
+    } catch (cleanupError) {
+      console.error(
+        `Mission backup temporary backup copy could not be removed (${temporaryPath}); it may use disk space until the next backup: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+      )
+    }
     await safeStorageDiagnostic(() =>
       operation === null
         ? undefined
@@ -5939,11 +5974,126 @@ async function syncBackup(
             errorName: error instanceof Error ? error.name : 'UnknownError',
           }),
     )
-    await removeSqliteFileSet(temporaryPath)
+    if (error?.code === 'BACKUP_INTEGRITY_FAILED') {
+      recordBackupIntegrityFailure(db, error)
+    } else if (error?.code === 'BACKUP_INSUFFICIENT_SPACE') {
+      console.warn(error.message)
+    }
     throw error
   }
 
   return backupPath
+}
+
+/** Free space kept for the live store beyond the copy itself: max(256 MB, 10 % of the store). */
+const BACKUP_MIN_FREE_SPACE_RESERVE_BYTES = 256 * 1024 * 1024
+const BACKUP_FREE_SPACE_RESERVE_FRACTION = 0.1
+
+/**
+ * Refuses to start a rolling backup copy that would leave the live store less
+ * than its reserve of free disk. The copy needs room for the whole database
+ * and WAL next to the old mirror; filling the disk would make live tracking
+ * commits fail with SQLITE_FULL [M-42]. The old mirror is kept.
+ *
+ * A filesystem that cannot report free space does not stop the backup; the
+ * missing check is logged.
+ */
+async function assertBackupFreeSpace(databasePath, backupPath, faultInjection) {
+  const databaseBytes = await fileSizeOrZero(databasePath)
+  const walBytes = await fileSizeOrZero(`${databasePath}-wal`)
+  const requiredBytes = computeBackupRequiredFreeBytes({ databaseBytes, walBytes })
+  let availableBytes
+  if (typeof faultInjection.availableBackupBytes === 'number') {
+    availableBytes = faultInjection.availableBackupBytes
+  } else {
+    try {
+      const statfs = typeof faultInjection.statfs === 'function'
+        ? faultInjection.statfs
+        : (directoryPath) => fs.statfs(directoryPath, { bigint: true })
+      const stats = await statfs(path.dirname(backupPath))
+      availableBytes = Number(stats.bavail * stats.bsize)
+    } catch (error) {
+      console.warn(
+        `Mission backup could not check free disk space and will continue: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return
+    }
+  }
+  if (availableBytes >= requiredBytes) return
+  const error = new Error(
+    `Disk nearly full: mission backup paused to protect live tracking. It needs about ${formatMegabytes(requiredBytes)} free and ${formatMegabytes(availableBytes)} is available. Free space on this laptop; the last backup is kept.`,
+  )
+  error.name = 'BackupInsufficientSpaceError'
+  error.code = 'BACKUP_INSUFFICIENT_SPACE'
+  throw error
+}
+
+/**
+ * Free bytes a rolling backup needs: the database and WAL it copies, plus a
+ * reserve for the live store of the larger of 256 MB or 10 % of the database.
+ */
+function computeBackupRequiredFreeBytes({ databaseBytes, walBytes }) {
+  const reserveBytes = Math.max(
+    BACKUP_MIN_FREE_SPACE_RESERVE_BYTES,
+    Math.ceil(databaseBytes * BACKUP_FREE_SPACE_RESERVE_FRACTION),
+  )
+  return databaseBytes + walBytes + reserveBytes
+}
+
+/** Returns a file's size, or 0 when it does not exist. */
+async function fileSizeOrZero(filePath) {
+  try {
+    return (await fs.stat(filePath)).size
+  } catch (error) {
+    if (error?.code === 'ENOENT') return 0
+    throw error
+  }
+}
+
+/** Formats a byte count as whole megabytes for an operator message. */
+function formatMegabytes(bytes) {
+  return `${Math.max(0, Math.ceil(bytes / (1024 * 1024)))} MB`
+}
+
+/**
+ * Records a refused backup copy loudly: an error log and, when the store can
+ * still write, an audit event on the active mission. Neither may hide the
+ * refusal itself [M-44].
+ */
+function recordBackupIntegrityFailure(db, error) {
+  console.error(error.message)
+  try {
+    const activeMission = getActiveMission(db)
+    if (activeMission !== null) {
+      appendEvent(db, activeMission.id, 'mission_backup_integrity_failed', {
+        reason: 'integrity_check_failed',
+        message: error.message,
+      })
+    }
+  } catch (auditError) {
+    console.error(
+      `Mission backup integrity failure could not be recorded in the audit log: ${auditError instanceof Error ? auditError.message : String(auditError)}`,
+    )
+  }
+}
+
+/**
+ * Damages one page in the middle of the temporary snapshot and leaves the
+ * header intact, so only a page-level check can catch it (test seam) [M-44].
+ */
+async function corruptSqliteMiddlePage(databasePath) {
+  const fileHandle = await fs.open(databasePath, 'r+')
+  try {
+    const header = Buffer.alloc(100)
+    await fileHandle.read(header, 0, 100, 0)
+    const encodedPageSize = header.readUInt16BE(16)
+    const pageSize = encodedPageSize === 1 ? 65_536 : encodedPageSize
+    const pageCount = header.readUInt32BE(28)
+    const middlePage = Math.max(2, Math.floor(pageCount / 2))
+    await fileHandle.write(Buffer.alloc(64, 0xff), 0, 64, (middlePage - 1) * pageSize + 8)
+  } finally {
+    await fileHandle.close()
+  }
 }
 
 /** Corrupts only the temporary snapshot header for a fail-closed regression seam. */
@@ -12672,6 +12822,7 @@ function createCoverageRequestAbortError() {
 
 module.exports = {
   CURRENT_SCHEMA_VERSION,
+  computeBackupRequiredFreeBytes,
   RETIRED_GPX_CHANGED_MESSAGE,
   readRetiredGpxSource,
   createElectronMissionStore,

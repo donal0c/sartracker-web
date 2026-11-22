@@ -20,7 +20,7 @@ type StorageDiagnosticsPort = {
   readonly started: (operation: StorageOperation) => Promise<void>
   readonly phase: (
     operation: StorageOperation,
-    stage: 'copied' | 'sanity_check_started' | 'sanity_checked' | 'renamed',
+    stage: 'copied' | 'sanity_check_started' | 'sanity_checked' | 'integrity_check_started' | 'integrity_checked' | 'renamed',
   ) => Promise<void>
   readonly completed: (operation: StorageOperation) => Promise<void>
   readonly failed: (operation: StorageOperation, input: { readonly stage: string; readonly errorName: string }) => Promise<void>
@@ -3802,6 +3802,8 @@ describe('electron mission store', () => {
       'copied',
       'sanity_check_started',
       'sanity_checked',
+      'integrity_check_started',
+      'integrity_checked',
       'renamed',
     ])
     expect(storageDiagnostics.completed).toHaveBeenCalledWith(operation)
