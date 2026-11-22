@@ -216,6 +216,75 @@ describe('WAR-06 pending source updates [DON-353]', () => {
   })
 })
 
+describe('WAR-06 failed source updates [DON-353]', () => {
+  const win = globalThis as unknown as { window?: Record<string, unknown> }
+  afterEach(() => { delete win.window })
+
+  /** A minimal evented object, like MapLibre's map and sources. */
+  function evented<T extends object>(body: T) {
+    const listeners: Record<string, Array<(event: unknown) => void>> = {}
+    return Object.assign(body, {
+      on: (type: string, listener: (event: unknown) => void) => { (listeners[type] ??= []).push(listener) },
+      fire: (type: string, event: unknown) => { for (const listener of listeners[type] ?? []) listener(event) },
+    })
+  }
+
+  /**
+   * Behaves like MapLibre 5.22 when the worker rejects an update: the source
+   * stops being busy (loaded() is true again), keeps its old payload, and fires
+   * an error that the map re-fires with the source id.
+   */
+  function rejectingSetup() {
+    let pending = false
+    const map = evented({ getSource: (): unknown => source })
+    const source = evented({
+      loaded: () => !pending,
+      getData: () => Promise.resolve({ features: [] }),
+      updateData: () => { pending = true },
+      rejectUpdate: (message: string) => {
+        pending = false
+        const event = { error: new Error(message) }
+        source.fire('error', event)
+        map.fire('error', { ...event, sourceId: 'tracking' })
+      },
+    })
+    win.window = { __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: true }
+    return { map, source }
+  }
+
+  it('a rejected worker update fails the reading with its error, never a ready zero', async () => {
+    const { source } = rejectingSetup()
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'ready', fixes: 0 })
+    source.updateData()
+    source.rejectUpdate('worker could not parse the update')
+    const reading = await readTrackingSourceInPage()
+    expect(reading).toMatchObject({ state: 'failed' })
+    expect((reading as { reason: string }).reason).toContain('worker could not parse the update')
+  })
+
+  it('stays failed after the source settles again, until the observation ends', async () => {
+    const { source } = rejectingSetup()
+    await readTrackingSourceInPage()
+    source.rejectUpdate('boom')
+    await readTrackingSourceInPage()
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'failed' })
+  })
+
+  it('ignores errors from other sources', async () => {
+    const { map } = rejectingSetup()
+    await readTrackingSourceInPage()
+    map.fire('error', { error: new Error('tile 404'), sourceId: 'basemap' })
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'ready' })
+  })
+
+  it('a failed reading fails the summary with the error text', () => {
+    const zeroAt = (at: number) => ({ state: 'ready', at, doneAt: at + 10, currentFixCount: 0, cachedDeviceCount: 0 })
+    const samples = [zeroAt(0), { state: 'failed', at: 50, doneAt: 60, map: { reason: 'the tracking source reported an error: boom' } }, zeroAt(100)]
+    const summary = summarizeSurfaceSamples(samples, { startedAt: 0, endedAt: 120 })
+    expect(summary.trackingSourceErrors).toEqual(['the tracking source reported an error: boom'])
+  })
+})
+
 describe('WAR-06 saved tracking visibility [DON-353]', () => {
   it('reads the IPC field names and names the entries that hide tracking positions', () => {
     expect(trackingNodesHiddenInCatalog([

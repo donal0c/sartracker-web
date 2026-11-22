@@ -16,6 +16,10 @@
  *   asynchronously and getData() returns the old payload until then, so the
  *   renderer can already report tracking shown while the source still holds
  *   the empty stand-in.
+ * - `failed`: the tracking source reported an error during this observation.
+ *   A rejected worker update leaves loaded() true and the old payload in
+ *   place, so nothing read from the source afterwards can be trusted. This
+ *   never happens in a healthy run, so it fails the probe with the error text.
  * - `not-drawn`: no map or no tracking source.
  * - `unreadable`: the source exists but could not be read, or the read threw.
  *
@@ -45,8 +49,22 @@ export const MAX_UNOBSERVED_GAP_MS = 2_000
  *   | { state: 'not-drawn' | 'unreadable', reason: string }>} the reading
  */
 export async function readTrackingSourceInPage() {
+  const errors = (window.__WAR06_TRACKING_SOURCE_ERRORS__ ??= [])
+  const failed = () => errors.length === 0
+    ? null
+    : { state: 'failed', reason: `the tracking source reported an error: ${errors[0]}`, errors: [...errors] }
   const map = window.__SARTRACKER_MAP__
-  if (map === undefined || map === null) return { state: 'not-drawn', reason: 'no map' }
+  if (map === undefined || map === null) return failed() ?? { state: 'not-drawn', reason: 'no map' }
+  // A source's error reaches the map with its sourceId. Watch each map once,
+  // and keep every error for the rest of the observation.
+  if (map.__war06TrackingErrorWatch !== true && typeof map.on === 'function') {
+    map.__war06TrackingErrorWatch = true
+    map.on('error', (event) => {
+      if (event?.sourceId !== 'tracking') return
+      errors.push(String(event?.error?.message ?? event?.error ?? 'unknown error').slice(0, 200))
+    })
+  }
+  if (failed() !== null) return failed()
   const source = map.getSource('tracking')
   if (source === undefined || source === null) return { state: 'not-drawn', reason: 'no tracking source' }
   // Read before and after the data, so a change while reading cannot confirm
@@ -65,6 +83,7 @@ export async function readTrackingSourceInPage() {
   if (data === undefined || data === null || !Array.isArray(data.features)) {
     return { state: 'unreadable', reason: 'the tracking source has no feature list' }
   }
+  if (failed() !== null) return failed()
   const settledAfter = settled()
   const visibleAfter = window.__SARTRACKER_TRACKING_VISIBLE__
   if (map.getSource('tracking') !== source) return { state: 'unreadable', reason: 'the tracking source was replaced during the read' }
@@ -126,6 +145,8 @@ export function summarizeSurfaceSamples(samples, window, actionWarning = '', dis
     hiddenCount: ofState('hidden'),
     unconfirmedCount: ofState('unconfirmed'),
     pendingCount: ofState('pending'),
+    trackingSourceErrors: [...new Set(valid.filter((sample) => sample.state === 'failed')
+      .map((sample) => sample.map?.reason ?? sample.reason ?? 'the tracking source reported an error'))],
     notDrawnCount: ofState('not-drawn'),
     notDrawnAfterReadyCount: first === undefined ? 0 : timed.filter((sample) => sample.state === 'not-drawn' && sample.at > first.at).length,
     unreadableCount: ofState('unreadable'),

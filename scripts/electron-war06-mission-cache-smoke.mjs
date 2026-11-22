@@ -710,6 +710,10 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
     // Each reading proves tracking was shown on the map at that moment; the
     // saved catalog is kept as evidence of why, if it was not.
     reportExtra.surfaceSamples = summarizeSurfaceSamples(samples, window, actionWarning, DISCARDED_CACHE_WARNING)
+    // A failed source update keeps the old payload, so any reading after it is
+    // untrustworthy; a healthy run never has one.
+    assert.deepEqual(reportExtra.surfaceSamples.trackingSourceErrors, [],
+      `${phase}: ${reportExtra.surfaceSamples.trackingSourceErrors.join('; ')}. The map's positions could not be trusted after that.`)
     reportExtra.savedTrackingHidden = await readSavedTrackingHidden(launch.page, missionId)
   }
   const result = {
@@ -855,6 +859,8 @@ function startSurfaceObserver(page) {
     async waitForReady(timeoutMs) {
       const deadline = Date.now() + timeoutMs
       while (!samples.some((sample) => sample.readable === true)) {
+        const failure = samples.find((sample) => sample.state === 'failed')
+        if (failure !== undefined) throw new Error(`Before the probe acted, ${failure.map?.reason ?? 'the tracking source reported an error'}.`)
         if (!observing || Date.now() > deadline) {
           const last = samples.at(-1)
           throw new Error(`The map gave no ready reading within ${timeoutMs} ms of launch (last: ${last?.state ?? 'none'}${last?.map?.reason === undefined ? '' : `, ${last.map.reason}`}), so nothing it shows could be proven.`)
