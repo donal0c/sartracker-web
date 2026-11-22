@@ -8,7 +8,12 @@
  */
 
 import { delay } from './app.mjs'
+import { openMissionSection } from '../../mission-sections.mjs'
 import { openParticipantPickers, openWorkspacePanel, pressPauseResume } from '../../workspace-panels.mjs'
+
+// One section opener for every probe: it opens the Mission panel and fails when
+// the section's content never appears (DON-353).
+export { openMissionSection }
 
 export const ARCHIVE_PASSPHRASE = 'Smoke-Test-Pass-2026!x'
 
@@ -101,39 +106,15 @@ export async function startMissionWithLookback(page, { name, offsetHours, device
   await openWorkspacePanel(page, 'mission')
   await t('mission-name-input').fill(name)
   await t('mission-offset-input').fill(String(offsetHours))
-  await openParticipantPickers(page)
-  const picker = t('participant-device-picker')
+  const picker = await openParticipantPickers(page, { require: 'device' })
   for (const device of devices) {
     await picker.getByText(device, { exact: true }).waitFor({ timeout: 30_000 })
     await picker.getByText(device, { exact: true }).click()
   }
   await t('mission-start-btn').click()
-  await openParticipantPickers(page)
-  await openMissionSection(page, 'participants')
+  await openMissionSection(page, 'participants', { timeoutMs: 20_000 })
   await t('participant-management').waitFor({ timeout: 20_000 })
   await delay(1500)
-}
-
-/**
- * Opens a Mission Control section (participants or outings) if it is
- * collapsed. During a mission they collapse to a summary until Show is
- * pressed; a section forced open by a warning is already open, and outside
- * an active or paused mission there is no wrapper at all [DON-300].
- *
- * @param {import('playwright').Page} page
- * @param {'participants' | 'outings'} name
- */
-export async function openMissionSection(page, name) {
-  const section = page.getByTestId(`mission-${name}-section`)
-  // The wrapper exists only while a mission is active or paused; give a
-  // just-started mission a moment, then treat "no wrapper" as open.
-  await section.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {})
-  if (await section.count() === 0) return
-  if (await section.getAttribute('data-open') !== 'false') return
-  await page.getByTestId(`mission-${name}-section-toggle`).click()
-  await page.waitForFunction((testId) =>
-    document.querySelector(`[data-testid="${testId}"]`)?.getAttribute('data-open') !== 'false',
-  `mission-${name}-section`, { timeout: 10_000 })
 }
 
 /**
@@ -145,7 +126,6 @@ export async function openMissionSection(page, name) {
  */
 export async function addParticipantAfterStart(page, device, historyFrom) {
   const t = byId(page)
-  await openParticipantPickers(page)
   await openMissionSection(page, 'participants')
   await t('participant-add-ref').selectOption({ label: device })
   await t(`participant-history-start-${historyFrom}`).check()
@@ -153,13 +133,34 @@ export async function addParticipantAfterStart(page, device, historyFrom) {
   await delay(1200)
 }
 
+// What the top bar's phase label says for each mission phase (DON-341).
+const TOP_BAR_PHASES = [
+  { text: 'Start a mission', phase: 'IDLE' },
+  { text: 'Running', phase: 'ACTIVE' },
+  { text: 'PAUSED', phase: 'PAUSED' },
+  { text: 'Needs resuming', phase: 'RECOVERY' },
+]
+
 /**
- * Returns the mission phase from the Mission panel, for example ACTIVE or
- * PAUSED. The top bar says "Running" for an active mission, so the panel's
- * own phase attribute is read instead (DON-341).
+ * Returns the mission phase the operator sees in the top bar: ACTIVE for
+ * "Running", PAUSED, RECOVERY for "Needs resuming", or IDLE. The label is
+ * always on screen; a missing or unrecognised label throws, so two unreadable
+ * phases can never pass as "unchanged" (DON-353).
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<'IDLE' | 'ACTIVE' | 'PAUSED' | 'RECOVERY'>}
  */
 export async function missionPhase(page) {
-  return ((await page.getByTestId('mission-control').getAttribute('data-mission-phase')) ?? '').trim().toUpperCase()
+  const label = page.getByTestId('ws-mission-phase')
+  try {
+    await label.waitFor({ state: 'visible', timeout: 10_000 })
+  } catch {
+    throw new Error('The top bar shows no mission phase.')
+  }
+  const text = ((await label.textContent()) ?? '').replace(/\s+/gu, ' ').trim()
+  const match = TOP_BAR_PHASES.find((entry) => text.includes(entry.text))
+  if (match === undefined) throw new Error(`The top bar mission phase "${text}" is not one the smoke recognises.`)
+  return match.phase
 }
 
 /** Toggles pause/resume, confirming a pause, and returns the new phase. */
@@ -227,28 +228,53 @@ export async function archiveMission(page) {
 }
 
 /**
- * Reads the visible tracking health: the top bar's tracking headline (with
- * its condition, for example `lost` or `credentials`), the problem words
- * beside it, the alarm strip, and the Tracking panel when it is open
- * (DON-341). The old layout's warning cell and health strip are gone.
+ * Returns the visible text of one element, or '' when it is absent or hidden.
  *
  * @param {import('playwright').Page} page
- * @returns {Promise<string>} the parts joined with " / ", whitespace collapsed
+ * @param {string} testId
+ */
+async function visibleText(page, testId) {
+  const locator = page.getByTestId(testId).first()
+  if (await locator.count() === 0 || !await locator.isVisible()) return ''
+  return ((await locator.innerText()) ?? '').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * Reads the visible tracking health: the top bar's tracking headline, the
+ * problem words beside it, the alarm strip, and the Tracking panel when it is
+ * open (DON-341). Only text the operator can see is returned; internal state
+ * such as the headline's condition attribute is never evidence.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<string>} the visible parts joined with " / "
  */
 export async function trackingStatus(page) {
   const parts = []
-  const headline = page.getByTestId('ws-tracking-headline')
-  if (await headline.count() > 0) {
-    const condition = await headline.getAttribute('data-condition').catch(() => null)
-    if (condition !== null) parts.push(`condition ${condition}`)
-  }
   for (const id of ['ws-tracking-headline', 'ws-tracking-problems', 'ws-alarm', 'ws-tracking-panel']) {
-    const locator = page.getByTestId(id)
-    if (await locator.count() > 0 && await locator.first().isVisible().catch(() => false)) {
-      parts.push(await locator.first().innerText().catch(() => ''))
-    }
+    const text = await visibleText(page, id)
+    if (text !== '') parts.push(text)
   }
-  return parts.join(' / ').replace(/\s+/gu, ' ').trim()
+  return parts.join(' / ')
+}
+
+/** Words that tell an operator tracking has failed. */
+export const OUTAGE_WORDS = /TRACKING LOST|unreachable|offline|error|retry|fail|lost|degraded|disconnect/i
+
+/**
+ * Returns what an operator sees when the tracking feed fails: the alarm strip
+ * across the map and a warning in the top bar's tracking headline. Both must
+ * be on screen and both must name the failure, or this returns ''. A probe got
+ * "condition lost / Tracking OK" past the old matcher (DON-353).
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<string>} "alarm / headline", or '' when either is missing
+ */
+export async function outageWarning(page) {
+  const alarm = await visibleText(page, 'ws-alarm')
+  const headline = [await visibleText(page, 'ws-tracking-headline'), await visibleText(page, 'ws-tracking-problems')]
+    .filter((text) => text !== '').join(' / ')
+  if (!OUTAGE_WORDS.test(alarm) || !OUTAGE_WORDS.test(headline)) return ''
+  return `${alarm} / ${headline}`
 }
 
 /** Returns the visible body text with whitespace collapsed. */

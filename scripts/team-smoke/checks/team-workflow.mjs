@@ -56,7 +56,9 @@ export default [
       await connectProvider(app.page, mock.url)
 
       // The server starts with KMRT only, and SAR Tracker has read it.
-      const listsGroup = (name) => t('participant-group-picker').getByText(name, { exact: true }).first()
+      // The group picker sits in a fold that starts closed; open it first.
+      const listsGroup = async (name) => (await openParticipantPickers(app.page, { require: 'group' }))
+        .getByText(name, { exact: true }).first()
         .waitFor({ timeout: GROUP_LIST_TIMEOUT_MS }).then(() => true, () => false)
       expectProduct(await listsGroup(TEAM_GROUP), `Mission setup did not list ${TEAM_GROUP} within ${GROUP_LIST_TIMEOUT_MS / 1000} s of connecting; the group-refresh check cannot start.`)
       expectProduct(await t('participant-group-picker').getByText(NEW_GROUP.name, { exact: true }).count() === 0,
@@ -74,10 +76,11 @@ export default [
         `${NEW_GROUP.name} was created in Traccar after SAR Tracker started, but mission setup still does not list it after ${GROUP_LIST_TIMEOUT_MS / 1000} s; volunteers would have to restart the app (DON-330).`)
 
       // Start with KMRT only, then check it is recording.
+      const groupPicker = await openParticipantPickers(app.page, { require: 'group' })
       await t('mission-name-input').fill('Group Refresh Smoke')
-      await t('participant-group-picker').getByText(TEAM_GROUP, { exact: true }).first().click()
+      await groupPicker.getByText(TEAM_GROUP, { exact: true }).first().click()
       await t('mission-start-btn').click()
-      await openMissionSection(app.page, 'participants')
+      await openMissionSection(app.page, 'participants', { timeoutMs: 20_000 })
       await t('participant-management').waitFor({ timeout: 20_000 })
       const kmrtIds = kmrt.map((entry) => entry.id)
       const kmrtRecording = await waitForFixes(profile, 'Group Refresh Smoke', () => kmrtIds, Date.now(), GROUP_RECORDING_TIMEOUT_MS)
@@ -175,14 +178,15 @@ export default [
 
       // "Enter mission name, set roll back time, Start": the team default
       // group is already ticked, and nothing else [DON-296].
+      const groupPicker = await openParticipantPickers(app.page, { require: 'group' })
       await t('mission-name-input').fill(MISSION)
       await t('mission-offset-input').fill(String(ROLL_BACK_HOURS))
-      const kmrtTicked = await waitUntilChecked(app.page.getByTestId('participant-group-picker')
+      const kmrtTicked = await waitUntilChecked(groupPicker
         .locator('label', { hasText: TEAM_GROUP }).locator('input[type="checkbox"]'), 60_000)
       await app.shot('start-default-group-ticked')
       if (!kmrtTicked) findings.push(`${TEAM_GROUP} was not pre-ticked at Start although it is the team default group`)
       await t('mission-start-btn').click()
-      await openMissionSection(app.page, 'participants')
+      await openMissionSection(app.page, 'participants', { timeoutMs: 20_000 })
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
       const missionStart = Date.parse(await app.page.evaluate(async () =>
@@ -242,7 +246,6 @@ export default [
         return (await store.listGroupMembershipEvents(mission.id)).filter((event) => event.change === 'left').length
       })
       const visibleNotices = () => t('participant-membership-notice').allInnerTexts().catch(() => [])
-      await openParticipantPickers(app.page)
       await openMissionSection(app.page, 'participants')
       const noticesBefore = new Set(await visibleNotices())
       const seenNotices = new Set()

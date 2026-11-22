@@ -161,8 +161,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await openMissionPanel(page)
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
-    // Timer should show ~2 hours
+    // Both timers should show ~2 hours: time since start in the panel and
+    // the active search time in the top bar.
     await expect(page.getByTestId('mission-elapsed')).toHaveText(/^02:0\d:\d\d$/)
+    await expect(page.getByTestId('ws-search-time')).toHaveText(/^02:0\d:\d\d$/)
 
     await captureElementAndRegister(page, 'mission-control', {
       testId: 'mission-backdated-offset',
@@ -177,6 +179,50 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'mission-control phase is "active"',
         'mission-elapsed matches 02:0X:XX pattern',
+      ],
+    })
+
+    await captureElementAndRegister(page, 'ws-top-bar', {
+      testId: 'mission-backdated-search-time',
+      testName: 'Top bar search time for a 2-hour back-dated start',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker top bar for a mission back-dated by 2 hours:
+1. The mission button names "Delayed Start" and shows it as Running
+2. The "Search time" clock reads approximately 02:00:XX (about 2 hours), not 00:00:XX, confirming the back-dating reached the top bar
+3. The clock text is whole and readable, not cut off or overlapping other top-bar items
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'ws-search-time matches 02:0X:XX pattern',
+      ],
+    })
+  })
+
+  test('a workspace opened over the Finish question is refused, and the question says why [DON-353]', async ({ page }) => {
+    await startMission(page, 'Refusal Notice')
+    await openMissionPanel(page)
+    await page.getByTestId('mission-finish-btn').click()
+    const finish = page.getByTestId('mission-finish-dialog')
+    await expect(finish).toBeVisible()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(finish).toContainText('Settings did not open. Answer this question first.')
+
+    await captureElementAndRegister(page, 'mission-finish-dialog', {
+      testId: 'mission-finish-workspace-refused',
+      testName: 'Finish question explains that Settings did not open',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Finish question after the operator pressed Settings while it was waiting:
+1. The Finish question is still shown, with its confirm and cancel choices
+2. It says in plain words "Settings did not open. Answer this question first."
+3. The notice is visible without scrolling and reads as a notice, not as an error that the mission failed
+4. Nothing suggests the mission has already finished
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'Settings workspace did not open',
+        'Finish dialog says Settings did not open. Answer this question first.',
       ],
     })
   })

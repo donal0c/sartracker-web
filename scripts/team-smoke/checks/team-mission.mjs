@@ -23,11 +23,11 @@ import path from 'node:path'
 import { delay, launchApp } from '../lib/app.mjs'
 import {
   ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
-  missionPhase, openMissionSection, placeMarker, resumeIfPrompted, startMission, trackingStatus,
+  missionPhase, openMissionSection, outageWarning, placeMarker, resumeIfPrompted, startMission, trackingStatus,
 } from '../lib/operator.mjs'
-import { openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
+import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
-import { expectProduct } from '../lib/results.mjs'
+import { expectProduct, NotTested } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
 
@@ -215,13 +215,19 @@ export default [
 
       // Start 48 h back with a group and one device ticked before Start.
       const t = (id) => app.page.getByTestId(id)
+      await openWorkspacePanel(app.page, 'mission')
       await t('mission-name-input').fill(MISSION)
       await t('mission-offset-input').fill(String(LOOKBACK_HOURS))
-      await t('participant-group-picker').getByText('KMRT Hasty', { exact: true }).click()
-      await t('participant-device-picker').getByText('Dog Handler', { exact: true }).click()
+      // Both pickers sit in folds that start closed; open them and wait for the entries.
+      const devicePicker = await openParticipantPickers(app.page, { require: 'device' })
+      const groupPicker = await openParticipantPickers(app.page, { require: 'group' })
+      await groupPicker.getByText('KMRT Hasty', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+      await groupPicker.getByText('KMRT Hasty', { exact: true }).click()
+      await devicePicker.getByText('Dog Handler', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+      await devicePicker.getByText('Dog Handler', { exact: true }).click()
       const missionStartPressedAt = Date.now()
       await t('mission-start-btn').click()
-      await openMissionSection(app.page, 'participants')
+      await openMissionSection(app.page, 'participants', { timeoutMs: 20_000 })
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
       const missionStart = Date.parse(await app.page.evaluate(async () =>
@@ -269,11 +275,14 @@ export default [
       if (!/stale/i.test(status)) findings.push(`no stale warning for a device silent 70 min: "${status.slice(0, 160)}"`)
       // DON-307: the Mission panel must close while yesterday's finished
       // mission awaits Archive & Lock, leaving the mission in the top bar.
+      // Automation errors propagate (NOT TESTED); only a panel that stays open is a product finding.
       await openWorkspacePanel(app.page, 'mission')
-      await t('ws-mission-close').click().catch(() => {})
-      await delay(800)
-      const panelClosed = !(await t('ws-mission-host').isVisible().catch(() => false))
-      const topBarShown = await t('current-mission-name').isVisible().catch(() => false)
+      await t('ws-mission-close').click()
+      const panelClosed = await t('ws-mission-host').waitFor({ state: 'hidden', timeout: 5_000 }).then(() => true, (error) => {
+        if (error?.name === 'TimeoutError') return false
+        throw error
+      })
+      const topBarShown = await t('current-mission-name').isVisible()
       if (!panelClosed || !topBarShown) findings.push('The Mission panel would not close while an earlier finished mission awaited Archive & Lock (DON-307)')
       await openWorkspacePanel(app.page, 'people')
       await t('open-devices-workspace').click()
@@ -434,14 +443,17 @@ export default [
       }
 
       // Provider outage: visible, then backfilled.
-      const beforeOutage = await trackingStatus(app.page)
+      // Evidence is the alarm strip plus the headline's warning, both on screen;
+      // one already showing before the outage proves nothing about it.
+      const beforeOutage = await outageWarning(app.page)
+      if (beforeOutage !== '') throw new NotTested(`The tracking alarm was already showing before the outage: "${beforeOutage.slice(0, 160)}".`)
       mock.setOffline(true)
       let outageShown = ''
       const outageStarted = Date.now()
       while (Date.now() - outageStarted < 60_000) {
         await delay(5000)
-        const during = await trackingStatus(app.page)
-        if (outageShown === '' && during !== beforeOutage && /unreachable|offline|error|retry|fail|lost|degraded|disconnect/i.test(during)) {
+        const during = await outageWarning(app.page)
+        if (outageShown === '' && during !== '') {
           outageShown = during
           await app.shot('outage')
         }
