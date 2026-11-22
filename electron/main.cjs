@@ -25,6 +25,7 @@ const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { projectCoverageRendererFailure } = require('./coverage-renderer-failure.cjs')
 const { applyGpuRenderingPreference, relaunchWithSoftwareRendering } = require('./gpu-rendering-preference.cjs')
+const { requestRelaunch } = require('./app-relaunch.cjs')
 const {
   TEMPORARY_PROFILE_PREFIX,
   checkProfileWritable,
@@ -69,6 +70,10 @@ const {
   closeStartupFailureWindows,
   showStartupFailureWindow,
 } = require('./startup-failure-window.cjs')
+const {
+  RENDERER_MOUNT_STAGE,
+  createRendererMountGate,
+} = require('./renderer-mount-gate.cjs')
 const { createTerminalFaultState } = require('./terminal-fault-state.cjs')
 const {
   STARTUP_RESPONSE_TIMEOUT_MS,
@@ -434,6 +439,14 @@ async function createWindow(
         retryPromise: null,
       }
       electronRuntimeContext.archiveReviewRendererLossFence = rendererLossFence
+      // The session stays unclean even if a replacement window loads, so the
+      // next launch still shows the crash-recovery notice [M-45].
+      rendererFaultThisSession = true
+      // Claimed before destroy so window-all-closed does not quit the app
+      // while the replacement window is being prepared [M-45]. Each crash
+      // holds its own claim until its recovery settles [DON-359].
+      activeRendererWindowRecoveries += 1
+      rendererCrashSequence += 1
       // A crashed WebContents has no renderer beforeunload fence. Destroy its
       // BrowserWindow synchronously so Cmd-R or a default reload cannot publish
       // a fresh renderer before sender-owned archive plaintext is swept.
@@ -441,6 +454,7 @@ async function createWindow(
       void Promise.all([archiveCleanupPromise, evidenceFence]).catch((error) => {
         reportUnsafeRendererTeardown(error, runtimeLog)
       })
+      void recoverOperationalWindowAfterCrash(details?.reason, runtimeLog)
     })
   }
 
@@ -454,15 +468,24 @@ async function createWindow(
     rendererUrl = indexUrl.toString()
   }
   const loadRenderer = () => window.loadURL(rendererUrl)
-  if (startupWatchdog === undefined) await loadRenderer()
-  else await startupWatchdog.run('operational window content load', loadRenderer)
   if (startupWatchdog === undefined) {
+    await loadRenderer()
     await rendererTeardownCoordinator.markRendererAvailable()
   } else {
-    await startupWatchdog.run(
-      'operational renderer availability fence',
-      () => rendererTeardownCoordinator.markRendererAvailable(),
-    )
+    // Listen before loading: the first screen can mount before the load
+    // promise settles. A loaded page whose script never mounts stays blank, so
+    // the shell is not revealed until the mount is confirmed [DON-354].
+    const mountGate = createRendererMountGate({ ipcMain, webContents: window.webContents })
+    try {
+      await startupWatchdog.run('operational window content load', loadRenderer)
+      await startupWatchdog.run(
+        'operational renderer availability fence',
+        () => rendererTeardownCoordinator.markRendererAvailable(),
+      )
+      await startupWatchdog.run(RENDERER_MOUNT_STAGE, () => mountGate.mounted)
+    } finally {
+      mountGate.dispose()
+    }
     // The shell is usable only after the renderer safety fence succeeds. Stop
     // the startup budget immediately before revealing it so later work cannot
     // turn a visible, ready shell into a fatal startup timeout.
@@ -470,6 +493,7 @@ async function createWindow(
     window.show()
     startupWindowReady = true
   }
+  return window
 }
 
 /**
@@ -961,8 +985,8 @@ async function handleFatalMainProcessError(input) {
     dialog.showErrorBox(
       'SAR Tracker runtime fault',
       evidenceWasSaved
-        ? 'SAR Tracker hit a fatal runtime fault. Crash evidence was saved and the app will relaunch so operators get a clean runtime.'
-        : 'SAR Tracker hit a fatal runtime fault. Crash evidence could not be confirmed, so the fault details may not have been saved. The app will relaunch so operators get a clean runtime.',
+        ? 'SAR Tracker hit a fatal runtime fault. Crash evidence was saved and the app will relaunch so operators get a clean runtime. If it has not reopened within a minute, start SAR Tracker again.'
+        : 'SAR Tracker hit a fatal runtime fault. Crash evidence could not be confirmed, so the fault details may not have been saved. The app will relaunch so operators get a clean runtime. If it has not reopened within a minute, start SAR Tracker again.',
     )
   } catch {
     // showErrorBox is unavailable in some headless/test contexts.
@@ -970,7 +994,19 @@ async function handleFatalMainProcessError(input) {
 
   terminalFaultState.markRelaunching()
   if (typeof app.relaunch === 'function') {
-    app.relaunch()
+    // An AppImage must relaunch the .AppImage file, not its vanishing mount [M-46].
+    const relaunch = requestRelaunch(app)
+    // Bounded, so a stalled log cannot hold the faulted process open; written
+    // before exit so the decision is not lost with the process [DON-359].
+    if (evidenceWriteResult.completed) {
+      await waitForEvidenceWrites(Promise.allSettled([
+        Promise.resolve().then(() => input.runtimeLog.append({
+          level: 'info',
+          event: 'fatal_relaunch_requested',
+          fields: { execPath: relaunch.execPath },
+        })),
+      ]))
+    }
   }
   if (typeof app.exit === 'function') {
     app.exit(1)
@@ -1771,6 +1807,9 @@ function startupFailureOperatorMessage(error) {
   if (error instanceof Error && error.code === 'ERR_SARTRACKER_PROFILE_UNWRITABLE') {
     return error.operatorMessage
   }
+  if (error instanceof StartupTimeoutError && error.stage === RENDERER_MOUNT_STAGE) {
+    return `SAR Tracker opened, but its map screen did not start within ${Math.ceil(error.timeoutMs / 1_000)} seconds. The installed copy may be damaged or incomplete. No mission-data damage was confirmed. Reinstall SAR Tracker from the team's release, then start it again. If it still does not start, preserve the profile and contact support. The application will now close.`
+  }
   if (error instanceof StartupTimeoutError) {
     return `SAR Tracker could not finish starting: the step "${error.stage}" was still in progress after ${Math.ceil(error.timeoutMs / 1_000)} seconds. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`
   }
@@ -2105,6 +2144,17 @@ async function markCleanExitFailSafe(crashLog, runtimeLog) {
 }
 
 let cleanExitInProgress = false
+// Renderer crash recovery state [M-45].
+let rendererFaultThisSession = false
+// Crashes whose recovery has not settled; window-all-closed must not quit
+// while any is outstanding.
+let activeRendererWindowRecoveries = 0
+// Bumped on every renderer crash so a recovery can tell that a newer crash
+// took over while it was waiting [DON-359].
+let rendererCrashSequence = 0
+let rendererWindowRecoveries = 0
+let operationalWindowRestore = null
+const MAX_RENDERER_WINDOW_RECOVERIES = 3
 async function markCleanExitAndQuit(
   crashLog,
   officialMapProxy,
@@ -2130,7 +2180,9 @@ async function markCleanExitAndQuit(
     await archiveReviewSessionManager.prepareClose()
     // A fatal response that withheld relaunch left this session unclean; the
     // next launch must still run its unclean-shutdown mission checks.
-    if (terminalFaultState.allowsCleanExitMarker()) {
+    // A renderer crash this session also keeps it unclean, so the next launch
+    // shows the crash-recovery notice even after a replacement window [M-45].
+    if (terminalFaultState.allowsCleanExitMarker() && !rendererFaultThisSession) {
       await markCleanExitFailSafe(crashLog, runtimeLog)
     }
     officialMapProxy.close?.()
@@ -2182,6 +2234,9 @@ async function prepareMissionStoreForExit(missionStore, runtimeLog) {
 
 app.on('window-all-closed', () => {
   if (!startupWindowReady) return
+  // A crashed renderer's window is being replaced; quitting here would end the
+  // session silently and stop tracking [M-45].
+  if (activeRendererWindowRecoveries > 0) return
   if (process.platform !== 'darwin') {
     app.quit()
   }
@@ -2189,23 +2244,161 @@ app.on('window-all-closed', () => {
 
 app.on('activate', async () => {
   if (!startupWindowReady) return
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (BrowserWindow.getAllWindows().length === 0 && windowRecoveryAllowed()) {
     try {
-      await awaitArchiveReviewRendererLossFence()
-      await electronRuntimeContext.rendererTeardownCoordinator
-        ?.ensureUnexpectedRendererLossFenced()
-      await createWindow(
-        electronRuntimeContext.crashLog,
-        electronRuntimeContext.runtimeLog,
-        electronRuntimeContext.rendererTeardownCoordinator,
-        electronRuntimeContext.archiveReviewSessionManager,
-      )
-      electronRuntimeContext.archiveReviewRendererLossFence = null
+      await restoreOperationalWindow()
     } catch (error) {
       reportUnsafeRendererRestore(error, electronRuntimeContext.runtimeLog)
     }
   }
 })
+
+/**
+ * True while this process may still open an operational window: startup
+ * finished and no quit or terminal fault response owns the process [DON-359].
+ */
+function windowRecoveryAllowed() {
+  return startupWindowReady && !cleanExitInProgress && terminalFaultState.phase === 'none'
+}
+
+/**
+ * Opens a replacement operational window once the lost renderer's evidence and
+ * archive fences are durable. Concurrent callers (crash recovery and macOS
+ * activate) share one attempt so only one replacement opens. Resolves to the
+ * new window, or null when a quit or fault response took over while the fences
+ * settled, so no window is opened behind it [DON-359].
+ */
+function restoreOperationalWindow() {
+  if (operationalWindowRestore !== null) return operationalWindowRestore
+  const restore = (async () => {
+    // Only the fence this restore waited for may be cleared: a crash while the
+    // restore is in flight installs a newer fence that must still hold [DON-359].
+    const awaitedFence = electronRuntimeContext.archiveReviewRendererLossFence
+    await awaitArchiveReviewRendererLossFence()
+    await electronRuntimeContext.rendererTeardownCoordinator
+      ?.ensureUnexpectedRendererLossFenced()
+    if (!windowRecoveryAllowed()) return null
+    const window = await createWindow(
+      electronRuntimeContext.crashLog,
+      electronRuntimeContext.runtimeLog,
+      electronRuntimeContext.rendererTeardownCoordinator,
+      electronRuntimeContext.archiveReviewSessionManager,
+    )
+    if (electronRuntimeContext.archiveReviewRendererLossFence === awaitedFence) {
+      electronRuntimeContext.archiveReviewRendererLossFence = null
+    }
+    return window
+  })()
+  operationalWindowRestore = restore
+  void restore.then(() => undefined, () => undefined).finally(() => {
+    if (operationalWindowRestore === restore) operationalWindowRestore = null
+  })
+  return restore
+}
+
+/**
+ * Reopens the map window after its renderer crashed, on every platform, and
+ * tells the operator what happened [M-45]. Repeated crashes stop after
+ * MAX_RENDERER_WINDOW_RECOVERIES so a crash loop ends in a visible message
+ * rather than flashing windows.
+ */
+async function recoverOperationalWindowAfterCrash(reason, runtimeLog) {
+  const crashSequence = rendererCrashSequence
+  try {
+    if (!windowRecoveryAllowed()) {
+      appendRecoveryEvent(runtimeLog, 'info', 'renderer_window_recovery_cancelled', reason)
+      return
+    }
+    // A restore already in flight was for an earlier crash; let it settle so
+    // only one replacement is being built at a time. Its own recovery sees
+    // this newer crash and stands down.
+    if (operationalWindowRestore !== null) {
+      await operationalWindowRestore.then(() => undefined, () => undefined)
+    }
+    if (crashSequence !== rendererCrashSequence) return
+    if (!windowRecoveryAllowed()) {
+      appendRecoveryEvent(runtimeLog, 'info', 'renderer_window_recovery_cancelled', reason)
+      return
+    }
+    if (rendererWindowRecoveries >= MAX_RENDERER_WINDOW_RECOVERIES) {
+      appendRecoveryEvent(runtimeLog, 'error', 'renderer_window_recovery_limit_reached', reason)
+      try {
+        dialog.showErrorBox(
+          'SAR Tracker map window keeps crashing',
+          `The map window has crashed ${rendererWindowRecoveries + 1} times in this session, so SAR Tracker will close instead of reopening it again. Start SAR Tracker again; the crash-recovery notice will show what was affected. If it keeps crashing, keep this laptop's SAR Tracker data folder and contact support.`,
+        )
+      } catch {
+        // The runtime log above keeps the decision in headless contexts.
+      }
+      app.quit()
+      return
+    }
+    rendererWindowRecoveries += 1
+    let window
+    try {
+      window = await restoreOperationalWindow()
+    } catch (error) {
+      // A quit, fault response or newer crash that began meanwhile owns what
+      // happens next; the newer crash runs its own recovery.
+      if (!windowRecoveryAllowed()) return
+      if (crashSequence !== rendererCrashSequence) {
+        appendRecoveryEvent(runtimeLog, 'warn', 'renderer_window_recovery_superseded', reason)
+        return
+      }
+      reportUnsafeRendererRestore(error, runtimeLog)
+      return
+    }
+    if (window === null) {
+      appendRecoveryEvent(runtimeLog, 'info', 'renderer_window_recovery_cancelled', reason)
+      return
+    }
+    if (crashSequence !== rendererCrashSequence || window.isDestroyed()) {
+      // The replacement itself crashed before it was ready; that crash's
+      // recovery reports the outcome, so this one must not claim success.
+      appendRecoveryEvent(runtimeLog, 'warn', 'renderer_window_recovery_superseded', reason)
+      return
+    }
+    appendRecoveryEvent(runtimeLog, 'warn', 'renderer_window_recovered', reason)
+    void Promise.resolve()
+      .then(() => dialog.showMessageBox(window, {
+        type: 'warning',
+        title: 'SAR Tracker map window reopened',
+        message: `The map window ${describeRendererLoss(reason)}. SAR Tracker has reopened it.`,
+        detail: 'Reopen the active mission if it is not showing, then check that tracking is live and team positions are updating. Anything shown in the old window but not yet saved may be missing; the crash is recorded in diagnostics.',
+        buttons: ['OK'],
+      }))
+      .catch(() => undefined)
+  } finally {
+    activeRendererWindowRecoveries = Math.max(0, activeRendererWindowRecoveries - 1)
+  }
+}
+
+/** Records one crash-recovery decision without letting a log failure escape. */
+function appendRecoveryEvent(runtimeLog, level, event, reason) {
+  void Promise.resolve()
+    .then(() => runtimeLog?.append({
+      level,
+      event,
+      fields: { reason: reason ?? 'unknown', recoveries: rendererWindowRecoveries },
+    }))
+    .catch(() => undefined)
+}
+
+/** Describes a render-process-gone reason in words a volunteer can act on. */
+function describeRendererLoss(reason) {
+  switch (reason) {
+    case 'oom':
+      return 'ran out of memory and closed'
+    case 'killed':
+      return 'was stopped by the system'
+    case 'launch-failed':
+      return 'could not start'
+    case 'integrity-failure':
+      return 'failed a code integrity check and closed'
+    default:
+      return 'crashed'
+  }
+}
 
 /** Retries only archive plaintext cleanup while retaining the one-shot crash/evidence fence. */
 async function awaitArchiveReviewRendererLossFence() {

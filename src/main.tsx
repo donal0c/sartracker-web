@@ -1,9 +1,8 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
 import { bootstrapAppRuntime } from './features/runtime/bootstrap-app-runtime'
 import { installAppRuntimeTeardown } from './features/runtime/install-app-runtime-teardown'
+import { RendererRoot } from './features/runtime/renderer-root'
 import { applySavedTheme } from './lib/theme-preference'
 
 applySavedTheme()
@@ -13,8 +12,4 @@ installAppRuntimeTeardown({
 })
 void runtimeBootstrapPromise
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+createRoot(document.getElementById('root')!).render(<RendererRoot />)
