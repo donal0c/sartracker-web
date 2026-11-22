@@ -7,7 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
-import { isModalWorkspacePanel, isTopModalWorkspacePanel, registerOpenModal } from './modal-workspace-registry'
+import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal } from './modal-workspace-registry'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls immediate mount and unmount. */
@@ -49,10 +49,22 @@ export function WorkspaceOverlay({
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
   const onCloseRef = useRef(onClose)
+  const refusedRef = useRef(false)
   useLayoutEffect(() => { onCloseRef.current = onClose })
 
   useLayoutEffect(() => {
+    refusedRef.current = false
     if (!open) {
+      return
+    }
+
+    // At most one known nesting, and never over a workspace asking a question:
+    // a refused open is closed again before it paints, and said in the console.
+    const refusal = docked ? null : modalWorkspaceOpenRefusal(labelledBy)
+    if (refusal !== null) {
+      refusedRef.current = true
+      console.error(`Workspace "${labelledBy}" was not opened: ${refusal}.`)
+      onCloseRef.current()
       return
     }
 
@@ -61,7 +73,7 @@ export function WorkspaceOverlay({
     // the tracking alarm, so the uncovered top bar and side panel must not take
     // presses or focus; the alarm itself (Resume) stays live.
     const releaseBackground = docked ? null : makeBackgroundInert()
-    const unregister = docked ? null : registerOpenModal(() => onCloseRef.current(), () => panelRef.current)
+    const unregister = docked ? null : registerOpenModal(labelledBy, () => onCloseRef.current(), () => panelRef.current)
     return () => {
       releaseBackground?.()
       unregister?.()
@@ -69,13 +81,13 @@ export function WorkspaceOverlay({
       returnFocusRef.current = null
       restoreFocus(returnTarget)
     }
-  }, [docked, open])
+  }, [docked, labelledBy, open])
 
   useLayoutEffect(() => {
     const panel = panelRef.current
     // Docked mode is non-modal: do not steal focus from the operator's current
     // control (e.g. the active-mission rail) when the panel opens (DON-176).
-    if (!open || panel === null || docked) {
+    if (!open || panel === null || docked || refusedRef.current) {
       return
     }
 

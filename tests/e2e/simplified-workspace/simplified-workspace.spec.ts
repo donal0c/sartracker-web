@@ -583,6 +583,82 @@ test.describe('Simplified workspace', () => {
     await expect(modals).toHaveCount(0)
   })
 
+  test('no third workspace opens, and none opens over a workspace that is asking a question', async ({ page }) => {
+    // Every opener sits behind an open modal, so these opens can only come from
+    // code. The one known nesting, Settings over All devices, still opens.
+    await open(page)
+    await startMission(page)
+    const modals = page.locator('[role="dialog"][aria-modal="true"]')
+    const openFromCode = async (store: 'settings' | 'diagnostics' | 'devices') => {
+      await page.evaluate(async (name) => {
+        if (name === 'settings') {
+          const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+          useSettingsWorkspaceStore.getState().openWorkspace()
+        } else if (name === 'diagnostics') {
+          const { useDiagnosticsWorkspaceStore } = await import('/src/features/diagnostics/diagnostics-workspace-store.ts')
+          useDiagnosticsWorkspaceStore.getState().openWorkspace()
+        } else {
+          const { useDeviceWorkspaceStore } = await import('/src/features/tracking/device-workspace-store.ts')
+          useDeviceWorkspaceStore.getState().openWorkspace()
+        }
+      }, store)
+    }
+    const escapeFromOutside = async () => {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+      await page.keyboard.press('Escape')
+    }
+
+    // All devices, then Settings over it, then Diagnostics: Diagnostics does not open.
+    await showPeople(page)
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await openFromCode('settings')
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await openFromCode('diagnostics')
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+    await expect(modals).toHaveCount(2)
+    // The refused open is dropped, not queued: it does not appear as the others close.
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+
+    // Only Settings may open over All devices, and nothing over Diagnostics.
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+    await openFromCode('devices')
+    await openFromCode('settings')
+    await page.waitForTimeout(300)
+    await expect(modals).toHaveCount(1)
+    await expect(page.getByTestId('devices-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+
+    // Settings asking whether to discard: Diagnostics does not open over the question.
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await openFromCode('diagnostics')
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+    await expect(modals).toHaveCount(1)
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await escapeFromOutside()
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(modals).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)
