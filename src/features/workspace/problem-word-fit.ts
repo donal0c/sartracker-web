@@ -75,12 +75,12 @@ export function fitKeepingRemedy(
  * @param words the problem words, most urgent first
  * @param shown how many whole words fit
  * @param compact count the rest as a short "+N"
- * @returns e.g. "History failed · 2 stale · +2 more"; "3 problems" when none fit
+ * @returns e.g. "History failed · 2 stale · +2 more"; "3 problems" or "1 problem" when none fit
  */
 export function problemWordsText(words: readonly string[], shown: number, compact = false): string {
   if (shown >= words.length) return words.join(PROBLEM_WORD_SEPARATOR)
-  // A single word is shown even when it cannot fit; nothing else could say it.
-  if (shown === 0) return words.length === 1 ? (words[0] ?? '') : `${words.length} problems`
+  // No whole word fits: count them, never draw a word past the bar. The label and Tracking name each one.
+  if (shown <= 0) return words.length === 1 ? '1 problem' : `${words.length} problems`
   const hidden = words.length - shown
   return [...words.slice(0, shown), compact ? `+${hidden}` : `+${hidden} more`].join(PROBLEM_WORD_SEPARATOR)
 }

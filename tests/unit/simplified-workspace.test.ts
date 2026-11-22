@@ -262,6 +262,15 @@ describe('tracking problem words', () => {
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 3)).toBe('History failed · 2 stale · 1 rejected')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 2)).toBe('History failed · 2 stale · +1 more')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 0)).toBe('3 problems')
+    // A lone word that does not fit is counted, never drawn past the bar (DON-353).
+    expect(problemWordsText(['Re-enter password'], 0)).toBe('1 problem')
+    expect(problemWordsText(['Re-enter password'], 0, true)).toBe('1 problem')
+    expect(problemWordsText(['Re-enter password'], 1)).toBe('Re-enter password')
+    // Before a mission: "Re-enter password" (154 px) in 100 px, and zero or negative room.
+    for (const available of [100, 0, -20]) {
+      const fit = fitKeepingRemedy([154], { remedy: 0, dropLead: false }, 16, 72, available, 28)
+      expect(problemWordsText(['Re-enter password'], fit.shown, fit.compact === true)).toBe('1 problem')
+    }
   })
 
   it('drops the alarm lead before anything else, and person-safety words win over the fix [DON-353]', () => {
