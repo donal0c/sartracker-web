@@ -7,7 +7,10 @@ import { useTrackingHeadline } from '../../features/workspace/tracking-headline'
 import { useMissionStore } from '../../features/mission/mission-store'
 import { selectWorkspaceHideBlockedReason } from '../../features/mission/workspace-hide-blocked-reason'
 import { CoverageAttentionIndicator } from '../coverage-attention-indicator'
-import { DeferredGpxImportPanel } from '../deferred-gpx-import-panel'
+// Loaded with the app, not on demand: the lazily loaded section arrived about
+// 300 ms after Tools opened and pushed the helicopter controls down 476 px,
+// under the pointer (DON-355; same reasoning as the modal screens, DON-229).
+import { GpxImportPanel } from '../gpx-import-panel'
 import { HelicopterPanel } from '../helicopter-panel'
 import { LayerFilterPanel } from '../layer-filter-panel'
 import { MissionControlPanel } from '../mission-control-panel'
@@ -185,7 +188,7 @@ export function useWorkspacePanels(input: {
       {visible === 'tools' ? (
         <section className="ws-panel-section" data-testid="ws-tools-panel">
           <PanelHead onClose={() => setTemporary(null)} title="GPX and helicopters" />
-          <div className="ws-panel-scroll space-y-4"><DeferredGpxImportPanel /><HelicopterPanel /></div>
+          <div className="ws-panel-scroll space-y-4"><GpxImportPanel /><HelicopterPanel /></div>
         </section>
       ) : null}
       <div

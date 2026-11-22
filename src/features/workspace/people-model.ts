@@ -15,6 +15,12 @@ export type PersonRow = {
   readonly attentionAcknowledged: boolean
   /** Lower is more urgent. Below SHARED_OUTAGE_URGENCY means a problem of their own. */
   readonly urgency: number
+  /**
+   * True when this person's only problem is that the mission is paused, which
+   * the MISSION PAUSED alarm already says. Their row still reads "Last known";
+   * the badge does not count them [DON-356].
+   */
+  readonly onlyPaused: boolean
 }
 
 /** Urgency of a person whose only problem is the outage or pause everyone shares. */
@@ -28,6 +34,8 @@ export type PeopleLiveness = {
   readonly live: boolean
   /** When positions were last confirmed, to spot anyone already quiet before they stopped. */
   readonly lastConfirmedAt: string | null
+  /** True while the mission is paused, so nobody's position is updating by design. */
+  readonly paused?: boolean
 }
 
 /** Words a volunteer can act on for how long ago a device last reported. */
@@ -42,8 +50,8 @@ export function formatLastHeard(lastSeen: string | null, nowMs: number): string 
   return `${hours} hr ${minutes % 60} min ago`
 }
 
-function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConfirmedAt }: PeopleLiveness): { readonly statusText: string; readonly tone: PersonTone; readonly urgency: number } {
-  if (!row.hasFix) return { statusText: 'No position yet', tone: 'attention', urgency: 1 }
+function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConfirmedAt, paused = false }: PeopleLiveness): { readonly statusText: string; readonly tone: PersonTone; readonly urgency: number; readonly onlyPaused: boolean } {
+  if (!row.hasFix) return { statusText: 'No position yet', tone: 'attention', urgency: 1, onlyPaused: false }
   // The age of the position being drawn, never of the last contact with the device.
   const age = formatLastHeard(row.fixTime, nowMs) ?? 'time unknown'
   const notes: string[] = []
@@ -60,14 +68,23 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConf
   else if (row.status === 'offline') notes.push(`Offline, position ${age}`)
   else if (row.status === 'unknown') notes.push(`Not confirmed, position ${age}`)
   else if (row.stale || row.sourceDisplay === 'Stale') notes.push(`Out of date, position ${age}`)
+  // While paused every row reads "Last known", so name the person's own
+  // problem from before the pause; the badge keeps counting them [DON-356].
+  const pausedOwnProblem = paused && !live
+    ? row.currentUnconfirmed ? 'position not confirmed before the pause'
+      : row.reportedStatus === 'offline' ? 'reported offline before the pause'
+        : row.reportedStatus === 'unknown' ? 'not confirmed before the pause'
+          : null
+    : null
+  if (pausedOwnProblem !== null) notes.push(pausedOwnProblem)
   if (row.fixTimeUnverified) notes.push('position time not verified')
   if (row.ingestWarning !== null) notes.push('bad position report rejected')
   if (notes.length > 0) {
-    const ownProblem = quietBeforeStop || row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
+    const ownProblem = quietBeforeStop || pausedOwnProblem !== null || row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
     const urgency = row.stationaryAttention ? (row.attentionAcknowledged ? 1 : 0) : ownProblem ? 2 : SHARED_OUTAGE_URGENCY
-    return { statusText: notes.join(' · '), tone: 'attention', urgency }
+    return { statusText: notes.join(' · '), tone: 'attention', urgency, onlyPaused: paused && !live && urgency === SHARED_OUTAGE_URGENCY }
   }
-  return { statusText: `Position ${age}`, tone: row.stationaryAttentionUnavailable ? 'muted' : 'ok', urgency: NO_PROBLEM_URGENCY }
+  return { statusText: `Position ${age}`, tone: row.stationaryAttentionUnavailable ? 'muted' : 'ok', urgency: NO_PROBLEM_URGENCY, onlyPaused: false }
 }
 
 /**
@@ -80,7 +97,7 @@ export function buildPeopleRows(
   liveness: PeopleLiveness = { live: true, lastConfirmedAt: null },
 ): readonly PersonRow[] {
   const people = rows.map((row) => {
-    const { statusText, tone, urgency } = describePerson(row, nowMs, liveness)
+    const { statusText, tone, urgency, onlyPaused } = describePerson(row, nowMs, liveness)
     return {
       deviceId: row.deviceId,
       name: row.name,
@@ -93,6 +110,7 @@ export function buildPeopleRows(
       canAcknowledge: row.stationaryAttention && !row.attentionAcknowledged,
       attentionAcknowledged: row.attentionAcknowledged,
       urgency,
+      onlyPaused,
     } satisfies PersonRow
   })
   return people.sort((left, right) => left.urgency - right.urgency || left.name.localeCompare(right.name))
@@ -106,7 +124,13 @@ export function selectExceptionsForMap(people: readonly PersonRow[]): readonly P
   return people.filter((person) => person.tone === 'attention' && person.urgency < SHARED_OUTAGE_URGENCY)
 }
 
-/** Counts the people the top of the screen should point the operator towards. */
+/**
+ * Counts the people the top of the screen should point the operator towards.
+ * While the mission is paused, the alarm covers everyone's stopped positions,
+ * so the badge counts only people with a problem of their own and keeps them
+ * apart from the pause [DON-356]. During a tracking outage everyone still
+ * counts.
+ */
 export function countPeopleNeedingAttention(people: readonly PersonRow[]): number {
-  return people.filter((person) => person.tone === 'attention').length
+  return people.filter((person) => person.tone === 'attention' && !person.onlyPaused).length
 }

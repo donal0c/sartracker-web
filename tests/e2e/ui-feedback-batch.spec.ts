@@ -143,9 +143,9 @@ test('high contrast is operator accessible and survives reload', async ({ page }
 
 test('brightened secondary controls retain their hover affordance', async ({ page }) => {
   await openWorkspacePanel(page, 'tools')
-  // The GPX import section loads lazily above the helicopter section and pushes
-  // it about 480 px down when it arrives; hovering before then left the pointer
-  // over empty space once it moved (CI flake, DON-353).
+  // The GPX import section used to load lazily and push the helicopter section
+  // about 476 px down when it arrived (CI flake, DON-353); it now loads with
+  // the app (DON-355, tools-panel-layout-stability.spec.ts).
   await expect(page.getByTestId('gpx-import-panel')).toBeVisible()
   await page.getByTestId('helicopter-add-slot').click()
   const button = page.getByTestId('helicopter-hide-empty-slots')
