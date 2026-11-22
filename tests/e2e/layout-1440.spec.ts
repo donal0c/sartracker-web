@@ -1,22 +1,26 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openParticipantPickers, openDiagnostics, openWorkspacePanel } from './helpers/workspace-panels'
+import { openMissionSections } from './helpers/mission-sections'
 
 // DON-300 manual-pass items at the common 1440 x 900 laptop size.
 test.use({ viewport: { width: 1440, height: 900 } })
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
+  await page.goto('/?missionHarness=1&missionModel=1')
   await page.getByTestId('app-title').waitFor()
 })
 
 test('top-bar labels fit their buttons instead of running together [DON-300]', async ({ page }) => {
-  const overflowing = await page.locator('.sar-mast-button').evaluateAll((buttons) =>
+  // Was the mast buttons; the top bar replaced the mast (DON-341).
+  await expect(page.getByTestId('ws-top-bar')).toBeVisible()
+  const overflowing = await page.getByTestId('ws-top-bar').locator('button').evaluateAll((buttons) =>
     buttons.filter((button) => button.scrollWidth > button.clientWidth + 1)
       .map((button) => button.textContent?.trim()))
   expect(overflowing).toEqual([])
 })
 
 test('Diagnostics summary values stay inside their panel [DON-300]', async ({ page }) => {
-  await page.getByTestId('open-diagnostics-workspace').click()
+  await openDiagnostics(page)
   const workspace = page.getByTestId('diagnostics-workspace')
   await expect(workspace).toBeVisible()
   const spilling = await workspace.locator('.sar-status-row').evaluateAll((rows) =>
@@ -57,17 +61,37 @@ async function seedRoster(page: import('@playwright/test').Page): Promise<void> 
   })
 }
 
+/** A roster the size of a real call-out: enough devices that the setup card scrolls. */
+async function seedLargeRoster(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(async () => {
+    const seen = new Date(Date.now() - 60_000).toISOString()
+    await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
+      groups: [{ group_id: '101', name: 'Hill Team', parent_group_id: null }],
+      devices: Array.from({ length: 30 }, (_, index) => ({
+        device_id: String(index + 1),
+        name: `Team ${String(index + 1).padStart(2, '0')}`,
+        status: 'online',
+        last_seen: seen,
+        unique_id: `u${index + 1}`,
+        category: null,
+        group_id: index % 2 === 0 ? '101' : null,
+      })),
+    })
+  })
+}
+
 async function startMission(
   page: import('@playwright/test').Page,
   select: (page: import('@playwright/test').Page) => Promise<void>,
   offsetHours = '0',
 ): Promise<void> {
   await seedRoster(page)
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('Layout mission')
   await page.getByTestId('mission-offset-input').fill(offsetHours)
   await select(page)
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-phase-chip').first()).toContainText(/active/i)
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 }
 
 /** True when the element is fully inside the window and inside every scrolling ancestor. */
@@ -109,6 +133,7 @@ async function completeHistory(page: import('@playwright/test').Page): Promise<v
 }
 
 const pickCharlie = async (page: import('@playwright/test').Page) => {
+  await openParticipantPickers(page)
   await page.getByTestId('participant-device-picker').getByText('Charlie Team', { exact: true }).click()
 }
 
@@ -119,9 +144,10 @@ test('gives the Tracking, Tools and Layers body room during a calm mission [DON-
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'false')
   await expect(page.getByTestId('mission-participants-section-summary')).toHaveText('1 device · history complete')
   await expect(page.getByTestId('mission-outings-section-summary')).toHaveText('No outing · fixes Unassigned')
-  const body = await page.getByTestId('sidebar-tab-content').boundingBox()
-  // 188 px before option C. The browser copy also shows its ~35 px
-  // "Browser testing mode" banner, which the desktop app does not.
+  // Was the sidebar tab body under Mission. Layers now has its own side panel (DON-341).
+  // The browser copy also shows its ~35 px "Browser testing mode" banner, which the desktop app does not.
+  await openWorkspacePanel(page, 'layers')
+  const body = await page.getByTestId('ws-layers-panel').boundingBox()
   expect(body?.height ?? 0).toBeGreaterThanOrEqual(300)
   await expectControlsInView(page)
 })
@@ -130,6 +156,7 @@ test('opens a folded section on request and keeps adding a participant possible 
   await startMission(page, pickCharlie)
   await completeHistory(page)
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'false')
+  await openMissionPanel(page)
   await page.getByTestId('mission-participants-section-toggle').click()
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'true')
   await expect(page.getByTestId('participant-add-btn')).toBeVisible()
@@ -141,6 +168,8 @@ test('folding a section keeps an unfinished entry and its error [DON-300]', asyn
   await startMission(page, pickCharlie)
   await completeHistory(page)
   const toggle = page.getByTestId('mission-participants-section-toggle')
+  // Start closes the panel; folding happens inside Mission (DON-341).
+  await openMissionPanel(page)
   await toggle.click()
   await page.getByTestId('participant-add-ref').selectOption({ index: 1 })
   await page.getByTestId('participant-history-start-custom').check()
@@ -155,10 +184,13 @@ test('folding a section keeps an unfinished entry and its error [DON-300]', asyn
 
 /** Header state, both timers and Pause/Finish are always in view during a mission [DON-300]. */
 async function expectControlsInView(page: import('@playwright/test').Page): Promise<void> {
-  for (const testId of ['mission-elapsed', 'mission-active-search', 'mission-pause-resume-btn', 'mission-finish-btn']) {
+  // Pause and Finish are in the Mission panel; the phase is in the top bar (DON-341).
+  await openMissionPanel(page)
+  // Active search time moved from Mission to the top bar (DON-341).
+  for (const testId of ['mission-elapsed', 'ws-search-time', 'mission-pause-resume-btn', 'mission-finish-btn']) {
     expect(await fullyShown(page.getByTestId(testId)), `${testId} fully shown`).toBe(true)
   }
-  expect(await fullyShown(page.getByTestId('mission-control-dock').getByTestId('mission-phase-chip')), 'phase chip fully shown').toBe(true)
+  expect(await fullyShown(page.getByTestId('ws-mission-phase')), 'phase fully shown').toBe(true)
 }
 
 /** True when a summary line takes one text line, whatever the platform fonts. */
@@ -181,7 +213,8 @@ test('keeps every folded summary to one line, even for a long outing name [DON-3
   expect(await singleLine(page.getByTestId('mission-participants-section-summary'))).toBe(true)
   expect(await singleLine(outingSummary)).toBe(true)
   const toggle = page.getByTestId('mission-outings-section-toggle')
-  await toggle.click()
+  // Outings sits inside "More mission options" in the Mission panel (DON-341).
+  await openMissionSections(page, ['outings'])
   const label = "Night search of the Hag's Glen and the Devil's Ladder approaches"
   await page.getByTestId('outing-label-input').fill(label)
   await page.getByTestId('outing-start-btn').click()
@@ -194,12 +227,19 @@ test('keeps every folded summary to one line, even for a long outing name [DON-3
 test('shows Pause and Finish from the top after Start, even when setup was scrolled [DON-300]', async ({ page }) => {
   // CI flake: the operator (or Playwright) scrolled Mission Control down to
   // reach Start, and the dock stayed scrolled with Pause/Finish cut off.
-  await seedRoster(page)
+  // Was the sidebar dock. The same Mission host becomes the side panel after
+  // Start, so a scroll left in setup must not carry over (DON-341). The setup
+  // card fits at 1440 x 900 with two devices, so a full roster with the
+  // pickers open makes it scroll, as a real team's does.
+  await seedLargeRoster(page)
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('Layout mission')
   await page.getByTestId('mission-offset-input').fill('0')
-  const dock = page.getByTestId('mission-control-dock')
-  await dock.evaluate((element) => { element.scrollTop = element.scrollHeight })
-  expect(await dock.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
+  await openParticipantPickers(page)
+  const host = page.getByTestId('ws-mission-host')
+  await expect.poll(() => host.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
+  await host.evaluate((element) => { element.scrollTop = element.scrollHeight })
+  expect(await host.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
   await page.getByTestId('mission-start-btn').click()
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')
   await expectControlsInView(page)
@@ -216,6 +256,7 @@ test.describe('a warning keeps Participants open, with Pause and Finish still in
 
   test('history still loading', async ({ page }) => {
     await startMission(page, async (target) => {
+      await openParticipantPickers(page)
       await target.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
     }, '2')
     await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')

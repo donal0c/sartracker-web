@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openDiagnostics } from './helpers/workspace-panels'
 
 test.describe('M21 diagnostics workspace', () => {
   test.beforeEach(async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -12,9 +13,10 @@ test.describe('M21 diagnostics workspace', () => {
   test('opens diagnostics, copies the support report, exports it, and repairs layer metadata', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Diagnostics Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(() => {
       window.localStorage.setItem(
@@ -80,7 +82,7 @@ test.describe('M21 diagnostics workspace', () => {
       )
     })
 
-    await page.getByTestId('open-diagnostics-workspace').click()
+    await openDiagnostics(page)
     await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
     await expect(page.getByTestId('diagnostics-workspace')).toContainText('Diagnostics Mission')
     await expect(page.getByTestId('diagnostics-workspace')).toContainText('https://traccar.example.com')
@@ -104,7 +106,7 @@ test.describe('M21 diagnostics workspace', () => {
     await page.keyboard.press('Escape')
     await page.getByTestId('basemap-menu-toggle').click()
     await page.getByTestId('basemap-btn-openstreetmap').click()
-    await page.getByTestId('open-diagnostics-workspace').click()
+    await openDiagnostics(page)
     await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
 
     await page.getByTestId('diagnostics-incident-time-input').fill(toDatetimeLocal(new Date()))
@@ -154,8 +156,9 @@ test.describe('M21 diagnostics workspace', () => {
   test('uses dialog semantics and returns focus to the diagnostics opener on Escape', async ({
     page,
   }) => {
-    const opener = page.getByTestId('open-diagnostics-workspace')
-    await opener.click()
+    // Diagnostics is now under More; the menu closes, so focus returns to More (DON-341).
+    const opener = page.getByTestId('ws-more-button')
+    await openDiagnostics(page)
 
     const dialog = page.getByRole('dialog', { name: 'Operational Diagnostics' })
     await expect(dialog).toBeVisible()
@@ -169,9 +172,10 @@ test.describe('M21 diagnostics workspace', () => {
   test('includes per-device breadcrumb render budget details in copied diagnostics [DON-159]', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Breadcrumb Diagnostics')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(async () => {
       const harness = window.__SARTRACKER_BROWSER_HARNESS__
@@ -256,7 +260,7 @@ test.describe('M21 diagnostics workspace', () => {
       })
     })
 
-    await page.getByTestId('open-diagnostics-workspace').click()
+    await openDiagnostics(page)
     await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
     await expect(page.getByTestId('diagnostics-workspace')).toContainText('Breadcrumb points')
 

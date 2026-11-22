@@ -765,8 +765,13 @@ body {
 .ws-clocks div { display: flex; flex-direction: column; line-height: 1.2; }
 .ws-clocks span { font-size: 12px; color: var(--ws-muted); }
 .ws-clocks strong { font-family: ui-monospace, Menlo, monospace; font-size: 17px; font-weight: 800; }
-.ws-health { display: flex; min-width: 0; flex: 1; flex-direction: column; justify-content: center; border: 1px solid transparent; padding: 0.1rem 0.7rem; text-align: left; line-height: 1.25; }
-.ws-health strong { font-size: 15px; line-height: 1.2; }
+.ws-health { position: relative; display: flex; min-width: 0; overflow: hidden; flex: 1; flex-direction: column; justify-content: center; border: 1px solid transparent; padding: 0.1rem 0.7rem; text-align: left; line-height: 1.25; }
+/* One line, so a long message never grows the top bar and moves what is under the pointer (DON-261). The short problem words come first and are never cut; only the rest may end in "…". The full words are in the label and the Tracking panel. */
+.ws-health strong { display: flex; min-width: 0; font-size: 15px; line-height: 1.2; white-space: nowrap; }
+.ws-health-icon { flex-shrink: 0; margin-right: 0.35rem; }
+.ws-health-problems { flex-shrink: 0; }
+.ws-health-measure { position: absolute; top: 0; left: 0; visibility: hidden; pointer-events: none; white-space: pre; }
+.ws-health-detail { min-width: 0; margin-left: 0.5rem; overflow: hidden; font-weight: 500; text-overflow: ellipsis; }
 .ws-health-time { font-size: 12px; color: var(--ws-muted); white-space: nowrap; }
 .ws-health-ok strong { color: #6ee7b7; }
 .ws-health-neutral strong { color: #e7e5e4; }
@@ -783,8 +788,22 @@ body {
 .ws-menu > button:hover, .ws-menu > a:hover { background: var(--ws-raised); }
 .ws-menu-row { padding: 0.25rem 0; }
 .ws-menu-version { padding: 0.25rem 0.6rem 0; font-size: 11px; color: var(--ws-muted); overflow-wrap: anywhere; }
+/* At narrow widths the logo, mission name and bar buttons give up room so
+   three tracking problems can be read in full, in the wider fonts of the
+   team's Linux laptops too (DON-261). The bar's height does not change. */
+@media (max-width: 1180px) {
+  .ws-top-bar { gap: 0.4rem; }
+  .ws-logo { display: none; }
+  .ws-mission-button { min-width: 8rem; }
+  .ws-health { padding: 0.1rem 0.5rem; }
+  .ws-bar-actions { gap: 0.25rem; }
+  .ws-bar-button { padding: 0 0.4rem; font-size: 13px; }
+}
 
 .ws-alarm { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 1rem; padding: 0.5rem 1rem; background: #dc2626; color: #fff; font-size: 17px; animation: ws-alarm-flash 1.1s steps(2, jump-none) infinite; }
+.ws-alarm-slot { position: absolute; top: 0; left: 0; right: 0; z-index: 50; }
+.ws-map-area .maplibregl-ctrl-top-left, .ws-map-area .maplibregl-ctrl-top-right { top: var(--ws-alarm-height, 0px); }
+.ws-map-area .sar-control-dock { margin-top: var(--ws-alarm-height, 0px); }
 .ws-alarm button { flex-shrink: 0; background: #fff; color: #7f1d1d; padding: 0.3rem 0.9rem; font-size: 15px; font-weight: 800; }
 @keyframes ws-alarm-flash { from { background: #dc2626; } to { background: #7f1d1d; } }
 @media (prefers-reduced-motion: reduce) { .ws-alarm { animation: none; } }
@@ -823,7 +842,7 @@ body {
 .ws-plain-lines dt { margin-top: 0.6rem; font-size: 13px; font-weight: 700; color: var(--ws-muted); }
 .ws-plain-lines dd { font-size: 15px; }
 .ws-plain-lines li { list-style: disc; margin-left: 1.1rem; }
-.ws-exceptions { position: absolute; right: 0.75rem; top: 7.25rem; z-index: 25; display: flex; max-width: min(24rem, 60%); flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+.ws-exceptions { position: absolute; right: 0.75rem; top: calc(7.25rem + var(--ws-alarm-height, 0px)); z-index: 25; display: flex; max-width: min(24rem, 60%); flex-direction: column; align-items: flex-end; gap: 0.25rem; }
 .ws-exceptions button { border: 1px solid #000; border-left: 4px solid #000; background: #fbbf24; color: #000; padding: 0.2rem 0.6rem; font-size: 14px; text-align: left; box-shadow: 0 4px 12px rgba(0,0,0,0.45); }
 
 [data-panel-arrangement] [data-testid='layer-panel'] { padding: 0 0.5rem 0.5rem; }
@@ -836,7 +855,7 @@ body {
 [data-panel-arrangement] [data-testid='drawing-toolbar'] { left: 14.5rem; top: 1rem; }
 
 [data-testid='ws-mission-host'].ws-panel-section { position: relative; overflow-y: auto; }
-.ws-mission-card { position: absolute; left: 50%; top: 1.25rem; z-index: 40; max-height: calc(100% - 2.5rem); width: 540px; max-width: calc(100% - 1.5rem); transform: translateX(-50%); overflow-y: auto; border: 2px solid #fff; background: var(--ws-bg); color: var(--ws-text); box-shadow: 0 24px 64px rgba(0,0,0,0.65); }
+.ws-mission-card { position: absolute; left: 50%; top: calc(1.25rem + var(--ws-alarm-height, 0px)); z-index: 40; max-height: calc(100% - 2.5rem - var(--ws-alarm-height, 0px)); width: 540px; max-width: calc(100% - 1.5rem); transform: translateX(-50%); overflow-y: auto; border: 2px solid #fff; background: var(--ws-bg); color: var(--ws-text); box-shadow: 0 24px 64px rgba(0,0,0,0.65); }
 .ws-mission-close { position: absolute; right: 0.6rem; top: 0.6rem; z-index: 1; background: var(--ws-bg); }
 [data-panel-arrangement] [data-testid='mission-control'] { border: 0; background: transparent; box-shadow: none; }
 [data-panel-arrangement] [data-testid='mission-control'] .sar-section-label { font-size: 17px; letter-spacing: 0; text-transform: none; color: #fff; }

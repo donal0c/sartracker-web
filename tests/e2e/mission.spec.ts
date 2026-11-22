@@ -61,15 +61,17 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-name-input').fill('Training Mission')
     await page.getByTestId('mission-start-btn').click()
 
-    await page.waitForTimeout(1100)
-    const elapsedBeforePause = await page.getByTestId('mission-elapsed').textContent()
+    // Wait on the clock itself, not a fixed sleep a loaded CI runner can outlast.
+    const elapsed = page.getByTestId('mission-elapsed')
+    await expect(elapsed).not.toHaveText('00:00:00')
+    const elapsedBeforePause = await elapsed.textContent()
 
     await pressPauseResume(page)
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveText('Resume')
 
     // DON-64: paused must be unmistakable and the recovery control always reachable.
-    // In the new layout that is the full-width alarm, whatever panel is open.
+    // In the new layout that is the alarm across the map, whatever panel is open.
     await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
     await expect(page.getByTestId('ws-alarm-resume')).toBeEnabled()
     await openMissionPanel(page)
@@ -82,11 +84,10 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
 
     const activeAtPause = await page.getByTestId('mission-active-search').textContent()
+    // Elapsed keeps moving while paused; once it has, active time must not have.
+    await expect(elapsed).not.toHaveText(elapsedBeforePause ?? '')
     await page.waitForTimeout(1100)
-    const elapsedDuringPause = await page.getByTestId('mission-elapsed').textContent()
     const activeDuringPause = await page.getByTestId('mission-active-search').textContent()
-
-    expect(elapsedDuringPause).not.toBe(elapsedBeforePause)
     expect(
       Math.abs(parseDuration(activeDuringPause) - parseDuration(activeAtPause)),
     ).toBeLessThanOrEqual(1)
@@ -95,9 +96,8 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     const activeAtResume = await page.getByTestId('mission-active-search').textContent()
-    await page.waitForTimeout(2100)
-    const activeAfterResume = await page.getByTestId('mission-active-search').textContent()
-    expect(parseDuration(activeAfterResume)).toBeGreaterThan(parseDuration(activeAtResume))
+    await expect.poll(async () => parseDuration(await page.getByTestId('mission-active-search').textContent()))
+      .toBeGreaterThan(parseDuration(activeAtResume))
   })
 
   test('finishes a mission through confirmation and returns to idle state', async ({ page }) => {

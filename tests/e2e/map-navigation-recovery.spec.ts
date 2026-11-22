@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 test('new Go To wins over a delayed production basemap camera restore [AUD-06]', async ({ page }, testInfo) => {
   await page.route('https://**/*', (route) => route.abort())
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
   await page.evaluate(async () => {
@@ -43,7 +43,7 @@ test('new Go To wins over a delayed production basemap camera restore [AUD-06]',
 
 test('basemap replacement during animated Go To settles at the destination [AUD-06]', async ({ page }, testInfo) => {
   await page.route('https://**/*', (route) => route.abort())
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
   await page.evaluate(() => {
@@ -68,7 +68,7 @@ test('basemap replacement during animated Go To settles at the destination [AUD-
 test('a never-loaded target expires and cannot reappear when the map recovers [AUD-06]', async ({ page }) => {
   await page.clock.install()
   await page.route('https://**/*', (route) => route.abort())
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
   await page.evaluate(() => window.__SARTRACKER_MAP__!.setStyle(null))
@@ -85,7 +85,7 @@ test('a never-loaded target expires and cannot reappear when the map recovers [A
 
 test('basemap application failure stays visible until the operator chooses another map', async ({ page }, testInfo) => {
   await page.route('https://**/*', (route) => route.abort())
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
   await page.evaluate(() => {
@@ -127,7 +127,7 @@ test('basemap application failure stays visible until the operator chooses anoth
 test('latest repeated Go To survives delayed style loading and renders at the requested coordinate [AUD-06]', async ({ page }, testInfo) => {
   test.setTimeout(60_000)
   await page.route('https://**/*', (route) => route.abort())
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toBeVisible()
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
   await page.evaluate(() => window.__SARTRACKER_MAP__!.setStyle({

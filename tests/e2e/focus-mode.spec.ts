@@ -1,108 +1,124 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, pressPauseResume } from './helpers/workspace-panels'
+import { armMapTool } from './helpers/map-tools'
 
-test.describe('M24 focus mode parity', () => {
+/**
+ * Focus Mode (M24) was retired with the old screen (DON-341). Each of its
+ * capabilities moved, as listed on DON-341; these tests keep the same parity
+ * checks against where each one lives now. "Full map" replaced Focus Mode.
+ */
+test.describe('M24 focus mode parity, now Full map (DON-341)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await page.evaluate(() => {
-      window.localStorage.removeItem('sartracker:focus-mode-active')
+      window.localStorage.clear()
     })
     await page.reload()
     await waitForShell(page)
   })
 
-  test('enters a map-first shell, mirrors coordinates, and persists across reload', async ({ page }) => {
-    await page.getByTestId('focus-mode-toggle').click()
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
-    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
-    await expect(page.getByTestId('operational-sidebar')).toHaveCount(0)
-    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText(
-      'Browser testing mode',
-    )
+  test('Full map gives the map the screen, keeps coordinates and warnings, and persists across reload', async ({ page }) => {
+    await startMission(page, 'Full Map Mission')
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
+    // The safety banner stays while the panel is closed (was: banner kept with the mast hidden).
+    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText('Browser testing mode')
+    // Tracking health stays in the top bar.
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
 
-    // Focus sidebar defaults to Layers tab with layer tree visible
-    await expect(page.getByTestId('focus-mode-layer-controls')).toBeVisible()
+    // Layers and Mission stay reachable from the top bar (was: Focus sidebar tabs and dock).
+    await page.getByTestId('ws-toggle-layers').click()
     await expect(page.getByTestId('layer-panel')).toBeVisible()
-
-    // Tabbed layout exposes Tracking and Tools tabs
-    await expect(page.getByTestId('focus-sidebar-tab-tracking')).toBeVisible()
-    await expect(page.getByTestId('focus-sidebar-tab-tools')).toBeVisible()
-    await expect(page.getByTestId('focus-sidebar-tab-layers')).toBeVisible()
-
-    // Mission control remains accessible in focus mode
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-control')).toBeVisible()
+    await page.getByTestId('ws-mission-close').click()
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
 
+    // The normal coordinate bar replaced the Focus Coordinates readout.
     await moveOverMap(page)
-    await expect(page.getByTestId('focus-mode-coordinate-display')).toContainText('°')
-    await expect(page.getByTestId('coordinate-display')).toHaveCount(0)
+    await expect(page.getByTestId('coordinate-display')).toContainText('°')
+    await expect(page.getByTestId('focus-mode-coordinate-display')).toHaveCount(0)
 
+    // Remembered across a reload, as Focus Mode was.
     await page.reload()
     await waitForShell(page)
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
-    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
-    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText(
-      'Browser testing mode',
-    )
-    await expect(page.getByTestId('focus-mode-toggle')).toContainText('Exit Focus Mode Plus')
-    await expect(page.getByTestId('coordinate-display')).toHaveCount(0)
+    await page.getByTestId('start-screen-resume-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText('Browser testing mode')
 
-    await page.getByTestId('focus-mode-toggle').click()
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'false')
-    await expect(page.getByTestId('operational-sidebar')).toBeVisible()
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-people-panel')).toBeVisible()
   })
 
-  test('preserves mission recovery, tracking awareness, and drawing workflows', async ({ page }) => {
-    await page.getByTestId('mission-name-input').fill('Focus Mode Mission')
-    await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+  test('with Full map on, recovery, tracking awareness and drawing still work', async ({ page }) => {
+    await startMission(page, 'Focus Mode Mission')
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-mission-button')).toContainText('Focus Mode Mission')
 
-    await page.getByTestId('focus-mode-toggle').click()
-    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
-    await expect(page.getByTestId('mission-control')).toContainText('Focus Mode Mission')
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-
+    // Tracking awareness: two devices, one online, are counted and described.
     await injectMockTracking(page)
-    await page.getByTestId('focus-sidebar-tab-tracking').click()
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
-    await expect(page.getByTestId('tracking-status')).toContainText('2')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('1 position out of date')
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is running')
 
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    // Pause and resume.
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    // A phase change closes the open panel, so Full map is back.
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
 
-    await page.getByTestId('drawing-toolbar-expand').click()
-    await page.getByTestId('drawing-tool-line').click({ force: true })
-    await clickMap(page, { x: 420, y: 240 })
-    await clickMap(page, { x: 560, y: 300 })
-    await rightClickMap(page, { x: 560, y: 300 })
+    // Drawing.
+    await armMapTool(page, 'line')
+    await clickMap(page, { x: 420, y: 340 })
+    await clickMap(page, { x: 560, y: 400 })
+    await rightClickMap(page, { x: 560, y: 400 })
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await page.getByTestId('drawing-name-input').fill('Focus Ingress')
     await page.getByTestId('drawing-save-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
 
-    const drawings = await readMissionDrawings(page)
-    expect(drawings.some((drawing) => drawing.name === 'Focus Ingress' && drawing.type === 'line')).toBe(true)
+    // The harness saves after the dialog closes; wait for it rather than read once.
+    await expect.poll(async () => (await readMissionDrawings(page))
+      .some((drawing) => drawing.name === 'Focus Ingress' && drawing.type === 'line')).toBe(true)
 
+    // Recovery after a reload, still on Full map.
     await page.reload()
     await waitForShell(page)
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Resume' }).click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await page.getByTestId('start-screen-resume-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
   })
 })
 
 async function waitForShell(page: Page) {
   await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
   await page.waitForSelector('canvas', { timeout: 15000 })
+}
+
+async function startMission(page: Page, name: string) {
+  await openMissionPanel(page)
+  await page.getByTestId('mission-name-input').fill(name)
+  await page.getByTestId('mission-start-btn').click()
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 }
 
 async function moveOverMap(page: Page) {

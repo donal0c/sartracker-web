@@ -19,8 +19,19 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { openMissionSections } from '../helpers/mission-sections'
+import {
+  openDevicesWorkspace,
+  openDiagnostics,
+  openMissionPanel,
+  openMissionReview,
+  openParticipantPickers,
+  openWorkspacePanel,
+  pressPauseResume,
+} from '../helpers/workspace-panels'
+import { armMapTool } from '../helpers/map-tools'
 
-const OUT_DIR = join(process.cwd(), 'public', 'manual', 'assets')
+/** MANUAL_OUT_DIR sends the images elsewhere, to check the walk-through without touching the manual. */
+const OUT_DIR = process.env.MANUAL_OUT_DIR ?? join(process.cwd(), 'public', 'manual', 'assets')
 
 test.skip(process.env.MANUAL_CAPTURE !== '1', 'set MANUAL_CAPTURE=1 to regenerate manual screenshots')
 test.use({ viewport: { width: 1440, height: 900 }, actionTimeout: 15_000 })
@@ -34,7 +45,6 @@ mkdirSync(OUT_DIR, { recursive: true })
  */
 const JPEG_SHOTS = new Set([
   'app-shell',
-  'focus-mode',
   'map-with-markup',
   'measurement',
   'mission-paused',
@@ -75,7 +85,7 @@ async function dialogPanel(page: Page, testId: string): Promise<Locator> {
 /** Opens the browser harness with the mission model on and waits for the map to draw. */
 async function openHarness(page: Page): Promise<void> {
   // coverage=1 turns on the Mission History coverage view, which packaged builds have by default.
-  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1&coverage=1')
+  await page.goto('/?missionHarness=1&missionModel=1&coverage=1')
   await page.getByTestId('app-title').waitFor({ timeout: 20_000 })
   await page.waitForSelector('canvas', { timeout: 20_000 })
   await page.waitForTimeout(2_500)
@@ -206,6 +216,8 @@ async function completeParticipantBackfill(page: Page): Promise<void> {
     await useCoverageStore.getState().controller?.refresh()
   })
   // Fail loudly rather than photograph a half-loaded panel.
+  // Mission history status lives in the Tracking panel now (DON-341).
+  await openWorkspacePanel(page, 'tracking')
   await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown', {
     timeout: 20_000,
   })
@@ -214,12 +226,13 @@ async function completeParticipantBackfill(page: Page): Promise<void> {
 /** Starts a mission with the Hill Team group and Charlie Team selected, then feeds tracking. */
 async function startDemoMission(page: Page, name = 'Coomloughra Search'): Promise<void> {
   await seedRoster(page)
+  await openParticipantPickers(page)
   await page.getByTestId('mission-name-input').fill(name)
   await page.getByTestId('mission-offset-input').fill('2')
   await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
   await page.getByTestId('participant-device-picker').getByText('Charlie Team', { exact: true }).click()
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-control')).toContainText('active')
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   await injectTracking(page)
   await completeParticipantBackfill(page)
 }
@@ -241,48 +254,42 @@ async function withTallWindow(page: Page, capture: () => Promise<void>): Promise
 }
 
 test.describe('manual screenshots: running a mission', () => {
-  test('start, tracking, devices, layers, tools, focus mode', async ({ page }) => {
+  test('start, tracking, devices, layers', async ({ page }) => {
     await openHarness(page)
     await seedRoster(page)
 
     // Ready to start: name, offset and participants filled in, nothing started yet.
+    await openParticipantPickers(page)
     await page.getByTestId('mission-name-input').fill('Coomloughra Search')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
     await page.getByTestId('participant-device-picker').getByText('Charlie Team', { exact: true }).click()
-    await withTallWindow(page, async () => {
-      // Scroll the device list so a locked group member and the ticked single device both show.
-      await page.getByTestId('participant-device-picker').evaluate((element) => {
-        for (const scroller of [element, ...element.querySelectorAll('*')]) scroller.scrollTop = 60
-      })
-      await shot(page, 'start-mission-setup', page.getByTestId('mission-control-dock'))
-    })
+    // The start card is the whole New mission screen (DON-342).
+    await shot(page, 'start-new-mission')
 
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await injectTracking(page)
     await completeParticipantBackfill(page)
     await shot(page, 'app-shell')
 
     await withTallWindow(page, async () => {
       // During a mission Participants and Outings fold to one line [DON-300].
-      await shot(page, 'mission-control-active', page.getByTestId('mission-control-dock'))
+      await openMissionPanel(page)
+      await shot(page, 'mission-control-active', page.getByTestId('ws-mission-host'))
       await openMissionSections(page, ['participants'])
-      await shot(page, 'mission-participants-open', page.getByTestId('mission-control-dock'))
+      await shot(page, 'mission-participants-open', page.getByTestId('ws-mission-host'))
       await page.getByTestId('mission-participants-section-toggle').click()
-      await shot(page, 'tracking-tab', page.getByTestId('sidebar-tab-content'))
-      await page.getByTestId('sidebar-tab-layers').click()
-      await shot(page, 'layers-tab', page.getByTestId('sidebar-tab-content'))
-      await page.getByTestId('sidebar-tab-tracking').click()
+      await openWorkspacePanel(page, 'tracking')
+      await shot(page, 'tracking-tab', page.getByTestId('ws-tracking-panel'))
+      await openWorkspacePanel(page, 'layers')
+      await shot(page, 'layers-tab', page.getByTestId('ws-layers-panel'))
     })
 
-    await page.getByTestId('open-devices-workspace').click()
-    await page.getByTestId('devices-workspace').waitFor()
+    await openDevicesWorkspace(page)
     await shot(page, 'devices-workspace')
     await page.keyboard.press('Escape')
-
-    await page.getByTestId('focus-mode-toggle').click()
-    await shot(page, 'focus-mode')
+    // Focus Mode was retired with the old screen (DON-341); the manual describes Full map instead.
   })
 })
 
@@ -292,7 +299,7 @@ test.describe('manual screenshots: map, coordinates, markers and drawings', () =
     await startDemoMission(page)
 
     await page.getByTestId('basemap-menu-toggle').click()
-    await shot(page, 'maps-menu', { x: 0, y: 170, width: 520, height: 560 })
+    await shot(page, 'maps-menu', await mapArea(page, 520, 560))
     await page.getByTestId('basemap-menu-toggle').click()
 
     await page.getByTestId('open-coordinate-converter').click()
@@ -304,10 +311,10 @@ test.describe('manual screenshots: map, coordinates, markers and drawings', () =
     await page.keyboard.press('Escape')
 
     await page.getByTestId('drawing-toolbar-expand').click()
-    await shot(page, 'map-tools', { x: 0, y: 170, width: 520, height: 640 })
+    await shot(page, 'map-tools', await mapArea(page, 520, 640))
 
     // Search area: three clicks to draw, then the form.
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await armMapTool(page, 'search_area')
     const canvas = page.locator('.maplibregl-canvas').first()
     await canvas.click({ position: { x: 560, y: 260 }, force: true })
     await canvas.click({ position: { x: 760, y: 240 }, force: true })
@@ -336,7 +343,7 @@ test.describe('manual screenshots: map, coordinates, markers and drawings', () =
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.getByTestId('marker-save-btn').click()
     await page.getByTestId('marker-dialog').waitFor({ state: 'hidden' })
-    await page.getByTestId('drawing-toolbar-collapse').click()
+    await foldMapTools(page)
     await shot(page, 'map-with-markup')
   })
 })
@@ -354,8 +361,7 @@ test.describe('manual screenshots: warnings, outings, history, pause', () => {
     // Stationary attention.
     await injectStationaryAlpha(page)
     await shot(page, 'stationary-attention-map')
-    await page.getByTestId('open-devices-workspace').click()
-    await page.getByTestId('devices-workspace').waitFor()
+    await openDevicesWorkspace(page)
     await shot(page, 'stationary-attention-devices')
     await page.keyboard.press('Escape')
     await injectTracking(page)
@@ -370,36 +376,56 @@ test.describe('manual screenshots: warnings, outings, history, pause', () => {
       await page.getByTestId('mission-outings-section-toggle').click()
     })
 
-    // Mission history coverage in the Layers tab.
+    // Mission history coverage, now in the Tracking panel (DON-341).
     await withTallWindow(page, async () => {
+      await openWorkspacePanel(page, 'tracking')
       await page.getByTestId('coverage-status-panel').scrollIntoViewIfNeeded()
       await shot(page, 'mission-history-coverage', page.getByTestId('coverage-status-panel'))
     })
 
     // Paused.
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-paused-banner')).toBeVisible()
+    await pressPauseResume(page)
+    await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
     await shot(page, 'mission-paused')
     await withTallWindow(page, async () => {
-      await shot(page, 'mission-paused-controls', page.getByTestId('mission-control-dock'))
+      await openMissionPanel(page)
+      await shot(page, 'mission-paused-controls', page.getByTestId('ws-mission-host'))
     })
-    await page.getByTestId('mission-paused-banner-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await page.getByTestId('ws-alarm-resume').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
 
     // Restart recovery.
     await page.reload()
     await page.getByTestId('app-title').waitFor({ timeout: 20_000 })
     await page.waitForSelector('canvas', { timeout: 20_000 })
     await page.waitForTimeout(1_500)
-    await page.getByTestId('mission-recovery-dialog').waitFor()
-    await shot(page, 'recovery-choice', page.getByTestId('mission-recovery-dialog'))
+    // The start screen offers Resume first (DON-342).
+    await page.getByTestId('start-screen-resume').waitFor()
+    await shot(page, 'start-resume-mission')
   })
 })
+
+/**
+ * A clip of the map's top-left corner. The map starts below the top bar and any
+ * banner, which is shallower than the old mast (DON-341), so the top is measured.
+ */
+async function mapArea(page: Page, width: number, height: number): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await page.getByTestId('map-container').boundingBox()
+  if (box === null) throw new Error('The map is not on screen.')
+  return { x: Math.round(box.x), y: Math.round(box.y), width, height }
+}
+
+/** Folds Map Tools if it is open; arming a tool may already have folded it. */
+async function foldMapTools(page: Page): Promise<void> {
+  const collapse = page.getByTestId('drawing-toolbar-collapse')
+  if (await collapse.isVisible()) await collapse.click()
+}
 
 const ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 
 /** Finishes the active mission through the confirmation dialog. */
 async function finishMission(page: Page): Promise<void> {
+  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).waitFor()
 }
@@ -430,7 +456,7 @@ test.describe('manual screenshots: review, replay and search passes', () => {
       }])
     })
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByTestId('mission-review-workspace').waitFor()
     await shot(page, 'review-docked')
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
@@ -456,7 +482,7 @@ test.describe('manual screenshots: finish, archive and lock', () => {
     await seedRoster(page)
     await page.getByTestId('mission-name-input').fill('Gap of Dunloe Training')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await finishMission(page)
     await confirmFinish(page)
     await withTallWindow(page, async () => {
@@ -483,7 +509,7 @@ test.describe('manual screenshots: finish, archive and lock', () => {
     await custody.waitFor({ state: 'hidden' })
 
     // Saved archives in Review, then open one read-only.
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByTestId('mission-archive-review-control').waitFor()
     await withTallWindow(page, async () => {
       await shot(page, 'archive-saved-list', page.getByTestId('mission-archive-review-control'))
@@ -577,9 +603,7 @@ test.describe('manual screenshots: settings and diagnostics', () => {
     }
     await page.keyboard.press('Escape')
 
-    await page.getByTestId('open-diagnostics-workspace').click()
-    const diagnostics = page.getByTestId('diagnostics-workspace')
-    await diagnostics.waitFor()
+    await openDiagnostics(page)
     const diagnosticsSheet = { x: 544, y: 0, width: 896, height: 900 }
     await shot(page, 'diagnostics-top', diagnosticsSheet)
     await page.getByTestId('diagnostics-export-support-bundle').evaluate((element) => {
@@ -608,22 +632,24 @@ test.describe('manual screenshots: GPX, helicopters, measuring, grid references,
       }])
     })
     await withTallWindow(page, async () => {
-      await page.getByTestId('sidebar-tab-tools').click()
-      await shot(page, 'tools-tab', page.getByTestId('sidebar-tab-content'))
+      await openWorkspacePanel(page, 'tools')
+      await shot(page, 'tools-tab', page.getByTestId('ws-tools-panel'))
       await page.getByTestId('helicopter-add-slot').click()
       await page.getByTestId('helicopter-panel').scrollIntoViewIfNeeded()
       await shot(page, 'helicopter-panel', page.getByTestId('helicopter-panel'))
-      await page.getByTestId('sidebar-tab-tracking').click()
+      await openWorkspacePanel(page, 'tracking')
     })
 
     // Measurement: Map Tools -> Measure -> two clicks.
+    // The measurement list shows inside the open Map Tools, so it stays open for this shot.
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-measure').click({ force: true })
     const canvas = page.locator('.maplibregl-canvas').first()
-    await canvas.click({ position: { x: 640, y: 600 }, force: true })
-    await canvas.click({ position: { x: 900, y: 420 }, force: true })
+    // Clear of the open Map Tools and its measurement list on the left.
+    await canvas.click({ position: { x: 800, y: 560 }, force: true })
+    await canvas.click({ position: { x: 960, y: 380 }, force: true })
     await page.getByTestId('measurement-panel').waitFor()
-    await shot(page, 'measurement', { x: 0, y: 170, width: 1040, height: 660 })
+    await shot(page, 'measurement', await mapArea(page, 1040, 660))
 
     // Marker at a grid reference.
     await page.getByTestId('drawing-tool-marker-at-grid').click({ force: true }).catch(async () => {
@@ -631,14 +657,9 @@ test.describe('manual screenshots: GPX, helicopters, measuring, grid references,
     })
     await page.getByTestId('marker-at-grid-panel').waitFor()
     await page.getByTestId('marker-at-grid-reference-input').fill('V 80962 80489')
-    await shot(page, 'marker-at-grid', { x: 0, y: 170, width: 700, height: 660 })
-    await page.getByTestId('drawing-toolbar-collapse').click()
-
-    // Minimised Mission Control.
-    await page.getByTestId('mission-control-collapse-btn').click()
-    await page.getByTestId('compact-mission-strip').waitFor()
-    await shot(page, 'mission-control-minimized', { x: 0, y: 0, width: 1440, height: 260 })
-    await page.getByTestId('compact-mission-restore').click()
+    await shot(page, 'marker-at-grid', await mapArea(page, 700, 660))
+    await foldMapTools(page)
+    // The minimised Mission Control strip was retired (DON-341); the top bar names the mission.
   })
 })
 
@@ -665,7 +686,7 @@ test.describe('manual screenshots: sealed archive that still needs verification'
     await page.evaluate(async (id) => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.prepareArchiveVerificationRetryFixture(id)
     }, archiveId)
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByTestId(`archive-verify-retry-${archiveId}`).click()
     await page.getByTestId('mission-archive-verification-dialog').waitFor()
     await withTallWindow(page, async () => {

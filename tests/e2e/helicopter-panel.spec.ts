@@ -1,22 +1,24 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M23 helicopter layer parity', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Helicopter Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('persists helicopter slots, renders the overlay, and supports visibility toggles', async ({
     page,
   }) => {
     await expect(page.getByTestId('helicopter-panel')).toHaveCount(0)
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
 
     // Helicopters are opt-in (DON-75): empty reserve slots stay hidden until the
     // operator deliberately reveals them.
@@ -51,7 +53,7 @@ test.describe('M23 helicopter layer parity', () => {
 
     await expect(page.getByTestId('helicopter-panel')).toContainText('1 ACTIVE')
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-group-helicopters').click()
     await page.getByTestId('layer-expand-layer-helicopters-slot-1').click()
     await expect(page.getByTestId('layer-tree')).toContainText('Rescue 118')

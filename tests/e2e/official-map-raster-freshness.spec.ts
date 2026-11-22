@@ -21,7 +21,7 @@ async function openSyntheticMap(page: Page, variant: Variant): Promise<void> {
   await page.route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, route => route.fulfill({
     contentType: 'image/png', body: Buffer.from(a, 'base64'),
   }))
-  await page.goto('/?missionHarness=1&classicLayout=1')
+  await page.goto('/?missionHarness=1')
   await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
   await expect(page.locator('canvas').first()).toBeVisible()
   await page.evaluate(({defaults, a, b, initial}) => {

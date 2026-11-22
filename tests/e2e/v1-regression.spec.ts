@@ -169,7 +169,7 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
       })
     })
 
-    // The new layout raises a full-width alarm that cannot be closed, and the
+    // The new layout raises an alarm across the map that cannot be closed, and the
     // Tracking panel says the map shows the last positions received, not a live feed.
     const alarm = page.getByTestId('ws-alarm')
     await expect(alarm).toBeVisible({ timeout: 5_000 })

@@ -35,31 +35,17 @@ import { DESKTOP_PANEL_ARRANGEMENT } from './features/workspace/panel-arrangemen
 import { shouldUseClassicLayoutFixture } from './features/workspace/classic-layout-fixture'
 import { WeatherMenu } from './components/weather-menu'
 import { LazyScreenBoundary } from './components/lazy-screen-boundary'
+// The modal screens load with the app, not on demand: from local disk the
+// split saved nothing worth having, and a press made while split code was
+// still arriving looked ignored (DON-229). The app is not shown until this
+// code is here, so a press always opens the real screen at once.
+import { SettingsWorkspace } from './components/settings-workspace'
+import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
+import { DevicesWorkspace } from './components/devices-workspace'
+import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { scopeAutosaveWarningToMission } from './features/persistence/autosave-warning-scope'
 import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 
-// Settings stays mounted so its open/close behaviour is unchanged; only its
-// code is split out of the default application chunk.
-const SettingsWorkspace = lazy(async () => {
-  const module = await import('./components/settings-workspace')
-
-  return { default: module.SettingsWorkspace }
-})
-const DiagnosticsWorkspace = lazy(async () => {
-  const module = await import('./components/diagnostics-workspace')
-
-  return { default: module.DiagnosticsWorkspace }
-})
-const DevicesWorkspace = lazy(async () => {
-  const module = await import('./components/devices-workspace')
-
-  return { default: module.DevicesWorkspace }
-})
-const MissionReviewWorkspace = lazy(async () => {
-  const module = await import('./components/mission-review-workspace')
-
-  return { default: module.MissionReviewWorkspace }
-})
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
 
@@ -169,18 +155,14 @@ function App() {
       <CoordinateConverterDialog />
       <MarkerDialog />
       <MarkerStatusBanner />
-      {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
-          A screen whose code fails to load shows a message; the rest of the app stays up. */}
-      <LazyScreenBoundary screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary screen="Mission review"><MissionReviewWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary screen="Settings">
-        <SettingsWorkspace
-          focusTarget={settingsFocusTarget}
-          onClose={closeSettingsWorkspace}
-          open={settingsOpen}
-        />
-      </LazyScreenBoundary>
+      <DevicesWorkspace />
+      <MissionReviewWorkspace />
+      <DiagnosticsWorkspace />
+      <SettingsWorkspace
+        focusTarget={settingsFocusTarget}
+        onClose={closeSettingsWorkspace}
+        open={settingsOpen}
+      />
     </main>
   )
 }
@@ -387,7 +369,7 @@ export function RuntimeSafetyBanner(props: {
         </p>
       ) : null}
       {focusAutosaveWarning === null ? null : (
-        <p className="mt-1" data-testid="focus-autosave-warning">
+        <p className="mt-1" data-testid="focus-autosave-warning" role="status">
           {focusAutosaveWarning}
         </p>
       )}

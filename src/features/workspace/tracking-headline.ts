@@ -10,6 +10,7 @@ import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
+import { PROBLEM_RANK, rankTrackingWarning, type RankedProblem } from './tracking-problem-labels'
 
 let remembered: { readonly missionId: string | null; readonly at: string } | null = null
 
@@ -37,7 +38,11 @@ export type TrackingHeadline = {
   readonly condition: TrackingCondition
   readonly tone: 'ok' | 'warning' | 'alert' | 'neutral'
   readonly text: string
-  /** Text for the full-width alarm, when it should say more than the headline. */
+  /** Short problem words, most urgent first, shown before anything else in the bar and never cut mid-word (DON-261). */
+  readonly problems: readonly string[]
+  /** The rest of the words, which may be cut short in the bar; the full text is in the label and Tracking. */
+  readonly detail: string
+  /** Text for the alarm across the map, when it should say more than the headline. */
   readonly alarm?: string
   /** Everything the old Tracking tab would have warned about, in plain words. */
   readonly issues: readonly string[]
@@ -85,17 +90,45 @@ export function describeTrackingHeadline(input: {
   if (allLocationsHidden) issues.push('All locations hidden on the map')
   else if (hiddenLocationCount > 0) issues.push(`${hiddenLocationCount} ${hiddenLocationCount === 1 ? "person's location" : "people's locations"} hidden on the map`)
 
-  // Short conditions stay in the bar and may wrap; the server's own sentence goes in Tracking.
+  // Short problem words go first and are never cut short; a reassuring sentence
+  // before a failure must not push the failure behind the ellipsis (DON-261).
+  const lost = status.mode === 'offline' || isCriticalTrackingTrustWarning(status.warning)
+  const ranked: RankedProblem[] = []
+  const name = (word: string, rank: number) => { if (!ranked.some((entry) => entry.word === word)) ranked.push({ word, rank }) }
+  if (evidenceFailed) name('Record not saved', PROBLEM_RANK.record)
+  if (!isPauseNotice(status.warning)) {
+    for (const entry of rankTrackingWarning(status.warning, status.warningCodes)) {
+      // The TRACKING LOST lead already says it is offline.
+      if (!(lost && entry.word.startsWith('Offline'))) name(entry.word, entry.rank)
+    }
+  }
+  if (staleCount > 0) name(`${staleCount} stale`, PROBLEM_RANK.stale)
+  if (stationaryCount > 0) name(`${stationaryCount} not moving`, PROBLEM_RANK.notMoving)
+  if (input.ingestRejected > 0) name(`${input.ingestRejected} rejected`, PROBLEM_RANK.rejected)
+  if (input.conflictCount > 0) name(`${input.conflictCount} conflicting`, PROBLEM_RANK.conflicting)
+  if (unverifiedCount > 0) name(`${unverifiedCount} ${unverifiedCount === 1 ? 'time' : 'times'} unverified`, PROBLEM_RANK.unverified)
+  if (allLocationsHidden) name('All hidden', PROBLEM_RANK.hidden)
+  else if (hiddenLocationCount > 0) name(`${hiddenLocationCount} hidden`, PROBLEM_RANK.hidden)
+  if (notedCount > 0) name(`${notedCount} not moving (noted)`, PROBLEM_RANK.notMovingNoted)
+  if (input.coverageStatus === 'error') name('History not loaded', PROBLEM_RANK.history)
+  if (input.coverageStatus === 'partial') name('History incomplete', PROBLEM_RANK.history + 2)
+  if (input.evidenceState !== 'healthy' && input.evidenceLossAcknowledged) name('Record loss noted', PROBLEM_RANK.recordNoted)
+  // One order for runtime and derived problems; ties keep the order found.
+  const problems = ranked.map((entry, index) => ({ ...entry, index }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.word)
+
+  // The server's own sentence goes in Tracking; the bar keeps the short conditions.
   const conditions = issues.filter((issue) => issue !== status.warning).join(' · ')
   const prefixed = (lead: string) => (conditions === '' ? lead : `${lead} · ${conditions}`)
   const summary = issues.join(' · ')
-  if (paused) return { condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), alarm: 'MISSION PAUSED: positions are not updating', issues }
-  if (status.mode === 'offline' || isCriticalTrackingTrustWarning(status.warning)) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), alarm: 'TRACKING LOST: positions on the map may not be current', issues }
-  if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
-  if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', issues }
-  if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', issues }
-  if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, issues }
-  return { condition: 'ok', tone: health.tone === 'success' ? 'ok' : 'warning', text: 'Tracking OK', issues }
+  if (paused) return { condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), problems: ['MISSION PAUSED', ...problems], detail: conditions, alarm: 'MISSION PAUSED: positions are not updating', issues }
+  if (lost) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), problems: ['TRACKING LOST', ...problems], detail: conditions, alarm: 'TRACKING LOST: positions on the map may not be current', issues }
+  if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
+  if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
+  if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', problems: ['Tracking not connected'], detail: '', issues }
+  if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, problems, detail: summary, issues }
+  return { condition: 'ok', tone: health.tone === 'success' ? 'ok' : 'warning', text: 'Tracking OK', problems: ['Tracking OK'], detail: '', issues }
 }
 
 /**

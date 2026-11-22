@@ -1,9 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
 
 test.describe('M12 settings workspace', () => {
   test.beforeEach(async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
@@ -86,17 +87,19 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Live Tracking Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
-    await expect(page.getByTestId('tracking-status')).toContainText('1')
-    await page.getByTestId('open-devices-workspace').click()
+    await openWorkspacePanel(page, 'tracking')
+    await expectTrackingOnline(page)
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
+    await openDevicesWorkspace(page)
     await expect(page.getByTestId('devices-workspace')).toContainText('S-Tab')
   })
 
@@ -105,7 +108,9 @@ test.describe('M12 settings workspace', () => {
   }) => {
     const server = await routeControllableTraccar(page)
 
+    // One press: Settings' code loads with the app, so the first press opens it.
     await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
     await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
     await page.getByTestId('settings-provider-email').fill('apiuser')
@@ -113,19 +118,21 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-auto-refresh-interval').fill('5')
     await page.getByTestId('settings-save').click()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Tracking Diagnostic Mission')
     await page.getByTestId('mission-start-btn').click()
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
-    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+    await openWorkspacePanel(page, 'tracking')
+    await expectTrackingOnline(page, 15_000)
     await expect.poll(server.getSuccessfulSessionRequestCount).toBeGreaterThanOrEqual(2)
 
     server.setAvailable(false)
-    await expect(page.getByTestId('tracking-status')).toContainText('OFFLINE MODE', {
-      timeout: 25_000,
-    })
+    // Was the OFFLINE MODE chip; the top bar now says TRACKING LOST.
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'lost', { timeout: 25_000 })
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('TRACKING LOST')
 
-    await page.getByTestId('open-diagnostics-workspace').click()
+    await openDiagnostics(page)
     await page.getByTestId('diagnostics-copy-report').click()
     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
       '[tracking-poll-ledger]',
@@ -160,15 +167,17 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Cursor Boundary Mission')
     await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
-    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+    await openWorkspacePanel(page, 'tracking')
+    await expectTrackingOnline(page, 15_000)
 
     await expect
       .poll(() => cursorScenario.breadcrumbRequests.length, { timeout: 15_000 })
@@ -223,26 +232,30 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Connected Finish Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
+    await openWorkspacePanel(page, 'tracking')
+    await expectTrackingOnline(page)
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
-    await expect(page.getByTestId('tracking-status')).toContainText('idle')
-    await expect(page.getByTestId('tracking-status')).toContainText('Waiting for an active mission.')
-    await expect(page.getByTestId('tracking-status')).toContainText('0')
-    await expect(page.getByTestId('tracking-status')).not.toContainText('online')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
+    await openWorkspacePanel(page, 'tracking')
+    // Was the IDLE chip, "Waiting for an active mission." and a zero counter.
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'disconnected')
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('Tracking not connected')
+    await expect(page.getByTestId('ws-toggle-people')).not.toContainText(/People [1-9]/)
   })
 
   test('large hosted breadcrumb history does not block current tracking status or exceed browser storage cap', async ({
@@ -266,10 +279,11 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Large History Mission')
     await page.getByTestId('mission-offset-input').fill('48')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
@@ -281,8 +295,9 @@ test.describe('M12 settings workspace', () => {
     // generous waits (matching the 15s settings-hide wait above) instead of
     // Playwright's default 5s assertion/poll timeout; the assertions
     // themselves are unchanged.
-    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
-    await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
+    await openWorkspacePanel(page, 'tracking')
+    await expectTrackingOnline(page, 15_000)
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1', { timeout: 15_000 })
     if (breadcrumbCount > 5_000) {
       await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
         `of at least ${breadcrumbCount.toLocaleString()} known fixes`,
@@ -478,6 +493,25 @@ async function routeTraccarSuccess(
   })
 }
 
+test.describe('Settings pressed as soon as the app appears', () => {
+  test('opens on the first press, even when its code was slow to arrive [DON-229]', async ({ page }) => {
+    // In CI a press just after start looked ignored: Settings' code was split
+    // out and still arriving, so nothing drew. The modal screens now load
+    // with the app, so the app is not shown until their code is here and a
+    // press always opens the real screen at once. Delay Settings' code well
+    // beyond the time allowed for it to open after the press.
+    await page.route(/\/src\/components\/settings-workspace\.tsx/, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3_000))
+      await route.continue()
+    })
+    await page.goto('/?missionHarness=1')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker', { timeout: 20_000 })
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible({ timeout: 1_000 })
+  })
+})
+
 async function routeControllableTraccar(page: import('@playwright/test').Page) {
   const currentFixTime = new Date().toISOString()
   let available = true
@@ -662,4 +696,9 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
     breadcrumbRequests,
     expectedOverlapFroms: [expectedOverlapFrom, expectedAfterOverlapFrom],
   }
+}
+
+/** The old ONLINE chip: the top bar's tracking headline says positions are arriving. */
+async function expectTrackingOnline(page: Page, timeout?: number) {
+  await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', /^(ok|attention)$/, timeout === undefined ? undefined : { timeout })
 }

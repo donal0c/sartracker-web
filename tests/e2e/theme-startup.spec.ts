@@ -10,7 +10,7 @@ for (const phase of ['booting', 'failed'] as const) {
           useRuntimeBootStore.setState({ phase: '${phase}', error: ${phase === 'failed' ? "'Injected startup fault'" : 'null'} });
         }`,
     }))
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await expect(page.getByTestId(`runtime-${phase}-shell`)).toBeVisible()
     await expect(page.getByTestId('theme-toggle')).toHaveCount(0)
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'high-contrast')

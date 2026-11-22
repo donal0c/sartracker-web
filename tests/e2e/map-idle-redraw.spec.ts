@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { createSyntheticRasterTilePng } from '../../build/electron-official-map-qualification-smoke-lib.js'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 const TRACKING_DEVICE_LAYER_ID = 'tracking-devices-circle'
 const TRACKING_BREADCRUMB_LAYER_ID = 'tracking-breadcrumbs-line'
@@ -61,13 +62,14 @@ test.describe('AUD-04 MapLibre idle redraw regression', () => {
       await installBaselineTrackingModule(page)
     }
 
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15_000 })
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('AUD-04 idle redraw')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await injectRenderedTrackingFixture(page)
     await waitForRenderedTrackingOverlay(page)
     // Let MapLibre finish the source/tile work caused by the fixture before

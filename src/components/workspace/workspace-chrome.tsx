@@ -12,6 +12,7 @@ import { APP_VERSION } from '../../lib/app-version'
 import { getAppRuntimeController } from '../../features/runtime/app-runtime-controller'
 import { ThemeToggle } from '../theme-toggle'
 import { TrackingStatusPanel } from '../tracking-status-panel'
+import { TrackingProblemWords } from './tracking-problem-words'
 
 const LAST_RECEIVED = 'The last positions received. They may not be where people are now.'
 const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; readonly map: string; readonly todo: string }> = {
@@ -32,13 +33,18 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
     <button
       aria-label={`${headline.text}. Open tracking details`}
       className={`ws-health ws-health-${headline.tone}`}
+      data-condition={headline.condition}
       data-testid="ws-tracking-headline"
       onClick={props.onOpen}
       role="status"
-      title="Open tracking details"
+      title={`${headline.text}. Open tracking details`}
       type="button"
     >
-      <strong><span aria-hidden="true">{headline.tone === 'ok' ? '●' : '⚠'} </span>{headline.text}</strong>
+      <strong>
+        <span aria-hidden="true" className="ws-health-icon">{headline.tone === 'ok' ? '●' : '⚠'}</span>
+        <TrackingProblemWords words={headline.problems} />
+        {headline.detail === '' ? null : <span className="ws-health-detail">{headline.detail}</span>}
+      </strong>
       <span className="ws-health-time">Last update {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt).replace(/ GMT.*$/, '')}</span>
     </button>
   )
@@ -71,7 +77,7 @@ function MissionSummary(props: { readonly attention: boolean; readonly onOpen: (
       </button>
       {mission === null ? null : (
         <div className="ws-clocks" data-testid="ws-clocks">
-          <div><span>Search time</span><strong>{formatMissionDuration(timer?.activeSeconds ?? 0)}</strong></div>
+          <div><span>Search time</span><strong data-testid="ws-search-time">{formatMissionDuration(timer?.activeSeconds ?? 0)}</strong></div>
         </div>
       )}
     </>
@@ -84,6 +90,16 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const openDiagnostics = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const openReview = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
+  const moreButtonRef = useRef<HTMLButtonElement>(null)
+  /**
+   * Closes the menu and opens a workspace. The menu item is about to unmount, so
+   * focus moves to More first; the workspace returns focus there when it closes.
+   */
+  const closeMenuTo = (openWorkspace: () => void) => {
+    setOpen(false)
+    moreButtonRef.current?.focus()
+    openWorkspace()
+  }
 
   // A press inside a child's portal (the weather menu renders on the body so the
   // top bar cannot clip it [DON-340]) is outside this element in the page but
@@ -107,11 +123,11 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
 
   return (
     <div className="relative" onPointerDown={() => { pressedInside.current = true }} ref={ref}>
-      <button aria-expanded={open} className="ws-bar-button" data-testid="ws-more-button" onClick={() => setOpen(!open)} type="button">More ▾</button>
+      <button aria-expanded={open} className="ws-bar-button" data-testid="ws-more-button" onClick={() => setOpen(!open)} ref={moreButtonRef} type="button">More ▾</button>
       {open ? (
         <div className="ws-menu" data-testid="ws-more-menu">
-          <button data-testid="ws-open-review" onClick={() => { setOpen(false); openReview() }} type="button">Review and replay</button>
-          <button data-testid="open-diagnostics-workspace" onClick={() => { setOpen(false); openDiagnostics() }} type="button">Diagnostics</button>
+          <button data-testid="ws-open-review" onClick={() => { closeMenuTo(openReview) }} type="button">Review and replay</button>
+          <button data-testid="open-diagnostics-workspace" onClick={() => { closeMenuTo(openDiagnostics) }} type="button">Diagnostics</button>
           <a data-testid="open-help-manual" href="./manual/index.html" rel="noreferrer" target="_blank">Help</a>
           <div className="ws-menu-row">{props.weather}</div>
           <div className="ws-menu-row"><ThemeToggle /></div>
@@ -148,7 +164,7 @@ export function WorkspaceTopBar(props: {
   )
 }
 
-/** Full-width alarm for a stopped map; it cannot be scrolled or closed away. */
+/** Flashing alarm across the top of the map when it cannot be trusted; it cannot be scrolled or closed away. */
 export function TrackingAlarm(props: { readonly headline: TrackingHeadline; readonly onOpenTracking: () => void }) {
   const phase = useMissionStore((state) => state.phase)
   const controller = useMissionStore((state) => state.controller)
@@ -191,9 +207,17 @@ export function PanelHead(props: { readonly title: ReactNode; readonly onClose: 
   )
 }
 
-/** Says in plain words what happened, what the map is showing and what to do. */
-export function TrackingDetails(props: { readonly headline: TrackingHeadline; readonly onClose: () => void }) {
+/**
+ * Says in plain words what happened, what the map is showing and what to do.
+ * Each new focusToken above zero moves keyboard focus to the panel.
+ */
+export function TrackingDetails(props: { readonly headline: TrackingHeadline; readonly onClose: () => void; readonly focusToken?: number }) {
   const { headline } = props
+  const sectionRef = useRef<HTMLElement>(null)
+  const focusToken = props.focusToken ?? 0
+  useEffect(() => {
+    if (focusToken > 0) sectionRef.current?.focus()
+  }, [focusToken])
   const lastSuccessAt = useLastConfirmedAt()
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
@@ -201,7 +225,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
 
   return (
-    <section className="ws-panel-section" data-testid="ws-tracking-panel">
+    <section className="ws-panel-section" data-testid="ws-tracking-panel" ref={sectionRef} tabIndex={-1}>
       <PanelHead onClose={props.onClose} title="Tracking" />
       <div className="ws-panel-scroll">
         <dl className="ws-plain-lines">

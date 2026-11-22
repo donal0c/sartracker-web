@@ -1,25 +1,28 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
+import { armMapTool } from './helpers/map-tools'
 
 test.describe('M8 drawing workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Drawing Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('shows how to finish a Search Area while the tool is armed [DON-300]', async ({ page }) => {
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await armMapTool(page, 'search_area')
     const hint = page.getByTestId('drawing-tool-hint')
     await expect(hint).toContainText('double-click or right-click to finish')
     await page.getByTestId('drawing-toolbar').screenshot({ path: 'test-results/don-300-search-area-hint.png' })
   })
 
   test('creates a line drawing from the toolbar and persists it', async ({ page }) => {
-    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await armMapTool(page, 'line')
     await clickMap(page, { x: 420, y: 240 })
     await clickMap(page, { x: 560, y: 300 })
     await rightClickMap(page, { x: 560, y: 300 })
@@ -40,7 +43,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('shows rejected sketch input in the toolbar when no dialog is open', async ({ page }) => {
-    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await armMapTool(page, 'line')
 
     await page.evaluate(async () => {
       const { useDrawingStore } = await import('/src/features/drawings/drawing-store.ts')
@@ -56,7 +59,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates a search area with metadata', async ({ page }) => {
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await armMapTool(page, 'search_area')
     await clickMap(page, { x: 440, y: 180 })
     await clickMap(page, { x: 620, y: 180 })
     await clickMap(page, { x: 540, y: 340 })
@@ -89,7 +92,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates LPB range rings and bearing lines with conversion', async ({ page }) => {
-    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
+    await armMapTool(page, 'range_ring')
     await clickMap(page, { x: 500, y: 240 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -98,7 +101,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-range-ring-lpb-category-input').selectOption('hiker')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('drawing-tool-bearing_line').click({ force: true })
+    await armMapTool(page, 'bearing_line')
     await clickMap(page, { x: 620, y: 260 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -115,7 +118,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates a search sector and supports escape cancellation', async ({ page }) => {
-    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await armMapTool(page, 'search_sector')
     await clickMap(page, { x: 360, y: 260 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -129,6 +132,7 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('drawing-sector-radius-input')).toHaveValue('1500')
     await page.getByTestId('drawing-save-btn').click()
 
+    await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-line').click({ force: true })
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Open')
@@ -140,7 +144,7 @@ test.describe('M8 drawing workflows', () => {
   test('keeps search sector draft fields when the radius input is used [DON-188]', async ({
     page,
   }) => {
-    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await armMapTool(page, 'search_sector')
     await clickMap(page, { x: 360, y: 260 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -158,7 +162,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('renders a visible full-circle search sector entered as 360 -> 0 (DON-170)', async ({ page }) => {
-    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await armMapTool(page, 'search_sector')
     await clickMap(page, { x: 360, y: 260 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -188,7 +192,7 @@ test.describe('M8 drawing workflows', () => {
   test('DON-196: simplifies drawing details and supports hidden search-area labels', async ({
     page,
   }) => {
-    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await armMapTool(page, 'text_label')
     await clickMap(page, { x: 540, y: 220 })
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await expect(page.getByText('Anchor', { exact: true })).toHaveCount(0)
@@ -197,7 +201,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-text-label-text-input').fill('Temporary CP')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
+    await armMapTool(page, 'range_ring')
     await clickMap(page, { x: 500, y: 240 })
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await expect(page.getByText('Centre', { exact: true })).toHaveCount(0)
@@ -208,7 +212,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-range-ring-radius-input').fill('600')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('drawing-tool-search_sector').click({ force: true })
+    await armMapTool(page, 'search_sector')
     await clickMap(page, { x: 360, y: 260 })
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await expect(page.getByText('Centre', { exact: true })).toHaveCount(0)
@@ -220,7 +224,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-sector-radius-input').fill('1200')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await armMapTool(page, 'search_area')
     await clickMap(page, { x: 440, y: 180 })
     await clickMap(page, { x: 620, y: 180 })
     await clickMap(page, { x: 540, y: 340 })
@@ -240,7 +244,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('creates, edits, and exposes text labels through the layer tree', async ({ page }) => {
-    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await armMapTool(page, 'text_label')
     await clickMap(page, { x: 540, y: 220 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -257,7 +261,7 @@ test.describe('M8 drawing workflows', () => {
     await page.getByTestId('drawing-text-label-text-input').fill('Updated Landing Zone')
     await page.getByTestId('drawing-save-btn').click()
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-panel').scrollIntoViewIfNeeded()
     await page.getByTestId('layer-tree-search').fill('Updated Landing')
     await expect(page.getByText('Text Labels')).toBeVisible()
@@ -267,7 +271,7 @@ test.describe('M8 drawing workflows', () => {
   test('DON-205: drags a long text label from visible text away from the anchor', async ({
     page,
   }) => {
-    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await armMapTool(page, 'text_label')
     await clickMap(page, { x: 540, y: 220 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -289,15 +293,16 @@ test.describe('M8 drawing workflows', () => {
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
     const moved = await readTextLabelCoordinates(page, 'Landing Zone West Ridge')
     await page.reload()
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    // After a reload the start screen offers Resume first (DON-342).
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await page.getByTestId('start-screen-resume-btn').click()
     await expect.poll(async () => readTextLabelCoordinates(page, 'Landing Zone West Ridge')).toEqual(moved)
   })
 
   test('DON-205: does not drag text labels through docked workspace overlays', async ({
     page,
   }) => {
-    await page.getByTestId('drawing-tool-text_label').click({ force: true })
+    await armMapTool(page, 'text_label')
     await clickMap(page, { x: 320, y: 220 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -313,7 +318,7 @@ test.describe('M8 drawing workflows', () => {
     const box = await canvas.boundingBox()
     expect(box).not.toBeNull()
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
 
     const workspaceBox = await page.getByTestId('mission-review-workspace').boundingBox()
@@ -333,7 +338,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('edits and deletes an existing drawing through select mode', async ({ page }) => {
-    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await armMapTool(page, 'line')
     await clickMap(page, { x: 420, y: 240 })
     await clickMap(page, { x: 560, y: 300 })
     await rightClickMap(page, { x: 560, y: 300 })
@@ -348,7 +353,7 @@ test.describe('M8 drawing workflows', () => {
     let drawings = await readMissionDrawings(page)
     expect(drawings.some((drawing) => drawing.name === 'Edited Name' && drawing.type === 'line')).toBe(true)
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-tree-search').fill('Edited Name')
     await page.getByTestId('layer-tree').getByRole('button', { name: 'Edited Name' }).click()
     await page.getByTestId('layer-edit-drawing-btn').click()
@@ -366,7 +371,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('does not open the marker modal while a drawing tool is active', async ({ page }) => {
-    await page.getByTestId('drawing-tool-range_ring').click({ force: true })
+    await armMapTool(page, 'range_ring')
     await clickMap(page, { x: 500, y: 240 })
 
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
@@ -393,7 +398,7 @@ test.describe('M8 drawing workflows', () => {
   })
 
   test('uses dialog semantics, traps focus, and cancels with Escape', async ({ page }) => {
-    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await armMapTool(page, 'line')
     await clickMap(page, { x: 420, y: 240 })
     await clickMap(page, { x: 560, y: 300 })
     await rightClickMap(page, { x: 560, y: 300 })

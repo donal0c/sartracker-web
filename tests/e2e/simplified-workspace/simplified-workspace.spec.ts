@@ -11,7 +11,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { openWorkspacePanel } from '../helpers/workspace-panels'
+import { openWorkspacePanel, pressPauseResume } from '../helpers/workspace-panels'
 
 const SHOTS = process.env.LAYOUT_SHOTS
 if (SHOTS !== undefined) mkdirSync(SHOTS, { recursive: true })
@@ -118,6 +118,39 @@ async function startMission(page: Page, options: { readonly defaultGroupSet?: bo
 
 async function showPeople(page: Page): Promise<void> {
   await openWorkspacePanel(page, 'people')
+}
+
+/**
+ * The alarm runs across the top of the map, flashing and unclosable, so the side
+ * panel never moves under the pointer (DON-341, finding 2 on PR 76). Checks it
+ * spans the map's width (within 2 px), is inside the window, is not covered by
+ * anything, and sits above the map's corner controls (zoom, compass, Maps and tools).
+ */
+async function expectAlarmOverMap(page: Page): Promise<void> {
+  const alarm = page.getByTestId('ws-alarm')
+  await expect(alarm).toBeVisible()
+  const placement = await alarm.evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const map = document.querySelector('[data-testid="map-container"]')?.getBoundingClientRect() ?? null
+    const centre = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    const controls = [...document.querySelectorAll('.maplibregl-ctrl-top-left > *, .maplibregl-ctrl-top-right > *, [data-testid="basemap-switcher"], [data-testid="drawing-toolbar"]')]
+      .map((control) => control.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => rect.top)
+    return {
+      box: { left: box.left, top: box.top, width: box.width, bottom: box.bottom },
+      map: map === null ? null : { left: map.left, width: map.width },
+      uncovered: centre !== null && element.contains(centre),
+      inWindow: box.top >= 0 && box.bottom <= window.innerHeight && box.left >= 0 && box.right <= window.innerWidth,
+      controlTops: controls,
+    }
+  })
+  expect(placement.map, 'map on screen').not.toBeNull()
+  expect(Math.abs(placement.box.left - (placement.map?.left ?? 0)), 'alarm starts at the map edge').toBeLessThanOrEqual(2)
+  expect(Math.abs(placement.box.width - (placement.map?.width ?? 0)), 'alarm spans the map width').toBeLessThanOrEqual(2)
+  expect(placement.inWindow, 'alarm inside the window').toBe(true)
+  expect(placement.uncovered, 'nothing covers the alarm').toBe(true)
+  for (const top of placement.controlTops) expect(top, 'map controls sit below the alarm').toBeGreaterThanOrEqual(placement.box.bottom - 0.5)
 }
 
 test.describe('Simplified workspace', () => {
@@ -314,11 +347,438 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
   })
 
+  test('All devices, Settings and Diagnostics never cover the alarm, running or paused, at either window size', async ({ page }) => {
+    // Was: these modals filled the window over every warning, as on the old screen.
+    await open(page)
+    await startMission(page)
+    const workspaces: ReadonlyArray<{ readonly name: string; readonly open: () => Promise<void>; readonly testId: string }> = [
+      { name: 'All devices', testId: 'devices-workspace', open: async () => { await showPeople(page); await page.getByTestId('open-devices-workspace').click() } },
+      { name: 'Settings', testId: 'settings-workspace', open: async () => { await page.getByTestId('open-settings-workspace').click() } },
+      { name: 'Diagnostics', testId: 'diagnostics-workspace', open: async () => { await page.getByTestId('ws-more-button').click(); await page.getByTestId('open-diagnostics-workspace').click() } },
+    ]
+    const resumeUncovered = () => page.getByTestId('ws-alarm-resume').evaluate((button) => {
+      const box = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return hit !== null && button.contains(hit)
+    })
+    for (const state of ['running', 'paused'] as const) {
+      if (state === 'running') await feed(page, { lost: true })
+      else { await feed(page); await pressPauseResume(page) }
+      await expect(page.getByTestId('ws-alarm')).toContainText(state === 'running' ? 'TRACKING LOST' : 'MISSION PAUSED')
+      for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+        await page.setViewportSize(size)
+        for (const workspace of workspaces) {
+          await workspace.open()
+          await expect(page.getByTestId(workspace.testId), `${workspace.name} open`).toBeVisible()
+          await expectAlarmOverMap(page)
+          if (state === 'paused') expect(await resumeUncovered(), `Resume clickable over ${workspace.name}`).toBe(true)
+          await page.keyboard.press('Escape')
+          await expect(page.getByTestId(workspace.testId)).toBeHidden()
+        }
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
+  })
+
+  test('with the alarm showing, a modal workspace still blocks everything behind it except the alarm', async ({ page }) => {
+    // Was: the full-window backdrop blocked these presses. The modal now starts
+    // below the alarm, so the uncovered top bar and side panel must be inert.
+    await open(page)
+    await startMission(page)
+    await feed(page, { lost: true })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    const workspaces: ReadonlyArray<{ readonly name: string; readonly open: () => Promise<void>; readonly testId: string }> = [
+      { name: 'All devices', testId: 'devices-workspace', open: async () => { await showPeople(page); await page.getByTestId('open-devices-workspace').click() } },
+      { name: 'Settings', testId: 'settings-workspace', open: async () => { await page.getByTestId('open-settings-workspace').click() } },
+      { name: 'Diagnostics', testId: 'diagnostics-workspace', open: async () => { await page.getByTestId('ws-more-button').click(); await page.getByTestId('open-diagnostics-workspace').click() } },
+    ]
+    const pressAt = async (testId: string) => {
+      const box = await page.getByTestId(testId).boundingBox()
+      if (box === null) throw new Error(`${testId} is not on screen.`)
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    }
+    const focusInsideModal = () => page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-modal="true"]')
+      return dialog !== null && dialog.contains(document.activeElement)
+    })
+    for (const workspace of workspaces) {
+      await workspace.open()
+      await expect(page.getByTestId(workspace.testId), `${workspace.name} open`).toBeVisible()
+      await expect(page.getByTestId('ws-mission-host')).toBeHidden()
+
+      // Pressing the uncovered Mission, Settings or side-panel controls opens nothing underneath.
+      await pressAt('ws-mission-button')
+      await pressAt('open-settings-workspace')
+      if (await page.getByTestId('ws-panel-close').isVisible()) await pressAt('ws-panel-close')
+      await page.waitForTimeout(200)
+      await expect(page.getByTestId('ws-mission-host'), `Mission stays shut behind ${workspace.name}`).toBeHidden()
+      await expect(page.locator('[role="dialog"][aria-modal="true"]'), `only ${workspace.name} is open`).toHaveCount(1)
+      await expect(page.getByTestId(workspace.testId)).toBeVisible()
+
+      // Keyboard focus never leaves the modal.
+      await page.locator('[role="dialog"][aria-modal="true"]').focus()
+      for (let step = 0; step < 40; step += 1) {
+        await page.keyboard.press(step % 7 === 6 ? 'Shift+Tab' : 'Tab')
+        expect(await focusInsideModal(), `focus inside ${workspace.name} after ${step + 1} presses`).toBe(true)
+      }
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId(workspace.testId)).toBeHidden()
+    }
+
+    // The alarm's own control still works over a modal.
+    await feed(page)
+    await pressPauseResume(page)
+    await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+    await page.keyboard.press('Escape')
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-resume').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+  })
+
+  test('What to do in the alarm closes an open workspace and shows Tracking, keeping unsaved Settings safe', async ({ page }) => {
+    // Was: with a modal open it only changed the hidden side panel, so nothing visibly happened.
+    await open(page)
+    await startMission(page)
+    await feed(page, { lost: true })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    const trackingShownAndFocused = async (from: string) => {
+      await expect(page.locator('[role="dialog"][aria-modal="true"]'), `${from} closed`).toHaveCount(0)
+      await expect(page.getByTestId('ws-tracking-panel'), `Tracking shown from ${from}`).toBeVisible()
+      await expect(page.getByTestId('ws-tracking-advice')).toContainText('internet connection')
+      expect(await page.getByTestId('ws-tracking-panel').evaluate((panel) => panel.contains(document.activeElement)), `Tracking focused from ${from}`).toBe(true)
+      await page.getByTestId('ws-panel-close').click()
+      await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+    }
+
+    await showPeople(page)
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-details').click()
+    await trackingShownAndFocused('All devices')
+
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-details').click()
+    await trackingShownAndFocused('Diagnostics')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-details').click()
+    await trackingShownAndFocused('clean Settings')
+
+    // Unsaved Settings: Keep editing leaves the workspace and the draft as they were.
+    const dirtySettings = async () => {
+      await page.getByTestId('open-settings-workspace').click()
+      await expect(page.getByTestId('settings-workspace')).toBeVisible()
+      await page.getByTestId('settings-section-advanced').click()
+      await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+      await page.getByTestId('ws-alarm-details').click()
+      await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    }
+    await dirtySettings()
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeHidden()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+
+    // Then What to do again and Discard: Settings closes and Tracking shows.
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await page.getByTestId('settings-discard-changes').click()
+    await trackingShownAndFocused('dirty Settings after Discard')
+  })
+
+  test('What to do closes nested workspaces in turn, and Keep editing on top drops the request', async ({ page }) => {
+    // The screen behind a modal is inert, so a second one opens only from code
+    // (for example the governance Admin Roster link opens Settings). Opened here
+    // through the store, as that code does.
+    await open(page)
+    await startMission(page)
+    await feed(page, { lost: true })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    const openSettingsOverDevices = async () => {
+      await showPeople(page)
+      await page.getByTestId('open-devices-workspace').click()
+      await expect(page.getByTestId('devices-workspace')).toBeVisible()
+      await page.evaluate(async () => {
+        const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+        useSettingsWorkspaceStore.getState().openWorkspace()
+      })
+      await expect(page.getByTestId('settings-workspace')).toBeVisible()
+      await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(2)
+    }
+
+    // Both close, then Tracking shows with focus.
+    await openSettingsOverDevices()
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+    expect(await page.getByTestId('ws-tracking-panel').evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
+    await page.getByTestId('ws-panel-close').click()
+    await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+
+    // Dirty Settings on top: Keep editing drops the request, so closing both by hand later does not jump to Tracking.
+    await openSettingsOverDevices()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(2)
+    // Each workspace's own Close (Escape defers while another modal is open).
+    await page.getByRole('dialog', { name: 'Operational Settings' }).getByTestId('workspace-close-btn').click()
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await page.locator('[role="dialog"][aria-modal="true"]').getByTestId('workspace-close-btn').click()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+  })
+
+  test('with two workspaces open, Escape closes only the top one, through its own close', async ({ page }) => {
+    // Was: each modal deferred Escape to the other, so it did nothing (also on master).
+    await open(page)
+    await startMission(page)
+    const openSettingsOverDevices = async () => {
+      await showPeople(page)
+      await page.getByTestId('open-devices-workspace').click()
+      await expect(page.getByTestId('devices-workspace')).toBeVisible()
+      await page.evaluate(async () => {
+        const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+        useSettingsWorkspaceStore.getState().openWorkspace()
+      })
+      await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    }
+    const modals = page.locator('[role="dialog"][aria-modal="true"]')
+    // Focus outside both panels, as after Keep editing removes the focused button,
+    // so the page-level Escape handlers decide (a panel's own handler would hide the bug).
+    const escapeFromOutside = async () => {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+      await page.keyboard.press('Escape')
+    }
+
+    await openSettingsOverDevices()
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+
+    // Unsaved Settings on top: Escape asks first and leaves All devices open.
+    await openSettingsOverDevices()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await expect(modals).toHaveCount(2)
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+  })
+
+  test('no third workspace opens, and none opens over a workspace that is asking a question', async ({ page }) => {
+    // Every opener sits behind an open modal, so these opens can only come from
+    // code. The one known nesting, Settings over All devices, still opens.
+    await open(page)
+    await startMission(page)
+    const modals = page.locator('[role="dialog"][aria-modal="true"]')
+    const openFromCode = async (store: 'settings' | 'diagnostics' | 'devices') => {
+      await page.evaluate(async (name) => {
+        if (name === 'settings') {
+          const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+          useSettingsWorkspaceStore.getState().openWorkspace()
+        } else if (name === 'diagnostics') {
+          const { useDiagnosticsWorkspaceStore } = await import('/src/features/diagnostics/diagnostics-workspace-store.ts')
+          useDiagnosticsWorkspaceStore.getState().openWorkspace()
+        } else {
+          const { useDeviceWorkspaceStore } = await import('/src/features/tracking/device-workspace-store.ts')
+          useDeviceWorkspaceStore.getState().openWorkspace()
+        }
+      }, store)
+    }
+    const escapeFromOutside = async () => {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+      await page.keyboard.press('Escape')
+    }
+
+    // All devices, then Settings over it, then Diagnostics: Diagnostics does not open.
+    await showPeople(page)
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await openFromCode('settings')
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await openFromCode('diagnostics')
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+    await expect(modals).toHaveCount(2)
+    // The refused open is dropped, not queued: it does not appear as the others close.
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+
+    // Only Settings may open over All devices, and nothing over Diagnostics.
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+    await openFromCode('devices')
+    await openFromCode('settings')
+    await page.waitForTimeout(300)
+    await expect(modals).toHaveCount(1)
+    await expect(page.getByTestId('devices-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+
+    // Settings asking whether to discard: Diagnostics does not open over the question.
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await openFromCode('diagnostics')
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+    await expect(modals).toHaveCount(1)
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await escapeFromOutside()
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(modals).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('diagnostics-workspace')).toHaveCount(0)
+  })
+
+  test('a pending Finish question stays in view: Settings does not open over it, and says so', async ({ page }) => {
+    // Was: Settings opened over the Finish question, and Escape then cancelled
+    // the hidden question instead of closing Settings.
+    await open(page)
+    await startMission(page)
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    const finish = page.getByTestId('mission-finish-dialog')
+    await expect(finish).toBeVisible()
+
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(finish).toBeVisible()
+    await expect(finish).toContainText('Settings did not open')
+    expect(await finish.evaluate((dialog) => dialog.contains(document.activeElement))).toBe(true)
+
+    // Escape answers the question in view (Cancel); then Settings opens as usual.
+    await page.keyboard.press('Escape')
+    await expect(finish).toHaveCount(0)
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+  })
+
+  test('Settings reopened after a discard does not cover a pending Finish question either', async ({ page }) => {
+    // Was: Settings still held the discarded draft, so the refusal asked to
+    // discard it again and left Settings open over Finish, with Escape cancelling Finish.
+    await open(page)
+    await startMission(page)
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await page.getByRole('dialog', { name: 'Operational Settings' }).getByTestId('workspace-close-btn').click()
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    const finish = page.getByTestId('mission-finish-dialog')
+    await expect(finish).toBeVisible()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('settings-discard-confirmation')).toHaveCount(0)
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0)
+    await expect(finish).toContainText('Settings did not open')
+    await page.keyboard.press('Escape')
+    await expect(finish).toHaveCount(0)
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+  })
+
+  test('docked Review stays open through a slow Finish, and waits for Settings to close before it fills the screen', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    // Hold the next Finish until the test releases it, as a slow disk would.
+    await page.evaluate(async () => {
+      const { getBrowserHarnessStore } = await import('/src/features/browser-validation/browser-harness-store.ts')
+      const store = getBrowserHarnessStore() as unknown as { finishMission: (id: string) => Promise<unknown> }
+      const original = store.finishMission.bind(store)
+      const holder = window as unknown as { releaseFinish?: () => void }
+      const gate = new Promise<void>((resolve) => { holder.releaseFinish = resolve })
+      store.finishMission = async (id) => { await gate; return original(id) }
+    })
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('ws-open-review').click()
+    const review = page.getByTestId('mission-review-workspace')
+    await expect(review).toBeVisible()
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+
+    // Finish while Review is docked; Settings is refused, visibly, while Finish is saving.
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('mission-finish-dialog')).toContainText('Settings did not open')
+    await expect(review).toBeVisible()
+
+    await page.evaluate(() => { (window as unknown as { releaseFinish?: () => void }).releaseFinish?.() })
+    await expect(page.getByTestId('ws-mission-phase')).not.toContainText('Running')
+    await expect(review).toBeVisible()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(1)
+  })
+
+  test('if the mission ends while Settings is open over docked Review, Review stays open and fills the screen after Settings closes', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('ws-open-review').click()
+    const review = page.getByTestId('mission-review-workspace')
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+
+    // The mission ends from outside this screen while Settings is open.
+    await page.evaluate(async () => {
+      const { useMissionStore } = await import('/src/features/mission/mission-store.ts')
+      await useMissionStore.getState().controller?.finishMission()
+    })
+    await expect(page.getByTestId('ws-mission-phase')).not.toContainText('Running')
+    await page.waitForTimeout(300)
+    await expect(review).toBeAttached()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(1)
+
+    await page.getByRole('dialog', { name: 'Operational Settings' }).getByTestId('workspace-close-btn').click()
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(review).toBeVisible()
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toHaveCount(0)
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(1)
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)
       await feed(page, { lost: true })
       await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+      await expectAlarmOverMap(page)
       await expect(page.getByTestId('ws-tracking-headline')).not.toContainText('Traccar server')
       // The named call-outs add to the alarm rather than repeating it.
       await expect(page.getByTestId('ws-exceptions-more')).toHaveCount(0)
@@ -362,7 +822,7 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
     })
 
-    test('while paused, the full-width alarm and its Resume stay on screen whatever panel is open', async ({ page }) => {
+    test('while paused, the alarm across the map and its Resume stay on screen whatever panel is open', async ({ page }) => {
       // The old screen held Mission open while paused. The new layout does not
       // (it would block Tracking's Reconnect); this alarm is what replaces it.
       await open(page)
@@ -377,8 +837,8 @@ test.describe('Simplified workspace', () => {
         await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
         await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
         await expect(page.getByTestId('ws-alarm-resume')).toBeEnabled()
-        const box = await page.getByTestId('ws-alarm').boundingBox()
-        expect(box?.width ?? 0).toBeGreaterThan(1440 * 0.9)
+        // Was: wider than 90% of 1440 px. It now spans the map, so the side panel never moves.
+        await expectAlarmOverMap(page)
       }
       // Pausing closes Mission; nothing holds it open, so the alarm must carry the state.
       await expect(page.getByTestId('ws-mission-host')).toBeHidden()
@@ -392,6 +852,22 @@ test.describe('Simplified workspace', () => {
       await page.getByTestId('ws-panel-close').click()
       await page.getByTestId('ws-full-map').click()
       await alarmShows()
+      // Every other panel, then the narrowest supported window with a panel open and closed.
+      await page.getByTestId('ws-full-map').click()
+      await page.getByTestId('ws-toggle-layers').click()
+      await page.getByTestId('ws-open-tools').click()
+      await expect(page.getByTestId('ws-tools-panel')).toBeVisible()
+      await alarmShows()
+      await page.getByTestId('ws-mission-button').click()
+      await expect(page.getByTestId('ws-mission-host')).toBeVisible()
+      await alarmShows()
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await alarmShows()
+      await page.getByTestId('ws-mission-close').click()
+      await page.getByTestId('ws-full-map').click()
+      await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+      await alarmShows()
+      await page.setViewportSize({ width: 1440, height: 900 })
 
       await page.getByTestId('ws-alarm-resume').click()
       await expect(page.getByTestId('ws-alarm')).toBeHidden()
@@ -410,6 +886,10 @@ test.describe('Simplified workspace', () => {
       await page.getByTestId('ws-more-button').click()
       await page.getByTestId('ws-open-review').click()
       await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+      // Review docks below the alarm, which stays uncovered across the map.
+      await expectAlarmOverMap(page)
+      const [alarmBox, reviewBox] = await Promise.all([page.getByTestId('ws-alarm').boundingBox(), page.getByTestId('mission-review-workspace').boundingBox()])
+      expect(reviewBox?.y ?? 0).toBeGreaterThanOrEqual((alarmBox?.y ?? 0) + (alarmBox?.height ?? 0) - 0.5)
       // Both stay clickable with Review open: a click that lands on Review would time out.
       await page.getByTestId('ws-mission-button').click({ timeout: 5_000 })
       await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
@@ -498,6 +978,11 @@ test.describe('Start screen', () => {
     await expect(page.getByTestId('mission-name-input')).toHaveCount(0)
     await expect(page.getByTestId('participant-device-picker')).toHaveCount(0)
     await shot(page, 'start-resume')
+    // Tracking lost while the resume card waits: the alarm runs above the card, never under it.
+    await feed(page, { lost: true })
+    await expectAlarmOverMap(page)
+    const [alarmBox, cardBox] = await Promise.all([page.getByTestId('ws-alarm').boundingBox(), page.getByTestId('ws-mission-host').boundingBox()])
+    expect(cardBox?.y ?? 0, 'resume card starts below the alarm').toBeGreaterThanOrEqual((alarmBox?.y ?? 0) + (alarmBox?.height ?? 0) - 0.5)
     await page.getByTestId('start-screen-resume-btn').click()
     await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
     await expect(page.getByTestId('current-mission-name')).toHaveText('Exercise Bravo')
