@@ -1725,6 +1725,7 @@ async function startElectronApp(startupWatchdog) {
   const settingsStore = createElectronSettingsStore({
     userDataPath,
     safeStorage,
+    runtimeLog,
   })
   const loadRuntimeBootstrapSettings = async (forceConnect = false) =>
     applyTrackingSoakRuntimeOverride(

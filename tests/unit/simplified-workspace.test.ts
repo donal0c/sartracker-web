@@ -159,6 +159,31 @@ describe('tracking headline', () => {
   })
 
 
+  it('names damaged saved settings and where to re-enter them, idle and mid-mission [M-47]', () => {
+    const warning = 'Saved settings could not be read, so SAR Tracker set them aside and started with default settings. Tracking is off until you re-enter the Traccar settings (and any rosters or maps you rely on) in Settings and press Save.'
+    const idle = describeTrackingHeadline({
+      ...base, phase: 'idle', status: status({ mode: 'idle', warning, warningCodes: ['tracking_settings_unreadable'] }),
+    })
+    expect(idle.condition).toBe('settings')
+    expect(idle.tone).toBe('warning')
+    expect(idle.problems[0]).toBe('Re-enter settings')
+    expect(idle.remedy).toBe('Re-enter settings')
+    expect(idle.text).toMatch(/not connected/i)
+    expect(idle.text).toMatch(/Traccar settings/)
+    expect(idle.issues).toContain(warning)
+    for (const [phase, lead] of [['active', 'TRACKING LOST'], ['paused', 'MISSION PAUSED']] as const) {
+      const headline = describeTrackingHeadline({
+        ...base, phase, status: status({ mode: 'idle', warning, warningCodes: ['tracking_settings_unreadable'] }),
+      })
+      expect(headline.condition, phase).toBe('settings')
+      expect(headline.tone, phase).toBe('alert')
+      expect(headline.alarm, phase).toMatch(new RegExp(`^${lead}`))
+      expect(headline.alarm, phase).toMatch(/saved settings/)
+      expect(headline.problems.slice(0, 2), phase).toEqual([lead, 'Re-enter settings'])
+      expect(headline.leadInAlarm, phase).toBe(true)
+    }
+  })
+
   it('only the credential alarm lets its lead yield; lost and paused keep theirs [DON-353]', () => {
     const lost = describeTrackingHeadline({ ...base, phase: 'active', status: status({ mode: 'offline', warning: 'Traccar offline', warningCodes: ['offline_last_known'] }) })
     expect(lost.condition).toBe('lost')

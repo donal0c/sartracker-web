@@ -68,6 +68,7 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
   const [testing, setTesting] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [coordinateDisplayMode, setCoordinateDisplayMode] = useState(readCoordinateDisplayMode)
   const availableTraccarGroups = useParticipantStore((state) => state.availableGroups)
   const [coordinatorRosterText, setCoordinatorRosterText] = useState('')
@@ -112,6 +113,7 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
         if (!cancelled) {
           const loadedDraft = createSettingsDraft(settings)
           const loadedCoordinateDisplayMode = readCoordinateDisplayMode()
+          setRecoveryNotice(settings.settingsRecoveryNotice ?? null)
           setDraft(loadedDraft)
           setCoordinatorRosterText(formatRosterInput(settings.missionDefaults.coordinatorRoster))
           setAdminRosterText(formatRosterInput(settings.missionDefaults.adminRoster))
@@ -176,6 +178,15 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
               </div>
             ) : (
               <>
+                {recoveryNotice === null ? null : (
+                  <div
+                    className="border border-amber-500/50 bg-amber-950/50 px-4 py-3 text-sm text-amber-100"
+                    data-testid="settings-recovery-notice"
+                    role="alert"
+                  >
+                    {recoveryNotice}
+                  </div>
+                )}
                 <SectionHeading section={activeSection} />
                 {renderActiveSection(draft)}
                 {(error ?? feedback) ? (
@@ -459,6 +470,7 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
 
     try {
       const saved = await saveAppSettings(draft)
+      setRecoveryNotice(saved.settingsRecoveryNotice ?? null)
       persistCoordinateDisplayMode(coordinateDisplayMode)
       const savedDraft = createSettingsDraft(saved)
       setDraft(savedDraft)

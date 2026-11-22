@@ -37,8 +37,8 @@ export type RuntimeBootstrapSettings = {
     readonly token?: string
   } | null
   readonly trackingDisabledReason?: string
-  /** Set when the saved tracking password or token cannot be used and must be entered again (DON-353). */
-  readonly trackingDisabledCode?: 'tracking_credentials_unreadable'
+  /** Why tracking needs re-entry in Settings: password/token (DON-353) or damaged settings (M-47). */
+  readonly trackingDisabledCode?: 'tracking_credentials_unreadable' | 'tracking_settings_unreadable'
 }
 
 export type RuntimeServiceHandles = {
