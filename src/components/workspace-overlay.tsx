@@ -7,7 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
-import { registerOpenModal } from './modal-workspace-registry'
+import { isModalWorkspacePanel, isTopModalWorkspacePanel, registerOpenModal } from './modal-workspace-registry'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls immediate mount and unmount. */
@@ -61,7 +61,7 @@ export function WorkspaceOverlay({
     // the tracking alarm, so the uncovered top bar and side panel must not take
     // presses or focus; the alarm itself (Resume) stays live.
     const releaseBackground = docked ? null : makeBackgroundInert()
-    const unregister = docked ? null : registerOpenModal(() => onCloseRef.current())
+    const unregister = docked ? null : registerOpenModal(() => onCloseRef.current(), () => panelRef.current)
     return () => {
       releaseBackground?.()
       unregister?.()
@@ -220,16 +220,24 @@ function makeBackgroundInert(): () => void {
 
 /**
  * Returns true when another modal or alert dialog should receive Escape before
- * the workspace itself.
+ * the workspace itself. Among open modal workspaces the one opened last owns
+ * Escape, so two never defer to each other; any other modal or alert dialog
+ * (for example Settings' unsaved-changes prompt) still comes first.
  */
 function hasTopLayerAboveWorkspace(panel: HTMLElement | null): boolean {
   if (panel === null) {
     return false
   }
 
+  const isModalWorkspace = isModalWorkspacePanel(panel)
+  if (isModalWorkspace && !isTopModalWorkspacePanel(panel)) {
+    return true
+  }
+
   const topLayers = document.querySelectorAll('[aria-modal="true"], [role="alertdialog"]')
   for (const layer of topLayers) {
-    if (layer !== panel) {
+    // Modal workspaces opened earlier sit below this one.
+    if (layer !== panel && !(isModalWorkspace && isModalWorkspacePanel(layer))) {
       return true
     }
   }

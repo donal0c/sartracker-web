@@ -540,6 +540,49 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
   })
 
+  test('with two workspaces open, Escape closes only the top one, through its own close', async ({ page }) => {
+    // Was: each modal deferred Escape to the other, so it did nothing (also on master).
+    await open(page)
+    await startMission(page)
+    const openSettingsOverDevices = async () => {
+      await showPeople(page)
+      await page.getByTestId('open-devices-workspace').click()
+      await expect(page.getByTestId('devices-workspace')).toBeVisible()
+      await page.evaluate(async () => {
+        const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+        useSettingsWorkspaceStore.getState().openWorkspace()
+      })
+      await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    }
+    const modals = page.locator('[role="dialog"][aria-modal="true"]')
+    // Focus outside both panels, as after Keep editing removes the focused button,
+    // so the page-level Escape handlers decide (a panel's own handler would hide the bug).
+    const escapeFromOutside = async () => {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur() })
+      await page.keyboard.press('Escape')
+    }
+
+    await openSettingsOverDevices()
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+
+    // Unsaved Settings on top: Escape asks first and leaves All devices open.
+    await openSettingsOverDevices()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await escapeFromOutside()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await expect(modals).toHaveCount(2)
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await escapeFromOutside()
+    await expect(modals).toHaveCount(0)
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)
