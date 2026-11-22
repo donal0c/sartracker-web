@@ -12,6 +12,7 @@ import { APP_VERSION } from '../../lib/app-version'
 import { getAppRuntimeController } from '../../features/runtime/app-runtime-controller'
 import { ThemeToggle } from '../theme-toggle'
 import { TrackingStatusPanel } from '../tracking-status-panel'
+import { TrackingProblemWords } from './tracking-problem-words'
 
 const LAST_RECEIVED = 'The last positions received. They may not be where people are now.'
 const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; readonly map: string; readonly todo: string }> = {
@@ -39,7 +40,11 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
       title={`${headline.text}. Open tracking details`}
       type="button"
     >
-      <strong><span aria-hidden="true">{headline.tone === 'ok' ? '●' : '⚠'} </span>{headline.text}</strong>
+      <strong>
+        <span aria-hidden="true" className="ws-health-icon">{headline.tone === 'ok' ? '●' : '⚠'}</span>
+        <TrackingProblemWords words={headline.problems} />
+        {headline.detail === '' ? null : <span className="ws-health-detail">{headline.detail}</span>}
+      </strong>
       <span className="ws-health-time">Last update {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt).replace(/ GMT.*$/, '')}</span>
     </button>
   )

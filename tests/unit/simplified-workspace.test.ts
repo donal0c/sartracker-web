@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { DESKTOP_PANEL_ARRANGEMENT, panelOpenByDefault, panelSide } from '../../src/features/workspace/panel-arrangement'
 import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/workspace/people-model'
 import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/workspace/tracking-headline'
+import { labelTrackingWarning } from '../../src/features/workspace/tracking-problem-labels'
+import { fitProblemWords, problemWordsText } from '../../src/features/workspace/problem-word-fit'
 import type { TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
@@ -40,6 +42,32 @@ describe('tracking headline', () => {
   }
   const status = (overrides: Partial<TrackingConnectionStatus>): TrackingConnectionStatus => ({
     mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null, ...overrides,
+  })
+
+  it('names each problem in short words before the reassuring sentence [DON-261]', () => {
+    const headline = describeTrackingHeadline({
+      ...base, phase: 'active', ingestRejected: 1,
+      status: status({
+        warning: 'Current fixes loaded; refreshing device roster. BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.',
+        warningCodes: ['roster_refreshing', 'history_refresh_failed'],
+      }),
+    })
+    expect(headline.problems).toEqual(['History failed', '1 rejected'])
+    expect(headline.detail).toContain('Current fixes loaded')
+    expect(headline.text).toContain('BREADCRUMB HISTORY REFRESH FAILED')
+  })
+
+  it('names a warning that arrived without a code, and leaves progress notes unnamed [DON-261]', () => {
+    expect(labelTrackingWarning('Something odd happened.', undefined)).toEqual(['Tracking warning'])
+    expect(labelTrackingWarning('Current fixes loaded; loading breadcrumb history.', ['history_loading'])).toEqual([])
+    expect(labelTrackingWarning(null, ['history_refresh_failed'])).toEqual([])
+  })
+
+  it('leads with TRACKING LOST and does not repeat Offline after it [DON-261]', () => {
+    const headline = describeTrackingHeadline({
+      ...base, phase: 'active', status: status({ mode: 'offline', warning: 'OFFLINE MODE — showing last known positions.', warningCodes: ['offline_last_known'] }),
+    })
+    expect(headline.problems).toEqual(['TRACKING LOST'])
   })
 
   it('treats the runtime pause notice as a pause, never as a lost connection', () => {
@@ -136,5 +164,18 @@ describe('people list', () => {
     ], NOW)
     expect(people.map((person) => person.name)).toEqual(['Zoe', 'Aoife', 'Brian'])
     expect(countPeopleNeedingAttention(people)).toBe(1)
+  })
+})
+
+describe('tracking problem words', () => {
+  it('shows every whole word that fits, and counts the rest instead of cutting one short [DON-261]', () => {
+    // words 100, 50, 70; separator 10; "+N more" 60
+    expect(fitProblemWords([100, 50, 70], 10, 60, 240)).toBe(3)
+    expect(fitProblemWords([100, 50, 70], 10, 60, 239)).toBe(2)
+    expect(fitProblemWords([100, 50, 70], 10, 60, 170)).toBe(1)
+    expect(fitProblemWords([100, 50, 70], 10, 60, 100)).toBe(0)
+    expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 3)).toBe('History failed · 2 stale · 1 rejected')
+    expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 2)).toBe('History failed · 2 stale · +1 more')
+    expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 0)).toBe('3 problems')
   })
 })

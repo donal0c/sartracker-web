@@ -145,6 +145,43 @@ test.describe('M19 devices workspace', () => {
   })
   }
 
+  test('shows every tracking problem in full at 1024 px, with the pointer target fixed [DON-261]', async ({ page }) => {
+    // Runtime warnings can put a reassuring sentence first and add counts after
+    // it. An ellipsis on one long line hid the problems behind "…"; these are
+    // amber states with no separate red alarm, so they must stay readable.
+    await page.setViewportSize({ width: 1024, height: 720 })
+    const opener = page.getByTestId('open-devices-workspace')
+    const topBefore = (await opener.boundingBox())?.y
+    await page.evaluate(async () => {
+      const [{ applyTrackingSnapshot, applyTrackingStatus }, { applyCurrentPositionRejections }] = await Promise.all([
+        import('/src/features/tracking/tracking-store.ts'),
+        import('/src/features/tracking/ingest-health-store.ts'),
+      ])
+      const position = (id: string) => ({
+        id: `${id}-current`, device_id: id, lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85,
+        accuracy: 8, timestamp: new Date().toISOString(), timestamp_source: 'server' as const, source: 'osmand',
+        data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: true,
+      })
+      applyTrackingSnapshot({ devices: [], positions: [position('alpha'), position('bravo')], breadcrumbs: [] })
+      applyTrackingStatus({
+        mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: new Date().toISOString(),
+        warning: 'Current fixes loaded; refreshing device roster. BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.',
+        warningCodes: ['roster_refreshing', 'history_refresh_failed'],
+      })
+      applyCurrentPositionRejections([{ deviceId: 'alpha', reason: 'invalid_coordinates', rowIndex: 1 }])
+    })
+
+    const problems = page.getByTestId('ws-tracking-problems')
+    await expect(problems).toHaveText('History failed · 2 stale · 1 rejected')
+    const clipped = await problems.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const bar = element.closest('[data-testid="ws-tracking-headline"]')?.getBoundingClientRect()
+      return element.scrollWidth > element.clientWidth + 0.5 || bar === undefined || box.right > bar.right + 0.5
+    })
+    expect(clipped).toBe(false)
+    expect((await opener.boundingBox())?.y).toBe(topBefore)
+  })
+
   test('makes workspace controls actionable immediately when opened [DON-260]', async ({
     page,
   }) => {
