@@ -7,6 +7,7 @@ import { createReplayOutingFixture } from './replay-outing-fixture.mjs'
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { copyStandaloneSqliteFixture } from './sqlite-fixture.mjs'
 import { validateReplayOutingFacts } from './replay-outing-receipts.mjs'
+import { openMissionReview } from '../workspace-panels.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..')
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -56,7 +57,8 @@ export async function runReplayOutingProbe({appPath,evidencePath,developmentTest
       return {first,pages,search}
     },{missionId:fixture.missionId,selectedTime:fixture.selectedTime,lastId:fixture.outings.at(-1),sessionId})
     report.live = await read(null)
-    await page.getByTestId('open-mission-review-workspace').click()
+    // Review opens from the top bar's More menu; the finished mission's start screen has no Review button (DON-341).
+    await openMissionReview(page)
     await page.getByRole('button',{name:'Replay',exact:true}).click()
     await page.getByTestId('mission-replay-seek').click()
     const status = page.getByTestId('mission-replay-outing-filter-page-status')
