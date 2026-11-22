@@ -32,7 +32,7 @@ import { describeMapNotDrawn, waitForMapDrawn } from '../lib/map-ready.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { STORE_FILE, withStore } from '../lib/store.mjs'
 import { parseDotSummary, verifyWholeTrailDrawn, WHOLE_TRAIL_UI } from '../lib/whole-trail.mjs'
-import { openWorkspacePanel } from '../../workspace-panels.mjs'
+import { moreMenuItem, openWorkspacePanel } from '../../workspace-panels.mjs'
 
 /** How long a map may take to load its style and tiles; software rendering is slow. */
 const MAP_DRAW_TIMEOUT_MS = 120_000
@@ -87,7 +87,8 @@ async function runSettingsMenuAndWeatherLinks(ctx) {
   expectProduct(closed, `Save & Close did not complete after adding a weather link: ${(await bodyText(app.page)).slice(0, 200)}`)
   await closeWorkspace(app.page)
 
-  await t('weather-menu-trigger').click()
+  // Weather is in the top bar's More menu (DON-341).
+  await (await moreMenuItem(app.page, 'weather-menu-trigger')).click()
   const link = t('weather-link-open-0')
   const shown = await link.waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, () => false)
   await app.shot('weather-menu-open')
@@ -351,7 +352,10 @@ export async function runWholeTrailWorkflow(ctx, preset) {
     await shotAfter(app, 'dots-earlier', verifyWholeTrailDrawn(app.page, stored, { step: `Breadcrumb dots after Earlier ("${earlierPage}")`, names }))
     steps.push(`after Earlier ("${earlierPage}"): whole trail still drawn`)
   } else {
-    steps.push('no Earlier page offered (all dots on one page)')
+    // No Earlier button is only right when the first page already shows every dot.
+    expectProduct(firstCounts.shown === firstCounts.total,
+      `The Breadcrumb dots page shows ${firstCounts.shown.toLocaleString('en-GB')} of ${firstCounts.total.toLocaleString('en-GB')} fixes but offers no Earlier page, so the rest cannot be reached: "${firstPage}" [DON-338]`)
+    steps.push(`no Earlier page offered (all ${firstCounts.total.toLocaleString('en-GB')} dots on one page)`)
   }
   await verifyWholeTrailDrawn(app.page, stored, { step: 'Whole-history line under dots', names, layers: 'coverage' })
   await app.stop()

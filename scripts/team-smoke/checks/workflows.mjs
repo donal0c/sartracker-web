@@ -24,7 +24,7 @@ import {
   startMission,
   switchBasemap,
 } from '../lib/operator.mjs'
-import { openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
+import { moreMenuItem, openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { finalizeQuitFindings, readFinalizeQuitState } from '../lib/finalize-quit.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { seedLivedInProfile } from '../lib/lived-in.mjs'
@@ -436,7 +436,7 @@ export default [
       const secretShown = await t('settings-provider-secret').inputValue()
       await closeWorkspace(app.page)
       const exportStarted = Date.now()
-      await t('open-diagnostics-workspace').click()
+      await (await moreMenuItem(app.page, 'open-diagnostics-workspace')).click()
       await delay(1500)
       await t('diagnostics-export-support-bundle').first().click()
       await delay(4000)

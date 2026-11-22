@@ -55,13 +55,36 @@ export async function openWorkspacePanel(page, panel, { timeoutMs = 15_000 } = {
 }
 
 /**
- * Opens Review and replay from the top bar's More menu (DON-341).
+ * Opens the top bar's More menu and returns one of its items, once visible.
+ * Review, Diagnostics, Help, Weather and the theme exist only while the menu is
+ * open, so a probe that reached for them directly never got there (DON-341).
  *
  * @param {import('playwright').Page} page the app window
+ * @param {string} testId the item's data-testid
+ * @param {{ timeoutMs?: number }} [options] how long to wait for the item
+ * @returns {Promise<import('playwright').Locator>} the visible item
  */
-export async function openMissionReview(page) {
-  await page.getByTestId('ws-more-button').click()
-  await page.getByTestId('ws-open-review').click()
+export async function moreMenuItem(page, testId, { timeoutMs = 10_000 } = {}) {
+  const menu = page.getByTestId('ws-more-menu')
+  if (!await menu.isVisible()) {
+    await page.getByTestId('ws-more-button').click()
+    await menu.waitFor({ state: 'visible', timeout: timeoutMs })
+  }
+  const item = menu.getByTestId(testId)
+  await item.waitFor({ state: 'visible', timeout: timeoutMs })
+  return item
+}
+
+/**
+ * Opens Review and replay from the top bar's More menu and waits until it is
+ * on screen (DON-341).
+ *
+ * @param {import('playwright').Page} page the app window
+ * @param {{ timeoutMs?: number }} [options] how long to wait for Review
+ */
+export async function openMissionReview(page, { timeoutMs = 15_000 } = {}) {
+  await (await moreMenuItem(page, 'ws-open-review', { timeoutMs })).click()
+  await page.getByTestId('mission-review-workspace').waitFor({ state: 'visible', timeout: timeoutMs })
 }
 
 /**
@@ -86,16 +109,58 @@ export async function pressPauseResume(page) {
 }
 
 /**
- * Opens the Mission panel and unfolds its participant pickers, so the device
- * picker and the add-device form are on screen (DON-341).
+ * Opens the Mission panel and unfolds its participant pickers (DON-341).
+ * "Change who's taking part" exists only when the team has a default group
+ * and "Pick people" holds the device list; both start closed. Before Start,
+ * pass `require` to wait until that picker is mounted, unfolded and visible;
+ * during a mission the pickers are replaced by the add-device form, so without
+ * `require` this only opens whichever folds are there.
  *
  * @param {import('playwright').Page} page the app window
+ * @param {{ require?: 'device' | 'group', timeoutMs?: number }} [options] the picker that must be visible
+ * @returns {Promise<import('playwright').Locator | null>} the required picker, or null
  */
-export async function openParticipantPickers(page) {
+export async function openParticipantPickers(page, { require, timeoutMs = 30_000 } = {}) {
   await openWorkspacePanel(page, 'mission')
-  for (const id of ['ws-change-participants', 'ws-pick-devices']) {
-    const fold = page.getByTestId(id)
-    if (await fold.count() === 0) continue
-    if (await fold.evaluate((element) => !element.open)) await fold.locator('summary').first().click()
+  const outer = page.getByTestId('ws-change-participants')
+  const devices = page.getByTestId('ws-pick-devices')
+  const picker = require === undefined ? null : page.getByTestId(`participant-${require}-picker`)
+  if (picker !== null) {
+    try {
+      await outer.or(devices).or(picker).first().waitFor({ state: 'attached', timeout: timeoutMs })
+    } catch {
+      throw new Error(`The participant pickers did not appear in the Mission panel within ${timeoutMs} ms.`)
+    }
   }
+  await unfold(outer)
+  if (require === 'device') await devices.waitFor({ state: 'visible', timeout: timeoutMs })
+  await unfold(devices)
+  if (picker === null) return null
+  try {
+    await picker.waitFor({ state: 'visible', timeout: timeoutMs })
+  } catch {
+    throw new Error(`The ${require} picker was not visible after opening its folds, within ${timeoutMs} ms.`)
+  }
+  return picker
+}
+
+/**
+ * Opens a closed `<details>` fold by its summary and waits until it is open.
+ * Does nothing if the fold is absent or already open.
+ *
+ * @param {import('playwright').Locator} fold the details element
+ */
+async function unfold(fold) {
+  if (await fold.count() === 0) return
+  if (await fold.evaluate((element) => element instanceof HTMLDetailsElement && element.open)) return
+  await fold.locator('summary').first().click()
+  await fold.evaluate((element) => new Promise((resolve, reject) => {
+    const deadline = Date.now() + 5_000
+    const check = () => {
+      if (element instanceof HTMLDetailsElement && element.open) resolve(undefined)
+      else if (Date.now() > deadline) reject(new Error(`The ${element.getAttribute('data-testid')} fold did not open.`))
+      else requestAnimationFrame(check)
+    }
+    check()
+  }))
 }
