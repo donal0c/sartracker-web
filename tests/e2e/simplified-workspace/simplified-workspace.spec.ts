@@ -11,7 +11,7 @@ import { join } from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { openWorkspacePanel } from '../helpers/workspace-panels'
+import { openWorkspacePanel, pressPauseResume } from '../helpers/workspace-panels'
 
 const SHOTS = process.env.LAYOUT_SHOTS
 if (SHOTS !== undefined) mkdirSync(SHOTS, { recursive: true })
@@ -345,6 +345,39 @@ test.describe('Simplified workspace', () => {
     // Opening Mission again shows the refusal in words.
     await page.getByTestId('ws-mission-button').click()
     await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+  })
+
+  test('All devices, Settings and Diagnostics never cover the alarm, running or paused, at either window size', async ({ page }) => {
+    // Was: these modals filled the window over every warning, as on the old screen.
+    await open(page)
+    await startMission(page)
+    const workspaces: ReadonlyArray<{ readonly name: string; readonly open: () => Promise<void>; readonly testId: string }> = [
+      { name: 'All devices', testId: 'devices-workspace', open: async () => { await showPeople(page); await page.getByTestId('open-devices-workspace').click() } },
+      { name: 'Settings', testId: 'settings-workspace', open: async () => { await page.getByTestId('open-settings-workspace').click() } },
+      { name: 'Diagnostics', testId: 'diagnostics-workspace', open: async () => { await page.getByTestId('ws-more-button').click(); await page.getByTestId('open-diagnostics-workspace').click() } },
+    ]
+    const resumeUncovered = () => page.getByTestId('ws-alarm-resume').evaluate((button) => {
+      const box = button.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+      return hit !== null && button.contains(hit)
+    })
+    for (const state of ['running', 'paused'] as const) {
+      if (state === 'running') await feed(page, { lost: true })
+      else { await feed(page); await pressPauseResume(page) }
+      await expect(page.getByTestId('ws-alarm')).toContainText(state === 'running' ? 'TRACKING LOST' : 'MISSION PAUSED')
+      for (const size of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+        await page.setViewportSize(size)
+        for (const workspace of workspaces) {
+          await workspace.open()
+          await expect(page.getByTestId(workspace.testId), `${workspace.name} open`).toBeVisible()
+          await expectAlarmOverMap(page)
+          if (state === 'paused') expect(await resumeUncovered(), `Resume clickable over ${workspace.name}`).toBe(true)
+          await page.keyboard.press('Escape')
+          await expect(page.getByTestId(workspace.testId)).toBeHidden()
+        }
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
   })
 
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {

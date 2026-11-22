@@ -8,6 +8,8 @@ import { useWorkspacePanels } from './use-workspace-panels'
 export const WORKSPACE_HEADER_BOTTOM_VAR = '--sar-workspace-header-bottom'
 /** CSS variable holding the alarm's height over the map; map controls and cards start below it. */
 export const WORKSPACE_ALARM_HEIGHT_VAR = '--ws-alarm-height'
+/** CSS variable set only while the alarm shows: where it ends. Modal workspaces start there. */
+export const WORKSPACE_ALARM_BOTTOM_VAR = '--sar-workspace-alarm-bottom'
 
 /**
  * The desktop workspace approved by the team (DON-341): one shallow top bar, an
@@ -40,7 +42,8 @@ export function SimplifiedWorkspace(props: {
 
   // Docked workspaces (Review and replay) start below the top bar and the alarm, so
   // the Mission button, Resume and every warning stay visible and clickable (DON-176).
-  // Map controls and the start card start below the alarm too.
+  // Map controls and the start card start below the alarm too, and modal workspaces
+  // start below it while it shows.
   const headerRef = useRef<HTMLDivElement>(null)
   const rowRef = useRef<HTMLDivElement>(null)
   const alarmRef = useRef<HTMLDivElement>(null)
@@ -54,6 +57,9 @@ export function SimplifiedWorkspace(props: {
       const alarmBox = alarm.getBoundingClientRect()
       root.style.setProperty(WORKSPACE_HEADER_BOTTOM_VAR, `${Math.max(header.getBoundingClientRect().bottom, alarmBox.bottom)}px`)
       row.style.setProperty(WORKSPACE_ALARM_HEIGHT_VAR, `${alarmBox.height}px`)
+      // All devices, Settings and Diagnostics must never hide a TRACKING LOST or PAUSED alarm.
+      if (alarmBox.height > 0) root.style.setProperty(WORKSPACE_ALARM_BOTTOM_VAR, `${alarmBox.bottom}px`)
+      else root.style.removeProperty(WORKSPACE_ALARM_BOTTOM_VAR)
     }
     publish()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
@@ -64,6 +70,7 @@ export function SimplifiedWorkspace(props: {
       observer?.disconnect()
       window.removeEventListener('resize', publish)
       root.style.removeProperty(WORKSPACE_HEADER_BOTTOM_VAR)
+      root.style.removeProperty(WORKSPACE_ALARM_BOTTOM_VAR)
     }
   }, [])
 

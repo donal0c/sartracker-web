@@ -275,6 +275,10 @@ test.describe('M19 devices workspace', () => {
 
     const zoomButton = page.getByTestId('devices-inspector-zoom')
     await expect(zoomButton).toBeVisible()
+    // Tracking is offline here, so the TRACKING LOST alarm shows and the workspace
+    // starts below it (DON-341): at 720 px high the inspector scrolls to Zoom.
+    // The DON-190 contract is the width: the action stays inside the inspector.
+    await zoomButton.scrollIntoViewIfNeeded()
     await expect(zoomButton).toBeInViewport()
 
     const boxes = await page.evaluate(() => {

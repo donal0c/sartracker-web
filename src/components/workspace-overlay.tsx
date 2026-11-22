@@ -151,7 +151,10 @@ export function WorkspaceOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex"
+      className="fixed inset-x-0 bottom-0 z-50 flex"
+      // In the new layout, while the tracking alarm shows, the modal starts below
+      // it so the alarm and Resume are never hidden; otherwise it fills the window.
+      style={{ top: 'var(--sar-workspace-alarm-bottom, 0px)' }}
     >
       {/* Backdrop — click to close */}
       <button
