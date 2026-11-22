@@ -47,8 +47,9 @@ export type TrackingHeadline = {
    */
   readonly leadInAlarm?: true
   /**
-   * The one word that says what the operator must do. The bar keeps it visible
-   * wherever the ranking puts it, never behind "+N more" (DON-353).
+   * The one word that says what the operator must do (DON-353). The bar shows
+   * it when it fits after the person-safety words ranked before it; otherwise
+   * it is counted in "+N more", and the label and Tracking panel still name it.
    */
   readonly remedy?: string
   /** The rest of the words, which may be cut short in the bar; the full text is in the label and Tracking. */
