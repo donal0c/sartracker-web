@@ -67,6 +67,10 @@ const {
   closeStartupFailureWindows,
   showStartupFailureWindow,
 } = require('./startup-failure-window.cjs')
+const {
+  RENDERER_MOUNT_STAGE,
+  createRendererMountGate,
+} = require('./renderer-mount-gate.cjs')
 const { createTerminalFaultState } = require('./terminal-fault-state.cjs')
 const {
   STARTUP_RESPONSE_TIMEOUT_MS,
@@ -452,15 +456,24 @@ async function createWindow(
     rendererUrl = indexUrl.toString()
   }
   const loadRenderer = () => window.loadURL(rendererUrl)
-  if (startupWatchdog === undefined) await loadRenderer()
-  else await startupWatchdog.run('operational window content load', loadRenderer)
   if (startupWatchdog === undefined) {
+    await loadRenderer()
     await rendererTeardownCoordinator.markRendererAvailable()
   } else {
-    await startupWatchdog.run(
-      'operational renderer availability fence',
-      () => rendererTeardownCoordinator.markRendererAvailable(),
-    )
+    // Listen before loading: the first screen can mount before the load
+    // promise settles. A loaded page whose script never mounts stays blank, so
+    // the shell is not revealed until the mount is confirmed [DON-354].
+    const mountGate = createRendererMountGate({ ipcMain, webContents: window.webContents })
+    try {
+      await startupWatchdog.run('operational window content load', loadRenderer)
+      await startupWatchdog.run(
+        'operational renderer availability fence',
+        () => rendererTeardownCoordinator.markRendererAvailable(),
+      )
+      await startupWatchdog.run(RENDERER_MOUNT_STAGE, () => mountGate.mounted)
+    } finally {
+      mountGate.dispose()
+    }
     // The shell is usable only after the renderer safety fence succeeds. Stop
     // the startup budget immediately before revealing it so later work cannot
     // turn a visible, ready shell into a fatal startup timeout.
@@ -1642,6 +1655,9 @@ function createUnwritableProfileError({ userDataPath, code }) {
 function startupFailureOperatorMessage(error) {
   if (error instanceof Error && error.code === 'ERR_SARTRACKER_PROFILE_UNWRITABLE') {
     return error.operatorMessage
+  }
+  if (error instanceof StartupTimeoutError && error.stage === RENDERER_MOUNT_STAGE) {
+    return `SAR Tracker opened, but its map screen did not start within ${Math.ceil(error.timeoutMs / 1_000)} seconds. The installed copy may be damaged or incomplete. No mission-data damage was confirmed. Reinstall SAR Tracker from the team's release, then start it again. If it still does not start, preserve the profile and contact support. The application will now close.`
   }
   if (error instanceof StartupTimeoutError) {
     return `SAR Tracker could not finish starting: the step "${error.stage}" was still in progress after ${Math.ceil(error.timeoutMs / 1_000)} seconds. This timeout does not mean the mission data is damaged; no corruption was confirmed. Preserve the profile and contact support before retrying. The application will now close.`

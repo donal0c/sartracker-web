@@ -37,6 +37,8 @@ const COVERAGE_RENDERER_FAILURE_CODES = Object.freeze([
 ])
 const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
 const RENDERER_TEARDOWN_READY_CHANNEL = 'sartracker:app-runtime-teardown-ready'
+// Must match electron/renderer-mount-gate.cjs (the sandboxed preload cannot require it).
+const RENDERER_MOUNTED_CHANNEL = 'sartracker:renderer-mounted'
 const MISSION_ARCHIVE_PROGRESS_CHANNEL = 'sartracker:mission-archive:progress'
 const ARCHIVE_REVIEW_PROGRESS_CHANNEL = 'sartracker:archive-review:progress'
 const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
@@ -1392,6 +1394,9 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   acknowledgeAppRuntimeTeardown(input) {
     ipcRenderer.send(RENDERER_TEARDOWN_READY_CHANNEL, input)
+  },
+  signalRendererMounted() {
+    ipcRenderer.send(RENDERER_MOUNTED_CHANNEL)
   },
   archiveReview: Object.freeze({
     supported: process.platform === 'darwin' || process.platform === 'linux',

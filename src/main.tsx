@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.tsx'
 import { bootstrapAppRuntime } from './features/runtime/bootstrap-app-runtime'
 import { installAppRuntimeTeardown } from './features/runtime/install-app-runtime-teardown'
+import { RendererMountedSignal } from './features/runtime/renderer-mounted-signal'
 import { applySavedTheme } from './lib/theme-preference'
 
 applySavedTheme()
@@ -16,5 +17,6 @@ void runtimeBootstrapPromise
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <RendererMountedSignal />
   </StrictMode>,
 )

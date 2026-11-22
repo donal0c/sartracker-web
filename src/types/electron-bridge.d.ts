@@ -128,6 +128,8 @@ export type SarTrackerElectronBridge = {
     readonly requestId: string
     readonly ok: boolean
   }) => void
+  /** Tells the main process the first screen mounted, so startup can reveal the window [DON-354]. */
+  readonly signalRendererMounted?: () => void
   readonly archiveReview: ArchiveReviewBridge
   readonly missionStore: Omit<MissionStore, 'listBreadcrumbPositions' | 'cancelBreadcrumbQuery'> & BreadcrumbQueryTransport
   readonly layerCatalogStore: LayerCatalogStore
