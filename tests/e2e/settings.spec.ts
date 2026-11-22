@@ -68,25 +68,47 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
   })
 
-  test('keeps "Re-enter password" visible at 1024 px in a wide font behind stale and not-moving people [DON-353]', async ({ page }) => {
-    // Codex's case: person-safety words rank before the fix, so the fix is not
-    // the second word, and "TRACKING LOST · 1 stale · +1 more" hid it.
+  test('keeps person-safety words ahead of the fix at 1024 px in a wide font when stale and not-moving people are flagged [DON-353]', async ({ page }) => {
+    // Decided: person-safety words win. A coordinator must tell a person who
+    // has stopped moving apart from positions only ageing because tracking failed.
     await useWideFontAt1024(page)
     await startMission(page, 'Credential safety words')
-    await injectCredentialLossWithSafetyWords(page)
+    await injectCredentialLossWithSafetyWords(page, { stale: true })
     const headline = page.getByTestId('ws-tracking-headline')
-    // Both safety conditions are present and named in full in the label.
+    // Both safety conditions and the fix are named in full in the label.
     await expect(headline).toHaveAttribute('aria-label', /1 position out of date/)
     await expect(headline).toHaveAttribute('aria-label', /1 person not moving/)
-    const text = await expectRemedyInBar(page, 'TRACKING LOST')
-    // Any safety word shown keeps its place before the fix; the rest are counted.
-    const before = text.slice(0, text.indexOf('Re-enter password'))
-    expect(before).not.toContain('more')
-    expect(before.replace(/1 stale · |1 not moving · /gu, '')).toBe('')
-    const shownSafety = (text.match(/1 stale|1 not moving/gu) ?? []).length
-    // Hidden safety words are always counted, never dropped silently.
-    if (shownSafety < 2) expect(text).toMatch(new RegExp(`· \\+${2 - shownSafety}( more)?$`, 'u'))
+    await expect(headline).toHaveAttribute('aria-label', /Settings/)
+    const text = await expectWholeWordsInBar(page, 'TRACKING LOST', '1 stale')
+    // The alarm lead gave way first; the strip carries it.
+    expect(text).toMatch(/^1 stale/u)
+    // Every word left out is counted: the not-moving word and the fix, unless shown.
+    const shown = ['1 not moving', 'Re-enter password'].filter((word) => text.includes(word)).length
+    if (shown < 2) expect(text).toMatch(new RegExp(` · \\+${2 - shown} more$`, 'u'))
+    // The fix never jumps ahead of a safety word.
+    if (text.includes('Re-enter password')) expect(text.indexOf('1 not moving')).toBeGreaterThan(-1)
   })
+
+  for (const settingsOpen of [false, true]) {
+    test(`shows a person already not moving ahead of the fix at 1024 px in a wide font${settingsOpen ? ' with Settings open' : ''} [DON-353]`, async ({ page }) => {
+      // The People badge reads the same with or without a person not moving
+      // during an outage, so the top bar must say it.
+      await useWideFontAt1024(page)
+      await startMission(page, settingsOpen ? 'Outage not moving settings' : 'Outage not moving')
+      await injectCredentialLossWithSafetyWords(page, { stale: false })
+      if (settingsOpen) {
+        await openWorkspacePanel(page, 'tracking')
+        await page.getByTestId('ws-open-tracking-settings').click()
+        await expect(page.getByTestId('settings-workspace')).toBeVisible()
+      }
+      const headline = page.getByTestId('ws-tracking-headline')
+      await expect(headline).toHaveAttribute('aria-label', /1 person not moving/)
+      await expect(headline).toHaveAttribute('aria-label', /Settings/)
+      const text = await expectWholeWordsInBar(page, 'TRACKING LOST', '1 not moving')
+      // The fix either fits after the safety word or is counted, never dropped silently.
+      if (!text.includes('Re-enter password')) expect(text).toMatch(/^1 not moving · \+1( more)?$/u)
+    })
+  }
 
   test('keeps "Re-enter password" visible at 1024 px in a wide font with Settings open [DON-353]', async ({ page }) => {
     await useWideFontAt1024(page)
@@ -873,9 +895,31 @@ async function expectRemedyInBar(page: Page, lead: string): Promise<string> {
   return text
 }
 
-/** Credential loss while one person has not moved for 20 minutes and another's position is out of date. */
-async function injectCredentialLossWithSafetyWords(page: Page) {
-  await page.evaluate(async () => {
+/**
+ * The bar shows this word on screen, whole and inside the bar, never a bare
+ * count, and the alarm strip says the lead wherever the bar dropped it.
+ *
+ * @returns the bar's problem words
+ */
+async function expectWholeWordsInBar(page: Page, lead: string, word: string): Promise<string> {
+  const problems = page.getByTestId('ws-tracking-problems')
+  await expect(problems).toBeVisible()
+  await expect(problems).toContainText(word)
+  await expect(page.getByTestId('ws-alarm')).toContainText(lead)
+  const text = (await problems.textContent()) ?? ''
+  expect(text).not.toMatch(/^\+|problems$/u)
+  const fit = await problems.evaluate((element) => {
+    const bar = element.closest('[data-testid="ws-tracking-headline"]')!.getBoundingClientRect()
+    const box = element.getBoundingClientRect()
+    return { inside: box.right <= bar.right + 0.5 && box.width > 0, clipped: element.scrollWidth > element.clientWidth + 1 }
+  })
+  expect(fit).toEqual({ inside: true, clipped: false })
+  return text
+}
+
+/** Credential loss while one person has not moved for 20 minutes and, with stale, another's position is out of date. */
+async function injectCredentialLossWithSafetyWords(page: Page, { stale }: { stale: boolean }) {
+  await page.evaluate(async (withStale) => {
     const now = Date.now()
     const iso = (ms: number) => new Date(ms).toISOString()
     const base = { lon: -9.7, altitude: null, speed: null, battery: null, accuracy: 4, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null }
@@ -886,15 +930,16 @@ async function injectCredentialLossWithSafetyWords(page: Page) {
     await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot({
       devices: [
         { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: alphaLatest.timestamp, unique_id: null, category: 'person' },
-        { device_id: 'bravo', name: 'Bravo Team', status: 'online', last_seen: bravo.timestamp, unique_id: null, category: 'person' },
+        ...(withStale ? [{ device_id: 'bravo', name: 'Bravo Team', status: 'online', last_seen: bravo.timestamp, unique_id: null, category: 'person' }] : []),
       ],
-      positions: [alphaLatest, bravo], breadcrumbs: [alphaFirst, alphaLatest, bravo],
+      positions: withStale ? [alphaLatest, bravo] : [alphaLatest],
+      breadcrumbs: withStale ? [alphaFirst, alphaLatest, bravo] : [alphaFirst, alphaLatest],
     }, {
       mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
       warning: 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
       warningCodes: ['tracking_credentials_unreadable'],
     })
-  })
+  }, stale)
 }
 
 async function expectTrackingOnline(page: Page, timeout?: number) {

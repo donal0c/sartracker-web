@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
-import { PROBLEM_WORD_SEPARATOR, fitKeepingRemedy, fitProblemWords, problemWordsText, selectedWordsText, type WordSelection } from '../../features/workspace/problem-word-fit'
+import { PROBLEM_WORD_SEPARATOR, fitKeepingRemedy, fitProblemWords, problemWordsText } from '../../features/workspace/problem-word-fit'
 
 /**
  * The problem words at the front of the tracking headline. Each word is shown
@@ -20,7 +20,8 @@ export function TrackingProblemWords(props: {
   const rowRef = useRef<HTMLSpanElement>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
   const [shown, setShown] = useState(words.length)
-  const [selection, setSelection] = useState<WordSelection | null>(null)
+  const [skipLead, setSkipLead] = useState(false)
+  const [compact, setCompact] = useState(false)
   const wordsKey = `${leadInAlarm ? 'lead-in-alarm' : ''}\n${remedy}\n${words.join('\n')}`
 
   useLayoutEffect(() => {
@@ -33,13 +34,17 @@ export function TrackingProblemWords(props: {
       const widths = parts.slice(0, words.length)
       const separator = parts[words.length] ?? 0
       const more = parts[words.length + 1] ?? 0
-      const compact = parts[words.length + 2] ?? 0
+      const short = parts[words.length + 2] ?? 0
       const available = line.getBoundingClientRect().right - row.getBoundingClientRect().left
       if (remedy >= 0) {
-        // The alarm strip always says an alarm lead, so it may give way to the remedy.
-        setSelection(fitKeepingRemedy(widths, { remedy, dropLead: leadInAlarm }, separator, more, available, compact))
+        // The alarm strip always says an alarm lead, so it gives way first; safety words keep their rank.
+        const fit = fitKeepingRemedy(widths, { remedy, dropLead: leadInAlarm }, separator, more, available, short)
+        setSkipLead(fit.skipLead)
+        setCompact(fit.compact === true)
+        setShown(fit.shown)
       } else {
-        setSelection(null)
+        setSkipLead(false)
+        setCompact(false)
         setShown(fitProblemWords(widths, separator, more, available))
       }
     }
@@ -57,7 +62,7 @@ export function TrackingProblemWords(props: {
   return (
     <>
       <span className="ws-health-problems" data-testid="ws-tracking-problems" ref={rowRef}>
-        {remedy >= 0 && selection !== null ? selectedWordsText(words, selection) : problemWordsText(words, shown)}
+        {problemWordsText(skipLead ? words.slice(1) : words, shown, compact)}
       </span>
       <span aria-hidden="true" className="ws-health-measure" ref={measureRef}>
         {words.map((word) => <span key={word}>{word}</span>)}

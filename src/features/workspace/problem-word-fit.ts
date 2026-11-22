@@ -24,20 +24,23 @@ export function fitProblemWords(widths: readonly number[], separator: number, mo
   return widths.length
 }
 
-/** Which problem words to show, by position, and how many to count as "+N more". */
-export type WordSelection = { readonly indices: readonly number[]; readonly hidden: number; readonly compact?: true }
+/** How a remedy-bearing headline is fitted: whether the alarm lead gives way, and how many words show. */
+export type RemedyFit = { readonly skipLead: boolean; readonly shown: number; readonly compact?: true }
 
 /**
- * Fits the words so the one thing the operator must do, the remedy, is never
- * hidden behind "+N more" (DON-353). The remedy is named by its position in
- * the ranked words, wherever the ranking put it; words ranked before it (a
- * person's safety, such as stale or not moving) keep their place in front.
- * In order of preference:
- * 1. every word that fits, from the front, when that already includes the remedy;
- * 2. the same without the alarm lead, which the flashing alarm strip always shows;
- * 3. as many of the words before the remedy as fit, then the remedy, counting the rest;
- * 4. the remedy and a short "+N" count, when "+N more" will not fit beside it;
- * 5. the remedy alone, when even that will not fit.
+ * Fits words that include a remedy, the thing the operator must do (DON-353).
+ * Ranking is never reordered: person-safety words ranked before the remedy
+ * (stale, not moving) win, because a coordinator must tell a person who has
+ * stopped moving apart from positions that are only ageing because tracking
+ * failed. In order:
+ * 1. every word that fits from the front, when that already includes the remedy;
+ * 2. otherwise the alarm lead gives way, since the alarm strip always shows it,
+ *    and the rest fit from the front: the remedy shows if it fits after the
+ *    safety words, or is counted in "+N more" (the Tracking panel and the
+ *    button's label still name it);
+ * 3. when no whole word fits beside "+N more", the first word beside a short
+ *    "+N", so a safety word stays on screen when Settings narrows the bar;
+ * 4. a count instead of any word, rather than a clipped word.
  *
  * @param widths the width of each word, most urgent first
  * @param options remedy: the remedy word's index; dropLead: the first word is
@@ -46,7 +49,7 @@ export type WordSelection = { readonly indices: readonly number[]; readonly hidd
  * @param more the width of the "+N more" count
  * @param available the width the words may use
  * @param compact the width of the short "+N" count
- * @returns the words to show and how many to count
+ * @returns whether to leave out the lead, how many of the remaining words to show, and whether the count is short
  */
 export function fitKeepingRemedy(
   widths: readonly number[],
@@ -55,43 +58,15 @@ export function fitKeepingRemedy(
   more: number,
   available: number,
   compact: number,
-): WordSelection {
-  const { remedy, dropLead } = options
-  const range = (from: number, to: number) => Array.from({ length: Math.max(0, to - from) }, (_, index) => from + index)
+): RemedyFit {
   const shown = fitProblemWords(widths, separator, more, available)
-  if (shown > remedy) return { indices: range(0, shown), hidden: widths.length - shown }
-  const start = dropLead && remedy > 0 ? 1 : 0
-  const pool = widths.length - start
-  if (start === 1) {
-    const rest = fitProblemWords(widths.slice(1), separator, more, available)
-    if (1 + rest > remedy) return { indices: range(1, 1 + rest), hidden: pool - rest }
-  }
-  const width = (indices: readonly number[], hidden: number) =>
-    indices.reduce((sum, index, at) => sum + (at === 0 ? 0 : separator) + (widths[index] ?? 0), 0)
-    + (hidden > 0 ? separator + more : 0)
-  for (let last = remedy - 1; last >= start - 1; last -= 1) {
-    const indices = [...range(start, last + 1), remedy]
-    const hidden = pool - indices.length
-    if (width(indices, hidden) <= available + 0.5) return { indices, hidden }
-  }
-  const hidden = pool - 1
-  if (hidden > 0 && (widths[remedy] ?? 0) + separator + compact <= available + 0.5) return { indices: [remedy], hidden, compact: true }
-  // The bar cannot hold even a count beside the remedy; the button's label and
-  // the Tracking panel list every problem.
-  return { indices: [remedy], hidden: 0 }
-}
-
-/**
- * Text for a selection of words.
- *
- * @param words the problem words, most urgent first
- * @param selection the words to show and how many to count
- * @returns e.g. "1 stale · Re-enter password · +1 more", or "Re-enter password · +2" when compact
- */
-export function selectedWordsText(words: readonly string[], selection: WordSelection): string {
-  const parts = selection.indices.map((index) => words[index] ?? '')
-  if (selection.hidden > 0) parts.push(selection.compact === true ? `+${selection.hidden}` : `+${selection.hidden} more`)
-  return parts.join(PROBLEM_WORD_SEPARATOR)
+  if (!options.dropLead || shown > options.remedy || widths.length < 2) return { skipLead: false, shown }
+  const rest = fitProblemWords(widths.slice(1), separator, more, available)
+  if (rest > 0) return { skipLead: true, shown: rest }
+  const short = fitProblemWords(widths.slice(1), separator, compact, available)
+  if (short > 0) return { skipLead: true, shown: short, compact: true }
+  // No whole word fits even without the lead: count every problem, lead included.
+  return { skipLead: false, shown: 0 }
 }
 
 /**
@@ -99,11 +74,13 @@ export function selectedWordsText(words: readonly string[], selection: WordSelec
  *
  * @param words the problem words, most urgent first
  * @param shown how many whole words fit
+ * @param compact count the rest as a short "+N"
  * @returns e.g. "History failed · 2 stale · +2 more"; "3 problems" when none fit
  */
-export function problemWordsText(words: readonly string[], shown: number): string {
+export function problemWordsText(words: readonly string[], shown: number, compact = false): string {
   if (shown >= words.length) return words.join(PROBLEM_WORD_SEPARATOR)
   // A single word is shown even when it cannot fit; nothing else could say it.
   if (shown === 0) return words.length === 1 ? (words[0] ?? '') : `${words.length} problems`
-  return [...words.slice(0, shown), `+${words.length - shown} more`].join(PROBLEM_WORD_SEPARATOR)
+  const hidden = words.length - shown
+  return [...words.slice(0, shown), compact ? `+${hidden}` : `+${hidden} more`].join(PROBLEM_WORD_SEPARATOR)
 }
