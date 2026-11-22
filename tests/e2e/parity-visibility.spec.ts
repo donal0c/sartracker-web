@@ -12,7 +12,16 @@
  * If the visibility store does not update after a tree toggle, the map cannot change.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { expandAllLayers } from './helpers/layers'
 import { closeMissionPanel, openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+
+/** Everyone's Location and Trail in People, together the old Tracking group (DON-341). */
+async function setAllTracking(page: Page, visible: boolean) {
+  for (const id of ['ws-all-positions', 'ws-all-trails']) {
+    await page.getByTestId(id).setChecked(visible)
+    await expect(page.getByTestId(id)).toBeChecked({ checked: visible })
+  }
+}
 
 async function waitForShell(page: Page) {
   const title = page.getByTestId('app-title')
@@ -372,39 +381,41 @@ async function seedVisibilityTestData(page: Page, retries = 2): Promise<void> {
 
 test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => {
   test('batch 2 global-off selected-on preserves independent current visibility', async ({ page }) => {
-    await page.getByTestId('layer-expand-all-btn').click()
-    const breadcrumbs = page.getByTestId('layer-visibility-layer-tracking-breadcrumbs')
+    // Live Tracking visibility is in People now (DON-341): Everyone's Trail is the
+    // old Breadcrumbs layer, each person's Location and Trail are the old items.
+    await openWorkspacePanel(page, 'people')
+    const breadcrumbs = page.getByTestId('ws-all-trails')
     await breadcrumbs.uncheck()
-    await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-alpha').check()
+    await page.getByTestId('ws-trail-alpha').check()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds).toEqual(['bravo'])
     await expect.poll(async () => (await readVisibilityState(page)).breadcrumbsVisible).toBe(true)
     await expect(breadcrumbs).toHaveJSProperty('indeterminate', true)
     expect((await readVisibilityState(page)).hiddenDeviceIds).toEqual([])
-    await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-alpha').uncheck()
+    await page.getByTestId('ws-trail-alpha').uncheck()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds.slice().sort()).toEqual(['alpha', 'bravo'])
     await breadcrumbs.check()
-    await page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo').uncheck()
+    await page.getByTestId('ws-trail-bravo').uncheck()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenBreadcrumbDeviceIds).toEqual(['bravo'])
-    await page.getByTestId('layer-visibility-layer-tracking-devices').uncheck()
-    await page.getByTestId('layer-visibility-feature-device-alpha').check()
+    await page.getByTestId('ws-all-positions').uncheck()
+    await page.getByTestId('ws-position-alpha').check()
     await expect.poll(async () => (await readVisibilityState(page)).hiddenDeviceIds).toEqual(['bravo'])
-    await expect(page.getByTestId('layer-visibility-layer-tracking-devices')).toHaveJSProperty('indeterminate', true)
-    await expect(page.getByTestId('persistent-tracking-health')).toContainText('Current-location display disabled for 1 device')
+    await expect(page.getByTestId('ws-all-positions')).toHaveJSProperty('indeterminate', true)
+    // The hidden-location warning moved from the mast into Tracking (DON-341).
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText("1 person's location hidden on the map")
     await closeMissionPanel(page)
     await page.screenshot({ path: 'tmp/pr15-remediation-visibility.png', fullPage: true })
-    await page.getByTestId('compact-mission-restore').click()
     await page.reload()
     await waitForShell(page)
-    await openMissionPanel(page)
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Resume', exact: true }).click()
+    // After a reload the start screen offers Resume first (DON-342).
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await page.getByTestId('start-screen-resume-btn').click()
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedVisibilityTestData(page)
-    await openWorkspacePanel(page, 'layers')
-    await page.getByTestId('layer-expand-all-btn').click()
-    await expect(page.getByTestId('layer-visibility-feature-device-alpha')).toBeChecked()
-    await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
-    await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo')).not.toBeChecked()
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-position-alpha')).toBeChecked()
+    await expect(page.getByTestId('ws-position-bravo')).not.toBeChecked()
+    await expect(page.getByTestId('ws-trail-bravo')).not.toBeChecked()
     await page.evaluate(async () => {
       const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
       const snapshot = useTrackingStore.getState().snapshot
@@ -412,8 +423,8 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
         { ...snapshot.devices[0]!, device_id: 'new-without-fix', name: 'New device without position' }],
       })
     })
-    await expect(page.getByTestId('layer-visibility-feature-device-new-without-fix')).not.toBeChecked()
-    await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-new-without-fix')).toBeChecked()
+    await expect(page.getByTestId('ws-position-new-without-fix')).not.toBeChecked()
+    await expect(page.getByTestId('ws-trail-new-without-fix')).toBeChecked()
     expect(await page.evaluate(async () => {
       const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
       return useTrackingStore.getState().snapshot.positions.some((position) => position.device_id === 'new-without-fix')
@@ -427,10 +438,9 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await resyncTrackingSnapshot(page)
-    await openWorkspacePanel(page, 'layers')
-    await page.getByTestId('layer-expand-all-btn').click()
-    await expect(page.getByTestId('layer-visibility-feature-device-bravo')).toBeChecked()
-    await expect(page.getByTestId('layer-visibility-feature-tracking-breadcrumb-bravo')).toBeChecked()
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-position-bravo')).toBeChecked()
+    await expect(page.getByTestId('ws-trail-bravo')).toBeChecked()
   })
   test.setTimeout(45_000)
 
@@ -469,6 +479,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
         ]),
       )
     await openWorkspacePanel(page, 'layers')
+    await expandAllLayers(page)
   })
 
   test('LPV-240: per-device tracking visibility toggle propagates to visibility store', async ({
@@ -478,8 +489,9 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     const before = await readVisibilityState(page)
     expect(before.hiddenDeviceIds).toEqual([])
 
-    // Find and click the Bravo device visibility toggle in the tree
-    const bravoToggle = page.getByTestId('layer-visibility-feature-device-bravo')
+    // Bravo's Location tick in People (was: the device item in the Layers tree; DON-341)
+    await openWorkspacePanel(page, 'people')
+    const bravoToggle = page.getByTestId('ws-position-bravo')
     await expect(bravoToggle).toBeVisible({ timeout: 10000 })
     await expect(bravoToggle).toBeChecked()
     await bravoToggle.click()
@@ -505,14 +517,11 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     expect(before.hiddenDeviceIds).toEqual([])
     expect(before.hiddenBreadcrumbDeviceIds).toEqual([])
 
-    const currentBravoToggle = page.getByTestId('layer-visibility-feature-device-bravo')
-    const breadcrumbsExpand = page.getByTestId('layer-expand-layer-tracking-breadcrumbs')
-    const breadcrumbBravoToggle = page.getByTestId(
-      'layer-visibility-feature-tracking-breadcrumb-bravo',
-    )
+    // Bravo's Location and Trail ticks sit side by side in People (DON-341).
+    await openWorkspacePanel(page, 'people')
+    const currentBravoToggle = page.getByTestId('ws-position-bravo')
+    const breadcrumbBravoToggle = page.getByTestId('ws-trail-bravo')
     await expect(currentBravoToggle).toBeVisible({ timeout: 10000 })
-    await expect(breadcrumbsExpand).toBeVisible({ timeout: 10000 })
-    await breadcrumbsExpand.click()
     await expect(breadcrumbBravoToggle).toBeVisible({ timeout: 10000 })
 
     await currentBravoToggle.click()
@@ -718,10 +727,10 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     const before = await readVisibilityState(page)
     expect(before.hiddenDeviceIds).toEqual([])
 
-    // Toggle the entire "Tracking" group off
-    const trackingGroupToggle = page.getByTestId('layer-visibility-group-tracking')
-    await expect(trackingGroupToggle).toBeVisible({ timeout: 10000 })
-    await trackingGroupToggle.click()
+    // Switch all of Tracking off: Everyone's Location and Trail in People are the
+    // old Tracking group (DON-341).
+    await openWorkspacePanel(page, 'people')
+    await setAllTracking(page, false)
 
     // CRITICAL: Are all devices now hidden in the visibility store?
     // Poll the actual condition rather than guessing the cascade-persist delay.
@@ -741,8 +750,8 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
       })
       .toBe(false)
 
-    // Re-enable group
-    await trackingGroupToggle.click()
+    // Re-enable all of Tracking
+    await setAllTracking(page, true)
 
     await expect
       .poll(async () => (await readVisibilityState(page)).hiddenDeviceIds, {
@@ -835,8 +844,9 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
   test('LPV-247: tree/canvas synchronization — repeated toggles maintain consistency', async ({
     page,
   }) => {
-    // Toggle device off and on rapidly
-    const bravoToggle = page.getByTestId('layer-visibility-feature-device-bravo')
+    // Toggle device off and on rapidly (Bravo's Location in People; DON-341)
+    await openWorkspacePanel(page, 'people')
+    const bravoToggle = page.getByTestId('ws-position-bravo')
     await expect(bravoToggle).toBeVisible({ timeout: 10000 })
 
     // Rapid toggle sequence
@@ -847,6 +857,8 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
     await bravoToggle.click()
     const state2 = await readVisibilityState(page)
     expect(state2.hiddenDeviceIds).not.toContain('bravo')
+    await openWorkspacePanel(page, 'layers')
+    await expandAllLayers(page)
 
     // Toggle marker type
     const clueToggle = page.getByTestId('layer-visibility-layer-markers-clues')
@@ -870,13 +882,13 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
   test('DON-85: hidden layers stay hidden after catalog refresh and tracking resync', async ({
     page,
   }) => {
-    const trackingGroupToggle = page.getByTestId('layer-visibility-group-tracking')
     const mapToolsGroupToggle = page.getByTestId('layer-visibility-group-map-tools')
 
-    await expect(trackingGroupToggle).toBeVisible({ timeout: 10000 })
     await expect(mapToolsGroupToggle).toBeVisible({ timeout: 10000 })
-    await trackingGroupToggle.click()
     await mapToolsGroupToggle.click()
+    // All of Tracking is switched off in People now (DON-341).
+    await openWorkspacePanel(page, 'people')
+    await setAllTracking(page, false)
 
     await expect
       .poll(async () => {
@@ -896,7 +908,12 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
       })
       .toContain('bravo')
 
-    await page.getByTestId('layer-refresh-btn').click()
+    // The new Layers panel has no Refresh button (DON-341); run the same catalog
+    // refresh it called.
+    await page.evaluate(async () => {
+      const { useLayerCatalogStore } = await import('/src/features/layers/layer-catalog-store.ts')
+      await useLayerCatalogStore.getState().controller?.forceRefresh()
+    })
     await resyncTrackingSnapshot(page)
 
     await expect
