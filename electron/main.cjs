@@ -492,30 +492,46 @@ function appendRuntimeEvent(runtimeLog, entry) {
  * the mission shows them as possibly missing rather than silently dropping them.
  *
  * @param {{ append: (entry: object) => Promise<unknown> }} runtimeLog
- * @returns {(input: { requestId: string, reason: string, signal: AbortSignal }) => Promise<'wait' | 'abandon'>}
+ * @returns {(input: { requestId: string, reason: string, webContents: unknown, signal: AbortSignal }) => Promise<'wait' | 'abandon'>}
  */
 function createHungRendererEscalation(runtimeLog) {
-  return async ({ requestId, reason, signal }) => {
+  const fallbackShownFor = new Set()
+  return async ({ requestId, reason, webContents, signal }) => {
     appendRuntimeEvent(runtimeLog, {
       level: 'warn',
       event: 'renderer_drain_overdue',
       fields: { requestId, reason },
     })
-    const { response } = await dialog.showMessageBox({
+    const reloading = reason === 'renderer_reload'
+    const action = reloading ? 'reload' : 'close'
+    const actionNow = reloading ? 'Reload now' : 'Close now'
+    // The owning window makes the macOS sheet asynchronous, so the abort
+    // signal can dismiss it when a late drain arrives [DON-361].
+    const owner = resolveOwningWindow(webContents)
+    const options = {
       type: 'warning',
       title: 'SAR Tracker is not responding',
-      message: "SAR Tracker's map window is not responding, so it cannot close yet.",
+      message: `SAR Tracker's map window is not responding, so it cannot ${action} yet.`,
       detail: [
         'Wait gives it more time to save the latest track points.',
-        'Close now closes it anyway. Track points not yet saved for the active mission',
-        'will be marked as possibly missing when SAR Tracker next opens.',
+        `${actionNow} goes ahead anyway. Track points not yet saved for the active mission`,
+        'will be marked as possibly missing.',
       ].join(' '),
-      buttons: ['Wait', 'Close now'],
+      buttons: ['Wait', actionNow],
       defaultId: 0,
       cancelId: 0,
       noLink: true,
       signal,
-    })
+    }
+    let response
+    try {
+      ;({ response } = owner === null
+        ? await dialog.showMessageBox(options)
+        : await dialog.showMessageBox(owner, options))
+    } catch (error) {
+      reportDrainEscalationFailure(runtimeLog, error, { requestId, reason }, fallbackShownFor)
+      return 'wait'
+    }
     if (response === 1) {
       appendRuntimeEvent(runtimeLog, {
         level: 'error',
@@ -530,6 +546,47 @@ function createHungRendererEscalation(runtimeLog) {
       fields: { requestId, reason },
     })
     return 'wait'
+  }
+}
+
+/** Returns the live window that owns the renderer, or null when there is none. */
+function resolveOwningWindow(webContents) {
+  try {
+    const owner = BrowserWindow.fromWebContents?.(webContents) ?? null
+    return owner !== null && !owner.isDestroyed?.() ? owner : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Logs a failed hung-renderer question and shows a blocking error box once per
+ * request, so the operator learns why the window will not close [DON-361].
+ */
+function reportDrainEscalationFailure(runtimeLog, error, context, fallbackShownFor) {
+  appendRuntimeEvent(runtimeLog, {
+    level: 'error',
+    event: 'renderer_drain_escalation_failed',
+    fields: {
+      requestId: context.requestId,
+      reason: context.reason,
+      name: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message : String(error),
+    },
+  })
+  if (fallbackShownFor.has(context.requestId)) return
+  fallbackShownFor.add(context.requestId)
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker is not responding',
+      [
+        "SAR Tracker's map window is not responding and the question about it could not be shown.",
+        'SAR Tracker will keep waiting for it to save the latest track points.',
+        'If it stays stuck, force quit SAR Tracker; unsaved track points will then be marked as possibly missing.',
+      ].join(' '),
+    )
+  } catch {
+    // The runtime log entry above is the remaining record.
   }
 }
 
@@ -1856,6 +1913,11 @@ async function startElectronApp(startupWatchdog) {
     ipcMain,
     missionStore,
     onDrainOverdue: createHungRendererEscalation(runtimeLog),
+    onDrainOverdueFailed: (error, context) => appendRuntimeEvent(runtimeLog, {
+      level: 'error',
+      event: 'renderer_drain_escalation_failed',
+      fields: { ...context, name: error instanceof Error ? error.name : typeof error },
+    }),
   })
   electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
   if (previousSessionEndedUncleanly) {

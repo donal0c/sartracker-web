@@ -21,6 +21,7 @@ function createRendererTeardownCoordinator(dependencies) {
   const overdueMs = dependencies.overdueMs ?? RENDERER_DRAIN_OVERDUE_MS
   // Resolves 'wait' (ask again later) or 'abandon' (seal as lost and continue).
   const onDrainOverdue = dependencies.onDrainOverdue
+  const onDrainOverdueFailed = dependencies.onDrainOverdueFailed
   const pendingByRequestId = new Map()
   const preparationByWebContents = new WeakMap()
   let unexpectedRendererLossDetected = false
@@ -152,7 +153,15 @@ function createRendererTeardownCoordinator(dependencies) {
           if (state !== 'pending') return
           void Promise.resolve()
             .then(() => onDrainOverdue({ requestId, reason, webContents, signal: overdueQuestion.signal }))
-            .catch(() => 'wait')
+            .catch((error) => {
+              // A failed question never closes the window: report it and ask again.
+              try {
+                if (typeof onDrainOverdueFailed === 'function') onDrainOverdueFailed(error, { requestId, reason })
+              } catch {
+                // Reporting must not break the blocked close.
+              }
+              return 'wait'
+            })
             .then((decision) => {
               if (state !== 'pending') return
               if (decision === 'abandon') {

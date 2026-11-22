@@ -673,6 +673,40 @@ describe('Electron main startup', () => {
     expect(rendererTeardownCoordinator.markRendererAvailable).toHaveBeenCalledTimes(2)
   })
 
+  it('finishes closing a hung map window once the operator chooses Close now [DON-361]', async () => {
+    const electronMock = createElectronMock(vi.fn(), undefined, true)
+    electronMock.dialog.showMessageBox.mockResolvedValue({ response: 1 })
+    Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
+      if (request === 'electron') return electronMock
+      return originalLoad(request, parent, isMain)
+    }) as typeof Module._load
+
+    // The coordinator captures setTimeout when main starts, so fake it first.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      require('../../electron/main.cjs')
+      await vi.waitFor(() => expect(electronMock.BrowserWindow).toHaveBeenCalledOnce())
+      const createdWindow = electronMock.BrowserWindow.mock.results[0]?.value
+      electronMock.BrowserWindow.fromWebContents.mockImplementation(
+        (contents: unknown) => (contents === createdWindow.webContents ? createdWindow : null),
+      )
+      const closeHandler = createdWindow.on.mock.calls.find(
+        ([eventName]: [string]) => eventName === 'close',
+      )?.[1]
+      closeHandler({ preventDefault: vi.fn() })
+      await vi.waitFor(() => expect(createdWindow.webContents.send).toHaveBeenCalledOnce())
+      // The renderer never acknowledges: alive but stuck.
+      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.waitFor(() => expect(electronMock.dialog.showMessageBox).toHaveBeenCalledWith(
+        createdWindow,
+        expect.objectContaining({ title: 'SAR Tracker is not responding' }),
+      ))
+      await vi.waitFor(() => expect(createdWindow.close).toHaveBeenCalledOnce())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps the window open until the renderer drain is acknowledged without racing a reload', async () => {
     const electronMock = createElectronMock(vi.fn(), undefined, true)
     Module._load = ((request: string, parent: NodeJS.Module | null, isMain: boolean) => {
@@ -3340,14 +3374,20 @@ describe('Electron main startup', () => {
       return { electronMock, logs, onDrainOverdue: dependencies!.onDrainOverdue! }
     }
 
-    it('asks the operator to wait or close now, and closes now on request', async () => {
+    it('asks the operator to wait or close now, attached to the map window, and closes now on request', async () => {
       const { electronMock, logs, onDrainOverdue } = await loadWithCapturedEscalation(1)
       const signal = new AbortController().signal
+      const owner = { isDestroyed: () => false }
+      const webContents = {}
+      electronMock.BrowserWindow.fromWebContents.mockImplementation(
+        (contents: unknown) => (contents === webContents ? owner : null),
+      )
 
-      await expect(onDrainOverdue({ requestId: 'r1', reason: 'app_quit', webContents: {}, signal }))
+      await expect(onDrainOverdue({ requestId: 'r1', reason: 'app_quit', webContents, signal }))
         .resolves.toBe('abandon')
 
-      expect(electronMock.dialog.showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
+      // A parent window makes the macOS dialog asynchronous, so the signal can close it [DON-361].
+      expect(electronMock.dialog.showMessageBox).toHaveBeenCalledWith(owner, expect.objectContaining({
         type: 'warning',
         title: 'SAR Tracker is not responding',
         buttons: ['Wait', 'Close now'],
@@ -3365,6 +3405,41 @@ describe('Electron main startup', () => {
           event: 'renderer_drain_abandoned',
         }))
       })
+    })
+
+    it('offers Reload now, not Close now, when a reload is waiting [DON-361]', async () => {
+      const { electronMock, onDrainOverdue } = await loadWithCapturedEscalation(1)
+
+      await expect(onDrainOverdue({
+        requestId: 'r1', reason: 'renderer_reload', webContents: {}, signal: new AbortController().signal,
+      })).resolves.toBe('abandon')
+
+      const options = electronMock.dialog.showMessageBox.mock.calls.at(-1)?.at(-1) as {
+        message: string, detail: string, buttons: string[]
+      }
+      expect(options.buttons).toEqual(['Wait', 'Reload now'])
+      expect(options.message).toContain('cannot reload yet')
+      expect(`${options.message} ${options.detail}`).not.toMatch(/close/iu)
+    })
+
+    it('logs a failed question and shows a fallback once, while still blocking the close [DON-361]', async () => {
+      const { electronMock, logs, onDrainOverdue } = await loadWithCapturedEscalation(0)
+      electronMock.dialog.showMessageBox.mockRejectedValue(new TypeError('dialog unavailable'))
+      const input = { requestId: 'r1', reason: 'window_close', webContents: {}, signal: new AbortController().signal }
+
+      await expect(onDrainOverdue(input)).resolves.toBe('wait')
+      await expect(onDrainOverdue(input)).resolves.toBe('wait')
+
+      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledOnce()
+      expect(electronMock.dialog.showErrorBox).toHaveBeenCalledWith(
+        'SAR Tracker is not responding',
+        expect.stringContaining('possibly missing'),
+      )
+      await vi.waitFor(() => expect(logs.runtimeLog.append).toHaveBeenCalledWith(expect.objectContaining({
+        level: 'error',
+        event: 'renderer_drain_escalation_failed',
+        fields: expect.objectContaining({ requestId: 'r1', name: 'TypeError' }),
+      })))
     })
 
     it('keeps waiting when the operator chooses Wait', async () => {
@@ -3528,6 +3603,7 @@ function createElectronMock(
     }
   })
   BrowserWindow.getAllWindows = vi.fn(() => existingWindows)
+  BrowserWindow.fromWebContents = vi.fn(() => null)
   BrowserWindow.getFocusedWindow = vi.fn(() => null)
 
   return {

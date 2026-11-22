@@ -827,7 +827,10 @@ describe('renderer teardown coordinator', () => {
       readonly reason: string
       readonly webContents: unknown
       readonly signal: AbortSignal
-    }) => Promise<'wait' | 'abandon'>) {
+    }) => Promise<'wait' | 'abandon'>, onDrainOverdueFailed?: (error: unknown, context: {
+      readonly requestId: string
+      readonly reason: string
+    }) => void) {
       vi.useFakeTimers()
       const listeners = new Map<string, (event: unknown, input: unknown) => void>()
       const missionStore = createMissionStore()
@@ -841,6 +844,7 @@ describe('renderer teardown coordinator', () => {
         timeoutMs: 5_000,
         overdueMs: 15_000,
         ...(onDrainOverdue === undefined ? {} : { onDrainOverdue }),
+        ...(onDrainOverdueFailed === undefined ? {} : { onDrainOverdueFailed }),
       })
       return { coordinator, listeners, missionStore, webContents }
     }
@@ -891,17 +895,52 @@ describe('renderer teardown coordinator', () => {
       expect(onDrainOverdue).toHaveBeenCalledTimes(2)
     })
 
-    it('keeps waiting, and asks again, when the escalation itself fails', async () => {
+    it('reports a failed escalation, keeps the close blocked and asks again [DON-361]', async () => {
+      const failure = new Error('dialog unavailable')
       const onDrainOverdue = vi.fn()
-        .mockRejectedValueOnce(new Error('dialog unavailable'))
+        .mockRejectedValueOnce(failure)
         .mockResolvedValueOnce('abandon')
-      const { coordinator, webContents } = createHungCoordinator(onDrainOverdue)
+      const onDrainOverdueFailed = vi.fn()
+      const { coordinator, webContents } = createHungCoordinator(onDrainOverdue, onDrainOverdueFailed)
 
       const preparation = coordinator.prepare({ webContents }, 'app_quit')
-      await vi.advanceTimersByTimeAsync(30_000)
+      let settled = false
+      void preparation.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(onDrainOverdueFailed).toHaveBeenCalledWith(failure, { requestId: 'request-hung', reason: 'app_quit' })
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(15_000)
 
       expect(onDrainOverdue).toHaveBeenCalledTimes(2)
       await expect(preparation).resolves.toEqual({ mode: 'durable_loss_marker', missionId: 'mission-1' })
+    })
+
+    it('closes a question that is still open when the late drain arrives [DON-361]', async () => {
+      let questionClosedBy: string | null = null
+      const onDrainOverdue = vi.fn((input: { readonly signal: AbortSignal }) =>
+        new Promise<'wait' | 'abandon'>((resolve) => {
+          input.signal.addEventListener('abort', () => {
+            questionClosedBy = 'drain'
+            resolve('wait')
+          })
+        }))
+      const { coordinator, listeners, missionStore, webContents } = createHungCoordinator(onDrainOverdue)
+
+      const preparation = coordinator.prepare({ webContents }, 'window_close')
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(onDrainOverdue).toHaveBeenCalledOnce()
+      expect(questionClosedBy).toBeNull()
+
+      listeners.get(RENDERER_TEARDOWN_READY_CHANNEL)?.(
+        { sender: webContents },
+        { requestId: 'request-hung', ok: true },
+      )
+
+      await expect(preparation).resolves.toEqual({ mode: 'renderer_drained' })
+      expect(questionClosedBy).toBe('drain')
+      expect(missionStore.resolveRendererEvidenceIncidents).toHaveBeenCalledWith({ outcome: 'drained' })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(onDrainOverdue).toHaveBeenCalledOnce()
     })
 
     it('never escalates a prompt clean drain', async () => {
