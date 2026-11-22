@@ -8,6 +8,7 @@
  */
 
 import { delay } from './app.mjs'
+import { openParticipantPickers, openWorkspacePanel, pressPauseResume } from '../../workspace-panels.mjs'
 
 export const ARCHIVE_PASSPHRASE = 'Smoke-Test-Pass-2026!x'
 
@@ -81,6 +82,7 @@ export async function closeWorkspace(page) {
  */
 export async function startMission(page, name, participants) {
   const t = byId(page)
+  await openWorkspacePanel(page, 'mission')
   await t('mission-name-input').fill(name)
   await t('mission-start-btn').click()
   await delay(2000)
@@ -96,14 +98,17 @@ export async function startMission(page, name, participants) {
  */
 export async function startMissionWithLookback(page, { name, offsetHours, devices }) {
   const t = byId(page)
+  await openWorkspacePanel(page, 'mission')
   await t('mission-name-input').fill(name)
   await t('mission-offset-input').fill(String(offsetHours))
+  await openParticipantPickers(page)
   const picker = t('participant-device-picker')
   for (const device of devices) {
     await picker.getByText(device, { exact: true }).waitFor({ timeout: 30_000 })
     await picker.getByText(device, { exact: true }).click()
   }
   await t('mission-start-btn').click()
+  await openParticipantPickers(page)
   await openMissionSection(page, 'participants')
   await t('participant-management').waitFor({ timeout: 20_000 })
   await delay(1500)
@@ -140,6 +145,7 @@ export async function openMissionSection(page, name) {
  */
 export async function addParticipantAfterStart(page, device, historyFrom) {
   const t = byId(page)
+  await openParticipantPickers(page)
   await openMissionSection(page, 'participants')
   await t('participant-add-ref').selectOption({ label: device })
   await t(`participant-history-start-${historyFrom}`).check()
@@ -147,15 +153,19 @@ export async function addParticipantAfterStart(page, device, historyFrom) {
   await delay(1200)
 }
 
-/** Returns the mission phase chip text, for example ACTIVE or PAUSED. */
+/**
+ * Returns the mission phase from the Mission panel, for example ACTIVE or
+ * PAUSED. The top bar says "Running" for an active mission, so the panel's
+ * own phase attribute is read instead (DON-341).
+ */
 export async function missionPhase(page) {
-  return (await page.getByTestId('mission-phase-chip').innerText()).trim().toUpperCase()
+  return ((await page.getByTestId('mission-control').getAttribute('data-mission-phase')) ?? '').trim().toUpperCase()
 }
 
-/** Toggles pause/resume and returns the new phase. */
+/** Toggles pause/resume, confirming a pause, and returns the new phase. */
 export async function togglePause(page) {
-  await page.getByTestId('mission-pause-resume-btn').click()
-  await delay(1500)
+  await pressPauseResume(page)
+  await delay(500)
   return missionPhase(page)
 }
 
@@ -165,7 +175,7 @@ export async function togglePause(page) {
  * @returns {Promise<boolean>} whether a prompt was shown
  */
 export async function resumeIfPrompted(page, timeoutMs = 20_000) {
-  const resume = page.getByRole('button', { name: /^resume$/i })
+  const resume = page.getByTestId('start-screen-resume-btn')
   const shown = await resume.waitFor({ state: 'visible', timeout: timeoutMs }).then(() => true, () => false)
   if (shown) {
     await resume.click()
@@ -196,6 +206,7 @@ export async function placeMarker(page, { name, x, y, type, attachment }) {
 
 /** Finishes the active mission. */
 export async function finishMission(page) {
+  await openWorkspacePanel(page, 'mission')
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
   await delay(2000)
@@ -204,6 +215,7 @@ export async function finishMission(page) {
 /** Finalizes a finished mission into an encrypted archive. */
 export async function archiveMission(page) {
   const t = byId(page)
+  await openWorkspacePanel(page, 'mission')
   await t('mission-finalize-btn').click()
   await delay(800)
   await t('archive-passphrase').fill(ARCHIVE_PASSPHRASE)
@@ -212,6 +224,31 @@ export async function archiveMission(page) {
   await delay(500)
   await t('archive-recovery-code-confirmation').fill((await t('archive-recovery-code').innerText()).trim())
   await t('archive-finalize').click()
+}
+
+/**
+ * Reads the visible tracking health: the top bar's tracking headline (with
+ * its condition, for example `lost` or `credentials`), the problem words
+ * beside it, the alarm strip, and the Tracking panel when it is open
+ * (DON-341). The old layout's warning cell and health strip are gone.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<string>} the parts joined with " / ", whitespace collapsed
+ */
+export async function trackingStatus(page) {
+  const parts = []
+  const headline = page.getByTestId('ws-tracking-headline')
+  if (await headline.count() > 0) {
+    const condition = await headline.getAttribute('data-condition').catch(() => null)
+    if (condition !== null) parts.push(`condition ${condition}`)
+  }
+  for (const id of ['ws-tracking-headline', 'ws-tracking-problems', 'ws-alarm', 'ws-tracking-panel']) {
+    const locator = page.getByTestId(id)
+    if (await locator.count() > 0 && await locator.first().isVisible().catch(() => false)) {
+      parts.push(await locator.first().innerText().catch(() => ''))
+    }
+  }
+  return parts.join(' / ').replace(/\s+/gu, ' ').trim()
 }
 
 /** Returns the visible body text with whitespace collapsed. */
