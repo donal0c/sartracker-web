@@ -145,10 +145,14 @@ test.describe('M19 devices workspace', () => {
   })
   }
 
-  test('shows every tracking problem in full at 1024 px, with the pointer target fixed [DON-261]', async ({ page }) => {
+  // Font widths differ by OS: the team's Linux laptops draw wider than macOS.
+  // Verdana (macOS, Windows) and DejaVu Sans (Linux) are the wide case.
+  for (const font of [null, 'Verdana, "DejaVu Sans", sans-serif'] as const) {
+  test(`shows every tracking problem in full at 1024 px, with the pointer target fixed${font === null ? '' : ', in a wide font'} [DON-261]`, async ({ page }) => {
     // Runtime warnings can put a reassuring sentence first and add counts after
     // it. An ellipsis on one long line hid the problems behind "…"; these are
     // amber states with no separate red alarm, so they must stay readable.
+    if (font !== null) await page.addStyleTag({ content: `:root, button { font-family: ${font} !important; }` })
     await page.setViewportSize({ width: 1024, height: 720 })
     const opener = page.getByTestId('open-devices-workspace')
     const topBefore = (await opener.boundingBox())?.y
@@ -181,6 +185,7 @@ test.describe('M19 devices workspace', () => {
     expect(clipped).toBe(false)
     expect((await opener.boundingBox())?.y).toBe(topBefore)
   })
+  }
 
   test('makes workspace controls actionable immediately when opened [DON-260]', async ({
     page,

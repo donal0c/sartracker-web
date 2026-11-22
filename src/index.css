@@ -788,11 +788,16 @@ body {
 .ws-menu > button:hover, .ws-menu > a:hover { background: var(--ws-raised); }
 .ws-menu-row { padding: 0.25rem 0; }
 .ws-menu-version { padding: 0.25rem 0.6rem 0; font-size: 11px; color: var(--ws-muted); overflow-wrap: anywhere; }
-/* At narrow widths the mission name and bar buttons give up room so tracking problems can be read in full (DON-261). */
+/* At narrow widths the logo, mission name and bar buttons give up room so
+   three tracking problems can be read in full, in the wider fonts of the
+   team's Linux laptops too (DON-261). The bar's height does not change. */
 @media (max-width: 1180px) {
+  .ws-top-bar { gap: 0.4rem; }
+  .ws-logo { display: none; }
   .ws-mission-button { min-width: 8rem; }
   .ws-health { padding: 0.1rem 0.5rem; }
-  .ws-bar-button { padding: 0 0.5rem; }
+  .ws-bar-actions { gap: 0.25rem; }
+  .ws-bar-button { padding: 0 0.4rem; font-size: 13px; }
 }
 
 .ws-alarm { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 1rem; padding: 0.5rem 1rem; background: #dc2626; color: #fff; font-size: 17px; animation: ws-alarm-flash 1.1s steps(2, jump-none) infinite; }
