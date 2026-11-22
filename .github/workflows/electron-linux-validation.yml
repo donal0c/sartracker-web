@@ -558,6 +558,20 @@ jobs:
             glxinfo -B | tee tmp/electron-validation-evidence/glxinfo.txt
           grep -qi 'llvmpipe' tmp/electron-validation-evidence/glxinfo.txt
 
+      - name: Packaged renderer mount handshake (DON-354)
+        timeout-minutes: 10
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          GALLIUM_DRIVER: llvmpipe
+          NO_AT_BRIDGE: '1'
+          SARTRACKER_PACKAGED_APP: ${{ github.workspace }}/tmp/electron-dist/linux-unpacked/sartracker-web
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1440x900x24' \
+            dbus-run-session -- \
+            npx playwright test --project=electron-controls --workers=1 \
+              tests/e2e/electron/don354-renderer-mount-handshake.spec.ts
+
       # 81 minutes of declared case bounds, 4.5 minutes of owned cleanup,
       # and evidence/summary headroom. These are harness deadlines, not
       # responsiveness or qualification thresholds.
