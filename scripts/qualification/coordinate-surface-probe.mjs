@@ -98,13 +98,20 @@ export async function runCoordinateSurface({ appPath, evidencePath, developmentT
       }
       throw new Error('Persisted drawing missing from rendered source.')
     }, stored.id)
-    const measurementCoordinates = await page.evaluate(() => {
-      const map = window.__SARTRACKER_MAP__
-      return [[680, 240], [820, 300]].map(point => { const coordinate = map.unproject(point); return [coordinate.lng, coordinate.lat] })
-    })
     await page.getByTestId('drawing-tool-measure').click()
-    await page.locator('.maplibregl-canvas').click({ position: { x: 680, y: 240 }, force: true })
-    await page.locator('.maplibregl-canvas').click({ position: { x: 820, y: 300 }, force: true })
+    // In the new layout (DON-341) the Map tools panel floats over the map while
+    // measuring, so fixed canvas points can land on it: the first click then
+    // never reached the map and the count stayed 0. Pick two points the map
+    // itself receives, and click without force so a covered point fails loudly.
+    const canvas = page.locator('.maplibregl-canvas')
+    const measurementPoints = await uncoveredMapPoints(canvas)
+    const measurementCoordinates = await page.evaluate(points => {
+      const map = window.__SARTRACKER_MAP__
+      return points.map(point => { const coordinate = map.unproject(point); return [coordinate.lng, coordinate.lat] })
+    }, measurementPoints)
+    for (const [x, y] of measurementPoints) await canvas.click({ position: { x, y } })
+    await page.getByTestId('measurement-count').filter({ hasText: /^1$/u }).waitFor({ timeout: 10_000 })
+      .catch(() => undefined)
     const measurement = { count: await page.getByTestId('measurement-count').innerText(), text: await page.getByTestId('measurement-list').innerText(), coordinates: measurementCoordinates }
     report.facts = { conversions, rejected, conversionLabel, geometry: stored.geometry.geometry ?? stored.geometry,
       persistedDrawingId: stored.id, ...rendered, measurement }
@@ -125,6 +132,25 @@ export async function runCoordinateSurface({ appPath, evidencePath, developmentT
   }
   if (failure) throw failure
   return report
+}
+
+/**
+ * Finds two canvas points 140 px across and 60 px down, with the line between
+ * them, that the map receives rather than a panel floating over it.
+ */
+async function uncoveredMapPoints(canvas) {
+  const points = await canvas.evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const mapGets = (x, y) => document.elementFromPoint(box.left + x, box.top + y) === element
+    for (let y = 120; y < box.height - 120; y += 20) {
+      for (let x = 40; x < box.width - 200; x += 20) {
+        if (mapGets(x, y) && mapGets(x + 70, y + 30) && mapGets(x + 140, y + 60)) return [[x, y], [x + 140, y + 60]]
+      }
+    }
+    return null
+  })
+  if (points === null) throw new Error('No uncovered map area was found for the measurement.')
+  return points
 }
 
 /** Read only the visible value beneath a converter card label, excluding its Copy control. */
