@@ -76,12 +76,15 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
     await expect(headline).toHaveAttribute('data-condition', /^(lost|disconnected)$/u, { timeout: 60_000 })
     const disconnected = (await headline.getAttribute('aria-label')) ?? ''
     const disconnectedCondition = await headline.getAttribute('data-condition')
+    // The words an operator sees, which a correct label alone would not prove.
+    const disconnectedWords = await visibleHeadlineWords(headline)
     await page.screenshot({ path: path.join(evidencePath, 'attention-disconnected.png'), fullPage: true })
     server.setStage('moving')
     await expect(headline).toHaveAttribute('data-condition', /^(ok|attention)$/u, { timeout: 90_000 })
     await expect(page.getByTestId('device-attention-1')).toHaveCount(0, { timeout: 60_000 })
     const recovered = (await headline.getAttribute('aria-label')) ?? ''
     const recoveredCondition = await headline.getAttribute('data-condition')
+    const recoveredWords = await visibleHeadlineWords(headline)
     await page.waitForFunction(() => Object.values(window.__SARTRACKER_MAP__?.getStyle()?.sources ?? {}).some(source =>
       source.type === 'geojson' && typeof source.data === 'object' && source.data.features?.some(feature =>
         feature.properties?.featureKind === 'device' && feature.properties?.deviceId === '1'
@@ -95,7 +98,7 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
       throw new Error('Recovered current fix is missing from the map.')
     })
     const currentVisible = await page.getByTestId('device-select-1').isVisible()
-    report.facts = { source, attention, acknowledged, stale, disconnected, disconnectedCondition, recovered, recoveredCondition, cleared: true, currentVisible,
+    report.facts = { source, attention, acknowledged, stale, disconnected, disconnectedCondition, disconnectedWords, recovered, recoveredCondition, recoveredWords, cleared: true, currentVisible,
       renderedCurrent, evidenceBeforeAck: beforeAck.digest, evidenceAfterAck: afterAck.digest,
       durableBeforeAck: beforeAck.rows, durableAfterAck: afterAck.rows, sourcePollsBeforeAck, sourcePollsAfterAck }
     validateAttentionSurface(report.facts)
@@ -121,15 +124,27 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
 }
 
 /**
- * Unfolds the start card's "Change who's taking part" and "Add one person at a
- * time" sections (DON-341), so the device picker can be used. Safe to repeat.
+ * Unfolds the start card's device picker (DON-341). "Change who's taking part"
+ * wraps it only when a default group is chosen, so that outer fold is opened
+ * when present and skipped otherwise; "Add one person at a time" is required.
  */
 async function unfoldParticipantPickers(page) {
-  for (const id of ['ws-change-participants', 'ws-pick-devices']) {
-    const fold = page.getByTestId(id)
-    await fold.waitFor({ state: 'attached', timeout: 30_000 })
-    if (await fold.evaluate(element => !element.open)) await fold.locator('summary').first().click()
-  }
+  const picker = page.getByTestId('ws-pick-devices')
+  await page.getByTestId('ws-change-participants').or(picker).first().waitFor({ state: 'attached', timeout: 30_000 })
+  const outer = page.getByTestId('ws-change-participants')
+  if (await outer.count() > 0 && await outer.evaluate(element => !element.open)) await outer.locator('summary').first().click()
+  await picker.waitFor({ state: 'visible', timeout: 30_000 })
+  if (await picker.evaluate(element => !element.open)) await picker.locator('summary').first().click()
+}
+
+/**
+ * The tracking headline's visible problem words, as shown in the top bar.
+ * Fails loudly when none are shown.
+ */
+async function visibleHeadlineWords(headline) {
+  const words = headline.getByTestId('ws-tracking-problems')
+  await words.waitFor({ state: 'visible', timeout: 10_000 })
+  return (await words.innerText()).trim()
 }
 
 /** Opens All devices through People, where the new layout keeps it (DON-341). */

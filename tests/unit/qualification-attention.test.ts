@@ -35,20 +35,57 @@ describe('packaged attention independent source and UI oracle', () => {
     expect(() => validateAttentionSurface(changed)).toThrow()
   })
 
-  it('accepts the new top bar, which names the tracking state by condition, and rejects its mutants [DON-353]', () => {
-    // The new layout (DON-341) has no mode chip: the top bar says "TRACKING LOST"
-    // or "Tracking OK" and carries the condition the advice is chosen by.
+  it('accepts the new top bar only when its condition, label and visible words agree [DON-353]', () => {
+    // The new layout (DON-341) has no mode chip: the top bar shows short problem
+    // words ("TRACKING LOST", "Tracking OK") and carries the condition the advice
+    // is chosen by. The label is the full sentence for screen readers.
     const facts = { source: createAttentionScenario(1800000000000), attention: 'Stationary Attention',
       acknowledged: 'Attention Acknowledged', stale: 'offline',
-      disconnected: 'TRACKING LOST', disconnectedCondition: 'lost', recovered: 'Tracking OK', recoveredCondition: 'ok',
+      disconnected: 'TRACKING LOST. Open tracking details', disconnectedCondition: 'lost', disconnectedWords: 'TRACKING LOST',
+      recovered: 'Tracking OK. Open tracking details', recoveredCondition: 'ok', recoveredWords: 'Tracking OK',
       cleared: true, currentVisible: true, renderedCurrent: { coordinates: [-9.7, 52.00101], attention: false },
       evidenceBeforeAck: 'a'.repeat(64), evidenceAfterAck: 'a'.repeat(64) }
     expect(validateAttentionSurface(facts).passed).toBe(true)
-    expect(validateAttentionSurface({ ...facts, disconnected: 'Tracking not connected', disconnectedCondition: 'disconnected' }).passed).toBe(true)
-    expect(() => validateAttentionSurface({ ...facts, disconnectedCondition: 'ok' })).toThrow()
-    expect(() => validateAttentionSurface({ ...facts, recoveredCondition: 'lost' })).toThrow()
-    expect(() => validateAttentionSurface({ ...facts, recoveredCondition: undefined })).toThrow()
-    expect(() => validateAttentionSurface({ ...facts, disconnectedCondition: undefined })).toThrow()
-    expect(() => validateAttentionSurface({ ...facts, recovered: 'TRACKING LOST' })).toThrow()
+    expect(validateAttentionSurface({ ...facts, disconnectedCondition: 'disconnected',
+      disconnected: 'Tracking not connected. Open tracking details', disconnectedWords: 'Tracking not connected' }).passed).toBe(true)
+    expect(validateAttentionSurface({ ...facts, recoveredCondition: 'attention',
+      recovered: '1 position out of date. Open tracking details', recoveredWords: '1 stale' }).passed).toBe(true)
+
+    const lossFails = (change: Record<string, unknown>) =>
+      expect(() => validateAttentionSurface({ ...facts, ...change })).toThrow(/tracking-loss transition failed/)
+    lossFails({ disconnectedCondition: 'ok' })
+    lossFails({ disconnectedCondition: 'paused' })
+    lossFails({ disconnected: 'Tracking OK. Open tracking details' })
+    lossFails({ disconnectedWords: '' })
+    lossFails({ disconnectedWords: undefined })
+    lossFails({ disconnectedWords: 'Tracking OK' })
+    lossFails({ disconnectedCondition: 'disconnected', disconnectedWords: 'Tracking OK' })
+
+    const recoveryFails = (change: Record<string, unknown>) =>
+      expect(() => validateAttentionSurface({ ...facts, ...change })).toThrow(/tracking-recovery transition failed/)
+    recoveryFails({ recoveredCondition: 'lost' })
+    recoveryFails({ recoveredCondition: 'paused' })
+    recoveryFails({ recovered: '' })
+    recoveryFails({ recoveredWords: '' })
+    recoveryFails({ recoveredWords: undefined })
+    recoveryFails({ recovered: 'MISSION PAUSED. Open tracking details' })
+    recoveryFails({ recoveredWords: 'MISSION PAUSED' })
+    recoveryFails({ recoveredWords: 'TRACKING LOST' })
+    recoveryFails({ recovered: 'Tracking not connected. Open tracking details' })
+    // An attention headline with the label and words otherwise matching, so only
+    // the guard under test can catch each one.
+    const attention = { recoveredCondition: 'attention', recovered: '1 position out of date. Open tracking details', recoveredWords: '1 stale' }
+    recoveryFails({ ...attention, recoveredWords: 'Tracking not connected' })
+    recoveryFails({ ...attention, recoveredWords: 'Offline' })
+    recoveryFails({ ...attention, recoveredWords: 'MISSION PAUSED' })
+    recoveryFails({ ...attention, recovered: 'Tracking not connected. Open tracking details' })
+    recoveryFails({ ...attention, recoveredWords: '' })
+    recoveryFails({ ...attention, recoveredWords: '   ' })
+    recoveryFails({ ...attention, recovered: '' })
+    recoveryFails({ recoveredCondition: 'attention', recovered: 'Tracking OK. Open tracking details' })
+    recoveryFails({ recoveredWords: '1 stale' })
+
+    // A failure names the transition and quotes what was seen.
+    expect(() => validateAttentionSurface({ ...facts, recoveredWords: 'MISSION PAUSED' })).toThrow(/"MISSION PAUSED"/)
   })
 })

@@ -309,6 +309,16 @@ export async function runMarkerAttachmentProbe(input, { developmentTestHarness =
     await markerRow.screenshot({ path: path.join(options.evidence, `marker-attachment-${markerKind}.png`) })
   }
   await layerSearch.fill('')
+  // Search opens the branches it matches, so also prove the ordinary tree:
+  // with the search empty, open any folded heading as an operator would and
+  // find each edited marker by name, once.
+  await expandFoldedLayerHeadings(layerTree)
+  for (const markerKind of MARKER_KINDS) {
+    const markerRow = layerTree.getByText(`C12 ${markerKind} edited`, { exact: true })
+    await markerRow.waitFor({ state: 'visible', timeout: 30_000 })
+    const count = await markerRow.count()
+    if (count !== 1) throw new Error(`C12 unfiltered layer tree shows "C12 ${markerKind} edited" ${count} times; expected once.`)
+  }
   await layerTree.evaluate((element) => { element.scrollTop = element.scrollHeight })
   await layerTree.screenshot({ path: path.join(options.evidence, 'marker-attachment-layer-tree.png') })
   await page.screenshot({ path: path.join(options.evidence, 'marker-attachment-markers.png'), fullPage: true })
@@ -584,4 +594,19 @@ function assertInsideProfile(candidate, profile) {
   if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
     throw new Error('C12 custody path escaped the owned disposable profile.')
   }
+}
+
+/**
+ * Opens every folded heading in the Layers tree with its own expand control,
+ * as the old Expand All button did (DON-341 removed that button).
+ *
+ * @param {import('playwright').Locator} layerTree the Layers tree
+ */
+async function expandFoldedLayerHeadings(layerTree) {
+  const folded = layerTree.locator('[data-testid^="layer-expand-"]', { hasText: '▸' })
+  for (let opened = 0; opened < 500; opened += 1) {
+    if (await folded.count() === 0) return
+    await folded.first().click()
+  }
+  throw new Error('C12 Layers tree still had folded headings after 500 clicks.')
 }
