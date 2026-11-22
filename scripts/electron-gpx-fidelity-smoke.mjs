@@ -264,7 +264,7 @@ async function captureFailureDiagnostics() {
     uiState = await page.evaluate(() => ({
       missionControl: document.querySelector('[data-testid="mission-control"]')?.textContent?.trim() ?? null,
       missionPhase: document.querySelector('[data-testid="mission-control"]')?.getAttribute('data-mission-phase') ?? null,
-      missionPhaseChip: document.querySelector('[data-testid="mission-phase-chip"]')?.textContent?.trim() ?? null,
+      topBarMissionPhase: document.querySelector('[data-testid="ws-mission-phase"]')?.textContent?.trim() ?? null,
       outingSection: document.querySelector('[data-testid="outing-controls-section"]')?.textContent?.trim() ?? null,
       outingLabelInput: Boolean(document.querySelector('[data-testid="outing-label-input"]')),
       outingStartButton: Boolean(document.querySelector('[data-testid="outing-start-btn"]')),

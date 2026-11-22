@@ -287,7 +287,9 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     )
     expect(traversalSource).not.toContain('force: true')
 
-    expect(restoreSource).toContain("getByTestId('open-devices-workspace')")
+    // Devices opens from People through the shared, audited helper (DON-341).
+    expect(restoreSource).toContain('openDevicesWorkspace(launch.page, {')
+    expect(restoreSource).toContain('click: ownedOperatorClick(launch,')
     expect(restoreSource).toContain("getByTestId('breadcrumb-mode-line')")
     expect(restoreSource).toContain('sar-segment-option-active')
     expect(restoreSource).toContain("getByTestId('workspace-close-btn')")
@@ -404,6 +406,13 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
     expect(source).not.toContain(
       'input.auditState.lastSequence = auditAtStart.lastSequence',
     )
+    // The shared operator controls (DON-341) click through ownedOperatorClick,
+    // which claims each click with performLaunchOwnedHarnessClick.
+    const ownedOperatorClickSource = functionSource(
+      'function ownedOperatorClick(',
+      'function performLaunchOwnedHarnessClick(',
+    )
+    expect(ownedOperatorClickSource).toContain('performLaunchOwnedHarnessClick(')
     for (const ownedClickSource of [
       startMission,
       recovery,
@@ -412,10 +421,12 @@ describe('fourteen-day packaged exact-dot soak script [DON-260]', () => {
       open,
       restore,
     ]) {
-      expect(ownedClickSource).toContain('performLaunchOwnedHarnessClick(')
+      expect(ownedClickSource).toMatch(/performLaunchOwnedHarnessClick\(|ownedOperatorClick\(launch/u)
     }
     expect(startMission).not.toContain('evaluateAll(')
-    expect(startMission).toContain("'participant-device-picker'")
+    expect(startMission).toContain('selectParticipants(launch.page, {')
+    expect(startMission).toContain("which: 'all'")
+    expect(startMission).toContain('expectedCount: expectedDeviceCount')
     expect(startMission).toContain('activeList?.children.length === expectedCount')
     expect(startMission).not.toContain("hasText: 'Synthetic Mission Team'")
     expect(traversal.match(/performLaunchOwnedHarnessClick\(/gu)).toHaveLength(2)
