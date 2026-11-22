@@ -452,19 +452,19 @@
             </thead>
             <tbody>
               <tr>
-                <td>The tracking strip under the top bar</td>
-                <td>Green <strong>Tracking connected</strong> and a recent <strong>Last success</strong> time.</td>
-                <td>Red <strong>Disconnected · retrying</strong>: the dots on the map are the <em>last</em> positions received, not live ones. Amber means read the words and act on them.</td>
+                <td>The tracking status in the top bar (click it for details)</td>
+                <td>Green <strong>Tracking OK</strong>.</td>
+                <td>A red strip under the top bar reading <strong>TRACKING LOST</strong> means the dots on the map are the <em>last</em> positions received, not live ones. Amber words such as <strong>2 stale</strong> or <strong>Re-enter password</strong> name a problem: click the status and follow what the Tracking panel says.</td>
               </tr>
               <tr>
-                <td>The mission chip (top left)</td>
-                <td>Green <strong>ACTIVE</strong>.</td>
-                <td>Red flashing <strong>PAUSED</strong>: the search clock is stopped and live refresh is suspended. Press <strong>Resume</strong> when searching restarts.</td>
+                <td>The mission button (top left)</td>
+                <td><strong>Mission · Running</strong>.</td>
+                <td><strong>Mission · PAUSED</strong>, with a red <strong>MISSION PAUSED</strong> strip: the search clock is stopped and positions are not updating. Open the mission button and press <strong>Resume</strong> when searching restarts. <strong>Needs resuming</strong> means the app restarted mid-mission: resume it before relying on the map.</td>
               </tr>
               <tr>
-                <td><strong>FIX</strong> and <strong>STALE</strong> in the top bar</td>
-                <td>FIX matches the teams you expect; STALE is 0.</td>
-                <td>STALE above 0 means a device has not reported for more than five minutes. Treat its dot as old.</td>
+                <td>Stale positions</td>
+                <td><strong>Tracking OK</strong> with nothing else after it.</td>
+                <td>A device that has not reported for more than five minutes is counted, for example <strong>2 stale</strong>. Treat its dot as old. When there is not room for every warning, the status shrinks them to <strong>+2 more</strong> or just <strong>3 problems</strong>, so a missing stale count does not prove positions are fresh: click the status and read the full list in the Tracking panel.</td>
               </tr>
               <tr>
                 <td>The <strong>Maps</strong> menu</td>
@@ -481,12 +481,12 @@
 
           <h3>The 6-step start</h3>
           <ol>
-            <li>Open SAR Tracker. Confirm the tracking strip is green. If it says <strong>Tracking is not configured</strong>, go to <a href="#settings">Settings</a> first.</li>
+            <li>Open SAR Tracker. Confirm the tracking status in the top bar reads <strong>Tracking OK</strong>. If it says <strong>Tracking not connected</strong>, click it: the Tracking panel says why (for example, no tracking server is set up yet) and what to do. Usually that means <a href="#settings">Settings</a> first.</li>
             <li>Type a <strong>Mission name</strong> your coordinators will recognise later.</li>
             <li>If the search began before you opened the app, set <strong>Roll back time (hours)</strong> (up to 48).</li>
             <li>Tick the <strong>groups and devices taking part</strong> <em>before</em> you press Start.</li>
             <li>Press <strong>Start</strong>.</li>
-            <li>Check the chip says <strong>ACTIVE</strong> and your teams are on the map.</li>
+            <li>Check the mission button reads <strong>Mission · Running</strong> and your teams are on the map.</li>
           </ol>
           <p>The full detail is in <a href="#mission">Run a mission</a>.</p>
 
@@ -569,7 +569,7 @@
             as mission evidence or shown on the mission map until you add them.
           </div>
           <p>
-            When you press <strong>Start</strong>, the chip turns green <strong>ACTIVE</strong> and
+            When you press <strong>Start</strong>, the mission button reads <strong>Mission · Running</strong> and
             the timers run. The <strong>Active</strong> timer is search time; <strong>Elapsed</strong>
             is total time since the (possibly backdated) start.
           </p>
@@ -616,7 +616,7 @@
           <p>
             <strong>History backfill: pending / retrying</strong> means the earlier track is still
             being fetched from the tracking server. <strong>You cannot finish the mission until it
-            completes.</strong> If it stays pending, check the tracking strip.
+            completes.</strong> If it stays pending, click the tracking status in the top bar.
           </p>
           <p>
             <strong>Unknown roster from an older version.</strong> If a group was selected in an older
@@ -653,12 +653,12 @@
           <h3 id="mission-pause">Pause and resume</h3>
           <div class="shot-row">
             <figure class="screenshot">
-              <img src="assets/mission-paused.jpg" alt="Main screen with a red PAUSED chip and a Mission paused, live refresh suspended strip" />
-              <figcaption>Paused: red chip, and the strip says live refresh is suspended.</figcaption>
+              <img src="assets/mission-paused.jpg" alt="Main screen while paused: the mission button reads Mission PAUSED, the top bar status reads MISSION PAUSED, and a red strip reads MISSION PAUSED: positions are not updating, with a Resume mission button" />
+              <figcaption>Paused: the mission button and the tracking status both say <strong>MISSION PAUSED</strong>, and the red strip across the map says positions are not updating, with <strong>Resume mission</strong>.</figcaption>
             </figure>
             <figure class="screenshot narrow">
-              <img src="assets/mission-paused-controls.png" alt="Mission Control while paused with a red border and an orange Resume button" />
-              <figcaption>A red <strong>Mission Paused</strong> banner with <strong>Resume Mission</strong>; the Pause button also becomes <strong>Resume</strong>.</figcaption>
+              <img src="assets/mission-paused-controls.png" alt="The Mission panel while paused, with a red MISSION PAUSED banner, a Resume Mission button, and Resume and Finish at the foot" />
+              <figcaption>The Mission panel while paused: a red <strong>Mission Paused</strong> banner with <strong>Resume Mission</strong>; the Pause button also becomes <strong>Resume</strong>.</figcaption>
             </figure>
           </div>
           <p>
@@ -717,30 +717,40 @@
             positions it had and marks them, rather than clearing the map.
           </p>
           <figure class="screenshot narrow">
-            <img src="assets/tracking-tab.png" alt="Tracking panel: ONLINE chip, Open Devices button, device, fix, cache and stale counters, and last success time" />
-            <figcaption>The Tracking panel when the feed is healthy.</figcaption>
+            <img src="assets/tracking-tab.png" alt="Tracking panel: What has happened, What the map is showing with the last update time, What to do, and the mission history coverage box" />
+            <figcaption>The Tracking panel when the feed is healthy. Click the tracking status in the top bar to open it.</figcaption>
           </figure>
 
-          <h3>What the tracking strip and chips are telling you</h3>
+          <h3>What the tracking status and alarm are telling you</h3>
+          <p>
+            The tracking status in the top bar is one line that says whether the map can be trusted.
+            Click it for the Tracking panel, which says <strong>what has happened</strong>,
+            <strong>what the map is showing</strong> and <strong>what to do</strong>. When tracking is lost
+            or the mission is paused, a red alarm strip also runs across the top of the map.
+            When there is not room for every warning, the status shrinks the rest to <strong>+2 more</strong>
+            (or <strong>+2</strong>, or just <strong>3 problems</strong>); click it to read them all.
+          </p>
           <table>
             <thead>
               <tr><th>You see</th><th>It means</th><th>What to do</th></tr>
             </thead>
             <tbody>
-              <tr><td>Green <strong>Tracking connected</strong></td><td>Positions are arriving.</td><td>Nothing. Still check <strong>Last success</strong> is recent.</td></tr>
-              <tr><td><strong>Re-enter password</strong>: amber before a mission; red with <strong>TRACKING LOST</strong> (or <strong>MISSION PAUSED</strong>) and the alarm during one. On a narrow screen the top bar first leaves out TRACKING LOST (the flashing alarm across the map still says it). Stale or not-moving people come before the fix: a person who has stopped moving may need a radio check. When there is not room for both, <strong>Re-enter password</strong> is counted as <strong>+1 more</strong> (or <strong>+1</strong>). Click the line to see every problem and the fix</td><td>The saved tracking password or token cannot be used on this computer, so tracking cannot connect. Any positions already on the map are the last ones received and may not be where people are now.</td><td>Click the line, then <strong>Open Settings: Tracking sources</strong>. Enter the password or token again and press <strong>Save, Connect &amp; Close</strong>. If the mission is paused, press <strong>Resume mission</strong> afterwards.</td></tr>
-              <tr><td>Grey <strong>Tracking not connected · Tracking is not configured</strong></td><td>No tracking server is set up.</td><td>Open <a href="#settings">Settings</a> and connect Traccar.</td></tr>
-              <tr><td>Red <strong>Disconnected · retrying</strong> and a red <strong>OFFLINE</strong> chip</td><td>The server is not answering. The map shows last-known positions.</td><td>Treat every dot as old. Use your independent source. Try <strong>Reconnect</strong> in the Devices workspace.</td></tr>
-              <tr><td>Amber <strong>Mission paused · live refresh suspended</strong></td><td>You paused the mission. No new positions are being fetched.</td><td>Press <strong>Resume</strong> to see live positions again.</td></tr>
-              <tr><td>Amber <strong>Tracking connected · 1 fix times unverified</strong></td><td>The tracker sent a position without a trustworthy fix time. It is shown for safety but is not used as exact trail evidence.</td><td>Use the position with care and note the device. Ask an admin to look if it keeps happening.</td></tr>
-              <tr><td>A device in <strong>STALE</strong></td><td>No report for more than five minutes.</td><td>Call the team. Do not assume the dot is where they are.</td></tr>
-              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Fix time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as STALE until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
-              <tr><td>Red <strong>Tracking not live · cached positions</strong> with <strong>LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record</strong></td><td>The app is waiting for the mission record to accept positions it already has. Until it does, it fetches no new ones, and the dots go STALE on schedule.</td><td>Treat every position as old and call teams for their locations. If it does not clear within a few minutes, save your work, restart the app and tell an admin.</td></tr>
+              <tr><td>Green <strong>Tracking OK</strong></td><td>Positions are arriving.</td><td>Nothing. Still glance at <strong>Last update</strong> under it.</td></tr>
+              <tr><td>Red <strong>TRACKING LOST</strong> in the status, and a red strip across the map: <strong>TRACKING LOST: positions on the map may not be current</strong></td><td>New positions have stopped arriving. The map shows the last positions received; they may not be where people are now.</td><td>Treat every dot as old and use your independent source. Check this computer's internet connection, then press <strong>Reconnect</strong> in the Tracking panel.</td></tr>
+              <tr><td>Red <strong>MISSION PAUSED</strong> in the status and the mission button, and a red strip: <strong>MISSION PAUSED: positions are not updating</strong></td><td>You paused the mission. No new positions are being fetched and the search clock is stopped.</td><td>Press <strong>Resume mission</strong> in the red strip when searching restarts.</td></tr>
+              <tr><td><strong>Re-enter password</strong>: amber before a mission; red with <strong>TRACKING LOST</strong> (or <strong>MISSION PAUSED</strong>) and the alarm during one. On a narrow screen the top bar first leaves out TRACKING LOST (the alarm across the map still says it). Stale or not-moving people come before the fix: a person who has stopped moving may need a radio check. When there is not room for both, <strong>Re-enter password</strong> is counted as <strong>+1 more</strong> (or <strong>+1</strong>). Click the line to see every problem and the fix</td><td>The saved tracking password or token cannot be used on this computer, so tracking cannot connect. Any positions already on the map are the last ones received and may not be where people are now.</td><td>Click the line, then <strong>Open Settings: Tracking sources</strong>. Enter the password or token again and press <strong>Save, Connect &amp; Close</strong>. If the mission is paused, press <strong>Resume mission</strong> afterwards.</td></tr>
+              <tr><td>Grey <strong>Tracking not connected</strong></td><td>Tracking is not connected, for example because no tracking server is set up yet. The Tracking panel says why.</td><td>Click it and follow <strong>What to do</strong>: usually open <a href="#settings">Settings</a>, connect Traccar, then <strong>Reconnect</strong>.</td></tr>
+              <tr><td>Amber <strong>Mission needs resuming</strong></td><td>The app restarted in the middle of a mission and tracking is not live.</td><td>Choose <strong>Resume</strong> if this is the same incident.</td></tr>
+              <tr><td>Red alarm <strong>MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing</strong></td><td>Part of the mission record could not be saved. Positions are still updating.</td><td>Keep the app open and carry on. Do not finish the mission yet. Open <strong>More</strong>, then <strong>Diagnostics</strong>, and send the support bundle.</td></tr>
+              <tr><td>Amber <strong>1 time unverified</strong></td><td>The tracker sent a position without a trustworthy fix time. It is shown for safety but is not used as exact trail evidence.</td><td>Use the position with care and note the device. Ask an admin to look if it keeps happening.</td></tr>
+              <tr><td>Amber <strong>2 stale</strong></td><td>Two devices have not reported for more than five minutes.</td><td>Call the teams. Do not assume the dots are where they are.</td></tr>
+              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Fix time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as stale until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
+              <tr><td>Red <strong>TRACKING LOST</strong>, with <strong>LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record</strong> in the Tracking panel</td><td>The app is waiting for the mission record to accept positions it already has. Until it does, it fetches no new ones, and the dots go stale on schedule.</td><td>Treat every position as old and call teams for their locations. If it does not clear within a few minutes, save your work, restart the app and tell an admin.</td></tr>
             </tbody>
           </table>
           <figure class="screenshot">
-            <img src="assets/tracking-offline.jpg" alt="Red Disconnected retrying strip while last-known team positions stay on the map" />
-            <figcaption>Tracking lost: the strip and the OFFLINE chip are red, and the last-known positions stay on the map.</figcaption>
+            <img src="assets/tracking-offline.jpg" alt="Tracking lost: the top bar status and a red strip across the map read TRACKING LOST, the Tracking panel explains what happened and offers Reconnect, and last-known team positions stay on the map" />
+            <figcaption>Tracking lost: the status and the red strip say <strong>TRACKING LOST</strong>, the Tracking panel says what to do, and the last-known positions stay on the map.</figcaption>
           </figure>
           <p>
             Other amber or red warnings you may meet in the Tracking panel, and what they mean:
@@ -1492,7 +1502,7 @@
           <h3 id="hosted-testing">The hosted test copy</h3>
           <ul>
             <li>It is at <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong> and is for training and quick surface checks only. It keeps mission data in the browser session, has no official maps, and cannot use file pickers or restart recovery. Never use it for a real incident.</li>
-            <li>Confirm the amber <strong>Browser testing mode</strong> banner and <strong>Browser test / Session storage only</strong> in the top bar.</li>
+            <li>Confirm the amber <strong>Browser testing mode</strong> banner under the top bar, which says mission data is stored in this browser session.</li>
             <li>In <strong>Settings → Tracking sources</strong> use the team's <strong>https</strong> Traccar address (from your admin), <strong>Basic</strong> login, <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>. A plain <code>http://</code> address is blocked from this page. After a full page reload, enter the password again.</li>
             <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>roll back time</strong> and tick the teams before Start.</li>
             <li>When you report something, include the URL, mission name, browser, what you expected and what happened, and a screenshot if you can. The checklist is <code>docs/team-testing-feedback-loop.md</code>.</li>

@@ -55,4 +55,23 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     expect(manual).not.toContain('was lost during runtime shutdown')
     expect(manual).not.toContain('Nothing is selected automatically. Starting')
   })
+
+  it('checks readiness on the new top bar, not the removed classic mast [DON-353]', () => {
+    expect(manual).not.toContain('<strong>FIX</strong> and <strong>STALE</strong> in the top bar')
+    expect(manual).not.toContain('Browser test / Session storage only')
+    expect(manual).not.toContain('Check the chip says <strong>ACTIVE</strong>')
+    expect(manual).toContain('Green <strong>Tracking OK</strong>')
+    expect(manual).toContain('<strong>Mission · Running</strong>')
+    expect(manual).toContain('amber <strong>Browser testing mode</strong> banner under the top bar')
+  })
+
+  it('describes the tracking status and alarm, not the removed chips [DON-353]', () => {
+    expect(manual).not.toMatch(/OFFLINE<\/strong> chip|ONLINE<\/strong> chip/u)
+    expect(manual).not.toContain('Mission paused · live refresh suspended')
+    expect(manual).not.toContain('Tracking not live · cached positions')
+    expect(manual).toContain('<strong>TRACKING LOST: positions on the map may not be current</strong>')
+    expect(manual).toContain('<strong>MISSION PAUSED: positions are not updating</strong>')
+    expect(manual).toContain('Grey <strong>Tracking not connected</strong>')
+    expect(manual).toContain('a missing stale count does not prove positions are fresh')
+  })
 })

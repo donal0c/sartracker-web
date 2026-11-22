@@ -71,20 +71,6 @@ body {
   margin: 0;
 }
 
-/* Operational awareness stays outside panels, with deliberate wrapping at zoom. */
-.sar-awareness-strip {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid var(--sar-line);
-  background: var(--sar-panel);
-}
-.sar-persistent-health { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.35rem 0.6rem; font-size: 12px; }
-.sar-compact-mission { display: flex; align-items: center; gap: 0.65rem; font-size: 12px; }
-.sar-compact-mission > span:first-child { max-width: 12rem; }
 .sar-device-list-scroll { scrollbar-gutter: stable; }
 .sar-device-grid { min-width: 59.5rem; }
 .sar-devices-inspector { padding: 1rem; }
@@ -97,7 +83,6 @@ body {
   .sar-devices-layout .sar-device-list-scroll { max-height: 45vh; }
   .sar-devices-layout > aside { flex-shrink: 0; overflow: visible; }
 }
-.sar-operational-sidebar { flex-shrink: 0; min-height: 0; max-width: 42vw; }
 .sar-workspace-content { min-height: 0; }
 .sar-mission-dock-focus { max-height: 48vh; }
 .sar-mission-header { flex-wrap: wrap; gap: 0.5rem; }
@@ -108,12 +93,6 @@ body {
 [data-theme='high-contrast'] :is(.sar-panel, .sar-sidebar, .sar-control-dock, .sar-rail-section) { background: #000; border-color: #bdbdbd; }
 [data-theme='high-contrast'] :is(button, input, select, textarea) { border-color: #bdbdbd; }
 [data-theme='high-contrast'] button:disabled { opacity: 1; border-style: dashed; color: #bdbdbd; cursor: not-allowed; }
-@media (max-width: 1100px) {
-  .sar-awareness-strip { max-height: 30vh; overflow-y: auto; }
-  .sar-compact-mission { flex-wrap: wrap; }
-  .sar-global-mast { overflow-x: auto; }
-  .sar-command-mast-grid { min-width: 1100px; }
-}
 
 @layer components {
   .sar-shell {
@@ -133,30 +112,6 @@ body {
     box-shadow:
       -34px 0 70px rgba(0, 0, 0, 0.5),
       inset 1px 0 rgba(255, 255, 255, 0.035);
-  }
-
-  .sar-command-mast {
-    border-bottom: 1px solid rgba(214, 204, 190, 0.12);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
-      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 55%),
-      #15130f;
-    box-shadow: inset 0 -1px rgba(0, 0, 0, 0.42);
-  }
-
-  .sar-global-mast {
-    border-bottom: 1px solid rgba(214, 204, 190, 0.13);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 52%),
-      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 34%),
-      #12100d;
-    box-shadow:
-      0 18px 42px rgba(0, 0, 0, 0.28),
-      inset 0 -1px rgba(0, 0, 0, 0.48);
-  }
-
-  .sar-command-mast-grid {
-    grid-template-columns: 300px 220px 118px 118px 76px 64px 160px repeat(5, minmax(0, 1fr));
   }
 
   .sar-mast-button {
@@ -190,25 +145,11 @@ body {
   }
 
   @media (max-width: 1400px) {
-    .sar-command-mast-grid {
-      grid-template-columns: 280px 170px 112px 112px 64px 56px 128px repeat(5, minmax(56px, 1fr));
-    }
-
     .sar-mast-button {
       padding: 0 0.35rem;
       font-size: 9px;
       letter-spacing: 0.04em;
     }
-
-    .sar-mast-readout {
-      padding-left: 0.5rem;
-      padding-right: 0.5rem;
-    }
-
-    .sar-mast-readout > p:last-child {
-      font-size: 1.125rem;
-    }
-
   }
 
   /* Full labels need about 110 px per button; below this width they ran
@@ -220,16 +161,6 @@ body {
 
     .sar-mast-label-short {
       display: inline;
-    }
-  }
-
-  @media (max-width: 1180px) {
-    .sar-command-mast-grid {
-      grid-template-columns: 224px 180px 96px 96px 64px 56px 112px repeat(5, minmax(54px, 1fr));
-    }
-
-    .sar-mast-readout > p:last-child {
-      font-size: 1rem;
     }
   }
 
