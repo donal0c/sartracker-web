@@ -31,7 +31,7 @@ export function useWorkspacePanels(input: {
   readonly onDecisionOpenChange: (open: boolean) => void
   readonly decisionOpen: boolean
   readonly actionError: string | null
-}): { readonly top: ReactNode; readonly side: ReactNode; readonly overMap: ReactNode; readonly slotSide: 'left' | 'right' } {
+}): { readonly top: ReactNode; readonly alarm: ReactNode; readonly side: ReactNode; readonly overMap: ReactNode; readonly slotSide: 'left' | 'right' } {
   const { arrangement, decisionOpen, actionError } = input
   const side = panelSide(arrangement)
   const phase = useMissionStore((state) => state.phase)
@@ -152,7 +152,6 @@ export function useWorkspacePanels(input: {
         panelButtons={panelButtons}
         weather={input.weather}
       />
-      <TrackingAlarm headline={headline} onOpenTracking={() => setTemporary('tracking')} />
       {/* DON-338 REN-6: the history-line warning stays on screen whenever Tracking is closed. */}
       {visible === 'tracking' ? null : <CoverageAttentionIndicator onOpenTracking={() => setTemporary('tracking')} />}
     </>
@@ -210,5 +209,8 @@ export function useWorkspacePanels(input: {
     ? <ExceptionsOnMap onShowAll={() => showBase('people')} people={people} />
     : null
 
-  return { top, side: panel, overMap, slotSide: side }
+  // Drawn across the top of the map, never above the side panel, so nothing moves under the pointer.
+  const alarm = <TrackingAlarm headline={headline} onOpenTracking={() => setTemporary('tracking')} />
+
+  return { top, alarm, side: panel, overMap, slotSide: side }
 }

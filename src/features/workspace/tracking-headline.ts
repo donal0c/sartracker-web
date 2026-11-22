@@ -37,7 +37,7 @@ export type TrackingHeadline = {
   readonly condition: TrackingCondition
   readonly tone: 'ok' | 'warning' | 'alert' | 'neutral'
   readonly text: string
-  /** Text for the full-width alarm, when it should say more than the headline. */
+  /** Text for the alarm across the map, when it should say more than the headline. */
   readonly alarm?: string
   /** Everything the old Tracking tab would have warned about, in plain words. */
   readonly issues: readonly string[]

@@ -96,19 +96,17 @@ test.describe('M19 devices workspace', () => {
     page,
   }) => {
     const opener = page.getByTestId('open-devices-workspace')
-    // The full-width TRACKING LOST alarm moves the whole workspace down by design
-    // (DON-341), so measure the link within its panel: tracking messages must not
-    // reflow the People panel under the pointer.
-    const side = page.getByTestId('ws-side')
-    const topInPanel = async () => {
-      const [box, panel] = await Promise.all([opener.boundingBox(), side.boundingBox()])
-      if (box === null || panel === null) {
+    // Measured on screen: the TRACKING LOST alarm runs across the map, so
+    // nothing under the pointer may move when it appears (DON-341).
+    const screenTop = async () => {
+      const box = await opener.boundingBox()
+      if (box === null) {
         throw new Error('Open Devices pointer target disappeared.')
       }
-      return box.y - panel.y
+      return box.y
     }
 
-    const observedTops = [await topInPanel()]
+    const observedTops = [await screenTop()]
     for (const warning of [
       null,
       'Current fixes loaded; loading breadcrumb history.',
@@ -136,7 +134,7 @@ test.describe('M19 devices workspace', () => {
         )
         await new Promise((resolve) => window.requestAnimationFrame(resolve))
       }, warning)
-      observedTops.push(await topInPanel())
+      observedTops.push(await screenTop())
     }
 
     expect(Math.max(...observedTops) - Math.min(...observedTops)).toBeLessThan(0.5)

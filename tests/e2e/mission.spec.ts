@@ -69,7 +69,7 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveText('Resume')
 
     // DON-64: paused must be unmistakable and the recovery control always reachable.
-    // In the new layout that is the full-width alarm, whatever panel is open.
+    // In the new layout that is the alarm across the map, whatever panel is open.
     await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
     await expect(page.getByTestId('ws-alarm-resume')).toBeEnabled()
     await openMissionPanel(page)

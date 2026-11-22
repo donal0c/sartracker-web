@@ -159,7 +159,7 @@ export function WorkspaceTopBar(props: {
   )
 }
 
-/** Full-width alarm for a stopped map; it cannot be scrolled or closed away. */
+/** Flashing alarm across the top of the map when it cannot be trusted; it cannot be scrolled or closed away. */
 export function TrackingAlarm(props: { readonly headline: TrackingHeadline; readonly onOpenTracking: () => void }) {
   const phase = useMissionStore((state) => state.phase)
   const controller = useMissionStore((state) => state.controller)

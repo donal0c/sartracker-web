@@ -120,6 +120,39 @@ async function showPeople(page: Page): Promise<void> {
   await openWorkspacePanel(page, 'people')
 }
 
+/**
+ * The alarm runs across the top of the map, flashing and unclosable, so the side
+ * panel never moves under the pointer (DON-341, finding 2 on PR 76). Checks it
+ * spans the map's width (within 2 px), is inside the window, is not covered by
+ * anything, and sits above the map's corner controls (zoom, compass, Maps and tools).
+ */
+async function expectAlarmOverMap(page: Page): Promise<void> {
+  const alarm = page.getByTestId('ws-alarm')
+  await expect(alarm).toBeVisible()
+  const placement = await alarm.evaluate((element) => {
+    const box = element.getBoundingClientRect()
+    const map = document.querySelector('[data-testid="map-container"]')?.getBoundingClientRect() ?? null
+    const centre = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    const controls = [...document.querySelectorAll('.maplibregl-ctrl-top-left > *, .maplibregl-ctrl-top-right > *, [data-testid="basemap-switcher"], [data-testid="drawing-toolbar"]')]
+      .map((control) => control.getBoundingClientRect())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => rect.top)
+    return {
+      box: { left: box.left, top: box.top, width: box.width, bottom: box.bottom },
+      map: map === null ? null : { left: map.left, width: map.width },
+      uncovered: centre !== null && element.contains(centre),
+      inWindow: box.top >= 0 && box.bottom <= window.innerHeight && box.left >= 0 && box.right <= window.innerWidth,
+      controlTops: controls,
+    }
+  })
+  expect(placement.map, 'map on screen').not.toBeNull()
+  expect(Math.abs(placement.box.left - (placement.map?.left ?? 0)), 'alarm starts at the map edge').toBeLessThanOrEqual(2)
+  expect(Math.abs(placement.box.width - (placement.map?.width ?? 0)), 'alarm spans the map width').toBeLessThanOrEqual(2)
+  expect(placement.inWindow, 'alarm inside the window').toBe(true)
+  expect(placement.uncovered, 'nothing covers the alarm').toBe(true)
+  for (const top of placement.controlTops) expect(top, 'map controls sit below the alarm').toBeGreaterThanOrEqual(placement.box.bottom - 0.5)
+}
+
 test.describe('Simplified workspace', () => {
     test('start a mission from one simple card', async ({ page }) => {
       await open(page)
@@ -319,6 +352,7 @@ test.describe('Simplified workspace', () => {
       await startMission(page)
       await feed(page, { lost: true })
       await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+      await expectAlarmOverMap(page)
       await expect(page.getByTestId('ws-tracking-headline')).not.toContainText('Traccar server')
       // The named call-outs add to the alarm rather than repeating it.
       await expect(page.getByTestId('ws-exceptions-more')).toHaveCount(0)
@@ -362,7 +396,7 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
     })
 
-    test('while paused, the full-width alarm and its Resume stay on screen whatever panel is open', async ({ page }) => {
+    test('while paused, the alarm across the map and its Resume stay on screen whatever panel is open', async ({ page }) => {
       // The old screen held Mission open while paused. The new layout does not
       // (it would block Tracking's Reconnect); this alarm is what replaces it.
       await open(page)
@@ -377,8 +411,8 @@ test.describe('Simplified workspace', () => {
         await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
         await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
         await expect(page.getByTestId('ws-alarm-resume')).toBeEnabled()
-        const box = await page.getByTestId('ws-alarm').boundingBox()
-        expect(box?.width ?? 0).toBeGreaterThan(1440 * 0.9)
+        // Was: wider than 90% of 1440 px. It now spans the map, so the side panel never moves.
+        await expectAlarmOverMap(page)
       }
       // Pausing closes Mission; nothing holds it open, so the alarm must carry the state.
       await expect(page.getByTestId('ws-mission-host')).toBeHidden()
@@ -392,6 +426,22 @@ test.describe('Simplified workspace', () => {
       await page.getByTestId('ws-panel-close').click()
       await page.getByTestId('ws-full-map').click()
       await alarmShows()
+      // Every other panel, then the narrowest supported window with a panel open and closed.
+      await page.getByTestId('ws-full-map').click()
+      await page.getByTestId('ws-toggle-layers').click()
+      await page.getByTestId('ws-open-tools').click()
+      await expect(page.getByTestId('ws-tools-panel')).toBeVisible()
+      await alarmShows()
+      await page.getByTestId('ws-mission-button').click()
+      await expect(page.getByTestId('ws-mission-host')).toBeVisible()
+      await alarmShows()
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await alarmShows()
+      await page.getByTestId('ws-mission-close').click()
+      await page.getByTestId('ws-full-map').click()
+      await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+      await alarmShows()
+      await page.setViewportSize({ width: 1440, height: 900 })
 
       await page.getByTestId('ws-alarm-resume').click()
       await expect(page.getByTestId('ws-alarm')).toBeHidden()
@@ -410,6 +460,10 @@ test.describe('Simplified workspace', () => {
       await page.getByTestId('ws-more-button').click()
       await page.getByTestId('ws-open-review').click()
       await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+      // Review docks below the alarm, which stays uncovered across the map.
+      await expectAlarmOverMap(page)
+      const [alarmBox, reviewBox] = await Promise.all([page.getByTestId('ws-alarm').boundingBox(), page.getByTestId('mission-review-workspace').boundingBox()])
+      expect(reviewBox?.y ?? 0).toBeGreaterThanOrEqual((alarmBox?.y ?? 0) + (alarmBox?.height ?? 0) - 0.5)
       // Both stay clickable with Review open: a click that lands on Review would time out.
       await page.getByTestId('ws-mission-button').click({ timeout: 5_000 })
       await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
@@ -498,6 +552,11 @@ test.describe('Start screen', () => {
     await expect(page.getByTestId('mission-name-input')).toHaveCount(0)
     await expect(page.getByTestId('participant-device-picker')).toHaveCount(0)
     await shot(page, 'start-resume')
+    // Tracking lost while the resume card waits: the alarm runs above the card, never under it.
+    await feed(page, { lost: true })
+    await expectAlarmOverMap(page)
+    const [alarmBox, cardBox] = await Promise.all([page.getByTestId('ws-alarm').boundingBox(), page.getByTestId('ws-mission-host').boundingBox()])
+    expect(cardBox?.y ?? 0, 'resume card starts below the alarm').toBeGreaterThanOrEqual((alarmBox?.y ?? 0) + (alarmBox?.height ?? 0) - 0.5)
     await page.getByTestId('start-screen-resume-btn').click()
     await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
     await expect(page.getByTestId('current-mission-name')).toHaveText('Exercise Bravo')
