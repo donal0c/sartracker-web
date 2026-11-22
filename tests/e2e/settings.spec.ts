@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test'
-import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
 
 test.describe('M12 settings workspace', () => {
   test.beforeEach(async ({ context, page }) => {
@@ -97,9 +97,9 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
-    await expect(page.getByTestId('tracking-status')).toContainText('1')
-    await page.getByTestId('open-devices-workspace').click()
+    await expectTrackingOnline(page)
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
+    await openDevicesWorkspace(page)
     await expect(page.getByTestId('devices-workspace')).toContainText('S-Tab')
   })
 
@@ -122,15 +122,15 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('open-settings-workspace').click()
     await page.getByTestId('settings-save-connect').click()
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+    await expectTrackingOnline(page, 15_000)
     await expect.poll(server.getSuccessfulSessionRequestCount).toBeGreaterThanOrEqual(2)
 
     server.setAvailable(false)
-    await expect(page.getByTestId('tracking-status')).toContainText('OFFLINE MODE', {
-      timeout: 25_000,
-    })
+    // Was the OFFLINE MODE chip; the top bar now says TRACKING LOST.
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'lost', { timeout: 25_000 })
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('TRACKING LOST')
 
-    await page.getByTestId('open-diagnostics-workspace').click()
+    await openDiagnostics(page)
     await page.getByTestId('diagnostics-copy-report').click()
     await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toContain(
       '[tracking-poll-ledger]',
@@ -175,7 +175,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
+    await expectTrackingOnline(page, 15_000)
 
     await expect
       .poll(() => cursorScenario.breadcrumbRequests.length, { timeout: 15_000 })
@@ -239,7 +239,7 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('settings-save-connect').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden({ timeout: 15_000 })
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
+    await expectTrackingOnline(page)
 
     await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
@@ -250,10 +250,10 @@ test.describe('M12 settings workspace', () => {
 
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('idle')
-    await expect(page.getByTestId('tracking-status')).toContainText('Waiting for an active mission.')
-    await expect(page.getByTestId('tracking-status')).toContainText('0')
-    await expect(page.getByTestId('tracking-status')).not.toContainText('online')
+    // Was the IDLE chip, "Waiting for an active mission." and a zero counter.
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'disconnected')
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('Tracking not connected')
+    await expect(page.getByTestId('ws-toggle-people')).not.toContainText(/People [1-9]/)
   })
 
   test('large hosted breadcrumb history does not block current tracking status or exceed browser storage cap', async ({
@@ -294,8 +294,8 @@ test.describe('M12 settings workspace', () => {
     // Playwright's default 5s assertion/poll timeout; the assertions
     // themselves are unchanged.
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('online', { timeout: 15_000 })
-    await expect(page.getByTestId('tracking-status')).toContainText('1', { timeout: 15_000 })
+    await expectTrackingOnline(page, 15_000)
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1', { timeout: 15_000 })
     if (breadcrumbCount > 5_000) {
       await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
         `of at least ${breadcrumbCount.toLocaleString()} known fixes`,
@@ -675,4 +675,9 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
     breadcrumbRequests,
     expectedOverlapFroms: [expectedOverlapFrom, expectedAfterOverlapFrom],
   }
+}
+
+/** The old ONLINE chip: the top bar's tracking headline says positions are arriving. */
+async function expectTrackingOnline(page: Page, timeout?: number) {
+  await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', /^(ok|attention)$/, timeout === undefined ? undefined : { timeout })
 }

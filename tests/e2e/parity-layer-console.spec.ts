@@ -1,8 +1,9 @@
 /**
- * Batch 2 follow-up: Parity tests for LPV-063 (show hidden), LPV-064 (refresh),
- * and LPV-065 (expand all) layer console controls.
+ * Batch 2 follow-up: Parity test for LPV-063 (hidden items stay listed). The
+ * LPV-064 to LPV-066 console buttons are not in the new Layers panel (DON-341).
  */
 import { expect, test, type Page } from '@playwright/test'
+import { expandAllLayers } from './helpers/layers'
 import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 async function waitForShell(page: Page) {
@@ -101,71 +102,24 @@ test.describe('Batch 2 follow-up: layer console controls (LPV-063, LPV-064, LPV-
     await openWorkspacePanel(page, 'layers')
   })
 
-  test('LPV-063: show-hidden toggle filters hidden items from tree', async ({ page }) => {
-    // Verify the toggle exists and defaults to checked (show hidden)
-    const toggle = page.getByTestId('layer-show-hidden-toggle').locator('input')
-    await expect(toggle).toBeVisible({ timeout: 5000 })
-    await expect(toggle).toBeChecked()
+  test('LPV-063: hidden items stay listed, unticked, so they can be switched back on', async ({ page }) => {
+    // The new Layers panel (DON-341) always lists hidden items; the Show hidden
+    // toggle is gone. A hidden item must stay in the tree, unticked.
+    await expect(page.getByTestId('layer-show-hidden-toggle')).toHaveCount(0)
+    await expandAllLayers(page)
 
-    // Hide the marker via the tree checkbox
     const markerToggle = page.getByTestId('layer-visibility-feature-marker-marker-1')
     await expect(markerToggle).toBeVisible({ timeout: 10000 })
     await markerToggle.click()
     await expect(markerToggle).not.toBeChecked()
-
-    // The hidden marker should still appear in the tree (showHidden = true)
     await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
 
-    // Toggle showHidden off — the hidden marker should disappear from the tree listing
-    await toggle.click()
-    await expect(toggle).not.toBeChecked()
-    await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeHidden()
-
-    // Toggle showHidden back on — the hidden marker reappears
-    await toggle.click()
-    await expect(toggle).toBeChecked()
-    await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
+    await markerToggle.click()
+    await expect(markerToggle).toBeChecked()
   })
 
-  test('LPV-064: refresh button exists and triggers catalog reload', async ({ page }) => {
-    const refreshBtn = page.getByTestId('layer-refresh-btn')
-    await expect(refreshBtn).toBeVisible({ timeout: 5000 })
-    await expect(refreshBtn).toHaveText('Refresh')
+  // LPV-064 (Refresh), LPV-065 (Expand All) and LPV-066 (Collapse All) tested
+  // buttons the new Layers panel does not have (DON-341). Folding and unfolding
+  // one heading is covered in layer-panel.spec.ts.
 
-    // Click refresh — the catalog should reload without error
-    await refreshBtn.click()
-
-    // Verify the tree still renders correctly after refresh
-    await expect(page.getByTestId('layer-tree')).toBeVisible()
-    await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
-  })
-
-  test('LPV-065: expand-all button expands all tree nodes', async ({ page }) => {
-    const expandAllBtn = page.getByTestId('layer-expand-all-btn')
-    await expect(expandAllBtn).toBeVisible({ timeout: 5000 })
-
-    // Collapse the tracking group
-    const trackingExpand = page.getByTestId('layer-expand-group-tracking')
-    await trackingExpand.click()
-    // After collapse, device item should be hidden
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeHidden()
-
-    // Click Expand All — the device item should reappear
-    await expandAllBtn.click()
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
-  })
-
-  test('LPV-066: collapse-all button collapses all tree nodes', async ({ page }) => {
-    const collapseAllBtn = page.getByTestId('layer-collapse-all-btn')
-    await expect(collapseAllBtn).toBeVisible({ timeout: 5000 })
-    await expect(collapseAllBtn).toHaveText('Collapse All')
-
-    // Device item is visible while the tracking group is expanded
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
-
-    // Click Collapse All — nested items collapse but top-level groups remain
-    await collapseAllBtn.click()
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeHidden()
-    await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
-  })
 })

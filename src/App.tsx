@@ -387,7 +387,7 @@ export function RuntimeSafetyBanner(props: {
         </p>
       ) : null}
       {focusAutosaveWarning === null ? null : (
-        <p className="mt-1" data-testid="focus-autosave-warning">
+        <p className="mt-1" data-testid="focus-autosave-warning" role="status">
           {focusAutosaveWarning}
         </p>
       )}

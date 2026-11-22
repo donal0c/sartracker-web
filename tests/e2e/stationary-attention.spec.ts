@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+import { openMissionPanel, openWorkspacePanel, openDevicesWorkspace } from './helpers/workspace-panels'
 
 test.describe('Stationary attention [DON-269]', () => {
   test.beforeEach(async ({ page }) => {
@@ -14,14 +14,15 @@ test.describe('Stationary attention [DON-269]', () => {
   test('highlights, acknowledges, and clears attention without hiding the current fix', async ({ page }) => {
     await inject(page, 52.0, 52.00001)
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('stationary-attention-summary')).toContainText('1 device needs stationary attention')
-    await page.getByTestId('open-devices-workspace').click()
+    // Was the Tracking tab's stationary summary; the Tracking panel lists it (DON-341).
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('1 person not moving')
+    await openDevicesWorkspace(page)
     await expect(page.getByTestId('device-attention-alpha')).toContainText('Stationary Attention')
     await page.getByTestId('acknowledge-stationary-attention').click()
     await expect(page.getByTestId('device-attention-alpha')).toContainText('Acknowledged')
 
     await inject(page, 52.0, 52.001)
-    await expect(page.getByTestId('stationary-attention-summary')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-headline')).not.toContainText('not moving')
     await expect(page.getByTestId('device-attention-alpha')).toHaveCount(0)
   })
 
@@ -45,8 +46,8 @@ test.describe('Stationary attention [DON-269]', () => {
     }
     await route(false)
     await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('stationary-attention-summary')).toHaveCount(0)
-    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('ws-tracking-headline')).not.toContainText('not moving')
+    await openDevicesWorkspace(page)
     await expect(page.getByTestId('device-attention-alpha')).toHaveCount(0)
     await page.screenshot({ path: 'output/repair-train-a/stationary-route-clear.png' })
     await route(true)
@@ -72,7 +73,7 @@ test.describe('Stationary attention [DON-269]', () => {
       }, count)
     }
     await publish(5)
-    await page.getByTestId('open-devices-workspace').click()
+    await openDevicesWorkspace(page)
     await page.getByTestId('acknowledge-stationary-attention').click()
     for (const count of [6, 7, 10]) {
       await publish(count)

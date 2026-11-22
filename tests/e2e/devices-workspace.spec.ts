@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -96,12 +96,19 @@ test.describe('M19 devices workspace', () => {
     page,
   }) => {
     const opener = page.getByTestId('open-devices-workspace')
-    const initialBox = await opener.boundingBox()
-    if (initialBox === null) {
-      throw new Error('Open Devices pointer target is unavailable.')
+    // The full-width TRACKING LOST alarm moves the whole workspace down by design
+    // (DON-341), so measure the link within its panel: tracking messages must not
+    // reflow the People panel under the pointer.
+    const side = page.getByTestId('ws-side')
+    const topInPanel = async () => {
+      const [box, panel] = await Promise.all([opener.boundingBox(), side.boundingBox()])
+      if (box === null || panel === null) {
+        throw new Error('Open Devices pointer target disappeared.')
+      }
+      return box.y - panel.y
     }
 
-    const observedTops = [initialBox.y]
+    const observedTops = [await topInPanel()]
     for (const warning of [
       null,
       'Current fixes loaded; loading breadcrumb history.',
@@ -129,11 +136,7 @@ test.describe('M19 devices workspace', () => {
         )
         await new Promise((resolve) => window.requestAnimationFrame(resolve))
       }, warning)
-      const box = await opener.boundingBox()
-      if (box === null) {
-        throw new Error('Open Devices pointer target disappeared.')
-      }
-      observedTops.push(box.y)
+      observedTops.push(await topInPanel())
     }
 
     expect(Math.max(...observedTops) - Math.min(...observedTops)).toBeLessThan(0.5)
@@ -197,14 +200,14 @@ test.describe('M19 devices workspace', () => {
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
     await expect(page.getByTestId('devices-inspector-title')).toContainText('Bravo Team')
-    await openWorkspacePanel(page, 'tracking')
-    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    // Was the Tracking tab beside Devices; tracking health now stays in the top bar (DON-341).
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
 
     await page.getByTestId('device-zoom-alpha').click()
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
-    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
     await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
   })

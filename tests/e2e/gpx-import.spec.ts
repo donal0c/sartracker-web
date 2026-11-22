@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { openMissionSections } from './helpers/mission-sections'
+import { expandAllLayers } from './helpers/layers'
 import { readFileSync } from 'node:fs'
 import { captureAndRegister } from './visual/helpers/verification-manifest'
-import { closeMissionPanel, openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+import { closeMissionPanel, openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M22 GPX import parity', () => {
   test.beforeEach(async ({ page }) => {
@@ -72,6 +73,8 @@ test.describe('M22 GPX import parity', () => {
       ])
     })
 
+    // The outing was started in Mission; the GPX panel is in Tools (DON-341).
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
     const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
@@ -89,12 +92,14 @@ test.describe('M22 GPX import parity', () => {
     })).toEqual({ matches: true, revision: 2 })
 
     await openWorkspacePanel(page, 'layers')
-    await page.getByTestId('layer-expand-group-gpx-tracks').click()
+    await expandAllLayers(page)
     await expect(page.getByTestId('layer-tree')).toContainText('GPX Tracks')
     await expect(page.getByTestId('layer-tree')).toContainText('alpha')
 
-    await page.getByTestId('layer-tree').getByText('alpha', { exact: true }).click()
-    await expect(page.getByTestId('layer-inspector')).toContainText('gpx_tracks')
+    // Only items open the inspector now; the track's heading folds instead (DON-341).
+    await page.getByTestId(`layer-select-feature-gpx-${importId}`).click()
+    // Was the heading's layer kind (gpx_tracks); the item's details name its source file.
+    await expect(page.getByTestId('layer-inspector')).toContainText('/tracks/alpha.gpx')
 
     await expect.poll(async () => {
       return page.evaluate(() => {
@@ -107,7 +112,7 @@ test.describe('M22 GPX import parity', () => {
       })
     }, { timeout: 10000 }).toBeGreaterThan(0)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await openMissionPanel(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Imports')
@@ -171,7 +176,10 @@ test.describe('M22 GPX import parity', () => {
       ])
       Object.assign(window, { releaseGpxDigest: () => { crypto.subtle.digest = original; release?.() }, pendingGpxImport: pending })
     }, source)
+    // GPX is in Tools and End Outing in Mission; one side panel shows at a time (DON-341).
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-files')).toContainText('Importing')
+    await openMissionPanel(page)
     await page.getByTestId('outing-end-btn').click()
     await expect(page.getByTestId('outing-no-active-notice')).toBeVisible()
     await page.evaluate(async () => {
@@ -179,6 +187,7 @@ test.describe('M22 GPX import parity', () => {
       gate.releaseGpxDigest()
       await gate.pendingGpxImport
     })
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
     const geometry = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().gpxImports[0].geometry_json)

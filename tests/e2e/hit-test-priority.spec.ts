@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { openMissionPanel } from './helpers/workspace-panels'
+import { armMapTool } from './helpers/map-tools'
 
 test.describe('B6 hit-test priority', () => {
   test.beforeEach(async ({ page }) => {
@@ -30,8 +31,7 @@ test.describe('B6 hit-test priority', () => {
     await page.getByTestId('marker-save-btn').click()
     await expect(markerDialog).toBeHidden()
 
-    await page.getByTestId('drawing-toolbar-expand').click()
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await armMapTool(page, 'search_area')
     await clickMap(page, { x: markerScreenX - 120, y: markerScreenY - 80 })
     await clickMap(page, { x: markerScreenX + 120, y: markerScreenY - 80 })
     await clickMap(page, { x: markerScreenX + 120, y: markerScreenY + 80 })
@@ -61,7 +61,7 @@ test.describe('B6 hit-test priority', () => {
   test('clicking only the polygon (no marker stacked) still selects the polygon', async ({ page }) => {
     await page.getByTestId('drawing-toolbar-expand').click()
 
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
+    await armMapTool(page, 'search_area')
     await clickMap(page, { x: 380, y: 200 })
     await clickMap(page, { x: 620, y: 200 })
     await clickMap(page, { x: 620, y: 360 })

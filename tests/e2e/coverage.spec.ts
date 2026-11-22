@@ -1,6 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
-import { seedCoverageMission } from './helpers/coverage-test-setup'
+import { seedCoverageMission as seedMission } from './helpers/coverage-test-setup'
+import { expandAllLayers } from './helpers/layers'
 import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+
+/** Seeds the coverage mission, then opens Tracking, where the history status now lives (DON-341). */
+async function seedCoverageMission(page: Page): Promise<void> {
+  await seedMission(page)
+  await openWorkspacePanel(page, 'tracking')
+}
 
 test.describe('complete mission-history coverage [DON-275]', () => {
   test('keeps renderer failure visible during live changes and recovers promptly [DON-325]', async ({ page }, testInfo) => {
@@ -138,7 +145,8 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     })
     await expect(panel).toContainText('Saved history has not been reconciled')
     await expect(panel).not.toContainText('All mission history shown')
-    await expect(page.getByTestId('tracking-counters')).toContainText('2')
+    // The old Tracking counters are not in the new Tracking panel; read the live snapshot they showed.
+    await expect.poll(() => readLiveTrackingCounts(page)).toEqual({ devices: 2, fixes: 2 })
     await page.evaluate(async () => {
       const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
       const state = useTrackingStore.getState()
@@ -158,12 +166,17 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown')
     const before = await readCoverageLayerFilters(page)
     await openWorkspacePanel(page, 'layers')
-    await page.getByTestId('layer-expand-all-btn').click()
-    await page.getByTestId('layer-visibility-layer-tracking-breadcrumbs').uncheck()
+    await expandAllLayers(page)
+    // Live Tracking visibility moved to People: Trail is the old Breadcrumbs layer,
+    // and Location plus Trail together are the old Tracking group (DON-341).
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('ws-all-trails').uncheck()
+    await openWorkspacePanel(page, 'layers')
     await expect(page.getByTestId('layer-visibility-feature-coverage-device-alpha')).toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-coverage-device-bravo')).toBeChecked()
     expect(await readCoverageLayerFilters(page)).toEqual(before)
-    await page.getByTestId('layer-visibility-group-tracking').uncheck()
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('ws-all-positions').uncheck()
     expect(await readCoverageLayerFilters(page)).toEqual(before)
     await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('coverage-status-panel')).toContainText('All mission history shown')
@@ -176,8 +189,9 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await expect(coverageStatus).not.toContainText('History incomplete')
 
     await openWorkspacePanel(page, 'layers')
-    await page.getByTestId('layer-expand-all-btn').click()
-    await expect(page.getByTestId('layer-row-group-coverage')).toContainText('Mission History')
+    await expandAllLayers(page)
+    // The Layers panel calls Mission History "Earlier tracks" (DON-341).
+    await expect(page.getByTestId('layer-row-group-coverage')).toContainText('Earlier tracks')
     await expect(page.getByTestId('layer-row-feature-coverage-device-alpha')).toBeVisible()
     await expect(page.getByTestId('layer-row-feature-coverage-device-discovery-only')).toHaveCount(0)
     await expect(page.getByTestId('layer-row-feature-coverage-period-unassigned-00'))
@@ -192,7 +206,8 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     const trackingFilterAfter = await readMapLayerFilter(page, 'tracking-devices-circle')
     expect(trackingFilterAfter).toEqual(trackingFilterBefore)
     expect(JSON.stringify(await readCoverageLayerFilters(page))).toContain('alpha')
-    await expect(page.getByTestId('tracking-counters')).toContainText('2')
+    // The old Tracking counters are not in the new Tracking panel; read the live snapshot they showed.
+    await expect.poll(() => readLiveTrackingCounts(page)).toEqual({ devices: 2, fixes: 2 })
 
     await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-visibility-feature-coverage-period-unassigned-00').click()
@@ -267,8 +282,8 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     })
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
-    await openMissionPanel(page)
-    await page.getByTestId('mission-control').getByRole('button', { name: 'Resume' }).click()
+    await page.getByTestId('start-screen-resume-btn').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('coverage-progress-text')).toHaveText(/^0 of \d+ fixes$/u)
     await page.evaluate(() => {
       window.sessionStorage.removeItem('sartracker:browser-harness:coverage-delay-ms')
@@ -308,6 +323,15 @@ test.describe('complete mission-history coverage [DON-275]', () => {
     await expect(page.getByTestId('layer-row-group-coverage')).toHaveCount(0)
   })
 })
+
+/** The Devices and Fixes the old Tracking counters showed: the live snapshot, not mission history. */
+async function readLiveTrackingCounts(page: Page): Promise<{ readonly devices: number; readonly fixes: number }> {
+  return page.evaluate(async () => {
+    const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+    const { snapshot } = useTrackingStore.getState()
+    return { devices: snapshot.devices.length, fixes: snapshot.positions.length }
+  })
+}
 
 async function readMapLayerFilter(page: Page, layerId: string): Promise<unknown> {
   return page.evaluate((id) => window.__SARTRACKER_MAP__?.getFilter(id) ?? null, layerId)

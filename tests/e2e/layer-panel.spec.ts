@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { expandAllLayers } from './helpers/layers'
 import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M17 layer tree workflows', () => {
@@ -16,20 +17,28 @@ test.describe('M17 layer tree workflows', () => {
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedLayerPanelData(page)
     await openWorkspacePanel(page, 'layers')
+    await expandAllLayers(page)
   })
 
   test('renders the nested layer tree and inspection workspace', async ({ page }) => {
     await expect(page.getByTestId('layer-tree')).toBeVisible()
-    await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
+    // Tracking moved to People, so Layers no longer lists it twice (DON-341).
+    await expect(page.getByTestId('layer-row-group-tracking')).toHaveCount(0)
     await expect(page.getByTestId('layer-row-group-map-tools')).toBeVisible()
     await expect(page.getByText('Browser session storage only')).toHaveCount(0)
     await expect(page.getByText('SQLite persistence active (WAL mode).')).toHaveCount(0)
 
-    await page.getByTestId('layer-select-feature-device-alpha').click()
-    await expect(page.getByTestId('layer-inspector-title')).toContainText('Alpha Team')
-    await expect(page.getByTestId('layer-inspector-details')).toContainText('Device ID')
-    await expect(page.getByTestId('layer-inspector-details')).toContainText(
-      'Last Seen09/04/2026, 17:00:00 GMT+01:00 (Europe/Dublin)',
+    await page.getByTestId('layer-select-feature-marker-marker-1').click()
+    await expect(page.getByTestId('layer-inspector-title')).toContainText('Boot Print')
+
+    // A device is inspected in Devices, opened from People (was: the Tracking layer item).
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('open-devices-workspace').click()
+    await page.getByTestId('device-select-alpha').click()
+    await expect(page.getByTestId('devices-inspector-title')).toContainText('Alpha Team')
+    await expect(page.getByTestId('devices-inspector')).toContainText('alpha')
+    await expect(page.getByTestId('device-inspector-last-seen-alpha')).toContainText(
+      '09/04/2026, 17:00:00 GMT+01:00 (Europe/Dublin)',
     )
   })
 
@@ -38,13 +47,15 @@ test.describe('M17 layer tree workflows', () => {
   }) => {
     await page.getByTestId('layer-tree-search').fill('Boot')
     await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeHidden()
+    await expect(page.getByTestId('layer-row-feature-drawing-drawing-1')).toBeHidden()
 
     await page.getByTestId('layer-tree-search').fill('')
-    await page.getByTestId('layer-select-layer-markers-clues').click()
+    // Only items open their details in the new Layers panel, so the alias is set
+    // on an item rather than on the Clues heading (DON-341).
+    await page.getByTestId('layer-select-feature-marker-marker-1').click()
     await page.getByTestId('layer-alias-input').fill('Evidence')
     await page.getByTestId('layer-alias-save').click()
-    await expect(page.getByTestId('layer-select-layer-markers-clues')).toContainText('Evidence')
+    await expect(page.getByTestId('layer-select-feature-marker-marker-1')).toContainText('Evidence')
 
     await page.getByTestId('layer-visibility-feature-marker-marker-1').click()
     await expect(page.getByTestId('layer-visibility-feature-marker-marker-1')).not.toBeChecked()
@@ -54,46 +65,49 @@ test.describe('M17 layer tree workflows', () => {
     page,
   }) => {
     await expect(page.getByTestId('layer-inspector-favorite')).toHaveCount(0)
-    await page.getByTestId('layer-select-layer-markers-clues').click()
+    await page.getByTestId('layer-select-feature-marker-marker-1').click()
     await expect(page.getByTestId('layer-inspector-favorite')).toHaveCount(0)
-    await expect(page.getByTestId('layer-favorite-feature-device-alpha')).toHaveCount(0)
+    await expect(page.getByTestId('layer-favorite-feature-marker-marker-1')).toHaveCount(0)
     await expect(page.getByTestId('layer-inspector-details')).not.toContainText('Favorite')
   })
 
   test('Move Up reorders a feature item within its layer', async ({ page }) => {
-    // Alpha sorts before Bravo by default. Selecting Bravo and moving it up must
-    // visibly place Bravo above Alpha in the People layer.
-    const peopleItems = page
+    // Boot Print sorts before Clue 02 by default. Selecting Clue 02 and moving it
+    // up must visibly place it first in the Clues layer. (People are ordered in
+    // the People panel now, so a marker layer stands in for them; DON-341.)
+    const clueItems = page
       .getByTestId('layer-tree')
-      .locator('[data-testid^="layer-row-feature-device-"]')
+      .locator('[data-testid^="layer-row-feature-marker-"]')
 
-    await expect(peopleItems.first()).toHaveAttribute(
+    await expect(clueItems.first()).toHaveAttribute(
       'data-testid',
-      'layer-row-feature-device-alpha',
+      'layer-row-feature-marker-marker-1',
     )
 
-    await page.getByTestId('layer-select-feature-device-bravo').click()
+    await page.getByTestId('layer-select-feature-marker-marker-2').click()
     const moveUp = page.getByTestId('layer-move-up')
     await expect(moveUp).toBeEnabled()
     await moveUp.click()
 
-    await expect(peopleItems.first()).toHaveAttribute(
+    await expect(clueItems.first()).toHaveAttribute(
       'data-testid',
-      'layer-row-feature-device-bravo',
+      'layer-row-feature-marker-marker-2',
     )
   })
 
-  test('Collapse All hides nested items and Expand All restores them', async ({
+  test('folding a heading hides its nested items and unfolding restores them', async ({
     page,
   }) => {
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
+    // The new Layers panel folds each heading on its own; there is no Collapse All
+    // or Expand All (DON-341).
+    await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
 
-    await page.getByTestId('layer-collapse-all-btn').click()
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeHidden()
-    await expect(page.getByTestId('layer-row-group-tracking')).toBeVisible()
+    await page.getByTestId('layer-select-layer-markers-clues').click()
+    await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeHidden()
+    await expect(page.getByTestId('layer-row-layer-markers-clues')).toBeVisible()
 
-    await page.getByTestId('layer-expand-all-btn').click()
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
+    await expandAllLayers(page)
+    await expect(page.getByTestId('layer-row-feature-marker-marker-1')).toBeVisible()
   })
 
   test('expanded layer workspace fills available RHS vertical space [DON-132]', async ({
@@ -107,7 +121,7 @@ test.describe('M17 layer tree workflows', () => {
     const layerTree = page.getByTestId('layer-tree')
     await expect(layerTree).toBeVisible()
 
-    const tabContent = page.locator('[data-testid="operational-sidebar"] [data-testid="sidebar-tab-content"]')
+    const tabContent = page.getByTestId('ws-layers-panel')
     await expect(tabContent).toBeVisible()
 
     // The layer panel should use most of the tab content height (at least 60%),
@@ -122,7 +136,7 @@ test.describe('M17 layer tree workflows', () => {
   test('preserves expanded tree scroll while the catalog refreshes [DON-187]', async ({
     page,
   }) => {
-    await page.getByTestId('layer-expand-all-btn').click()
+    await expandAllLayers(page)
     const layerTree = page.getByTestId('layer-tree')
     await expect(layerTree).toBeVisible()
 
@@ -132,7 +146,7 @@ test.describe('M17 layer tree workflows', () => {
     await page.mouse.wheel(0, 220)
     await expect.poll(() => layerTree.evaluate((element) => {
       const tree = element.getBoundingClientRect()
-      const viewport = element.closest('[data-testid="sidebar-tab-content"]')!.getBoundingClientRect()
+      const viewport = element.closest('[data-testid="ws-layers-panel"]')!.getBoundingClientRect()
       return Math.min(tree.bottom, viewport.bottom, window.innerHeight) - Math.max(tree.top, viewport.top, 0)
     })).toBeGreaterThan(96)
 
@@ -160,23 +174,28 @@ test.describe('M17 layer tree workflows', () => {
   test('persists tree metadata and visibility across reload within the mission harness', async ({
     page,
   }) => {
-    await page.getByTestId('layer-select-layer-markers-clues').click()
+    await page.getByTestId('layer-select-feature-marker-marker-1').click()
     await page.getByTestId('layer-alias-input').fill('Evidence')
     await page.getByTestId('layer-alias-save').click()
-    await page.getByTestId('layer-visibility-feature-device-bravo').click()
     await page.getByTestId('layer-visibility-feature-marker-marker-1').click()
+    // One person's location is switched off in People now (DON-341).
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('ws-position-bravo').click()
+    await expect(page.getByTestId('ws-position-bravo')).not.toBeChecked()
 
     await page.reload()
     await waitForShell(page)
-    await openMissionPanel(page)
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Resume' }).click()
+    // After a reload the start screen offers Resume first (DON-342).
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await page.getByTestId('start-screen-resume-btn').click()
     await seedLayerPanelData(page)
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-position-bravo')).not.toBeChecked()
     await openWorkspacePanel(page, 'layers')
+    await expandAllLayers(page)
 
-    await expect(page.getByTestId('layer-visibility-feature-device-bravo')).not.toBeChecked()
     await expect(page.getByTestId('layer-visibility-feature-marker-marker-1')).not.toBeChecked()
-    await expect(page.getByTestId('layer-select-layer-markers-clues')).toContainText('Evidence')
+    await expect(page.getByTestId('layer-select-feature-marker-marker-1')).toContainText('Evidence')
   })
 })
 

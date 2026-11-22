@@ -32,6 +32,7 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
     <button
       aria-label={`${headline.text}. Open tracking details`}
       className={`ws-health ws-health-${headline.tone}`}
+      data-condition={headline.condition}
       data-testid="ws-tracking-headline"
       onClick={props.onOpen}
       role="status"
@@ -71,7 +72,7 @@ function MissionSummary(props: { readonly attention: boolean; readonly onOpen: (
       </button>
       {mission === null ? null : (
         <div className="ws-clocks" data-testid="ws-clocks">
-          <div><span>Search time</span><strong>{formatMissionDuration(timer?.activeSeconds ?? 0)}</strong></div>
+          <div><span>Search time</span><strong data-testid="ws-search-time">{formatMissionDuration(timer?.activeSeconds ?? 0)}</strong></div>
         </div>
       )}
     </>
