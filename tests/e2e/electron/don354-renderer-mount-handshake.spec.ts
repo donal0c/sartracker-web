@@ -23,7 +23,8 @@ const packagedApp = process.env.SARTRACKER_PACKAGED_APP
 test.skip(packagedApp === undefined || packagedApp.trim() === '',
   'Needs SARTRACKER_PACKAGED_APP: the packaged app with an Electron-built SQLite module.')
 
-type RuntimeLogEntry = { readonly event?: string, readonly fields?: Record<string, unknown> }
+/** One runtime-log line: the writer spreads an entry's fields beside ts, level and event. */
+type RuntimeLogEntry = { readonly event?: string, readonly [field: string]: unknown }
 
 /** Reads the profile's JSON-lines runtime log; missing file reads as empty. */
 async function readRuntimeLog(profile: string): Promise<RuntimeLogEntry[]> {
@@ -98,8 +99,8 @@ test('ends at the visible fault screen, logged, with a nonzero exit when the ent
     const visible = await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows().filter((w) => w.isVisible()).map((w) => w.getTitle()))
     expect(visible).toEqual(['SAR Tracker could not start'])
-    await expect.poll(async () => (await readRuntimeLog(profile)).find((entry) => entry.event === 'startup_failure')?.fields, { timeout: 10_000 })
-      .toMatchObject({ name: 'StartupTimeoutError', stage: 'map screen start' })
+    await expect.poll(async () => (await readRuntimeLog(profile)).find((entry) => entry.event === 'startup_failure'), { timeout: 10_000 })
+      .toMatchObject({ level: 'error', name: 'StartupTimeoutError', stage: 'map screen start' })
 
     // Dismissing the fault screen ends the process with a failure code.
     await app.evaluate(({ BrowserWindow }) => {
