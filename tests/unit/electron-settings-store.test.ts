@@ -307,6 +307,58 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
+  // A matching entry whose secret is not a string or an explicit null is
+  // damaged, not cleared: tracking must ask for it again, not read as merely
+  // unconfigured (DON-353).
+  it.each([
+    ['a number', { secret: 42, generation: 'same-generation' }],
+    ['no secret property', { generation: 'same-generation' }],
+    ['an empty string', { secret: '', generation: 'same-generation' }],
+    ['a null entry', null],
+    ['a string entry', 'not-an-object'],
+  ])('reports a matching-generation credential with %s as damaged [DON-353]', async (_shape, entry) => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        credentialGeneration: 'same-generation',
+        dataSource: { providerType: 'traccar_http', baseUrl: 'https://kmrtsar.eu', authMode: 'basic', email: 'sean', autoConnect: true },
+      }),
+      'utf8',
+    )
+    await writeFile(path.join(userDataPath!, 'credentials.json'), JSON.stringify({ version: 2, traccar: { basic: entry } }), 'utf8')
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('damaged')
+    expect(runtime.trackingDisabledReason).toContain('re-enter the password or token in Settings')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
+  })
+
+  it('treats an explicit null secret as an operator clear, not damage [DON-353]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        credentialGeneration: 'same-generation',
+        dataSource: { providerType: 'traccar_http', baseUrl: 'https://kmrtsar.eu', authMode: 'basic', email: 'sean', autoConnect: true },
+      }),
+      'utf8',
+    )
+    await writeFile(
+      path.join(userDataPath!, 'credentials.json'),
+      JSON.stringify({ version: 2, traccar: { basic: { secret: null, generation: 'same-generation' } } }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
+  })
+
   it('rejects Traccar provider URLs with embedded credentials before persistence [DON-207]', async () => {
     const store = await createStore({ backend: 'gnome_libsecret' })
     const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)

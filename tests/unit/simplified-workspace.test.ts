@@ -99,23 +99,52 @@ describe('tracking headline', () => {
   it('names a saved tracking password that must be re-entered, not a neutral "not connected" [DON-353]', () => {
     // The old layout's warning said what to do; the new bar must say it too.
     const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
-    for (const phase of ['idle', 'active'] as const) {
-      const headline = describeTrackingHeadline({
-        ...base, phase, status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
-      })
-      expect(headline.condition).toBe('credentials')
-      expect(headline.tone).toBe('warning')
-      expect(headline.problems[0]).toBe('Re-enter tracking password')
-      expect(headline.text).toMatch(/not connected/i)
-      expect(headline.text).toMatch(/Settings/)
-      expect(headline.issues).toContain(warning)
-    }
+    // Before a mission starts, amber is enough: nobody is relying on the map yet.
+    const idle = describeTrackingHeadline({
+      ...base, phase: 'idle', status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+    })
+    expect(idle.condition).toBe('credentials')
+    expect(idle.tone).toBe('warning')
+    expect(idle.alarm).toBeUndefined()
+    expect(idle.problems[0]).toBe('Re-enter tracking password')
+    expect(idle.text).toMatch(/not connected/i)
+    expect(idle.text).toMatch(/Settings/)
+    expect(idle.issues).toContain(warning)
+    expect(idle.lastReceivedShown).toBe(false)
     // Tracking that is simply not set up still reads as not connected.
     const plain = describeTrackingHeadline({
       ...base, phase: 'idle', status: status({ mode: 'idle', warning: 'Tracking is not configured.', warningCodes: ['tracking_not_configured'] }),
     })
     expect(plain.condition).toBe('disconnected')
     expect(plain.problems).toEqual(['Tracking not connected'])
+  })
+
+  it('raises the alarm when a mission loses its tracking password, keeping the credential advice [DON-353]', () => {
+    // Tracking has stopped completely mid-mission: that is TRACKING LOST, not an
+    // amber notice, but the fix is still to re-enter the password in Settings.
+    const warning = 'Stored Traccar credentials are damaged. Tracking is disabled; re-enter the password or token in Settings.'
+    const kept = { device_cache_stale: false } as unknown as NormalizedTrackingPosition
+    for (const [phase, lead] of [['active', 'TRACKING LOST'], ['paused', 'MISSION PAUSED']] as const) {
+      const headline = describeTrackingHeadline({
+        ...base, phase, positions: [kept],
+        status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+      })
+      expect(headline.condition, phase).toBe('credentials')
+      expect(headline.tone, phase).toBe('alert')
+      expect(headline.alarm, phase).toMatch(new RegExp(`^${lead}`))
+      expect(headline.alarm, phase).toMatch(/password or token/)
+      expect(headline.problems.slice(0, 2), phase).toEqual([lead, 'Re-enter tracking password'])
+      expect(headline.text, phase).toMatch(/Settings/)
+      // The runtime keeps the positions already on the map; they are last received.
+      expect(headline.lastReceivedShown, phase).toBe(true)
+    }
+    // A failed record does not hide that tracking itself has stopped.
+    const recordToo = describeTrackingHeadline({
+      ...base, phase: 'active', evidenceState: 'degraded',
+      status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+    })
+    expect(recordToo.condition).toBe('credentials')
+    expect(recordToo.lastReceivedShown).toBe(false)
   })
 
   it('keeps the last confirmed time through the null the runtime publishes on pause, per mission', () => {
