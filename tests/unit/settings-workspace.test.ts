@@ -57,12 +57,21 @@ describe('SettingsWorkspace', () => {
     useSettingsApplyStore.setState({ failure: null })
   })
 
-  it('says when saved settings were damaged and set aside, until Save repairs them [M-47]', async () => {
+  it('says when saved settings were damaged and set aside, until Save repairs them [M-47] [DON-360]', async () => {
     const notice = 'Saved settings could not be read, so SAR Tracker set them aside and started with default settings.'
     const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
-    arrangeDefaults({ ...DEFAULT_APP_SETTINGS, settingsRecoveryNotice: notice })
-    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
-    render(React.createElement(SettingsWorkspace, { open: true, onClose: vi.fn() }))
+    arrangeDefaults()
+    // A stateful store: Save replaces what the next open loads, as the main
+    // process does once it has rewritten settings.json.
+    let stored: typeof DEFAULT_APP_SETTINGS & { settingsRecoveryNotice?: string } =
+      { ...DEFAULT_APP_SETTINGS, settingsRecoveryNotice: notice }
+    mocks.loadAppSettings.mockImplementation(async () => stored)
+    mocks.saveAppSettings.mockImplementation(async (draft: AppSettingsDraft) => {
+      stored = { ...DEFAULT_APP_SETTINGS, missionDefaults: draft.missionDefaults }
+      return stored
+    })
+    const onClose = vi.fn()
+    render(React.createElement(SettingsWorkspace, { open: true, onClose }))
     await waitForEnabledButton('[data-testid="settings-save"]')
 
     const banner = document.querySelector('[data-testid="settings-recovery-notice"]')
@@ -71,12 +80,33 @@ describe('SettingsWorkspace', () => {
     // Save stays available: it is how the damaged file is repaired.
     expect(getButton('[data-testid="settings-save"]').disabled).toBe(false)
 
-    arrangeDefaults()
+    await act(async () => {
+      getButton('[data-testid="settings-save"]').click()
+    })
+    expect(mocks.saveAppSettings).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
+
     act(() => root?.unmount())
     host?.remove()
     render(React.createElement(SettingsWorkspace, { open: true, onClose: vi.fn() }))
     await waitForEnabledButton('[data-testid="settings-save"]')
+    expect(mocks.loadAppSettings).toHaveBeenCalledTimes(2)
     expect(document.querySelector('[data-testid="settings-recovery-notice"]')).toBeNull()
+  })
+
+  it('keeps the damaged-settings notice when Save fails [DON-360]', async () => {
+    const notice = 'Saved settings could not be read, so SAR Tracker set them aside and started with default settings.'
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    arrangeDefaults({ ...DEFAULT_APP_SETTINGS, settingsRecoveryNotice: notice })
+    mocks.saveAppSettings.mockRejectedValue(new Error('Settings store unavailable.'))
+    render(React.createElement(SettingsWorkspace, { open: true, onClose: vi.fn() }))
+    await waitForEnabledButton('[data-testid="settings-save"]')
+
+    await act(async () => {
+      getButton('[data-testid="settings-save"]').click()
+    })
+
+    expect(document.querySelector('[data-testid="settings-recovery-notice"]')?.textContent).toBe(notice)
   })
 
   describe('menu of five sections [DON-343]', () => {

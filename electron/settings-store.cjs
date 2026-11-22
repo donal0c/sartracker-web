@@ -10,6 +10,7 @@ const { decodeOfficialMapTile } = require('./official-map-tile-decoder.cjs')
 const SETTINGS_FILE_NAME = 'settings.json'
 // A damaged settings.json is renamed to settings.json.corrupt-<timestamp> and
 // kept, never deleted, so what was lost stays inspectable [M-47].
+const SETTINGS_RECOVERY_REASON = 'settings_file_unreadable'
 const SETTINGS_UNREADABLE_MESSAGE =
   'Saved settings could not be read, so SAR Tracker set them aside and started with default settings. Tracking is off until you re-enter the Traccar settings (and any rosters or maps you rely on) in Settings and press Save.'
 // Legacy keyring-encrypted secret file (beta.5 and earlier). Read-only now:
@@ -98,6 +99,7 @@ function createElectronSettingsStore(options) {
   const platform = options.platform ?? process.platform
   const now = options.now ?? (() => new Date())
   const decodeTile = options.decodeOfficialMapTile ?? decodeOfficialMapTile
+  const runtimeLog = options.runtimeLog
   let saveTail = Promise.resolve()
 
   return {
@@ -107,8 +109,71 @@ function createElectronSettingsStore(options) {
     testTrackingConnection,
   }
 
+  /**
+   * Runs a task in the same queue as Save, so setting a damaged file aside can
+   * never interleave with a Save that is repairing it [DON-360].
+   */
+  function runExclusive(task) {
+    const operation = saveTail.then(task)
+    saveTail = operation.catch(() => undefined)
+    return operation
+  }
+
+  /**
+   * Reads and normalizes settings.json. A damaged file is set aside only while
+   * holding the Save queue, after reading it again there.
+   *
+   * @param {boolean} [holdsQueue] true when called from inside the Save queue
+   */
+  async function readPersisted(holdsQueue = false) {
+    const file = await readSettingsFile(settingsPath)
+    if (file.state === 'ok') return normalizePersistedSettings(file.parsed, null)
+    if (file.state === 'missing') {
+      return normalizePersistedSettings({}, await findSetAsideSettings(settingsPath))
+    }
+    return holdsQueue ? recoverDamagedSettings() : runExclusive(recoverDamagedSettings)
+  }
+
+  /**
+   * Sets a damaged settings.json aside. Must run inside the Save queue: it reads
+   * the file again first, because a Save may have repaired it, or another
+   * reader set it aside, since the caller saw it damaged [DON-360].
+   */
+  async function recoverDamagedSettings() {
+    const file = await readSettingsFile(settingsPath)
+    if (file.state === 'ok') return normalizePersistedSettings(file.parsed, null)
+    if (file.state === 'missing') {
+      return normalizePersistedSettings({}, await findSetAsideSettings(settingsPath))
+    }
+    let settingsRecovery
+    try {
+      settingsRecovery = await setAsideDamagedSettings(settingsPath, now)
+    } catch (error) {
+      logSettingsEvent({
+        level: 'error',
+        event: 'settings_file_set_aside_failed',
+        fields: { code: error?.cause?.code ?? error?.code ?? 'unknown' },
+      })
+      throw error
+    }
+    logSettingsEvent({
+      level: 'error',
+      event: 'settings_file_set_aside',
+      fields: { setAsideFileName: settingsRecovery.setAsideFileName, reason: SETTINGS_RECOVERY_REASON },
+    })
+    return normalizePersistedSettings({}, settingsRecovery)
+  }
+
+  /** Records a settings recovery decision in the runtime log; never includes settings contents. */
+  function logSettingsEvent(entry) {
+    if (runtimeLog === undefined || runtimeLog === null) return
+    void Promise.resolve()
+      .then(() => runtimeLog.append(entry))
+      .catch(() => undefined)
+  }
+
   async function loadAppSettings() {
-    const persisted = await readSettings(settingsPath, now)
+    const persisted = await readPersisted()
     persisted.officialMaps.packages = persisted.officialMaps.packages.map(revalidateOfficialMapPackage)
     return toView(
       persisted,
@@ -118,15 +183,13 @@ function createElectronSettingsStore(options) {
 
   /** Serializes atomic settings replacements so roster history cannot be lost by concurrent saves. */
   function saveAppSettings(input, options = {}) {
-    const operation = saveTail.then(() => persistAppSettings(input, options))
-    saveTail = operation.catch(() => undefined)
-    return operation
+    return runExclusive(() => persistAppSettings(input, options))
   }
 
   /** Persists a settings revision and its local roster provenance in the same atomic file. */
   async function persistAppSettings(input, options) {
     // A damaged file reads as defaults (already set aside), so Save repairs it [M-47].
-    const previous = await readSettings(settingsPath, now)
+    const previous = await readPersisted(true)
     const existingSecretPresent = await hasSecret(
       input.dataSource.authMode,
       previous.credentialGeneration,
@@ -147,11 +210,28 @@ function createElectronSettingsStore(options) {
         ),
         weather: normalizeWeather(input.weather),
       }
+      // After damaged settings were set aside, the earlier roster and its
+      // history are unknown: record that gap, linked to the kept file, rather
+      // than presenting the defaults as what was there before [DON-360].
+      const gap = previous.settingsRecovery
+      const settingsRecoveries = [...previous.settingsRecoveries]
+      if (gap !== null) {
+        settingsRecoveries.push({
+          recordedAt: now().toISOString(),
+          reason: SETTINGS_RECOVERY_REASON,
+          setAsideFileName: gap.setAsideFileName,
+        })
+      }
+      if (settingsRecoveries.length > 0) next.settingsRecoveries = settingsRecoveries
       const history = [...previous.adminRosterHistory]
       if (JSON.stringify(previous.missionDefaults.adminRoster) !== JSON.stringify(next.missionDefaults.adminRoster)) {
         if (history.length >= 10_000) throw new Error('Administrator roster history is full. Contact support before changing it.')
-        history.push({ recordedAt: now().toISOString(), authority: 'trusted_local_settings',
-          previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster })
+        history.push(gap === null
+          ? { recordedAt: now().toISOString(), authority: 'trusted_local_settings',
+            previous: previous.missionDefaults.adminRoster, next: next.missionDefaults.adminRoster }
+          : { recordedAt: now().toISOString(), authority: 'trusted_local_settings',
+            previous: null, previousUnknownReason: SETTINGS_RECOVERY_REASON,
+            setAsideFileName: gap.setAsideFileName, next: next.missionDefaults.adminRoster })
       }
       if (history.length > 0) next.adminRosterHistory = history
 
@@ -163,6 +243,13 @@ function createElectronSettingsStore(options) {
         next.credentialGeneration = credentialGeneration
       }
       await writeJsonAtomically(settingsPath, next)
+      if (gap !== null) {
+        logSettingsEvent({
+          level: 'warn',
+          event: 'settings_file_repaired',
+          fields: { setAsideFileName: gap.setAsideFileName },
+        })
+      }
       await removeDeletedAppOwnedOfficialMapPackages(previous.officialMaps.packages, next.officialMaps.packages, userDataPath)
 
       return toView(
@@ -180,7 +267,7 @@ function createElectronSettingsStore(options) {
   }
 
   async function loadRuntimeBootstrapSettings(forceConnect = false) {
-    const persisted = await readSettings(settingsPath, now)
+    const persisted = await readPersisted()
     const secretResult = await readSecret(
       persisted.dataSource.authMode,
       persisted.credentialGeneration,
@@ -229,7 +316,7 @@ function createElectronSettingsStore(options) {
   }
 
   async function testTrackingConnection(input) {
-    const persisted = await readSettings(settingsPath, now)
+    const persisted = await readPersisted()
     const existingSecretPresent = await hasSecret(
       input.dataSource.authMode,
       persisted.credentialGeneration,
@@ -258,7 +345,7 @@ function createElectronSettingsStore(options) {
       return nextSecret
     }
 
-    const persisted = await readSettings(settingsPath)
+    const persisted = await readPersisted()
     const result = await readSecret(dataSource.authMode, persisted.credentialGeneration)
     if (result.unsafeReason !== undefined) {
       throw new Error(result.unsafeReason)
@@ -476,17 +563,16 @@ function createElectronSettingsStore(options) {
 }
 
 /**
- * Reads and normalizes settings.json. A file that is not a JSON object (empty,
- * truncated, garbage) is set aside and read as defaults with a recovery
- * marker; a file that cannot be read at all still throws [M-47].
+ * Normalizes parsed settings.json contents. `settingsRecovery` names the kept
+ * damaged file while settings have not been saved since it was set aside.
  *
- * @param {string} settingsPath absolute path of settings.json
- * @param {() => Date} now clock used to name a set-aside file
+ * @param {Record<string, unknown>} parsed parsed settings object, or {} for defaults
+ * @param {{ setAsideFileName: string } | null} settingsRecovery
  */
-async function readSettings(settingsPath, now = () => new Date()) {
-  const { parsed, settingsRecovery } = await readSettingsFile(settingsPath, now)
+function normalizePersistedSettings(parsed, settingsRecovery) {
   return {
     settingsRecovery,
+    settingsRecoveries: readSettingsRecoveries(parsed.settingsRecoveries),
     credentialGeneration: readCredentialGeneration(parsed.credentialGeneration),
     adminRosterHistory: readAdminRosterHistory(parsed.adminRosterHistory),
     missionDefaults: normalizeMissionDefaults({
@@ -508,16 +594,20 @@ async function readSettings(settingsPath, now = () => new Date()) {
 }
 
 /**
- * Returns the parsed settings object, or `{}` plus a recovery marker when the
- * file was damaged (now or on an earlier launch that was never repaired).
+ * Reads settings.json without changing it. A file that is not a JSON object
+ * (empty, truncated, garbage) is `damaged`; a file that cannot be read at all
+ * still throws [M-47].
+ *
+ * @param {string} settingsPath absolute path of settings.json
+ * @returns {Promise<{ state: 'ok', parsed: Record<string, unknown> } | { state: 'missing' } | { state: 'damaged' }>}
  */
-async function readSettingsFile(settingsPath, now) {
+async function readSettingsFile(settingsPath) {
   let raw
   try {
     raw = await fs.readFile(settingsPath, 'utf8')
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
-    return { parsed: {}, settingsRecovery: await findSetAsideSettings(settingsPath) }
+    return { state: 'missing' }
   }
   let parsed
   try {
@@ -526,14 +616,14 @@ async function readSettingsFile(settingsPath, now) {
     parsed = undefined
   }
   if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    return { parsed, settingsRecovery: null }
+    return { state: 'ok', parsed }
   }
-  return { parsed: {}, settingsRecovery: await setAsideDamagedSettings(settingsPath, now) }
+  return { state: 'damaged' }
 }
 
 /**
- * Renames a damaged settings.json aside and records the rename durably. A
- * concurrent reader that already moved it finds the set-aside copy instead.
+ * Renames a damaged settings.json aside and records the rename durably.
+ * Callers hold the Save queue.
  */
 async function setAsideDamagedSettings(settingsPath, now) {
   const stamp = now().toISOString().replace(/[:.]/gu, '-')
@@ -568,14 +658,40 @@ async function findSetAsideSettings(settingsPath) {
   return setAside.length === 0 ? null : { setAsideFileName: setAside[setAside.length - 1] }
 }
 
+/**
+ * Reads the durable record of settings files set aside and later repaired by
+ * Save [DON-360]. A malformed record is refused rather than dropped.
+ */
+function readSettingsRecoveries(value) {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 1_000 || value.some((entry) =>
+    entry === null || typeof entry !== 'object' || entry.reason !== SETTINGS_RECOVERY_REASON
+    || typeof entry.recordedAt !== 'string' || Number.isNaN(Date.parse(entry.recordedAt))
+    || typeof entry.setAsideFileName !== 'string' || !entry.setAsideFileName.startsWith(`${SETTINGS_FILE_NAME}.corrupt-`))) {
+    throw new Error('The record of repaired settings is invalid. Contact support before saving settings.')
+  }
+  return value
+}
+
+/**
+ * A roster history entry's `previous` is either the roster that was saved, or
+ * null with the reason it is unknown and the kept file it was lost from [DON-360].
+ */
+function isKnownOrRecordedUnknownPrevious(entry) {
+  if (Array.isArray(entry.previous)) return true
+  return entry.previous === null
+    && entry.previousUnknownReason === SETTINGS_RECOVERY_REASON
+    && typeof entry.setAsideFileName === 'string'
+}
+
 /** Retains local configuration provenance without presenting it as authenticated user identity. */
 function readAdminRosterHistory(value) {
   if (value === undefined) return []
   if (!Array.isArray(value) || value.length > 10_000 || value.some((entry) =>
     entry === null || typeof entry !== 'object' || entry.authority !== 'trusted_local_settings'
     || typeof entry.recordedAt !== 'string' || Number.isNaN(Date.parse(entry.recordedAt))
-    || !Array.isArray(entry.previous) || !Array.isArray(entry.next)
-    || [...entry.previous, ...entry.next].some((name) => typeof name !== 'string'))) {
+    || !isKnownOrRecordedUnknownPrevious(entry) || !Array.isArray(entry.next)
+    || [...(entry.previous ?? []), ...entry.next].some((name) => typeof name !== 'string'))) {
     throw new Error('Administrator roster history is invalid. Contact support before saving settings.')
   }
   return value

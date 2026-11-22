@@ -78,6 +78,7 @@ describe('electron settings store', () => {
   let userDataPath: string | null = null
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     if (userDataPath !== null) {
       await rm(userDataPath, { recursive: true, force: true })
       userDataPath = null
@@ -1194,6 +1195,121 @@ describe('electron settings store', () => {
       expect((await readdir(userDataPath!)).some((name) => name.startsWith('settings.json.corrupt-'))).toBe(true)
     })
 
+    it('never sets aside a file that Save repaired while a stale reader was paused [DON-360]', async () => {
+      const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      const settingsPath = path.join(userDataPath!, 'settings.json')
+      await writeFile(settingsPath, '{"dataSource":', 'utf8')
+      const realReadFile = fsPromises.readFile.bind(fsPromises)
+      let releaseStaleReader: () => void = () => undefined
+      const staleReaderPaused = new Promise<void>((pausedResolve) => {
+        let paused = false
+        vi.spyOn(fsPromises, 'readFile').mockImplementation(async (...args: Parameters<typeof fsPromises.readFile>) => {
+          const contents = await realReadFile(...args)
+          if (!paused && String(args[0]) === settingsPath) {
+            paused = true
+            pausedResolve()
+            await new Promise<void>((release) => { releaseStaleReader = release })
+          }
+          return contents
+        })
+      })
+      const staleRead = store.loadAppSettings()
+      await staleReaderPaused
+      await store.loadAppSettings()
+      const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+      draft.dataSource.providerType = 'traccar_http'
+      draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+      draft.dataSource.email = 'sean'
+      draft.dataSource.secretInput = 'field-secret'
+      await store.saveAppSettings(draft)
+
+      releaseStaleReader()
+      await staleRead
+
+      const persisted = JSON.parse(await readFile(settingsPath, 'utf8'))
+      expect(persisted.dataSource.baseUrl).toBe('https://kmrtsar.eu')
+      expect((await readdir(userDataPath!)).filter((name) => name.startsWith('settings.json.corrupt-')))
+        .toHaveLength(1)
+    })
+
+    it('records the settings gap durably on Save instead of inventing roster history [DON-360]', async () => {
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      const settingsPath = path.join(userDataPath!, 'settings.json')
+      await writeFile(settingsPath, '{"missionDefaults":{"adminRoster":["Old"]},"adminRosterHistory":[', 'utf8')
+      await store.loadAppSettings()
+      const setAsideFileName = (await readdir(userDataPath!)).find((name) => name.startsWith('settings.json.corrupt-'))
+      const first = createSettingsDraft(DEFAULT_APP_SETTINGS)
+      first.missionDefaults.adminRoster = ['Alice']
+
+      await store.saveAppSettings(first)
+      const afterRepair = JSON.parse(await readFile(settingsPath, 'utf8'))
+
+      expect(afterRepair.settingsRecoveries).toEqual([{
+        recordedAt: expect.any(String),
+        reason: 'settings_file_unreadable',
+        setAsideFileName,
+      }])
+      expect(afterRepair.adminRosterHistory).toEqual([{
+        recordedAt: expect.any(String),
+        authority: 'trusted_local_settings',
+        previous: null,
+        previousUnknownReason: 'settings_file_unreadable',
+        setAsideFileName,
+        next: ['Alice'],
+      }])
+
+      const second = createSettingsDraft(DEFAULT_APP_SETTINGS)
+      second.missionDefaults.adminRoster = ['Bob']
+      const restarted = createElectronSettingsStore({
+        userDataPath: userDataPath!,
+        safeStorage: createMockSafeStorage('gnome_libsecret'),
+        platform: 'linux',
+        decodeOfficialMapTile: decodeOpaqueTile,
+      })
+      await restarted.saveAppSettings(second)
+      const later = JSON.parse(await readFile(settingsPath, 'utf8'))
+      expect(later.settingsRecoveries).toHaveLength(1)
+      expect(later.adminRosterHistory).toHaveLength(2)
+      expect(later.adminRosterHistory[1]).toEqual(expect.objectContaining({ previous: ['Alice'], next: ['Bob'] }))
+    })
+
+    it('logs setting a damaged file aside and its repair without the file contents [DON-360]', async () => {
+      const runtimeLog = { append: vi.fn(async () => undefined) }
+      const store = await createStore({ backend: 'gnome_libsecret', runtimeLog })
+      await writeFile(path.join(userDataPath!, 'settings.json'), '{"dataSource":{"baseUrl":"https://secret-host.example"', 'utf8')
+
+      await store.loadAppSettings()
+      await store.saveAppSettings(createSettingsDraft(DEFAULT_APP_SETTINGS))
+
+      expect(runtimeLog.append).toHaveBeenCalledWith({
+        level: 'error',
+        event: 'settings_file_set_aside',
+        fields: { setAsideFileName: expect.stringMatching(/^settings\.json\.corrupt-/u), reason: 'settings_file_unreadable' },
+      })
+      expect(runtimeLog.append).toHaveBeenCalledWith({
+        level: 'warn',
+        event: 'settings_file_repaired',
+        fields: { setAsideFileName: expect.stringMatching(/^settings\.json\.corrupt-/u) },
+      })
+      expect(JSON.stringify(runtimeLog.append.mock.calls)).not.toContain('secret-host')
+    })
+
+    it('logs when a damaged file cannot be set aside [DON-360]', async () => {
+      const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+      const runtimeLog = { append: vi.fn(async () => undefined) }
+      const store = await createStore({ backend: 'gnome_libsecret', runtimeLog })
+      await writeFile(path.join(userDataPath!, 'settings.json'), '{', 'utf8')
+      vi.spyOn(fsPromises, 'rename').mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
+
+      await expect(store.loadAppSettings()).rejects.toThrow('could not be set aside')
+      expect(runtimeLog.append).toHaveBeenCalledWith({
+        level: 'error',
+        event: 'settings_file_set_aside_failed',
+        fields: { code: 'EACCES' },
+      })
+    })
+
     it('still fails loudly when settings.json cannot be read at all', async () => {
       const store = await createStore({ backend: 'gnome_libsecret' })
       await mkdir(path.join(userDataPath!, 'settings.json'))
@@ -1238,6 +1354,7 @@ describe('electron settings store', () => {
     readonly now?: () => Date
     readonly decryptString?: (encrypted: Buffer) => string
     readonly decodeOfficialMapTile?: (bytes: Uint8Array, format: string) => boolean | Promise<boolean>
+    readonly runtimeLog?: { append: (entry: unknown) => Promise<unknown> }
   }): Promise<ElectronSettingsStore> {
     userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-electron-settings-'))
     return createElectronSettingsStore({
@@ -1250,7 +1367,8 @@ describe('electron settings store', () => {
       // keep the native-image boundary explicit while the freshness tests cover
       // malformed and replacement lifecycle behavior.
       decodeOfficialMapTile: options.decodeOfficialMapTile ?? decodeOpaqueTile,
-    })
+      runtimeLog: options.runtimeLog,
+    } as Parameters<typeof createElectronSettingsStore>[0])
   }
 })
 
