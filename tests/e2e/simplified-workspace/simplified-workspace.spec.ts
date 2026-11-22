@@ -491,6 +491,55 @@ test.describe('Simplified workspace', () => {
     await trackingShownAndFocused('dirty Settings after Discard')
   })
 
+  test('What to do closes nested workspaces in turn, and Keep editing on top drops the request', async ({ page }) => {
+    // The screen behind a modal is inert, so a second one opens only from code
+    // (for example the governance Admin Roster link opens Settings). Opened here
+    // through the store, as that code does.
+    await open(page)
+    await startMission(page)
+    await feed(page, { lost: true })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    const openSettingsOverDevices = async () => {
+      await showPeople(page)
+      await page.getByTestId('open-devices-workspace').click()
+      await expect(page.getByTestId('devices-workspace')).toBeVisible()
+      await page.evaluate(async () => {
+        const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+        useSettingsWorkspaceStore.getState().openWorkspace()
+      })
+      await expect(page.getByTestId('settings-workspace')).toBeVisible()
+      await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(2)
+    }
+
+    // Both close, then Tracking shows with focus.
+    await openSettingsOverDevices()
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+    expect(await page.getByTestId('ws-tracking-panel').evaluate((panel) => panel.contains(document.activeElement))).toBe(true)
+    await page.getByTestId('ws-panel-close').click()
+    await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+
+    // Dirty Settings on top: Keep editing drops the request, so closing both by hand later does not jump to Tracking.
+    await openSettingsOverDevices()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(2)
+    // Each workspace's own Close (Escape defers while another modal is open).
+    await page.getByRole('dialog', { name: 'Operational Settings' }).getByTestId('workspace-close-btn').click()
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(page.getByTestId('settings-workspace')).toBeHidden()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await page.locator('[role="dialog"][aria-modal="true"]').getByTestId('workspace-close-btn').click()
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0)
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)

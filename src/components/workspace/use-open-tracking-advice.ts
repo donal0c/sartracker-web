@@ -6,8 +6,9 @@ import { openModalWorkspaceCount, requestTopModalWorkspaceClose, subscribeModalW
  * What to do in the tracking alarm. With a modal workspace open, the advice is
  * behind it, so the workspace is asked to close through its own close handler
  * (Settings asks before losing unsaved edits) and Tracking shows once it has
- * closed. If the operator stays in the workspace (Keep editing, or any press
- * inside it that leaves it open), the request lapses.
+ * closed; nested workspaces are asked one after another. If the operator stays
+ * in a workspace (Keep editing, or any press inside it that leaves it open),
+ * the request lapses.
  */
 export function useOpenTrackingAdvice(showTracking: () => void): () => void {
   const pending = useRef(false)
@@ -15,17 +16,27 @@ export function useOpenTrackingAdvice(showTracking: () => void): () => void {
   useLayoutEffect(() => { show.current = showTracking })
 
   useEffect(() => {
+    let lastCount = openModalWorkspaceCount()
     const onModalsChanged = () => {
-      if (!pending.current || openModalWorkspaceCount() > 0) return
-      pending.current = false
-      show.current()
+      const count = openModalWorkspaceCount()
+      const closedOne = count < lastCount
+      lastCount = count
+      if (!pending.current) return
+      if (count === 0) {
+        pending.current = false
+        show.current()
+        return
+      }
+      // Nested workspaces: ask the next one down, through its own close handler.
+      if (closedOne) requestTopModalWorkspaceClose()
     }
     const onClick = (event: MouseEvent) => {
-      if (!pending.current) return
-      const dialog = document.querySelector('[role="dialog"][aria-modal="true"]')
-      if (dialog === null || !(event.target instanceof Node) || !dialog.contains(event.target)) return
-      // After the press has run: a Discard closes the workspace, Keep editing does not.
-      window.setTimeout(() => { if (openModalWorkspaceCount() > 0) pending.current = false }, 0)
+      if (!pending.current || !(event.target instanceof Element)) return
+      // The workspace the press came from, which with nested workspaces need not be the first in the page.
+      const dialog = event.target.closest('[role="dialog"][aria-modal="true"]')
+      if (dialog === null) return
+      // After the press has run: a Discard closes that workspace; Keep editing leaves it open and drops the request.
+      window.setTimeout(() => { if (dialog.isConnected) pending.current = false }, 0)
     }
     const unsubscribe = subscribeModalWorkspaces(onModalsChanged)
     document.addEventListener('click', onClick, true)
