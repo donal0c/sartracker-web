@@ -232,6 +232,33 @@ describe('people list', () => {
     expect(lost.find((person) => person.name === 'Ciara')?.statusText).toContain('Already out of date when updates stopped')
   })
 
+  it('counts on the badge only people with a problem of their own while the mission is paused [DON-356]', () => {
+    // Paused: everyone reads "Last known", but only Ciara, already out of date
+    // before the pause, has a problem of her own. The alarm already says the
+    // mission is paused.
+    const stoppedRows = [
+      row({ deviceId: '1', name: 'Aoife' }),
+      row({ deviceId: '2', name: 'Brian' }),
+      row({ deviceId: '4', name: 'Ciara', fixTime: '2026-11-06T11:30:00.000Z' }),
+    ]
+    const paused = buildPeopleRows(stoppedRows, NOW, { live: false, lastConfirmedAt: '2026-11-06T11:55:00.000Z', paused: true })
+    expect(countPeopleNeedingAttention(paused)).toBe(1)
+    // Everyone is still marked in the list; only the count changes.
+    expect(paused.every((person) => person.tone === 'attention')).toBe(true)
+    // With nobody singled out, the badge has nothing to count.
+    const allFresh = buildPeopleRows([row({ deviceId: '1', name: 'Aoife' })], NOW, { live: false, lastConfirmedAt: '2026-11-06T11:59:00.000Z', paused: true })
+    expect(countPeopleNeedingAttention(allFresh)).toBe(0)
+    // A tracking outage is not a pause: everyone still counts.
+    const outage = buildPeopleRows(stoppedRows, NOW, { live: false, lastConfirmedAt: '2026-11-06T11:55:00.000Z' })
+    expect(countPeopleNeedingAttention(outage)).toBe(3)
+  })
+
+  it('still counts a person whose current position is unconfirmed while tracking is live', () => {
+    const [person] = buildPeopleRows([row({ sourceDisplay: 'Last known' })], NOW)
+    expect(person?.tone).toBe('attention')
+    expect(countPeopleNeedingAttention(person === undefined ? [] : [person])).toBe(1)
+  })
+
   it('keeps an acknowledged stationary warning visible until movement clears it', () => {
     const [person] = buildPeopleRows([row({ stationaryAttention: true, attentionAcknowledged: true, attentionElapsedDisplay: '30 min without meaningful movement' })], NOW)
     expect(person?.tone).toBe('attention')
