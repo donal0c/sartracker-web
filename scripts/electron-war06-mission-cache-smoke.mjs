@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process'
 import { _electron as electron } from 'playwright'
 import { extractFile } from '@electron/asar'
 import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
+import { closeWorkspace, confirmFinishMission, openDevicesWorkspace, selectParticipants } from './operator-controls.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -159,7 +160,7 @@ async function main() {
     const positiveSamples = await observeActionSurface(activeLaunch.page, async () => {
       await resumeRecoverableMission(activeLaunch.page, missionA.id)
       await waitForValue(
-        () => readOperatorSurface(activeLaunch.page),
+        () => readOperatorSurface(activeLaunch.page, { open: true }),
         (surface) => surface.mode.toLowerCase() === 'offline'
           && surface.currentFixCount > 0 && surface.cachedDeviceCount > 0,
         'same-mission restart to show retained cache',
@@ -224,7 +225,7 @@ async function main() {
     const keyedObservation = await observeActionSurface(activeLaunch.page, async () => {
       await resumeRecoverableMission(activeLaunch.page, missionB.id)
       return waitForValue(
-        () => readOperatorSurface(activeLaunch.page),
+        () => readOperatorSurface(activeLaunch.page, { open: true }),
         (surface) => surface.warning.includes(DISCARDED_CACHE_WARNING),
         'planned keyed-cache discard warning for Mission B',
       )
@@ -262,7 +263,7 @@ async function main() {
     const legacyObservation = await observeActionSurface(activeLaunch.page, async () => {
       await resumeRecoverableMission(activeLaunch.page, missionB.id)
       return waitForValue(
-        () => readOperatorSurface(activeLaunch.page),
+        () => readOperatorSurface(activeLaunch.page, { open: true }),
         (surface) => surface.warning.includes(DISCARDED_CACHE_WARNING),
         'planned legacy-cache discard warning for Mission B',
       )
@@ -288,7 +289,7 @@ async function main() {
     provider.setAvailable(true)
     await waitForValue(
       async () => ({
-        surface: await readOperatorSurface(activeLaunch.page),
+        surface: await readOperatorSurface(activeLaunch.page, { open: true }),
         cache: await readCache(cachePath),
       }),
       (observation) => observation.surface.mode.toLowerCase() === 'online'
@@ -613,9 +614,9 @@ async function attestPackagedInputs(app, appPath) {
 
 /** Performs the real operator setup for Mission A, including participant selection. */
 async function prepareMissionA(page) {
-  const picker = page.getByTestId('participant-device-picker')
-  await picker.getByRole('checkbox').first().waitFor({ timeout: CONDITION_TIMEOUT_MS })
-  await picker.getByRole('checkbox').first().check()
+  // The picker may sit inside folds in the new layout (DON-341); the helper
+  // opens whichever exist and requires the picker.
+  await selectParticipants(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await page.getByTestId('mission-name-input').fill('WAR-06 Mission A')
   // Keep the synthetic history rows inside the real mission evidence window.
   // This is still operator setup through the production control, rather than
@@ -637,10 +638,7 @@ async function resumeRecoverableMission(page, missionId) {
 
 /** Finishes a mission through the operator-facing decision dialog. */
 async function finishMission(page, missionId) {
-  await page.getByTestId('mission-finish-btn').click()
-  const dialog = page.getByTestId('mission-finish-dialog')
-  await dialog.waitFor({ state: 'visible', timeout: CONDITION_TIMEOUT_MS })
-  await dialog.getByRole('button', { name: 'Confirm Finish', exact: true }).click()
+  await confirmFinishMission(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await waitForValue(
     () => readActiveMission(page),
     (mission) => mission === null,
@@ -714,36 +712,60 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
   return result
 }
 
-/** Reads the current operator-visible text without mutating renderer state. */
+/**
+ * Reads what the operator sees about tracking. The new layout (DON-341) has
+ * no always-on tracking readout: the connection mode, the tracking warning
+ * and each person's position source are in Devices, opened from People. With
+ * `open` (or `requireCounters`) it opens Devices first. Without it, it only
+ * reads what is already on screen, so the recovery sampler never changes the
+ * renderer; it then reports `devicesVisible: false` and no counts.
+ *
+ * The fix count is the people with a position; the cache count is those whose
+ * source reads Cache (or Stale, which only a cached position past its age
+ * limit shows), matching the retired Fixes and Cache counters.
+ */
 async function readOperatorSurface(page, options = {}) {
+  if (options.open === true || options.requireCounters === true) {
+    await openDevicesWorkspace(page, { timeoutMs: CONDITION_TIMEOUT_MS })
+  }
   const surface = await page.evaluate(() => {
-    const text = (testId) => document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
+    const shown = (element) => element !== null && element.getClientRects().length > 0
+    const text = (element) => element?.textContent?.trim() ?? ''
+    const devicesVisible = shown(document.querySelector('[data-testid="devices-workspace"]'))
+    const headline = document.querySelector('[data-testid="ws-tracking-headline"]')
+    const all = (prefix) => [...document.querySelectorAll(`[data-testid^="${prefix}"]`)]
     return {
-      mode: text('tracking-mode-chip'),
-      warning: text('tracking-warning'),
-      counters: text('tracking-counters'),
-      stationaryAttention: text('stationary-attention-summary'),
+      devicesVisible,
+      headline: headline?.getAttribute('aria-label') ?? '',
+      headlineCondition: headline?.getAttribute('data-condition') ?? '',
+      mode: devicesVisible ? text(document.querySelector('[data-testid="devices-tracking-mode"]')) : '',
+      warning: devicesVisible ? text(document.querySelector('[data-testid="devices-tracking-warning"]')) : '',
+      sources: devicesVisible ? all('device-source-').map(text) : [],
+      stationaryAttention: devicesVisible
+        ? all('device-attention-')
+          .filter((element) => !element.dataset.testid.startsWith('device-attention-unavailable-'))
+          .map(text).filter((value) => value !== '').join(' · ')
+        : '',
       body: document.body.innerText,
     }
   })
   if (options.requireCounters === true) {
-    assert.match(surface.counters, /Fixes\s*\d+/i, 'Tracking fixes counter is not readable on the operator surface.')
-    assert.match(surface.counters, /Cache\s*\d+/i, 'Tracking cache counter is not readable on the operator surface.')
+    assert.equal(surface.devicesVisible, true, 'Devices did not open, so the tracking readout is not readable on the operator surface.')
   }
+  const currentFixCount = surface.sources.filter((source) => source !== 'No fix').length
+  const cachedDeviceCount = surface.sources.filter((source) => source === 'Cache' || source === 'Stale').length
   return {
     ...surface,
-    currentFixCount: readCounter(surface.counters, 'Fixes'),
-    cachedDeviceCount: readCounter(surface.counters, 'Cache'),
+    counters: surface.devicesVisible ? `Fixes ${currentFixCount} Cache ${cachedDeviceCount}` : '',
+    currentFixCount,
+    cachedDeviceCount,
   }
 }
 
 /** Captures the operator device inspector and coordinates when a row exists. */
 async function captureDeviceWorkspace(launch, evidenceDir, phase) {
-  const openButton = launch.page.getByTestId('open-devices-workspace')
-  if (await openButton.count() === 0) return { visible: false }
-  await openButton.click()
-  const workspace = launch.page.getByTestId('devices-workspace')
-  await workspace.waitFor({ state: 'visible', timeout: CONDITION_TIMEOUT_MS })
+  // Devices opens from People in the new layout (DON-341).
+  const workspace = await openDevicesWorkspace(launch.page, { timeoutMs: CONDITION_TIMEOUT_MS })
   const row = launch.page.getByTestId(`device-select-name-${DEVICE_ID}`)
   const layout = workspace.locator('..')
   if (await row.count() > 0) {
@@ -755,8 +777,7 @@ async function captureDeviceWorkspace(launch, evidenceDir, phase) {
   const screenshotPath = path.join(evidenceDir, `${phase}-devices.png`)
   await launch.page.screenshot({ path: screenshotPath })
   launch.screenshots.push(screenshotPath)
-  const closeButton = launch.page.getByTestId('workspace-close-btn')
-  if (await closeButton.count() > 0) await closeButton.click()
+  await closeWorkspace(launch.page, { timeoutMs: CONDITION_TIMEOUT_MS })
   return {
     visible: true,
     screenshotPath,
@@ -806,12 +827,6 @@ function summarizeSurfaceSamples(samples) {
     discardWarningObserved: validSamples.some((sample) => sample.warning.includes(DISCARDED_CACHE_WARNING)),
     attentionObserved: validSamples.some((sample) => sample.stationaryAttention !== ''),
   }
-}
-
-/** Reads a named integer from the four-column tracking counter readout. */
-function readCounter(text, label) {
-  const value = text.match(new RegExp(`${label}\\s*(\\d+)`, 'i'))?.[1]
-  return value === undefined ? 0 : Number(value)
 }
 
 /** Reads mission evidence through the exposed read-only preload methods. */

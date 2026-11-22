@@ -8,6 +8,7 @@ import { createAttentionScenario, startAttentionServer } from './attention-serve
 import { validateAttentionSurface } from './attention-receipts.mjs'
 import { validateCanonicalIngestSurface } from './canonical-ingest-receipts.mjs'
 import { hashCandidateFile } from './candidate-artifacts.mjs'
+import { openDevicesWorkspace, unfoldParticipantPickers } from '../operator-controls.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -57,7 +58,7 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
     const headline = page.getByTestId('ws-tracking-headline')
     await headline.click()
     await expect(page.getByTestId('ws-tracking-happened')).toContainText(/not moving/i, { timeout: 60_000 })
-    await openDevicesFromPeople(page)
+    await openDevicesWorkspace(page)
     const attention = await page.getByTestId('device-attention-1').innerText()
     const stale = await page.getByTestId('device-status-2').innerText()
     await page.screenshot({ path: path.join(evidencePath, 'attention-raised.png'), fullPage: true })
@@ -124,20 +125,6 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
 }
 
 /**
- * Unfolds the start card's device picker (DON-341). "Change who's taking part"
- * wraps it only when a default group is chosen, so that outer fold is opened
- * when present and skipped otherwise; "Add one person at a time" is required.
- */
-async function unfoldParticipantPickers(page) {
-  const picker = page.getByTestId('ws-pick-devices')
-  await page.getByTestId('ws-change-participants').or(picker).first().waitFor({ state: 'attached', timeout: 30_000 })
-  const outer = page.getByTestId('ws-change-participants')
-  if (await outer.count() > 0 && await outer.evaluate(element => !element.open)) await outer.locator('summary').first().click()
-  await picker.waitFor({ state: 'visible', timeout: 30_000 })
-  if (await picker.evaluate(element => !element.open)) await picker.locator('summary').first().click()
-}
-
-/**
  * The tracking headline's visible problem words, as shown in the top bar.
  * Fails loudly when none are shown.
  */
@@ -145,14 +132,6 @@ async function visibleHeadlineWords(headline) {
   const words = headline.getByTestId('ws-tracking-problems')
   await words.waitFor({ state: 'visible', timeout: 10_000 })
   return (await words.innerText()).trim()
-}
-
-/** Opens All devices through People, where the new layout keeps it (DON-341). */
-async function openDevicesFromPeople(page) {
-  const opener = page.getByTestId('open-devices-workspace')
-  if (!await opener.isVisible()) await page.getByTestId('ws-toggle-people').click()
-  await opener.click()
-  await page.getByTestId('devices-workspace').waitFor()
 }
 
 /** Hash independently read durable rows around a presentation-only acknowledgement. */

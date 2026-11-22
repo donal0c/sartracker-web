@@ -42,6 +42,7 @@ import {
 import { startRenderTraceDiagnostics } from '../build/electron-render-trace-diagnostics.js'
 import { startArchiveLaunch } from './qualification/archive-launch.mjs'
 import { openMissionSection } from './mission-sections.mjs'
+import { selectParticipants } from './operator-controls.mjs'
 import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
@@ -1405,15 +1406,11 @@ async function startLivenessMission(page, expectedDeviceId) {
   const participantSelection = page.getByTestId('participant-selection-step')
   const missionModelEnabled = await participantSelection.isVisible().catch(() => false)
   if (missionModelEnabled) {
-    const deviceCheckboxes = page
-      .getByTestId('participant-device-picker')
-      .locator('input[type="checkbox"]')
-    await deviceCheckboxes.first().waitFor({ state: 'attached', timeout: 30_000 })
-    const deviceCount = await deviceCheckboxes.count()
-    if (deviceCount !== 1) {
-      throw new Error('Archive-lifecycle liveness mission did not receive one mock device.')
-    }
-    await deviceCheckboxes.first().check({ force: true })
+    // The device picker may sit inside folds (DON-341); the helper opens them,
+    // requires exactly one mock device, then ticks it.
+    await selectParticipants(page, { expectedCount: 1 }).catch((error) => {
+      throw new Error(`Archive-lifecycle liveness mission did not receive one mock device: ${error instanceof Error ? error.message : String(error)}`)
+    })
   }
   await page.getByTestId('mission-start-btn').click({ force: true })
   const mission = await waitForActiveMission(page, LIVENESS_MISSION_NAME, 30_000)
