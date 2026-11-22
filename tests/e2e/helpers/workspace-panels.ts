@@ -116,3 +116,19 @@ export async function closeMissionPanel(page: Page): Promise<void> {
   if (await close.isVisible()) await close.click()
   await expect(page.getByTestId('mission-control')).toBeHidden()
 }
+
+/** Opens Diagnostics, which now lives under More in the top bar (DON-341). */
+export async function openDiagnostics(page: Page): Promise<void> {
+  if (!await page.getByTestId('open-diagnostics-workspace').isVisible()) {
+    await page.getByTestId('ws-more-button').click()
+  }
+  await page.getByTestId('open-diagnostics-workspace').click()
+  await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+}
+
+/** Opens the Devices workspace through People's "All devices" link (DON-341). */
+export async function openDevicesWorkspace(page: Page): Promise<void> {
+  await openWorkspacePanel(page, 'people')
+  await page.getByTestId('open-devices-workspace').click()
+  await expect(page.getByTestId('devices-workspace')).toBeVisible()
+}

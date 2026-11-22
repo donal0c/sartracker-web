@@ -84,6 +84,16 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   const openDiagnostics = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const openReview = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
+  const moreButtonRef = useRef<HTMLButtonElement>(null)
+  /**
+   * Closes the menu and opens a workspace. The menu item is about to unmount, so
+   * focus moves to More first; the workspace returns focus there when it closes.
+   */
+  const closeMenuTo = (openWorkspace: () => void) => {
+    setOpen(false)
+    moreButtonRef.current?.focus()
+    openWorkspace()
+  }
 
   // A press inside a child's portal (the weather menu renders on the body so the
   // top bar cannot clip it [DON-340]) is outside this element in the page but
@@ -107,11 +117,11 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
 
   return (
     <div className="relative" onPointerDown={() => { pressedInside.current = true }} ref={ref}>
-      <button aria-expanded={open} className="ws-bar-button" data-testid="ws-more-button" onClick={() => setOpen(!open)} type="button">More ▾</button>
+      <button aria-expanded={open} className="ws-bar-button" data-testid="ws-more-button" onClick={() => setOpen(!open)} ref={moreButtonRef} type="button">More ▾</button>
       {open ? (
         <div className="ws-menu" data-testid="ws-more-menu">
-          <button data-testid="ws-open-review" onClick={() => { setOpen(false); openReview() }} type="button">Review and replay</button>
-          <button data-testid="open-diagnostics-workspace" onClick={() => { setOpen(false); openDiagnostics() }} type="button">Diagnostics</button>
+          <button data-testid="ws-open-review" onClick={() => { closeMenuTo(openReview) }} type="button">Review and replay</button>
+          <button data-testid="open-diagnostics-workspace" onClick={() => { closeMenuTo(openDiagnostics) }} type="button">Diagnostics</button>
           <a data-testid="open-help-manual" href="./manual/index.html" rel="noreferrer" target="_blank">Help</a>
           <div className="ws-menu-row">{props.weather}</div>
           <div className="ws-menu-row"><ThemeToggle /></div>
