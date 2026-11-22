@@ -95,6 +95,15 @@ test.describe('A3.9 weather links menu', () => {
     await page.keyboard.press('Escape')
     await expect(page.getByTestId('weather-menu')).toBeHidden()
   })
+
+  test('More closes on the first press outside it [DON-341]', async ({ page }) => {
+    await page.getByTestId('ws-more-button').click()
+    await expect(page.getByTestId('ws-more-menu')).toBeVisible()
+    const map = await page.getByTestId('map-container').boundingBox()
+    if (map === null) throw new Error('Map is not on screen.')
+    await page.mouse.click(map.x + map.width / 2, map.y + map.height / 2)
+    await expect(page.getByTestId('ws-more-menu')).toBeHidden()
+  })
 })
 
 /** Weather sits under More in the top bar (DON-341); that is the only navigation change. */

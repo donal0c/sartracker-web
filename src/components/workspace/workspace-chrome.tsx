@@ -94,6 +94,8 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
 
   useEffect(() => {
     if (!open) return
+    // The press that opened More marked itself inside before this listener existed.
+    pressedInside.current = false
     const close = (event: PointerEvent) => {
       const inside = pressedInside.current || (ref.current !== null && ref.current.contains(event.target as Node))
       pressedInside.current = false
