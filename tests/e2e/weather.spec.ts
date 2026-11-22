@@ -1,13 +1,13 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 test.describe('A3.9 weather links menu', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
   })
 
   test('shows an explicit empty state when no weather links are configured', async ({ page }) => {
-    await page.getByTestId('weather-menu-trigger').click()
+    await openWeatherMenu(page)
 
     await expect(page.getByTestId('weather-menu')).toContainText(
       'No weather links configured',
@@ -36,7 +36,7 @@ test.describe('A3.9 weather links menu', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
-    await page.getByTestId('weather-menu-trigger').click()
+    await openWeatherMenu(page)
     await expect(page.getByTestId('weather-menu')).toContainText('Met Éireann')
 
     const popupPromise = page.waitForEvent('popup')
@@ -77,7 +77,7 @@ test.describe('A3.9 weather links menu', () => {
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
-    await page.getByTestId('weather-menu-trigger').click()
+    await openWeatherMenu(page)
     const link = page.getByTestId('weather-link-open-0')
     await expect(link).toBeVisible()
 
@@ -96,3 +96,9 @@ test.describe('A3.9 weather links menu', () => {
     await expect(page.getByTestId('weather-menu')).toBeHidden()
   })
 })
+
+/** Weather sits under More in the top bar (DON-341); that is the only navigation change. */
+async function openWeatherMenu(page: Page) {
+  await page.getByTestId('ws-more-button').click()
+  await page.getByTestId('weather-menu-trigger').click()
+}

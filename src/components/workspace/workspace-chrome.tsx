@@ -85,17 +85,26 @@ function MoreMenu(props: { readonly weather: ReactNode }) {
   const openDiagnostics = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const openReview = useMissionReviewWorkspaceStore((state) => state.openWorkspace)
 
+  // A press inside a child's portal (the weather menu renders on the body so the
+  // top bar cannot clip it [DON-340]) is outside this element in the page but
+  // inside it in React, whose events bubble through portals. Mark those presses
+  // so the window listener, which runs after React's, does not close More and
+  // unmount the weather link before its click lands.
+  const pressedInside = useRef(false)
+
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => {
-      if (ref.current !== null && !ref.current.contains(event.target as Node)) setOpen(false)
+      const inside = pressedInside.current || (ref.current !== null && ref.current.contains(event.target as Node))
+      pressedInside.current = false
+      if (!inside) setOpen(false)
     }
     window.addEventListener('pointerdown', close)
     return () => window.removeEventListener('pointerdown', close)
   }, [open])
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative" onPointerDown={() => { pressedInside.current = true }} ref={ref}>
       <button aria-expanded={open} className="ws-bar-button" data-testid="ws-more-button" onClick={() => setOpen(!open)} type="button">More ▾</button>
       {open ? (
         <div className="ws-menu" data-testid="ws-more-menu">
