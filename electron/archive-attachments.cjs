@@ -641,7 +641,9 @@ async function* streamArchiveAttachment(descriptor) {
 
 module.exports = {
   ArchiveAttachmentError,
+  MAX_ATTACHMENT_BYTES,
   enumerateArchiveAttachments,
+  readCustodyV2,
   readArchiveAttachmentReferenceLedger,
   streamArchiveAttachment,
   verifyArchiveAttachmentEntryProofs,

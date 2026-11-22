@@ -134,6 +134,7 @@ const {
   createParticipantStore,
 } = require('./participant-store.cjs')
 const { createResponsiveMissionWriter } = require('./responsive-mission-writer.cjs')
+const { readCustodyV2 } = require('./archive-attachments.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
 const {
@@ -3109,17 +3110,25 @@ function createElectronMissionStore(options) {
     runMarkerAttachmentIngest: async (missionId, writeAttachment, cleanupAttachment) =>
       enqueueAttachmentLifecycleOperation(missionId, async () => {
         ensureWritableMission(db, missionId)
-        const attachmentPath = await writeAttachment()
+        const written = await writeAttachment()
+        const attachmentPath = typeof written === 'string' ? written : written?.attachmentPath
         try {
+          if (typeof attachmentPath !== 'string' || attachmentPath === '') {
+            throw new Error('Attachment write returned no stored path.')
+          }
+          const custody = typeof written === 'string'
+            ? {}
+            : normalizeMarkerAttachmentCustody(written.custody, missionId, attachmentPath)
           db.transaction(() => {
             ensureWritableMission(db, missionId)
             insertEvent(db, missionId, 'marker_attachment_ingested', now(), {
               attachment_path: attachmentPath,
+              ...custody,
             })
           }).immediate()
           return attachmentPath
         } catch (error) {
-          if (typeof cleanupAttachment === 'function') {
+          if (typeof cleanupAttachment === 'function' && typeof attachmentPath === 'string') {
             try {
               await cleanupAttachment(attachmentPath)
             } catch (cleanupError) {
@@ -12583,6 +12592,36 @@ function validateLatLon(lat, lon, label) {
   }
   if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
     throw new Error(`${label} longitude must be a finite value between -180 and 180.`)
+  }
+}
+
+/**
+ * Validates the v2 custody fields a live attachment write reports with the
+ * archive reader's own rules, so the ingest event never records custody the
+ * archive would later reject [M-41]. Returns only the known fields.
+ */
+function normalizeMarkerAttachmentCustody(custody, missionId, attachmentPath) {
+  let valid = custody !== null && typeof custody === 'object'
+    && custody.custody_version === 2
+    && typeof custody.attachment_id === 'string'
+    && path.basename(attachmentPath).startsWith(`${custody.attachment_id}-`)
+  if (valid) {
+    try {
+      readCustodyV2(custody, missionId, attachmentPath)
+    } catch {
+      valid = false
+    }
+  }
+  if (!valid) {
+    throw new Error('Attachment custody record is invalid; the attachment was not saved.')
+  }
+  return {
+    custody_version: 2,
+    attachment_id: custody.attachment_id,
+    size_bytes: custody.size_bytes,
+    sha256: custody.sha256,
+    relative_path: custody.relative_path,
+    display_name: custody.display_name,
   }
 }
 
