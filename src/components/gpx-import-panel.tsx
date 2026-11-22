@@ -24,6 +24,7 @@ export function GpxImportPanel() {
   const mapImportTotal = useGpxStore((state) => state.mapImportTotal)
   const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
+  const watchNotice = useGpxStore((state) => state.watchNotice)
   const gpxGroupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenGpxImportIds = useLayerVisibilityStore((state) => state.hiddenGpxImportIds)
   const importIssues = useGpxStore((state) => state.importIssues)
@@ -112,6 +113,16 @@ export function GpxImportPanel() {
       {!desktopAvailable ? (
         <p className="sar-helper-text mt-3" data-testid="gpx-import-desktop-note">
           GPX import controls are available in the desktop app.
+        </p>
+      ) : null}
+      {watchNotice !== null ? (
+        <p
+          className={`mt-3 text-sm ${watchNotice.tone === 'problem' ? 'font-semibold text-rose-300' : 'text-emerald-300'}`}
+          data-testid="gpx-watch-notice"
+          data-tone={watchNotice.tone}
+          role={watchNotice.tone === 'problem' ? 'alert' : 'status'}
+        >
+          {watchNotice.message}
         </p>
       ) : null}
       {error !== null ? (

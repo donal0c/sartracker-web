@@ -181,6 +181,17 @@ function createElectronFileSystem(options) {
       assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
       return listWatchedGpxDirectoryPaths(normalizedDirectoryPath)
     },
+    /** Throws unless the operator chose this folder (or one above it) in this session [DON-337]. */
+    assertWatchableGpxDirectory: (directoryPath) => {
+      assertAllowedPath(normalizeRawGpxPath(directoryPath, 'Watched GPX folder'), 'Watched GPX folder')
+    },
+    /**
+     * Re-allows a folder the operator chose before a restart. Only the main
+     * process calls this, with paths it saved itself [DON-337].
+     */
+    restoreWatchedGpxDirectory: (directoryPath) => {
+      allowDirectory(normalizeRawGpxPath(directoryPath, 'Watched GPX folder'))
+    },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
       const fileName = normalizeAttachmentFileName(input.fileName)

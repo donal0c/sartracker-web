@@ -12,6 +12,7 @@ import {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { createElectronMissionStore } from '../../infrastructure/mission-store/electron-mission-store'
 import { createElectronGpxImportSource } from '../../infrastructure/gpx-import-source/electron-gpx-import-source'
+import { createElectronGpxWatchedFolderStore } from '../../infrastructure/gpx-watched-folders/electron-gpx-watched-folder-store'
 import { createTauriGpxImportSource } from '../../infrastructure/gpx-import-source/tauri-gpx-import-source'
 import { electronMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/electron-marker-attachment-store'
 import { noopMarkerAttachmentAdapter } from '../../infrastructure/marker-attachment-store/noop-marker-attachment-adapter'
@@ -231,6 +232,7 @@ export async function startAppRuntime(
     attachmentAdapter,
     missionModelEnabled,
     gpxWatchSource: gpxImportSource,
+    ...(runtimeKind === 'electron' ? { gpxWatchedFolderStore: createElectronGpxWatchedFolderStore() } : {}),
     requestAutosaveSync: (reason: AutosaveSyncReason) =>
       activeServices.requestAutosaveSync(reason),
     startMissionRuntime: resolvedDependencies.startMissionRuntime,
