@@ -31,12 +31,28 @@ async function ingestElectronMarkerAttachment(
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer())
-  const storedPath = await bridge.ingestMarkerAttachment({
-    missionId,
-    fileName,
-    bytesBase64: encodeBase64(bytes),
-  })
+  let storedPath: string
+  try {
+    storedPath = await bridge.ingestMarkerAttachment({
+      missionId,
+      fileName,
+      bytesBase64: encodeBase64(bytes),
+    })
+  } catch (error) {
+    throw unwrapIpcError(error)
+  }
   return { storedPath, fileName }
+}
+
+const IPC_ERROR_PREFIX = /^Error invoking remote method '[^']*': (?:[A-Za-z]*Error: )?/u
+
+/**
+ * Removes Electron's "Error invoking remote method" wrapper so the operator
+ * sees the main process's own plain-language refusal [M-41].
+ */
+function unwrapIpcError(error: unknown): unknown {
+  if (!(error instanceof Error) || !IPC_ERROR_PREFIX.test(error.message)) return error
+  return new Error(error.message.replace(IPC_ERROR_PREFIX, ''))
 }
 
 function encodeBase64(bytes: Uint8Array): string {

@@ -134,6 +134,7 @@ const {
   createParticipantStore,
 } = require('./participant-store.cjs')
 const { createResponsiveMissionWriter } = require('./responsive-mission-writer.cjs')
+const { readCustodyV2 } = require('./archive-attachments.cjs')
 const { runOutingFixSummaryInWorker } = require('./outing-fix-summary-runner.cjs')
 const { runCoverageQueryInWorker } = require('./coverage-query-runner.cjs')
 const {
@@ -12594,31 +12595,24 @@ function validateLatLon(lat, lon, label) {
   }
 }
 
-const MARKER_ATTACHMENT_SHA256 = /^[0-9a-f]{64}$/u
-const MARKER_ATTACHMENT_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
-
 /**
- * Validates the v2 custody fields a live attachment write reports, so the
- * ingest event never records custody the archive would later reject [M-41].
- * Returns only the known fields.
+ * Validates the v2 custody fields a live attachment write reports with the
+ * archive reader's own rules, so the ingest event never records custody the
+ * archive would later reject [M-41]. Returns only the known fields.
  */
 function normalizeMarkerAttachmentCustody(custody, missionId, attachmentPath) {
-  const basename = path.basename(attachmentPath)
-  if (
-    custody === null || typeof custody !== 'object'
-    || custody.custody_version !== 2
-    || typeof custody.attachment_id !== 'string'
-    || !MARKER_ATTACHMENT_UUID_V4.test(custody.attachment_id)
-    || !basename.startsWith(`${custody.attachment_id}-`)
-    || !Number.isSafeInteger(custody.size_bytes)
-    || custody.size_bytes < 1
-    || typeof custody.sha256 !== 'string'
-    || !MARKER_ATTACHMENT_SHA256.test(custody.sha256)
-    || custody.relative_path !== `missions/${missionId}/attachments/${basename}`
-    || typeof custody.display_name !== 'string'
-    || custody.display_name.length < 1
-    || Buffer.byteLength(custody.display_name, 'utf8') > 255
-  ) {
+  let valid = custody !== null && typeof custody === 'object'
+    && custody.custody_version === 2
+    && typeof custody.attachment_id === 'string'
+    && path.basename(attachmentPath).startsWith(`${custody.attachment_id}-`)
+  if (valid) {
+    try {
+      readCustodyV2(custody, missionId, attachmentPath)
+    } catch {
+      valid = false
+    }
+  }
+  if (!valid) {
     throw new Error('Attachment custody record is invalid; the attachment was not saved.')
   }
   return {

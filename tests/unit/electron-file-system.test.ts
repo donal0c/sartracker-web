@@ -306,6 +306,133 @@ describe('Electron filesystem service', () => {
     }
   })
 
+  it('flushes the parent folders again when a write is retried after a failed folder flush [M-41]', async () => {
+    const service = await createService()
+    const missionsDirectory = path.join(userDataPath!, 'missions')
+    const syncedPaths: string[] = []
+    let failMissionsFlushOnce = true
+    const realOpen = promisesFs.open.bind(promisesFs)
+    const openSpy = vi.spyOn(promisesFs, 'open').mockImplementation(async (...args) => {
+      const handle = await realOpen(...(args as Parameters<typeof promisesFs.open>))
+      const realSync = handle.sync.bind(handle)
+      handle.sync = async () => {
+        if (String(args[0]) === missionsDirectory && failMissionsFlushOnce) {
+          failMissionsFlushOnce = false
+          throw Object.assign(new Error('EIO: i/o error, fsync'), { code: 'EIO', syscall: 'fsync' })
+        }
+        syncedPaths.push(String(args[0]))
+        return realSync()
+      }
+      return handle
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const missionStore = {
+      runMarkerAttachmentIngest: async (_missionId: string, writeAttachment: () => Promise<unknown>) =>
+        (await writeAttachment() as { readonly attachmentPath: string }).attachmentPath,
+    }
+    const input = {
+      missionId: 'mission-retry',
+      fileName: 'retry.jpg',
+      bytesBase64: Buffer.from('retry evidence').toString('base64'),
+    }
+    try {
+      await expect(service.ingestMarkerAttachment(input, missionStore)).rejects.toThrow()
+      syncedPaths.length = 0
+      // The folders already exist now, so mkdir creates nothing on the retry.
+      const storedPath = await service.ingestMarkerAttachment(input, missionStore)
+      if (process.platform !== 'win32') {
+        const missionDirectory = path.join(missionsDirectory, 'mission-retry')
+        expect(syncedPaths).toEqual(expect.arrayContaining([
+          userDataPath!,
+          missionsDirectory,
+          missionDirectory,
+          path.dirname(storedPath),
+        ]))
+      }
+      await expect(readFile(storedPath, 'utf8')).resolves.toBe('retry evidence')
+    } finally {
+      openSpy.mockRestore()
+    }
+  })
+
+  it('tells the operator plainly when the attachment cannot be saved safely [M-41]', async () => {
+    const service = await createService()
+    const attachmentDirectory = path.join(userDataPath!, 'missions', 'mission-eio', 'attachments')
+    const realOpen = promisesFs.open.bind(promisesFs)
+    const openSpy = vi.spyOn(promisesFs, 'open').mockImplementation(async (...args) => {
+      const handle = await realOpen(...(args as Parameters<typeof promisesFs.open>))
+      if (String(args[0]).startsWith(`${attachmentDirectory}${path.sep}`)) {
+        handle.sync = async () => {
+          throw Object.assign(new Error(`EIO: i/o error, fsync '${String(args[0])}'`), {
+            code: 'EIO',
+            syscall: 'fsync',
+          })
+        }
+      }
+      return handle
+    })
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const runMarkerAttachmentIngest = vi.fn(async (
+      _missionId: string,
+      writeAttachment: () => Promise<unknown>,
+    ) => (await writeAttachment() as { readonly attachmentPath: string }).attachmentPath)
+    try {
+      const failure = service.ingestMarkerAttachment({
+        missionId: 'mission-eio',
+        fileName: 'eio.jpg',
+        bytesBase64: Buffer.from('never durable').toString('base64'),
+      }, { runMarkerAttachmentIngest })
+      await expect(failure).rejects.toMatchObject({
+        code: 'ATTACHMENT_WRITE_FAILED',
+        message: expect.stringMatching(
+          /could not be saved safely.*not added.*free disk space.*attach the file again/iu,
+        ),
+      })
+      await expect(failure).rejects.not.toThrow(/EIO|fsync|i\/o error/u)
+      expect(errors).toHaveBeenCalledWith(expect.stringMatching(/attachment write failed.*EIO.*fsync/iu))
+      for (const call of errors.mock.calls) {
+        expect(String(call[0])).not.toContain(userDataPath!)
+      }
+      // No half-written file is left behind for a reference that was never committed.
+      await expect(promisesFs.readdir(attachmentDirectory)).resolves.toEqual([])
+    } finally {
+      openSpy.mockRestore()
+    }
+  })
+
+  it('refuses custody the archive would reject, including the 25 MB bound [M-41]', async () => {
+    const missionStore = createElectronMissionStore({ userDataPath: (userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-custody-bound-'))) }) as unknown as {
+      readonly createMission: (input: { readonly name: string }) => Promise<{ readonly id: string }>
+      readonly runMarkerAttachmentIngest: (
+        missionId: string,
+        writeAttachment: () => Promise<unknown>,
+        cleanupAttachment: (attachmentPath: string) => Promise<void>,
+      ) => Promise<string>
+      readonly close: () => void
+    }
+    try {
+      const mission = await missionStore.createMission({ name: 'Custody bound' })
+      const attachmentId = '0b5c3f7e-1d2a-4c3b-9e8f-7a6b5c4d3e2f'
+      const storedName = `${attachmentId}-big.jpg`
+      const attachmentPath = path.join(userDataPath, 'missions', mission.id, 'attachments', storedName)
+      const cleanup = vi.fn(async () => undefined)
+      await expect(missionStore.runMarkerAttachmentIngest(mission.id, async () => ({
+        attachmentPath,
+        custody: {
+          custody_version: 2,
+          attachment_id: attachmentId,
+          size_bytes: 25 * 1024 * 1024 + 1,
+          sha256: 'a'.repeat(64),
+          relative_path: `missions/${mission.id}/attachments/${storedName}`,
+          display_name: 'big.jpg',
+        },
+      }), cleanup)).rejects.toThrow(/custody record is invalid/u)
+      expect(cleanup).toHaveBeenCalledWith(attachmentPath)
+    } finally {
+      missionStore.close()
+    }
+  })
+
   it('records v2 custody so a damaged attachment is caught at archive [M-41]', async () => {
     const service = await createService()
     const missionStore = createElectronMissionStore({ userDataPath: userDataPath! })
