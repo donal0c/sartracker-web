@@ -73,6 +73,7 @@ const WARNING_LABELS: Readonly<Record<TrackingWarningCode, RankedProblem | null>
   mission_storage_rows_rejected: { word: 'Fixes not saved', rank: PROBLEM_RANK.record + 1 },
   source_position_id_reused: { word: 'Position IDs reused', rank: PROBLEM_RANK.record + 5 },
   participant_scope: { word: 'People scope', rank: PROBLEM_RANK.roster + 1 },
+  participant_history_unavailable: { word: 'History unavailable', rank: PROBLEM_RANK.history + 3 },
   unclassified: { word: 'Tracking warning', rank: PROBLEM_RANK.unclassified },
 }
 
