@@ -4,7 +4,7 @@ import { DESKTOP_PANEL_ARRANGEMENT, panelOpenByDefault, panelSide } from '../../
 import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/workspace/people-model'
 import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/workspace/tracking-headline'
 import { labelTrackingWarning } from '../../src/features/workspace/tracking-problem-labels'
-import { fitProblemWords, fitWithYieldingLead, problemWordsText } from '../../src/features/workspace/problem-word-fit'
+import { fitKeepingRemedy, fitProblemWords, problemWordsText, selectedWordsText } from '../../src/features/workspace/problem-word-fit'
 import type { NormalizedTrackingPosition, TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
@@ -108,6 +108,8 @@ describe('tracking headline', () => {
     expect(idle.alarm).toBeUndefined()
     expect(idle.problems[0]).toBe('Re-enter password')
     expect(idle.leadInAlarm).toBeUndefined()
+    // The fix is named by identity, so its place in the ranking does not matter.
+    expect(idle.remedy).toBe('Re-enter password')
     expect(idle.text).toMatch(/not connected/i)
     expect(idle.text).toMatch(/Settings/)
     expect(idle.issues).toContain(warning)
@@ -137,6 +139,7 @@ describe('tracking headline', () => {
       expect(headline.problems.slice(0, 2), phase).toEqual([lead, 'Re-enter password'])
       // The alarm strip always says the lead, so the bar may drop it for the fix.
       expect(headline.leadInAlarm, phase).toBe(true)
+      expect(headline.remedy, phase).toBe('Re-enter password')
       expect(headline.text, phase).toMatch(/Settings/)
       // The runtime keeps the positions already on the map; they are last received.
       expect(headline.lastReceivedShown, phase).toBe(true)
@@ -159,6 +162,7 @@ describe('tracking headline', () => {
     const lost = describeTrackingHeadline({ ...base, phase: 'active', status: status({ mode: 'offline', warning: 'Traccar offline', warningCodes: ['offline_last_known'] }) })
     expect(lost.condition).toBe('lost')
     expect(lost.leadInAlarm).toBeUndefined()
+    expect(lost.remedy).toBeUndefined()
     const paused = describeTrackingHeadline({ ...base, phase: 'paused', status: status({ mode: 'idle' }) })
     expect(paused.condition).toBe('paused')
     expect(paused.leadInAlarm).toBeUndefined()
@@ -260,16 +264,39 @@ describe('tracking problem words', () => {
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 0)).toBe('3 problems')
   })
 
-  it('drops an alarm lead the strip already shows before it hides the fix behind "+N more" [DON-353]', () => {
-    // Linux fonts at 1024 px: TRACKING LOST 137, Re-enter password 154, separator 16, "+N more" 72.
-    expect(fitWithYieldingLead([137, 154], 16, 72, 420)).toEqual({ skipLead: false, shown: 2 })
-    expect(fitWithYieldingLead([137, 154], 16, 72, 280)).toEqual({ skipLead: true, shown: 1 })
-    // With more words, the fix still comes before the count.
-    expect(fitWithYieldingLead([137, 154, 100], 16, 72, 250)).toEqual({ skipLead: true, shown: 1 })
-    expect(fitWithYieldingLead([137, 154, 100], 16, 72, 280)).toEqual({ skipLead: true, shown: 2 })
-    // The lead stays whenever it and the fix fit, counting the rest.
-    expect(fitWithYieldingLead([137, 154, 100], 16, 72, 400)).toEqual({ skipLead: false, shown: 2 })
-    // A lone lead is never dropped: it is the whole message.
-    expect(fitWithYieldingLead([137], 16, 72, 100)).toEqual({ skipLead: false, shown: 0 })
+  it('keeps the fix word visible wherever the ranking puts it, dropping the alarm lead first [DON-353]', () => {
+    // Linux fonts: TRACKING LOST 137, 1 stale 70, 1 not moving 100, Re-enter password 154, separator 16, "+N more" 72.
+    const fit = (widths: number[], remedy: number, dropLead: boolean, available: number) =>
+      fitKeepingRemedy(widths, { remedy, dropLead }, 16, 72, available, 25)
+    // Everything fits: nothing changes.
+    expect(fit([137, 154], 1, true, 420)).toEqual({ indices: [0, 1], hidden: 0 })
+    // The lead and the fix do not both fit: the lead, which the alarm strip shows, gives way.
+    expect(fit([137, 154], 1, true, 280)).toEqual({ indices: [1], hidden: 0 })
+    // Person-safety words rank before the fix; the fix is found by identity, not
+    // position. Codex's case: "TRACKING LOST · 1 stale · +1 more" hid the fix.
+    expect(fit([137, 70, 154], 2, true, 330)).toEqual({ indices: [1, 2], hidden: 0 })
+    // Stale and not moving stay before the fix while they fit.
+    expect(fit([137, 70, 100, 154], 3, true, 360)).toEqual({ indices: [1, 2, 3], hidden: 0 })
+    // Narrower: the words between give way to the count, in ranking order.
+    expect(fit([137, 70, 100, 154], 3, true, 330)).toEqual({ indices: [1, 3], hidden: 1 })
+    // Narrower still: only the fix and a count of the rest, never "N problems".
+    expect(fit([137, 70, 100, 154], 3, true, 250)).toEqual({ indices: [3], hidden: 2 })
+    // Too narrow for "+2 more" (the 1024 px wide-font bar has 221 px): a short "+2" still says more is wrong.
+    expect(fit([137, 70, 100, 154], 3, true, 221)).toEqual({ indices: [3], hidden: 2, compact: true })
+    // Too narrow even for that: the fix alone (the label and Tracking list the rest).
+    expect(fit([137, 70, 100, 154], 3, true, 160)).toEqual({ indices: [3], hidden: 0 })
+    // Words after the fix are counted.
+    expect(fit([137, 154, 100], 1, true, 250)).toEqual({ indices: [1], hidden: 1 })
+    expect(fit([137, 154, 100], 1, true, 400)).toEqual({ indices: [0, 1], hidden: 1 })
+    // Before a mission there is no alarm lead to drop: the fix still stays.
+    expect(fit([70, 154], 1, false, 200)).toEqual({ indices: [1], hidden: 1, compact: true })
+    expect(fit([70, 154], 1, false, 180)).toEqual({ indices: [1], hidden: 0 })
+    expect(fit([70, 154, 100], 1, false, 260)).toEqual({ indices: [1], hidden: 2 })
+    expect(selectedWordsText(['TRACKING LOST', '1 stale', '1 not moving', 'Re-enter password'], { indices: [1, 3], hidden: 1 }))
+      .toBe('1 stale · Re-enter password · +1 more')
+    expect(selectedWordsText(['TRACKING LOST', '1 stale', '1 not moving', 'Re-enter password'], { indices: [3], hidden: 2, compact: true }))
+      .toBe('Re-enter password · +2')
+    expect(selectedWordsText(['TRACKING LOST', 'Re-enter password'], { indices: [0, 1], hidden: 0 }))
+      .toBe('TRACKING LOST · Re-enter password')
   })
 })

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openMissionPanel, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
+import { openMissionPanel, openWorkspacePanel, openDiagnostics, openDevicesWorkspace, pressPauseResume } from './helpers/workspace-panels'
 
 test.describe('M12 settings workspace', () => {
   test.beforeEach(async ({ context, page }) => {
@@ -52,19 +52,51 @@ test.describe('M12 settings workspace', () => {
       await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
       await injectCredentialLoss(page, 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.')
       const problems = page.getByTestId('ws-tracking-problems')
-      await expect(problems).toContainText('Re-enter password')
+      await expectRemedyInBar(page, 'TRACKING LOST')
       await expect(problems).not.toContainText('more')
-      // Where the lead gives way, the alarm strip still says it.
-      await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
-      // The words fit inside the bar, not clipped past its edge.
-      const fits = await problems.evaluate((element) => {
-        const bar = element.closest('[data-testid="ws-tracking-headline"]')!.getBoundingClientRect()
-        return element.getBoundingClientRect().right <= bar.right + 0.5
-      })
-      expect(fits).toBe(true)
       if (width === 1280) await expect(problems).toHaveText(/^TRACKING LOST · Re-enter password/)
     })
   }
+
+  test('keeps "Re-enter password" visible at 1024 px in a wide font when the mission is paused [DON-353]', async ({ page }) => {
+    await useWideFontAt1024(page)
+    await startMission(page, 'Credential paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
+    await injectCredentialLoss(page, 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.')
+    await expectRemedyInBar(page, 'MISSION PAUSED')
+    await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
+  })
+
+  test('keeps "Re-enter password" visible at 1024 px in a wide font behind stale and not-moving people [DON-353]', async ({ page }) => {
+    // Codex's case: person-safety words rank before the fix, so the fix is not
+    // the second word, and "TRACKING LOST · 1 stale · +1 more" hid it.
+    await useWideFontAt1024(page)
+    await startMission(page, 'Credential safety words')
+    await injectCredentialLossWithSafetyWords(page)
+    const headline = page.getByTestId('ws-tracking-headline')
+    // Both safety conditions are present and named in full in the label.
+    await expect(headline).toHaveAttribute('aria-label', /1 position out of date/)
+    await expect(headline).toHaveAttribute('aria-label', /1 person not moving/)
+    const text = await expectRemedyInBar(page, 'TRACKING LOST')
+    // Any safety word shown keeps its place before the fix; the rest are counted.
+    const before = text.slice(0, text.indexOf('Re-enter password'))
+    expect(before).not.toContain('more')
+    expect(before.replace(/1 stale · |1 not moving · /gu, '')).toBe('')
+    const shownSafety = (text.match(/1 stale|1 not moving/gu) ?? []).length
+    // Hidden safety words are always counted, never dropped silently.
+    if (shownSafety < 2) expect(text).toMatch(new RegExp(`· \\+${2 - shownSafety}( more)?$`, 'u'))
+  })
+
+  test('keeps "Re-enter password" visible at 1024 px in a wide font with Settings open [DON-353]', async ({ page }) => {
+    await useWideFontAt1024(page)
+    await startMission(page, 'Credential settings open')
+    await injectCredentialLoss(page, 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.')
+    await openWorkspacePanel(page, 'tracking')
+    await page.getByTestId('ws-open-tracking-settings').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expectRemedyInBar(page, 'TRACKING LOST')
+  })
 
   test('clears the password warning only once a replacement password connects [DON-353]', async ({ page }) => {
     const server = await routeControllableTraccar(page)
@@ -814,6 +846,63 @@ async function injectCredentialLoss(page: Page, warning: string) {
         warningCodes: ['tracking_credentials_unreadable'] },
     )
   }, warning)
+}
+
+/** Forces the wide font (Verdana on macOS, DejaVu Sans on Linux, as in CI) at 1024 px. */
+async function useWideFontAt1024(page: Page) {
+  await page.addStyleTag({ content: ':root, button { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' })
+  await page.setViewportSize({ width: 1024, height: 720 })
+}
+
+async function startMission(page: Page, name: string) {
+  await openMissionPanel(page)
+  await page.getByTestId('mission-name-input').fill(name)
+  await page.getByTestId('mission-start-btn').click()
+  await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+}
+
+/**
+ * The fix is in the top bar, inside it, never a bare count, and the alarm strip
+ * says the lead wherever the bar dropped it.
+ *
+ * @returns the bar's problem words
+ */
+async function expectRemedyInBar(page: Page, lead: string): Promise<string> {
+  const problems = page.getByTestId('ws-tracking-problems')
+  await expect(problems).toContainText('Re-enter password')
+  await expect(page.getByTestId('ws-alarm')).toContainText(lead)
+  const text = (await problems.textContent()) ?? ''
+  expect(text).not.toMatch(/^\+|problems$/u)
+  const fits = await problems.evaluate((element) => {
+    const bar = element.closest('[data-testid="ws-tracking-headline"]')!.getBoundingClientRect()
+    return element.getBoundingClientRect().right <= bar.right + 0.5
+  })
+  expect(fits).toBe(true)
+  return text
+}
+
+/** Credential loss while one person has not moved for 20 minutes and another's position is out of date. */
+async function injectCredentialLossWithSafetyWords(page: Page) {
+  await page.evaluate(async () => {
+    const now = Date.now()
+    const iso = (ms: number) => new Date(ms).toISOString()
+    const base = { lon: -9.7, altitude: null, speed: null, battery: null, accuracy: 4, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null }
+    const still = { ...base, device_id: 'alpha', lat: 52.0, device_cache_stale: false }
+    const alphaFirst = { ...still, id: 'a1', timestamp: iso(now - 20 * 60_000) }
+    const alphaLatest = { ...still, id: 'a2', lat: 52.00001, timestamp: iso(now - 30_000) }
+    const bravo = { ...base, device_id: 'bravo', id: 'b1', lat: 52.1, device_cache_stale: true, timestamp: iso(now - 10 * 60_000) }
+    await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot({
+      devices: [
+        { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: alphaLatest.timestamp, unique_id: null, category: 'person' },
+        { device_id: 'bravo', name: 'Bravo Team', status: 'online', last_seen: bravo.timestamp, unique_id: null, category: 'person' },
+      ],
+      positions: [alphaLatest, bravo], breadcrumbs: [alphaFirst, alphaLatest, bravo],
+    }, {
+      mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+      warning: 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
+      warningCodes: ['tracking_credentials_unreadable'],
+    })
+  })
 }
 
 async function expectTrackingOnline(page: Page, timeout?: number) {

@@ -10,7 +10,7 @@ import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
-import { PROBLEM_RANK, rankTrackingWarning, type RankedProblem } from './tracking-problem-labels'
+import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, type RankedProblem } from './tracking-problem-labels'
 
 let remembered: { readonly missionId: string | null; readonly at: string } | null = null
 
@@ -46,6 +46,11 @@ export type TrackingHeadline = {
    * which cannot be closed, is on screen.
    */
   readonly leadInAlarm?: true
+  /**
+   * The one word that says what the operator must do. The bar keeps it visible
+   * wherever the ranking puts it, never behind "+N more" (DON-353).
+   */
+  readonly remedy?: string
   /** The rest of the words, which may be cut short in the bar; the full text is in the label and Tracking. */
   readonly detail: string
   /** Text for the alarm across the map, when it should say more than the headline. */
@@ -145,7 +150,7 @@ export function describeTrackingHeadline(input: {
     const lead = paused ? 'MISSION PAUSED' : 'TRACKING LOST'
     const advice = `${lead}: ${credentialAdvice}`
     return {
-      condition: 'credentials', tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true,
+      condition: 'credentials', tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true, remedy: CREDENTIAL_REENTRY_WORD,
       detail: conditions === '' ? advice : `${advice} · ${conditions}`,
       alarm: `${lead}: the saved tracking password or token cannot be used; positions on the map may not be current`,
       issues, lastReceivedShown,
@@ -158,7 +163,7 @@ export function describeTrackingHeadline(input: {
   // Before a mission starts amber is enough: nobody relies on the map yet.
   if (credentialsUnusable) {
     const advice = `Tracking not connected: ${credentialAdvice}`
-    return { condition: 'credentials', tone: 'warning', text: prefixed(advice), problems, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
+    return { condition: 'credentials', tone: 'warning', text: prefixed(advice), problems, remedy: CREDENTIAL_REENTRY_WORD, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
   }
   if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', problems: ['Tracking not connected'], detail: '', issues }
   if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, problems, detail: summary, issues }
