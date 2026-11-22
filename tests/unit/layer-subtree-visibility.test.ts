@@ -81,13 +81,32 @@ describe('switching a layer on in the simplified workspace [DON-341]', () => {
 
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['2'])
     expect(useLayerVisibilityStore.getState().groupVisibility.tracking).toBe(true)
-    // Person 2 only inherited the hidden layer; it is saved hidden before the
-    // layer is saved visible, so reopening the mission does not reveal them.
+    // The Current Location layer stays saved hidden: it is what a person who
+    // joins later inherits, so it must never be switched on for one person.
     const calls = setNodeVisibilities.mock.calls.map(([ids, visible]) => [ids, visible])
-    const hideSibling = calls.findIndex(([ids, visible]) => visible === false && (ids as string[]).includes(getDeviceFeatureNodeId('2')))
-    const showLayer = calls.findIndex(([ids, visible]) => visible === true && (ids as string[]).includes(TRACKING_DEVICES_LAYER_NODE_ID))
-    expect(hideSibling).toBeGreaterThanOrEqual(0)
-    expect(showLayer).toBeGreaterThan(hideSibling)
+    expect(calls.some(([ids, visible]) => visible === true && (ids as string[]).includes(TRACKING_DEVICES_LAYER_NODE_ID))).toBe(false)
+    expect(calls.some(([ids, visible]) => visible === true && (ids as string[]).includes(getDeviceFeatureNodeId('2')))).toBe(false)
+  })
+
+  it('after Everyone off and one person on, a person who joins later stays hidden, as on the old screen [DON-341]', async () => {
+    // The old screen's rule (parity-visibility batch 2): a later joiner takes
+    // Everyone's setting, not the one person who was switched back on.
+    const catalog = heldCatalog({ initial: [[TRACKING_DEVICES_LAYER_NODE_ID, false], [getDeviceFeatureNodeId('1'), false], [getDeviceFeatureNodeId('2'), false]] })
+    const reveal = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
+    await catalog.releaseAll()
+    await reveal
+
+    catalog.join(device('3'))
+    const layer = catalog.readRoot().children.flatMap((group) => group.children).find((node) => node.id === TRACKING_DEVICES_LAYER_NODE_ID)
+    const visibility = Object.fromEntries((layer?.children ?? []).map((child) => [child.id, child.isVisible]))
+    expect(visibility).toEqual({
+      [getDeviceFeatureNodeId('1')]: true,
+      [getDeviceFeatureNodeId('2')]: false,
+      [getDeviceFeatureNodeId('3')]: false,
+    })
+    // The map draws from the same catalog, so it agrees with People.
+    useLayerVisibilityStore.getState().hydrateCatalogVisibility('mission-1', catalog.readRoot())
+    expect(useLayerVisibilityStore.getState().hiddenDeviceIds.slice().sort()).toEqual(['2', '3'])
   })
 })
 
@@ -101,8 +120,9 @@ function heldCatalog(options: {
 } = {}) {
   const saved = new Map<string, boolean>(options.initial ?? [[TRACKING_DEVICES_LAYER_NODE_ID, false]])
   const pending: Array<() => void> = []
+  const devices = [device('1'), device('2')]
   const build = () => buildLayerCatalogTree({
-    missionId: 'mission-1', devices: [device('1'), device('2')], markers: [], drawings: [], helicopters: [],
+    missionId: 'mission-1', devices, markers: [], drawings: [], helicopters: [],
     gpxImports: [], measurements: [],
     metadataEntries: [...saved].map(([nodeId, isVisible]) => ({
       missionId: 'mission-1', nodeId, parentNodeId: nodeId === TRACKING_DEVICES_LAYER_NODE_ID ? TRACKING_GROUP_NODE_ID : TRACKING_DEVICES_LAYER_NODE_ID,
@@ -128,7 +148,9 @@ function heldCatalog(options: {
       next()
     }
   }
-  return { controller: { setNodeVisibilities } as never, setNodeVisibilities, readRoot: () => root, saved, releaseAll }
+  /** A device joins the mission; the catalog is rebuilt as the runtime does on the next tracking poll. */
+  const join = (joining: ReturnType<typeof device>) => { devices.push(joining); root = build() }
+  return { controller: { setNodeVisibilities } as never, setNodeVisibilities, readRoot: () => root, saved, releaseAll, join }
 }
 
 describe('People visibility writes [DON-341]', () => {
@@ -141,20 +163,21 @@ describe('People visibility writes [DON-341]', () => {
     await Promise.all([first, second])
 
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual([])
-    expect(catalog.saved.get(TRACKING_DEVICES_LAYER_NODE_ID)).toBe(true)
-    expect(catalog.saved.get(getDeviceFeatureNodeId('1'))).not.toBe(false)
-    expect(catalog.saved.get(getDeviceFeatureNodeId('2'))).not.toBe(false)
+    // Everyone's Location stays off; each person is shown by their own tick.
+    expect(catalog.saved.get(TRACKING_DEVICES_LAYER_NODE_ID)).toBe(false)
+    expect(catalog.saved.get(getDeviceFeatureNodeId('1'))).toBe(true)
+    expect(catalog.saved.get(getDeviceFeatureNodeId('2'))).toBe(true)
   })
 
   it('a failed save is reported, and the map goes back to what was saved', async () => {
     useLayerVisibilityStore.setState({ hiddenDeviceIds: ['1', '2'] })
-    const catalog = heldCatalog({ failWhen: (ids, visible) => visible && ids.includes(TRACKING_DEVICES_LAYER_NODE_ID) })
+    const catalog = heldCatalog({ failWhen: (ids, visible) => visible && ids.includes(getDeviceFeatureNodeId('1')) })
     const reveal = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: true, revealAncestors: true })
     const outcome = reveal.then(() => 'saved', (error: unknown) => error instanceof Error ? error.message : 'failed')
     await catalog.releaseAll()
 
     expect(await outcome).toBe('disk unavailable')
-    // The Current Location layer was never saved visible, so nobody shows as visible.
+    // Person 1 was never saved visible, so nobody shows as visible.
     expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(expect.arrayContaining(['1', '2']))
   })
 
@@ -167,6 +190,21 @@ describe('People visibility writes [DON-341]', () => {
     })
     const hideEveryone = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: TRACKING_DEVICES_LAYER_NODE_ID, visible: false, revealAncestors: true })
     const outcome = hideEveryone.then(() => 'saved', () => 'failed')
+    await catalog.releaseAll()
+
+    expect(await outcome).toBe('failed')
+    expect(useLayerVisibilityStore.getState().hiddenDeviceIds).toEqual(['2'])
+  })
+
+  it('a failed hide under Everyone off puts the person back shown, as saved', async () => {
+    // Everyone's Location off, person 1 switched back on by their own tick.
+    useLayerVisibilityStore.setState({ hiddenDeviceIds: ['2'] })
+    const catalog = heldCatalog({
+      initial: [[TRACKING_DEVICES_LAYER_NODE_ID, false], [getDeviceFeatureNodeId('1'), true], [getDeviceFeatureNodeId('2'), false]],
+      failWhen: () => true,
+    })
+    const hide = queueLayerSubtreeVisibility({ readMissionId: () => 'mission-1', readRoot: catalog.readRoot, controller: catalog.controller, nodeId: getDeviceFeatureNodeId('1'), visible: false, revealAncestors: true })
+    const outcome = hide.then(() => 'saved', () => 'failed')
     await catalog.releaseAll()
 
     expect(await outcome).toBe('failed')
