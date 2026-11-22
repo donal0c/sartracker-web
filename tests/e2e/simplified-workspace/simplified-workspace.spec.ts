@@ -161,6 +161,39 @@ test.describe('Simplified workspace', () => {
       await expect(page.getByTestId('ws-trail-6')).toBeChecked()
     })
 
+    test('after Everyone off and one person on, a person who joins later stays off, as on the old screen', async ({ page }) => {
+      // Regression from PR 72 (DON-341): the old screen's rule is parity-visibility batch 2.
+      await open(page)
+      await startMission(page)
+      await showPeople(page)
+      await page.getByTestId('ws-all-positions').uncheck()
+      await page.getByTestId('ws-position-5').check()
+      await expect(page.getByTestId('ws-position-5')).toBeChecked()
+      await expect(page.getByTestId('ws-position-6')).not.toBeChecked()
+      await expect(page.getByTestId('ws-all-positions')).toHaveJSProperty('indeterminate', true)
+
+      // Someone joins with a fix after that choice.
+      await page.evaluate(async () => {
+        const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+        const snapshot = useTrackingStore.getState().snapshot
+        const position = snapshot.positions[0]!
+        useTrackingStore.getState().applySnapshot({
+          ...snapshot,
+          devices: [...snapshot.devices, { ...snapshot.devices[0]!, device_id: 'late-joiner', name: 'Late Joiner' }],
+          positions: [...snapshot.positions, { ...position, id: 'pos-late-joiner', device_id: 'late-joiner' }],
+        })
+      })
+      await expect(page.getByTestId('ws-position-late-joiner')).not.toBeChecked()
+      // Everyone's Trail was left on, so the joiner's trail follows it.
+      await expect(page.getByTestId('ws-trail-late-joiner')).toBeChecked()
+      // The map agrees with People: the joiner's location is not drawn.
+      await expect.poll(() => page.evaluate(async () => {
+        const { useLayerVisibilityStore } = await import('/src/features/layers/layer-visibility-store.ts')
+        return useLayerVisibilityStore.getState().hiddenDeviceIds.includes('late-joiner')
+      })).toBe(true)
+      await expect(page.getByTestId('ws-position-5')).toBeChecked()
+    })
+
     test('a show or hide that cannot be saved says so in People and leaves the tick as saved', async ({ page }) => {
     await open(page)
     await startMission(page)

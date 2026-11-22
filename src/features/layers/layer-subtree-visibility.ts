@@ -5,6 +5,8 @@ import {
   HELICOPTERS_GROUP_NODE_ID,
   isCoverageNodeId,
   MAP_TOOLS_GROUP_NODE_ID,
+  TRACKING_BREADCRUMBS_LAYER_NODE_ID,
+  TRACKING_DEVICES_LAYER_NODE_ID,
   TRACKING_GROUP_NODE_ID,
 } from './layer-catalog-ids'
 import { findCatalogNode, getNodeChildren } from './layer-catalog-tree'
@@ -132,6 +134,7 @@ async function applyAndPersist(
   assertCurrent()
   if (input.visible && input.revealAncestors === true) {
     const hiddenAncestors = findAncestorNodeIds(input.root, nodeId)
+      .filter((id) => !PER_PERSON_LAYER_NODE_IDS.has(id))
       .filter((id) => findCatalogNode(input.root, id)?.isVisible === false || isHiddenGroup(id))
     if (hiddenAncestors.length === 0) return
     // Only the group flag goes through the runtime store: applying a layer node
@@ -160,7 +163,8 @@ async function applyAndPersist(
 
 /**
  * Sets the runtime visibility of each touched node to what the saved catalog
- * says: a node shows only when it and every group and layer above it are shown.
+ * says: a node shows only when it and every group and layer above it are shown,
+ * except that a person shows by their own tick under a per-person layer.
  *
  * Groups go first, then layers, then each person. Showing a layer shows
  * everyone under it, so each person's own saved state must be applied last or
@@ -172,7 +176,10 @@ function reconcileWithSaved(saved: LayerCatalogRootNode, touched: ReadonlySet<st
       const node = findCatalogNode(saved, id)
       if (node === null) return []
       const ancestors = findAncestorNodeIds(saved, id)
-      const effective = node.isVisible && ancestors.every((ancestorId) => findCatalogNode(saved, ancestorId)?.isVisible !== false)
+      // A person under Current Location or Breadcrumbs shows by their own tick.
+      const effective = node.isVisible && ancestors
+        .filter((ancestorId) => !PER_PERSON_LAYER_NODE_IDS.has(ancestorId))
+        .every((ancestorId) => findCatalogNode(saved, ancestorId)?.isVisible !== false)
       return [{ id, depth: ancestors.length, effective }]
     })
     .sort((a, b) => a.depth - b.depth)
@@ -199,6 +206,18 @@ function isHiddenGroup(nodeId: string): boolean {
   const key = GROUP_KEY_BY_NODE_ID[nodeId]
   return key !== undefined && !groups[key]
 }
+
+/**
+ * Current Location and Breadcrumbs draw each person by their own tick, so a
+ * person shows under them whatever the layer says. The layer's saved choice is
+ * what a person who joins later starts with: after Everyone off and one person
+ * on, a later joiner stays off, as on the old screen (parity-visibility batch 2).
+ * Revealing one person must therefore never switch the layer on [DON-341].
+ */
+const PER_PERSON_LAYER_NODE_IDS: ReadonlySet<string> = new Set([
+  TRACKING_DEVICES_LAYER_NODE_ID,
+  TRACKING_BREADCRUMBS_LAYER_NODE_ID,
+])
 
 const GROUP_KEY_BY_NODE_ID: Readonly<Record<string, keyof ReturnType<typeof useLayerVisibilityStore.getState>['groupVisibility']>> = {
   [TRACKING_GROUP_NODE_ID]: 'tracking',
