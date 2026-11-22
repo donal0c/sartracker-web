@@ -61,6 +61,25 @@ async function seedRoster(page: import('@playwright/test').Page): Promise<void> 
   })
 }
 
+/** A roster the size of a real call-out: enough devices that the setup card scrolls. */
+async function seedLargeRoster(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(async () => {
+    const seen = new Date(Date.now() - 60_000).toISOString()
+    await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
+      groups: [{ group_id: '101', name: 'Hill Team', parent_group_id: null }],
+      devices: Array.from({ length: 30 }, (_, index) => ({
+        device_id: String(index + 1),
+        name: `Team ${String(index + 1).padStart(2, '0')}`,
+        status: 'online',
+        last_seen: seen,
+        unique_id: `u${index + 1}`,
+        category: null,
+        group_id: index % 2 === 0 ? '101' : null,
+      })),
+    })
+  })
+}
+
 async function startMission(
   page: import('@playwright/test').Page,
   select: (page: import('@playwright/test').Page) => Promise<void>,
@@ -208,15 +227,19 @@ test('keeps every folded summary to one line, even for a long outing name [DON-3
 test('shows Pause and Finish from the top after Start, even when setup was scrolled [DON-300]', async ({ page }) => {
   // CI flake: the operator (or Playwright) scrolled Mission Control down to
   // reach Start, and the dock stayed scrolled with Pause/Finish cut off.
-  await seedRoster(page)
+  // Was the sidebar dock. The same Mission host becomes the side panel after
+  // Start, so a scroll left in setup must not carry over (DON-341). The setup
+  // card fits at 1440 x 900 with two devices, so a full roster with the
+  // pickers open makes it scroll, as a real team's does.
+  await seedLargeRoster(page)
   await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('Layout mission')
   await page.getByTestId('mission-offset-input').fill('0')
-  // Was the sidebar dock. The same Mission host becomes the side panel after
-  // Start, so a scroll left in setup must not carry over (DON-341). The setup
-  // card fits at 1440 x 900, so it may have nothing to scroll.
+  await openParticipantPickers(page)
   const host = page.getByTestId('ws-mission-host')
+  await expect.poll(() => host.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true)
   await host.evaluate((element) => { element.scrollTop = element.scrollHeight })
+  expect(await host.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
   await page.getByTestId('mission-start-btn').click()
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')
   await expectControlsInView(page)
