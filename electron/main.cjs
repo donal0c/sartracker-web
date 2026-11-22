@@ -471,6 +471,69 @@ async function createWindow(
 }
 
 /**
+ * Appends a runtime-log event without letting a log failure break the caller.
+ * A failed write is reported on stderr so it is never silent.
+ *
+ * @param {{ append: (entry: object) => Promise<unknown> }} runtimeLog
+ * @param {object} entry
+ */
+function appendRuntimeEvent(runtimeLog, entry) {
+  void Promise.resolve()
+    .then(() => runtimeLog.append(entry))
+    .catch((error) => {
+      console.error(`[runtime-log] Could not record ${entry.event}:`, error)
+    })
+}
+
+/**
+ * Builds the operator escalation for a map window that is alive but not
+ * answering the close/quit drain [M-48]. The operator chooses to keep waiting
+ * or to close now; closing now seals the loss of unconfirmed track points, so
+ * the mission shows them as possibly missing rather than silently dropping them.
+ *
+ * @param {{ append: (entry: object) => Promise<unknown> }} runtimeLog
+ * @returns {(input: { requestId: string, reason: string, signal: AbortSignal }) => Promise<'wait' | 'abandon'>}
+ */
+function createHungRendererEscalation(runtimeLog) {
+  return async ({ requestId, reason, signal }) => {
+    appendRuntimeEvent(runtimeLog, {
+      level: 'warn',
+      event: 'renderer_drain_overdue',
+      fields: { requestId, reason },
+    })
+    const { response } = await dialog.showMessageBox({
+      type: 'warning',
+      title: 'SAR Tracker is not responding',
+      message: "SAR Tracker's map window is not responding, so it cannot close yet.",
+      detail: [
+        'Wait gives it more time to save the latest track points.',
+        'Close now closes it anyway. Track points not yet saved for the active mission',
+        'will be marked as possibly missing when SAR Tracker next opens.',
+      ].join(' '),
+      buttons: ['Wait', 'Close now'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      signal,
+    })
+    if (response === 1) {
+      appendRuntimeEvent(runtimeLog, {
+        level: 'error',
+        event: 'renderer_drain_abandoned',
+        fields: { requestId, reason },
+      })
+      return 'abandon'
+    }
+    appendRuntimeEvent(runtimeLog, {
+      level: 'warn',
+      event: 'renderer_drain_wait_chosen',
+      fields: { requestId, reason },
+    })
+    return 'wait'
+  }
+}
+
+/**
  * Prevents renderer content from navigating the operational window or opening
  * auxiliary windows outside the controlled SAR Tracker shell.
  */
@@ -484,6 +547,12 @@ function installWindowTeardownGuards(
   let closeInProgress = false
   let allowNextUnload = false
   let reloadInProgress = false
+  window.on('unresponsive', () => {
+    appendRuntimeEvent(runtimeLog, { level: 'warn', event: 'renderer_unresponsive', fields: {} })
+  })
+  window.on('responsive', () => {
+    appendRuntimeEvent(runtimeLog, { level: 'info', event: 'renderer_responsive', fields: {} })
+  })
   window.on('close', (event) => {
     if (closeAllowed) return
     event.preventDefault()
@@ -1786,6 +1855,7 @@ async function startElectronApp(startupWatchdog) {
   const rendererTeardownCoordinator = createRendererTeardownCoordinator({
     ipcMain,
     missionStore,
+    onDrainOverdue: createHungRendererEscalation(runtimeLog),
   })
   electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
   if (previousSessionEndedUncleanly) {

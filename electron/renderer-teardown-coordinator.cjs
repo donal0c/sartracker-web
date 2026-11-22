@@ -3,6 +3,9 @@ const { randomUUID } = require('node:crypto')
 const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
 const RENDERER_TEARDOWN_READY_CHANNEL = 'sartracker:app-runtime-teardown-ready'
 const RENDERER_TEARDOWN_TIMEOUT_MS = 5_000
+// After this long without an acknowledgement a still-alive renderer is treated
+// as hung and the operator is asked whether to keep waiting [M-48].
+const RENDERER_DRAIN_OVERDUE_MS = 15_000
 const RENDERER_EVIDENCE_LOSS_REASON = 'renderer_pending_evidence_lost'
 
 /**
@@ -15,6 +18,9 @@ function createRendererTeardownCoordinator(dependencies) {
   const setTimeoutFn = dependencies.setTimeout ?? globalThis.setTimeout
   const clearTimeoutFn = dependencies.clearTimeout ?? globalThis.clearTimeout
   const timeoutMs = dependencies.timeoutMs ?? RENDERER_TEARDOWN_TIMEOUT_MS
+  const overdueMs = dependencies.overdueMs ?? RENDERER_DRAIN_OVERDUE_MS
+  // Resolves 'wait' (ask again later) or 'abandon' (seal as lost and continue).
+  const onDrainOverdue = dependencies.onDrainOverdue
   const pendingByRequestId = new Map()
   const preparationByWebContents = new WeakMap()
   let unexpectedRendererLossDetected = false
@@ -55,7 +61,8 @@ function createRendererTeardownCoordinator(dependencies) {
 
   /**
    * Uses the fixed timeout only as a durable soft deadline. The renderer remains
-   * alive until it confirms a clean drain or is actually lost.
+   * alive until it confirms a clean drain, is actually lost, or the operator
+   * chooses to stop waiting for an overdue drain [M-48].
    */
   function requestRendererDrain(webContents, reason) {
     const requestId = createRequestId()
@@ -68,13 +75,21 @@ function createRendererTeardownCoordinator(dependencies) {
     return new Promise((resolve, reject) => {
       let state = 'pending'
       let timer
+      let overdueTimer
       let settlement = null
       let uncertainty = null
+      const overdueQuestion = new AbortController()
+      const stopOverdueEscalation = () => {
+        if (overdueTimer !== undefined) clearTimeoutFn(overdueTimer)
+        overdueTimer = undefined
+        overdueQuestion.abort()
+      }
       const fail = (error) => {
         if (state === 'settled') return
         state = 'settled'
         pendingByRequestId.delete(requestId)
         if (timer !== undefined) clearTimeoutFn(timer)
+        stopOverdueEscalation()
         reject(error)
       }
       const settle = (drained) => {
@@ -84,6 +99,7 @@ function createRendererTeardownCoordinator(dependencies) {
         if (settlement !== null) return settlement
         state = 'settling'
         if (timer !== undefined) clearTimeoutFn(timer)
+        stopOverdueEscalation()
         settlement = (async () => {
           const provisionalScopes = uncertainty === null ? [] : await uncertainty
           let lossScopes = []
@@ -127,6 +143,27 @@ function createRendererTeardownCoordinator(dependencies) {
         uncertainty = stageRendererEvidenceUncertainty(requestId)
         void uncertainty.catch(fail)
       }, timeoutMs)
+      // A renderer stuck in a long loop never acknowledges and is never lost;
+      // without this the close or quit would wait forever, invisibly [M-48].
+      const armOverdueEscalation = () => {
+        if (typeof onDrainOverdue !== 'function') return
+        overdueTimer = setTimeoutFn(() => {
+          overdueTimer = undefined
+          if (state !== 'pending') return
+          void Promise.resolve()
+            .then(() => onDrainOverdue({ requestId, reason, webContents, signal: overdueQuestion.signal }))
+            .catch(() => 'wait')
+            .then((decision) => {
+              if (state !== 'pending') return
+              if (decision === 'abandon') {
+                void settle(false).catch(() => undefined)
+                return
+              }
+              armOverdueEscalation()
+            })
+        }, overdueMs)
+      }
+      armOverdueEscalation()
       try {
         webContents.send(RENDERER_TEARDOWN_REQUEST_CHANNEL, { requestId, reason })
       } catch {
@@ -311,6 +348,7 @@ function isRendererTeardownResult(input) {
 module.exports = {
   RENDERER_TEARDOWN_READY_CHANNEL,
   RENDERER_TEARDOWN_REQUEST_CHANNEL,
+  RENDERER_DRAIN_OVERDUE_MS,
   RENDERER_TEARDOWN_TIMEOUT_MS,
   createRendererTeardownCoordinator,
   isRendererTeardownResult,
