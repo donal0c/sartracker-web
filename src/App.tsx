@@ -14,6 +14,8 @@ import { MeasurementRuntimeBridge } from './features/measurements/measurement-ru
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
 import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
 import { useSettingsWorkspaceStore } from './features/settings/settings-workspace-store'
+import { useDeviceWorkspaceStore } from './features/tracking/device-workspace-store'
+import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
 import { useMissionStore } from './features/mission/mission-store'
@@ -78,6 +80,8 @@ function App() {
   const settingsOpen = useSettingsWorkspaceStore((state) => state.open)
   const settingsFocusTarget = useSettingsWorkspaceStore((state) => state.focusTarget)
   const closeSettingsWorkspace = useSettingsWorkspaceStore((state) => state.closeWorkspace)
+  const devicesOpen = useDeviceWorkspaceStore((state) => state.open)
+  const diagnosticsOpen = useDiagnosticsWorkspaceStore((state) => state.open)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
   const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
   const handleMissionActionError = useCallback((error: string | null) => {
@@ -170,11 +174,12 @@ function App() {
       <MarkerDialog />
       <MarkerStatusBanner />
       {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
+          A press made before the code arrives says "Opening …" at once (DON-229).
           A screen whose code fails to load shows a message; the rest of the app stays up. */}
-      <LazyScreenBoundary screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary requested={devicesOpen} screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
       <LazyScreenBoundary screen="Mission review"><MissionReviewWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary screen="Settings">
+      <LazyScreenBoundary requested={diagnosticsOpen} screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary requested={settingsOpen} screen="Settings">
         <SettingsWorkspace
           focusTarget={settingsFocusTarget}
           onClose={closeSettingsWorkspace}

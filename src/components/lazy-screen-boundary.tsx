@@ -10,7 +10,12 @@ type LazyScreenBoundaryState = { readonly error: Error | null }
  * replaced by a plain message; the top bar, alarms and banners stay up.
  */
 export class LazyScreenBoundary extends Component<
-  { readonly screen: string; readonly children: ReactNode },
+  {
+    readonly screen: string
+    /** True once the operator has asked for this screen, so a press made while its code loads is answered at once. */
+    readonly requested?: boolean
+    readonly children: ReactNode
+  },
   LazyScreenBoundaryState
 > {
   override state: LazyScreenBoundaryState = { error: null }
@@ -36,7 +41,11 @@ export class LazyScreenBoundary extends Component<
 
   override render() {
     if (this.state.error === null) {
-      return <Suspense fallback={null}>{this.props.children}</Suspense>
+      return (
+        <Suspense fallback={this.props.requested === true ? <LazyScreenLoading screen={this.props.screen} /> : null}>
+          {this.props.children}
+        </Suspense>
+      )
     }
     return (
       <div
@@ -54,4 +63,21 @@ export class LazyScreenBoundary extends Component<
       </div>
     )
   }
+}
+
+/**
+ * Shown when a screen was asked for before its code arrived (DON-229). Without
+ * it the press looked ignored and an operator would press again or give up.
+ */
+function LazyScreenLoading(props: { readonly screen: string }) {
+  return (
+    <div
+      className="sar-module fixed left-1/2 top-24 z-50 -translate-x-1/2 p-3 text-sm font-semibold"
+      data-screen={props.screen}
+      data-testid="lazy-screen-loading"
+      role="status"
+    >
+      Opening {props.screen}…
+    </div>
+  )
 }

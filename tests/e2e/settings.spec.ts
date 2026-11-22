@@ -108,14 +108,12 @@ test.describe('M12 settings workspace', () => {
   }) => {
     const server = await routeControllableTraccar(page)
 
-    // In CI the first press on a freshly loaded screen was once lost; wait for
-    // Settings to be open (pressing again only if it is not) rather than assume.
-    await expect(async () => {
-      if (!(await page.getByTestId('settings-workspace').isVisible())) {
-        await page.getByTestId('open-settings-workspace').click({ timeout: 2_000 })
-      }
-      await expect(page.getByTestId('settings-workspace')).toBeVisible({ timeout: 3_000 })
-    }).toPass({ timeout: 20_000 })
+    // One press. Settings' code is fetched when the app shell appears, so on a
+    // slow dev server it may still be arriving: the press is kept and the
+    // screen says "Opening Settings…" until then. Readiness is that code
+    // loading, so wait for Settings itself rather than pressing again.
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible({ timeout: 20_000 })
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
     await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
     await page.getByTestId('settings-provider-email').fill('apiuser')
@@ -497,6 +495,31 @@ async function routeTraccarSuccess(
     })
   })
 }
+
+test.describe('Settings pressed while its code is still loading', () => {
+  test('says so at once, then opens Settings, without a second press [DON-229]', async ({ page }) => {
+    // Settings' code is fetched when the app shell first appears, so a press
+    // just after start can land before it arrives. In CI that press looked
+    // ignored: Settings drew nothing until the code came.
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    await page.route(/\/src\/components\/settings-workspace\.tsx/, async (route) => {
+      await held
+      await route.continue()
+    })
+    await page.goto('/?missionHarness=1')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+
+    await page.getByTestId('open-settings-workspace').click()
+    const loading = page.getByTestId('lazy-screen-loading')
+    await expect(loading).toHaveText('Opening Settings…')
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+
+    release()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(loading).toHaveCount(0)
+  })
+})
 
 async function routeControllableTraccar(page: import('@playwright/test').Page) {
   const currentFixTime = new Date().toISOString()
