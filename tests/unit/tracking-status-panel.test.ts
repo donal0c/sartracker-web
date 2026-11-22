@@ -66,7 +66,33 @@ describe('TrackingStatusPanel', () => {
 
     expect(host!.textContent).not.toContain('Telemetry stream healthy')
     expect(getElement('[data-testid="tracking-mode-chip"]').className).not.toContain('sar-status-chip-success')
-    expect(getText('[data-testid="tracking-warning"]')).toContain('1 position out of date')
+    expect(getText('[data-testid="tracking-warning"]')).toContain('Feed connected · 1 position not current')
+  })
+
+  it('does not say the feed is connected while tracking is offline or idle with stale positions [DON-358]', () => {
+    const stalePosition = {
+      id: 'p1', device_id: 'alpha', lat: 52, lon: -9.7, altitude: null, speed: null, battery: null, accuracy: null,
+      timestamp: '2026-04-10T11:00:00.000Z', source: null, data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: true,
+    }
+    const snapshot = {
+      devices: [{ device_id: 'alpha', name: 'Alpha', status: 'online', last_seen: null, unique_id: null, category: null }],
+      positions: [stalePosition],
+      breadcrumbs: [],
+    }
+    for (const [mode, expected] of [['offline', 'Tracking offline · 1 position not current'], ['idle', 'Tracking not connected · 1 position not current']] as const) {
+      useTrackingStore.setState({
+        snapshot,
+        status: { mode, consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null },
+      })
+      render(React.createElement(TrackingStatusPanel))
+      const warning = getText('[data-testid="tracking-warning"]')
+      expect(warning).not.toContain('Feed connected')
+      expect(warning).toContain(expected)
+      act(() => root?.unmount())
+      host?.remove()
+      root = null
+      host = null
+    }
   })
 
   it('renders offline tracking mode and OFFLINE MODE warning as a flashing red alert', () => {

@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { resolveMissionHistoryOmissions } from '../features/layers/breadcrumb-coverage-visibility'
 import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
-import { describeTrackingFreshness } from '../features/tracking/persistent-tracking-health'
+import { describeTrackingFeed, describeTrackingFreshness } from '../features/tracking/persistent-tracking-health'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
@@ -137,6 +137,11 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   // Devices header and the top bar [M-20].
   const freshnessWarning = describeTrackingFreshness(staleDeviceCount, unverifiedFixTimeCount)
   const feedHealthy = status.mode === 'online' && !criticalTrustWarning && status.warning === null && freshnessWarning === null
+  // Connection-aware words for old positions: never "Feed connected" while
+  // tracking is offline or not connected [DON-358].
+  const freshnessMessage = freshnessWarning === null
+    ? null
+    : describeTrackingFeed(status, staleDeviceCount, unverifiedFixTimeCount, '')
   const modeChipClassName =
     feedHealthy
       ? 'sar-status-chip-success'
@@ -196,8 +201,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           {status.warning}
         </TrackingStatusMessage>
       )}
-      {status.warning !== null || freshnessWarning === null || simplified ? null : (
-        <TrackingStatusMessage tone="warning">{freshnessWarning}</TrackingStatusMessage>
+      {status.warning !== null || freshnessMessage === null || simplified ? null : (
+        <TrackingStatusMessage tone={freshnessMessage.tone === 'alert' ? 'critical' : 'warning'}>
+          {freshnessMessage.headline}
+        </TrackingStatusMessage>
       )}
 
       {historyTransfer === undefined ? null : (

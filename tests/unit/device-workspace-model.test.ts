@@ -175,6 +175,17 @@ describe('device workspace model', () => {
     expect(freshOffline.sourceDisplay).toBe('Last known')
   })
 
+  it('does not call a fix ahead of the laptop clock older than 5 minutes [DON-358]', () => {
+    const online: TrackingConnectionStatus = { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null }
+    const tenMinutesAhead = new Date(Date.now() + 10 * 60_000).toISOString()
+    const summary = buildDeviceWorkspaceSummary(buildDeviceWorkspaceRows(
+      { ...SNAPSHOT, positions: [{ ...SNAPSHOT.positions[0]!, timestamp: tenMinutesAhead, device_cache_stale: true, fix_time_ahead_of_clock: true }] }, [],
+    ), online)
+    expect(summary.tone).toBe('warning')
+    expect(summary.headline).toContain('1 position not current')
+    expect(summary.headline).not.toMatch(/older than|out of date/)
+  })
+
   it('never calls the feed healthy while positions are stale or unverified [M-20]', () => {
     const online: TrackingConnectionStatus = { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null }
     const staleRows = buildDeviceWorkspaceRows(
@@ -182,7 +193,7 @@ describe('device workspace model', () => {
     )
     const stale = buildDeviceWorkspaceSummary(staleRows, online)
     expect(stale.headline).not.toBe('Tracking feed healthy.')
-    expect(stale.headline).toContain('2 positions out of date')
+    expect(stale.headline).toContain('2 positions not current')
     expect(stale.tone).toBe('warning')
 
     const unverified = buildDeviceWorkspaceSummary(buildDeviceWorkspaceRows(
