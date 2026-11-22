@@ -4,7 +4,7 @@ import { DESKTOP_PANEL_ARRANGEMENT, panelOpenByDefault, panelSide } from '../../
 import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/workspace/people-model'
 import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/workspace/tracking-headline'
 import { labelTrackingWarning } from '../../src/features/workspace/tracking-problem-labels'
-import { fitProblemWords, problemWordsText } from '../../src/features/workspace/problem-word-fit'
+import { fitProblemWords, fitWithYieldingLead, problemWordsText } from '../../src/features/workspace/problem-word-fit'
 import type { NormalizedTrackingPosition, TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
@@ -106,7 +106,8 @@ describe('tracking headline', () => {
     expect(idle.condition).toBe('credentials')
     expect(idle.tone).toBe('warning')
     expect(idle.alarm).toBeUndefined()
-    expect(idle.problems[0]).toBe('Re-enter tracking password')
+    expect(idle.problems[0]).toBe('Re-enter password')
+    expect(idle.leadInAlarm).toBeUndefined()
     expect(idle.text).toMatch(/not connected/i)
     expect(idle.text).toMatch(/Settings/)
     expect(idle.issues).toContain(warning)
@@ -133,7 +134,9 @@ describe('tracking headline', () => {
       expect(headline.tone, phase).toBe('alert')
       expect(headline.alarm, phase).toMatch(new RegExp(`^${lead}`))
       expect(headline.alarm, phase).toMatch(/password or token/)
-      expect(headline.problems.slice(0, 2), phase).toEqual([lead, 'Re-enter tracking password'])
+      expect(headline.problems.slice(0, 2), phase).toEqual([lead, 'Re-enter password'])
+      // The alarm strip always says the lead, so the bar may drop it for the fix.
+      expect(headline.leadInAlarm, phase).toBe(true)
       expect(headline.text, phase).toMatch(/Settings/)
       // The runtime keeps the positions already on the map; they are last received.
       expect(headline.lastReceivedShown, phase).toBe(true)
@@ -151,6 +154,15 @@ describe('tracking headline', () => {
     expect(recordToo.text).toContain('Mission record not fully saved')
   })
 
+
+  it('only the credential alarm lets its lead yield; lost and paused keep theirs [DON-353]', () => {
+    const lost = describeTrackingHeadline({ ...base, phase: 'active', status: status({ mode: 'offline', warning: 'Traccar offline', warningCodes: ['offline_last_known'] }) })
+    expect(lost.condition).toBe('lost')
+    expect(lost.leadInAlarm).toBeUndefined()
+    const paused = describeTrackingHeadline({ ...base, phase: 'paused', status: status({ mode: 'idle' }) })
+    expect(paused.condition).toBe('paused')
+    expect(paused.leadInAlarm).toBeUndefined()
+  })
   it('keeps the last confirmed time through the null the runtime publishes on pause, per mission', () => {
     expect(rememberLastConfirmedAt('m1', '2026-11-06T11:55:00.000Z')).toBe('2026-11-06T11:55:00.000Z')
     expect(rememberLastConfirmedAt('m1', null)).toBe('2026-11-06T11:55:00.000Z')
@@ -246,5 +258,18 @@ describe('tracking problem words', () => {
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 3)).toBe('History failed · 2 stale · 1 rejected')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 2)).toBe('History failed · 2 stale · +1 more')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 0)).toBe('3 problems')
+  })
+
+  it('drops an alarm lead the strip already shows before it hides the fix behind "+N more" [DON-353]', () => {
+    // Linux fonts at 1024 px: TRACKING LOST 137, Re-enter password 154, separator 16, "+N more" 72.
+    expect(fitWithYieldingLead([137, 154], 16, 72, 420)).toEqual({ skipLead: false, shown: 2 })
+    expect(fitWithYieldingLead([137, 154], 16, 72, 280)).toEqual({ skipLead: true, shown: 1 })
+    // With more words, the fix still comes before the count.
+    expect(fitWithYieldingLead([137, 154, 100], 16, 72, 250)).toEqual({ skipLead: true, shown: 1 })
+    expect(fitWithYieldingLead([137, 154, 100], 16, 72, 280)).toEqual({ skipLead: true, shown: 2 })
+    // The lead stays whenever it and the fix fit, counting the rest.
+    expect(fitWithYieldingLead([137, 154, 100], 16, 72, 400)).toEqual({ skipLead: false, shown: 2 })
+    // A lone lead is never dropped: it is the whole message.
+    expect(fitWithYieldingLead([137], 16, 72, 100)).toEqual({ skipLead: false, shown: 0 })
   })
 })

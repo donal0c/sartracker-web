@@ -24,7 +24,7 @@ test.describe('M12 settings workspace', () => {
     const headline = page.getByTestId('ws-tracking-headline')
     await expect(headline).toHaveAttribute('data-condition', 'credentials')
     // Tracking has stopped completely mid-mission: the alarm, not an amber notice.
-    await expect(headline.getByTestId('ws-tracking-problems')).toHaveText(/^TRACKING LOST · Re-enter tracking password/)
+    await expect(headline.getByTestId('ws-tracking-problems')).toHaveText(/^TRACKING LOST · Re-enter password/)
     await expect(headline).toHaveAttribute('aria-label', /Settings/)
     await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
     await expect(page.getByTestId('ws-alarm')).toContainText('password or token')
@@ -39,6 +39,32 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
     await expect(page.getByTestId('settings-section-tracking-sources')).toHaveAttribute('aria-current', 'page')
   })
+
+  // CI's Linux fonts draw wider than macOS; Verdana (macOS) and DejaVu Sans
+  // (Linux) are the wide case. The fix must never hide behind "+1 more".
+  for (const width of [1280, 1024]) {
+    test(`keeps "Re-enter password" visible in the top bar at ${width} px in a wide font [DON-353]`, async ({ page }) => {
+      await page.addStyleTag({ content: ':root, button { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' })
+      await page.setViewportSize({ width, height: 720 })
+      await openMissionPanel(page)
+      await page.getByTestId('mission-name-input').fill('Credential fit')
+      await page.getByTestId('mission-start-btn').click()
+      await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+      await injectCredentialLoss(page, 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.')
+      const problems = page.getByTestId('ws-tracking-problems')
+      await expect(problems).toContainText('Re-enter password')
+      await expect(problems).not.toContainText('more')
+      // Where the lead gives way, the alarm strip still says it.
+      await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+      // The words fit inside the bar, not clipped past its edge.
+      const fits = await problems.evaluate((element) => {
+        const bar = element.closest('[data-testid="ws-tracking-headline"]')!.getBoundingClientRect()
+        return element.getBoundingClientRect().right <= bar.right + 0.5
+      })
+      expect(fits).toBe(true)
+      if (width === 1280) await expect(problems).toHaveText(/^TRACKING LOST · Re-enter password/)
+    })
+  }
 
   test('clears the password warning only once a replacement password connects [DON-353]', async ({ page }) => {
     const server = await routeControllableTraccar(page)
@@ -67,7 +93,7 @@ test.describe('M12 settings workspace', () => {
     await expect.poll(server.getUnavailableResponseCount, { timeout: 15_000 }).toBeGreaterThan(0)
     await expect(headline).toHaveAttribute('data-condition', 'lost', { timeout: 15_000 })
     await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
-    await expect(page.getByTestId('ws-tracking-problems')).not.toContainText('Re-enter tracking password')
+    await expect(page.getByTestId('ws-tracking-problems')).not.toContainText('Re-enter password')
 
     // The server comes back: positions arrive and the warning and button are gone.
     server.setAvailable(true)

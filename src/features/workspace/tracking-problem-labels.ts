@@ -24,7 +24,7 @@ export const PROBLEM_RANK = {
 } as const
 
 /** The problem word for a saved tracking password or token that must be entered again. */
-export const CREDENTIAL_REENTRY_WORD = 'Re-enter tracking password'
+export const CREDENTIAL_REENTRY_WORD = 'Re-enter password'
 
 /** A short problem word and how urgent it is. */
 export type RankedProblem = { readonly word: string; readonly rank: number }
