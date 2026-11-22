@@ -700,7 +700,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(people).toContainText('People 3')
     // The exact values the old mast pinned (3 tracked, 1 stale), now two parts.
     await expect(page.getByTestId('ws-people-attention')).toHaveText('1 ⚠')
-    await expect(page.getByTestId('ws-tracking-problems')).toContainText('1 stale')
+    await expect(page.getByTestId('ws-tracking-problems')).toHaveText('1 stale')
     const peopleText = (await people.textContent()) ?? ''
     expect(peopleText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
     // Only the problem words: the last-update date below them is not a count.
@@ -969,15 +969,15 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'tracking',
       severity: 'critical',
       verificationPrompt: `Verify this full-page screenshot of SAR Tracker mid-mission when the saved tracking password stops working:
-1. A bright red alarm strip says "TRACKING LOST" and tells the operator to re-enter the password or token
-2. The top bar's tracking headline reads as lost tracking and shows "Re-enter password" in whole words
+1. A bright red alarm strip across the map says "TRACKING LOST": the saved tracking password or token cannot be used, and positions on the map may not be current
+2. The top bar's tracking headline reads as lost tracking and shows "Re-enter password" in whole words (the re-entry wording is in the headline, not the alarm strip)
 3. The mission still shows as Running in the top bar
 4. Last positions remain on the map; nothing claims they are current
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'headline condition is credentials',
         'problem words contain Re-enter password',
-        'alarm says TRACKING LOST and names the password or token',
+        'alarm says TRACKING LOST and that the password or token cannot be used',
       ],
     })
   })
