@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { missionPhase, openMissionSection, outageWarning, returnReplayToLive, trackingStatus } from '../../scripts/team-smoke/lib/operator.mjs'
+import { missionPhase, openMissionSection, outageWarning, placeMarker, returnReplayToLive, trackingStatus } from '../../scripts/team-smoke/lib/operator.mjs'
 import { moreMenuItem, openMissionReview, openParticipantPickers, pressPauseResume } from '../../scripts/workspace-panels.mjs'
 
 /**
@@ -43,6 +43,10 @@ test.describe('team-smoke navigation helpers [DON-353]', () => {
     await expect(page.getByTestId('ws-mission-host')).toBeHidden()
     expect(await missionPhase(page)).toBe('ACTIVE')
 
+    // A marker is placed with ordinary clicks on the map and the type's label.
+    await placeMarker(page, { name: 'Harness clue', x: 600, y: 420, type: 'clue' })
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
     // The shared section opener reopens Mission and waits for the participants.
     await openMissionSection(page, 'participants')
     await expect(page.getByTestId('participant-management')).toBeVisible()
@@ -66,6 +70,16 @@ test.describe('team-smoke navigation helpers [DON-353]', () => {
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
     await page.getByTestId('mission-replay-seek').click()
     await expect(page.getByTestId('mission-replay-return-live')).toBeVisible()
+    // Replay still on screen without its button is stuck, never "not in replay".
+    await page.evaluate(() => {
+      const button = document.querySelector<HTMLElement>('[data-testid="mission-replay-return-live"]')
+      if (button !== null) button.style.display = 'none'
+    })
+    expect(await returnReplayToLive(page)).toBe('stuck')
+    await page.evaluate(() => {
+      const button = document.querySelector<HTMLElement>('[data-testid="mission-replay-return-live"]')
+      if (button !== null) button.style.display = ''
+    })
     expect(await returnReplayToLive(page)).toBe('live')
     await page.getByTestId('workspace-close-btn').click()
 
