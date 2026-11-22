@@ -10,6 +10,37 @@ test.describe('M12 settings workspace', () => {
     await expect(title).toContainText('SAR Tracker')
   })
 
+  test('says to re-enter an unreadable tracking password and opens Settings at Tracking sources [DON-353]', async ({ page }) => {
+    // The old layout's warning said what to do; the new top bar hid it behind
+    // a neutral "Tracking not connected" until the Tracking panel was opened.
+    const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+    // The harness injects tracking into a mission, as when the password stops working mid-mission.
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Credential check')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await page.evaluate(async (text) => {
+      await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot(
+        { devices: [], positions: [], breadcrumbs: [] },
+        { mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: text,
+          warningCodes: ['tracking_credentials_unreadable'] },
+      )
+    }, warning)
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+    await expect(headline.getByTestId('ws-tracking-problems')).toHaveText(/^Re-enter tracking password/)
+    await expect(headline).toHaveAttribute('aria-label', /Settings/)
+
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText(warning)
+    await expect(page.getByTestId('ws-tracking-advice')).toContainText('Tracking sources')
+    // Reconnecting cannot help until the password is entered again.
+    await expect(page.getByTestId('ws-reconnect')).toHaveCount(0)
+    await page.getByTestId('ws-open-tracking-settings').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.getByTestId('settings-section-tracking-sources')).toHaveAttribute('aria-current', 'page')
+  })
+
   test('opens the workspace and validates Traccar provider inputs', async ({ page }) => {
     await page.getByTestId('open-settings-workspace').click()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()

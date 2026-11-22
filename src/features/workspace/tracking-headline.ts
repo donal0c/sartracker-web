@@ -31,7 +31,7 @@ export function useLastConfirmedAt(): string | null {
   return rememberLastConfirmedAt(missionId, reported)
 }
 
-export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'disconnected' | 'attention'
+export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'credentials' | 'disconnected' | 'attention'
 
 export type TrackingHeadline = {
   /** The condition that decides the advice, so a pause is not told to check the internet. */
@@ -126,6 +126,12 @@ export function describeTrackingHeadline(input: {
   if (lost) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), problems: ['TRACKING LOST', ...problems], detail: conditions, alarm: 'TRACKING LOST: positions on the map may not be current', issues }
   if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
+  // A saved password that cannot be used is named, with where to fix it; a
+  // neutral "not connected" hid both until the Tracking panel was opened (DON-353).
+  if (status.mode !== 'online' && status.warningCodes?.includes('tracking_credentials_unreadable') === true) {
+    const advice = 'Tracking not connected: re-enter the tracking password or token in Settings'
+    return { condition: 'credentials', tone: 'warning', text: prefixed(advice), problems, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues }
+  }
   if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', problems: ['Tracking not connected'], detail: '', issues }
   if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, problems, detail: summary, issues }
   return { condition: 'ok', tone: health.tone === 'success' ? 'ok' : 'warning', text: 'Tracking OK', problems: ['Tracking OK'], detail: '', issues }

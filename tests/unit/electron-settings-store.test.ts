@@ -59,6 +59,7 @@ type ElectronSettingsStore = {
       readonly token?: string
     } | null
     readonly trackingDisabledReason?: string
+    readonly trackingDisabledCode?: string
   }>
   readonly testTrackingConnection: (input: ReturnType<typeof createSettingsDraft>) => Promise<{
     readonly ok: boolean
@@ -245,6 +246,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('keeps the shell operable with tracking disabled when the credential file is unreadable [WAR04-SET-01]', async () => {
@@ -268,6 +270,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('could not be read')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('does not pair settings with a credential from another save generation [WAR04-SET-02]', async () => {
@@ -301,6 +304,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('do not match')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('rejects Traccar provider URLs with embedded credentials before persistence [DON-207]', async () => {
@@ -804,6 +808,7 @@ describe('electron settings store', () => {
     const runtime = await store.loadRuntimeBootstrapSettings(true)
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('persists a Traccar secret on Linux even when safeStorage would fall back to basic_text', async () => {
@@ -856,6 +861,7 @@ describe('electron settings store', () => {
     const runtime = await store.loadRuntimeBootstrapSettings(true)
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('migrates a decryptable legacy secrets.json into the local credential file and leaves it intact', async () => {
@@ -919,6 +925,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('could not be read')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('keeps the shell operable when the legacy credential file is corrupt', async () => {
@@ -942,6 +949,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('could not be read')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('fails closed when current generated credentials are missing instead of resurrecting a legacy secret', async () => {
@@ -959,6 +967,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('do not match')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('starts without tracking when only an undecryptable legacy secrets.json exists', async () => {
@@ -994,6 +1003,7 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toBe(
       'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
     )
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
     expect(decryptString).not.toHaveBeenCalled()
     // Migration must not delete or rewrite the legacy file (decision (a)).
     await expect(access(path.join(userDataPath, 'secrets.json'))).resolves.toBeUndefined()

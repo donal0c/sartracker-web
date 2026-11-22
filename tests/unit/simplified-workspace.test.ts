@@ -96,6 +96,28 @@ describe('tracking headline', () => {
     expect(headline.text).not.toContain('Traccar server')
   })
 
+  it('names a saved tracking password that must be re-entered, not a neutral "not connected" [DON-353]', () => {
+    // The old layout's warning said what to do; the new bar must say it too.
+    const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+    for (const phase of ['idle', 'active'] as const) {
+      const headline = describeTrackingHeadline({
+        ...base, phase, status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+      })
+      expect(headline.condition).toBe('credentials')
+      expect(headline.tone).toBe('warning')
+      expect(headline.problems[0]).toBe('Re-enter tracking password')
+      expect(headline.text).toMatch(/not connected/i)
+      expect(headline.text).toMatch(/Settings/)
+      expect(headline.issues).toContain(warning)
+    }
+    // Tracking that is simply not set up still reads as not connected.
+    const plain = describeTrackingHeadline({
+      ...base, phase: 'idle', status: status({ mode: 'idle', warning: 'Tracking is not configured.', warningCodes: ['tracking_not_configured'] }),
+    })
+    expect(plain.condition).toBe('disconnected')
+    expect(plain.problems).toEqual(['Tracking not connected'])
+  })
+
   it('keeps the last confirmed time through the null the runtime publishes on pause, per mission', () => {
     expect(rememberLastConfirmedAt('m1', '2026-11-06T11:55:00.000Z')).toBe('2026-11-06T11:55:00.000Z')
     expect(rememberLastConfirmedAt('m1', null)).toBe('2026-11-06T11:55:00.000Z')

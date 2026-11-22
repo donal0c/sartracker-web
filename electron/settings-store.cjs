@@ -182,6 +182,10 @@ function createElectronSettingsStore(options) {
       secretResult,
       forceConnect,
     })
+    // The saved password or token is unreadable, undecryptable or from another
+    // save: say so by code, so the top bar can ask for it again (DON-353).
+    const credentialsUnreadable =
+      secretResult.unsafeReason !== undefined && disabledReason === secretResult.unsafeReason
     const shouldConnect =
       disabledReason === undefined &&
       persisted.dataSource.providerType === 'traccar_http' &&
@@ -206,6 +210,7 @@ function createElectronSettingsStore(options) {
         ? createTrackingConfig(persisted.dataSource, secretResult.value)
         : null,
       ...(disabledReason === undefined ? {} : { trackingDisabledReason: disabledReason }),
+      ...(credentialsUnreadable ? { trackingDisabledCode: 'tracking_credentials_unreadable' } : {}),
     }
   }
 

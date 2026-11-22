@@ -22,6 +22,7 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
   paused: { happened: 'The mission is paused, so positions are not updating.', map: LAST_RECEIVED, todo: 'Positions stopped because the mission is paused. Press Resume mission in the red bar to start them again.' },
   record: { happened: 'Part of the mission record could not be saved.', map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
   recovery: { happened: 'A mission was interrupted and has not been resumed.', map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
+  credentials: { happened: 'Tracking cannot connect: the saved tracking password or token cannot be used on this computer.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the tracking password or token again, then press Save, Connect & Close.' },
   disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
 }
 
@@ -223,6 +224,8 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const [reconnectError, setReconnectError] = useState<string | null>(null)
   const advice = TRACKING_ADVICE[headline.condition]
   const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
+  // Settings opens at Tracking sources, where the password or token is entered.
+  const openSettings = useSettingsWorkspaceStore((state) => state.openWorkspace)
 
   return (
     <section className="ws-panel-section" data-testid="ws-tracking-panel" ref={sectionRef} tabIndex={-1}>
@@ -252,6 +255,14 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           type="button"
         >
           {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+        </button> : null}
+        {headline.condition === 'credentials' ? <button
+          className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
+          data-testid="ws-open-tracking-settings"
+          onClick={() => openSettings()}
+          type="button"
+        >
+          Open Settings: Tracking sources
         </button> : null}
         {reconnectError === null ? null : <p className="sar-inline-alert p-2 text-sm" role="alert">{reconnectError}</p>}
         <TrackingStatusPanel variant="simplified" />

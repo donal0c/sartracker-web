@@ -136,6 +136,8 @@ export type RuntimeBootstrapSettings = {
     readonly token?: string
   } | null
   readonly trackingDisabledReason?: string
+  /** Set when the saved tracking password or token cannot be used and must be entered again (DON-353). */
+  readonly trackingDisabledCode?: 'tracking_credentials_unreadable'
   readonly stationaryAttentionConfig?: {
     readonly heartbeatWindowMs: number
     readonly heartbeatToleranceMs: number
