@@ -273,4 +273,43 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
       message: 'The watched folder list could not be saved: Disk full. The folder is watched now but will be forgotten after a restart; choose it again with Watch Folder to retry saving.',
     })
   })
+
+  it('shows a backup warning that arrived after the switch when that mission reopens, until a backup succeeds [review round 4]', async () => {
+    const saved = new Map<string, readonly string[]>([['mission-1', ['/field/a']]])
+    let finishFirstSave: () => void = () => undefined
+    const backupWarning = 'The watched-folder list was saved, but its backup copy could not be updated: EISDIR.'
+    const store: GpxWatchedFolderStoreBoundary = {
+      loadWatchedFolders: vi.fn(async (missionId: string) => ({ paths: saved.get(missionId) ?? [], warning: null })),
+      saveWatchedFolders: vi.fn()
+        .mockImplementationOnce((missionId: string, paths: readonly string[]) => new Promise<{ backupWarning: string }>((resolve) => {
+          finishFirstSave = () => { saved.set(missionId, [...paths]); resolve({ backupWarning }) }
+        }))
+        .mockImplementation(async (missionId: string, paths: readonly string[]) => {
+          saved.set(missionId, [...paths])
+          return { backupWarning: null }
+        }),
+    }
+    const runtime = await startRuntime({ watchedFolderStore: store })
+    await runtime.controller.refreshMission('mission-1')
+    const adding = runtime.controller.addWatchedDirectory('/field/b')
+    await vi.waitFor(() => expect(store.saveWatchedFolders).toHaveBeenCalledTimes(1))
+    await runtime.controller.refreshMission('mission-2')
+    finishFirstSave()
+    await adding
+    expect(runtime.state()?.watchNotice).toBeNull()
+
+    await runtime.controller.refreshMission('mission-1')
+    expect(runtime.state()?.watchedDirectories).toEqual(['/field/a', '/field/b'])
+    expect(runtime.state()?.watchNotice).toEqual({
+      tone: 'problem',
+      message: 'Resumed watching 2 folders saved for this mission. New GPX files there will import automatically. The watched-folder list was saved, but its backup copy could not be updated: EISDIR. The folder will still be watched after a restart. Check the disk and free space; the backup is retried on the next change.',
+    })
+
+    // A later save that updates the backup clears it, now and on the next reopen.
+    runtime.controller.removeWatchedDirectory('/field/b')
+    await vi.waitFor(() => expect(runtime.state()?.watchNotice).toBeNull())
+    await runtime.controller.refreshMission('mission-2')
+    await runtime.controller.refreshMission('mission-1')
+    expect(runtime.state()?.watchNotice?.tone).toBe('resumed')
+  })
 })

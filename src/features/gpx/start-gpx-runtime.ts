@@ -217,6 +217,8 @@ export async function startGpxRuntime(
   const latestSaveByMission = new Map<string, Promise<void>>()
   /** Missions whose latest save failed, with the warning to show for them. */
   const watchSaveFailures = new Map<string, string>()
+  /** Missions whose list saved but whose backup copy did not, with the warning. */
+  const watchBackupWarnings = new Map<string, string>()
   let importPublication = 0
   let importErrorRevision = 0
   let nextImportCursor: string | null = null
@@ -631,7 +633,9 @@ export async function startGpxRuntime(
     const watchedDirectories = [...saved, ...unsaved.filter((path) => !saved.includes(path))]
     watchListByMission.set(missionId, watchedDirectories)
     if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
-    const saveFailure = watchSaveFailures.get(missionId) ?? null
+    const saveProblems = [watchSaveFailures.get(missionId), watchBackupWarnings.get(missionId)]
+      .filter((message): message is string => message !== undefined)
+    const saveFailure = saveProblems.length === 0 ? null : saveProblems.join(' ')
     if (saved.length === 0) {
       if (saveFailure === null && watchedDirectories.length === state.watchedDirectories.length) return
       state = {
@@ -676,16 +680,15 @@ export async function startGpxRuntime(
       try {
         const { backupWarning } = await store.saveWatchedFolders(missionId, paths)
         watchSaveFailures.delete(missionId)
+        // Kept for the mission before the guard, so it is shown when that
+        // mission opens again, until a save also updates the backup.
+        const backupNotice = backupWarning === null ? null : describeBackupWarning(backupWarning)
+        if (backupNotice === null) watchBackupWarnings.delete(missionId)
+        else watchBackupWarnings.set(missionId, backupNotice)
         if (!isCurrent()) return
-        if (backupWarning !== null) {
+        if (backupNotice !== null) {
           // The list is safe; only its backup copy is behind. Say so plainly.
-          state = {
-            ...state,
-            watchNotice: {
-              tone: 'problem',
-              message: `${backupWarning.replace(/\.$/u, '')}. The folder will still be watched after a restart. Check the disk and free space; the backup is retried on the next change.`,
-            },
-          }
+          state = { ...state, watchNotice: { tone: 'problem', message: backupNotice } }
           publishRuntime()
         } else if (state.watchNotice?.tone === 'problem') {
           state = { ...state, watchNotice: null }
@@ -1287,7 +1290,11 @@ function describeOmittedWatchedFiles(directoryPath: string, omittedCount: number
     + 'Move older files to another folder.'
 }
 
-/** Names a watched folder that could not be listed, in words a volunteer can act on. */
+/** Operator wording for a list that saved while its backup copy did not [DON-337]. */
+function describeBackupWarning(warning: string): string {
+  return `${warning.replace(/\.$/u, '')}. The folder will still be watched after a restart. Check the disk and free space; the backup is retried on the next change.`
+}
+
 /** Operator words for a watch-store or folder error, without Electron's IPC wrapper text. */
 function describeWatchError(error: unknown): string {
   return toErrorMessage(error)
@@ -1308,6 +1315,7 @@ function describeUnopenableWatchedFolder(directoryPath: string, error: unknown):
   return `Watched folder ${directoryPath} could not be opened: ${describeWatchError(error)}. New GPX files there are not being imported. Reconnect the folder or drive and press Rescan Watches, or remove it from Watched Folders.`
 }
 
+/** Names a watched folder that could not be listed, in words a volunteer can act on. */
 function describeWatchedFolderFailure(failure: GpxImportOperationFailure): string {
   return `Watched folder ${failure.fileName} could not be read: ${failure.reason.replace(/\.+$/u, '')}. Check the folder is still connected, then select it again.`
 }
