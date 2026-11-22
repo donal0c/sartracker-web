@@ -92,9 +92,13 @@ test.describe('M19 devices workspace', () => {
     await expect(opener).toBeFocused()
   })
 
-  test('keeps the Open Devices pointer target fixed while tracking messages change [DON-261]', async ({
+  for (const width of [1280, 1024]) {
+  test(`keeps the Open Devices pointer target fixed while tracking messages change, ${width} px wide [DON-261]`, async ({
     page,
   }) => {
+    // A long message wrapped to two lines on Linux fonts in CI, growing the top
+    // bar and moving the panel; 1024 px makes it long enough to wrap anywhere.
+    await page.setViewportSize({ width, height: 720 })
     const opener = page.getByTestId('open-devices-workspace')
     // Measured on screen: the TRACKING LOST alarm runs across the map, so
     // nothing under the pointer may move when it appears (DON-341).
@@ -139,6 +143,7 @@ test.describe('M19 devices workspace', () => {
 
     expect(Math.max(...observedTops) - Math.min(...observedTops)).toBeLessThan(0.5)
   })
+  }
 
   test('makes workspace controls actionable immediately when opened [DON-260]', async ({
     page,

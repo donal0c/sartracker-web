@@ -36,7 +36,7 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
       data-testid="ws-tracking-headline"
       onClick={props.onOpen}
       role="status"
-      title="Open tracking details"
+      title={`${headline.text}. Open tracking details`}
       type="button"
     >
       <strong><span aria-hidden="true">{headline.tone === 'ok' ? '●' : '⚠'} </span>{headline.text}</strong>
