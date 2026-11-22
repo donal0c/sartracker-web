@@ -32,12 +32,44 @@ function createFakeSource() {
   }
 }
 
+/**
+ * The map's visible tracking tiles. `refresh` reloads every one, errored ones
+ * included, so they are loading until `loadAll` or `failOne` is called.
+ */
+function createFakeTiles(source: ReturnType<typeof createFakeSource>) {
+  let loading = false
+  return {
+    refresh: vi.fn(() => { loading = true }),
+    settled: () => !loading,
+    /** Every visible tile finished loading the new data. */
+    loadAll() {
+      loading = false
+      source.fire('data', { dataType: 'source', tile: {} })
+    },
+    /** A tile failed to load; MapLibre fires the error on the source. */
+    failOne(message = 'tile failed') {
+      loading = false
+      source.fire('error', { error: new Error(message), tile: {} })
+    },
+  }
+}
+
+/** Lets the deferred tile refresh run. */
+const flush = () => Promise.resolve()
+
+/** Starts a watch on a fake source with fake tiles. */
+function setup(startFailed = false) {
+  const source = createFakeSource()
+  const tiles = createFakeTiles(source)
+  const onFailure = vi.fn()
+  const onRecovered = vi.fn()
+  const watch = watchTrackingSourceUpdates(source, { startFailed, tiles, onFailure, onRecovered })
+  return { source, tiles, onFailure, onRecovered, watch }
+}
+
 describe('tracking source update watch [DON-357]', () => {
   it('reports a rejected worker update as a failure and asks for a full resync', () => {
-    const source = createFakeSource()
-    const onFailure = vi.fn()
-    const onRecovered = vi.fn()
-    const watch = watchTrackingSourceUpdates(source, { startFailed: false, onFailure, onRecovered })
+    const { source, onFailure, onRecovered, watch } = setup()
 
     source.startDispatch()
     source.reject('could not parse diff')
@@ -47,10 +79,8 @@ describe('tracking source update watch [DON-357]', () => {
     expect(onRecovered).not.toHaveBeenCalled()
   })
 
-  it('stays failed when an update dispatched before the resync succeeds', () => {
-    const source = createFakeSource()
-    const onRecovered = vi.fn()
-    const watch = watchTrackingSourceUpdates(source, { startFailed: false, onFailure: vi.fn(), onRecovered })
+  it('stays failed when an update dispatched before the resync succeeds', async () => {
+    const { source, tiles, onRecovered, watch } = setup()
 
     source.startDispatch()
     source.reject()
@@ -59,22 +89,65 @@ describe('tracking source update watch [DON-357]', () => {
     source.startDispatch()
     watch.noteFullResync()
     source.succeed()
+    await flush()
 
     expect(onRecovered).not.toHaveBeenCalled()
+    expect(tiles.refresh).not.toHaveBeenCalled()
     expect(watch.needsFullResync()).toBe(false)
 
-    // The full replacement is the next dispatch; only its success clears.
+    // The full replacement is the next dispatch; only it, once drawn, clears.
     source.startDispatch()
     source.succeed()
+    await flush()
+    tiles.loadAll()
     expect(onRecovered).toHaveBeenCalledTimes(1)
     expect(watch.needsFullResync()).toBe(false)
   })
 
+  it('keeps the failure after the resync is applied until every visible tile has reloaded', async () => {
+    const { source, tiles, onRecovered, watch } = setup()
+    source.startDispatch()
+    source.reject()
+    watch.noteFullResync()
+    source.startDispatch()
+    source.succeed()
+
+    // The worker holds the new data, but the map has not drawn it yet. Errored
+    // tiles are skipped by MapLibre's normal reload, so every tile is reloaded.
+    expect(onRecovered).not.toHaveBeenCalled()
+    await flush()
+    expect(tiles.refresh).toHaveBeenCalledTimes(1)
+    expect(onRecovered).not.toHaveBeenCalled()
+
+    tiles.loadAll()
+    expect(onRecovered).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays failed when a tile fails to reload after the resync, and asks for another', async () => {
+    const { source, tiles, onFailure, onRecovered, watch } = setup()
+    source.startDispatch()
+    source.reject('first')
+    watch.noteFullResync()
+    source.startDispatch()
+    source.succeed()
+    await flush()
+
+    tiles.failOne('tile could not be built')
+
+    expect(onRecovered).not.toHaveBeenCalled()
+    expect(onFailure).toHaveBeenLastCalledWith('tile could not be built')
+    expect(watch.needsFullResync()).toBe(true)
+  })
+
+  it('reports a tile that fails to load while healthy as a failure', () => {
+    const { tiles, onFailure, watch } = setup()
+    tiles.failOne('tile could not be built')
+    expect(onFailure).toHaveBeenCalledWith('tile could not be built')
+    expect(watch.needsFullResync()).toBe(true)
+  })
+
   it('stays failed when the resync itself is rejected, and asks for another', () => {
-    const source = createFakeSource()
-    const onFailure = vi.fn()
-    const onRecovered = vi.fn()
-    const watch = watchTrackingSourceUpdates(source, { startFailed: false, onFailure, onRecovered })
+    const { source, onFailure, onRecovered, watch } = setup()
 
     source.startDispatch()
     source.reject('first')
@@ -87,10 +160,8 @@ describe('tracking source update watch [DON-357]', () => {
     expect(watch.needsFullResync()).toBe(true)
   })
 
-  it('ignores tile loading events, which the source fires too', () => {
-    const source = createFakeSource()
-    const onRecovered = vi.fn()
-    const watch = watchTrackingSourceUpdates(source, { startFailed: false, onFailure: vi.fn(), onRecovered })
+  it('ignores tile loading events, which the source fires too', async () => {
+    const { source, tiles, onRecovered, watch } = setup()
 
     source.startDispatch()
     source.reject()
@@ -98,31 +169,47 @@ describe('tracking source update watch [DON-357]', () => {
     // A tile request is not a worker dispatch and must not be counted as one.
     source.fire('dataloading', { dataType: 'source', tile: {} })
     source.succeed()
+    await flush()
+    tiles.loadAll()
     expect(onRecovered).not.toHaveBeenCalled()
   })
 
-  it('does nothing on success while healthy', () => {
-    const source = createFakeSource()
-    const onRecovered = vi.fn()
-    const watch = watchTrackingSourceUpdates(source, { startFailed: false, onFailure: vi.fn(), onRecovered })
+  it('does nothing on success while healthy', async () => {
+    const { source, tiles, onRecovered, watch } = setup()
     source.startDispatch()
     source.succeed()
+    await flush()
+    expect(tiles.refresh).not.toHaveBeenCalled()
     expect(onRecovered).not.toHaveBeenCalled()
     expect(watch.needsFullResync()).toBe(false)
   })
 
-  it('lets a new source clear an earlier failure once it applies its first data', () => {
-    const source = createFakeSource()
-    const onRecovered = vi.fn()
-    watchTrackingSourceUpdates(source, { startFailed: true, onFailure: vi.fn(), onRecovered })
+  it('lets a new source clear an earlier failure once its first data is drawn', async () => {
+    const { source, tiles, onRecovered } = setup(true)
     // A new source's first dispatch started inside addSource, before the watch.
     source.succeed()
+    await flush()
+    expect(onRecovered).not.toHaveBeenCalled()
+    tiles.loadAll()
     expect(onRecovered).toHaveBeenCalledTimes(1)
   })
 
+  it('reports a failure when the tiles cannot be reloaded at all', async () => {
+    const { source, tiles, onFailure, onRecovered, watch } = setup()
+    tiles.refresh.mockImplementation(() => { throw new Error('There is no tile manager with ID "tracking"') })
+    source.startDispatch()
+    source.reject()
+    watch.noteFullResync()
+    source.startDispatch()
+    source.succeed()
+    await flush()
+    expect(onRecovered).not.toHaveBeenCalled()
+    expect(onFailure).toHaveBeenLastCalledWith(expect.stringContaining('no tile manager'))
+    expect(watch.needsFullResync()).toBe(true)
+  })
+
   it('stops listening when stopped', () => {
-    const source = createFakeSource()
-    const watch = watchTrackingSourceUpdates(source, { startFailed: false, onFailure: vi.fn(), onRecovered: vi.fn() })
+    const { source, watch } = setup()
     expect(source.listenerCount()).toBeGreaterThan(0)
     watch.stop()
     expect(source.listenerCount()).toBe(0)

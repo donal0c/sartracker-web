@@ -7,10 +7,17 @@
  *
  * Recovery is strict. A diff dispatched after a failure was built against data
  * the source never applied, so its success proves nothing. Only a full
- * replacement sent after the failure, and dispatched after that point, clears
- * it. MapLibre runs one worker dispatch at a time and starts each with a
+ * replacement sent after the failure, and dispatched after that point, counts.
+ * MapLibre runs one worker dispatch at a time and starts each with a
  * `dataloading` event, so counting those tells which dispatch a later `data`
  * event belongs to.
+ *
+ * Even then the worker holding the data is not the map drawing it. MapLibre's
+ * own reload after a full replacement skips tiles that errored earlier, so a
+ * tile that failed stays blank. Once the replacement is applied every visible
+ * tile is reloaded, errored ones included, and the failure clears only when
+ * none is still loading and none failed since. A tile that fails to load is
+ * itself a failure: positions in it are not drawn.
  */
 
 type SourceListener = (event: unknown) => void
@@ -30,6 +37,14 @@ export type TrackingSourceUpdateWatch = {
   readonly stop: () => void
 }
 
+/** The map's visible tiles for the tracking source. */
+export type TrackingSourceTiles = {
+  /** Reloads every visible tile, errored ones included (`map.refreshTiles`). */
+  readonly refresh: () => void
+  /** True when no visible tile is still loading (`map.isSourceLoaded`). */
+  readonly settled: () => boolean
+}
+
 export type TrackingSourceUpdateWatchOptions = {
   /**
    * A failure is already showing from an earlier source. A new source's first
@@ -37,6 +52,7 @@ export type TrackingSourceUpdateWatchOptions = {
    * listen), so its first success clears it.
    */
   readonly startFailed: boolean
+  readonly tiles: TrackingSourceTiles
   readonly onFailure: (message: string) => void
   readonly onRecovered: () => void
 }
@@ -51,6 +67,16 @@ const MESSAGE_LIMIT = 200
  */
 function describeSourceError(event: unknown): string {
   const error = typeof event === 'object' && event !== null ? (event as { error?: unknown }).error : undefined
+  return describeError(error)
+}
+
+/**
+ * Reads an error's message, whatever shape it has.
+ *
+ * @param error what was thrown or reported
+ * @returns the error text, bounded
+ */
+function describeError(error: unknown): string {
   const message = error instanceof Error
     ? error.message
     : typeof error === 'string' && error !== '' ? error : 'unknown error'
@@ -84,6 +110,33 @@ export function watchTrackingSourceUpdates(
   // Dispatch count at the moment the full replacement was sent; null while
   // none has been sent since the latest failure.
   let resyncAfter: number | null = options.startFailed ? -1 : null
+  // The replacement is applied; waiting for every visible tile to redraw it.
+  let awaitingTiles = false
+  let stopped = false
+
+  const fail = (message: string) => {
+    failed = true
+    resyncAfter = null
+    awaitingTiles = false
+    options.onFailure(message)
+  }
+  const recoverIfDrawn = () => {
+    if (!failed || !awaitingTiles || !options.tiles.settled()) return
+    failed = false
+    resyncAfter = null
+    awaitingTiles = false
+    options.onRecovered()
+  }
+  const reloadTiles = () => {
+    if (stopped || !awaitingTiles) return
+    try {
+      options.tiles.refresh()
+    } catch (error) {
+      fail(describeError(error))
+      return
+    }
+    recoverIfDrawn()
+  }
 
   const onDataLoading: SourceListener = (event) => {
     // Tile requests also fire `dataloading` on the source; they carry a tile.
@@ -91,21 +144,26 @@ export function watchTrackingSourceUpdates(
     dispatches += 1
   }
   const onData: SourceListener = (event) => {
+    if (readField(event, 'tile') !== undefined) {
+      recoverIfDrawn()
+      return
+    }
     if (readField(event, 'sourceDataType') !== 'content') return
-    if (!failed || resyncAfter === null || dispatches <= resyncAfter) return
-    failed = false
-    resyncAfter = null
-    options.onRecovered()
+    if (!failed || awaitingTiles || resyncAfter === null || dispatches <= resyncAfter) return
+    awaitingTiles = true
+    // After MapLibre's own handler for this event has started its reload, so
+    // this reload of every tile is the one that counts.
+    queueMicrotask(reloadTiles)
   }
   const onError: SourceListener = (event) => {
-    failed = true
-    resyncAfter = null
-    options.onFailure(describeSourceError(event))
+    fail(describeSourceError(event))
   }
 
   source.on('dataloading', onDataLoading)
   source.on('data', onData)
   source.on('error', onError)
+  // A tile dropped from view while loading will not fire `data`.
+  source.on('dataabort', recoverIfDrawn)
 
   return {
     needsFullResync: () => failed && resyncAfter === null,
@@ -113,9 +171,11 @@ export function watchTrackingSourceUpdates(
       if (failed) resyncAfter = dispatches
     },
     stop: () => {
+      stopped = true
       source.off('dataloading', onDataLoading)
       source.off('data', onData)
       source.off('error', onError)
+      source.off('dataabort', recoverIfDrawn)
     },
   }
 }

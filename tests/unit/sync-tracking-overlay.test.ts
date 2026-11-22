@@ -49,11 +49,16 @@ function createMockMap(options: { readonly missingLayerIds?: readonly string[] }
   const sources = new Map<string, unknown>()
   const missingLayerIds = new Set(options.missingLayerIds ?? [])
   const sourceHandles = new Map<string, MockSourceHandle>()
+  // Visible tracking tiles: refreshTiles starts reloading them all.
+  const tiles = { loading: false }
 
   return {
     layers,
     sources,
     sourceHandles,
+    tiles,
+    refreshTiles: vi.fn(() => { tiles.loading = true }),
+    isSourceLoaded: vi.fn(() => !tiles.loading),
     getLayer: vi.fn((id: string) => (layers.has(id) ? { id } : undefined)),
     getSource: vi.fn((id: string) => {
       return sourceHandles.get(id)
@@ -832,6 +837,14 @@ describe('tracking source update failures [DON-357]', () => {
 
     source.fire('dataloading', { dataType: 'source' })
     source.fire('data', { dataType: 'source', sourceDataType: 'content' })
+    // Applied in the worker but not yet drawn: every visible tile is reloaded,
+    // errored ones included, and the alarm holds until they have.
+    await Promise.resolve()
+    expect(map.refreshTiles).toHaveBeenCalledWith('tracking')
+    expect(useTrackingMapUpdateStore.getState().failure).not.toBeNull()
+
+    map.tiles.loading = false
+    source.fire('data', { dataType: 'source', tile: {} })
     expect(useTrackingMapUpdateStore.getState().failure).toBeNull()
   })
 

@@ -88,12 +88,16 @@ const trackingSourceWatchByMap = new WeakMap<object, { readonly source: GeoJSONS
  * the watch when the source itself was replaced (for example by a style
  * change) [DON-357].
  */
-function ensureTrackingSourceWatch(map: object, source: GeoJSONSource): TrackingSourceUpdateWatch {
+function ensureTrackingSourceWatch(map: maplibregl.Map, source: GeoJSONSource): TrackingSourceUpdateWatch {
   const current = trackingSourceWatchByMap.get(map)
   if (current !== undefined && current.source === source) return current.watch
   current?.watch.stop()
   const watch = watchTrackingSourceUpdates(source, {
     startFailed: useTrackingMapUpdateStore.getState().failure !== null,
+    tiles: {
+      refresh: () => map.refreshTiles(TRACKING_SOURCE_ID),
+      settled: () => map.isSourceLoaded(TRACKING_SOURCE_ID) === true,
+    },
     onFailure: (message) => {
       const alreadyFailed = useTrackingMapUpdateStore.getState().failure !== null
       useTrackingMapUpdateStore.getState().reportFailure(message)
