@@ -8,6 +8,12 @@
  */
 
 import { delay } from './app.mjs'
+import { openMissionSection } from '../../mission-sections.mjs'
+import { openParticipantPickers, openWorkspacePanel, pressPauseResume } from '../../workspace-panels.mjs'
+
+// One section opener for every probe: it opens the Mission panel and fails when
+// the section's content never appears (DON-353).
+export { openMissionSection }
 
 export const ARCHIVE_PASSPHRASE = 'Smoke-Test-Pass-2026!x'
 
@@ -81,6 +87,7 @@ export async function closeWorkspace(page) {
  */
 export async function startMission(page, name, participants) {
   const t = byId(page)
+  await openWorkspacePanel(page, 'mission')
   await t('mission-name-input').fill(name)
   await t('mission-start-btn').click()
   await delay(2000)
@@ -96,39 +103,18 @@ export async function startMission(page, name, participants) {
  */
 export async function startMissionWithLookback(page, { name, offsetHours, devices }) {
   const t = byId(page)
+  await openWorkspacePanel(page, 'mission')
   await t('mission-name-input').fill(name)
   await t('mission-offset-input').fill(String(offsetHours))
-  const picker = t('participant-device-picker')
+  const picker = await openParticipantPickers(page, { require: 'device' })
   for (const device of devices) {
     await picker.getByText(device, { exact: true }).waitFor({ timeout: 30_000 })
     await picker.getByText(device, { exact: true }).click()
   }
   await t('mission-start-btn').click()
-  await openMissionSection(page, 'participants')
+  await openMissionSection(page, 'participants', { timeoutMs: 20_000 })
   await t('participant-management').waitFor({ timeout: 20_000 })
   await delay(1500)
-}
-
-/**
- * Opens a Mission Control section (participants or outings) if it is
- * collapsed. During a mission they collapse to a summary until Show is
- * pressed; a section forced open by a warning is already open, and outside
- * an active or paused mission there is no wrapper at all [DON-300].
- *
- * @param {import('playwright').Page} page
- * @param {'participants' | 'outings'} name
- */
-export async function openMissionSection(page, name) {
-  const section = page.getByTestId(`mission-${name}-section`)
-  // The wrapper exists only while a mission is active or paused; give a
-  // just-started mission a moment, then treat "no wrapper" as open.
-  await section.waitFor({ state: 'attached', timeout: 5000 }).catch(() => {})
-  if (await section.count() === 0) return
-  if (await section.getAttribute('data-open') !== 'false') return
-  await page.getByTestId(`mission-${name}-section-toggle`).click()
-  await page.waitForFunction((testId) =>
-    document.querySelector(`[data-testid="${testId}"]`)?.getAttribute('data-open') !== 'false',
-  `mission-${name}-section`, { timeout: 10_000 })
 }
 
 /**
@@ -147,15 +133,40 @@ export async function addParticipantAfterStart(page, device, historyFrom) {
   await delay(1200)
 }
 
-/** Returns the mission phase chip text, for example ACTIVE or PAUSED. */
+// What the top bar's phase label says for each mission phase (DON-341).
+const TOP_BAR_PHASES = [
+  { text: 'Start a mission', phase: 'IDLE' },
+  { text: 'Running', phase: 'ACTIVE' },
+  { text: 'PAUSED', phase: 'PAUSED' },
+  { text: 'Needs resuming', phase: 'RECOVERY' },
+]
+
+/**
+ * Returns the mission phase the operator sees in the top bar: ACTIVE for
+ * "Running", PAUSED, RECOVERY for "Needs resuming", or IDLE. The label is
+ * always on screen; a missing or unrecognised label throws, so two unreadable
+ * phases can never pass as "unchanged" (DON-353).
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<'IDLE' | 'ACTIVE' | 'PAUSED' | 'RECOVERY'>}
+ */
 export async function missionPhase(page) {
-  return (await page.getByTestId('mission-phase-chip').innerText()).trim().toUpperCase()
+  const label = page.getByTestId('ws-mission-phase')
+  try {
+    await label.waitFor({ state: 'visible', timeout: 10_000 })
+  } catch {
+    throw new Error('The top bar shows no mission phase.')
+  }
+  const text = ((await label.textContent()) ?? '').replace(/\s+/gu, ' ').trim()
+  const match = TOP_BAR_PHASES.find((entry) => text.includes(entry.text))
+  if (match === undefined) throw new Error(`The top bar mission phase "${text}" is not one the smoke recognises.`)
+  return match.phase
 }
 
-/** Toggles pause/resume and returns the new phase. */
+/** Toggles pause/resume, confirming a pause, and returns the new phase. */
 export async function togglePause(page) {
-  await page.getByTestId('mission-pause-resume-btn').click()
-  await delay(1500)
+  await pressPauseResume(page)
+  await delay(500)
   return missionPhase(page)
 }
 
@@ -165,7 +176,7 @@ export async function togglePause(page) {
  * @returns {Promise<boolean>} whether a prompt was shown
  */
 export async function resumeIfPrompted(page, timeoutMs = 20_000) {
-  const resume = page.getByRole('button', { name: /^resume$/i })
+  const resume = page.getByTestId('start-screen-resume-btn')
   const shown = await resume.waitFor({ state: 'visible', timeout: timeoutMs }).then(() => true, () => false)
   if (shown) {
     await resume.click()
@@ -182,9 +193,14 @@ export async function resumeIfPrompted(page, timeoutMs = 20_000) {
  */
 export async function placeMarker(page, { name, x, y, type, attachment }) {
   const t = byId(page)
-  await t('map-container').click({ position: { x, y }, force: true })
+  await t('map-container').click({ position: { x, y } })
   await delay(700)
-  if (type !== undefined) await t(`marker-type-${type}`).check({ force: true })
+  if (type !== undefined) {
+    // The radio is visually hidden by design; the operator presses its label.
+    const radio = t(`marker-type-${type}`)
+    await radio.locator('xpath=..').click()
+    if (!await radio.isChecked()) throw new Error(`Pressing the ${type} marker type did not select it.`)
+  }
   await t('marker-name-input').fill(name)
   if (attachment !== undefined) {
     await t('marker-attachment-input').setInputFiles(attachment)
@@ -196,6 +212,7 @@ export async function placeMarker(page, { name, x, y, type, attachment }) {
 
 /** Finishes the active mission. */
 export async function finishMission(page) {
+  await openWorkspacePanel(page, 'mission')
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
   await delay(2000)
@@ -204,6 +221,7 @@ export async function finishMission(page) {
 /** Finalizes a finished mission into an encrypted archive. */
 export async function archiveMission(page) {
   const t = byId(page)
+  await openWorkspacePanel(page, 'mission')
   await t('mission-finalize-btn').click()
   await delay(800)
   await t('archive-passphrase').fill(ARCHIVE_PASSPHRASE)
@@ -212,6 +230,56 @@ export async function archiveMission(page) {
   await delay(500)
   await t('archive-recovery-code-confirmation').fill((await t('archive-recovery-code').innerText()).trim())
   await t('archive-finalize').click()
+}
+
+/**
+ * Returns the visible text of one element, or '' when it is absent or hidden.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} testId
+ */
+async function visibleText(page, testId) {
+  const locator = page.getByTestId(testId).first()
+  if (await locator.count() === 0 || !await locator.isVisible()) return ''
+  return ((await locator.innerText()) ?? '').replace(/\s+/gu, ' ').trim()
+}
+
+/**
+ * Reads the visible tracking health: the top bar's tracking headline, the
+ * problem words beside it, the alarm strip, and the Tracking panel when it is
+ * open (DON-341). Only text the operator can see is returned; internal state
+ * such as the headline's condition attribute is never evidence.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<string>} the visible parts joined with " / "
+ */
+export async function trackingStatus(page) {
+  const parts = []
+  for (const id of ['ws-tracking-headline', 'ws-tracking-problems', 'ws-alarm', 'ws-tracking-panel']) {
+    const text = await visibleText(page, id)
+    if (text !== '') parts.push(text)
+  }
+  return parts.join(' / ')
+}
+
+/** Words that tell an operator tracking has failed. */
+export const OUTAGE_WORDS = /TRACKING LOST|unreachable|offline|error|retry|fail|lost|degraded|disconnect/i
+
+/**
+ * Returns what an operator sees when the tracking feed fails: the alarm strip
+ * across the map and a warning in the top bar's tracking headline. Both must
+ * be on screen and both must name the failure, or this returns ''. A probe got
+ * "condition lost / Tracking OK" past the old matcher (DON-353).
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<string>} "alarm / headline", or '' when either is missing
+ */
+export async function outageWarning(page) {
+  const alarm = await visibleText(page, 'ws-alarm')
+  const headline = [await visibleText(page, 'ws-tracking-headline'), await visibleText(page, 'ws-tracking-problems')]
+    .filter((text) => text !== '').join(' / ')
+  if (!OUTAGE_WORDS.test(alarm) || !OUTAGE_WORDS.test(headline)) return ''
+  return `${alarm} / ${headline}`
 }
 
 /** Returns the visible body text with whitespace collapsed. */
@@ -235,4 +303,34 @@ export async function switchBasemap(page) {
   const after = (await toggle.innerText()).replace(/\s+/gu, ' ')
   if (after === before) throw new Error(`The basemap stayed "${before}" after choosing ${other.id}.`)
   return after
+}
+
+/**
+ * Leaves Replay with "Return to Live / now" and waits for the live map
+ * context. A click failure propagates (NOT TESTED). Replay on screen without
+ * the button, or still on screen after the click, is 'stuck'; 'not-in-replay'
+ * means the live context was already shown.
+ *
+ * @param {import('playwright').Page} page the app window
+ * @param {{ timeoutMs?: number }} [options] how long to wait for the live state
+ * @returns {Promise<'live' | 'not-in-replay' | 'stuck'>} what the operator saw
+ */
+export async function returnReplayToLive(page, { timeoutMs = 10_000 } = {}) {
+  const workspace = page.getByTestId('mission-replay-workspace')
+  const replayShown = workspace.getByText('Replay — data known at selected time', { exact: true })
+  const button = page.getByTestId('mission-replay-return-live')
+  if (!await button.isVisible()) {
+    if (await replayShown.isVisible()) return 'stuck'
+    return 'not-in-replay'
+  }
+  await button.click()
+  try {
+    await button.waitFor({ state: 'hidden', timeout: timeoutMs })
+    await workspace.getByText('Live map context', { exact: true })
+      .waitFor({ state: 'visible', timeout: timeoutMs })
+  } catch (error) {
+    if (error?.name === 'TimeoutError') return 'stuck'
+    throw error
+  }
+  return 'live'
 }

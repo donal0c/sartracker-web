@@ -18,11 +18,14 @@ import {
   closeWorkspace,
   connectProvider,
   finishMission,
+  missionPhase,
   placeMarker,
   resumeIfPrompted,
+  returnReplayToLive,
   startMission,
   switchBasemap,
 } from '../lib/operator.mjs'
+import { moreMenuItem, openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { finalizeQuitFindings, readFinalizeQuitState } from '../lib/finalize-quit.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { seedLivedInProfile } from '../lib/lived-in.mjs'
@@ -139,7 +142,7 @@ async function quitDuringFinalizeRound(ctx, profile, { label, waitForAdmission }
   if (archiveId === undefined) {
     findings.push('no archive row was stored')
   } else {
-    await app.page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(app.page)
     await delay(1500)
     await app.page.getByTestId(`archive-review-select-${archiveId}`).click({ timeout: 15_000 })
     await app.page.getByTestId('archive-review-secret').fill(ARCHIVE_PASSPHRASE)
@@ -271,16 +274,16 @@ export default [
       await app.stop()
       app = await launchApp(ctx, { profile, label: 'markers-gpx-relaunch' })
       await resumeIfPrompted(app.page, 15_000)
-      await app.page.getByTestId('sidebar-tab-tools').click().catch(() => {})
+      await openWorkspacePanel(app.page, 'tools')
       await delay(1500)
       await app.shot('markers-gpx-relaunch')
       if (await drawnGpxSegments(app.page) === 0) findings.push('the imported GPX track was not drawn after a relaunch (DON-319)')
       const basemap = await switchBasemap(app.page)
       if (await drawnGpxSegments(app.page) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
-      await app.page.getByTestId('sidebar-tab-layers').click()
+      await openWorkspacePanel(app.page, 'layers')
       await app.page.getByTestId('layer-visibility-group-gpx-tracks').uncheck()
       const hiddenDrawn = await drawnGpxSegments(app.page)
-      await app.page.getByTestId('sidebar-tab-tools').click()
+      await openWorkspacePanel(app.page, 'tools')
       await delay(1500)
       const summary = await app.page.getByTestId('gpx-import-summary').innerText().catch(() => '')
       const trackState = await app.page.getByTestId(`gpx-map-visibility-${importId}`).innerText().catch(() => '')
@@ -325,7 +328,7 @@ export default [
       await connectProvider(app.page, mock.url)
       await startMission(app.page, 'Replay Smoke', ['Walker Alpha', 'Walker Bravo'])
       await delay(150_000)
-      await t('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1200)
       await app.page.getByRole('button', { name: 'Replay', exact: true }).click()
       await delay(1500)
@@ -337,11 +340,11 @@ export default [
       const state = (await t('mission-replay-reconstructed-state').innerText().catch(() => '')).replace(/\s+/gu, ' ')
       const replayError = await t('mission-replay-error').innerText().catch(() => null)
       await app.shot('replay')
-      await t('mission-replay-return-live').click().catch(() => {})
-      await delay(1000)
+      const leftReplay = await returnReplayToLive(app.page)
       await closeWorkspace(app.page)
-      const phase = (await t('mission-phase-chip').innerText()).trim()
+      const phase = await missionPhase(app.page)
       expectProduct(replayError === null && state !== '', `Replay did not reconstruct state: ${replayError ?? 'empty state'}.`)
+      expectProduct(leftReplay === 'live', `Return to Live / now did not bring back the live map context (${leftReplay}).`)
       expectProduct(/ACTIVE/i.test(phase), `Live mission became ${phase} after replay.`)
       const basemaps = []
       for (const name of ['ESRI Satellite', 'OpenStreetMap', 'ESRI World Topo', 'OpenTopoMap']) {
@@ -375,7 +378,7 @@ export default [
       expectProduct(archived, `Archive did not complete: ${(await bodyText(app.page)).slice(0, 200)}`)
       await app.stop()
       app = await launchApp(ctx, { profile, label: 'archive-2-reopen' })
-      await app.page.getByTestId('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1500)
       await app.page.locator('[data-testid^=archive-review-select-]').first().click()
       await app.page.getByTestId('archive-review-secret').fill('Wrong-Passphrase-123!')
@@ -434,7 +437,7 @@ export default [
       const secretShown = await t('settings-provider-secret').inputValue()
       await closeWorkspace(app.page)
       const exportStarted = Date.now()
-      await t('open-diagnostics-workspace').click()
+      await (await moreMenuItem(app.page, 'open-diagnostics-workspace')).click()
       await delay(1500)
       await t('diagnostics-export-support-bundle').first().click()
       await delay(4000)

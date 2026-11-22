@@ -19,8 +19,8 @@ import { NotTested, ProductFailure } from './results.mjs'
  * may reword the dots status or rename a control; change it here only.
  */
 export const WHOLE_TRAIL_UI = Object.freeze({
-  /** Sidebar tab that holds the coverage panel and the dots status. */
-  trackingTab: 'sidebar-tab-tracking',
+  /** Side panel that holds the coverage panel and the dots status (DON-341). */
+  trackingPanel: 'tracking',
   /** The team's path into dots: "Inspect exact fixes" on the coverage panel. */
   showDots: 'coverage-inspect-exact-fixes',
   /** The dots status line ("showing N of M" today; "dots show N of M exact fixes" after the fix). */
