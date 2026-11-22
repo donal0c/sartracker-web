@@ -480,9 +480,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
     await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
     await expect(page.getByTestId('ws-toggle-people')).toContainText('People 3')
-    // Paused, no position is live, so all three need a look; the person who
-    // was already stale is told apart in the People panel below.
-    await expect(page.getByTestId('ws-people-attention')).toHaveText('3 ⚠')
+    // DON-356: the badge counts only the person already stale before the
+    // pause; the alarm covers everyone else's stopped positions.
+    await expect(page.getByTestId('ws-people-attention')).toHaveText('1 ⚠')
     await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'paused')
     // The stale person is still named while paused.
     await expect(page.getByTestId('ws-tracking-problems')).toContainText('1 stale')
@@ -495,7 +495,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this full-page screenshot of SAR Tracker with the mission paused and the side panel hidden (Full map):
 1. The map fills the width below the top bar; no side panel is open
 2. A bright red alarm strip says "MISSION PAUSED" and that positions are not updating, with a "Resume mission" button
-3. The top bar's People button reads "People 3" with a separate amber attention badge reading "3 ⚠" (paused, no position is live, so everyone needs a look)
+3. The top bar's People button reads "People 3" with a separate amber attention badge reading "1 ⚠" (only the person already stale before the pause; the alarm covers everyone else)
 4. The top bar's tracking headline reads as paused (red/high alert) and still names "1 stale"; a callout on the map says Charlie Team was already out of date when updates stopped
 5. A "Show panel" button in the top bar brings the panel back
 6. Nothing in the top bar is cut off or overlapping
@@ -503,7 +503,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'Full map on: button reads Show panel and the People panel is hidden',
         'alarm says MISSION PAUSED with a Resume control',
-        'People button reads People 3 with attention badge "3 ⚠" (paused: none live)',
+        'People button reads People 3 with attention badge "1 ⚠" (paused: only the already-stale person) [DON-356]',
         'tracking headline condition is paused and names 1 stale',
       ],
     })

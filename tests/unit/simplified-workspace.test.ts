@@ -6,7 +6,8 @@ import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/fea
 import { labelTrackingWarning } from '../../src/features/workspace/tracking-problem-labels'
 import { fitKeepingRemedy, fitProblemWords, problemWordsText } from '../../src/features/workspace/problem-word-fit'
 import type { NormalizedTrackingPosition, TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
-import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
+import { buildDeviceWorkspaceRows, type DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
+import type { TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 
 const NOW = Date.parse('2026-11-06T12:00:00.000Z')
 
@@ -16,7 +17,7 @@ function row(overrides: Partial<DeviceWorkspaceRow>): DeviceWorkspaceRow {
     dataOrigin: 'live', lastSeen: '2026-11-06T11:58:00.000Z', lastSeenDisplay: '', fixTimeDisplay: '', fixTime: '2026-11-06T11:58:00.000Z', sourceDisplay: 'Live',
     fixTimeUnverified: false, ingestWarning: null, stale: false, accuracyDisplay: '', batteryDisplay: '', speedDisplay: '',
     stationaryAttention: false, stationaryAttentionUnavailable: false, stationaryAttentionUnreliable: false,
-    attentionAcknowledged: false, attentionElapsedDisplay: '', ...overrides,
+    attentionAcknowledged: false, attentionElapsedDisplay: '', reportedStatus: 'online', currentUnconfirmed: false, ...overrides,
   }
 }
 
@@ -230,6 +231,59 @@ describe('people list', () => {
     ], NOW, { live: false, lastConfirmedAt: '2026-11-06T11:55:00.000Z' })
     expect(selectExceptionsForMap(lost).map((person) => person.name)).toEqual(['Zoe', 'Brian', 'Ciara'])
     expect(lost.find((person) => person.name === 'Ciara')?.statusText).toContain('Already out of date when updates stopped')
+  })
+
+  it('counts on the badge only people with a problem of their own while the mission is paused [DON-356]', () => {
+    // Paused: everyone reads "Last known", but only Ciara, already out of date
+    // before the pause, has a problem of her own. The alarm already says the
+    // mission is paused.
+    const stoppedRows = [
+      row({ deviceId: '1', name: 'Aoife' }),
+      row({ deviceId: '2', name: 'Brian' }),
+      row({ deviceId: '4', name: 'Ciara', fixTime: '2026-11-06T11:30:00.000Z' }),
+    ]
+    const paused = buildPeopleRows(stoppedRows, NOW, { live: false, lastConfirmedAt: '2026-11-06T11:55:00.000Z', paused: true })
+    expect(countPeopleNeedingAttention(paused)).toBe(1)
+    // Everyone is still marked in the list; only the count changes.
+    expect(paused.every((person) => person.tone === 'attention')).toBe(true)
+    // With nobody singled out, the badge has nothing to count.
+    const allFresh = buildPeopleRows([row({ deviceId: '1', name: 'Aoife' })], NOW, { live: false, lastConfirmedAt: '2026-11-06T11:59:00.000Z', paused: true })
+    expect(countPeopleNeedingAttention(allFresh)).toBe(0)
+    // A tracking outage is not a pause: everyone still counts.
+    const outage = buildPeopleRows(stoppedRows, NOW, { live: false, lastConfirmedAt: '2026-11-06T11:55:00.000Z' })
+    expect(countPeopleNeedingAttention(outage)).toBe(3)
+  })
+
+  it('keeps a person\'s own problem on the badge when the mission is paused [DON-356]', () => {
+    // Recent fixes for all three, so nobody is "already out of date": Aoife's
+    // current fix was never confirmed in the store and Brian was reported
+    // offline. Both count while active and must still count while paused.
+    const fix = (deviceId: string) => ({ id: `pos-${deviceId}`, device_id: deviceId, lat: 52, lon: -9.7, altitude: null, speed: 0, battery: 80, accuracy: 8, timestamp: '2026-11-06T11:58:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false })
+    const snapshot = {
+      devices: [
+        { device_id: 'aoife', name: 'Aoife', status: 'online' as const, last_seen: '2026-11-06T11:58:00.000Z', unique_id: null, category: 'person' },
+        { device_id: 'brian', name: 'Brian', status: 'offline' as const, last_seen: '2026-11-06T11:58:00.000Z', unique_id: null, category: 'person' },
+        { device_id: 'ciara', name: 'Ciara', status: 'online' as const, last_seen: '2026-11-06T11:58:00.000Z', unique_id: null, category: 'person' },
+      ],
+      positions: [fix('aoife'), fix('brian'), fix('ciara')],
+      breadcrumbs: [],
+      unconfirmedCurrentDeviceIds: ['aoife'],
+    } as unknown as TrackingSnapshot
+    const confirmedAt = '2026-11-06T11:59:00.000Z'
+    const active = buildPeopleRows(buildDeviceWorkspaceRows(snapshot, [], undefined, {}, 'online'), NOW, { live: true, lastConfirmedAt: confirmedAt })
+    expect(countPeopleNeedingAttention(active)).toBe(2)
+    // Paused: polling publishes "idle", so every row reads Last known.
+    const paused = buildPeopleRows(buildDeviceWorkspaceRows(snapshot, [], undefined, {}, 'idle'), NOW, { live: false, lastConfirmedAt: confirmedAt, paused: true })
+    expect(countPeopleNeedingAttention(paused)).toBe(2)
+    expect(paused.find((person) => person.name === 'Aoife')?.statusText).toContain('position not confirmed before the pause')
+    expect(paused.find((person) => person.name === 'Brian')?.statusText).toContain('reported offline before the pause')
+    expect(paused.find((person) => person.name === 'Ciara')?.onlyPaused).toBe(true)
+  })
+
+  it('still counts a person whose current position is unconfirmed while tracking is live', () => {
+    const [person] = buildPeopleRows([row({ sourceDisplay: 'Last known' })], NOW)
+    expect(person?.tone).toBe('attention')
+    expect(countPeopleNeedingAttention(person === undefined ? [] : [person])).toBe(1)
   })
 
   it('keeps an acknowledged stationary warning visible until movement clears it', () => {
