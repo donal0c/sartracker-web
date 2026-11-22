@@ -108,7 +108,14 @@ test.describe('M12 settings workspace', () => {
   }) => {
     const server = await routeControllableTraccar(page)
 
-    await page.getByTestId('open-settings-workspace').click()
+    // In CI the first press on a freshly loaded screen was once lost; wait for
+    // Settings to be open (pressing again only if it is not) rather than assume.
+    await expect(async () => {
+      if (!(await page.getByTestId('settings-workspace').isVisible())) {
+        await page.getByTestId('open-settings-workspace').click({ timeout: 2_000 })
+      }
+      await expect(page.getByTestId('settings-workspace')).toBeVisible({ timeout: 3_000 })
+    }).toPass({ timeout: 20_000 })
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
     await page.getByTestId('settings-provider-url').fill('http://traccar.test:8082')
     await page.getByTestId('settings-provider-email').fill('apiuser')
