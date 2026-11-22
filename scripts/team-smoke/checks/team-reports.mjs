@@ -32,6 +32,7 @@ import { describeMapNotDrawn, waitForMapDrawn } from '../lib/map-ready.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { STORE_FILE, withStore } from '../lib/store.mjs'
 import { parseDotSummary, verifyWholeTrailDrawn, WHOLE_TRAIL_UI } from '../lib/whole-trail.mjs'
+import { openWorkspacePanel } from '../../workspace-panels.mjs'
 
 /** How long a map may take to load its style and tiles; software rendering is slow. */
 const MAP_DRAW_TIMEOUT_MS = 120_000
@@ -319,7 +320,7 @@ export async function runWholeTrailWorkflow(ctx, preset) {
   const steps = []
 
   // The whole-history layer must finish for the stored mission.
-  await t(WHOLE_TRAIL_UI.trackingTab).click()
+  await openWorkspacePanel(app.page, WHOLE_TRAIL_UI.trackingPanel)
   const complete = await t(WHOLE_TRAIL_UI.coverageComplete).waitFor({ timeout: COVERAGE_COMPLETE_TIMEOUT_MS }).then(() => true, () => false)
   await app.shot('coverage')
   expectProduct(complete, `The mission history status did not reach "All mission history shown" within ${COVERAGE_COMPLETE_TIMEOUT_MS / 1000} s for a stored, fully reconciled mission: "${await panelText(app.page)}" [DON-338 / REN-2]`)

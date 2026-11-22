@@ -23,8 +23,9 @@ import path from 'node:path'
 import { delay, launchApp } from '../lib/app.mjs'
 import {
   ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
-  missionPhase, openMissionSection, placeMarker, resumeIfPrompted, startMission,
+  missionPhase, openMissionSection, placeMarker, resumeIfPrompted, startMission, trackingStatus,
 } from '../lib/operator.mjs'
+import { openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
 import { expectProduct } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
@@ -92,15 +93,8 @@ async function writeGpxFiles(inbox) {
   return [timedFile, untimedFile]
 }
 
-/** Reads the visible tracking health text. */
-export async function trackingStatus(page) {
-  const parts = []
-  for (const id of ['tracking-warning', 'mast-tracking-cell', 'persistent-tracking-health', 'stationary-attention-summary']) {
-    const locator = page.getByTestId(id)
-    if (await locator.count() > 0) parts.push(await locator.first().innerText().catch(() => ''))
-  }
-  return parts.join(' / ').replace(/\s+/gu, ' ').trim()
-}
+/** Reads the visible tracking health text (see operator.mjs). */
+export { trackingStatus }
 
 /** Adds a participant during the mission with an explicit history choice. */
 export async function addAfterStart(page, kind, label, historyFrom) {
@@ -271,16 +265,17 @@ export default [
       await delay(20_000)
       const status = await trackingStatus(app.page)
       await app.shot('indicators')
-      if (!/stationary attention/i.test(status)) findings.push(`no stationary attention for devices still for hours: "${status.slice(0, 160)}"`)
+      if (!/not moving/i.test(status)) findings.push(`no "not moving" warning for devices still for hours: "${status.slice(0, 160)}"`)
       if (!/stale/i.test(status)) findings.push(`no stale warning for a device silent 70 min: "${status.slice(0, 160)}"`)
-      // DON-307: Minimize must work while yesterday's finished mission awaits Archive & Lock.
-      await t('mission-control-collapse-btn').click()
+      // DON-307: the Mission panel must close while yesterday's finished
+      // mission awaits Archive & Lock, leaving the mission in the top bar.
+      await openWorkspacePanel(app.page, 'mission')
+      await t('ws-mission-close').click().catch(() => {})
       await delay(800)
-      const minimizedShown = await t('command-mast-mission-control-minimized').isVisible().catch(() => false)
-      const dockHidden = !(await t('mission-control-dock').isVisible().catch(() => false))
-      if (!minimizedShown || !dockHidden) findings.push('Minimize did nothing while an earlier finished mission awaited Archive & Lock (DON-307)')
-      await t('compact-mission-restore').click().catch(() => {})
-      await delay(800)
+      const panelClosed = !(await t('ws-mission-host').isVisible().catch(() => false))
+      const topBarShown = await t('current-mission-name').isVisible().catch(() => false)
+      if (!panelClosed || !topBarShown) findings.push('The Mission panel would not close while an earlier finished mission awaited Archive & Lock (DON-307)')
+      await openWorkspacePanel(app.page, 'people')
       await t('open-devices-workspace').click()
       await delay(1500)
       const deviceList = await t('device-list-scroll').innerText()
@@ -509,7 +504,7 @@ export default [
       if (!deletion.confirmationShown || !deletion.keptOpen) findings.push('marker delete did not require a second confirmation, or Keep did not keep it')
 
       // Replay into the backfilled window (24 h after mission start).
-      await app.page.getByTestId('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1500)
       await app.page.getByRole('button', { name: 'Replay', exact: true }).click()
       await delay(1500)
@@ -559,6 +554,7 @@ export default [
       expectProduct(governanceName.includes(MISSION),
         `Archive & Lock offered a different mission after finishing "${MISSION}": "${governanceName.slice(0, 120)}" (DON-294).`)
       let recoveryCode = ''
+      await openWorkspacePanel(app.page, 'mission')
       await t('mission-finalize-btn').click()
       await delay(800)
       await t('archive-passphrase').fill(ARCHIVE_PASSPHRASE)
@@ -580,7 +576,7 @@ export default [
       ).get(MISSION)?.id)
       expectProduct(archiveId !== undefined, `No archive row was stored for "${MISSION}".`)
       app = await launchApp(ctx, { profile, label: 'team-3-reopen' })
-      await app.page.getByTestId('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1500)
       await app.page.getByTestId(`archive-review-select-${archiveId}`).click({ timeout: 15_000 })
       await app.page.getByTestId('archive-review-slot-recovery').click()
