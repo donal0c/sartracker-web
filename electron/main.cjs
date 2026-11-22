@@ -18,6 +18,8 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 let startupWindowReady = false
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
+const { createGpxWatchedFolderStore } = require('./gpx-watched-folder-store.cjs')
+const { registerGpxWatchedFolderHandlers } = require('./gpx-watched-folder-ipc.cjs')
 const { resolveAllowedWeatherUrl } = require('./external-url-policy.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
@@ -1882,6 +1884,13 @@ async function startElectronApp(startupWatchdog) {
     archiveReviewSessionManager,
     previousSessionEndedUncleanly,
   )
+  // Watched GPX folders survive a restart per mission [DON-337].
+  registerGpxWatchedFolderHandlers({
+    ipcMain,
+    validateIpcSender,
+    watchedFolderStore: createGpxWatchedFolderStore({ userDataPath }),
+    fileSystem,
+  })
   await createWindow(
     crashLog,
     runtimeLog,
