@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process'
 
 import { _electron as electron } from 'playwright'
 import { extractFile } from '@electron/asar'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -625,9 +626,8 @@ async function prepareMissionA(page) {
 
 /** Resumes the recoverable mission through the operator-facing recovery control. */
 async function resumeRecoverableMission(page, missionId) {
-  const dialog = page.getByTestId('mission-recovery-dialog')
-  await dialog.waitFor({ state: 'visible', timeout: CONDITION_TIMEOUT_MS })
-  await dialog.getByRole('button', { name: 'Resume', exact: true }).click()
+  // The Resume card (DON-342) or the older dialog; neither appearing fails.
+  await resumeThroughRecoveryPrompt(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await waitForValue(
     () => readActiveMission(page),
     (mission) => mission?.id === missionId && mission.status === 'active',

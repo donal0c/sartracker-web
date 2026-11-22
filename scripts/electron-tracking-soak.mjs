@@ -95,6 +95,7 @@ import {
   scheduleEvidenceHeapSample,
   summarizeHeapSamples,
 } from '../build/electron-tracking-soak-memory-lib.js'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -2740,12 +2741,16 @@ async function waitForActiveMission(page, timeoutMs) {
 }
 
 async function resumeRecoveredMission(launch, expectedMissionId) {
-  await launch.page.getByTestId('mission-recovery-dialog').waitFor({ state: 'attached', timeout: 60_000 })
-  await performLaunchOwnedHarnessClick(
-    launch,
-    'mission-recovery-dialog',
-    () => launch.page.getByRole('button', { name: 'Resume' }).click({ force: true }),
-  )
+  // The Resume card (DON-342) or the older dialog; neither appearing fails.
+  // The card's button carries its own test id; the dialog's Resume does not.
+  await resumeThroughRecoveryPrompt(launch.page, {
+    timeoutMs: 60_000,
+    click: (button, surface) => performLaunchOwnedHarnessClick(
+      launch,
+      surface === 'card' ? 'start-screen-resume-btn' : 'mission-recovery-dialog',
+      () => button.click(),
+    ),
+  })
   await waitForActiveMission(launch.page, 30_000)
   const missionId = await readActiveMissionId(launch.page)
   if (missionId !== expectedMissionId) {

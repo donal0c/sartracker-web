@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { validateMapSurface, validateMapSurfaceFacts } from './map-surface-receipts.mjs'
+import { resumeRecoveredMission } from '../mission-recovery.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const C14_MISSION_NAME = 'C14 map surface proof'
@@ -72,7 +73,9 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
 
     await page.getByTestId('mission-name-input').fill(C14_MISSION_NAME)
     await page.getByTestId('mission-start-btn').click()
-    await page.getByTestId('mission-control').waitFor()
+    // The Mission panel closes once the mission starts (DON-341), so wait for
+    // its state, not for it to stay on screen.
+    await page.locator('[data-testid="mission-control"][data-mission-phase="active"]').waitFor({ state: 'attached' })
     const missionId = await page.evaluate(async (name) => {
       const missions = await window.sartrackerElectron.missionStore.listMissions()
       const mission = missions.find((candidate) => candidate.name === name)
@@ -82,10 +85,10 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
     await seedMapEvidence(page)
     await page.reload()
     await page.getByTestId('app-shell').waitFor({ timeout: 60_000 })
-    const recovery = page.getByTestId('mission-recovery-dialog')
-    if (await recovery.count() > 0 && await recovery.isVisible()) {
-      await recovery.getByRole('button', { name: 'Resume' }).click()
-    }
+    // The reload interrupts a running mission, so recovery must be offered:
+    // through the Resume card (DON-342) or the older dialog. Neither appearing
+    // fails C14 instead of carrying on without the mission.
+    await resumeRecoveredMission(page)
     await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
     await page.waitForFunction(() => {
       const map = window.__SARTRACKER_MAP__
@@ -98,21 +101,32 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
     const drawing = report.persisted.before.drawings.find((candidate) => candidate.name === 'C14 line')
     if (!marker || !drawing) throw new Error('C14 UI-created marker or drawing was not persisted.')
     report.map.before = await readMapSnapshot(page)
-    await page.getByTestId('sidebar-tab-layers').click()
+    // Layers opens from the top bar (DON-341 removed the sidebar tabs). Each
+    // row is found by name with the tree's own search.
+    const layerTree = page.getByTestId('layer-tree')
+    if (!await layerTree.isVisible()) await page.getByTestId('ws-toggle-layers').click()
+    await layerTree.waitFor({ state: 'visible' })
+    const layerSearch = page.getByTestId('layer-tree-search')
     const markerToggle = page.getByTestId(`layer-visibility-feature-marker-${marker.id}`)
     const drawingToggle = page.getByTestId(`layer-visibility-feature-drawing-${drawing.id}`)
-    await markerToggle.waitFor()
-    await drawingToggle.waitFor()
+    await layerSearch.fill('C14 marker')
+    await markerToggle.waitFor({ state: 'visible' })
     await markerToggle.click()
     await page.waitForFunction((id) => JSON.stringify(window.__SARTRACKER_MAP__?.getFilter('mission-markers-symbol-ipp_lkp') ?? '').includes(id), marker.id)
     const markerHidden = true
     await markerToggle.click()
     await page.waitForFunction((id) => !JSON.stringify(window.__SARTRACKER_MAP__?.getFilter('mission-markers-symbol-ipp_lkp') ?? '').includes(id), marker.id)
+    await layerSearch.fill('C14 line')
+    await drawingToggle.waitFor({ state: 'visible' })
     await drawingToggle.click()
     await page.waitForFunction((id) => JSON.stringify(window.__SARTRACKER_MAP__?.getFilter('mission-drawings-line') ?? '').includes(id), drawing.id)
     const drawingHidden = true
     await drawingToggle.click()
     await page.waitForFunction((id) => !JSON.stringify(window.__SARTRACKER_MAP__?.getFilter('mission-drawings-line') ?? '').includes(id), drawing.id)
+    await layerSearch.fill('')
+    // The base map control sits under the Layers panel; close it as an operator would.
+    await page.getByTestId('ws-toggle-layers').click()
+    await layerTree.waitFor({ state: 'hidden' })
     report.visibility = {
       marker: { id: marker.id, hiddenObserved: markerHidden, restored: true, sourceRetained: await sourceContains(page, 'mission-markers', marker.id, 'markerId') },
       drawing: { id: drawing.id, hiddenObserved: drawingHidden, restored: true, sourceRetained: await sourceContains(page, 'mission-drawings', drawing.id, 'drawingId') },
@@ -179,13 +193,39 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
   return report
 }
 
+/**
+ * Finds two canvas points 140 px across and 60 px down, with the line between
+ * them, that the map receives rather than a panel floating over it.
+ *
+ * @param {import('@playwright/test').Locator} canvas the map canvas
+ * @returns {Promise<[[number, number], [number, number]]>} the two points
+ */
+async function uncoveredMapPoints(canvas) {
+  const points = await canvas.evaluate(element => {
+    const box = element.getBoundingClientRect()
+    const mapGets = (x, y) => document.elementFromPoint(box.left + x, box.top + y) === element
+    for (let y = 120; y < box.height - 120; y += 20) {
+      for (let x = 40; x < box.width - 200; x += 20) {
+        if (mapGets(x, y) && mapGets(x + 70, y + 30) && mapGets(x + 140, y + 60)) return [[x, y], [x + 140, y + 60]]
+      }
+    }
+    return null
+  })
+  if (points === null) throw new Error('C14 found no uncovered map area to draw the line.')
+  return points
+}
+
 async function seedMapEvidence(page) {
   const canvas = page.locator('.maplibregl-canvas').first()
   await page.getByTestId('drawing-toolbar-expand').click()
   await page.getByTestId('drawing-tool-line').click({ force: true })
-  await canvas.click({ position: { x: 420, y: 240 }, force: true })
-  await canvas.click({ position: { x: 560, y: 300 }, force: true })
-  await canvas.click({ position: { x: 560, y: 300 }, button: 'right', force: true })
+  // The Map tools panel floats over the map in the new layout (DON-341), so
+  // fixed points can land on it. Draw where the map itself gets the clicks,
+  // without force, so a covered point fails loudly.
+  const [[x1, y1], [x2, y2]] = await uncoveredMapPoints(canvas)
+  await canvas.click({ position: { x: x1, y: y1 } })
+  await canvas.click({ position: { x: x2, y: y2 } })
+  await canvas.click({ position: { x: x2, y: y2 }, button: 'right' })
   await page.getByTestId('drawing-dialog').waitFor()
   await page.getByTestId('drawing-name-input').fill('C14 line')
   await page.getByTestId('drawing-save-btn').click()
