@@ -436,6 +436,61 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
   })
 
+  test('What to do in the alarm closes an open workspace and shows Tracking, keeping unsaved Settings safe', async ({ page }) => {
+    // Was: with a modal open it only changed the hidden side panel, so nothing visibly happened.
+    await open(page)
+    await startMission(page)
+    await feed(page, { lost: true })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    const trackingShownAndFocused = async (from: string) => {
+      await expect(page.locator('[role="dialog"][aria-modal="true"]'), `${from} closed`).toHaveCount(0)
+      await expect(page.getByTestId('ws-tracking-panel'), `Tracking shown from ${from}`).toBeVisible()
+      await expect(page.getByTestId('ws-tracking-advice')).toContainText('internet connection')
+      expect(await page.getByTestId('ws-tracking-panel').evaluate((panel) => panel.contains(document.activeElement)), `Tracking focused from ${from}`).toBe(true)
+      await page.getByTestId('ws-panel-close').click()
+      await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+    }
+
+    await showPeople(page)
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-details').click()
+    await trackingShownAndFocused('All devices')
+
+    await page.getByTestId('ws-more-button').click()
+    await page.getByTestId('open-diagnostics-workspace').click()
+    await expect(page.getByTestId('diagnostics-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-details').click()
+    await trackingShownAndFocused('Diagnostics')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-details').click()
+    await trackingShownAndFocused('clean Settings')
+
+    // Unsaved Settings: Keep editing leaves the workspace and the draft as they were.
+    const dirtySettings = async () => {
+      await page.getByTestId('open-settings-workspace').click()
+      await expect(page.getByTestId('settings-workspace')).toBeVisible()
+      await page.getByTestId('settings-section-advanced').click()
+      await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+      await page.getByTestId('ws-alarm-details').click()
+      await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    }
+    await dirtySettings()
+    await page.getByTestId('settings-keep-editing').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeHidden()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await expect(page.getByTestId('ws-tracking-panel')).toHaveCount(0)
+
+    // Then What to do again and Discard: Settings closes and Tracking shows.
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.getByTestId('settings-discard-confirmation')).toBeVisible()
+    await page.getByTestId('settings-discard-changes').click()
+    await trackingShownAndFocused('dirty Settings after Discard')
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)

@@ -7,6 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
+import { registerOpenModal } from './modal-workspace-registry'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls immediate mount and unmount. */
@@ -47,6 +48,8 @@ export function WorkspaceOverlay({
 }: WorkspaceOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
+  const onCloseRef = useRef(onClose)
+  useLayoutEffect(() => { onCloseRef.current = onClose })
 
   useLayoutEffect(() => {
     if (!open) {
@@ -58,8 +61,10 @@ export function WorkspaceOverlay({
     // the tracking alarm, so the uncovered top bar and side panel must not take
     // presses or focus; the alarm itself (Resume) stays live.
     const releaseBackground = docked ? null : makeBackgroundInert()
+    const unregister = docked ? null : registerOpenModal(() => onCloseRef.current())
     return () => {
       releaseBackground?.()
+      unregister?.()
       const returnTarget = returnFocusRef.current
       returnFocusRef.current = null
       restoreFocus(returnTarget)

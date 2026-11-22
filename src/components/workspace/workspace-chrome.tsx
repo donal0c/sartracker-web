@@ -202,9 +202,17 @@ export function PanelHead(props: { readonly title: ReactNode; readonly onClose: 
   )
 }
 
-/** Says in plain words what happened, what the map is showing and what to do. */
-export function TrackingDetails(props: { readonly headline: TrackingHeadline; readonly onClose: () => void }) {
+/**
+ * Says in plain words what happened, what the map is showing and what to do.
+ * Each new focusToken above zero moves keyboard focus to the panel.
+ */
+export function TrackingDetails(props: { readonly headline: TrackingHeadline; readonly onClose: () => void; readonly focusToken?: number }) {
   const { headline } = props
+  const sectionRef = useRef<HTMLElement>(null)
+  const focusToken = props.focusToken ?? 0
+  useEffect(() => {
+    if (focusToken > 0) sectionRef.current?.focus()
+  }, [focusToken])
   const lastSuccessAt = useLastConfirmedAt()
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
@@ -212,7 +220,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
 
   return (
-    <section className="ws-panel-section" data-testid="ws-tracking-panel">
+    <section className="ws-panel-section" data-testid="ws-tracking-panel" ref={sectionRef} tabIndex={-1}>
       <PanelHead onClose={props.onClose} title="Tracking" />
       <div className="ws-panel-scroll">
         <dl className="ws-plain-lines">

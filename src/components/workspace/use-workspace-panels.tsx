@@ -14,6 +14,7 @@ import { MissionControlPanel } from '../mission-control-panel'
 import { usePeopleRows } from '../../features/workspace/use-people-rows'
 import { ExceptionsOnMap } from './exceptions-on-map'
 import { PeoplePanel } from './people-panel'
+import { useOpenTrackingAdvice } from './use-open-tracking-advice'
 import { TrackingDetails, TrackingAlarm, PanelHead, WorkspaceTopBar } from './workspace-chrome'
 
 type BasePanel = 'people' | 'layers'
@@ -51,6 +52,13 @@ export function useWorkspacePanels(input: {
     setBaseState(next)
   }, [])
   const [temporary, setTemporary] = useState<TemporaryPanel | null>(null)
+  // What to do in the alarm shows Tracking and moves focus to it, closing an open workspace first.
+  const [trackingFocusToken, setTrackingFocusToken] = useState(0)
+  const showTrackingAdvice = useCallback(() => {
+    setTemporary('tracking')
+    setTrackingFocusToken((token) => token + 1)
+  }, [])
+  const openTrackingAdvice = useOpenTrackingAdvice(showTrackingAdvice)
   useEffect(() => { setBaseState(defaultBase()) }, [defaultBase])
 
   const running = phase === 'active' || phase === 'paused'
@@ -173,7 +181,7 @@ export function useWorkspacePanels(input: {
           <LayerFilterPanel variant="simplified" />
         </section>
       ) : null}
-      {visible === 'tracking' ? <TrackingDetails headline={headline} onClose={() => setTemporary(null)} /> : null}
+      {visible === 'tracking' ? <TrackingDetails focusToken={trackingFocusToken} headline={headline} onClose={() => setTemporary(null)} /> : null}
       {visible === 'tools' ? (
         <section className="ws-panel-section" data-testid="ws-tools-panel">
           <PanelHead onClose={() => setTemporary(null)} title="GPX and helicopters" />
@@ -210,7 +218,7 @@ export function useWorkspacePanels(input: {
     : null
 
   // Drawn across the top of the map, never above the side panel, so nothing moves under the pointer.
-  const alarm = <TrackingAlarm headline={headline} onOpenTracking={() => setTemporary('tracking')} />
+  const alarm = <TrackingAlarm headline={headline} onOpenTracking={openTrackingAdvice} />
 
   return { top, alarm, side: panel, overMap, slotSide: side }
 }
