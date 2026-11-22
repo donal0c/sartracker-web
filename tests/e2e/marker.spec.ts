@@ -1,13 +1,15 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M6 marker workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title'); await title.waitFor({ state: 'visible', timeout: 10000 }); await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Marker Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('creates a clue marker from a map click and persists it', async ({ page }) => {
@@ -45,7 +47,7 @@ test.describe('M6 marker workflows', () => {
   })
 
   test('creates a marker from a coarse TM65 grid reference through Map Tools', async ({ page }) => {
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
 
     await page.getByTestId('drawing-toolbar-expand').click()
