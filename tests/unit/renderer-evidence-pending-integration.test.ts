@@ -48,6 +48,8 @@ const {
     readonly setTimeout: (listener: () => void, delayMs: number) => unknown
     readonly clearTimeout: (timer: unknown) => void
     readonly timeoutMs: number
+    readonly overdueMs?: number
+    readonly onDrainOverdue?: (input: { readonly signal: AbortSignal }) => Promise<'wait' | 'abandon'>
   }) => {
     readonly prepare: (window: unknown, reason: string) => Promise<unknown>
     readonly markRendererUnavailable: () => Promise<unknown>
@@ -165,6 +167,48 @@ describe('renderer pending-evidence marker at the real persistence boundary [DON
     // The sealed marker is consumed: the loss is now the durable record.
     const outboxNames = await readdir(path.join(userDataPath!, 'ingest-anomaly-outbox'))
     expect(outboxNames.filter((name) => name.startsWith('renderer-evidence-pending-'))).toEqual([])
+  })
+
+  it('keeps the loss after reopening when the operator closes a hung map window now [DON-361]', async () => {
+    const first = await openStore()
+    const held = await first.createMission({ name: 'Hung renderer' })
+    await first.setRendererEvidencePending({ mission_id: held.id, pending: true })
+    const timers: Array<{ readonly listener: () => void, readonly delayMs: number }> = []
+    const webContents = { id: 1, isDestroyed: () => false, send: vi.fn() }
+    const onDrainOverdue = vi.fn(async () => 'abandon' as const)
+    const coordinator = createRendererTeardownCoordinator({
+      ipcMain: { on: vi.fn(), removeListener: vi.fn() },
+      missionStore: first,
+      createRequestId: () => 'request-hung',
+      setTimeout: vi.fn((listener: () => void, delayMs: number) => {
+        timers.push({ listener, delayMs })
+        return timers.length
+      }),
+      clearTimeout: vi.fn(),
+      timeoutMs: 5_000,
+      overdueMs: 15_000,
+      onDrainOverdue,
+    })
+    try {
+      // The renderer never answers: it is alive but stuck.
+      const preparation = coordinator.prepare({ webContents }, 'window_close')
+      await vi.waitFor(() => expect(webContents.send).toHaveBeenCalledOnce())
+      timers.find((timer) => timer.delayMs === 5_000)?.listener()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      timers.find((timer) => timer.delayMs === 15_000)?.listener()
+      await expect(preparation).resolves.toEqual({ mode: 'durable_loss_marker', missionId: held.id })
+    } finally {
+      coordinator.dispose()
+    }
+    expect(onDrainOverdue).toHaveBeenCalledOnce()
+    await first.prepareClose()
+    first.close()
+    store = null
+
+    const reopened = await openStore()
+    await expect(reopened.getIngestEvidenceHealth(held.id)).resolves.toMatchObject({
+      state: 'critical', reason: 'renderer_pending_evidence_lost',
+    })
   })
 
   it('survives a restart: a marker written before the process died is found by the next start', async () => {
