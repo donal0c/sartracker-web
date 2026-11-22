@@ -1,5 +1,7 @@
 export type AppRuntimeController = {
   readonly reloadSettings: (options?: { readonly forceConnect?: boolean }) => Promise<void>
+  /** Whether the settings applied last hold a live tracking connection. */
+  readonly isTrackingConnected: () => boolean
   readonly dispose: () => Promise<void>
 }
 
@@ -37,6 +39,7 @@ async function replaceAppRuntimeController(
 
       await nextController.reloadSettings(options)
     },
+    isTrackingConnected: () => !disposed && nextController.isTrackingConnected(),
     dispose: () => {
       if (disposalPromise === null) {
         disposed = true

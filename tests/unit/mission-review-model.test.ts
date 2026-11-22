@@ -132,6 +132,28 @@ describe('mission review model', () => {
     ])
   })
 
+  it('names a GPX import that was stopped part way and settled [DON-350]', () => {
+    const snapshot = buildMissionReviewSnapshot({
+      mission: createMission(),
+      info: createStoreInfo(),
+      events: [
+        createEvent('gpx_import_batch_interrupted', { completed_files: 37, failed_files: 63, total_files: 100 }),
+        createEvent('gpx_import_batch_interrupted', {}),
+      ],
+      markers: [],
+      devices: [],
+      breadcrumbCount: 0,
+      drawings: [],
+      gpxImports: [],
+      layerMetadata: [],
+    })
+
+    expect(snapshot.eventRows.map((row) => `${row.title}: ${row.description}`)).toEqual([
+      'GPX Import Stopped: GPX import stopped part way: 37 of 100 files imported, 63 listed as import issues.',
+      'GPX Import Stopped: GPX import stopped part way; its files were settled for review.',
+    ])
+  })
+
   it('produces safe coordinate display for invalid lat/lon', () => {
     const snapshot = buildMissionReviewSnapshot({
       mission: createMission(),

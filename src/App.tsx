@@ -6,6 +6,7 @@ import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
 import { MarkerDialog } from './components/marker-dialog'
+import { MarkerStatusBanner } from './components/marker-status-banner'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { OutingRuntimeBridge } from './features/outings/outing-runtime-bridge'
 import { ParticipantRuntimeBridge } from './features/participants/participant-runtime-bridge'
@@ -167,6 +168,7 @@ function App() {
       <DrawingDialog />
       <CoordinateConverterDialog />
       <MarkerDialog />
+      <MarkerStatusBanner />
       {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
           A screen whose code fails to load shows a message; the rest of the app stays up. */}
       <LazyScreenBoundary screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>

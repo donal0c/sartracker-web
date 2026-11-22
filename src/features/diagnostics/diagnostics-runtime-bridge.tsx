@@ -113,7 +113,7 @@ export function DiagnosticsRuntimeBridge() {
           markers: useMarkerStore.getState().markers,
           drawings: useDrawingStore.getState().drawings,
           helicopters: useHelicopterStore.getState().helicopters,
-          gpxImports: useGpxStore.getState().imports,
+          gpxImports: useGpxStore.getState().mapImports,
           measurements: useMeasurementStore.getState().measurements,
         })
       },

@@ -1,6 +1,22 @@
 const DEFAULT_GEOMETRY_BYTE_LIMIT = 384 * 1024
 const DEFAULT_PAGE_BYTE_LIMIT = 1024 * 1024
 const DEFAULT_PAGE_LIMIT = 25
+/**
+ * Display geometry the map may hold for a whole mission. Every active import
+ * gets an equal share, so the map draws all of them rather than one list page
+ * [DON-350] [M-87].
+ */
+const MAP_TOTAL_BYTE_BUDGET = 8 * 1024 * 1024
+/** The smallest share a track is thinned to before the map stops adding tracks. */
+const MAP_MIN_TRACK_BYTES = 16 * 1024
+/** Tracks the map can draw at the minimum share; any beyond are reported, never hidden. */
+const MAP_MAX_TRACKS = Math.floor(MAP_TOTAL_BYTE_BUDGET / MAP_MIN_TRACK_BYTES)
+const MAP_PAGE_LIMIT = 25
+const ACTIVE_GPX_IMPORT_PREDICATE = `mission_id = ? AND retired_at IS NULL AND import_state = 'complete'
+      AND EXISTS (
+        SELECT 1 FROM gpx_import_revisions AS revisions
+        WHERE revisions.import_id = gpx_track_imports.id
+      )`
 
 /**
  * Produces a deterministic display-only MultiLineString while leaving exact
@@ -147,6 +163,117 @@ function listGpxImportProjectionPage(db, input) {
   }
 }
 
+/**
+ * Reads one page of the mission-wide map projection. Unlike the list page, the
+ * caller drains every page: each import's geometry is thinned to its share of
+ * MAP_TOTAL_BYTE_BUDGET, so the whole set fits on the map at once. An import
+ * that cannot be thinned to its share is named in `undrawn`; imports beyond
+ * MAP_MAX_TRACKS end the projection with `truncated`. The caller compares what
+ * it drew with `totalActive` and tells the operator about any shortfall.
+ */
+function listGpxMapProjectionPage(db, input) {
+  const missionId = normalizePageText(input?.missionId, 'GPX mission')
+  const cursor = decodePageCursor(input?.cursor, 'map-imports', missionId)
+  const position = cursor === null ? 0 : cursor.position
+  const totalActive = Number(db.prepare(`SELECT COUNT(*) AS count FROM gpx_track_imports
+    WHERE ${ACTIVE_GPX_IMPORT_PREDICATE}`).get(missionId).count)
+  const drawableTotal = Math.min(totalActive, MAP_MAX_TRACKS)
+  const remaining = drawableTotal - position
+  if (remaining <= 0) {
+    return { entries: [], undrawn: [], nextCursor: null, totalActive, truncated: totalActive > position }
+  }
+  const trackByteLimit = Math.max(
+    MAP_MIN_TRACK_BYTES,
+    Math.min(DEFAULT_GEOMETRY_BYTE_LIMIT, Math.floor(MAP_TOTAL_BYTE_BUDGET / Math.max(1, drawableTotal))),
+  )
+  const limit = Math.min(MAP_PAGE_LIMIT, remaining)
+  const cursorClause = cursor === null
+    ? ''
+    : `AND (
+      display_name > ? OR
+      (display_name = ? AND imported_at > ?) OR
+      (display_name = ? AND imported_at = ? AND id > ?)
+    )`
+  const parameters = cursor === null
+    ? [missionId, limit + 1]
+    : [
+        missionId,
+        cursor.displayName,
+        cursor.displayName,
+        cursor.importedAt,
+        cursor.displayName,
+        cursor.importedAt,
+        cursor.id,
+        limit + 1,
+      ]
+  const rows = db.prepare(`SELECT
+      id, mission_id, source_path, file_name, display_name, geometry_json,
+      metadata_json, content_sha256, timing_class, outing_id,
+      revision_sequence, retired_at, retired_by, imported_at, updated_at
+    FROM gpx_track_imports
+    WHERE ${ACTIVE_GPX_IMPORT_PREDICATE}
+      ${cursorClause}
+    ORDER BY display_name ASC, imported_at ASC, id ASC
+    LIMIT ?`).all(...parameters)
+  const drawable = []
+  const undrawn = []
+  const pageRows = rows.slice(0, limit)
+  const pageByteLimit = DEFAULT_PAGE_BYTE_LIMIT - 1024
+  let consumed = 0
+  for (const row of pageRows) {
+    let projected = null
+    let failure = null
+    try {
+      projected = { ...row, geometry_json: fitGeometryToShare(row.geometry_json, trackByteLimit) }
+    } catch (error) {
+      failure = {
+        id: row.id,
+        display_name: row.display_name,
+        reason: error instanceof Error ? error.message : String(error),
+      }
+    }
+    const candidate = {
+      entries: projected === null ? drawable : [...drawable, projected],
+      undrawn: failure === null ? undrawn : [...undrawn, failure],
+    }
+    if (consumed > 0 && Buffer.byteLength(JSON.stringify(candidate), 'utf8') > pageByteLimit) break
+    if (projected !== null) drawable.push(projected)
+    if (failure !== null) undrawn.push(failure)
+    consumed += 1
+  }
+  const last = pageRows[consumed - 1]
+  const nextPosition = position + consumed
+  const hasMore = consumed < rows.length && nextPosition < drawableTotal
+  return {
+    entries: drawable,
+    undrawn,
+    totalActive,
+    truncated: !hasMore && totalActive > drawableTotal,
+    nextCursor: !hasMore || last === undefined
+      ? null
+      : encodePageCursor({
+          kind: 'map-imports',
+          contextId: missionId,
+          displayName: last.display_name,
+          importedAt: last.imported_at,
+          id: last.id,
+          position: nextPosition,
+        }),
+  }
+}
+
+/** Passes a geometry through when it already fits its share, otherwise thins it deterministically. */
+function fitGeometryToShare(geometryJson, byteLimit) {
+  if (typeof geometryJson === 'string' && Buffer.byteLength(geometryJson, 'utf8') <= byteLimit) {
+    return geometryJson
+  }
+  try {
+    return compactGpxDisplayGeometry(geometryJson, byteLimit)
+  } catch {
+    throw new Error('Too many separate track segments to draw within the map budget.')
+  }
+}
+
 /** Reads one bounded revision-summary page without geometry or retained bytes. */
 function listGpxImportRevisionProjectionPage(db, input) {
   const importId = normalizePageText(input?.importId, 'GPX import')
@@ -226,10 +353,12 @@ function decodePageCursor(value, expectedKind, expectedContextId) {
   ) {
     throw new Error('GPX renderer page cursor is invalid.')
   }
-  if (expectedKind === 'imports') {
+  if (expectedKind === 'imports' || expectedKind === 'map-imports') {
     if (
       !isBoundedCursorText(parsed.displayName, true)
       || !isBoundedCursorText(parsed.importedAt, false, 100)
+      || (expectedKind === 'map-imports'
+        && (!Number.isSafeInteger(parsed.position) || parsed.position < 1 || parsed.position > MAP_MAX_TRACKS))
     ) {
       throw new Error('GPX renderer page cursor is invalid.')
     }
@@ -252,5 +381,8 @@ module.exports = {
   compactGpxDisplayGeometry,
   listGpxImportProjectionPage,
   listGpxImportRevisionProjectionPage,
+  listGpxMapProjectionPage,
+  MAP_MAX_TRACKS,
+  MAP_TOTAL_BYTE_BUDGET,
   packGpxRendererPage,
 }

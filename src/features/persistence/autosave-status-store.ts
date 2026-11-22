@@ -107,19 +107,25 @@ const INITIAL_STATE = {
 
 export const useAutosaveStatusStore = create<AutosaveStatusState>((set) => ({
   ...INITIAL_STATE,
+  // A settings reload calls configure() again. It changes the schedule only:
+  // a standing failure and the time since the last good backup stay until a
+  // backup actually succeeds [DON-352, audit M-63].
   configure: (input) =>
-    set({
-      phase: input.enabled ? 'idle' : 'disabled',
+    set((state) => ({
+      phase: input.enabled ? (state.lastFailure === null ? 'idle' : 'failed') : 'disabled',
       enabled: input.enabled,
       intervalMs: input.intervalMs,
       staleAfterMs: input.intervalMs * STALE_INTERVAL_MULTIPLIER,
-      lastAttemptAt: toIso(input.now),
-      lastFailure: null,
-      observedMsSinceLastSuccess: 0,
-    }),
+      lastAttemptAt: state.lastAttemptAt ?? toIso(input.now),
+    })),
+  // Switching autosave off changes the schedule only. A standing failure and
+  // the last good backup are kept, so switching it back on shows "Autosave
+  // failing" or "Autosave stale" again instead of a clean slate
+  // [DON-352, audit M-63].
   markDisabled: () =>
     set({
-      ...INITIAL_STATE,
+      phase: 'disabled',
+      enabled: false,
     }),
   markSyncStarted: (input) =>
     set({

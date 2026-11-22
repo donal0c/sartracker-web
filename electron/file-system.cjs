@@ -10,6 +10,13 @@ const {
 } = require('./gpx-import-envelope.cjs')
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+/**
+ * Paths one watched-folder listing returns. A watch is not an operator
+ * selection, so it is not held to the 100-file selection cap; beyond this
+ * bound the most recently changed files are kept and the rest are counted, so
+ * new files keep importing and the operator is told [DON-350] [M-40].
+ */
+const MAX_WATCHED_GPX_LISTING_PATHS = 1_000
 const OFFICIAL_MAP_PACKAGE_DIRECTORY = 'official-map-packages'
 
 /**
@@ -167,6 +174,11 @@ function createElectronFileSystem(options) {
       assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
       return listBoundedGpxDirectoryPaths(normalizedDirectoryPath)
     },
+    listWatchedGpxDirectoryPaths: async (directoryPath) => {
+      const normalizedDirectoryPath = normalizeRawGpxPath(directoryPath, 'GPX directory')
+      assertAllowedPath(normalizedDirectoryPath, 'GPX directory')
+      return listWatchedGpxDirectoryPaths(normalizedDirectoryPath)
+    },
     ingestMarkerAttachment: async (input, missionStore) => {
       const missionId = normalizeMissionId(input.missionId)
       const fileName = normalizeAttachmentFileName(input.fileName)
@@ -279,6 +291,43 @@ async function listBoundedGpxDirectoryPaths(directoryPath) {
   )
 }
 
+/**
+ * Lists every GPX file in a watched folder up to MAX_WATCHED_GPX_LISTING_PATHS,
+ * keeping the most recently changed when there are more, and reports how many
+ * were left out.
+ */
+async function listWatchedGpxDirectoryPaths(directoryPath) {
+  const directory = await fs.opendir(directoryPath).catch(() => null)
+  if (directory === null) {
+    throw new Error(`GPX watch directory was not found: ${directoryPath}`)
+  }
+  const gpxPaths = []
+  let overlongPaths = 0
+  for await (const entry of directory) {
+    if (!entry.isFile() || !isGpxPath(entry.name)) continue
+    // Counted, not dropped silently: the operator is told files were left out.
+    if (directoryPath.length + 1 + entry.name.length > MAX_GPX_IMPORT_PATH_LENGTH) {
+      overlongPaths += 1
+      continue
+    }
+    gpxPaths.push(path.join(directoryPath, entry.name))
+  }
+  let kept = gpxPaths
+  if (gpxPaths.length > MAX_WATCHED_GPX_LISTING_PATHS) {
+    const stamped = await Promise.all(gpxPaths.map(async (filePath) => ({
+      filePath,
+      mtimeMs: (await fs.stat(filePath).catch(() => null))?.mtimeMs ?? 0,
+    })))
+    stamped.sort((left, right) => right.mtimeMs - left.mtimeMs
+      || left.filePath.localeCompare(right.filePath))
+    kept = stamped.slice(0, MAX_WATCHED_GPX_LISTING_PATHS).map((entry) => entry.filePath)
+  }
+  return {
+    paths: kept.sort((left, right) => path.basename(left).localeCompare(path.basename(right))),
+    omittedCount: gpxPaths.length - kept.length + overlongPaths,
+  }
+}
+
 function normalizeRequiredPath(inputPath, label) {
   if (typeof inputPath !== 'string') {
     throw new Error(`${label} must be a string.`)
@@ -358,6 +407,7 @@ async function writeFileAtomically(destinationPath, bytes) {
 }
 
 module.exports = {
+  MAX_WATCHED_GPX_LISTING_PATHS,
   MAX_ATTACHMENT_BYTES,
   createElectronFileSystem,
 }

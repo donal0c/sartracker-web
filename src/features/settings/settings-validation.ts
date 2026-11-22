@@ -186,6 +186,10 @@ function validateWeatherLinks(
       const parsed = new URL(addSchemeIfMissing(link.url.trim()))
       if (!['http:', 'https:'].includes(parsed.protocol)) {
         errors[`weather.links.${index}.url`] = 'Weather link URL must use http or https.'
+      } else if (parsed.username !== '' || parsed.password !== '') {
+        // The desktop app refuses to open these, so say so here, not mid-mission [DON-340].
+        errors[`weather.links.${index}.url`] =
+          'Remove the user name or password from this weather link; SAR Tracker will not open links that contain them.'
       }
     } catch {
       errors[`weather.links.${index}.url`] = 'Weather link URL must be a valid absolute URL.'

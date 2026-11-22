@@ -14,7 +14,7 @@ import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
 import {
-  closeWorkspace, connectProvider, finishMission, openMissionSection, startMission, waitForBasemapLabel,
+  closeWorkspace, connectProvider, finishMission, openMissionSection, openSettingsSection, startMission, waitForBasemapLabel,
 } from '../lib/operator.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { isRetryableStoreRead } from '../lib/live-recording.mjs'
@@ -364,6 +364,7 @@ async function importDiscovery(app) {
   const t = (id) => app.page.getByTestId(id)
   await t('open-settings-workspace').click()
   await delay(800)
+  await openSettingsSection(app.page, 'mapping')
   await t('choose-official-map-package').click()
   await t('official-map-package-status').getByText(/0\/1 ready/u).waitFor({ timeout: VERIFY_TIMEOUT_MS })
   await t('settings-save').click()

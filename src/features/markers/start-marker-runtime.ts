@@ -4,13 +4,14 @@ import type {
   MissionStore,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import {
+  appendTreatmentUpdate,
   buildMarkerSaveInput,
   changeMarkerDraftType,
   createMarkerDraftAtCoordinate,
   createMarkerDraftFromMarker,
   type MarkerDraft,
 } from './marker-draft'
-import type { MarkerDialogState, MarkerRuntimeState } from './marker-store'
+import { isMarkerDialogDirty, type MarkerDialogState, type MarkerRuntimeState } from './marker-store'
 import type { MarkerAttachmentBoundary } from '../../infrastructure/marker-attachment-store/marker-attachment-boundary'
 import type { DiagnosticEventInput } from '../diagnostics/diagnostic-event-log'
 
@@ -29,6 +30,8 @@ export type MarkerRuntimeController = {
   readonly beginCreateFromDraft: (draft: MarkerDraft) => void
   readonly beginEdit: (markerId: string) => void
   readonly updateDraft: (patch: Partial<MarkerDraft>) => void
+  readonly updatePendingTreatmentUpdate: (text: string) => void
+  readonly dismissError: () => void
   readonly changeDraftType: (type: MarkerDraft['type']) => void
   readonly attachEvidence: (file: File) => Promise<void>
   readonly clearAttachment: () => void
@@ -37,6 +40,7 @@ export type MarkerRuntimeController = {
   readonly deleteEditingMarker: () => Promise<boolean>
 }
 
+/** Owns mission marker loading and each create/edit draft session. */
 export async function startMarkerRuntime(
   dependencies: StartMarkerRuntimeDependencies,
 ): Promise<MarkerRuntimeController> {
@@ -44,8 +48,13 @@ export async function startMarkerRuntime(
   let markers: readonly Marker[] = []
   let loading = false
   let saving = false
+  // True only while a marker save or retire is in flight; evidence ingestion also sets
+  // `saving` but persists nothing, so it must not hide a discarded draft.
+  let persisting = false
   let error: string | null = null
+  let loadError: string | null = null
   let dialog: MarkerDialogState | null = null
+  let dialogSessionId = 0
   let refreshToken = 0
 
   publishRuntime()
@@ -53,9 +62,16 @@ export async function startMarkerRuntime(
   return {
     refreshMission: async (missionId) => {
       const token = ++refreshToken
+      // A draft whose save or retire is in flight is not discarded: that result reports itself.
+      const discardedDraftNotice = dialog !== null && !persisting && isMarkerDialogDirty(dialog)
+        ? describeDiscardedDraft(dialog)
+        : null
       activeMissionId = missionId
       dialog = null
-      error = null
+      // A mission change cannot wait for the discard confirmation, so say what was lost
+      // instead of dropping unsaved marker edits silently.
+      error = discardedDraftNotice
+      loadError = null
 
       if (missionId === null) {
         markers = []
@@ -79,7 +95,8 @@ export async function startMarkerRuntime(
         }
 
         markers = []
-        error = toErrorMessage(runtimeError)
+        loadError = toErrorMessage(runtimeError)
+        recordBeginOrLoadFailure('marker_load_failed')
       } finally {
         if (isCurrentRefresh(token, missionId)) {
           loading = false
@@ -102,11 +119,12 @@ export async function startMarkerRuntime(
       } catch (runtimeError) {
         dialog = null
         error = toErrorMessage(runtimeError)
+        recordBeginOrLoadFailure('marker_create_begin_failed')
         publishRuntime()
         return
       }
 
-      dialog = { mode: 'create', draft }
+      dialog = createDialog('create', draft)
       error = null
       publishRuntime()
     },
@@ -115,7 +133,7 @@ export async function startMarkerRuntime(
         return
       }
 
-      dialog = { mode: 'create', draft }
+      dialog = createDialog('create', draft)
       error = null
       publishRuntime()
     },
@@ -123,6 +141,7 @@ export async function startMarkerRuntime(
       const marker = markers.find((candidate) => candidate.id === markerId)
       if (marker === undefined) {
         error = `Marker not found: ${markerId}`
+        recordBeginOrLoadFailure('marker_edit_begin_failed')
         publishRuntime()
         return
       }
@@ -136,11 +155,12 @@ export async function startMarkerRuntime(
       } catch (runtimeError) {
         dialog = null
         error = toErrorMessage(runtimeError)
+        recordBeginOrLoadFailure('marker_edit_begin_failed')
         publishRuntime()
         return
       }
 
-      dialog = { mode: 'edit', draft }
+      dialog = createDialog('edit', draft)
       error = null
       publishRuntime()
     },
@@ -156,6 +176,15 @@ export async function startMarkerRuntime(
           ...patch,
         },
       }
+      publishRuntime()
+    },
+    updatePendingTreatmentUpdate: (text) => {
+      if (dialog === null || saving) return
+      dialog = { ...dialog, pendingTreatmentUpdate: text }
+      publishRuntime()
+    },
+    dismissError: () => {
+      error = null
       publishRuntime()
     },
     changeDraftType: (type) => {
@@ -202,7 +231,11 @@ export async function startMarkerRuntime(
         publishRuntime()
       } catch (runtimeError) {
         saving = false
-        error = toErrorMessage(runtimeError)
+        // A failed ingestion for a draft a refresh already discarded must not replace
+        // the discard notice: that notice is what the operator still needs to act on.
+        if (isCurrentDialogContext(missionId, dialogId, dialogCoordinates)) {
+          error = toErrorMessage(runtimeError)
+        }
         publishRuntime()
       }
     },
@@ -235,37 +268,70 @@ export async function startMarkerRuntime(
         return null
       }
 
+      let draft = dialog.draft
+      if (draft.type === 'casualty' && dialog.pendingTreatmentUpdate.trim() !== '') {
+        try {
+          draft = {
+            ...draft,
+            treatment: appendTreatmentUpdate({
+              existingTreatment: draft.treatment,
+              note: dialog.pendingTreatmentUpdate,
+              timestamp: new Date(),
+              updatedBy: draft.updatedBy,
+            }),
+          }
+        } catch (runtimeError) {
+          error = `The New Treatment Update could not be added: ${toErrorMessage(runtimeError)} Shorten it or press Add Update after fixing the log, then Save.`
+          publishRuntime()
+          return null
+        }
+      }
+
+      const missionId = activeMissionId
+      const sessionId = dialog.sessionId
+      const mode = dialog.mode
       saving = true
+      persisting = true
       error = null
       publishRuntime()
 
       try {
         const marker = await dependencies.markerStore.upsertMarker(
           buildMarkerSaveInput({
-            missionId: activeMissionId,
-            displayOrder: dialog.draft.displayOrder ?? getNextDisplayOrder(markers),
-            draft: dialog.draft,
+            missionId,
+            displayOrder: draft.displayOrder ?? getNextDisplayOrder(markers),
+            draft,
           }),
         )
 
-        markers = upsertMarker(markers, marker)
+        // The store write stands, but only the mission it was saved to may show it.
+        // A refresh to another mission while the save was in flight already replaced
+        // the marker list and closed this dialog.
+        const sameMission = activeMissionId === missionId
+        if (sameMission) {
+          markers = upsertMarker(markers, marker)
+        }
         void dependencies.recordDiagnosticEvent?.({
           level: 'info',
           category: 'marker',
           event: 'marker_saved',
           fields: {
-            mode: dialog.mode,
+            mode,
             markerType: marker.type,
-            markerCount: markers.length,
+            markerCount: sameMission ? markers.length : null,
             hasAttachment: marker.attachment_path !== null,
           },
         })
-        dialog = null
+        if (dialog?.sessionId === sessionId) {
+          dialog = null
+        }
         saving = false
+        persisting = false
         publishRuntime()
         return marker
       } catch (runtimeError) {
         saving = false
+        persisting = false
         error = toErrorMessage(runtimeError)
         publishRuntime()
         throw runtimeError
@@ -277,7 +343,10 @@ export async function startMarkerRuntime(
       }
 
       const markerId = dialog.draft.id
+      const missionId = activeMissionId
+      const sessionId = dialog.sessionId
       saving = true
+      persisting = true
       error = null
       publishRuntime()
 
@@ -285,18 +354,25 @@ export async function startMarkerRuntime(
         const didDelete = await dependencies.markerStore.deleteMarker(markerId)
         if (!didDelete) {
           saving = false
+          persisting = false
           publishRuntime()
           return false
         }
 
-        markers = markers.filter((marker) => marker.id !== markerId)
-        dialog = null
+        if (activeMissionId === missionId) {
+          markers = markers.filter((marker) => marker.id !== markerId)
+        }
+        if (dialog?.sessionId === sessionId) {
+          dialog = null
+        }
         saving = false
+        persisting = false
         error = null
         publishRuntime()
         return true
       } catch (runtimeError) {
         saving = false
+        persisting = false
         error = toErrorMessage(runtimeError)
         publishRuntime()
         throw runtimeError
@@ -304,6 +380,32 @@ export async function startMarkerRuntime(
     },
   }
 
+  /** Captures a baseline and assigns a new identity for every opened dialog. */
+  function createDialog(mode: MarkerDialogState['mode'], draft: MarkerDraft): MarkerDialogState {
+    return {
+      sessionId: ++dialogSessionId,
+      mode,
+      draft,
+      baselineDraft: { ...draft, coordinates: { ...draft.coordinates } },
+      pendingTreatmentUpdate: '',
+    }
+  }
+
+  /** Names the marker whose unsaved edits a mission refresh discarded. */
+  function describeDiscardedDraft(discarded: MarkerDialogState): string {
+    const name = discarded.draft.name.trim() === '' ? 'without a name' : `"${discarded.draft.name.trim()}"`
+    const treatmentNote = discarded.pendingTreatmentUpdate.trim() !== ''
+      ? ', including a treatment update that had not been added,'
+      : ''
+    return `Unsaved changes to marker ${name} were discarded${treatmentNote} because the mission changed or reloaded. Reopen the marker and re-enter them.`
+  }
+
+  /** Records failure kind only; raw exceptions may contain locations or personal details. */
+  function recordBeginOrLoadFailure(event: string): void {
+    void dependencies.recordDiagnosticEvent?.({ level: 'error', category: 'marker', event })
+  }
+
+  /** Publishes the current runtime snapshot to the renderer. */
   function publishRuntime(): void {
     dependencies.applyRuntime({
       activeMissionId,
@@ -311,6 +413,7 @@ export async function startMarkerRuntime(
       loading,
       saving,
       error,
+      loadError,
       dialog,
     })
   }

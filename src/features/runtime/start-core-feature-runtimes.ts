@@ -1,3 +1,4 @@
+import type { WatchedGpxDirectoryListing } from '../gpx/start-gpx-runtime'
 import type { MissionStore } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { MarkerAttachmentBoundary } from '../../infrastructure/marker-attachment-store/marker-attachment-boundary'
 import {
@@ -109,6 +110,7 @@ export type GpxWatchSource = {
     directoryPath: string,
   ) => Promise<readonly GpxImportFileInput[]>
   readonly listDirectoryPaths?: (directoryPath: string) => Promise<readonly string[]>
+  readonly listWatchedDirectoryPaths?: (directoryPath: string) => Promise<WatchedGpxDirectoryListing>
 }
 
 export type CoreFeatureRuntimeOptions = {

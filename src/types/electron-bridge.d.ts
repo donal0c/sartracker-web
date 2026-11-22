@@ -1,3 +1,4 @@
+import type { WatchedGpxDirectoryListing } from '../features/gpx/start-gpx-runtime'
 import type {
   AppSettings,
   AppSettingsDraft,
@@ -94,6 +95,7 @@ export type SarTrackerElectronBridge = {
     readonly message: string
   }>
   readonly listGpxDirectoryPaths: (directoryPath: string) => Promise<readonly string[]>
+  readonly listWatchedGpxDirectoryPaths: (directoryPath: string) => Promise<WatchedGpxDirectoryListing>
   readonly ingestMarkerAttachment: (input: {
     readonly missionId: string
     readonly fileName: string

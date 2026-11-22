@@ -75,17 +75,21 @@ describe('MarkerDialog two-stage delete confirmation', () => {
 
   function renderEditMarker(type: 'ipp_lkp' | 'clue' | 'hazard' | 'casualty' = 'hazard'): MarkerRuntimeController {
     const controller = createController()
+    const draft = {
+      ...createMarkerDraftAtCoordinate(52.0, -9.5, type),
+      id: 'marker-existing-1',
+      name: 'Test Marker',
+      condition: type === 'casualty' ? 'Injured - Conscious' : '',
+      evacuationPriority: type === 'casualty' ? 'Urgent' : '',
+    }
     useMarkerStore.setState({
       controller,
       dialog: {
+        sessionId: 1,
         mode: 'edit',
-        draft: {
-          ...createMarkerDraftAtCoordinate(52.0, -9.5, type),
-          id: 'marker-existing-1',
-          name: 'Test Marker',
-          condition: type === 'casualty' ? 'Injured - Conscious' : '',
-          evacuationPriority: type === 'casualty' ? 'Urgent' : '',
-        },
+        draft,
+        baselineDraft: draft,
+        pendingTreatmentUpdate: '',
       },
     })
     render(React.createElement(MarkerDialog))
@@ -109,6 +113,8 @@ function createController(): MarkerRuntimeController {
     beginCreateFromDraft: vi.fn(),
     beginEdit: vi.fn(),
     updateDraft: vi.fn(),
+    updatePendingTreatmentUpdate: vi.fn(),
+    dismissError: vi.fn(),
     changeDraftType: vi.fn(),
     attachEvidence: vi.fn(),
     clearAttachment: vi.fn(),

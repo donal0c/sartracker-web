@@ -43,7 +43,7 @@ export function AdminIdentityField(props: AdminIdentityFieldProps) {
           <p className="font-semibold">No Admin Roster members are configured.</p>
           <p className="mt-1">
             This decision must be recorded by a named admin. Add the responsible admin in
-            Settings → Mission Defaults → Admin roster, then Save &amp; Close to return here.
+            Settings → Mission defaults → Admin roster, then Save &amp; Close to return here.
             Anything you have typed below is kept.
           </p>
           <button

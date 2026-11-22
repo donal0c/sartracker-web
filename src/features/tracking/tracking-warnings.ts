@@ -26,6 +26,7 @@ export type TrackingWarningCode =
   | 'tracking_reconnecting'
   | 'tracking_reconnect_failed'
   | 'evidence_custody_unsettled'
+  | 'evidence_backpressure'
   | 'persisted_breadcrumbs_dropped'
   | 'cache_update_failed'
   | 'cache_mission_mismatch'

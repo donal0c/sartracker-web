@@ -1,4 +1,5 @@
-const WEB_MERCATOR_EQUATOR_METRES_PER_PIXEL = 156_543.033_928_040_97
+/** MapLibre zoom 0 spans 512 CSS pixels, so use 2 * pi * 6378137 / 512 at the equator. */
+const WEB_MERCATOR_EQUATOR_METRES_PER_PIXEL_512 = (2 * Math.PI * 6_378_137) / 512
 const NICE_DISTANCE_STEPS = [1, 2, 5] as const
 
 export type MapScaleReadout = {
@@ -54,7 +55,7 @@ export function buildMapScaleReadout(input: BuildMapScaleReadoutInput): MapScale
   const targetWidthPx = input.targetWidthPx ?? 140
   const latitudeRadians = clampLatitude(input.latitude) * (Math.PI / 180)
   const metresPerPixel =
-    (WEB_MERCATOR_EQUATOR_METRES_PER_PIXEL * Math.cos(latitudeRadians)) / 2 ** input.zoom
+    (WEB_MERCATOR_EQUATOR_METRES_PER_PIXEL_512 * Math.cos(latitudeRadians)) / 2 ** input.zoom
   const distanceM = chooseMapScaleDistance(metresPerPixel, targetWidthPx)
   const widthPx = distanceM > 0 ? Math.max(1, distanceM / metresPerPixel) : 0
 

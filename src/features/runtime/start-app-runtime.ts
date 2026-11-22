@@ -246,6 +246,10 @@ export async function startAppRuntime(
   let trackingSession: TrackingRuntimeStop | null = null
   let reloadTail: Promise<void> = Promise.resolve()
   let disposed = false
+  // Whether the services applied last hold a tracking connection. Save & Close
+  // keeps a connection the coordinator already has: auto-connect decides only
+  // the connection at startup [DON-352, audit M-67].
+  let trackingConnectionApplied = false
   let stopOwnedServices = async (): Promise<void> => undefined
   let trackingCustodyStopped = false
   const cleanup = createRuntimeCleanup([
@@ -299,6 +303,7 @@ export async function startAppRuntime(
 
       await reloadSettings(options)
     },
+    isTrackingConnected: () => trackingConnectionApplied,
     dispose: cleanup,
   }
 
@@ -311,7 +316,7 @@ export async function startAppRuntime(
     const generation = ++reloadGeneration
 
     const runtimeSettings = await resolvedDependencies.readRuntimeBootstrapSettings(
-      options?.forceConnect ?? false,
+      (options?.forceConnect ?? false) || trackingConnectionApplied,
     )
 
     if (generation !== reloadGeneration) {
@@ -529,6 +534,7 @@ export async function startAppRuntime(
     }
 
     activeServices = nextServices
+    trackingConnectionApplied = runtimeSettings.trackingConfig !== null
     if (preservesTrackingSession) await stopRuntimeServices(previousServices)
   }
 }

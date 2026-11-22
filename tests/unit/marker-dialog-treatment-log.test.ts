@@ -30,15 +30,19 @@ describe('MarkerDialog casualty treatment log', () => {
     // operators expect) is "10:15" in any timezone the test runs in.
     vi.setSystemTime(new Date(2026, 5, 2, 10, 15, 0))
     const controller = createController()
+    const draft = {
+      ...createMarkerDraftAtCoordinate(52.179337, -9.464944, 'casualty'),
+      treatment: '[2026-06-02 10:00] Alpha: Blanket applied',
+      updatedBy: 'Bravo',
+    }
     useMarkerStore.setState({
       controller,
       dialog: {
+        sessionId: 1,
         mode: 'create',
-        draft: {
-          ...createMarkerDraftAtCoordinate(52.179337, -9.464944, 'casualty'),
-          treatment: '[2026-06-02 10:00] Alpha: Blanket applied',
-          updatedBy: 'Bravo',
-        },
+        draft,
+        baselineDraft: draft,
+        pendingTreatmentUpdate: '',
       },
     })
 
@@ -61,15 +65,19 @@ describe('MarkerDialog casualty treatment log', () => {
   it('clears an unsaved treatment-size error when the dialog closes', () => {
     const controller = createController()
     const casualtyDraft = createMarkerDraftAtCoordinate(52.179337, -9.464944, 'casualty')
+    const draft = {
+      ...casualtyDraft,
+      treatment: 'a'.repeat(512 * 1_024 - 10),
+      updatedBy: 'Bravo',
+    }
     useMarkerStore.setState({
       controller,
       dialog: {
+        sessionId: 1,
         mode: 'create',
-        draft: {
-          ...casualtyDraft,
-          treatment: 'a'.repeat(512 * 1_024 - 10),
-          updatedBy: 'Bravo',
-        },
+        draft,
+        baselineDraft: draft,
+        pendingTreatmentUpdate: '',
       },
     })
 
@@ -79,8 +87,19 @@ describe('MarkerDialog casualty treatment log', () => {
     expect(query('[role="alert"]')?.textContent).toMatch(/524288 UTF-8 bytes or fewer/i)
 
     click('[data-testid="marker-close-btn"]')
+    expect(controller.closeDialog).not.toHaveBeenCalled()
+    click('[data-testid="marker-discard-confirm-btn"]')
 
     expect(controller.closeDialog).toHaveBeenCalledOnce()
+    act(() => useMarkerStore.setState({
+      dialog: {
+        sessionId: 2,
+        mode: 'create',
+        draft: casualtyDraft,
+        baselineDraft: casualtyDraft,
+        pendingTreatmentUpdate: '',
+      },
+    }))
     expect(document.body.textContent).not.toMatch(/524288 UTF-8 bytes or fewer/i)
     expect((query('[data-testid="marker-treatment-update-input"]') as HTMLTextAreaElement).value)
       .toBe('')
@@ -105,10 +124,15 @@ function createController(): MarkerRuntimeController & {
     beginCreateFromDraft: vi.fn(),
     beginEdit: vi.fn(),
     updateDraft: vi.fn(),
+    updatePendingTreatmentUpdate: vi.fn((text: string) => {
+      const dialog = useMarkerStore.getState().dialog
+      if (dialog !== null) useMarkerStore.setState({ dialog: { ...dialog, pendingTreatmentUpdate: text } })
+    }),
+    dismissError: vi.fn(),
     changeDraftType: vi.fn(),
     attachEvidence: vi.fn(),
     clearAttachment: vi.fn(),
-    closeDialog: vi.fn(),
+    closeDialog: vi.fn(() => useMarkerStore.setState({ dialog: null })),
     saveDraft: vi.fn(),
     deleteEditingMarker: vi.fn(),
   }

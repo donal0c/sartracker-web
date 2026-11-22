@@ -33,7 +33,7 @@ describe('breadcrumb PR-3 operator manual [DON-275]', () => {
       'Complete</strong> or <strong>100%',
       'Record Gap &amp; Allow Archive',
       'Open Admin Roster Settings',
-      'Settings → Mission Defaults → Admin roster',
+      'Settings → Mission defaults → Admin roster',
       'A lost recovery code cannot be recovered',
       'Verified encrypted archive',
       'SAR Tracker could not restart safely',

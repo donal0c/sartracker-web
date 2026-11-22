@@ -116,6 +116,38 @@ describe('TrackingStatusPanel', () => {
     expect(getText('[data-testid="tracking-warning"]')).toContain('Live refresh suspended')
   })
 
+  it('warns in plain words when fix times are ahead of this laptop clock [DON-349 M-06]', () => {
+    useTrackingStore.setState((state) => ({
+      snapshot: {
+        ...state.snapshot,
+        positions: [{
+          id: 'position-1',
+          device_id: 'device-1',
+          lat: 52,
+          lon: -9.7,
+          altitude: null,
+          speed: null,
+          battery: null,
+          accuracy: null,
+          timestamp: '2026-08-22T11:00:00.000Z',
+          timestamp_source: 'fix',
+          fix_time_unverified: false,
+          fix_time_ahead_of_clock: true,
+          source: 'traccar',
+          data_origin: 'live',
+          cache_age_seconds: null,
+          device_cache_stale: true,
+        }],
+      },
+    }))
+
+    render(React.createElement(TrackingStatusPanel))
+
+    expect(getText('[data-testid="fix-time-ahead-warning"]')).toBe(
+      'FIX TIME AHEAD OF THIS LAPTOP — 1 device reports a fix time more than 2 minutes in the future. It is shown as stale. Check the laptop clock and the tracker time zone.',
+    )
+  })
+
   it('shows rejected-row and unverified-fix-time warnings while retaining valid fixes [DON-267]', () => {
     useTrackingStore.setState((state) => ({
       snapshot: {

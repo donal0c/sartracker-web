@@ -469,6 +469,7 @@ export const COMPARED_POSITION_KEYS = [
   'timestamp',
   'timestamp_source',
   'fix_time_unverified',
+  'fix_time_ahead_of_clock',
   'source',
   'data_origin',
   'cache_age_seconds',

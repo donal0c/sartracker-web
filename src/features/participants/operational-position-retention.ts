@@ -1,6 +1,7 @@
 import {
   annotateTrackingSnapshotHealth,
   DEFAULT_DEVICE_STALE_THRESHOLD_MS,
+  isPositionExpired,
 } from '../tracking/tracking-snapshot-health'
 import type {
   NormalizedTrackingDevice,
@@ -64,7 +65,9 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
       const refreshedPositions = [...positionsByDevice.values()].map((position) => annotateTrackingSnapshotHealth({
         devices: [],
         positions: [position],
-        breadcrumbs: [],
+        // The device's breadcrumbs keep a breadcrumb-ahead-of-clock warning on
+        // a retained marker; marker selection draws that breadcrumb [DON-349].
+        breadcrumbs: filtered.breadcrumbs.filter((breadcrumb) => breadcrumb.device_id === position.device_id),
       }, {
         now: observedAt,
         deviceStaleThresholdMs: DEFAULT_DEVICE_STALE_THRESHOLD_MS,
@@ -83,7 +86,8 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
       )
       const retainedPositions: NormalizedTrackingPosition[] = []
       for (const position of refreshedPositions) {
-        if (position.device_cache_stale) {
+        // A fix ahead of the clock is kept and stays labelled [DON-349 M-06].
+        if (isPositionExpired(position)) {
           positionsByDevice.delete(position.device_id)
           devicesById.delete(position.device_id)
           cacheWrittenAtByDevice.delete(position.device_id)

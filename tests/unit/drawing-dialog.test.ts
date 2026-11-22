@@ -270,6 +270,19 @@ describe('DrawingDialog vertices readout', () => {
     expect(confirmation?.textContent).toMatch(/revisions and audit evidence.*retained/i)
   })
 
+  it.each([true, false])('resets retire confirmation for another drawing (close first: %s) [DON-348 M-73]', async (closeFirst) => {
+    useDrawingStore.setState({ dialog: { mode: 'edit', draft: { ...LINE_DRAFT, id: 'drawing-1' } } })
+    await renderDialog()
+    act(() => (document.querySelector('[data-testid="drawing-delete-btn"]') as HTMLButtonElement).click())
+    expect(document.querySelector('[data-testid="drawing-delete-confirmation"]')).not.toBeNull()
+
+    if (closeFirst) act(() => useDrawingStore.setState({ dialog: null }))
+    act(() => useDrawingStore.setState({ dialog: { mode: 'edit', draft: { ...LINE_DRAFT, id: 'drawing-2' } } }))
+
+    expect(document.querySelector('[data-testid="drawing-delete-confirmation"]')).toBeNull()
+    expect(document.querySelector('[data-testid="drawing-delete-btn"]')).not.toBeNull()
+  })
+
   async function renderDialog(): Promise<void> {
     const { DrawingDialog } = await import('../../src/components/drawing-dialog')
     host = document.createElement('div')

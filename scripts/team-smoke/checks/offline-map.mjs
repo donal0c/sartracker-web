@@ -15,7 +15,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
 import { delay, launchApp } from '../lib/app.mjs'
-import { bodyText, closeWorkspace, waitForBasemapLabel } from '../lib/operator.mjs'
+import { bodyText, closeWorkspace, openSettingsSection, waitForBasemapLabel } from '../lib/operator.mjs'
 import { NotTested, expectProduct } from '../lib/results.mjs'
 
 const VERIFY_TIMEOUT_MS = 5 * 60_000
@@ -44,6 +44,7 @@ export default [
       const t = (id) => first.page.getByTestId(id)
       await t('open-settings-workspace').click()
       await delay(800)
+      await openSettingsSection(first.page, 'mapping')
       await t('choose-official-map-package').click()
       // Choosing adds a pending (unverified) package; Save & Close verifies it.
       await t('official-map-package-status').getByText(/0\/1 ready/u).waitFor({ timeout: VERIFY_TIMEOUT_MS })
@@ -61,6 +62,7 @@ export default [
       const second = await launchApp(ctx, { profile, label: 'offline-map-restart', env: { SARTRACKER_ELECTRON_BLOCK_NETWORK: '1' } })
       await second.page.getByTestId('open-settings-workspace').click()
       await delay(1500)
+      await openSettingsSection(second.page, 'mapping')
       const status = (await second.page.getByTestId('official-map-package-status').innerText()).replace(/\s+/gu, ' ')
       await second.shot('settings-after-restart')
       expectProduct(/1\/1 ready/u.test(status), `After restart the package panel shows: ${status.slice(0, 200)}`)
