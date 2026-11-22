@@ -21,7 +21,7 @@
  *   place, so nothing read from the source afterwards can be trusted. This
  *   never happens in a healthy run, so it fails the probe with the error text.
  * - `uncaptured`: the renderer is not reporting the tracking source's errors
- *   (window.__SARTRACKER_TRACKING_SOURCE_ERRORS__, written by
+ *   (window.__SARTRACKER_TRACKING_SOURCE_ERRORS__ and _ERROR_COUNT__, written by
  *   src/features/map/tracking-source-error-report.ts from the moment the map
  *   is created), so a failed update could go unseen.
  * - `not-drawn`: no map or no tracking source.
@@ -53,18 +53,22 @@ export const MAX_UNOBSERVED_GAP_MS = 2_000
  *   | { state: 'not-drawn' | 'unreadable', reason: string }>} the reading
  */
 export async function readTrackingSourceInPage() {
-  // The renderer's own report of the tracking source's errors since the map
-  // was created. Any entry fails the reading; a missing report is blind.
+  // The renderer's own report of the tracking source's errors: a count since
+  // the page loaded, never reset (so an error just before the map was
+  // recreated still counts), and the current map's latest messages. Any
+  // error fails the reading; a missing report is blind.
   const failed = () => {
-    const errors = window.__SARTRACKER_TRACKING_SOURCE_ERRORS__
-    return Array.isArray(errors) && errors.length > 0
-      ? { state: 'failed', reason: `the tracking source reported an error: ${errors[0]}`, errors: [...errors] }
-      : null
+    const count = window.__SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__
+    const errors = Array.isArray(window.__SARTRACKER_TRACKING_SOURCE_ERRORS__) ? window.__SARTRACKER_TRACKING_SOURCE_ERRORS__ : []
+    if (!(typeof count === 'number' && count > 0) && errors.length === 0) return null
+    const total = typeof count === 'number' ? Math.max(count, errors.length) : errors.length
+    const latest = errors.length > 0 ? `: ${errors.at(-1)}` : ' (on a map since torn down)'
+    return { state: 'failed', reason: `the tracking source reported ${total} error${total === 1 ? '' : 's'}${latest}`, errors: [...errors] }
   }
   const map = window.__SARTRACKER_MAP__
   if (map === undefined || map === null) return failed() ?? { state: 'not-drawn', reason: 'no map' }
   if (failed() !== null) return failed()
-  if (!Array.isArray(window.__SARTRACKER_TRACKING_SOURCE_ERRORS__)) {
+  if (!Array.isArray(window.__SARTRACKER_TRACKING_SOURCE_ERRORS__) || typeof window.__SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__ !== 'number') {
     return { state: 'uncaptured', reason: 'the renderer is not reporting tracking-source errors, so a failed update could be missed' }
   }
   const source = map.getSource('tracking')

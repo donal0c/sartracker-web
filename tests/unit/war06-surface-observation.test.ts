@@ -15,7 +15,10 @@ import {
 function pageWindow(props: Record<string, unknown> = {}): Record<string, unknown> {
   const page: Record<string, unknown> = {}
   ;(globalThis as unknown as { window?: unknown }).window = page
-  if (props.__SARTRACKER_MAP__ !== undefined) page.__SARTRACKER_TRACKING_SOURCE_ERRORS__ = []
+  if (props.__SARTRACKER_MAP__ !== undefined) {
+    page.__SARTRACKER_TRACKING_SOURCE_ERRORS__ = []
+    page.__SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__ = 0
+  }
   Object.assign(page, props)
   return page
 }
@@ -213,7 +216,7 @@ describe('WAR-06 pending source updates [DON-353]', () => {
   })
 
   it('a visibility report that changes during the read is not ready', async () => {
-    const page = pageWindow({ __SARTRACKER_TRACKING_VISIBLE__: true, __SARTRACKER_TRACKING_SOURCE_ERRORS__: [] })
+    const page = pageWindow({ __SARTRACKER_TRACKING_VISIBLE__: true, __SARTRACKER_TRACKING_SOURCE_ERRORS__: [], __SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__: 0 })
     const changing = { loaded: () => true, getData: () => { page.__SARTRACKER_TRACKING_VISIBLE__ = false; return Promise.resolve({ features: [] }) } }
     page.__SARTRACKER_MAP__ = { getSource: () => changing }
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'hidden' })
@@ -235,7 +238,9 @@ describe('WAR-06 pending source updates [DON-353]', () => {
 
 describe('WAR-06 failed source updates [DON-353]', () => {
   const win = globalThis as unknown as { window?: Record<string, unknown> }
-  afterEach(() => { delete win.window })
+  const stops = new Map<object, () => void>()
+  const stopReport = (map: object) => { stops.get(map)?.(); stops.delete(map) }
+  afterEach(() => { stops.clear(); delete win.window })
 
   /** A minimal evented object, like MapLibre's map and sources. */
   function evented<T extends object>(body: T) {
@@ -268,7 +273,7 @@ describe('WAR-06 failed source updates [DON-353]', () => {
     })
     // The product's own report, attached as use-map-instance.ts attaches it.
     pageWindow({ __SARTRACKER_TRACKING_VISIBLE__: true })
-    reportTrackingSourceErrors(map)
+    stops.set(map, reportTrackingSourceErrors(map))
     ;(globalThis as unknown as { window: Record<string, unknown> }).window.__SARTRACKER_MAP__ = map
     return { map, source }
   }
@@ -319,6 +324,27 @@ describe('WAR-06 failed source updates [DON-353]', () => {
     page.__SARTRACKER_MAP__ = next
     next.fire('error', { error: new Error('rejected on the new map'), sourceId: 'tracking' })
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'failed', reason: expect.stringContaining('rejected on the new map') })
+  })
+
+  it('an error just before the map is recreated still fails the next reading [DON-353]', async () => {
+    const { map, source } = rejectingSetup()
+    const page = (globalThis as unknown as { window: Record<string, unknown> }).window
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'ready', fixes: 0 })
+    source.updateData()
+    source.rejectUpdate('rejected just before teardown')
+    // Torn down and recreated before the next sample, as use-map-instance.ts does.
+    stopReport(map)
+    delete page.__SARTRACKER_MAP__
+    const next = evented({ getSource: (): unknown => nextSource })
+    const nextSource = { loaded: () => true, getData: () => Promise.resolve({ features: [] }) }
+    reportTrackingSourceErrors(next)
+    page.__SARTRACKER_MAP__ = next
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'failed', reason: expect.stringContaining('1 error') })
+  })
+
+  it('a non-numeric error count is never trusted', async () => {
+    pageWindow({ __SARTRACKER_MAP__: { getSource: () => undefined }, __SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__: '0' })
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'uncaptured' })
   })
 
   it('a map without the error report is never trusted', async () => {

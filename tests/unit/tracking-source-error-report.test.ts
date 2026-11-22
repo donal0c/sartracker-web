@@ -19,10 +19,16 @@ function fakeMap() {
   }
 }
 
+const count = () => (window as Window & { __SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__?: number }).__SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__
+
 const read = () => (window as Window & { __SARTRACKER_TRACKING_SOURCE_ERRORS__?: string[] }).__SARTRACKER_TRACKING_SOURCE_ERRORS__
 
 let stop: (() => void) | null = null
-afterEach(() => { stop?.(); stop = null })
+afterEach(() => {
+  stop?.()
+  stop = null
+  delete (window as Window & { __SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__?: number }).__SARTRACKER_TRACKING_SOURCE_ERROR_COUNT__
+})
 
 it('starts empty, records only tracking-source errors, and is removed on stop [DON-353]', () => {
   const map = fakeMap()
@@ -68,4 +74,31 @@ it('records an error without a message as text rather than dropping it [DON-353]
   stop = reportTrackingSourceErrors(map)
   map.fire({ sourceId: 'tracking' })
   expect(read()).toEqual(['unknown error'])
+})
+
+it('counts tracking-source errors for the life of the page, across map teardown and recreation [DON-353]', () => {
+  const first = fakeMap()
+  const stopFirst = reportTrackingSourceErrors(first)
+  expect(count()).toBe(0)
+  first.fire({ sourceId: 'basemap', error: new Error('tile 404') })
+  expect(count()).toBe(0)
+  first.fire({ sourceId: 'tracking', error: new Error('rejected before teardown') })
+  expect(count()).toBe(1)
+  stopFirst()
+  expect(count()).toBe(1)
+  const second = fakeMap()
+  stop = reportTrackingSourceErrors(second)
+  expect(read()).toEqual([])
+  expect(count()).toBe(1)
+  second.fire({ sourceId: 'tracking', error: new Error('on the new map') })
+  expect(count()).toBe(2)
+})
+
+it('keeps counting past the entry cap [DON-353]', () => {
+  const map = fakeMap()
+  stop = reportTrackingSourceErrors(map)
+  for (let index = 0; index < TRACKING_SOURCE_ERROR_REPORT_LIMIT + 5; index += 1) {
+    map.fire({ sourceId: 'tracking', error: new Error(`error ${index}`) })
+  }
+  expect(count()).toBe(TRACKING_SOURCE_ERROR_REPORT_LIMIT + 5)
 })
