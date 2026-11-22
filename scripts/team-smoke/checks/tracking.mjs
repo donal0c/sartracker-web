@@ -9,6 +9,7 @@
  * (DON-299 classes 2-3) [DON-315, DON-316].
  */
 
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
@@ -405,7 +406,10 @@ export default [
   {
     check: 'Mission lifecycle and crash recovery',
     id: 'lifecycle',
-    manualSteps: ['Close with the window X, reopen and confirm no false unexpected-shutdown report and no evidence-health warning in Tracking.'],
+    manualSteps: [
+      'Close with the window X, reopen and confirm no false unexpected-shutdown report and no evidence-health warning in Tracking.',
+      'During the renderer-crash phase, confirm the "SAR Tracker map window reopened" notice is on screen and tells you to check that tracking is live.',
+    ],
     async run(ctx) {
       const name = 'Lifecycle Smoke'
       const findings = []
@@ -444,20 +448,38 @@ export default [
       await requireEvidenceHealthy('SIGKILL')
       await requireLive('resumed after SIGKILL', 100_000)
 
-      // A renderer crash reopens the map window with a notice [M-45]. Give it
-      // time to do so, then kill and relaunch: the next launch must still
-      // report the crash, because the reopened window never cleans the session.
-      const session = await app.page.context().newCDPSession(app.page)
+      // A renderer crash reopens the map window in the same process, with a
+      // notice [M-45] [DON-359]. The process must stay up, the replacement
+      // window must show the app, and walkers must keep recording live there.
+      const crashedPage = app.page
+      const session = await crashedPage.context().newCDPSession(crashedPage)
       void session.send('Page.crash').catch(() => {})
-      await Promise.race([app.exited, delay(20_000)])
-      await app.kill()
+      const replacement = await waitForReplacementPage(crashedPage, () => app.alive(), 60_000)
+      expectProduct(app.alive(), 'The app process exited after a renderer crash instead of reopening the map window.')
+      expectProduct(replacement !== null, 'No replacement map window opened within 60 s of a renderer crash.')
+      app.page = replacement
+      app.page.on('dialog', (dialog) => { void dialog.accept().catch(() => {}) })
+      await app.page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
+      await app.shot('renderer-crash-replacement')
+      // The notice is a native dialog CDP cannot read; its runtime-log record
+      // is the evidence that it was raised. Its wording is a manual step.
+      const recovered = await waitForRuntimeEvent(profile, 'renderer_window_recovered', 30_000)
+      if (!recovered) findings.push('the reopened map window left no renderer_window_recovered record, so its notice was not raised')
+      await resumeIfPrompted(app.page, 15_000)
+      expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE in the reopened map window.')
+      await requireEvidenceHealthy('a renderer crash')
+      await requireLive('in the window reopened after a renderer crash', 100_000)
+
+      // Quit normally from the reopened window: the next launch must still
+      // report the crash, because a renderer fault keeps the session unclean.
+      await app.stop('SIGTERM')
       app = await launchApp(ctx, { profile, label: 'lifecycle-3-after-renderer-crash' })
       const crashStateAfterRendererCrash = await app.page.evaluate(() => window.sartrackerElectron.readCrashRecoveryState())
-      if (crashStateAfterRendererCrash?.uncleanShutdown !== true) findings.push('a renderer crash was not reported as an unexpected shutdown on the next launch')
+      if (crashStateAfterRendererCrash?.uncleanShutdown !== true) findings.push('a renderer crash followed by a normal quit was not reported as an unexpected shutdown on the next launch')
       expectProduct(await resumeIfPrompted(app.page), 'No recovery prompt after renderer crash.')
       expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE after resuming from renderer crash.')
-      await requireEvidenceHealthy('a renderer crash')
-      await requireLive('resumed after a renderer crash', 100_000)
+      await requireEvidenceHealthy('a renderer crash and normal quit')
+      await requireLive('resumed after a renderer crash and normal quit', 100_000)
 
       // Graceful quit, then a normal relaunch must not claim a crash. The
       // window X button cannot be driven faithfully over CDP; check it by hand.
@@ -534,3 +556,43 @@ export default [
     },
   },
 ]
+
+/**
+ * Waits for a new app page in the same browser after the given page's
+ * renderer crashed, failing fast if the process exits [DON-359].
+ *
+ * @param {import('playwright').Page} crashedPage
+ * @param {() => boolean} isRunning
+ * @param {number} timeoutMs
+ * @returns {Promise<import('playwright').Page | null>}
+ */
+async function waitForReplacementPage(crashedPage, isRunning, timeoutMs) {
+  const context = crashedPage.context()
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline && isRunning()) {
+    const page = context.pages().find((candidate) =>
+      candidate !== crashedPage && !candidate.isClosed() && !candidate.url().startsWith('devtools'))
+    if (page !== undefined) return page
+    await delay(500)
+  }
+  return null
+}
+
+/**
+ * Polls the profile's runtime log for one event name.
+ *
+ * @param {string} profile app user-data folder
+ * @param {string} event
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>}
+ */
+async function waitForRuntimeEvent(profile, event, timeoutMs) {
+  const file = path.join(profile, 'logs', 'runtime.log')
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const text = await readFile(file, 'utf8').catch(() => '')
+    if (text.split('\n').some((line) => line.includes(`"event":"${event}"`))) return true
+    await delay(1000)
+  }
+  return false
+}
