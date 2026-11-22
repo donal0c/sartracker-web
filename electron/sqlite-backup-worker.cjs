@@ -19,7 +19,7 @@ if (parentPort === null) {
  */
 const ALL_REMAINING_PAGES = 2_147_483_647
 
-/** Most quick_check problem lines reported; the first few name the damage. */
+/** Most integrity_check problem lines reported; the first few name the damage. */
 const MAX_INTEGRITY_PROBLEMS = 5
 
 /** Opens an independent WAL reader and completes the online backup in this worker isolate. */
@@ -38,11 +38,13 @@ async function backup() {
 }
 
 /**
- * Runs SQLite's b-tree structure check on a finished copy, in this worker so the
- * page scan never blocks the main process [M-44]. A copy that fails is reported,
- * never repaired.
+ * Runs SQLite's full integrity check on a finished copy, in this worker so the
+ * scan never blocks the main process [M-44]. integrity_check, unlike
+ * quick_check, also verifies every index against its table rows, so a copy
+ * whose indexes silently miss rows is refused too. A copy that fails is
+ * reported, never repaired.
  */
-function quickCheck() {
+function integrityCheck() {
   let database
   let problems
   try {
@@ -51,8 +53,8 @@ function quickCheck() {
     // sidecar is left behind when the copy is renamed into place.
     database = new Database(workerData.targetPath, { fileMustExist: true })
     problems = database
-      .pragma(`quick_check(${MAX_INTEGRITY_PROBLEMS})`)
-      .map((row) => String(row.quick_check))
+      .pragma(`integrity_check(${MAX_INTEGRITY_PROBLEMS})`)
+      .map((row) => String(row.integrity_check))
   } catch (error) {
     // Damage bad enough that SQLite cannot even walk the copy is the same
     // finding as a failed check, not a worker fault.
@@ -76,8 +78,8 @@ function isSqliteCorruption(error) {
 
 async function run() {
   try {
-    if (workerData.mode === 'quick_check') {
-      quickCheck()
+    if (workerData.mode === 'integrity_check') {
+      integrityCheck()
     } else {
       await backup()
     }

@@ -13,13 +13,13 @@ function runSqliteBackupInWorker(input) {
 }
 
 /**
- * Runs `PRAGMA quick_check` on a finished SQLite copy outside the Electron main
- * isolate. Rejects with code BACKUP_INTEGRITY_FAILED, naming the first problems,
- * when the copy's b-tree structure is damaged [M-44].
+ * Runs `PRAGMA integrity_check` on a finished SQLite copy outside the Electron
+ * main isolate. Rejects with code BACKUP_INTEGRITY_FAILED, naming the first
+ * problems, when the copy's pages or indexes are damaged [M-44].
  */
-function runSqliteQuickCheckInWorker(input) {
+function runSqliteIntegrityCheckInWorker(input) {
   return runBackupWorker(input.workerPath, {
-    mode: 'quick_check',
+    mode: 'integrity_check',
     targetPath: input.targetPath,
   })
 }
@@ -60,7 +60,7 @@ function runBackupWorker(workerPath, workerData) {
   })
 }
 
-/** Builds the operator-readable refusal for a copy that failed quick_check. */
+/** Builds the operator-readable refusal for a copy that failed integrity_check. */
 function createIntegrityError(problems) {
   const detail = (Array.isArray(problems) ? problems : [])
     .map((problem) => safeWorkerErrorMessage(problem))
@@ -88,5 +88,5 @@ function safeWorkerErrorName(input) {
 
 module.exports = {
   runSqliteBackupInWorker,
-  runSqliteQuickCheckInWorker,
+  runSqliteIntegrityCheckInWorker,
 }
