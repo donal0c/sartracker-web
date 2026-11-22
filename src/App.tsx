@@ -32,9 +32,7 @@ import { reloadRuntimeFaultShell } from './features/runtime/runtime-fault-reload
 import { APP_VERSION } from './lib/app-version'
 import { SimplifiedWorkspace } from './components/workspace/simplified-workspace'
 import { DESKTOP_PANEL_ARRANGEMENT } from './features/workspace/panel-arrangement'
-import { shouldUseClassicLayoutFixture } from './features/workspace/classic-layout-fixture'
 import { WeatherMenu } from './components/weather-menu'
-import { LazyScreenBoundary } from './components/lazy-screen-boundary'
 // The modal screens load with the app, not on demand: from local disk the
 // split saved nothing worth having, and a press made while split code was
 // still arriving looked ignored (DON-229). The app is not shown until this
@@ -44,20 +42,11 @@ import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
 import { DevicesWorkspace } from './components/devices-workspace'
 import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { scopeAutosaveWarningToMission } from './features/persistence/autosave-warning-scope'
-import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
 
   return { default: module.MapView }
-})
-
-// TEMPORARY, browser-test harness only: the old screen never loads in the
-// packaged app, so it lives in its own chunk, out of first paint (DON-353).
-const ClassicLayoutFixture = lazy(async () => {
-  const module = await import('./components/classic-layout-fixture-screen')
-
-  return { default: module.ClassicLayoutFixture }
 })
 
 function App() {
@@ -70,8 +59,6 @@ function App() {
     setMissionActionError(error)
   }, [])
   const browserTestingMode = shouldEnableMissionBrowserHarness()
-  const classicLayoutFixture = shouldUseClassicLayoutFixture()
-  const focusModeActive = useFocusModeStore((state) => state.active)
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
 
@@ -109,7 +96,6 @@ function App() {
   return (
     <main
       className="sar-shell flex h-screen w-full flex-col overflow-hidden"
-      data-focus-mode={classicLayoutFixture && focusModeActive ? 'true' : 'false'}
       data-testid="app-shell"
     >
       <DiagnosticsRuntimeBridge />
@@ -123,33 +109,17 @@ function App() {
       <MeasurementRuntimeBridge />
       <MissionReviewRuntimeBridge />
 
-      {classicLayoutFixture ? (
-        <LazyScreenBoundary screen="Old screen test fixture">
-          <ClassicLayoutFixture
-            actionError={missionActionError}
-            browserTestingMode={browserTestingMode}
-            decisionOpen={missionDecisionOpen}
-            map={map}
-            onActionErrorChange={handleMissionActionError}
-            onDecisionOpenChange={setMissionDecisionOpen}
-            renderSafetyBanner={(focusModeActive) => (
-              <RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive={focusModeActive} />
-            )}
-          />
-        </LazyScreenBoundary>
-      ) : (
-        <SimplifiedWorkspace
-          actionError={missionActionError}
-          arrangement={DESKTOP_PANEL_ARRANGEMENT}
-          decisionOpen={missionDecisionOpen}
-          map={map}
-          onActionErrorChange={handleMissionActionError}
-          onDecisionOpenChange={setMissionDecisionOpen}
-          // The old mast is gone, so the autosave warning shows in the safety banner.
-          safetyBanner={<RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive />}
-          weather={<WeatherMenu />}
-        />
-      )}
+      <SimplifiedWorkspace
+        actionError={missionActionError}
+        arrangement={DESKTOP_PANEL_ARRANGEMENT}
+        decisionOpen={missionDecisionOpen}
+        map={map}
+        onActionErrorChange={handleMissionActionError}
+        onDecisionOpenChange={setMissionDecisionOpen}
+        // The old mast is gone, so the autosave warning shows in the safety banner.
+        safetyBanner={<RuntimeSafetyBanner browserTestingMode={browserTestingMode} />}
+        weather={<WeatherMenu />}
+      />
 
       <DrawingDialog />
       <CoordinateConverterDialog />
@@ -337,9 +307,12 @@ function safeRuntimeFaultTimestamp(input: string): string {
   return input.replace(/[:.]/g, '-')
 }
 
+/**
+ * The amber strip under the top bar: browser testing mode, the autosave
+ * warning and any lifecycle backup failure. Renders nothing when all are clear.
+ */
 export function RuntimeSafetyBanner(props: {
   readonly browserTestingMode: boolean
-  readonly focusModeActive: boolean
 }) {
   const currentMission = useMissionStore((state) => state.currentMission)
   const autosaveStatus = useAutosaveStatusStore()
@@ -348,11 +321,10 @@ export function RuntimeSafetyBanner(props: {
     selectAutosaveWarning(autosaveStatus),
     currentMission,
   )
-  const focusAutosaveWarning = props.focusModeActive ? autosaveWarning : null
 
   if (
     !props.browserTestingMode &&
-    focusAutosaveWarning === null &&
+    autosaveWarning === null &&
     lifecycleBackupFailure === null
   ) {
     return null
@@ -368,9 +340,9 @@ export function RuntimeSafetyBanner(props: {
           Browser testing mode: mission data is stored in this browser session. Use for team testing only, not live incidents.
         </p>
       ) : null}
-      {focusAutosaveWarning === null ? null : (
+      {autosaveWarning === null ? null : (
         <p className="mt-1" data-testid="focus-autosave-warning" role="status">
-          {focusAutosaveWarning}
+          {autosaveWarning}
         </p>
       )}
       {lifecycleBackupFailure === null ? null : (

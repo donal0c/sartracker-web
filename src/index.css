@@ -97,7 +97,6 @@ body {
   .sar-devices-layout .sar-device-list-scroll { max-height: 45vh; }
   .sar-devices-layout > aside { flex-shrink: 0; overflow: visible; }
 }
-.sar-operational-sidebar { flex-shrink: 0; min-height: 0; max-width: 42vw; }
 .sar-workspace-content { min-height: 0; }
 .sar-mission-dock-focus { max-height: 48vh; }
 .sar-mission-header { flex-wrap: wrap; gap: 0.5rem; }
