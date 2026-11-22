@@ -16,6 +16,8 @@ import { exportSupportBundle } from './infrastructure/support-report/tauri-suppo
 import { useSettingsWorkspaceStore } from './features/settings/settings-workspace-store'
 import { useDeviceWorkspaceStore } from './features/tracking/device-workspace-store'
 import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
+import { useMissionReviewWorkspaceStore } from './features/mission-review/mission-review-workspace-store'
+import { MODAL_WORKSPACE_TITLE_IDS } from './lib/modal-workspace-registry'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
 import { useMissionStore } from './features/mission/mission-store'
@@ -81,7 +83,12 @@ function App() {
   const settingsFocusTarget = useSettingsWorkspaceStore((state) => state.focusTarget)
   const closeSettingsWorkspace = useSettingsWorkspaceStore((state) => state.closeWorkspace)
   const devicesOpen = useDeviceWorkspaceStore((state) => state.open)
+  const closeDevicesWorkspace = useDeviceWorkspaceStore((state) => state.closeWorkspace)
   const diagnosticsOpen = useDiagnosticsWorkspaceStore((state) => state.open)
+  const closeDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.closeWorkspace)
+  const reviewOpen = useMissionReviewWorkspaceStore((state) => state.open)
+  const closeReviewWorkspace = useMissionReviewWorkspaceStore((state) => state.closeWorkspace)
+  const missionPhase = useMissionStore((state) => state.phase)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
   const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
   const handleMissionActionError = useCallback((error: string | null) => {
@@ -176,10 +183,18 @@ function App() {
       {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
           A press made before the code arrives says "Opening …" at once (DON-229).
           A screen whose code fails to load shows a message; the rest of the app stays up. */}
-      <LazyScreenBoundary requested={devicesOpen} screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary screen="Mission review"><MissionReviewWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary requested={diagnosticsOpen} screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
-      <LazyScreenBoundary requested={settingsOpen} screen="Settings">
+      <LazyScreenBoundary request={{ open: devicesOpen, titleId: MODAL_WORKSPACE_TITLE_IDS.devices, onCancel: closeDevicesWorkspace }} screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary
+        request={{
+          open: reviewOpen,
+          titleId: MODAL_WORKSPACE_TITLE_IDS.review,
+          onCancel: closeReviewWorkspace,
+          docked: missionPhase === 'active' || missionPhase === 'paused',
+        }}
+        screen="Mission review"
+      ><MissionReviewWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary request={{ open: diagnosticsOpen, titleId: MODAL_WORKSPACE_TITLE_IDS.diagnostics, onCancel: closeDiagnosticsWorkspace }} screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary request={{ open: settingsOpen, titleId: MODAL_WORKSPACE_TITLE_IDS.settings, onCancel: closeSettingsWorkspace }} screen="Settings">
         <SettingsWorkspace
           focusTarget={settingsFocusTarget}
           onClose={closeSettingsWorkspace}

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openMissionPanel, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
+import { openMissionPanel, openMissionReview, openWorkspacePanel, openDiagnostics, openDevicesWorkspace } from './helpers/workspace-panels'
 
 test.describe('M12 settings workspace', () => {
   test.beforeEach(async ({ context, page }) => {
@@ -518,6 +518,89 @@ test.describe('Settings pressed while its code is still loading', () => {
     release()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
     await expect(loading).toHaveCount(0)
+  })
+})
+
+test.describe('Settings asked for, then left, while its code is still loading', () => {
+  async function holdSettingsCode(page: Page): Promise<() => void> {
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    await page.route(/\/src\/components\/settings-workspace\.tsx/, async (route) => {
+      await held
+      await route.continue()
+    })
+    return release
+  }
+
+  async function settingsRequested(page: Page): Promise<boolean> {
+    return page.evaluate(async () => {
+      const { useSettingsWorkspaceStore } = await import('/src/features/settings/settings-workspace-store.ts')
+      return useSettingsWorkspaceStore.getState().open
+    })
+  }
+
+  test('the alarm\'s What to do cancels a pending Settings, which then never opens over the advice [DON-229]', async ({ page }) => {
+    const release = await holdSettingsCode(page)
+    await page.goto('/?missionHarness=1')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+    await page.evaluate(async () => {
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      applyTrackingStatus({ mode: 'offline', consecutiveFailures: 1, recovered: false, lastSuccessAt: null, warning: 'OFFLINE MODE — no current positions received for this mission.' })
+    })
+    await expect(page.getByTestId('ws-alarm-details')).toBeVisible()
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('lazy-screen-loading')).toHaveText('Opening Settings…')
+    await page.getByTestId('ws-alarm-details').click()
+    await expect(page.getByTestId('lazy-screen-loading')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+    expect(await settingsRequested(page)).toBe(false)
+
+    const arrived = page.waitForResponse(/\/src\/components\/settings-workspace\.tsx/)
+    release()
+    await arrived
+    await page.evaluate(() => new Promise((resolve) => window.setTimeout(resolve, 300)))
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+  })
+
+  test('Escape cancels a pending Settings, which then stays closed [DON-229]', async ({ page }) => {
+    const release = await holdSettingsCode(page)
+    await page.goto('/?missionHarness=1')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('lazy-screen-loading')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('lazy-screen-loading')).toHaveCount(0)
+    expect(await settingsRequested(page)).toBe(false)
+
+    const arrived = page.waitForResponse(/\/src\/components\/settings-workspace\.tsx/)
+    release()
+    await arrived
+    await page.evaluate(() => new Promise((resolve) => window.setTimeout(resolve, 300)))
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+  })
+
+  test('Review pressed while its code is loading says so, then opens [DON-229]', async ({ page }) => {
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    await page.route(/\/src\/components\/mission-review-workspace\.tsx/, async (route) => {
+      await held
+      await route.continue()
+    })
+    await page.goto('/?missionHarness=1')
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Review Loading Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+
+    await openMissionReview(page)
+    await expect(page.getByTestId('lazy-screen-loading')).toHaveText('Opening Mission review…')
+    release()
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await expect(page.getByTestId('lazy-screen-loading')).toHaveCount(0)
   })
 })
 
