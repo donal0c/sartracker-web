@@ -38,6 +38,8 @@ export type TrackingWarningCode =
   | 'mission_storage_rows_rejected'
   | 'source_position_id_reused'
   | 'participant_scope'
+  /** A participant's history cannot be downloaded because the mission has no record of the device. */
+  | 'participant_history_unavailable'
   /** A warning that reached the status without a code: reported, never dropped. */
   | 'unclassified'
 

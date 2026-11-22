@@ -65,7 +65,7 @@ import {
   filterCanonicalFixTimeEvidenceSnapshot,
 } from './canonical-fix-time-evidence'
 import { describeTrackingWarningForDiagnostics } from './tracking-status-diagnostics'
-import { appendTrackingWarnings, type TrackingWarningCode } from './tracking-warnings'
+import { appendTrackingWarnings, type TrackingWarning, type TrackingWarningCode } from './tracking-warnings'
 import {
   buildStoreWriteWarnings,
   mergeStoreWriteTotals,
@@ -489,6 +489,10 @@ export async function startTrackingRuntime(
   const participantBackfillRetryStates = new Map<string, ParticipantBackfillRetryState>()
   let lastParticipantBackfillKey: string | null = null
   let lastParticipantBackfillMissingDevicesKey: string | null = null
+  let participantBackfillMissingDevices: {
+    readonly missionId: string
+    readonly deviceIds: readonly string[]
+  } | null = null
   let participantBackfillRetryTimer: ReturnType<typeof setTimeout> | null = null
   const participantScopeWaiters = new Set<() => void>()
   const participantScopeReadyTimeoutMs = dependencies.participantScopeReadyTimeoutMs
@@ -1745,8 +1749,9 @@ export async function startTrackingRuntime(
   }
 
   /**
-   * Logs, once per change, the participant devices whose history backfill is
-   * waiting because the mission has no device record for them yet [M-34].
+   * Keeps the participant devices whose history cannot be downloaded, because
+   * the mission has no device record for them, in a lasting operator warning
+   * that names them; logs each change once and clears when none remain [M-34].
    */
   function noteParticipantBackfillMissingDevices(
     missionId: string,
@@ -1755,11 +1760,33 @@ export async function startTrackingRuntime(
     const key = deviceIds.length === 0 ? null : `${missionId}:${deviceIds.join(',')}`
     if (key === lastParticipantBackfillMissingDevicesKey) return
     lastParticipantBackfillMissingDevicesKey = key
-    if (key === null) return
-    logger.warn(
-      'Participant history backfill is waiting for devices with no mission device record; other devices continue.',
-      { missionId, deviceIds },
-    )
+    participantBackfillMissingDevices = key === null ? null : { missionId, deviceIds }
+    if (key !== null) {
+      logger.warn(
+        'Participant history backfill is waiting for devices with no mission device record; other devices continue.',
+        { missionId, deviceIds },
+      )
+      void dependencies.recordDiagnosticEvent?.({
+        level: 'warn',
+        category: 'tracking',
+        event: 'participant_history_unavailable',
+        fields: { deviceCount: deviceIds.length },
+      })
+    }
+    refreshTrackingStatus()
+  }
+
+  /** The lasting warning for participant history that cannot be downloaded [M-34]. */
+  function participantHistoryUnavailableWarning(currentMissionId: string | null): TrackingWarning | null {
+    const missing = participantBackfillMissingDevices
+    if (missing === null || missing.missionId !== currentMissionId) return null
+    const devices = missing.deviceIds.length === 1
+      ? `device ${missing.deviceIds[0]} has`
+      : `devices ${missing.deviceIds.join(', ')} have`
+    return {
+      code: 'participant_history_unavailable',
+      text: `PARTICIPANT HISTORY UNAVAILABLE — Traccar ${devices} no saved record in this mission, so earlier history cannot be downloaded and Finish stays blocked. Add it as a participant again while it is reporting so the app records it; its history then downloads. If it is not coming back, tell your technical lead.`,
+    }
   }
 
   async function runNextParticipantBackfillPass(): Promise<ParticipantBackfillPassResult> {
@@ -1773,7 +1800,10 @@ export async function startTrackingRuntime(
       activeMission.id,
     ) ?? []
     let incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
-    if (incomplete.length === 0) return { kind: 'idle' }
+    if (incomplete.length === 0) {
+      noteParticipantBackfillMissingDevices(activeMission.id, [])
+      return { kind: 'idle' }
+    }
     if (dependencies.missionStore.listDevices !== undefined) {
       const devices = await dependencies.missionStore.listDevices(activeMission.id)
       const durableDeviceIds = new Set(devices.map((device) => device.device_id))
@@ -2056,6 +2086,9 @@ export async function startTrackingRuntime(
         : null,
       ...buildStoreWriteWarnings(storeWriteTotals, useMissionStore.getState().currentMission?.id ?? storeWriteTotals?.missionId ?? null),
       scopeWarning === null ? null : { code: 'participant_scope', text: scopeWarning },
+      participantHistoryUnavailableWarning(
+        useMissionStore.getState().currentMission?.id ?? participantBackfillMissingDevices?.missionId ?? null,
+      ),
     )
     return {
       ...status,
