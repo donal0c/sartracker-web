@@ -135,6 +135,7 @@ const {
 const {
   assertMissionParticipantBackfillComplete,
   createParticipantStore,
+  insertBackfillCheckpoint,
 } = require('./participant-store.cjs')
 const { createResponsiveMissionWriter } = require('./responsive-mission-writer.cjs')
 const { readCustodyV2 } = require('./archive-attachments.cjs')
@@ -4765,6 +4766,7 @@ function migrate(db, archiveDirectory) {
       existingSchemaVersion < MISSION_EVIDENCE_VERSION_SCHEMA,
     )
     recoverStagingGpxImports(db, migrationTime)
+    scheduleGrandfatheredParticipantBackfill(db, migrationTime)
     if (positionsRequireProvenanceBackfill && existingSchemaVersion !== 0
       && tableExists(db, 'mission_replay_position_day_counts')) {
       db.exec(`
@@ -5367,6 +5369,53 @@ function backfillGrandfatheredParticipants(db) {
     ) VALUES (?, ?, 'device', ?, NULL, 'grandfathered', ?, ?, NULL, NULL, NULL)`)
   for (const row of rows) {
     insert.run(randomUUID(), row.mission_id, row.device_id, row.start_time, migratedAt)
+  }
+}
+
+/**
+ * Gives every grandfathered device on a still-open mission an unfetched history
+ * window [effective_from, added_at], so the runtime backfill re-reads that
+ * period from Traccar and Finish can succeed once it has [M-26]. Runs on every
+ * open, which also repairs stores an earlier build migrated without it. The
+ * window is recorded as not yet reconciled: nothing claims coverage that was
+ * never fetched. Finished and finalized missions are left as they are.
+ */
+function scheduleGrandfatheredParticipantBackfill(db, timestamp) {
+  const participants = db.prepare(`SELECT participant.mission_id, participant.traccar_device_id,
+      participant.effective_from, participant.added_at
+    FROM mission_participants AS participant
+    INNER JOIN missions AS mission ON mission.id = participant.mission_id
+    WHERE participant.provenance = 'grandfathered'
+      AND participant.kind = 'device'
+      AND participant.traccar_device_id IS NOT NULL
+      AND participant.effective_from < participant.added_at
+      AND mission.status IN ('active', 'paused')
+    ORDER BY participant.mission_id ASC, participant.traccar_device_id ASC`).all()
+  if (participants.length === 0) return
+  const countCheckpoints = db.prepare(`SELECT COUNT(*) AS count
+    FROM participant_backfill_checkpoints
+    WHERE mission_id = ? AND traccar_device_id = ?`)
+  for (const participant of participants) {
+    const before = countCheckpoints
+      .get(participant.mission_id, participant.traccar_device_id).count
+    insertBackfillCheckpoint(db, {
+      missionId: participant.mission_id,
+      deviceId: participant.traccar_device_id,
+      windowFrom: participant.effective_from,
+      windowTo: participant.added_at,
+      reconciledUntil: participant.effective_from,
+      completed: false,
+      updatedAt: timestamp,
+    })
+    const after = countCheckpoints
+      .get(participant.mission_id, participant.traccar_device_id).count
+    if (after === before) continue
+    insertEvent(db, participant.mission_id, 'participant_backfill_scheduled', timestamp, {
+      traccar_device_id: participant.traccar_device_id,
+      window_from: participant.effective_from,
+      window_to: participant.added_at,
+      reason: 'grandfathered_on_upgrade',
+    })
   }
 }
 

@@ -608,8 +608,13 @@ function assertMissionParticipantBackfillComplete(db, missionId) {
     if (evaluation.scope === 'unknown') {
       throw new Error('Mission cannot be finished because a legacy group history scope is unknown. Review retained group membership before finishing.')
     }
+    // Name who is missing and say plainly when no retry exists, instead of
+    // promising that a retry will fix it [M-26].
+    const who = participant.kind === 'device' && participant.traccar_device_id !== null
+      ? `device ${participant.traccar_device_id}`
+      : 'a group participant'
     throw new Error(
-      'Mission cannot be finished while participant history backfill coverage is incomplete. Keep the mission active and retry history backfill before finishing.',
+      `Mission cannot be finished while participant history backfill coverage is incomplete for ${who}: part of its history window has not been fetched from Traccar and no download is scheduled for it. Keep the mission active and tell your technical lead.`,
     )
   }
 }
@@ -891,4 +896,8 @@ function insertAudit(db, missionId, eventType, timestamp, details, eventId = ran
     .run(eventId, missionId, eventType, timestamp, JSON.stringify(details), timestamp)
 }
 
-module.exports = { assertMissionParticipantBackfillComplete, createParticipantStore }
+module.exports = {
+  assertMissionParticipantBackfillComplete,
+  createParticipantStore,
+  insertBackfillCheckpoint,
+}
