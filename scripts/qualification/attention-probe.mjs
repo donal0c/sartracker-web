@@ -48,12 +48,16 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
     await page.getByTestId('app-title').waitFor()
     await page.getByTestId('mission-name-input').fill('C06 stationary attention')
     await page.getByTestId('mission-offset-input').fill('1')
+    await unfoldParticipantPickers(page)
     const devices = page.getByTestId('participant-device-picker').locator('input[type="checkbox"]')
     await expect(devices).toHaveCount(2, { timeout: 30_000 })
     for (let index = 0; index < 2; index++) await devices.nth(index).check()
     await page.getByTestId('mission-start-btn').click()
-    await page.getByTestId('stationary-attention-summary').waitFor({ timeout: 60_000 })
-    await page.getByTestId('open-devices-workspace').click()
+    // The old Tracking tab's stationary summary is a line in the Tracking panel now (DON-341).
+    const headline = page.getByTestId('ws-tracking-headline')
+    await headline.click()
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText(/not moving/i, { timeout: 60_000 })
+    await openDevicesFromPeople(page)
     const attention = await page.getByTestId('device-attention-1').innerText()
     const stale = await page.getByTestId('device-status-2').innerText()
     await page.screenshot({ path: path.join(evidencePath, 'attention-raised.png'), fullPage: true })
@@ -68,13 +72,16 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
     const sourcePollsAfterAck = server.requests.filter(request => request.method === 'GET' && request.path === '/api/positions').length
     await page.screenshot({ path: path.join(evidencePath, 'attention-acknowledged.png'), fullPage: true })
     server.setStage('disconnected')
-    await expect(page.getByTestId('tracking-mode-chip')).toHaveText(/offline|disconnected|not connected/i, { timeout: 60_000 })
-    const disconnected = await page.getByTestId('tracking-mode-chip').innerText()
+    // No mode chip in the new layout: the top bar names the condition and says it in words.
+    await expect(headline).toHaveAttribute('data-condition', /^(lost|disconnected)$/u, { timeout: 60_000 })
+    const disconnected = (await headline.getAttribute('aria-label')) ?? ''
+    const disconnectedCondition = await headline.getAttribute('data-condition')
     await page.screenshot({ path: path.join(evidencePath, 'attention-disconnected.png'), fullPage: true })
     server.setStage('moving')
-    await expect(page.getByTestId('tracking-mode-chip')).toHaveText(/online|live|connected/i, { timeout: 90_000 })
+    await expect(headline).toHaveAttribute('data-condition', /^(ok|attention)$/u, { timeout: 90_000 })
     await expect(page.getByTestId('device-attention-1')).toHaveCount(0, { timeout: 60_000 })
-    const recovered = await page.getByTestId('tracking-mode-chip').innerText()
+    const recovered = (await headline.getAttribute('aria-label')) ?? ''
+    const recoveredCondition = await headline.getAttribute('data-condition')
     await page.waitForFunction(() => Object.values(window.__SARTRACKER_MAP__?.getStyle()?.sources ?? {}).some(source =>
       source.type === 'geojson' && typeof source.data === 'object' && source.data.features?.some(feature =>
         feature.properties?.featureKind === 'device' && feature.properties?.deviceId === '1'
@@ -88,7 +95,7 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
       throw new Error('Recovered current fix is missing from the map.')
     })
     const currentVisible = await page.getByTestId('device-select-1').isVisible()
-    report.facts = { source, attention, acknowledged, stale, disconnected, recovered, cleared: true, currentVisible,
+    report.facts = { source, attention, acknowledged, stale, disconnected, disconnectedCondition, recovered, recoveredCondition, cleared: true, currentVisible,
       renderedCurrent, evidenceBeforeAck: beforeAck.digest, evidenceAfterAck: afterAck.digest,
       durableBeforeAck: beforeAck.rows, durableAfterAck: afterAck.rows, sourcePollsBeforeAck, sourcePollsAfterAck }
     validateAttentionSurface(report.facts)
@@ -111,6 +118,26 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
   }
   if (failure) throw failure
   return report
+}
+
+/**
+ * Unfolds the start card's "Change who's taking part" and "Add one person at a
+ * time" sections (DON-341), so the device picker can be used. Safe to repeat.
+ */
+async function unfoldParticipantPickers(page) {
+  for (const id of ['ws-change-participants', 'ws-pick-devices']) {
+    const fold = page.getByTestId(id)
+    await fold.waitFor({ state: 'attached', timeout: 30_000 })
+    if (await fold.evaluate(element => !element.open)) await fold.locator('summary').first().click()
+  }
+}
+
+/** Opens All devices through People, where the new layout keeps it (DON-341). */
+async function openDevicesFromPeople(page) {
+  const opener = page.getByTestId('open-devices-workspace')
+  if (!await opener.isVisible()) await page.getByTestId('ws-toggle-people').click()
+  await opener.click()
+  await page.getByTestId('devices-workspace').waitFor()
 }
 
 /** Hash independently read durable rows around a presentation-only acknowledgement. */

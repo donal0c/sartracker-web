@@ -34,4 +34,21 @@ describe('packaged attention independent source and UI oracle', () => {
     changed.source.stationary[1].latitude = 53
     expect(() => validateAttentionSurface(changed)).toThrow()
   })
+
+  it('accepts the new top bar, which names the tracking state by condition, and rejects its mutants [DON-353]', () => {
+    // The new layout (DON-341) has no mode chip: the top bar says "TRACKING LOST"
+    // or "Tracking OK" and carries the condition the advice is chosen by.
+    const facts = { source: createAttentionScenario(1800000000000), attention: 'Stationary Attention',
+      acknowledged: 'Attention Acknowledged', stale: 'offline',
+      disconnected: 'TRACKING LOST', disconnectedCondition: 'lost', recovered: 'Tracking OK', recoveredCondition: 'ok',
+      cleared: true, currentVisible: true, renderedCurrent: { coordinates: [-9.7, 52.00101], attention: false },
+      evidenceBeforeAck: 'a'.repeat(64), evidenceAfterAck: 'a'.repeat(64) }
+    expect(validateAttentionSurface(facts).passed).toBe(true)
+    expect(validateAttentionSurface({ ...facts, disconnected: 'Tracking not connected', disconnectedCondition: 'disconnected' }).passed).toBe(true)
+    expect(() => validateAttentionSurface({ ...facts, disconnectedCondition: 'ok' })).toThrow()
+    expect(() => validateAttentionSurface({ ...facts, recoveredCondition: 'lost' })).toThrow()
+    expect(() => validateAttentionSurface({ ...facts, recoveredCondition: undefined })).toThrow()
+    expect(() => validateAttentionSurface({ ...facts, disconnectedCondition: undefined })).toThrow()
+    expect(() => validateAttentionSurface({ ...facts, recovered: 'TRACKING LOST' })).toThrow()
+  })
 })
