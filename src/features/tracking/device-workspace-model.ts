@@ -20,6 +20,8 @@ export type DeviceWorkspaceRow = {
   readonly lastSeen: string | null
   readonly lastSeenDisplay: string
   readonly fixTimeDisplay: string
+  /** Raw time of the position being shown, which can be older than last contact. */
+  readonly fixTime: string | null
   readonly sourceDisplay: string
   readonly fixTimeUnverified: boolean
   readonly ingestWarning: string | null
@@ -83,6 +85,7 @@ export function buildDeviceWorkspaceRows(
         lastSeen: device.last_seen,
         lastSeenDisplay: formatOperatorLocalTimestamp(device.last_seen),
         fixTimeDisplay: formatOperatorLocalTimestamp(position?.timestamp ?? null),
+        fixTime: position?.timestamp ?? null,
         sourceDisplay:
           position === null
             ? 'No fix'

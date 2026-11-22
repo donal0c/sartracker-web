@@ -26,7 +26,7 @@ async function setServer(
 
 test.describe('Traccar group choices refresh on demand [DON-330]', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&missionModel=1')
+    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
     await page.getByTestId('app-title').waitFor()
     await page.evaluate(async (fixture) => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery(fixture as never)

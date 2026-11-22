@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test'
 test.use({ launchOptions: { args: ['--disable-webgl', '--disable-3d-apis'] } })
 
 test('shows why the map is missing and keeps the shell usable when WebGL is unavailable [DON-288]', async ({ page }) => {
-  await page.goto('/?missionHarness=1')
+  await page.goto('/?missionHarness=1&classicLayout=1')
   await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
 
   const panel = page.getByTestId('map-renderer-unavailable')

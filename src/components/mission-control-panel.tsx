@@ -1,4 +1,6 @@
-import { lazy, Suspense, useLayoutEffect } from 'react'
+import { lazy, Suspense, useLayoutEffect, useState, type ReactNode } from 'react'
+
+import { ResumeMissionChoice } from './workspace/resume-mission-choice'
 
 import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
@@ -43,6 +45,14 @@ type MissionControlPanelProps = {
   readonly onMinimizedChange?: (minimized: boolean) => void
   readonly onActionErrorChange?: (error: string | null) => void
   readonly onDecisionOpenChange?: (open: boolean) => void
+  /**
+   * Simplified workspace only: true while something in Mission needs the
+   * operator (a failed Start, a participant or outing warning, an archive that
+   * needs recovery), so the workspace opens Mission and badges its button.
+   */
+  readonly onAttentionChange?: (needed: boolean) => void
+  /** Simplified workspace: plain words, clocks live in the top bar, Outings tucked away. */
+  readonly variant?: 'standard' | 'simplified'
 }
 
 /**
@@ -53,7 +63,12 @@ export function MissionControlPanel({
   onMinimizedChange,
   onActionErrorChange,
   onDecisionOpenChange,
+  onAttentionChange,
+  variant = 'standard',
 }: MissionControlPanelProps = {}) {
+  const simplified = variant === 'simplified'
+  // the team asked for Pause not to be easy to hit by accident.
+  const [confirmingPause, setConfirmingPause] = useState(false)
   const {
     phase,
     currentMission,
@@ -125,6 +140,19 @@ export function MissionControlPanel({
   const sectionsCollapsible = phase === 'active' || phase === 'paused'
   const participantSection = useParticipantSectionSummary()
   const outingSection = useOutingSectionSummary()
+  const outingNeedsAttention = outingSection.attention.length > 0
+  const archiveNeedsRecovery = phase === 'idle' && governanceMission?.storage_state === 'recovery_required'
+  // Participant warnings count only during a mission: on the new-mission screen
+  // the card is already open, and an empty roster must not badge anything.
+  // Normal progress ("history still loading", and "no participants selected"
+  // while Start is still saving them) holds the section open inside Mission
+  // but does not pull Mission open or badge it.
+  const participantNeedsAttention = sectionsCollapsible &&
+    participantSection.attention.some((reason) => !PARTICIPANT_PROGRESS_REASONS.has(reason))
+  const attentionNeeded = simplified && (
+    startError !== null || participantNeedsAttention || outingNeedsAttention || archiveNeedsRecovery
+  )
+  useLayoutEffect(() => { onAttentionChange?.(attentionNeeded) }, [attentionNeeded, onAttentionChange])
   const canMinimizeToMast =
     phase === 'active' &&
     currentMission !== null &&
@@ -132,6 +160,9 @@ export function MissionControlPanel({
     !decisionOpen &&
     onMinimizedChange !== undefined
   const effectiveMinimized = canMinimizeToMast && minimized
+  // DON-342: the simplified start screen offers only Resume, or New with name, roll back and Start.
+  const resumeChoice = simplified && phase === 'recovery' && recoverableMission !== null
+  const startScreen = simplified && (phase === 'idle' || resumeChoice)
 
   if (effectiveMinimized) {
     return null
@@ -145,15 +176,15 @@ export function MissionControlPanel({
     >
       <div className={`sar-mission-header flex items-center justify-between border-b border-[var(--sar-line)] ${sectionsCollapsible ? 'mb-3 pb-2' : 'mb-4 pb-3'}`}>
         <div>
-          <span className="sar-section-label text-amber-300">Mission Control</span>
-          {sectionsCollapsible ? null : (
+          <span className="sar-section-label text-amber-300">{simplified ? (phase === 'idle' ? 'New mission' : resumeChoice ? 'Unfinished mission' : 'Mission') : 'Mission Control'}</span>
+          {sectionsCollapsible || simplified ? null : (
             <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
               lifecycle and timing
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <button
+          {simplified ? null : <button
             className="sar-button px-3 py-1.5 text-[12px] font-semibold uppercase tracking-[0.08em]"
             data-testid="open-mission-review-workspace"
             disabled={!canOpenReview}
@@ -161,7 +192,7 @@ export function MissionControlPanel({
             type="button"
           >
             Review
-          </button>
+          </button>}
           {canMinimizeToMast ? (
             <button
               aria-expanded="true"
@@ -173,7 +204,7 @@ export function MissionControlPanel({
               Minimize
             </button>
           ) : null}
-          {phase !== 'idle' && (
+          {phase !== 'idle' && !simplified && (
             <div
               className={`h-2 w-2 rounded-full ${
                 phase === 'active'
@@ -191,7 +222,7 @@ export function MissionControlPanel({
             >
               {phasePresentation.statusLabel}
             </span>
-          ) : (
+          ) : simplified ? null : (
             <span
               className={`font-semibold uppercase text-[11px] ${
                 phase === 'active'
@@ -244,16 +275,25 @@ export function MissionControlPanel({
         </div>
       ) : null}
 
-      <div className={sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
+      <div className={simplified ? 'flex flex-col gap-2' : sectionsCollapsible ? 'space-y-2' : 'space-y-4'}>
         {/* Primary Telemetry; compact during a mission (also shown in the mast) [DON-300] */}
-        <div className="grid gap-3 sm:grid-cols-2">
+        {resumeChoice && recoverableMission !== null ? (
+          <ResumeMissionChoice
+            busy={governanceBusy}
+            mission={recoverableMission}
+            onResume={resumeRecoverable}
+            onStartNew={startFresh}
+          />
+        ) : null}
+
+        <div className={`grid gap-3 sm:grid-cols-2 ${simplified ? (startScreen ? 'hidden' : 'sm:!grid-cols-1') : ''}`}>
           <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">{simplified ? 'Since start' : 'Elapsed'}</p>
             <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'} ${simplified ? 'hidden' : ''}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
             <p className={`mt-1 font-mono font-black leading-none text-emerald-400 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
@@ -263,7 +303,7 @@ export function MissionControlPanel({
 
         {/* Setup Inputs - Only visible in Idle */}
         {phase === 'idle' ? (
-          <div className="sar-module space-y-4 p-4">
+          <div className="sar-module space-y-4 p-4" data-testid={simplified ? 'start-screen-new' : undefined}>
             <div>
               <label
                 className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
@@ -278,7 +318,7 @@ export function MissionControlPanel({
                 id={MISSION_NAME_INPUT_ID}
                 maxLength={MAX_MISSION_NAME_BYTES}
                 onChange={(event) => setMissionName(event.target.value)}
-                placeholder="Search Operation Name"
+                placeholder={simplified ? 'For example: Coomloughra search' : 'Search Operation Name'}
                 value={missionName}
               />
             </div>
@@ -288,8 +328,9 @@ export function MissionControlPanel({
                 className="block text-[11px] font-bold uppercase tracking-[0.1em] text-stone-300"
                 htmlFor={MISSION_OFFSET_INPUT_ID}
               >
-                Start Offset (Hours)
+                {simplified ? 'Roll back time (hours)' : 'Start Offset (Hours)'}
               </label>
+              {simplified ? <p className="mt-1 text-[13px] text-stone-300">If people were out before you opened this. Leave at 0 if not.</p> : null}
               <input
                 className="sar-input mt-2 w-full px-3 py-2 text-sm"
                 data-testid="mission-offset-input"
@@ -303,7 +344,7 @@ export function MissionControlPanel({
                 value={startOffsetHours}
               />
             </div>
-            <ParticipantControlsSection lookbackRequested={Number(startOffsetHours) > 0} phase={phase} />
+            <ParticipantControlsSection lookbackRequested={Number(startOffsetHours) > 0} phase={phase} variant={variant} />
           </div>
         ) : focusModeActive ? (
           <div className="sar-readout border-l-4 border-l-emerald-400 px-3 py-3">
@@ -327,7 +368,16 @@ export function MissionControlPanel({
         </div>
 
         {/* Tactical Actions */}
-        <div className="space-y-2">
+        <div className={`space-y-2 ${simplified ? 'order-last border-t border-[var(--sar-line)] pt-3' : ''} ${resumeChoice ? 'hidden' : ''}`}>
+          {simplified && confirmingPause ? (
+            <div className="border border-amber-300 p-3" data-testid="ws-pause-confirm" role="group" aria-label="Confirm pause">
+              <p className="text-[14px] font-bold">Pause the mission? Positions stop updating until you resume.</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button className="sar-button-focus px-3 py-2 text-[13px] font-bold" data-testid="ws-pause-confirm-yes" onClick={() => { setConfirmingPause(false); void pauseOrResume() }} type="button">Pause</button>
+                <button className="sar-button px-3 py-2 text-[13px] font-bold" data-testid="ws-pause-confirm-no" onClick={() => setConfirmingPause(false)} type="button">Keep going</button>
+              </div>
+            </div>
+          ) : null}
           <button
             className={`${phase === 'idle' ? 'sar-action-primary w-full px-4 py-3 text-[14px] font-black uppercase tracking-[0.12em] transition-all active:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale' : 'sr-only'}`}
             data-testid="mission-start-btn"
@@ -337,7 +387,7 @@ export function MissionControlPanel({
           >
             Start
           </button>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className={`grid gap-2 sm:grid-cols-2 ${simplified && phase === 'idle' ? 'hidden' : ''}`}>
             <button
               className={`px-3 py-2.5 text-[13px] font-bold uppercase tracking-[0.1em] transition-all disabled:cursor-not-allowed disabled:opacity-20 disabled:grayscale ${
                 phasePresentation.paused
@@ -346,7 +396,10 @@ export function MissionControlPanel({
               }`}
               data-testid="mission-pause-resume-btn"
               disabled={!canPauseOrResume}
-              onClick={() => void pauseOrResume()}
+              onClick={() => {
+                if (simplified && phase === 'active') setConfirmingPause(true)
+                else void pauseOrResume()
+              }}
               type="button"
             >
               {pauseResumeLabel}
@@ -365,18 +418,43 @@ export function MissionControlPanel({
 
         {/* During a mission Pause/Finish sit above the sections, so a section
             held open by a warning can never push them out of view [DON-300]. */}
-        {phase !== 'idle' ? (
+        {phase !== 'idle' && !resumeChoice ? (
           <MissionSectionDisclosure
             collapsible={sectionsCollapsible}
             section={participantSection}
             testId="mission-participants-section"
-            title="Participants"
+            title={simplified ? 'People on this mission' : 'Participants'}
           >
             <ParticipantControlsSection phase={phase} />
           </MissionSectionDisclosure>
         ) : null}
 
-        {(currentMission !== null || governanceMission !== null) && outingSection.enabled ? (
+        {simplified && !startScreen ? (
+          <button
+            className="sar-button w-full px-3 py-2 text-[13px] font-bold"
+            data-testid="open-mission-review-workspace"
+            disabled={!canOpenReview}
+            onClick={() => openReviewWorkspace()}
+            type="button"
+          >
+            Review and replay
+          </button>
+        ) : null}
+
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified && !startScreen ? (
+          <MoreMissionOptions open={outingNeedsAttention}>
+            <MissionSectionDisclosure
+              collapsible={sectionsCollapsible}
+              section={outingSection}
+              testId="mission-outings-section"
+              title="Outings"
+            >
+              <OutingControlsSection />
+            </MissionSectionDisclosure>
+          </MoreMissionOptions>
+        ) : null}
+
+        {(currentMission !== null || governanceMission !== null) && outingSection.enabled && !simplified ? (
           <MissionSectionDisclosure
             collapsible={sectionsCollapsible}
             section={outingSection}
@@ -388,6 +466,7 @@ export function MissionControlPanel({
         ) : null}
 
         {phase === 'idle' && governanceMission !== null ? (
+          <FinishedMissionFold fold={simplified} needsReview={archiveNeedsRecovery}>
           <div
             className="border border-sky-500/20 bg-sky-950/20 p-4"
             data-testid="mission-governance-card"
@@ -489,6 +568,7 @@ export function MissionControlPanel({
               ) : null}
             </div>
           </div>
+          </FinishedMissionFold>
         ) : null}
 
         {governanceFeedback !== null ? (
@@ -498,7 +578,7 @@ export function MissionControlPanel({
         ) : null}
       </div>
 
-      {phase === 'recovery' && recoverableMission !== null ? (
+      {phase === 'recovery' && recoverableMission !== null && !resumeChoice ? (
         <div className="mt-4 border border-amber-500/30 bg-amber-950/50 p-4 shadow-xl" data-testid="mission-recovery-dialog">
           <p className="font-semibold text-amber-300 uppercase text-[13px] tracking-wide">Resume Mission?</p>
           <div className="mt-2 font-mono text-[13px] leading-relaxed text-stone-300">
@@ -657,5 +737,39 @@ function MissionActionError({ message }: { readonly message: string }) {
     >
       {message}
     </p>
+  )
+}
+
+/** Participant section reasons that are normal progress, not a problem for the operator. */
+const PARTICIPANT_PROGRESS_REASONS: ReadonlySet<string> = new Set(['history still loading', 'no participants selected'])
+
+/**
+ * The last finished mission's archive and unlock controls on the start screen.
+ * They are never folded away: the old screen showed them in full until the
+ * mission was archived, and the card cannot be closed while they show (DON-341).
+ */
+function FinishedMissionFold(props: { readonly fold: boolean; readonly needsReview: boolean; readonly children: ReactNode }) {
+  if (!props.fold) return <>{props.children}</>
+  return (
+    <div className="text-[13px]" data-testid="start-screen-finished-mission">
+      <p className={`py-1 font-semibold ${props.needsReview ? 'text-amber-300' : 'text-stone-200'}`}>
+        {props.needsReview ? 'Last finished mission needs recovery' : 'Last finished mission: archive and unlock'}
+      </p>
+      <div className="mt-2">{props.children}</div>
+    </div>
+  )
+}
+
+/**
+ * Simplified Mission panel: less-used options under one line. A warning inside
+ * (for example outings that failed to load) shows them unfolded.
+ */
+function MoreMissionOptions(props: { readonly open: boolean; readonly children: ReactNode }) {
+  if (props.open) return <div className="text-[13px]" data-testid="ws-more-mission-options">{props.children}</div>
+  return (
+    <details className="text-[13px]" data-testid="ws-more-mission-options">
+      <summary className="cursor-pointer select-none py-1 font-semibold text-stone-200">More mission options</summary>
+      <div className="mt-2">{props.children}</div>
+    </details>
   )
 }

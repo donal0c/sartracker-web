@@ -6,7 +6,7 @@ test.describe('M10 full mission integration flow', () => {
   test('runs a complete mocked SAR mission with restart recovery and persistence checks', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
 
     await page.getByTestId('mission-name-input').fill('Full Mission Flow')

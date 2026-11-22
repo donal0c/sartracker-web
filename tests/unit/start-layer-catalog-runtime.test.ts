@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { startLayerCatalogRuntime } from '../../src/features/layers/start-layer-catalog-runtime'
+import { LayerCatalogMissionChangedError, startLayerCatalogRuntime } from '../../src/features/layers/start-layer-catalog-runtime'
 import type { LayerCatalogMetadataEntry } from '../../src/features/layers/layer-catalog-types'
 import type {
   Device,
@@ -25,6 +25,27 @@ describe('startLayerCatalogRuntime', () => {
     await pending.catch(() => undefined)
     expect(applyRuntime.mock.calls).toHaveLength(published)
     expect(applyRuntime.mock.lastCall?.[0]).toMatchObject({ missionId: 'mission-2', loading: false, error: null })
+  })
+  it('a visibility write held for one mission never lands in the next mission [DON-341]', async () => {
+    const applyRuntime = vi.fn()
+    let finishWrite: () => void = () => { throw new Error('Write not started') }
+    const upsertMetadata = vi.fn().mockImplementation((write) => new Promise((resolve) => {
+      finishWrite = () => resolve({ ...write, alias: null, isFavorite: false, displayOrder: 0, metadataJson: null, updatedAt: '2026-04-10T10:00:00.000Z' })
+    }))
+    const runtime = await startLayerCatalogRuntime({ layerCatalogStore: { listMetadata: vi.fn().mockResolvedValue([]), upsertMetadata }, applyRuntime })
+    // Both missions hold the same item, so the old write's node id exists in the new one too.
+    const input = { devices: [], markers: [createMarker()], drawings: [], helicopters: [], gpxImports: [], measurements: [] }
+    await runtime.refreshCatalog({ ...input, missionId: 'mission-1' })
+    const write = runtime.setNodeVisibilities(['feature:marker:marker-1'], false)
+    const outcome = write.then(() => 'saved', (error: unknown) => error)
+    await runtime.refreshCatalog({ ...input, missionId: 'mission-2' })
+    const published = applyRuntime.mock.calls.length
+    finishWrite()
+
+    expect(await outcome).toBeInstanceOf(LayerCatalogMissionChangedError)
+    expect(upsertMetadata).toHaveBeenCalledWith(expect.objectContaining({ missionId: 'mission-1' }))
+    expect(applyRuntime.mock.calls).toHaveLength(published)
+    expect(applyRuntime.mock.lastCall?.[0]).toMatchObject({ missionId: 'mission-2', metadataEntries: [] })
   })
   it('does not publish the old mission tree under a new mission while metadata loads', async () => {
     const applyRuntime = vi.fn()

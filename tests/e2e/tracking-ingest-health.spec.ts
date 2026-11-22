@@ -4,7 +4,7 @@ test.describe('BCP-01 current-position ingest health', () => {
   test.use({ timezoneId: 'Europe/Dublin' })
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15_000 })
     await page.getByTestId('mission-name-input').fill('BCP-01 Ingest Health')

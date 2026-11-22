@@ -115,7 +115,7 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
   test('operator sees an explicit "showing last known positions" warning when only cached tracking is available', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
     await page.getByTestId('mission-name-input').fill('Cold Start Offline Test')
     await page.getByTestId('mission-start-btn').click()
@@ -191,7 +191,7 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
   test('an empty breadcrumb result does not re-show the amber loading warning on the next poll', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
     await page.getByTestId('mission-name-input').fill('Steady Tracking Status')
     await page.getByTestId('mission-start-btn').click()
@@ -344,7 +344,7 @@ test.describe('Mast tracking cell never reads as a positions/stale ratio (sartra
   test.setTimeout(45_000)
 
   test('the mast splits FIX and STALE into separate values', async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
     await page.getByTestId('mission-name-input').fill('Mast Tracking Ratio Regression')
     await page.getByTestId('mission-start-btn').click()
@@ -384,7 +384,7 @@ test.describe('Mast tracking cell never reads as a positions/stale ratio (sartra
   })
 
   test('idle state shows zero fix and zero stale with no ratio chrome', async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
 
     const cell = page.getByTestId('mast-tracking-cell')
@@ -403,7 +403,7 @@ test.describe('V1 regression: tracking visibility filter through to MapLibre', (
   test('hiding a single tracking device updates the MapLibre device-circle filter', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
     await page.getByTestId('mission-name-input').fill('Tracking Visibility Test')
     await page.getByTestId('mission-start-btn').click()

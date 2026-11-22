@@ -12,6 +12,7 @@ type CoverageStatusPanelProps = {
   readonly unassignedOmitted: boolean
   readonly onRetry: () => void
   readonly onInspectExactFixes: () => void
+  readonly inspectLabel?: string
 }
 
 /** Renders calm, database-backed mission-history progress and recovery controls. */
@@ -202,7 +203,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
         onClick={props.onInspectExactFixes}
         type="button"
       >
-        Inspect exact fixes
+        {props.inspectLabel ?? 'Inspect exact fixes'}
       </button>
       {omissions > 0 && props.state.status !== 'complete' ? (
         <p className="mt-2 text-[11px] text-violet-100">

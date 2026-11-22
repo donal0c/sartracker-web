@@ -5,7 +5,7 @@ import { formatDublinDateTimeLocal } from '../../src/features/mission-review/dub
 
 test.describe('PR5 mission evidence and repeated search passes [DON-279]', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&missionModel=1')
+    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
     await page.getByTestId('mission-name-input').fill('Search Pass Evidence')

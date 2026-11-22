@@ -75,7 +75,7 @@ async function dialogPanel(page: Page, testId: string): Promise<Locator> {
 /** Opens the browser harness with the mission model on and waits for the map to draw. */
 async function openHarness(page: Page): Promise<void> {
   // coverage=1 turns on the Mission History coverage view, which packaged builds have by default.
-  await page.goto('/?missionHarness=1&missionModel=1&coverage=1')
+  await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1&coverage=1')
   await page.getByTestId('app-title').waitFor({ timeout: 20_000 })
   await page.waitForSelector('canvas', { timeout: 20_000 })
   await page.waitForTimeout(2_500)

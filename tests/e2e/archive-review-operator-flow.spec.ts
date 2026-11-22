@@ -238,7 +238,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
 })
 
 async function openBrowserHarness(page: Page): Promise<void> {
-  await page.goto('/?missionHarness=1')
+  await page.goto('/?missionHarness=1&classicLayout=1')
   await expect(page.getByTestId('app-title')).toContainText('SAR Tracker', { timeout: 15_000 })
   await page.waitForSelector('canvas', { timeout: 20_000 })
 }

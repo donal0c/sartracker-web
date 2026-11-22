@@ -295,7 +295,7 @@ test.describe('complete mission-history coverage [DON-275]', () => {
   })
 
   test('leaves the existing browser surface unchanged while the coverage flag is off', async ({ page }) => {
-    await page.goto('/?missionHarness=1&missionModel=1')
+    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
     await page.getByTestId('mission-name-input').fill('Coverage Flag Off')
     await page.getByTestId('mission-start-btn').click()

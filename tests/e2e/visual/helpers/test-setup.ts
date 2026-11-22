@@ -20,8 +20,8 @@ export async function navigateToHarness(
   options: { readonly missionModel?: boolean } = {},
 ): Promise<void> {
   await page.goto(options.missionModel === true
-    ? '/?missionHarness=1&missionModel=1'
-    : '/?missionHarness=1')
+    ? '/?missionHarness=1&classicLayout=1&missionModel=1'
+    : '/?missionHarness=1&classicLayout=1')
   await waitForAppShell(page)
 }
 

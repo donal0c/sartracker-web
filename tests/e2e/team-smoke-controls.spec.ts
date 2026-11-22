@@ -12,7 +12,7 @@ import { midMissionControls } from '../../scripts/team-smoke/checks/tracking.mjs
 test.describe('team-smoke mid-mission controls [DON-315]', () => {
   test('every control presses and undoes during an active mission', async ({ page }) => {
     test.setTimeout(120_000)
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await page.evaluate(() => window.localStorage.removeItem('sartracker:focus-mode-active'))
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })

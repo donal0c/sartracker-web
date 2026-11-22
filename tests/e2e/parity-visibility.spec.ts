@@ -431,7 +431,7 @@ test.describe('Batch 1: Critical visibility parity (LPV-240 to LPV-247)', () => 
   test.setTimeout(45_000)
 
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await waitForShell(page)
     await page.getByTestId('mission-name-input').fill('Visibility Test')
     await page.getByTestId('mission-start-btn').click()

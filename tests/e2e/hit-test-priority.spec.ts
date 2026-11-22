@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 
 test.describe('B6 hit-test priority', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')

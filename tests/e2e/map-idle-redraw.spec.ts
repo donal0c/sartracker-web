@@ -61,7 +61,7 @@ test.describe('AUD-04 MapLibre idle redraw regression', () => {
       await installBaselineTrackingModule(page)
     }
 
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15_000 })
 

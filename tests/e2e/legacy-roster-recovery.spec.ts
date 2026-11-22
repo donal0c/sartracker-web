@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 for (const resolution of ['attested-empty', 'supplied-members'] as const) {
   test(`coordinator recovers a removed legacy roster: ${resolution} [DON-271]`, async ({ page }) => {
-    await page.goto('/?missionHarness=1&missionModel=1')
+    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
     await page.getByTestId('app-title').waitFor()
     await page.evaluate(async () => {
       const modulePath = '/src/features/browser-validation/browser-harness-store.ts'

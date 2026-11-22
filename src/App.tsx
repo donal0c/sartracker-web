@@ -2,37 +2,22 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 
 import { DrawingRuntimeBridge } from './features/drawings/drawing-runtime-bridge'
 import { DiagnosticsRuntimeBridge } from './features/diagnostics/diagnostics-runtime-bridge'
-import { DiagnosticsWorkspace } from './components/diagnostics-workspace'
 import { DrawingDialog } from './components/drawing-dialog'
 import { CoordinateConverterDialog } from './components/coordinate-converter-dialog'
-import { DevicesWorkspace } from './components/devices-workspace'
-import { OperationalSidebar } from './components/operational-sidebar'
-import { useSidebarTabs } from './components/use-sidebar-tabs'
-import { CoverageAttentionIndicator } from './components/coverage-attention-indicator'
-import { FocusModeToggle } from './components/focus-mode-toggle'
-import { MissionReviewWorkspace } from './components/mission-review-workspace'
 import { LayerCatalogRuntimeBridge } from './features/layers/layer-catalog-runtime-bridge'
 import { MarkerDialog } from './components/marker-dialog'
 import { MarkerRuntimeBridge } from './features/markers/marker-runtime-bridge'
 import { OutingRuntimeBridge } from './features/outings/outing-runtime-bridge'
 import { ParticipantRuntimeBridge } from './features/participants/participant-runtime-bridge'
 import { MeasurementRuntimeBridge } from './features/measurements/measurement-runtime-bridge'
-import { useAppStore } from './lib/app-store'
 import { MissionReviewRuntimeBridge } from './features/mission-review/mission-review-runtime-bridge'
-import { loadAppSettings } from './infrastructure/settings-store/tauri-settings-store'
 import { exportSupportBundle } from './infrastructure/support-report/tauri-support-report-store'
-import { openExternalUrl } from './infrastructure/url-opener/open-external-url'
-import type { WeatherLinkSettings } from './features/settings/settings-types'
-import { useDiagnosticsWorkspaceStore } from './features/diagnostics/diagnostics-workspace-store'
 import { useSettingsWorkspaceStore } from './features/settings/settings-workspace-store'
 import { GpxRuntimeBridge } from './features/gpx/gpx-runtime-bridge'
 import { HelicopterRuntimeBridge } from './features/helicopters/helicopter-runtime-bridge'
-import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 import { useMissionStore } from './features/mission/mission-store'
 import { shouldEnableMissionBrowserHarness } from './features/mission/mission-browser-harness'
 import { MapErrorBoundary } from './components/map-error-boundary'
-import { formatMissionDuration } from './features/mission/mission-timers'
-import { useMissionTimer } from './features/mission/use-mission-timer'
 import {
   selectLifecycleBackupFailureAlert,
   selectAutosaveWarning,
@@ -43,14 +28,14 @@ import {
   useRuntimeBootStore,
 } from './features/runtime/runtime-boot-store'
 import { reloadRuntimeFaultShell } from './features/runtime/runtime-fault-reload'
-import { useTrackingStore } from './features/tracking/tracking-store'
-import { selectCommandMastTrackingReadout } from './features/tracking/command-mast-tracking-readout'
 import { APP_VERSION } from './lib/app-version'
-import { CompactMissionStrip } from './components/compact-mission-strip'
-import { PersistentTrackingHealth } from './components/persistent-tracking-health'
-import { ThemeToggle } from './components/theme-toggle'
-import { useWorkspaceVisibility } from './features/mission/use-workspace-visibility'
-import { selectWorkspaceHideBlockedReason } from './features/mission/workspace-hide-blocked-reason'
+import { SimplifiedWorkspace } from './components/workspace/simplified-workspace'
+import { DESKTOP_PANEL_ARRANGEMENT } from './features/workspace/panel-arrangement'
+import { shouldUseClassicLayoutFixture } from './features/workspace/classic-layout-fixture'
+import { WeatherMenu } from './components/weather-menu'
+import { LazyScreenBoundary } from './components/lazy-screen-boundary'
+import { scopeAutosaveWarningToMission } from './features/persistence/autosave-warning-scope'
+import { useFocusModeStore } from './features/focus-mode/focus-mode-store'
 
 // Settings stays mounted so its open/close behaviour is unchanged; only its
 // code is split out of the default application chunk.
@@ -59,56 +44,49 @@ const SettingsWorkspace = lazy(async () => {
 
   return { default: module.SettingsWorkspace }
 })
+const DiagnosticsWorkspace = lazy(async () => {
+  const module = await import('./components/diagnostics-workspace')
+
+  return { default: module.DiagnosticsWorkspace }
+})
+const DevicesWorkspace = lazy(async () => {
+  const module = await import('./components/devices-workspace')
+
+  return { default: module.DevicesWorkspace }
+})
+const MissionReviewWorkspace = lazy(async () => {
+  const module = await import('./components/mission-review-workspace')
+
+  return { default: module.MissionReviewWorkspace }
+})
 const MapView = lazy(async () => {
   const module = await import('./components/map-view')
 
   return { default: module.MapView }
 })
 
-type RuntimeMode = 'electron' | 'hosted-browser'
+// TEMPORARY, browser-test harness only: the old screen never loads in the
+// packaged app, so it lives in its own chunk, out of first paint (DON-353).
+const ClassicLayoutFixture = lazy(async () => {
+  const module = await import('./components/classic-layout-fixture-screen')
+
+  return { default: module.ClassicLayoutFixture }
+})
 
 function App() {
-  const status = useAppStore((state) => state.status)
-  const focusModeActive = useFocusModeStore((state) => state.active)
   const settingsOpen = useSettingsWorkspaceStore((state) => state.open)
   const settingsFocusTarget = useSettingsWorkspaceStore((state) => state.focusTarget)
-  const openSettingsWorkspace = useSettingsWorkspaceStore((state) => state.openWorkspace)
   const closeSettingsWorkspace = useSettingsWorkspaceStore((state) => state.closeWorkspace)
   const [missionActionError, setMissionActionError] = useState<string | null>(null)
   const [missionDecisionOpen, setMissionDecisionOpen] = useState(false)
-  const restoreWorkspaceRef = useRef<HTMLButtonElement>(null)
-  const collapseOriginRef = useRef<HTMLElement | null>(null)
   const handleMissionActionError = useCallback((error: string | null) => {
     setMissionActionError(error)
   }, [])
-  const openDiagnosticsWorkspace = useDiagnosticsWorkspaceStore((state) => state.openWorkspace)
   const browserTestingMode = shouldEnableMissionBrowserHarness()
-  const runtimeMode: RuntimeMode = browserTestingMode ? 'hosted-browser' : 'electron'
+  const classicLayoutFixture = shouldUseClassicLayoutFixture()
+  const focusModeActive = useFocusModeStore((state) => state.active)
   const runtimeBootPhase = useRuntimeBootStore((state) => state.phase)
   const runtimeBootError = useRuntimeBootStore((state) => state.error)
-  const missionPhase = useMissionStore((state) => state.phase)
-  const currentMission = useMissionStore((state) => state.currentMission)
-  const governanceMission = useMissionStore((state) => state.governanceMission)
-  const railCollapseBlockedReason = selectWorkspaceHideBlockedReason({
-    decisionOpen: missionDecisionOpen,
-    actionError: missionActionError,
-    phase: missionPhase,
-    governanceMission,
-  })
-  const workspace = useWorkspaceVisibility(
-    `${currentMission?.id ?? 'none'}:${missionPhase}:${governanceMission?.id ?? 'none'}`,
-    railCollapseBlockedReason,
-  )
-  const effectiveRailCollapsed = workspace.collapsed
-  const sidebarTabs = useSidebarTabs(focusModeActive)
-  // The history warning lives in the awareness strip, outside the collapsible
-  // sidebar, whenever the full Tracking panel is not on screen [DON-338 REN-6].
-  const trackingPanelHidden = effectiveRailCollapsed || sidebarTabs.activeTab !== 'tracking'
-  const missionControlMinimized =
-    missionPhase === 'active' &&
-    missionActionError === null &&
-    currentMission !== null &&
-    workspace.minimized
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -116,6 +94,20 @@ function App() {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [])
+
+  const map = (
+    <Suspense
+      fallback={
+        <div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">
+          Loading map shell...
+        </div>
+      }
+    >
+      <MapErrorBoundary>
+        <MapView />
+      </MapErrorBoundary>
+    </Suspense>
+  )
 
   if (runtimeBootPhase !== 'ready') {
     return (
@@ -130,7 +122,7 @@ function App() {
   return (
     <main
       className="sar-shell flex h-screen w-full flex-col overflow-hidden"
-      data-focus-mode={focusModeActive ? 'true' : 'false'}
+      data-focus-mode={classicLayoutFixture && focusModeActive ? 'true' : 'false'}
       data-testid="app-shell"
     >
       <DiagnosticsRuntimeBridge />
@@ -144,85 +136,55 @@ function App() {
       <MeasurementRuntimeBridge />
       <MissionReviewRuntimeBridge />
 
-      {focusModeActive ? null : (
-        <CommandMast
-          missionControlMinimized={missionControlMinimized}
-          onOpenDiagnostics={openDiagnosticsWorkspace}
-          onOpenSettings={() => openSettingsWorkspace()}
-          runtimeMode={runtimeMode}
-          status={status}
-        />
-      )}
-      <div className="sar-awareness-strip">
-        {(missionControlMinimized || effectiveRailCollapsed) && <CompactMissionStrip onRestore={workspace.restore} />}
-        <PersistentTrackingHealth />
-        {trackingPanelHidden && <CoverageAttentionIndicator onOpenTracking={() => {
-          workspace.restoreRail()
-          sidebarTabs.setActiveTab('tracking')
-        }} />}
-        <ThemeToggle />
-        {effectiveRailCollapsed && <button ref={restoreWorkspaceRef} className="sar-button px-3 py-2 text-xs font-bold" data-testid="restore-workspace" onClick={() => {
-          workspace.restoreRail()
-          requestAnimationFrame(() => collapseOriginRef.current?.focus())
-        }} type="button">Restore workspace</button>}
-        {focusModeActive && effectiveRailCollapsed && <FocusModeToggle className="sar-button px-3 py-2 text-xs" />}
-      </div>
-      <RuntimeSafetyBanner
-        browserTestingMode={browserTestingMode}
-        focusModeActive={focusModeActive}
-      />
-
-      <div className="flex min-h-0 flex-1">
-        {/* Map Area - Expanded */}
-        <section className="relative flex-1 overflow-hidden">
-          <Suspense
-            fallback={
-              <div className="flex h-full w-full items-center justify-center bg-stone-950 text-sm text-stone-400">
-                Loading map shell...
-              </div>
-            }
-          >
-            <MapErrorBoundary>
-              <MapView />
-            </MapErrorBoundary>
-          </Suspense>
-        </section>
-
-        <OperationalSidebar
-          focusModeActive={focusModeActive}
-          tabs={sidebarTabs}
-          collapsed={effectiveRailCollapsed}
-          minimized={missionControlMinimized}
-          collapseDisabledReason={railCollapseBlockedReason}
+      {classicLayoutFixture ? (
+        <LazyScreenBoundary screen="Old screen test fixture">
+          <ClassicLayoutFixture
+            actionError={missionActionError}
+            browserTestingMode={browserTestingMode}
+            decisionOpen={missionDecisionOpen}
+            map={map}
+            onActionErrorChange={handleMissionActionError}
+            onDecisionOpenChange={setMissionDecisionOpen}
+            renderSafetyBanner={(focusModeActive) => (
+              <RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive={focusModeActive} />
+            )}
+          />
+        </LazyScreenBoundary>
+      ) : (
+        <SimplifiedWorkspace
+          actionError={missionActionError}
+          arrangement={DESKTOP_PANEL_ARRANGEMENT}
+          decisionOpen={missionDecisionOpen}
+          map={map}
           onActionErrorChange={handleMissionActionError}
           onDecisionOpenChange={setMissionDecisionOpen}
-          onMinimizedChange={workspace.minimize}
-          onCollapseWorkspace={() => {
-            collapseOriginRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-            workspace.collapse()
-            requestAnimationFrame(() => restoreWorkspaceRef.current?.focus())
-          }}
+          // The old mast is gone, so the autosave warning shows in the safety banner.
+          safetyBanner={<RuntimeSafetyBanner browserTestingMode={browserTestingMode} focusModeActive />}
+          weather={<WeatherMenu />}
         />
-      </div>
+      )}
 
       <DrawingDialog />
       <CoordinateConverterDialog />
-      <DevicesWorkspace />
-      <MissionReviewWorkspace />
       <MarkerDialog />
-      <DiagnosticsWorkspace />
-      <Suspense fallback={null}>
+      {/* Opened on demand, so their code stays out of first paint; each stays mounted once loaded.
+          A screen whose code fails to load shows a message; the rest of the app stays up. */}
+      <LazyScreenBoundary screen="Devices"><DevicesWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary screen="Mission review"><MissionReviewWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary screen="Diagnostics"><DiagnosticsWorkspace /></LazyScreenBoundary>
+      <LazyScreenBoundary screen="Settings">
         <SettingsWorkspace
           focusTarget={settingsFocusTarget}
           onClose={closeSettingsWorkspace}
           open={settingsOpen}
         />
-      </Suspense>
+      </LazyScreenBoundary>
     </main>
   )
 }
 
 export default App
+
 
 /**
  * Blocks operator interaction until runtime startup either succeeds or fails visibly.
@@ -398,7 +360,7 @@ export function RuntimeSafetyBanner(props: {
   const currentMission = useMissionStore((state) => state.currentMission)
   const autosaveStatus = useAutosaveStatusStore()
   const lifecycleBackupFailure = selectLifecycleBackupFailureAlert(autosaveStatus)
-  const autosaveWarning = selectCommandMastAutosaveWarning(
+  const autosaveWarning = scopeAutosaveWarningToMission(
     selectAutosaveWarning(autosaveStatus),
     currentMission,
   )
@@ -454,411 +416,9 @@ export function RuntimeSafetyBanner(props: {
   )
 }
 
-/** Renders the top operational mast with mission, tracking, diagnostics, and runtime health. */
-export function CommandMast(props: {
-  readonly status: string
-  readonly runtimeMode: RuntimeMode
-  readonly missionControlMinimized?: boolean
-  readonly onOpenDiagnostics: () => void
-  readonly onOpenSettings: () => void
-}) {
-  const phase = useMissionStore((state) => state.phase)
-  const currentMission = useMissionStore((state) => state.currentMission)
-  const snapshot = useTrackingStore((state) => state.snapshot)
-  const trackingStatus = useTrackingStore((state) => state.status)
-  const autosaveStatus = useAutosaveStatusStore()
-  const staleCount = snapshot.positions.filter((position) => position.device_cache_stale).length
-  const autosaveWarning = selectCommandMastAutosaveWarning(
-    selectAutosaveWarning(autosaveStatus),
-    currentMission,
-  )
-  const systemStatus = resolveCommandMastSystemStatus({
-    runtimeMode: props.runtimeMode,
-    status: props.status,
-    autosaveWarning,
-  })
-  const timerState = useMissionTimer(currentMission)
 
-  return (
-    <header className="sar-global-mast flex-shrink-0" data-testid="command-mast">
-      <div className="sar-command-mast-grid grid min-h-[80px] w-full items-stretch overflow-hidden">
-        <div className="flex min-w-0 items-center gap-3 border-r border-[var(--sar-line)] px-4">
-          <div className="relative flex h-14 w-16 flex-shrink-0 items-center justify-center overflow-hidden border border-stone-200/40 bg-white">
-            <img
-              alt="Mountain Rescue team logo"
-              className="h-full w-full object-contain"
-              onError={(event) => {
-                event.currentTarget.hidden = true
-                event.currentTarget.nextElementSibling?.removeAttribute('hidden')
-              }}
-              src="./brand/kmrt-logo-compact.png"
-            />
-            <span className="font-mono text-[11px] font-black text-amber-200" hidden>
-              MR
-            </span>
-          </div>
-          <div className="sr-only">
-            MR
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
-              Mountain Rescue
-            </p>
-            <h1
-              className="mt-1 truncate font-mono text-[22px] font-black leading-none tracking-wide text-stone-50"
-              data-testid="app-title"
-            >
-              SAR Tracker
-            </h1>
-            <p className="mt-1 min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-stone-300">
-              {APP_VERSION}
-            </p>
-          </div>
-        </div>
 
-        <div
-          className="min-w-0 border-r border-[var(--sar-line)] px-4 py-2"
-          data-testid={
-            props.missionControlMinimized && currentMission !== null
-              ? 'command-mast-mission-control-minimized'
-              : undefined
-          }
-        >
-          <div className="flex items-center gap-2">
-            <span className="sar-section-label text-amber-300">Mission</span>
-            <span className={phasePillClassName(phase)}>{phase}</span>
-          </div>
-          <p
-            className="mt-2 truncate text-sm font-bold text-stone-100"
-            data-testid="current-mission-name"
-          >
-            {currentMission?.name ?? 'No active mission'}
-          </p>
-          <p className="mt-1 truncate font-mono text-[11px] uppercase tracking-[0.12em] text-stone-300">
-            {currentMission === null ? 'Ready to start' : `Started ${formatTime(currentMission.start_time)}`}
-          </p>
-        </div>
 
-        <TopReadout label="Elapsed" value={formatMissionDuration(timerState?.elapsedSeconds ?? 0)} />
-        <TopReadout
-          label="Active"
-          tone="success"
-          value={formatMissionDuration(timerState?.activeSeconds ?? 0)}
-        />
-        <TopReadout label="Devices" value={String(snapshot.devices.length)} />
-        <TrackingMastCell
-          readout={selectCommandMastTrackingReadout({
-            mode: trackingStatus.mode,
-            fixCount: snapshot.positions.length,
-            staleCount,
-          })}
-        />
 
-        <div className="flex min-w-0 flex-col justify-center border-l border-r border-[var(--sar-line)] px-3">
-          <p className="sar-section-label">System Status</p>
-          <p
-            className={`mt-1 font-mono text-sm font-black uppercase tracking-[0.08em] ${
-              systemStatus.tone === 'success' ? 'text-emerald-300' : 'text-amber-300'
-            }`}
-            data-testid="system-status-value"
-          >
-            {systemStatus.value}
-          </p>
-          <p
-            className="mt-1 truncate text-[10px] font-black uppercase tracking-[0.08em] text-stone-300"
-            data-testid="system-status-detail"
-            title={systemStatus.detail}
-          >
-            {systemStatus.detail}
-          </p>
-          {autosaveWarning === null ? null : (
-            <p
-              aria-label={autosaveWarning}
-              className="sar-status-chip-warning mt-1 inline-flex w-fit max-w-full truncate px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.04em]"
-              data-testid="autosave-warning"
-              role="status"
-              title={autosaveWarning}
-            >
-              Autosave warning
-            </p>
-          )}
-        </div>
-        <button
-          aria-label="Open diagnostics workspace"
-          className="sar-mast-button"
-          data-testid="open-diagnostics-workspace"
-          onClick={() => props.onOpenDiagnostics()}
-          type="button"
-        >
-          <span className="sar-mast-label-full">Diagnostics</span>
-          <span aria-hidden="true" className="sar-mast-label-short">
-            Diag
-          </span>
-        </button>
-        <FocusModeToggle className="sar-mast-button" compact />
-        <button
-          aria-label="Open settings workspace"
-          className="sar-mast-button"
-          data-testid="open-settings-workspace"
-          onClick={() => props.onOpenSettings()}
-          type="button"
-        >
-          <span className="sar-mast-label-full">Settings</span>
-          <span aria-hidden="true" className="sar-mast-label-short">
-            Set
-          </span>
-        </button>
-        <WeatherMenu />
-        <a
-          aria-label="Open help manual"
-          className="sar-mast-button inline-flex items-center justify-center"
-          data-testid="open-help-manual"
-          href="./manual/index.html"
-          rel="noreferrer"
-          target="_blank"
-        >
-          <span className="sar-mast-label-full">Help</span>
-          <span aria-hidden="true" className="sar-mast-label-short">
-            Help
-          </span>
-        </a>
-      </div>
-    </header>
-  )
-}
 
-/** Compact mast menu for operator-configured external weather resources. */
-function WeatherMenu() {
-  const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [links, setLinks] = useState<readonly WeatherLinkSettings[]>([])
-  const [error, setError] = useState<string | null>(null)
 
-  return (
-    <div className="relative flex min-w-0 border-r border-[var(--sar-line)]">
-      <button
-        aria-expanded={open}
-        aria-label="Open weather links menu"
-        className="sar-mast-button w-full"
-        data-testid="weather-menu-trigger"
-        onClick={() => {
-          if (open) {
-            setOpen(false)
-            return
-          }
-          setOpen(true)
-          void loadWeatherLinks()
-        }}
-        type="button"
-      >
-        <span className="sar-mast-label-full">Weather</span>
-        <span aria-hidden="true" className="sar-mast-label-short">
-          Wx
-        </span>
-      </button>
-      {open ? (
-        <div
-          className="absolute right-0 top-full z-50 mt-1 w-72 border border-[var(--sar-line)] bg-[var(--sar-panel)] p-3 text-sm shadow-2xl"
-          data-testid="weather-menu"
-        >
-          <p className="sar-section-label text-amber-300">External Weather Links</p>
-          <p className="sar-helper-text mt-1">
-            Opens configured websites in a new tab. No weather data is fetched by SAR Tracker.
-          </p>
-          {loading ? (
-            <p className="mt-3 text-sm text-stone-300">Loading weather links...</p>
-          ) : error !== null ? (
-            <p className="mt-3 text-sm font-semibold text-rose-300">{error}</p>
-          ) : links.length === 0 ? (
-            <p className="mt-3 text-sm text-stone-300">
-              No weather links configured. Add named weather URLs in Settings.
-            </p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {links.map((link, index) => (
-                <button
-                  className="sar-button flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-bold text-stone-100"
-                  data-testid={`weather-link-open-${index}`}
-                  key={`${link.name}-${link.url}`}
-                  onClick={() => void openExternalUrl(link.url)}
-                  type="button"
-                >
-                  <span className="truncate">{link.name}</span>
-                  <span aria-hidden="true" className="ml-3 text-amber-300">Open</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  )
-
-  async function loadWeatherLinks(): Promise<void> {
-    setLoading(true)
-    setError(null)
-    try {
-      const settings = await loadAppSettings()
-      setLinks(settings.weather.links)
-    } catch (loadError) {
-      setError(toErrorMessage(loadError))
-      setLinks([])
-    } finally {
-      setLoading(false)
-    }
-  }
-}
-
-function TopReadout(props: {
-  readonly label: string
-  readonly value: string
-  readonly tone?: 'default' | 'success' | 'warning'
-}) {
-  const toneClassName =
-    props.tone === 'success'
-      ? 'text-emerald-300'
-      : props.tone === 'warning'
-        ? 'text-amber-300'
-        : 'text-stone-100'
-
-  return (
-    <div className="sar-mast-readout flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-4">
-      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-300">
-        {props.label}
-      </p>
-      <p className={`mt-1 font-mono text-xl font-black leading-none ${toneClassName}`}>
-        {props.value}
-      </p>
-    </div>
-  )
-}
-
-function TrackingMastCell(props: {
-  readonly readout: ReturnType<typeof selectCommandMastTrackingReadout>
-}) {
-  const labelToneClassName =
-    props.readout.tone === 'success'
-      ? 'text-emerald-300'
-      : props.readout.tone === 'warning'
-        ? 'text-amber-300'
-        : 'text-stone-300'
-  const staleToneClassName =
-    props.readout.stale.tone === 'warning' ? 'text-amber-300' : 'text-stone-400'
-
-  return (
-    <div
-      className="flex min-w-0 flex-col justify-center border-r border-[var(--sar-line)] px-3"
-      data-testid="mast-tracking-cell"
-    >
-      <p
-        className={`text-[10px] font-black uppercase tracking-[0.14em] ${labelToneClassName}`}
-        data-testid="mast-tracking-mode"
-      >
-        {props.readout.label}
-      </p>
-      <div className="mt-1 flex items-baseline justify-between gap-1">
-        <span className="text-[9px] font-bold uppercase tracking-[0.08em] text-stone-300">
-          {props.readout.fix.label}
-        </span>
-        <span
-          className="font-mono text-sm font-black leading-none text-stone-100"
-          data-testid="mast-tracking-fix-value"
-        >
-          {props.readout.fix.value}
-        </span>
-      </div>
-      <div className="mt-1 flex items-baseline justify-between gap-1">
-        <span className={`text-[9px] font-bold uppercase tracking-[0.08em] ${staleToneClassName}`}>
-          {props.readout.stale.label}
-        </span>
-        <span
-          className={`font-mono text-sm font-black leading-none ${staleToneClassName}`}
-          data-testid="mast-tracking-stale-value"
-        >
-          {props.readout.stale.value}
-        </span>
-      </div>
-    </div>
-  )
-}
-
-function resolveCommandMastSystemStatus(input: {
-  readonly runtimeMode: RuntimeMode
-  readonly status: string
-  readonly autosaveWarning: string | null
-}): {
-  readonly value: string
-  readonly detail: string
-  readonly tone: 'success' | 'warning'
-} {
-  if (input.runtimeMode === 'hosted-browser') {
-    return {
-      value: 'Browser test',
-      detail: 'Session storage only',
-      tone: 'warning',
-    }
-  }
-
-  if (input.autosaveWarning !== null) {
-    return {
-      value: input.status,
-      detail: 'Autosave warning',
-      tone: 'warning',
-    }
-  }
-
-  return {
-    value: input.status,
-    detail: 'Desktop persistence',
-    tone: 'success',
-  }
-}
-
-/** Keeps stale autosave warnings mission-scoped while preserving failure visibility. */
-function selectCommandMastAutosaveWarning(
-  warning: string | null,
-  currentMission: unknown,
-): string | null {
-  if (warning === null) {
-    return null
-  }
-
-  if (warning.startsWith('Autosave failing')) {
-    return warning
-  }
-
-  return currentMission === null ? null : warning
-}
-
-function phasePillClassName(phase: string): string {
-  const base =
-    'px-2 py-0.5 font-mono text-[10px] font-black uppercase tracking-[0.12em]'
-
-  if (phase === 'active') {
-    return `${base} sar-status-chip-success`
-  }
-
-  // Paused must read as an alarm, not a soft warning (DON-64): the mast pill
-  // flashes bright red so an operator scanning the top bar cannot miss it.
-  if (phase === 'paused') {
-    return `${base} sar-status-chip-paused`
-  }
-
-  if (phase === 'recovery') {
-    return `${base} sar-status-chip-warning`
-  }
-
-  return `${base} sar-status-chip-neutral`
-}
-
-function formatTime(value: string): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
