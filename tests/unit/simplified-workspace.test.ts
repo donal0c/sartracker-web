@@ -5,7 +5,7 @@ import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectEx
 import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/workspace/tracking-headline'
 import { labelTrackingWarning } from '../../src/features/workspace/tracking-problem-labels'
 import { fitProblemWords, problemWordsText } from '../../src/features/workspace/problem-word-fit'
-import type { TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
+import type { NormalizedTrackingPosition, TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
 const NOW = Date.parse('2026-11-06T12:00:00.000Z')
@@ -52,9 +52,21 @@ describe('tracking headline', () => {
         warningCodes: ['roster_refreshing', 'history_refresh_failed'],
       }),
     })
-    expect(headline.problems).toEqual(['History failed', '1 rejected'])
+    expect(headline.problems).toEqual(['1 rejected', 'History failed'])
     expect(headline.detail).toContain('Current fixes loaded')
     expect(headline.text).toContain('BREADCRUMB HISTORY REFRESH FAILED')
+  })
+
+  it('puts a person who is stale or not moving before cache and history problems [DON-261]', () => {
+    const stale = { device_cache_stale: true } as unknown as NormalizedTrackingPosition
+    const headline = describeTrackingHeadline({
+      ...base, phase: 'active', positions: [stale], stationaryCount: 1, ingestRejected: 1,
+      status: status({
+        warning: 'Tracking cache could not be updated. BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.',
+        warningCodes: ['cache_update_failed', 'history_refresh_failed'],
+      }),
+    })
+    expect(headline.problems).toEqual(['1 stale', '1 not moving', '1 rejected', 'History failed', 'Cache not updated'])
   })
 
   it('names a warning that arrived without a code, and leaves progress notes unnamed [DON-261]', () => {
@@ -174,6 +186,8 @@ describe('tracking problem words', () => {
     expect(fitProblemWords([100, 50, 70], 10, 60, 239)).toBe(2)
     expect(fitProblemWords([100, 50, 70], 10, 60, 170)).toBe(1)
     expect(fitProblemWords([100, 50, 70], 10, 60, 100)).toBe(0)
+    // Every word fits, so no room is kept for a count that is not needed.
+    expect(fitProblemWords([100, 40], 10, 60, 155)).toBe(2)
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 3)).toBe('History failed · 2 stale · 1 rejected')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 2)).toBe('History failed · 2 stale · +1 more')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 0)).toBe('3 problems')

@@ -172,7 +172,7 @@ test.describe('M19 devices workspace', () => {
     })
 
     const problems = page.getByTestId('ws-tracking-problems')
-    await expect(problems).toHaveText('History failed · 2 stale · 1 rejected')
+    await expect(problems).toHaveText('2 stale · 1 rejected · History failed')
     const clipped = await problems.evaluate((element) => {
       const box = element.getBoundingClientRect()
       const bar = element.closest('[data-testid="ws-tracking-headline"]')?.getBoundingClientRect()

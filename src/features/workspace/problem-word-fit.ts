@@ -11,6 +11,9 @@ export const PROBLEM_WORD_SEPARATOR = ' · '
  * @returns how many words to show; the rest are counted, never cut mid-word
  */
 export function fitProblemWords(widths: readonly number[], separator: number, more: number, available: number): number {
+  // Room for a "+N more" count is only kept when not every word fits.
+  const all = widths.reduce((sum, width, index) => sum + (index === 0 ? 0 : separator) + width, 0)
+  if (all <= available + 0.5) return widths.length
   let used = 0
   for (let shown = 0; shown < widths.length; shown += 1) {
     used += (shown === 0 ? 0 : separator) + (widths[shown] ?? 0)

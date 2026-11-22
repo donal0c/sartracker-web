@@ -10,7 +10,7 @@ import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
-import { labelTrackingWarning } from './tracking-problem-labels'
+import { PROBLEM_RANK, rankTrackingWarning, type RankedProblem } from './tracking-problem-labels'
 
 let remembered: { readonly missionId: string | null; readonly at: string } | null = null
 
@@ -93,26 +93,30 @@ export function describeTrackingHeadline(input: {
   // Short problem words go first and are never cut short; a reassuring sentence
   // before a failure must not push the failure behind the ellipsis (DON-261).
   const lost = status.mode === 'offline' || isCriticalTrackingTrustWarning(status.warning)
-  const problems: string[] = []
-  const name = (word: string) => { if (!problems.includes(word)) problems.push(word) }
-  if (evidenceFailed) name('Record not saved')
+  const ranked: RankedProblem[] = []
+  const name = (word: string, rank: number) => { if (!ranked.some((entry) => entry.word === word)) ranked.push({ word, rank }) }
+  if (evidenceFailed) name('Record not saved', PROBLEM_RANK.record)
   if (!isPauseNotice(status.warning)) {
-    for (const word of labelTrackingWarning(status.warning, status.warningCodes)) {
+    for (const entry of rankTrackingWarning(status.warning, status.warningCodes)) {
       // The TRACKING LOST lead already says it is offline.
-      if (!(lost && word.startsWith('Offline'))) name(word)
+      if (!(lost && entry.word.startsWith('Offline'))) name(entry.word, entry.rank)
     }
   }
-  if (staleCount > 0) name(`${staleCount} stale`)
-  if (input.ingestRejected > 0) name(`${input.ingestRejected} rejected`)
-  if (input.conflictCount > 0) name(`${input.conflictCount} conflicting`)
-  if (stationaryCount > 0) name(`${stationaryCount} not moving`)
-  if (input.coverageStatus === 'error') name('History not loaded')
-  if (input.coverageStatus === 'partial') name('History incomplete')
-  if (unverifiedCount > 0) name(`${unverifiedCount} ${unverifiedCount === 1 ? 'time' : 'times'} unverified`)
-  if (allLocationsHidden) name('All hidden')
-  else if (hiddenLocationCount > 0) name(`${hiddenLocationCount} hidden`)
-  if (notedCount > 0) name(`${notedCount} not moving (noted)`)
-  if (input.evidenceState !== 'healthy' && input.evidenceLossAcknowledged) name('Record loss noted')
+  if (staleCount > 0) name(`${staleCount} stale`, PROBLEM_RANK.stale)
+  if (stationaryCount > 0) name(`${stationaryCount} not moving`, PROBLEM_RANK.notMoving)
+  if (input.ingestRejected > 0) name(`${input.ingestRejected} rejected`, PROBLEM_RANK.rejected)
+  if (input.conflictCount > 0) name(`${input.conflictCount} conflicting`, PROBLEM_RANK.conflicting)
+  if (unverifiedCount > 0) name(`${unverifiedCount} ${unverifiedCount === 1 ? 'time' : 'times'} unverified`, PROBLEM_RANK.unverified)
+  if (allLocationsHidden) name('All hidden', PROBLEM_RANK.hidden)
+  else if (hiddenLocationCount > 0) name(`${hiddenLocationCount} hidden`, PROBLEM_RANK.hidden)
+  if (notedCount > 0) name(`${notedCount} not moving (noted)`, PROBLEM_RANK.notMovingNoted)
+  if (input.coverageStatus === 'error') name('History not loaded', PROBLEM_RANK.history)
+  if (input.coverageStatus === 'partial') name('History incomplete', PROBLEM_RANK.history + 2)
+  if (input.evidenceState !== 'healthy' && input.evidenceLossAcknowledged) name('Record loss noted', PROBLEM_RANK.recordNoted)
+  // One order for runtime and derived problems; ties keep the order found.
+  const problems = ranked.map((entry, index) => ({ ...entry, index }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.word)
 
   // The server's own sentence goes in Tracking; the bar keeps the short conditions.
   const conditions = issues.filter((issue) => issue !== status.warning).join(' · ')
