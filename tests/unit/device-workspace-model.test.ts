@@ -72,6 +72,26 @@ const STATUS: TrackingConnectionStatus = {
 }
 
 describe('device workspace model', () => {
+  it('never labels a fix ahead of the laptop clock as Live [DON-349 M-06]', () => {
+    const rows = buildDeviceWorkspaceRows(
+      {
+        ...SNAPSHOT,
+        positions: SNAPSHOT.positions.map((position) => position.device_id === 'alpha'
+          ? { ...position, device_cache_stale: true, fix_time_ahead_of_clock: true }
+          : position),
+      },
+      [],
+      undefined,
+      {},
+      'online',
+    )
+    expect(rows[0]).toMatchObject({
+      deviceId: 'alpha',
+      sourceDisplay: 'Fix time ahead of laptop clock',
+      stale: true,
+    })
+  })
+
   it('labels retained live-origin fixes as last known while reconnecting [AUD-13]', () => {
     const rows = buildDeviceWorkspaceRows(SNAPSHOT, [], undefined, {}, 'idle')
     expect(rows[0]).toMatchObject({ status: 'unknown', sourceDisplay: 'Last known' })

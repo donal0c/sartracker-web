@@ -12,7 +12,10 @@ test.describe('M12 settings workspace', () => {
   test('opens the workspace and validates Traccar provider inputs', async ({ page }) => {
     await page.getByTestId('open-settings-workspace').click()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await expect(page.getByTestId('settings-section-tracking-sources')).toHaveAttribute('aria-current', 'page')
+    await page.getByTestId('settings-section-mapping').click()
     await expect(page.getByTestId('official-map-source-status')).toContainText('Official maps are not configured.')
+    await page.getByTestId('settings-section-tracking-sources').click()
 
     await page.getByRole('button', { name: 'Traccar HTTP' }).click()
     await page.getByTestId('settings-provider-url').fill('https://traccar.example.com')
@@ -313,18 +316,22 @@ test.describe('M12 settings workspace', () => {
     await page.getByTestId('open-settings-workspace').click()
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
 
+    await page.getByTestId('settings-section-advanced').click()
     await page.getByTestId('settings-auto-save-interval').fill('90')
     await page.getByTestId('settings-primary-root').fill('/missions/primary')
     await page.getByTestId('settings-tracking-cache-enabled').uncheck()
+    await page.getByTestId('settings-section-mapping').click()
     await page.getByRole('button', { name: 'TM65 first' }).click()
     await page.getByTestId('settings-save').click()
     await expect(page.getByTestId('settings-workspace')).toBeHidden()
 
     await page.reload()
     await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-section-advanced').click()
     await expect(page.getByTestId('settings-auto-save-interval')).toHaveValue('90')
     await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/primary')
     await expect(page.getByTestId('settings-tracking-cache-enabled')).not.toBeChecked()
+    await page.getByTestId('settings-section-mapping').click()
     await expect(page.getByRole('button', { name: 'TM65 first' })).toHaveClass(/bg-amber-500/)
   })
 
@@ -355,7 +362,13 @@ test.describe('M12 settings workspace', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Operational Settings' })
     await expect(dialog).toBeVisible()
+    await page.getByTestId('settings-section-advanced').click()
     await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    // An edit in one section is kept, and still guarded, after visiting another [DON-343].
+    await page.getByTestId('settings-section-weather-links').click()
+    await page.getByTestId('settings-section-advanced').click()
+    await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
+    await page.getByTestId('settings-section-mission-defaults').click()
 
     await page.keyboard.press('Escape')
     await expect(dialog).toBeVisible()
@@ -363,6 +376,7 @@ test.describe('M12 settings workspace', () => {
 
     await page.getByTestId('settings-keep-editing').click()
     await expect(page.getByTestId('settings-discard-confirmation')).toBeHidden()
+    await page.getByTestId('settings-section-advanced').click()
     await expect(page.getByTestId('settings-primary-root')).toHaveValue('/missions/draft-root')
 
     await page.keyboard.press('Escape')
@@ -371,6 +385,7 @@ test.describe('M12 settings workspace', () => {
     await expect(opener).toBeFocused()
 
     await opener.click()
+    await page.getByTestId('settings-section-advanced').click()
     await expect(page.getByTestId('settings-primary-root')).not.toHaveValue('/missions/draft-root')
   })
 })

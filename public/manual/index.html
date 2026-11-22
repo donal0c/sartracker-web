@@ -499,7 +499,7 @@
             <li><strong>Start the PC and open the AppImage from the desktop.</strong> On PCLinuxOS this is the SAR Tracker AppImage file.</li>
             <li><strong>Enter the mission name.</strong></li>
             <li><strong>Set the roll back time</strong>: <strong>Roll back time (hours)</strong>, up to 48, if people were out before you opened the app.</li>
-            <li><strong>Start.</strong> Your team's own group (for example KMRT) is already ticked, marked <em>team default</em>, if it was chosen once in Settings → Mission Defaults. Its members' tracks are fetched back to the start offset.</li>
+            <li><strong>Start.</strong> Your team's own group (for example KMRT) is already ticked, marked <em>team default</em>, if it was chosen once in Settings → Tracking sources. Its members' tracks are fetched back to the roll back time.</li>
             <li><strong>Discovery map.</strong> SAR Tracker opens on the map you last chose, so Discovery Topo comes back by itself if its package is ready.</li>
             <li><strong>From here the mission develops:</strong> convert coordinates (<strong>Convert</strong>, bottom right), add the casualty location (a <a href="#markers">Casualty marker</a>), and watch where people are.</li>
             <li><strong>Switch maps when you need to</strong>: OpenTopoMap and ESRI Satellite are in <strong>Maps</strong> (they need internet).</li>
@@ -553,7 +553,7 @@
               Refreshing never ticks anyone for you.</li>
           </ul>
           <p>
-            <strong>Team default group.</strong> In <strong>Settings → Mission Defaults → Team default
+            <strong>Team default group.</strong> In <strong>Settings → Tracking sources → Team default
             group</strong>, choose your team's own Traccar group (for example KMRT). It is then ticked
             automatically in the Start step of every new mission, marked <em>team default</em>, so its
             members' history is fetched from the roll back time. Untick it if your team is not taking part;
@@ -732,6 +732,8 @@
               <tr><td>Amber <strong>Mission paused · live refresh suspended</strong></td><td>You paused the mission. No new positions are being fetched.</td><td>Press <strong>Resume</strong> to see live positions again.</td></tr>
               <tr><td>Amber <strong>Tracking connected · 1 fix times unverified</strong></td><td>The tracker sent a position without a trustworthy fix time. It is shown for safety but is not used as exact trail evidence.</td><td>Use the position with care and note the device. Ask an admin to look if it keeps happening.</td></tr>
               <tr><td>A device in <strong>STALE</strong></td><td>No report for more than five minutes.</td><td>Call the team. Do not assume the dot is where they are.</td></tr>
+              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Fix time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as STALE until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
+              <tr><td>Red <strong>Tracking not live · cached positions</strong> with <strong>LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record</strong></td><td>The app is waiting for the mission record to accept positions it already has. Until it does, it fetches no new ones, and the dots go STALE on schedule.</td><td>Treat every position as old and call teams for their locations. If it does not clear within a few minutes, save your work, restart the app and tell an admin.</td></tr>
             </tbody>
           </table>
           <figure class="screenshot">
@@ -807,7 +809,7 @@
           <p>
             An amber ring means a device has not moved meaningfully for a while. The defaults are
             <strong>20 minutes</strong> and <strong>15 metres</strong> (changeable in Settings under
-            Mission Defaults). It is a prompt to check on them, <strong>not an emergency declaration</strong>.
+            Mission defaults). It is a prompt to check on them, <strong>not an emergency declaration</strong>.
             <strong>Acknowledge attention</strong> dims the ring but changes no data. Real movement clears it.
             A new stationary spell needs a new acknowledgement.
           </p>
@@ -898,6 +900,7 @@
             The strip at the bottom shows the position under the cursor as <strong>DD</strong>
             (latitude/longitude), <strong>Irish Grid</strong> (TM65) and <strong>DMS</strong>. Outside Ireland
             the grid field says <strong>Outside Ireland</strong> rather than inventing a reference.
+            The <strong>Map scale</strong> bar at the bottom left shows the ground distance the bar covers at the centre of the map.
           </p>
           <figure class="screenshot">
             <img src="assets/coordinate-converter.png" alt="Coordinate converter showing IG, DD and DMS results for a typed position" />
@@ -907,6 +910,7 @@
             <li>Choose the input type: <strong>IG</strong>, <strong>DD</strong> or <strong>DMS</strong>. (<strong>W3W</strong> is not available offline.)</li>
             <li>Type the coordinates and press <strong>Convert</strong>. Copy any result with <strong>Copy</strong>.</li>
             <li><strong>Go To Location</strong> moves the map there (a red ring marks it briefly). <strong>Create Marker Here</strong> opens the marker form at that point.</li>
+            <li>If you change the coordinates or the input type after converting, the result and both buttons disappear. Press <strong>Convert</strong> again, so a marker is never placed at the old position.</li>
           </ol>
           <ul>
             <li>Short grid references work: <code>V 80 84</code> means the centre of that grid square.</li>
@@ -931,7 +935,7 @@
           <h3>One-time setup (desktop app)</h3>
           <ol>
             <li>Get the team's USB drive or folder with the MapGenie source file and the prepared <code>.mbtiles</code> map package.</li>
-            <li>Open <strong>Settings → Official Maps</strong>.</li>
+            <li>Open <strong>Settings → Mapping</strong>.</li>
             <li>Press <strong>Choose MapGenie File</strong> and pick the source file.</li>
             <li>Press <strong>Add Discovery Package</strong> and pick the <code>.mbtiles</code> file. The app copies it into its own storage, so you can remove the USB afterwards.</li>
             <li>Press <strong>Save Settings</strong> and wait for the package to be checked.</li>
@@ -1027,7 +1031,9 @@
           </table>
           <ul>
             <li><strong>Casualty markers need Name, Casualty Status and Evacuation Priority</strong> before Save works. Missing ones are marked <em>Required</em>.</li>
-            <li><strong>Treatment log</strong>: type each update in <strong>New Treatment Update</strong> and press <strong>Add Update</strong>. Each entry is timestamped and earlier ones are never overwritten.</li>
+            <li><strong>Treatment log</strong>: type each update in <strong>New Treatment Update</strong> and press <strong>Add Update</strong>, or press <strong>Save</strong> to add the typed update and save the marker together. Each entry is timestamped and earlier ones stay in the log.</li>
+            <li>Closing a marker with unsaved changes asks before discarding them. Choose <strong>Keep editing</strong> to continue or <strong>Discard changes</strong> to close without saving.</li>
+            <li>Marker load or placement failures show a warning banner over the map. For a load failure, press <strong>Retry</strong>; markers on the map may be incomplete until the load succeeds.</li>
             <li><strong>Map label size</strong> changes the text on the map. Casualty labels start larger.</li>
             <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app.</li>
             <li><strong>Retire</strong> asks twice (<strong>Retire</strong>, then <strong>Retire Marker</strong>; <strong>Keep</strong> cancels). A retired marker leaves the map but its history stays in the record.</li>
@@ -1097,8 +1103,9 @@
           </figure>
           <h3>GPX tracks</h3>
           <ul>
-            <li><strong>Import Files</strong> and <strong>Import Folder</strong> add tracks. <strong>Watch Folder</strong> imports new files as they appear, and <strong>Rescan Watches</strong> checks again. These need the desktop app.</li>
-            <li>A newly imported track is shown on the map straight away. A track you hid yourself stays hidden. The panel summary says how many tracks are listed and how many are on the map, for example <em>5 listed · 4 on map, 1 hidden in Layers</em>.</li>
+            <li><strong>Import Files</strong> and <strong>Import Folder</strong> add tracks. <strong>Watch Folder</strong> imports new files as they appear, and <strong>Rescan Watches</strong> checks again. These need the desktop app. A watched folder is checked every 30 seconds; files that have not changed are skipped, and the list stays on the page you are reading.</li>
+            <li>A newly imported track is shown on the map straight away. A track you hid yourself stays hidden. The panel summary says how many tracks are listed and how many are on the map, for example <em>5 listed · 4 on map, 1 hidden in Layers</em>. The list shows 25 tracks per page, but the map draws every track in the mission, not only the page you are reading.</li>
+            <li>With many tracks, each one is drawn with less detail so they all fit. If the map still cannot draw every track (more than 512, or a track with too many separate pieces), a yellow notice on the map says <em>Map shows X of Y imported GPX tracks</em> and names the ones left out; the panel summary adds <em>N not drawn</em> and those rows say <strong>Not drawn on map</strong>. If the map could not be refreshed, the notice says so and the map keeps the tracks it last drew.</li>
             <li>Each track's row says <strong>On map</strong>, or <strong>Hidden on map</strong> with the reason (<em>GPX Tracks is off in Layers</em> or <em>this track is off in Layers</em>) and a <strong>Show on map</strong> button. A listed track is not necessarily drawn: check this line if you cannot find a track.</li>
             <li>If showing a track could not be saved, the row says <strong>On map, but not saved (may be hidden after a restart)</strong> with a <strong>Save again</strong> button.</li>
             <li>Each imported track has its own colour. <strong>Retire</strong> takes it off the map but keeps the record; the retired track stays in the mission history and Replay.</li>
@@ -1107,7 +1114,8 @@
             <li>A renamed copy of a retired file imports as a separate, new track.</li>
             <li>Points with no time are kept as <em>static</em> evidence and are not placed at an invented time.</li>
             <li>To link a track to an outing, type the coordinator's name in <strong>Coordinator name for outing assignments</strong>, then choose the outing on the track's row.</li>
-            <li>Limits: 8 MiB per file and 100 files at a time. A bad file is refused with a reason and reported, never shown as a clean import. Wait for one import to finish before starting another.</li>
+            <li>If an import stops part way (for example the import stops responding), the files already imported stay, the rest are listed under import issues for review, and the message says how many were imported. For a large watched folder, which is sent in parts of 100, the import stops at the failed part and the message also says how many files were never tried; rescan or import again to try them. Finish works without restarting.</li>
+            <li>Limits: 8 MiB per file and 100 files at a time for Import Files and Import Folder. A watched folder can hold up to 1000 GPX files; beyond that only the 1000 most recently changed are watched and a message says how many are not. Move older files to another folder. A bad file is refused with a reason and reported, never shown as a clean import. Wait for one import to finish before starting another.</li>
             <li>Finish and Archive are held back while a GPX import is unfinished.</li>
           </ul>
           <h3>Helicopters</h3>
@@ -1299,7 +1307,7 @@
           </div>
           <p>
             This records who accepted the gap. It does not restore evidence, and the warning stays with the
-            mission. If the admin list is empty, add the admin in <strong>Settings → Mission Defaults → Admin roster</strong>,
+            mission. If the admin list is empty, add the admin in <strong>Settings → Mission defaults → Admin roster</strong>,
             press <strong>Save &amp; Close</strong>, and you return to the same dialog with your typing kept.
           </p>
         </section>
@@ -1307,17 +1315,28 @@
         <section id="settings">
           <h2>Settings</h2>
           <p>
-            Open <strong>Settings</strong> from the top bar. If you close it with unsaved edits the app asks
-            whether to keep editing or discard. The bar at the bottom has <strong>Test Connection</strong>,
-            <strong>Save &amp; Close</strong> and <strong>Save, Connect &amp; Close</strong>.
+            Open <strong>Settings</strong> from the top bar. Settings is a menu of five sections on the left:
+            <strong>Mission defaults</strong>, <strong>Tracking sources</strong>, <strong>Mapping</strong>,
+            <strong>Weather links</strong> and <strong>Advanced</strong>. It opens on <strong>Tracking sources</strong>.
+            Moving between sections keeps your edits; nothing is saved until you press a save button.
+            If you close Settings with unsaved edits the app asks whether to keep editing or discard.
+            The bar at the bottom has <strong>Test Connection</strong>, <strong>Save &amp; Close</strong> and
+            <strong>Save, Connect &amp; Close</strong>.
           </p>
-          <h3>Connect to Traccar</h3>
+          <p>
+            A section with a mistake that stops saving shows a red number in the menu, and the bottom bar says
+            <strong>Fix before saving</strong> with the section's name. Open that section to see the message under the field.
+          </p>
+          <h3>Tracking sources: team default group and Traccar</h3>
           <figure class="screenshot narrow">
-            <img src="assets/settings-data-sources.png" alt="Data Sources settings with provider buttons, base URL, authentication mode, email and password" />
-            <figcaption>Data Sources.</figcaption>
+            <img src="assets/settings-data-sources.png" alt="Tracking sources: team default group, provider buttons, base URL, authentication mode, email and password" />
+            <figcaption>Tracking sources.</figcaption>
           </figure>
+          <ul>
+            <li><strong>Team default group</strong>: choose your team's own Traccar group once (for example KMRT). It is ticked automatically at Start in every new mission. See <a href="#start">Start a mission</a>.</li>
+          </ul>
           <ol>
-            <li>Under <strong>Data Sources</strong>, choose provider <strong>Traccar HTTP</strong>.</li>
+            <li>Under <strong>Traccar connection</strong>, choose provider <strong>Traccar HTTP</strong>.</li>
             <li>Enter the <strong>Provider base URL</strong> your admin gave you. Do not put a username or password in it; such URLs are refused.</li>
             <li>Choose <strong>Basic</strong> (email and password) or <strong>Bearer</strong> (token) and fill it in.</li>
             <li>Press <strong>Test Connection</strong>. It signs in and checks device access.</li>
@@ -1328,24 +1347,62 @@
             keyring) and is cleared from the form after saving. If tracking says no credential is available,
             enter it again here.
           </p>
-          <h3>Mission defaults, rosters and weather</h3>
+          <ul>
+            <li><strong>Auto-connect on startup</strong> only decides whether tracking starts when the app opens. Saving Settings later keeps tracking that is already live.</li>
+            <li><strong>Auto-refresh</strong> and its <strong>interval</strong> (seconds, default 30): how often positions are fetched.</li>
+          </ul>
+          <p>
+            <strong>Saving can stop live tracking only if you say so.</strong> If tracking is live and your edits
+            would switch it off (provider set to <strong>None</strong>, <strong>Auto-refresh</strong> switched off, or the
+            stored password cleared), the app asks first and names the reason. Press <strong>Keep Editing</strong> to go
+            back, or <strong>Stop Tracking and Save</strong> if you mean it.
+          </p>
+          <p>
+            If settings are saved but cannot be applied to the running app, a red <strong>Settings not applied</strong>
+            message appears at the bottom of the screen after Settings closes. Your settings are saved. Open
+            <strong>Devices</strong> and use <strong>Reconnect</strong>, or restart SAR Tracker, then press
+            <strong>Dismiss</strong>.
+          </p>
+          <h3>Mission defaults</h3>
           <figure class="screenshot narrow">
-            <img src="assets/settings-rosters.png" alt="Settings showing coordinator roster, admin roster and coordinate display mode" />
-            <figcaption>Coordinator roster, Admin roster and coordinate display.</figcaption>
+            <img src="assets/settings-rosters.png" alt="Mission defaults: coordinator roster, admin roster and stationary attention" />
+            <figcaption>Mission defaults.</figcaption>
           </figure>
           <ul>
-            <li><strong>Auto-refresh interval</strong> (seconds) and <strong>Auto-save interval</strong> (seconds): both default to 30.</li>
-            <li><strong>Stationary attention window</strong> (minutes) and <strong>movement floor</strong> (metres): defaults 20 and 15. Change them only on purpose.</li>
-            <li><strong>Primary</strong> and <strong>Backup mission root</strong>: where mission files are kept. Leave blank unless an admin tells you otherwise.</li>
             <li><strong>Coordinator roster</strong> and <strong>Admin roster</strong>: names, one per line (commas also work). Coordinators are the people named in your records. Admins can record evidence gaps and unlock missions. These are lists of names for the record; they are not passwords, so treat Settings as trusted-computer access.</li>
-            <li><strong>Coordinate display mode</strong>: <strong>Lat/Lon first</strong> or <strong>TM65 first</strong>.</li>
-            <li><strong>Official Maps</strong>: see <a href="#official-maps">Official and offline maps</a>.</li>
-            <li><strong>Weather Links</strong>: press <strong>Add Weather Link</strong> for a named link such as Met Éireann. It appears in the <strong>Weather</strong> menu and opens in your normal browser. SAR Tracker does not fetch or forecast weather itself.</li>
+            <li><strong>Stationary attention window</strong> (minutes) and <strong>movement floor</strong> (metres): defaults 20 and 15. Change them only on purpose.</li>
           </ul>
+          <h3>Mapping</h3>
           <figure class="screenshot narrow">
-            <img src="assets/settings-weather-links.png" alt="Settings showing Official map source, Weather Links and Advanced Settings" />
-            <figcaption>Official map source, Weather Links and Advanced Settings.</figcaption>
+            <img src="assets/settings-mapping.png" alt="Mapping: official map source, offline packages and coordinate display" />
+            <figcaption>Mapping.</figcaption>
           </figure>
+          <ul>
+            <li><strong>Official maps</strong>: see <a href="#official-maps">Official and offline maps</a>.</li>
+            <li><strong>Coordinate display</strong>: <strong>Lat/Lon first</strong> or <strong>TM65 first</strong>. Display only; stored positions do not change.</li>
+          </ul>
+          <h3>Weather links</h3>
+          <figure class="screenshot narrow">
+            <img src="assets/settings-weather-links.png" alt="Weather links: named external weather websites" />
+            <figcaption>Weather links.</figcaption>
+          </figure>
+          <p>
+            Press <strong>Add Weather Link</strong> for a named link such as Met Éireann, with an <code>http</code> or
+            <code>https</code> address. It appears in the <strong>Weather</strong> menu in the top bar and opens in your
+            normal web browser. The desktop app opens only addresses on the websites saved here, and Settings will not save an address that contains a user name or password. If a link cannot be
+            opened, the Weather menu stays open and says why. SAR Tracker does not fetch or forecast weather itself.
+          </p>
+          <h3>Advanced</h3>
+          <figure class="screenshot narrow">
+            <img src="assets/settings-advanced.png" alt="Advanced: auto-save, mission roots, tracking cache, replay and repair" />
+            <figcaption>Advanced. Change only when asked by support or your team lead.</figcaption>
+          </figure>
+          <ul>
+            <li><strong>Auto-save</strong> and its <strong>interval</strong> (seconds, default 30).</li>
+            <li><strong>Primary</strong> and <strong>Backup mission root</strong>: where mission files are kept. Leave blank unless an admin tells you otherwise.</li>
+            <li><strong>Tracking cache</strong>: keeps the last good positions when Traccar cannot be reached.</li>
+            <li><strong>Replay defaults</strong> and the reserved <strong>Repair Layer Structure</strong> action.</li>
+          </ul>
         </section>
 
         <section id="diagnostics">
@@ -1434,7 +1491,7 @@
           <ul>
             <li>It is at <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong> and is for training and quick surface checks only. It keeps mission data in the browser session, has no official maps, and cannot use file pickers or restart recovery. Never use it for a real incident.</li>
             <li>Confirm the amber <strong>Browser testing mode</strong> banner and <strong>Browser test / Session storage only</strong> in the top bar.</li>
-            <li>In <strong>Settings → Data Sources</strong> use the team's <strong>https</strong> Traccar address (from your admin), <strong>Basic</strong> login, <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>. A plain <code>http://</code> address is blocked from this page. After a full page reload, enter the password again.</li>
+            <li>In <strong>Settings → Tracking sources</strong> use the team's <strong>https</strong> Traccar address (from your admin), <strong>Basic</strong> login, <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>. A plain <code>http://</code> address is blocked from this page. After a full page reload, enter the password again.</li>
             <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>roll back time</strong> and tick the teams before Start.</li>
             <li>When you report something, include the URL, mission name, browser, what you expected and what happened, and a screenshot if you can. The checklist is <code>docs/team-testing-feedback-loop.md</code>.</li>
           </ul>

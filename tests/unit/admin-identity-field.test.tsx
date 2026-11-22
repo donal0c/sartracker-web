@@ -21,7 +21,7 @@ describe('AdminIdentityField [DON-281]', () => {
     render({ rosterStatus: 'ready', adminRoster: [], onOpen })
     const notice = query('admin-roster-empty-notice')
     expect(notice?.textContent).toContain('No Admin Roster members are configured')
-    expect(notice?.textContent).toContain('Settings → Mission Defaults → Admin roster')
+    expect(notice?.textContent).toContain('Settings → Mission defaults → Admin roster')
     expect(select().disabled).toBe(true)
     expect(select().textContent).toBe('No admins configured')
 

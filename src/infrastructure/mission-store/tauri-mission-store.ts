@@ -432,6 +432,18 @@ export type GpxImportPage = {
   readonly nextCursor: string | null
 }
 
+/** One page of the mission-wide GPX map projection [DON-350] [M-87]. */
+export type GpxMapProjectionPage = {
+  readonly entries: readonly GpxTrackImport[]
+  readonly nextCursor: string | null
+  /** Active imports in the mission, drawn or not. */
+  readonly totalActive: number
+  /** Imports on this page that could not be thinned to their map share. */
+  readonly undrawn: readonly { readonly id: string; readonly display_name: string; readonly reason: string }[]
+  /** True when the projection stopped at its track cap with imports left undrawn. */
+  readonly truncated: boolean
+}
+
 export type HelicopterSlotKey = 'slot_1' | 'slot_2' | 'slot_3' | 'slot_4'
 
 export type Helicopter = {
@@ -1307,6 +1319,11 @@ export type MissionStore = {
     readonly cursor?: string
     readonly limit?: number
   }) => Promise<GpxImportPage>
+  /** Every active import, thinned to a share of one mission-wide map budget; drain all pages [DON-350]. */
+  readonly listGpxMapProjectionPage?: (input: {
+    readonly missionId: string
+    readonly cursor?: string
+  }) => Promise<GpxMapProjectionPage>
   readonly listGpxImportIssues?: (input: {
     readonly missionId: string
     readonly cursor?: string
@@ -1340,6 +1357,8 @@ export type MissionStore = {
   }) => Promise<{
     readonly imports: readonly { readonly id: string }[]
     readonly failures: readonly { readonly sourcePath: string; readonly reason: string }[]
+    /** Watched paths whose bytes already back a live import; nothing was written for them. */
+    readonly unchanged?: readonly string[]
     readonly dispatchDurationMs: number
   }>
   readonly upsertSearchArea?: (input: Readonly<Record<string, unknown>>) => Promise<SearchArea>

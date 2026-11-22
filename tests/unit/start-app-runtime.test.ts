@@ -1095,6 +1095,67 @@ describe('app runtime startup', () => {
     ])
   })
 
+  it('keeps a live tracking connection when settings are saved with auto-connect off [DON-352, audit M-67]', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const readRuntimeBootstrapSettings = vi.fn(async (forceConnect?: boolean) =>
+      forceConnect === true
+        ? createBootstrapSettings()
+        : { ...createBootstrapSettings(), trackingConfig: null })
+    const startTrackingRuntime = vi.fn().mockResolvedValue(vi.fn())
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings,
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime,
+    })
+    // Startup respects auto-connect off: no connection yet.
+    expect(readRuntimeBootstrapSettings).toHaveBeenLastCalledWith(false)
+    expect(runtime!.isTrackingConnected()).toBe(false)
+
+    // The coordinator connects with Save, Connect & Close.
+    await runtime!.reloadSettings({ forceConnect: true })
+    expect(runtime!.isTrackingConnected()).toBe(true)
+
+    // A later Save & Close must keep that connection instead of tearing it down.
+    await runtime!.reloadSettings({ forceConnect: false })
+    expect(readRuntimeBootstrapSettings).toHaveBeenLastCalledWith(true)
+    expect(runtime!.isTrackingConnected()).toBe(true)
+  })
+
+  it('reports tracking as not connected after settings that stop tracking are applied [DON-352]', async () => {
+    const store: MissionStore & AutosaveStore = createMissionStoreStub()
+    const readRuntimeBootstrapSettings = vi.fn()
+      .mockResolvedValueOnce(createBootstrapSettings())
+      .mockResolvedValueOnce({ ...createBootstrapSettings(), trackingConfig: null })
+
+    const runtime = await startAppRuntime({
+      registerServiceWorker: vi.fn().mockResolvedValue(undefined),
+      isTauriRuntimeAvailable: vi.fn().mockReturnValue(true),
+      createMissionStore: vi.fn().mockReturnValue(store),
+      readRuntimeBootstrapSettings,
+      startMissionAutosave: vi.fn().mockReturnValue(createAutosaveController()),
+      startMissionRuntime: vi.fn().mockResolvedValue({}),
+      startMissionGovernanceRuntime: vi.fn().mockResolvedValue({}),
+      startMarkerRuntime: vi.fn().mockResolvedValue({}),
+      startDrawingRuntime: vi.fn().mockResolvedValue({}),
+      startGpxRuntime: vi.fn().mockResolvedValue({}),
+      startTrackingRuntime: vi.fn().mockResolvedValue(vi.fn()),
+    })
+    expect(runtime!.isTrackingConnected()).toBe(true)
+
+    await runtime!.reloadSettings()
+
+    expect(runtime!.isTrackingConnected()).toBe(false)
+  })
+
   it('disposes the active runtime services explicitly', async () => {
     const store: MissionStore & AutosaveStore = createMissionStoreStub()
     const activeAutosaveStop = vi.fn()

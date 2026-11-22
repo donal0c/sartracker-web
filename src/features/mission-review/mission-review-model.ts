@@ -412,6 +412,14 @@ function describeMissionEvent(
       ]
         .filter((value): value is string => value !== null)
         .join(' ')
+    case 'gpx_import_batch_interrupted': {
+      const completed = readCount(details, 'completed_files')
+      const total = readCount(details, 'total_files')
+      const failed = readCount(details, 'failed_files')
+      if (completed === null || total === null) return 'GPX import stopped part way; its files were settled for review.'
+      return `GPX import stopped part way: ${completed} of ${total} file${total === 1 ? '' : 's'} imported`
+        + `${failed === null ? '' : `, ${failed} listed as import issues`}.`
+    }
     case 'mission_archived':
     case 'mission_archive_succeeded':
       return archivePath === null ? 'Mission archive created.' : `Archive created at ${archivePath}.`
@@ -426,6 +434,12 @@ function describeMissionEvent(
     default:
       return fallback ?? 'Mission event recorded.'
   }
+}
+
+/** Reads a non-negative whole number from event details, or null when absent or malformed. */
+function readCount(details: Record<string, unknown> | null, key: string): number | null {
+  const value = details?.[key]
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
 }
 
 function readString(
@@ -510,4 +524,5 @@ const EVENT_TITLES: Record<
   gpx_import_updated: { title: 'GPX Import Updated', description: null },
   gpx_import_restored: { title: 'GPX Import Restored', description: null },
   gpx_import_deleted: { title: 'GPX Import Retired', description: null },
+  gpx_import_batch_interrupted: { title: 'GPX Import Stopped', description: null },
 }

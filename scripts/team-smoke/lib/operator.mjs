@@ -50,6 +50,20 @@ export async function waitForBasemapLabel(page, expected, timeoutMs = 15_000) {
   return label
 }
 
+/**
+ * Opens one section of the Settings menu (DON-343). Builds from before the
+ * menu show every setting on one page and have no section buttons, so the
+ * click is skipped there and the same smoke runs against either build.
+ *
+ * @param {import('playwright').Page} page
+ * @param {'mission-defaults'|'tracking-sources'|'mapping'|'weather-links'|'advanced'} section
+ */
+export async function openSettingsSection(page, section) {
+  const button = page.getByTestId(`settings-section-${section}`)
+  const present = await button.waitFor({ state: 'visible', timeout: 5_000 }).then(() => true, () => false)
+  if (present) await button.click()
+}
+
 /** Closes an open workspace panel if one is showing. */
 export async function closeWorkspace(page) {
   const close = page.getByTestId('workspace-close-btn')

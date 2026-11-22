@@ -50,7 +50,8 @@ describe('GPX panel shows when tracks are hidden on the map [DON-319]', () => {
     host = document.createElement('div')
     document.body.append(host)
     root = createRoot(host)
-    useGpxStore.setState({ activeMissionId: 'mission-a', imports: [track('a'), track('b')], outings: [], watchedDirectories: [],
+    useGpxStore.setState({ activeMissionId: 'mission-a', imports: [track('a'), track('b')],
+      mapImports: [track('a'), track('b')], mapImportTotal: 2, mapCoverageNotice: null, outings: [], watchedDirectories: [],
       importIssues: [], importPageNumber: 1, hasMoreImports: false, loadingMoreImports: false,
       hasMoreImportIssues: false, importing: false, loading: false, error: null, controller: null })
     useLayerCatalogStore.setState({ controller: { setNodeVisibilities } as never, root: catalogWith([track('a'), track('b')]) })

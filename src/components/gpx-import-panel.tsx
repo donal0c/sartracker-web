@@ -20,6 +20,8 @@ const gpxImportSource = createDesktopGpxImportSource()
 export function GpxImportPanel() {
   const controller = useGpxStore((state) => state.controller)
   const imports = useGpxStore((state) => state.imports)
+  const mapImports = useGpxStore((state) => state.mapImports)
+  const mapImportTotal = useGpxStore((state) => state.mapImportTotal)
   const outings = useGpxStore((state) => state.outings)
   const watchedDirectories = useGpxStore((state) => state.watchedDirectories)
   const gpxGroupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
@@ -38,19 +40,28 @@ export function GpxImportPanel() {
   const [assignmentActor, setAssignmentActor] = useState('')
   const statusRequest = useRef(0)
 
+  // Listed tracks the map projection could not draw; only marked once the map knows it is short.
+  const notDrawnIds = useMemo(() => {
+    if (mapImportTotal <= mapImports.length) return new Set<string>()
+    const drawn = new Set(mapImports.map((entry) => entry.id))
+    return new Set(imports.filter((entry) => !drawn.has(entry.id)).map((entry) => entry.id))
+  }, [imports, mapImportTotal, mapImports])
+
   const desktopAvailable = isTauriRuntimeAvailable() || isElectronRuntimeAvailable()
   const canImport = controller !== null && desktopAvailable && !loading && !importing
   const importSummary = useMemo(
     () => {
       // Counts what is drawn, not what is listed: "5 shown" used to appear
       // while every track was hidden in Layers [DON-319].
-      const onMap = imports.filter((entry) =>
+      // The map holds every drawable import mission-wide, not only this list page [DON-350].
+      const onMap = mapImports.filter((entry) =>
         describeGpxMapVisibility(entry.id, gpxGroupVisibility, hiddenGpxImportIds) === 'on_map').length
-      const hidden = imports.length - onMap
+      const hidden = mapImports.length - onMap
+      const notDrawn = Math.max(0, mapImportTotal - mapImports.length)
       const paging = hasMoreImports || importPageNumber > 1 ? ` · page ${importPageNumber}` : ''
-      return `${imports.length}${hasMoreImports ? '+' : ''} listed · ${onMap} on map${hidden > 0 ? `, ${hidden} hidden in Layers` : ''}${paging} · ${watchedDirectories.length} watched`
+      return `${imports.length}${hasMoreImports ? '+' : ''} listed · ${onMap} on map${hidden > 0 ? `, ${hidden} hidden in Layers` : ''}${notDrawn > 0 ? `, ${notDrawn} not drawn` : ''}${paging} · ${watchedDirectories.length} watched`
     },
-    [gpxGroupVisibility, hasMoreImports, hiddenGpxImportIds, importPageNumber, imports, watchedDirectories.length],
+    [gpxGroupVisibility, hasMoreImports, hiddenGpxImportIds, importPageNumber, imports.length, mapImportTotal, mapImports, watchedDirectories.length],
   )
 
   return (
@@ -187,6 +198,7 @@ export function GpxImportPanel() {
             actionLabel: 'Retire',
             onAction: () => void handleDeleteImport(entry.id, entry.display_name),
             mapVisibility: describeGpxMapVisibility(entry.id, gpxGroupVisibility, hiddenGpxImportIds),
+            notDrawn: notDrawnIds.has(entry.id),
             onShowOnMap: () => showOnMap(entry.id),
             visibilityUnsaved: unsavedReveals.has(entry.id),
           }))}
@@ -480,6 +492,8 @@ function PanelList(props: {
     readonly actionLabel: string
     readonly onAction: () => void
     readonly mapVisibility?: GpxMapVisibility
+    /** The map could not draw this track; the map notice says why [DON-350]. */
+    readonly notDrawn?: boolean
     readonly onShowOnMap?: () => void
     readonly visibilityUnsaved?: boolean
   }[]
@@ -514,7 +528,9 @@ function PanelList(props: {
               </div>
               {item.mapVisibility !== undefined ? (
                 <div className="flex items-center justify-between gap-3 text-[11px]" data-testid={`gpx-map-visibility-${item.id}`}>
-                  {item.mapVisibility === 'on_map' && item.visibilityUnsaved === true ? (
+                  {item.notDrawn === true ? (
+                    <span className="font-semibold text-amber-200">Not drawn on map (see the notice on the map)</span>
+                  ) : item.mapVisibility === 'on_map' && item.visibilityUnsaved === true ? (
                     <>
                       <span className="font-semibold text-amber-200">On map, but not saved (may be hidden after a restart)</span>
                       <button

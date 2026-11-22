@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { useDrawingStore } from '../features/drawings/drawing-store'
+import type { DrawingRuntimeController } from '../features/drawings/start-drawing-runtime'
 import {
   formatDistance,
   geodesicBearing,
@@ -15,6 +16,7 @@ import {
   MAX_MANUAL_RANGE_RING_COUNT,
   SEARCH_AREA_STATUSES,
   type DrawingDraft,
+  type DrawingDialogState,
 } from '../features/drawings/drawing-types'
 import { ColorPaletteInput } from './color-palette-input'
 import { DialogOverlay } from './dialog-overlay'
@@ -32,12 +34,30 @@ type DrawingDraftUpdate<TDraft extends DrawingDraft = DrawingDraft> =
 export function DrawingDialog() {
   const controller = useDrawingStore((state) => state.controller)
   const dialog = useDrawingStore((state) => state.dialog)
+  if (dialog === null || controller === null) return null
+
+  return (
+    <DrawingDialogBody
+      controller={controller}
+      dialog={dialog}
+      key={`${dialog.mode}:${dialog.draft.id ?? dialog.draft.type}`}
+    />
+  )
+}
+
+/** Resets local retire confirmation when the drawing changes or the dialog closes. */
+function DrawingDialogBody({ dialog, controller }: {
+  readonly dialog: DrawingDialogState
+  readonly controller: DrawingRuntimeController
+}) {
   const saving = useDrawingStore((state) => state.saving)
   const runtimeError = useDrawingStore((state) => state.error)
   const [deleteConfirmationVisible, setDeleteConfirmationVisible] = useState(false)
 
-  if (dialog === null || controller === null) {
-    return null
+  /** Clears the confirmation for every operator dismissal path. */
+  const closeDialog = (): void => {
+    setDeleteConfirmationVisible(false)
+    controller.closeDialog()
   }
 
   const draft = dialog.draft
@@ -45,7 +65,7 @@ export function DrawingDialog() {
   return (
     <DialogOverlay
       labelledBy={DRAWING_DIALOG_TITLE_ID}
-      onClose={() => controller.closeDialog()}
+      onClose={closeDialog}
       open={dialog !== null}
       panelClassName="max-h-[calc(100vh-4rem)] w-full max-w-3xl overflow-y-auto rounded-3xl border border-stone-700 bg-stone-900 p-6 shadow-2xl shadow-black/40"
       testId="drawing-dialog"
@@ -61,7 +81,7 @@ export function DrawingDialog() {
         </div>
         <button
           className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-2 text-sm text-stone-200"
-          onClick={() => controller.closeDialog()}
+          onClick={closeDialog}
           type="button"
         >
           Close
@@ -188,7 +208,7 @@ export function DrawingDialog() {
             <div className="flex gap-3">
               <button
                 className="rounded-lg border border-stone-600 bg-stone-950 px-4 py-2 text-sm text-stone-200"
-                onClick={() => controller.closeDialog()}
+                onClick={closeDialog}
                 type="button"
               >
                 Cancel

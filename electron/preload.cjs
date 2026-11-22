@@ -18,6 +18,7 @@ const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official
 const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
 const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
+const LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-watched-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
@@ -133,6 +134,7 @@ const MISSION_STORE_CHANNELS = {
   listGpxImportIssues: 'sartracker:mission-store:list-gpx-import-issues',
   deleteGpxImport: 'sartracker:mission-store:delete-gpx-import',
   listGpxImportRevisionPage: 'sartracker:mission-store:list-gpx-import-revision-page',
+  listGpxMapProjectionPage: 'sartracker:mission-store:list-gpx-map-projection-page',
   importGpxEvidencePaths: 'sartracker:mission-store:import-gpx-evidence-paths',
   updateGpxImportPresentation: 'sartracker:mission-store:update-gpx-import-presentation',
   upsertSearchArea: 'sartracker:mission-store:upsert-search-area',
@@ -180,6 +182,7 @@ const BOUNDED_EVIDENCE_STORE_METHODS = new Set([
   'listGpxImportIssues',
   'deleteGpxImport',
   'listGpxImportRevisionPage',
+  'listGpxMapProjectionPage',
   'importGpxEvidencePaths',
   'updateGpxImportPresentation',
   'upsertSearchArea',
@@ -1319,6 +1322,12 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       projectPr5ScalarForIpc(directoryPath, 'GPX directory path', 4_096),
     )
   },
+  listWatchedGpxDirectoryPaths(directoryPath) {
+    return ipcRenderer.invoke(
+      LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL,
+      projectPr5ScalarForIpc(directoryPath, 'GPX directory path', 4_096),
+    )
+  },
   ingestMarkerAttachment(input) {
     return ipcRenderer.invoke(INGEST_MARKER_ATTACHMENT_CHANNEL, input)
   },
@@ -1566,6 +1575,10 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       ['listGpxImportRevisionPage', async (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.listGpxImportRevisionPage,
         projectPr5ObjectForIpc(input, 'GPX revision page', ['importId', 'cursor'], ['limit']),
+      )],
+      ['listGpxMapProjectionPage', async (input) => ipcRenderer.invoke(
+        MISSION_STORE_CHANNELS.listGpxMapProjectionPage,
+        projectPr5ObjectForIpc(input, 'GPX map projection page', ['missionId', 'cursor']),
       )],
       ['importGpxEvidencePaths', async (input) => ipcRenderer.invoke(
         MISSION_STORE_CHANNELS.importGpxEvidencePaths,

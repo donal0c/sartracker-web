@@ -36,7 +36,7 @@ export function LayerCatalogRuntimeBridge() {
   const markers = useMarkerStore((state) => state.markers)
   const drawings = useDrawingStore((state) => state.drawings)
   const helicopters = useHelicopterStore((state) => state.helicopters)
-  const gpxImports = useGpxStore((state) => state.imports)
+  const gpxImports = useGpxStore((state) => state.mapImports)
   const measurements = useMeasurementStore((state) => state.measurements)
   const coverageState = useCoverageStore((state) => state.state)
   const omittedCoverageDeviceIds = useCoverageFilterStore((state) => state.omittedDeviceIds)

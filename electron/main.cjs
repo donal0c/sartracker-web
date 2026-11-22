@@ -18,6 +18,7 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 let startupWindowReady = false
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
+const { resolveAllowedWeatherUrl } = require('./external-url-policy.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
 const { projectCoverageRendererFailure } = require('./coverage-renderer-failure.cjs')
@@ -97,6 +98,7 @@ const CHOOSE_OFFICIAL_MAP_SOURCE_FILE_PATH_CHANNEL = 'sartracker:choose-official
 const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map-package-path'
 const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
+const LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-watched-gpx-directory-paths'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
@@ -219,6 +221,7 @@ const MISSION_STORE_CHANNELS = {
   deleteGpxImport: 'sartracker:mission-store:delete-gpx-import',
   listGpxImportRevisions: 'sartracker:mission-store:list-gpx-import-revisions',
   listGpxImportRevisionPage: 'sartracker:mission-store:list-gpx-import-revision-page',
+  listGpxMapProjectionPage: 'sartracker:mission-store:list-gpx-map-projection-page',
   importGpxEvidencePaths: 'sartracker:mission-store:import-gpx-evidence-paths',
   updateGpxImportPresentation: 'sartracker:mission-store:update-gpx-import-presentation',
   upsertSearchArea: 'sartracker:mission-store:upsert-search-area',
@@ -1086,6 +1089,10 @@ function registerIpcHandlers(
     validateIpcSender(event)
     return fileSystem.listGpxDirectoryPaths(directoryPath)
   })
+  ipcMain.handle(LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL, (event, directoryPath) => {
+    validateIpcSender(event)
+    return fileSystem.listWatchedGpxDirectoryPaths(directoryPath)
+  })
   ipcMain.handle(INGEST_MARKER_ATTACHMENT_CHANNEL, (event, input) => {
     validateIpcSender(event)
     if (typeof input !== 'object' || input === null) {
@@ -1110,16 +1117,20 @@ function registerIpcHandlers(
     validateIpcSender(event)
     return fileSystem.openExternalPath(inputPath)
   })
-  ipcMain.handle(OPEN_EXTERNAL_URL_CHANNEL, (event, inputUrl) => {
+  ipcMain.handle(OPEN_EXTERNAL_URL_CHANNEL, async (event, inputUrl) => {
     validateIpcSender(event)
-    const normalized = (inputUrl ?? '').trim()
-    if (normalized === '') {
-      throw new Error('URL is required.')
+    try {
+      const settings = await settingsStore.loadAppSettings()
+      const allowedUrl = resolveAllowedWeatherUrl(inputUrl, settings.weather?.links ?? [])
+      await shell.openExternal(allowedUrl)
+    } catch (error) {
+      await runtimeLog.append({
+        level: 'warn',
+        event: 'external_url_open_failed',
+        fields: { reason: error instanceof Error ? error.message : String(error) },
+      })
+      throw error
     }
-    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
-      throw new Error('URL scheme must be http:// or https://')
-    }
-    return shell.openExternal(normalized)
   })
   ipcMain.handle(FETCH_OFFICIAL_MAP_TILE_CHANNEL, (event, inputUrl) => {
     validateIpcSender(event)

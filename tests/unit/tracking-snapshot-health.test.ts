@@ -5,6 +5,7 @@ import {
   calculateCacheAgeMs,
   isTrackingCacheUsable,
 } from '../../src/features/tracking/tracking-snapshot-health'
+import { selectNewestKnownFixes } from '../../src/features/tracking/newest-known-fix'
 import type { TrackingSnapshot } from '../../src/features/tracking/tracking-types'
 
 const LIVE_SNAPSHOT: TrackingSnapshot = {
@@ -41,6 +42,53 @@ const LIVE_SNAPSHOT: TrackingSnapshot = {
 }
 
 describe('tracking snapshot health', () => {
+  it('marks a fix timestamped well ahead of the laptop clock as stale and flags the clock difference [DON-349 M-06]', () => {
+    // The tracker sends local summer time as UTC, or the laptop clock runs behind.
+    const snapshot = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
+      now: new Date('2026-04-06T09:30:00.000Z'),
+      deviceStaleThresholdMs: 5 * 60 * 1000,
+    })
+
+    expect(snapshot.positions[0]?.device_cache_stale).toBe(true)
+    expect(snapshot.positions[0]?.fix_time_ahead_of_clock).toBe(true)
+    // Display health only: the fix itself is unchanged.
+    expect(snapshot.positions[0]?.timestamp).toBe('2026-04-06T10:30:00.000Z')
+    expect(snapshot.positions[0]?.fix_time_unverified).toBe(false)
+  })
+
+  it('tolerates small clock differences and clears the flag once the clock catches up [DON-349 M-06]', () => {
+    const slightlyAhead = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
+      now: new Date('2026-04-06T10:29:00.000Z'),
+    })
+    expect(slightlyAhead.positions[0]?.device_cache_stale).toBe(false)
+    expect(slightlyAhead.positions[0]?.fix_time_ahead_of_clock).toBeUndefined()
+
+    const flagged = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
+      now: new Date('2026-04-06T10:00:00.000Z'),
+    })
+    const caughtUp = annotateTrackingSnapshotHealth(flagged, {
+      now: new Date('2026-04-06T10:31:00.000Z'),
+    })
+    expect(caughtUp.positions[0]?.device_cache_stale).toBe(false)
+    expect(caughtUp.positions[0]?.fix_time_ahead_of_clock).toBeUndefined()
+  })
+
+  it('flags a device whose newest breadcrumb is ahead of the clock, so the marker it wins is never Live [DON-349 M-06 review]', () => {
+    // A wrong 11:00 fix was stored; the tracker clock was then corrected and
+    // now reports 10:30. The 11:00 breadcrumb still wins marker selection.
+    const futureBreadcrumb = { ...LIVE_SNAPSHOT.positions[0]!, id: 'crumb-future', lat: 52.5, timestamp: '2026-04-06T11:00:00.000Z' }
+    const snapshot = annotateTrackingSnapshotHealth(
+      { ...LIVE_SNAPSHOT, breadcrumbs: [futureBreadcrumb] },
+      { now: new Date('2026-04-06T10:30:30.000Z'), deviceStaleThresholdMs: 5 * 60 * 1000 },
+    )
+
+    const [marker] = selectNewestKnownFixes(snapshot.positions, snapshot.breadcrumbs)
+    expect(marker?.id).toBe('crumb-future')
+    expect(marker?.device_cache_stale).toBe(true)
+    expect(marker?.fix_time_ahead_of_clock).toBe(true)
+    expect(snapshot.positions[0]?.fix_time_ahead_of_clock).toBe(true)
+  })
+
   it('uses the operational five-minute stale threshold by default [DON-260]', () => {
     const snapshot = annotateTrackingSnapshotHealth(LIVE_SNAPSHOT, {
       now: new Date('2026-04-06T10:35:01.000Z'),

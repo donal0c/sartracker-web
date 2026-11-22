@@ -61,16 +61,20 @@ describe('MarkerDialog casualty required-field validation', () => {
 
   it('does not show validation error for non-casualty markers with empty fields', () => {
     const controller = createController()
+    const draft = {
+      ...createMarkerDraftAtCoordinate(52.0, -9.5, 'hazard'),
+      name: '',
+      condition: '',
+      evacuationPriority: '',
+    }
     useMarkerStore.setState({
       controller,
       dialog: {
+        sessionId: 1,
         mode: 'create',
-        draft: {
-          ...createMarkerDraftAtCoordinate(52.0, -9.5, 'hazard'),
-          name: '',
-          condition: '',
-          evacuationPriority: '',
-        },
+        draft,
+        baselineDraft: draft,
+        pendingTreatmentUpdate: '',
       },
     })
     render(React.createElement(MarkerDialog))
@@ -119,14 +123,15 @@ describe('MarkerDialog casualty required-field validation', () => {
 
   function renderCasualtyDialog(fields: { name: string; condition: string; evacuationPriority: string }): void {
     const controller = createController()
+    const draft = { ...createMarkerDraftAtCoordinate(52.0, -9.5, 'casualty'), ...fields }
     useMarkerStore.setState({
       controller,
       dialog: {
+        sessionId: 1,
         mode: 'create',
-        draft: {
-          ...createMarkerDraftAtCoordinate(52.0, -9.5, 'casualty'),
-          ...fields,
-        },
+        draft,
+        baselineDraft: draft,
+        pendingTreatmentUpdate: '',
       },
     })
     render(React.createElement(MarkerDialog))
@@ -149,6 +154,8 @@ function createController(): MarkerRuntimeController {
     beginCreateFromDraft: vi.fn(),
     beginEdit: vi.fn(),
     updateDraft: vi.fn(),
+    updatePendingTreatmentUpdate: vi.fn(),
+    dismissError: vi.fn(),
     changeDraftType: vi.fn(),
     attachEvidence: vi.fn(),
     clearAttachment: vi.fn(),

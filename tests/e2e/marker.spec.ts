@@ -209,6 +209,61 @@ test.describe('M6 marker workflows', () => {
     })
   })
 
+  test('saves a pending treatment update and protects unsaved edits on close [DON-348]', async ({ page }) => {
+    await clickMapCentre(page)
+    await page.getByTestId('marker-dialog').getByText('Casualty', { exact: true }).click()
+    await page.getByTestId('marker-name-input').fill('Subject Charlie')
+    await page.getByTestId('marker-condition-input').selectOption('Medical Emergency')
+    await page.getByTestId('marker-evacuation-priority-input').selectOption('Urgent')
+    await page.getByTestId('marker-treatment-update-input').fill('Gave 2 puffs salbutamol 14:05')
+    await expect(page.getByTestId('marker-treatment-pending-note')).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath('marker-pending-treatment.png') })
+    await page.getByTestId('marker-save-btn').click()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
+    await clickMapCentre(page)
+    await expect(page.getByTestId('marker-treatment-update-input')).toHaveValue('')
+    await expect(page.getByTestId('marker-treatment-log-input')).toHaveValue(/Gave 2 puffs salbutamol 14:05/)
+    await page.getByTestId('marker-treatment-update-input').fill('Blanket applied')
+    await page.getByTestId('marker-treatment-append-btn').click()
+    await page.getByTestId('marker-close-btn').click()
+    await expect(page.getByTestId('marker-discard-confirmation')).toBeVisible()
+    await expect(page.getByTestId('marker-discard-keep-btn')).toBeFocused()
+    await page.screenshot({ path: test.info().outputPath('marker-discard-confirmation.png') })
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('marker-discard-confirmation')).toBeHidden()
+    await expect(page.getByTestId('marker-treatment-log-input')).toHaveValue(/Blanket applied/)
+    await page.getByTestId('marker-close-btn').click()
+    await page.getByTestId('marker-discard-confirm-btn').click()
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+
+    const treatment = await page.evaluate(() => {
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      return raw === null ? null : JSON.parse(raw).markers[0]?.treatment
+    })
+    expect(treatment).toContain('Gave 2 puffs salbutamol 14:05')
+    expect(treatment).not.toContain('Blanket applied')
+  })
+
+  test('shows a rejected marker placement over the map [DON-348]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const moduleUrl = '/src/features/markers/marker-store.ts'
+      const { useMarkerStore } = await import(moduleUrl) as typeof import('../../src/features/markers/marker-store')
+      const controller = useMarkerStore.getState().controller
+      if (controller === null) throw new Error('Marker runtime is not ready.')
+      controller.beginCreateAt(0, 0)
+    })
+    const banner = page.getByTestId('marker-status-banner')
+    await expect(banner).toBeVisible()
+    await expect(banner).toHaveAttribute('role', 'alert')
+    await expect(banner).toContainText('Marker could not be placed')
+    await expect(page.getByTestId('marker-dialog')).toBeHidden()
+    await page.screenshot({ path: test.info().outputPath('marker-placement-error.png') })
+
+    await page.getByTestId('marker-status-dismiss-btn').click()
+    await expect(banner).toBeHidden()
+  })
+
   test('preserves and edits an accumulated casualty treatment log beyond 2,000 bytes', async ({ page }) => {
     await clickMapCentre(page)
     const dialog = page.getByTestId('marker-dialog')

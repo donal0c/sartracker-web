@@ -7,6 +7,12 @@ const {
 } = require('./gpx-import-envelope.cjs')
 
 const DEFAULT_WORKER_PATH = path.join(__dirname, 'gpx-evidence-import-worker.cjs')
+/**
+ * How long the worker may stay silent before it is treated as stalled. The
+ * worker reports after every write chunk and file, so a long silence means a
+ * stall, never a large batch [DON-350] [M-36].
+ */
+const DEFAULT_INACTIVITY_TIMEOUT_MS = 120_000
 
 /** Imports GPX source bytes and bulk points without Electron main-isolate transformation. */
 function runGpxEvidenceImportInWorker(input) {
@@ -19,6 +25,7 @@ function runGpxEvidenceImportInWorker(input) {
     throw new Error('GPX foreground writer counter is invalid.')
   }
   if (input.signal?.aborted === true) return Promise.reject(createAbortError())
+  const inactivityTimeoutMs = normalizeInactivityTimeout(input.inactivityTimeoutMs)
   const startedAt = performance.now()
   let resolveWorkerExit
   const workerExited = new Promise((resolve) => { resolveWorkerExit = resolve })
@@ -35,6 +42,7 @@ function runGpxEvidenceImportInWorker(input) {
         batchId: input.batchId ?? randomUUID(),
         receiptsStarted: input.receiptsStarted === true,
         pauseAfter: normalizePauseAfter(input.faultInjection?.pauseAfter),
+        pauseAtPathIndex: normalizePauseAtPathIndex(input.faultInjection?.pauseAtPathIndex),
       }
       worker = input.createWorker?.({ workerPath, workerData })
         ?? new Worker(workerPath, { workerData })
@@ -46,6 +54,7 @@ function runGpxEvidenceImportInWorker(input) {
     const dispatchDurationMs = performance.now() - startedAt
     let completed = null
     let settled = false
+    let timeout = null
     const cleanup = () => {
       clearTimeout(timeout)
       input.signal?.removeEventListener('abort', handleAbort)
@@ -61,11 +70,21 @@ function runGpxEvidenceImportInWorker(input) {
       void Promise.resolve(worker.terminate()).catch(() => undefined)
     }
     const handleAbort = () => terminateAndReject(createAbortError())
-    const timeout = setTimeout(() => {
-      terminateAndReject(new Error('GPX evidence import worker timed out.'))
-    }, 120_000)
+    /** Restarts the stall timer; any worker message proves it is still working. */
+    const armWatchdog = () => {
+      clearTimeout(timeout)
+      if (settled) return
+      timeout = setTimeout(() => {
+        terminateAndReject(new Error(
+          `GPX evidence import worker stopped responding for ${formatSeconds(inactivityTimeoutMs)} and was stopped.`,
+        ))
+      }, inactivityTimeoutMs)
+    }
+    armWatchdog()
     input.signal?.addEventListener('abort', handleAbort, { once: true })
     worker.on('message', (message) => {
+      armWatchdog()
+      if (message?.type === 'heartbeat') return
       if (message?.type === 'progress') {
         input.onProgress?.({ completed: message.completed, total: message.total })
       } else if (message?.type === 'complete' && Array.isArray(message.imports)
@@ -98,10 +117,29 @@ function normalizePauseAfter(value) {
   return value === 'pending' || value === 'retained' ? value : null
 }
 
+/** Accepts only the durable receipt index the forced-kill harness targets. */
+function normalizePauseAtPathIndex(value) {
+  return Number.isSafeInteger(value) && value >= 0 ? value : null
+}
+
+/** Bounds the stall window; tests may shorten it, production keeps the default. */
+function normalizeInactivityTimeout(value) {
+  if (value === undefined) return DEFAULT_INACTIVITY_TIMEOUT_MS
+  if (!Number.isSafeInteger(value) || value < 100 || value > 30 * 60_000) {
+    throw new Error('GPX import inactivity timeout is invalid.')
+  }
+  return value
+}
+
+/** Formats a timeout for operator-facing text. */
+function formatSeconds(milliseconds) {
+  return `${Math.round(milliseconds / 1000)} s`
+}
+
 function createAbortError() {
   const error = new Error('GPX evidence import worker was cancelled.')
   error.name = 'AbortError'
   return error
 }
 
-module.exports = { runGpxEvidenceImportInWorker }
+module.exports = { DEFAULT_INACTIVITY_TIMEOUT_MS, runGpxEvidenceImportInWorker }
