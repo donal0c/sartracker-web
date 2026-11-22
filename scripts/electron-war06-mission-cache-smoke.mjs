@@ -1054,7 +1054,7 @@ function assertMissionBHasNoMissionA(phase, missionAId, label) {
   assert.ok((samples?.readableCount ?? 0) > 0, `${label} never read the map during recovery, so no Mission A leak is proven absent.`)
   assert.equal(samples.readyBeforeAction, true, `${label} had no ready map reading before recovery began, so the start of recovery was not watched.`)
   assert.ok(samples.longestGapMs <= MAX_UNOBSERVED_GAP_MS,
-    `${label} could not read the map with tracking shown for ${samples.longestGapMs} ms during recovery (limit ${MAX_UNOBSERVED_GAP_MS} ms; hidden ${samples.hiddenCount}, unconfirmed ${samples.unconfirmedCount}, not drawn after ready ${samples.notDrawnAfterReadyCount}, invalid ${samples.invalidCount}); a Mission A position shown then would be missed.`)
+    `${label} could not read the map with tracking shown for ${samples.longestGapMs} ms during recovery (limit ${MAX_UNOBSERVED_GAP_MS} ms; hidden ${samples.hiddenCount}, unconfirmed ${samples.unconfirmedCount}, update pending ${samples.pendingCount}, not drawn after ready ${samples.notDrawnAfterReadyCount}, invalid ${samples.invalidCount}); a Mission A position shown then would be missed.`)
   assert.equal(samples.maxCurrentFixCount, 0, `${label} transiently rendered a current fix.`)
   assert.equal(samples.maxCachedDeviceCount, 0, `${label} transiently rendered a cached device.`)
   assert.equal(phase.surfaceSamples?.attentionObserved ?? false, false, `${label} transiently rendered stationary attention.`)

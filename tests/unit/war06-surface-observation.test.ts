@@ -108,7 +108,8 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
     { properties: { featureKind: 'device', dataOrigin: 'live' } },
     { properties: { featureKind: 'breadcrumb' } },
   ]
-  const sourceMap = { getSource: () => ({ getData: () => Promise.resolve({ features }) }) }
+  const stableSource = { loaded: () => true, getData: () => Promise.resolve({ features }) }
+  const sourceMap = { getSource: () => stableSource }
 
   it('no map is not drawn, not a zero', async () => {
     win.window = {}
@@ -121,7 +122,8 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
   })
 
   it('a source that throws is unreadable', async () => {
-    withMap({ getSource: () => ({ getData: () => Promise.reject(new Error('boom')) }) })
+    const failing = { loaded: () => true, getData: () => Promise.reject(new Error('boom')) }
+    withMap({ getSource: () => failing })
     expect(await readTrackingSourceInPage()).toEqual({ state: 'unreadable', reason: 'boom' })
   })
 
@@ -143,6 +145,74 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
   it('unknown tracking visibility is unconfirmed, never ready', async () => {
     win.window = { __SARTRACKER_MAP__: sourceMap }
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unconfirmed', fixes: 2 })
+  })
+})
+
+describe('WAR-06 pending source updates [DON-353]', () => {
+  const win = globalThis as unknown as { window?: Record<string, unknown> }
+  afterEach(() => { delete win.window })
+  const device = { properties: { featureKind: 'device', dataOrigin: 'live' } }
+
+  /**
+   * Behaves like MapLibre's GeoJSON source: updateData() queues the change,
+   * loaded() is false until the worker finishes, and getData() keeps returning
+   * the old payload until then.
+   */
+  function delayedSource() {
+    let data: { features: unknown[] } = { features: [] }
+    let pending: { features: unknown[] } | null = null
+    return {
+      loaded: () => pending === null,
+      getData: () => Promise.resolve(data),
+      updateData: (next: { features: unknown[] }) => { pending = next },
+      finishUpdate: () => { if (pending !== null) { data = pending; pending = null } },
+    }
+  }
+
+  it('a pending update is blind, not a zero; once it completes the reading is ready', async () => {
+    const source = delayedSource()
+    win.window = { __SARTRACKER_MAP__: { getSource: () => source } }
+    source.updateData({ features: [device] })
+    win.window.__SARTRACKER_TRACKING_VISIBLE__ = true
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'pending', fixes: 0 })
+    source.finishUpdate()
+    expect(await readTrackingSourceInPage()).toEqual({ state: 'ready', fixes: 1, cache: 0, attention: 0 })
+  })
+
+  it('an update that starts during the read is blind', async () => {
+    const source = delayedSource()
+    const map = { getSource: () => source }
+    win.window = { __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: true }
+    const read = source.getData
+    source.getData = () => { source.updateData({ features: [device] }); return read() }
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'pending' })
+  })
+
+  it('a source replaced during the read is unreadable', async () => {
+    let current = { loaded: () => true, getData: () => { current = { ...current }; return Promise.resolve({ features: [] }) } }
+    win.window = { __SARTRACKER_MAP__: { getSource: () => current }, __SARTRACKER_TRACKING_VISIBLE__: true }
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unreadable' })
+  })
+
+  it('a visibility report that changes during the read is not ready', async () => {
+    const window = { __SARTRACKER_MAP__: {}, __SARTRACKER_TRACKING_VISIBLE__: true } as Record<string, unknown>
+    const changing = { loaded: () => true, getData: () => { window.__SARTRACKER_TRACKING_VISIBLE__ = false; return Promise.resolve({ features: [] }) } }
+    window.__SARTRACKER_MAP__ = { getSource: () => changing }
+    win.window = window
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'hidden' })
+  })
+
+  it('a source that cannot say whether an update is pending is blind', async () => {
+    const silent = { getData: () => Promise.resolve({ features: [] }) }
+    win.window = { __SARTRACKER_MAP__: { getSource: () => silent }, __SARTRACKER_TRACKING_VISIBLE__: true }
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'pending' })
+  })
+
+  it('pending readings count as blind in the summary', () => {
+    const zeroAt = (at: number) => ({ state: 'ready', at, doneAt: at + 10, currentFixCount: 0, cachedDeviceCount: 0 })
+    const summary = summarizeSurfaceSamples([zeroAt(0), { state: 'pending', at: 50, doneAt: 60, currentFixCount: 0, cachedDeviceCount: 0 }, zeroAt(3_000)], { startedAt: 0, endedAt: 3_020 })
+    expect(summary.longestGapMs).toBe(3_010)
+    expect(summary.pendingCount).toBe(1)
   })
 })
 

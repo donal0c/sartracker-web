@@ -11,6 +11,11 @@
  *   nothing.
  * - `unconfirmed`: the source was read, but the renderer did not say whether
  *   tracking is shown.
+ * - `pending`: the source was read, but an update to it was queued or in
+ *   progress before or after the read. MapLibre applies updates
+ *   asynchronously and getData() returns the old payload until then, so the
+ *   renderer can already report tracking shown while the source still holds
+ *   the empty stand-in.
  * - `not-drawn`: no map or no tracking source.
  * - `unreadable`: the source exists but could not be read, or the read threw.
  *
@@ -31,10 +36,12 @@ export const MAX_UNOBSERVED_GAP_MS = 2_000
 
 /**
  * Reads the map's tracking source in the renderer, with whether tracking is
- * shown on the map. Self-contained, because Playwright sends its source text
- * to the page.
+ * shown on the map. A reading is ready only if the source had no update
+ * pending both before and after the read, the same source was there
+ * throughout, and the renderer reported tracking shown both times.
+ * Self-contained, because Playwright sends its source text to the page.
  *
- * @returns {Promise<{ state: 'ready' | 'hidden' | 'unconfirmed', fixes: number, cache: number, attention: number }
+ * @returns {Promise<{ state: 'ready' | 'hidden' | 'unconfirmed' | 'pending', fixes: number, cache: number, attention: number }
  *   | { state: 'not-drawn' | 'unreadable', reason: string }>} the reading
  */
 export async function readTrackingSourceInPage() {
@@ -42,9 +49,11 @@ export async function readTrackingSourceInPage() {
   if (map === undefined || map === null) return { state: 'not-drawn', reason: 'no map' }
   const source = map.getSource('tracking')
   if (source === undefined || source === null) return { state: 'not-drawn', reason: 'no tracking source' }
-  // Read before the data, so a change while reading cannot confirm data drawn
-  // under the other setting.
-  const visible = window.__SARTRACKER_TRACKING_VISIBLE__
+  // Read before and after the data, so a change while reading cannot confirm
+  // data drawn under the other setting or before a pending update landed.
+  const settled = () => typeof source.loaded === 'function' && source.loaded() === true
+  const settledBefore = settled()
+  const visibleBefore = window.__SARTRACKER_TRACKING_VISIBLE__
   let data
   try {
     data = typeof source.getData === 'function'
@@ -56,15 +65,23 @@ export async function readTrackingSourceInPage() {
   if (data === undefined || data === null || !Array.isArray(data.features)) {
     return { state: 'unreadable', reason: 'the tracking source has no feature list' }
   }
+  const settledAfter = settled()
+  const visibleAfter = window.__SARTRACKER_TRACKING_VISIBLE__
+  if (map.getSource('tracking') !== source) return { state: 'unreadable', reason: 'the tracking source was replaced during the read' }
   const points = data.features.filter((feature) => feature?.properties?.featureKind === 'device')
   const counts = {
     fixes: points.length,
     cache: points.filter((feature) => feature.properties.dataOrigin === 'cache').length,
     attention: points.filter((feature) => feature.properties.attention === true).length,
   }
-  if (visible === true && window.__SARTRACKER_TRACKING_VISIBLE__ === true) return { state: 'ready', ...counts }
-  if (visible === false) return { state: 'hidden', reason: 'tracking is hidden on the map', ...counts }
-  return { state: 'unconfirmed', reason: 'the renderer did not report whether tracking is shown', ...counts }
+  if (visibleBefore === false || visibleAfter === false) return { state: 'hidden', reason: 'tracking is hidden on the map', ...counts }
+  if (visibleBefore !== true || visibleAfter !== true) {
+    return { state: 'unconfirmed', reason: 'the renderer did not report whether tracking is shown', ...counts }
+  }
+  if (!settledBefore || !settledAfter) {
+    return { state: 'pending', reason: 'an update to the tracking source was pending, so it may still hold old data', ...counts }
+  }
+  return { state: 'ready', ...counts }
 }
 
 /**
@@ -108,6 +125,7 @@ export function summarizeSurfaceSamples(samples, window, actionWarning = '', dis
     invalidCount: timed.filter((sample) => sample.state === 'ready' && !counted(sample)).length,
     hiddenCount: ofState('hidden'),
     unconfirmedCount: ofState('unconfirmed'),
+    pendingCount: ofState('pending'),
     notDrawnCount: ofState('not-drawn'),
     notDrawnAfterReadyCount: first === undefined ? 0 : timed.filter((sample) => sample.state === 'not-drawn' && sample.at > first.at).length,
     unreadableCount: ofState('unreadable'),
