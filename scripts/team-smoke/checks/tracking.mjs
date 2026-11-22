@@ -19,9 +19,10 @@ import { markerBehindFindings, readMarkerFixes, requireRoadSpeedFixes } from '..
 import { ROAD_DEVICE, startMockTraccar } from '../lib/mock-traccar.mjs'
 import {
   addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, resumeIfPrompted,
-  startMission, startMissionWithLookback, togglePause,
+  startMission, startMissionWithLookback, togglePause, trackingStatus as readTrackingStatus,
 } from '../lib/operator.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
+import { openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { missionFixes } from '../lib/store.mjs'
 
 const WALKERS = ['Walker Alpha', 'Walker Bravo']
@@ -268,47 +269,51 @@ async function markerAtNewestFix(app, mock, profile, name) {
  */
 export function midMissionControls(page) {
   const t = (id) => page.getByTestId(id)
-  const layerToggle = (nodeTestId) => ({
+  // The tracking layers are the People panel's Everyone ticks in the new layout (DON-353).
+  const everyoneTicks = (ids) => ({
     async press() {
-      await t('sidebar-tab-layers').click()
-      await t('layer-expand-all-btn').click()
-      await t(`layer-visibility-${nodeTestId}`).uncheck()
+      await openWorkspacePanel(page, 'people')
+      for (const id of ids) await t(id).uncheck()
     },
     async undo() {
-      await t('sidebar-tab-layers').click()
-      await t(`layer-visibility-${nodeTestId}`).check()
+      await openWorkspacePanel(page, 'people')
+      for (const id of ids) await t(id).check()
     },
   })
   return [
-    { label: 'the devices layer was hidden', ...layerToggle('layer-tracking-devices') },
-    { label: 'the breadcrumbs layer was hidden', ...layerToggle('layer-tracking-breadcrumbs') },
-    { label: 'the whole Tracking group was hidden', ...layerToggle('group-tracking') },
+    { label: 'every location was hidden', ...everyoneTicks(['ws-all-positions']) },
+    { label: 'every trail was hidden', ...everyoneTicks(['ws-all-trails']) },
+    { label: 'every location and trail was hidden', ...everyoneTicks(['ws-all-positions', 'ws-all-trails']) },
     {
-      // The toggle is rendered in the mast, the focus sidebar and the
-      // collapsed-rail strip; press the one the operator can see.
-      label: 'Focus Mode was on',
-      press: () => t('focus-mode-toggle').filter({ visible: true }).first().click(),
-      undo: () => t('focus-mode-toggle').filter({ visible: true }).first().click(),
+      // Full map replaced Focus Mode: the button closes the side panel and reads "Show panel" until pressed again.
+      label: 'Full map was on',
+      async press() {
+        await t('ws-full-map').click()
+        await t('ws-full-map').filter({ hasText: 'Show panel' }).waitFor()
+      },
+      async undo() {
+        await t('ws-full-map').click()
+        await t('ws-full-map').filter({ hasText: 'Full map' }).waitFor()
+      },
     },
     {
-      // The Devices button is on the Tracking tab; the layer controls above
-      // leave Layers selected (box run 3d, 2 Oct 2026).
+      // All devices is in the People panel's header.
       label: 'the Devices workspace was open',
       async press() {
-        await t('sidebar-tab-tracking').click()
+        await openWorkspacePanel(page, 'people')
         await t('open-devices-workspace').click()
       },
       undo: () => closeWorkspace(page),
     },
     {
       label: 'Review was open',
-      press: () => t('open-mission-review-workspace').click(),
+      press: () => openMissionReview(page),
       undo: () => closeWorkspace(page),
     },
     {
       label: 'Replay was showing',
       async press() {
-        await t('open-mission-review-workspace').click()
+        await openMissionReview(page)
         await page.getByRole('button', { name: 'Replay', exact: true }).click()
         await t('mission-replay-seek').click()
       },
@@ -475,14 +480,7 @@ export default [
     async run(ctx) {
       const name = 'Smoke Mission O'
       const { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'outage', name)
-      const trackingStatus = async () => {
-        const parts = []
-        for (const id of ['tracking-warning', 'mast-tracking-cell', 'persistent-tracking-health']) {
-          const locator = app.page.getByTestId(id)
-          if (await locator.count() > 0) parts.push(await locator.first().innerText().catch(() => ''))
-        }
-        return parts.join(' / ').replace(/\s+/gu, ' ').trim()
-      }
+      const trackingStatus = () => readTrackingStatus(app.page)
       await delay(30_000)
       // One phone loses signal: the other walker must keep recording live,
       // and the held stretch must arrive whole when signal returns [DON-316].
