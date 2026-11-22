@@ -1041,7 +1041,7 @@ async function ensureMissionActive(page, missionId) {
     'mission state to hydrate after packaged restart',
   )
   if (state.active?.id === missionId && state.active.status === 'active') return
-  // The Resume card (DON-342) or the older dialog; neither appearing fails.
+  // The Resume card (DON-342); it not appearing, or staying, fails.
   await boundedPageAction(page, () => resumeThroughRecoveryPrompt(page, { timeoutMs: CONDITION_TIMEOUT_MS }), 'resume recovered mission')
   await waitForValue(
     () => readActiveMission(page),

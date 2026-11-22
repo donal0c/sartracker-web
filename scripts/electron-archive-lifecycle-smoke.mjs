@@ -1436,7 +1436,7 @@ async function resumeLivenessMission(
   expectedDeviceId,
   participantScopeRequired,
 ) {
-  // The Resume card (DON-342) or the older dialog; neither appearing fails.
+  // The Resume card (DON-342); it not appearing, or staying, fails.
   await resumeThroughRecoveryPrompt(page, { timeoutMs: 30_000 })
   const mission = await waitForActiveMission(
     page,

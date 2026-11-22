@@ -1511,7 +1511,7 @@ async function resumeRecoveredMission(
   timeoutMs,
   recordMilestone = () => undefined,
 ) {
-  // The Resume card (DON-342) or the older dialog; neither appearing fails.
+  // The Resume card (DON-342); it not appearing, or staying, fails.
   await resumeThroughRecoveryPrompt(page, {
     timeoutMs,
     click: async (button) => {

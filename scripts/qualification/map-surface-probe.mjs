@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { hashCandidateFile } from './candidate-artifacts.mjs'
 import { validateMapSurface, validateMapSurfaceFacts } from './map-surface-receipts.mjs'
-import { resumeRecoveredMission } from '../mission-recovery.mjs'
+import { confirmResumedMission, resumeRecoveredMission } from '../mission-recovery.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const C14_MISSION_NAME = 'C14 map surface proof'
@@ -24,7 +24,8 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
     persisted: { before: null, after: null },
     map: { before: null, after: null },
     visibility: { marker: null, drawing: null },
-    focus: null,
+    recovery: null,
+    fullMap: null,
     overlayFailure: null,
     cleanup: { applicationClosed: false, profileRemoved: false },
     failure: null,
@@ -85,10 +86,13 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
     await seedMapEvidence(page)
     await page.reload()
     await page.getByTestId('app-shell').waitFor({ timeout: 60_000 })
-    // The reload interrupts a running mission, so recovery must be offered:
-    // through the Resume card (DON-342) or the older dialog. Neither appearing
-    // fails C14 instead of carrying on without the mission.
+    // The reload interrupts a running mission, so the Resume card (DON-342)
+    // must be offered, and Resume must bring back this same mission running.
+    // A missing card, another mission or a paused one fails C14 instead of
+    // carrying on with a map that only looks right.
     await resumeRecoveredMission(page)
+    const recovered = await confirmResumedMission(page, missionId)
+    report.recovery = { missionId: recovered.id, storeStatus: recovered.status, rendererPhase: 'active' }
     await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
     await page.waitForFunction(() => {
       const map = window.__SARTRACKER_MAP__
@@ -140,11 +144,7 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
       const basemap = Object.keys(sources).find((id) => !['mission-markers', 'mission-drawings'].includes(id))
       return basemap === 'esri_topo' && sources['mission-markers']?.type === 'geojson' && sources['mission-drawings']?.type === 'geojson'
     })
-    await page.getByTestId('focus-mode-toggle').click()
-    await page.getByTestId('focus-mode-coordinate-mirror').waitFor()
-    report.focus = { before: false, activeObserved: true, coordinateMirrorVisible: true, restored: true }
-    await page.getByTestId('focus-mode-toggle').click()
-    await page.getByTestId('focus-mode-coordinate-mirror').waitFor({ state: 'hidden' })
+    report.fullMap = await exerciseFullMap(page)
 
     report.overlayFailure = await exerciseOverlayFailure(page, consoleLines, options.evidence)
     report.map.after = await readMapSnapshot(page)
@@ -191,6 +191,62 @@ export async function runMapSurfaceProbe(input, { developmentTestHarness = false
   }
   if (failure) throw failure
   return report
+}
+
+/**
+ * Full map replaced Focus mode (DON-341). Opens a panel, closes it with Full
+ * map, measures that the map takes the freed width and still receives the
+ * pointer with a coordinate readout, then gives the panel back.
+ *
+ * @param {import('@playwright/test').Page} page the app window
+ * @returns {Promise<object>} the Full map observations for the receipt
+ */
+export async function exerciseFullMap(page) {
+  const side = page.getByTestId('ws-side')
+  const fullMap = page.getByTestId('ws-full-map')
+  const peoplePanel = page.getByTestId('ws-people-panel')
+  if (!await peoplePanel.isVisible()) await page.getByTestId('ws-toggle-people').click()
+  await peoplePanel.waitFor({ state: 'visible' })
+  const panelOpenBefore = (await side.getAttribute('data-empty')) === 'false'
+  const measure = () => page.evaluate(() => {
+    const canvas = window.__SARTRACKER_MAP__.getCanvas().getBoundingClientRect()
+    const panel = document.querySelector('[data-testid="ws-side"]')?.getBoundingClientRect()
+    return { canvasWidth: canvas.width, sideWidth: panel?.width ?? Number.NaN, viewportWidth: document.documentElement.clientWidth }
+  })
+  const before = await measure()
+  await fullMap.click()
+  await page.locator('[data-testid="ws-side"][data-empty="true"]').waitFor({ state: 'attached' })
+  await peoplePanel.waitFor({ state: 'hidden' })
+  // The map resizes after the panel goes; wait for the canvas to settle.
+  await page.waitForFunction(() => window.__SARTRACKER_MAP__.getCanvas().getBoundingClientRect().width >= document.documentElement.clientWidth - 1)
+    .catch(() => undefined)
+  const after = await measure()
+  const canvasBox = await page.locator('canvas.maplibregl-canvas').boundingBox()
+  if (canvasBox === null) throw new Error('Full map: the map canvas has no on-screen box.')
+  const centre = { x: canvasBox.x + canvasBox.width / 2, y: canvasBox.y + canvasBox.height / 2 }
+  const pointerInput = await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y)
+    return target === window.__SARTRACKER_MAP__.getCanvas()
+  }, centre)
+  await page.mouse.move(centre.x, centre.y)
+  await page.mouse.move(centre.x + 12, centre.y + 8)
+  const readout = page.getByTestId('coordinate-display')
+  await page.waitForFunction(() => (document.querySelector('[data-testid="coordinate-display"]')?.textContent ?? '').includes('°'))
+  const coordinateReadout = ((await readout.textContent()) ?? '').trim().slice(0, 200)
+  await fullMap.click()
+  await peoplePanel.waitFor({ state: 'visible' })
+  const restored = (await side.getAttribute('data-empty')) === 'false'
+  return {
+    panelOpenBefore,
+    canvasWidthBefore: before.canvasWidth,
+    panelsClosed: true,
+    viewportWidth: after.viewportWidth,
+    canvasWidthAfter: after.canvasWidth,
+    sideWidthAfter: after.sideWidth,
+    pointerInput,
+    coordinateReadout,
+    restored,
+  }
 }
 
 /**

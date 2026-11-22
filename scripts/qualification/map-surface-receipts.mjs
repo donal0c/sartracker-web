@@ -64,10 +64,12 @@ export function validateMapSurfaceFacts(report) {
 
   assertVisibilityReceipt(report.visibility?.marker, 'marker')
   assertVisibilityReceipt(report.visibility?.drawing, 'drawing')
-  if (report.focus?.before !== false || report.focus?.activeObserved !== true
-      || report.focus?.coordinateMirrorVisible !== true || report.focus?.restored !== true) {
-    throw new Error('Focus mode did not expose and restore the operator coordinate surface.')
+  const recovery = report.recovery
+  if (recovery?.missionId !== persistedBefore.missionId || recovery.storeStatus !== 'active'
+      || recovery.rendererPhase !== 'active') {
+    throw new Error('Restart recovery did not bring back the same mission running in both the store and the renderer.')
   }
+  assertFullMapReceipt(report.fullMap)
 
   const failure = report.overlayFailure
   if (failure?.attempted !== true || failure.throwHookHit !== true
@@ -81,8 +83,32 @@ export function validateMapSurfaceFacts(report) {
   return Object.freeze({
     status: 'PASS',
     releaseEligible: false,
-    scope: 'packaged map, layer, basemap, focus and overlay recovery surface; DON-264 remains independently release-blocking until observed green',
+    scope: 'packaged map, layer, basemap, Full map, mission recovery and overlay recovery surface; DON-264 remains independently release-blocking until observed green',
   })
+}
+
+/**
+ * Full map (DON-341, replacing Focus mode) must give the map the space a panel
+ * used, keep the map usable and the coordinates readable, and give the panel
+ * back: closing clutter must never cost map space, coordinates or evidence.
+ *
+ * @param {unknown} fullMap the probe's Full map observations
+ */
+function assertFullMapReceipt(fullMap) {
+  const finite = (value) => typeof value === 'number' && Number.isFinite(value)
+  if (fullMap?.panelOpenBefore !== true || fullMap.panelsClosed !== true || fullMap.restored !== true
+      || !finite(fullMap.canvasWidthBefore) || !finite(fullMap.canvasWidthAfter)
+      || !finite(fullMap.viewportWidth) || !finite(fullMap.sideWidthAfter)) {
+    throw new Error('Full map did not close an open panel and give it back.')
+  }
+  if (fullMap.sideWidthAfter !== 0 || fullMap.canvasWidthAfter <= fullMap.canvasWidthBefore
+      || fullMap.canvasWidthAfter < fullMap.viewportWidth - 1) {
+    throw new Error('Full map did not give the map the full available width.')
+  }
+  if (fullMap.pointerInput !== true || typeof fullMap.coordinateReadout !== 'string'
+      || !fullMap.coordinateReadout.includes('°')) {
+    throw new Error('Full map did not keep the map taking pointer input with a coordinate readout.')
+  }
 }
 
 function projectPersisted(value) {

@@ -626,7 +626,7 @@ async function prepareMissionA(page) {
 
 /** Resumes the recoverable mission through the operator-facing recovery control. */
 async function resumeRecoverableMission(page, missionId) {
-  // The Resume card (DON-342) or the older dialog; neither appearing fails.
+  // The Resume card (DON-342); it not appearing, or staying, fails.
   await resumeThroughRecoveryPrompt(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await waitForValue(
     () => readActiveMission(page),

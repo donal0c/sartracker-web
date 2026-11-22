@@ -2741,15 +2741,10 @@ async function waitForActiveMission(page, timeoutMs) {
 }
 
 async function resumeRecoveredMission(launch, expectedMissionId) {
-  // The Resume card (DON-342) or the older dialog; neither appearing fails.
-  // The card's button carries its own test id; the dialog's Resume does not.
+  // The Resume card (DON-342); it not appearing, or staying, fails.
   await resumeThroughRecoveryPrompt(launch.page, {
     timeoutMs: 60_000,
-    click: (button, surface) => performLaunchOwnedHarnessClick(
-      launch,
-      surface === 'card' ? 'start-screen-resume-btn' : 'mission-recovery-dialog',
-      () => button.click(),
-    ),
+    click: (button) => performLaunchOwnedHarnessClick(launch, 'start-screen-resume-btn', () => button.click()),
   })
   await waitForActiveMission(launch.page, 30_000)
   const missionId = await readActiveMissionId(launch.page)
