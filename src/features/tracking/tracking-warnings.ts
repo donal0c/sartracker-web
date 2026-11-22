@@ -25,6 +25,8 @@ export type TrackingWarningCode =
   | 'tracking_not_configured'
   /** The saved tracking password or token cannot be used and must be entered again in Settings. */
   | 'tracking_credentials_unreadable'
+  /** settings.json was damaged and set aside; the Traccar settings must be entered again (M-47). */
+  | 'tracking_settings_unreadable'
   | 'tracking_reconnecting'
   | 'tracking_reconnect_failed'
   | 'evidence_custody_unsettled'

@@ -57,6 +57,28 @@ describe('SettingsWorkspace', () => {
     useSettingsApplyStore.setState({ failure: null })
   })
 
+  it('says when saved settings were damaged and set aside, until Save repairs them [M-47]', async () => {
+    const notice = 'Saved settings could not be read, so SAR Tracker set them aside and started with default settings.'
+    const { SettingsWorkspace } = await import('../../src/components/settings-workspace')
+    arrangeDefaults({ ...DEFAULT_APP_SETTINGS, settingsRecoveryNotice: notice })
+    mocks.saveAppSettings.mockResolvedValue(DEFAULT_APP_SETTINGS)
+    render(React.createElement(SettingsWorkspace, { open: true, onClose: vi.fn() }))
+    await waitForEnabledButton('[data-testid="settings-save"]')
+
+    const banner = document.querySelector('[data-testid="settings-recovery-notice"]')
+    expect(banner?.textContent).toBe(notice)
+    expect(banner?.getAttribute('role')).toBe('alert')
+    // Save stays available: it is how the damaged file is repaired.
+    expect(getButton('[data-testid="settings-save"]').disabled).toBe(false)
+
+    arrangeDefaults()
+    act(() => root?.unmount())
+    host?.remove()
+    render(React.createElement(SettingsWorkspace, { open: true, onClose: vi.fn() }))
+    await waitForEnabledButton('[data-testid="settings-save"]')
+    expect(document.querySelector('[data-testid="settings-recovery-notice"]')).toBeNull()
+  })
+
   describe('menu of five sections [DON-343]', () => {
     it('shows a menu of the five sections and opens on Tracking sources with the default group', async () => {
       const { SettingsWorkspace } = await import('../../src/components/settings-workspace')

@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -1114,6 +1114,121 @@ describe('electron settings store', () => {
         body: 'email=sean&password=stored-secret',
       }),
     )
+  })
+
+  describe('damaged settings.json [M-47]', () => {
+    it.each([
+      ['empty', ''],
+      ['truncated', '{"dataSource":'],
+      ['not an object', '[1,2,3]'],
+      ['null', 'null'],
+    ])('starts with tracking off and a visible notice when settings.json is %s, keeping the bad file', async (_label, contents) => {
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      await writeFile(path.join(userDataPath!, 'settings.json'), contents, 'utf8')
+
+      const runtime = await store.loadRuntimeBootstrapSettings(true)
+      const settings = await store.loadAppSettings() as typeof DEFAULT_APP_SETTINGS & {
+        readonly settingsRecoveryNotice?: string
+      }
+
+      expect(runtime.trackingConfig).toBeNull()
+      expect(runtime.trackingDisabledReason).toContain('could not be read')
+      expect(runtime.trackingDisabledReason).toContain('Traccar')
+      expect(runtime.trackingDisabledCode).toBe('tracking_settings_unreadable')
+      expect(settings.settingsRecoveryNotice).toContain('set them aside')
+      expect(settings.settingsRecoveryNotice).toContain('settings.json.corrupt-')
+      expect(settings.dataSource.providerType).toBe('none')
+      const setAside = (await readdir(userDataPath!)).filter((name) => name.startsWith('settings.json.corrupt-'))
+      expect(setAside).toHaveLength(1)
+      expect(await readFile(path.join(userDataPath!, setAside[0]!), 'utf8')).toBe(contents)
+    })
+
+    it('keeps the notice on a fresh store until Settings are saved', async () => {
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      await writeFile(path.join(userDataPath!, 'settings.json'), '{', 'utf8')
+      await store.loadAppSettings()
+
+      const restarted = createElectronSettingsStore({
+        userDataPath: userDataPath!,
+        safeStorage: createMockSafeStorage('gnome_libsecret'),
+        platform: 'linux',
+        decodeOfficialMapTile: decodeOpaqueTile,
+      })
+      const runtime = await restarted.loadRuntimeBootstrapSettings(true)
+
+      expect(runtime.trackingDisabledCode).toBe('tracking_settings_unreadable')
+    })
+
+    it('lets Settings Save repair a damaged settings.json', async () => {
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      await writeFile(path.join(userDataPath!, 'settings.json'), '{"dataSource":', 'utf8')
+      const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+      draft.dataSource.providerType = 'traccar_http'
+      draft.dataSource.baseUrl = 'https://kmrtsar.eu'
+      draft.dataSource.email = 'sean'
+      draft.dataSource.secretInput = 'field-secret'
+
+      const saved = await store.saveAppSettings(draft) as typeof DEFAULT_APP_SETTINGS & {
+        readonly settingsRecoveryNotice?: string
+      }
+
+      expect(saved.dataSource.baseUrl).toBe('https://kmrtsar.eu')
+      expect(saved.settingsRecoveryNotice).toBeUndefined()
+      const restarted = createElectronSettingsStore({
+        userDataPath: userDataPath!,
+        safeStorage: createMockSafeStorage('gnome_libsecret'),
+        platform: 'linux',
+        decodeOfficialMapTile: decodeOpaqueTile,
+      })
+      const reloaded = await restarted.loadAppSettings() as typeof DEFAULT_APP_SETTINGS & {
+        readonly settingsRecoveryNotice?: string
+      }
+      expect(reloaded.dataSource.baseUrl).toBe('https://kmrtsar.eu')
+      expect(reloaded.settingsRecoveryNotice).toBeUndefined()
+      const runtime = await restarted.loadRuntimeBootstrapSettings(true)
+      expect(runtime.trackingConfig).toEqual({
+        baseUrl: 'https://kmrtsar.eu',
+        email: 'sean',
+        password: 'field-secret',
+      })
+      expect((await readdir(userDataPath!)).some((name) => name.startsWith('settings.json.corrupt-'))).toBe(true)
+    })
+
+    it('still fails loudly when settings.json cannot be read at all', async () => {
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      await mkdir(path.join(userDataPath!, 'settings.json'))
+
+      await expect(store.loadRuntimeBootstrapSettings(true)).rejects.toThrow()
+    })
+
+    it('fsyncs the settings file before renaming it and the folder after', async () => {
+      const fsPromises = require('node:fs/promises') as typeof import('node:fs/promises')
+      const store = await createStore({ backend: 'gnome_libsecret' })
+      const events: string[] = []
+      const realOpen = fsPromises.open.bind(fsPromises)
+      const realRename = fsPromises.rename.bind(fsPromises)
+      vi.spyOn(fsPromises, 'open').mockImplementation(async (...args: Parameters<typeof fsPromises.open>) => {
+        const handle = await realOpen(...args)
+        const target = String(args[0])
+        const realSync = handle.sync.bind(handle)
+        handle.sync = async () => {
+          events.push(`sync:${target === userDataPath ? 'dir' : path.basename(target).split('.').slice(0, 2).join('.')}`)
+          return realSync()
+        }
+        return handle
+      })
+      vi.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+        events.push(`rename:${path.basename(String(to))}`)
+        return realRename(from, to)
+      })
+      const draft = createSettingsDraft(DEFAULT_APP_SETTINGS)
+      draft.missionDefaults.autoRefreshIntervalSeconds = 45
+
+      await store.saveAppSettings(draft)
+
+      const settingsEvents = events.slice(events.indexOf('sync:settings.json'))
+      expect(settingsEvents.slice(0, 3)).toEqual(['sync:settings.json', 'rename:settings.json', 'sync:dir'])
+    })
   })
 
   async function createStore(options: {

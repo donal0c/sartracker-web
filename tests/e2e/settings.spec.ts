@@ -40,6 +40,26 @@ test.describe('M12 settings workspace', () => {
     await expect(page.getByTestId('settings-section-tracking-sources')).toHaveAttribute('aria-current', 'page')
   })
 
+  test('says to re-enter damaged saved settings and opens Settings at Tracking sources [M-47]', async ({ page }) => {
+    const warning = 'Saved settings could not be read, so SAR Tracker set them aside and started with default settings. Tracking is off until you re-enter the Traccar settings (and any rosters or maps you rely on) in Settings and press Save.'
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Settings check')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await injectCredentialLoss(page, warning, 'tracking_settings_unreadable')
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'settings')
+    await expect(headline.getByTestId('ws-tracking-problems')).toHaveText(/^TRACKING LOST · Re-enter settings/)
+    await expect(page.getByTestId('ws-alarm')).toContainText('saved settings were damaged')
+
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('set it aside')
+    await expect(page.getByTestId('ws-tracking-advice')).toContainText('Traccar server')
+    await expect(page.getByTestId('ws-reconnect')).toHaveCount(0)
+    await page.getByTestId('ws-open-tracking-settings').click()
+    await expect(page.getByTestId('settings-section-tracking-sources')).toHaveAttribute('aria-current', 'page')
+  })
+
   // CI's Linux fonts draw wider than macOS; Verdana (macOS) and DejaVu Sans
   // (Linux) are the wide case. The fix must never hide behind "+1 more".
   for (const width of [1280, 1024]) {
@@ -853,8 +873,12 @@ async function routeTraccarCursorBoundarySequence(page: import('@playwright/test
 
 /** The old ONLINE chip: the top bar's tracking headline says positions are arriving. */
 /** Puts the state the runtime reaches when a saved password stops working mid-mission: idle, with the positions already received. */
-async function injectCredentialLoss(page: Page, warning: string) {
-  await page.evaluate(async (text) => {
+async function injectCredentialLoss(
+  page: Page,
+  warning: string,
+  code: 'tracking_credentials_unreadable' | 'tracking_settings_unreadable' = 'tracking_credentials_unreadable',
+) {
+  await page.evaluate(async ({ text, warningCode }) => {
     await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot(
       {
         devices: [{ device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: new Date().toISOString(), unique_id: null, category: null }],
@@ -865,9 +889,9 @@ async function injectCredentialLoss(page: Page, warning: string) {
         breadcrumbs: [],
       },
       { mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: text,
-        warningCodes: ['tracking_credentials_unreadable'] },
+        warningCodes: [warningCode] },
     )
-  }, warning)
+  }, { text: warning, warningCode: code })
 }
 
 /** Forces the wide font (Verdana on macOS, DejaVu Sans on Linux, as in CI) at 1024 px. */
