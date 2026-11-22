@@ -15,7 +15,7 @@ const HISTORY_WARNING =
 
 const BASE = {
   positions: [], ingestRejected: 0, evidenceState: 'healthy', evidenceLossAcknowledged: false, conflictCount: 0,
-  stationaryCount: 0, notedCount: 0, coverageStatus: 'complete', hiddenLocationCount: 0, allLocationsHidden: false,
+  stationaryCount: 0, notedCount: 0, coverageStatus: 'complete', hiddenLocationCount: 0, allLocationsHidden: false, mapUpdateFailed: false,
 } as const
 
 function pausedHeadline(warning: string, warningCodes: TrackingConnectionStatus['warningCodes']) {

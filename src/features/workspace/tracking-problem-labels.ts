@@ -7,6 +7,8 @@ import type { TrackingWarningCode } from '../tracking/tracking-warnings'
  * mission record, then trail history, then the local cache.
  */
 export const PROBLEM_RANK = {
+  /** The map is not drawing the latest positions, for everyone at once [DON-357]. */
+  mapNotUpdating: 5,
   stale: 10,
   notMoving: 11,
   rejected: 12,

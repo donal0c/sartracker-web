@@ -33,6 +33,7 @@ function appHeadline(status: Partial<TrackingConnectionStatus>, phase: MissionRu
     status: { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null, ...status },
     phase, positions: [], ingestRejected: 0, evidenceState, evidenceLossAcknowledged: false, conflictCount: 0,
     stationaryCount: 0, notedCount: 0, coverageStatus: 'complete', hiddenLocationCount: 0, allLocationsHidden: false,
+    mapUpdateFailed: false,
   })
 }
 

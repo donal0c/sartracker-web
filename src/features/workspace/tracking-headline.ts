@@ -10,8 +10,12 @@ import { selectCoverageStateForMission } from '../tracking/mission-coverage-scop
 import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useTrackingStore } from '../tracking/tracking-store'
+import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
 import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
+
+const MAP_NOT_UPDATING_ISSUE = 'Map is not showing the latest positions'
+const MAP_NOT_UPDATING_WORD = 'Map not updating'
 
 /** The routine notice the poller and mission bridge publish while a mission is paused. */
 const PAUSE_NOTICE = 'Live refresh suspended while mission is paused.'
@@ -58,7 +62,7 @@ export function useLastConfirmedAt(): string | null {
   return rememberLastConfirmedAt(missionId, reported)
 }
 
-export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'disconnected' | 'attention'
+export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'disconnected' | 'attention'
 
 export type TrackingHeadline = {
   /** The condition that decides the advice, so a pause is not told to check the internet. */
@@ -109,6 +113,8 @@ export function describeTrackingHeadline(input: {
   readonly coverageStatus: string
   readonly hiddenLocationCount: number
   readonly allLocationsHidden: boolean
+  /** The map rejected a tracking update and still draws older positions [DON-357]. */
+  readonly mapUpdateFailed: boolean
 }): TrackingHeadline {
   const { status, phase, positions, stationaryCount, notedCount, hiddenLocationCount, allLocationsHidden } = input
   const staleCount = positions.filter((position) => position.device_cache_stale).length
@@ -119,6 +125,7 @@ export function describeTrackingHeadline(input: {
   // The pause leads the headline, so its own notice is dropped; anything sent with it stays.
   const shown = withoutPauseNotice(status, paused)
   const issues: string[] = []
+  if (input.mapUpdateFailed) issues.push(MAP_NOT_UPDATING_ISSUE)
   const evidenceFailed = input.evidenceState !== 'healthy' && !input.evidenceLossAcknowledged
   if (evidenceFailed) issues.push('Mission record not fully saved')
   if (input.evidenceState !== 'healthy' && input.evidenceLossAcknowledged) issues.push('Some mission record was lost (acknowledged)')
@@ -140,6 +147,7 @@ export function describeTrackingHeadline(input: {
   const lost = status.mode === 'offline' || isCriticalTrackingTrustWarning(status.warning)
   const ranked: RankedProblem[] = []
   const name = (word: string, rank: number) => { if (!ranked.some((entry) => entry.word === word)) ranked.push({ word, rank }) }
+  if (input.mapUpdateFailed) name(MAP_NOT_UPDATING_WORD, PROBLEM_RANK.mapNotUpdating)
   if (evidenceFailed) name('Record not saved', PROBLEM_RANK.record)
   for (const entry of rankTrackingWarning(shown.warning, shown.warningCodes)) {
     // The TRACKING LOST lead already says it is offline.
@@ -191,6 +199,16 @@ export function describeTrackingHeadline(input: {
   }
   if (paused) return { condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), problems: ['MISSION PAUSED', ...problems], detail: conditions, alarm: 'MISSION PAUSED: positions are not updating', issues }
   if (lost) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), problems: ['TRACKING LOST', ...problems], detail: conditions, alarm: 'TRACKING LOST: positions on the map may not be current', issues }
+  // The feed is fine but the map still draws older positions: that must never
+  // read as live, so it is the alarm, ahead of the record warning [DON-357].
+  if (input.mapUpdateFailed) {
+    const others = issues.filter((issue) => issue !== status.warning && issue !== MAP_NOT_UPDATING_ISSUE).join(' · ')
+    return {
+      condition: 'map', tone: 'alert', text: others === '' ? 'MAP NOT UPDATING' : `MAP NOT UPDATING · ${others}`,
+      problems: ['MAP NOT UPDATING', ...problems.filter((word) => word !== MAP_NOT_UPDATING_WORD)], detail: others,
+      alarm: 'MAP NOT UPDATING: positions drawn on the map may be out of date', issues,
+    }
+  }
   if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
   // Before a mission starts amber is enough: nobody relies on the map yet.
@@ -224,11 +242,12 @@ export function useTrackingHeadline(): TrackingHeadline {
   const hiddenLocationCount = useLayerVisibilityStore((state) => state.hiddenDeviceIds.length)
   const allLocationsHidden = useLayerVisibilityStore((state) => !state.groupVisibility.tracking)
   const coverage = selectCoverageStateForMission(useCoverageStore((state) => state.state), missionId)
+  const mapUpdateFailed = useTrackingMapUpdateStore((state) => state.failure !== null)
 
   return useMemo(() => describeTrackingHeadline({
     status, phase, positions, ingestRejected: ingest.totalRejected, evidenceState: evidence.state,
     evidenceLossAcknowledged: evidence.acknowledgedLoss !== undefined, conflictCount: evidence.conflictCount,
-    stationaryCount, notedCount, coverageStatus: coverage.status, hiddenLocationCount, allLocationsHidden,
+    stationaryCount, notedCount, coverageStatus: coverage.status, hiddenLocationCount, allLocationsHidden, mapUpdateFailed,
   }),
-  [allLocationsHidden, coverage.status, evidence.acknowledgedLoss, evidence.conflictCount, evidence.state, hiddenLocationCount, ingest.totalRejected, notedCount, phase, positions, stationaryCount, status])
+  [allLocationsHidden, mapUpdateFailed, coverage.status, evidence.acknowledgedLoss, evidence.conflictCount, evidence.state, hiddenLocationCount, ingest.totalRejected, notedCount, phase, positions, stationaryCount, status])
 }

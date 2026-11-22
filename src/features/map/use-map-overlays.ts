@@ -13,6 +13,7 @@ import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
+import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { useCoverageStore } from '../tracking/coverage-store'
 import {
   isCoverageOverlayAttached,
@@ -46,6 +47,10 @@ const EMPTY_TRACKING_SNAPSHOT: ReturnType<typeof useTrackingStore.getState>['sna
  */
 export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
+  // A rejected tracking update resyncs straight away rather than waiting for
+  // the next poll; only the change to failed triggers it, so a map that keeps
+  // rejecting is not retried in a loop [DON-357].
+  const trackingMapUpdateFailed = useTrackingMapUpdateStore((state) => state.failure !== null)
   const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
   const hiddenBreadcrumbDeviceIds = useLayerVisibilityStore((state) => state.hiddenBreadcrumbDeviceIds)
@@ -116,6 +121,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     exactBreadcrumbDotState,
     trackingSnapshot,
     attentionByDevice,
+    trackingMapUpdateFailed,
   ])
 
   useEffect(() => {
