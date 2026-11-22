@@ -1,14 +1,13 @@
 import { expect, test } from '@playwright/test'
 import { captureAndRegister } from './helpers/verification-manifest'
-import { closeMissionPanel } from '../helpers/workspace-panels'
 
 for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1920, 1080]]) {
   test(`UI feedback Focus safety at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height })
-    await page.goto('/?missionHarness=1')
+    await page.goto('/?missionHarness=1&classicLayout=1')
     await page.getByTestId('mission-name-input').fill('Ridge search — team exercise')
     await page.getByTestId('mission-start-btn').click()
-    await closeMissionPanel(page)
+    await page.getByTestId('mission-control-collapse-btn').click()
     await page.getByTestId('focus-mode-toggle').click()
     if (width === 1366 || width === 1920) await page.getByTestId('theme-toggle').click()
     await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot(

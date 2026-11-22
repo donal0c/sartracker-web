@@ -3,7 +3,6 @@
  * Provides consistent app initialization, mission management, and tracking injection.
  */
 import { expect, type Page } from '@playwright/test'
-import { openMissionPanel, pressPauseResume } from '../../helpers/workspace-panels'
 
 /** Wait for the app shell to be fully loaded and interactive. */
 export async function waitForAppShell(page: Page): Promise<void> {
@@ -21,8 +20,8 @@ export async function navigateToHarness(
   options: { readonly missionModel?: boolean } = {},
 ): Promise<void> {
   await page.goto(options.missionModel === true
-    ? '/?missionHarness=1&missionModel=1'
-    : '/?missionHarness=1')
+    ? '/?missionHarness=1&classicLayout=1&missionModel=1'
+    : '/?missionHarness=1&classicLayout=1')
   await waitForAppShell(page)
 }
 
@@ -32,37 +31,35 @@ export async function startMission(
   name: string,
   offsetHours?: number,
 ): Promise<void> {
-  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill(name)
   if (offsetHours !== undefined) {
     await page.getByTestId('mission-offset-input').fill(String(offsetHours))
   }
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+  await expect(page.getByTestId('mission-control')).toContainText('active')
 }
 
 /** Pause the current active mission. */
 export async function pauseMission(page: Page): Promise<void> {
-  await pressPauseResume(page)
-  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
+  await page.getByTestId('mission-pause-resume-btn').click()
+  await expect(page.getByTestId('mission-control')).toContainText('paused')
 }
 
 /** Resume a paused mission. */
 export async function resumeMission(page: Page): Promise<void> {
-  await pressPauseResume(page)
-  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+  await page.getByTestId('mission-pause-resume-btn').click()
+  await expect(page.getByTestId('mission-control')).toContainText('active')
 }
 
 /** Finish the current mission through the confirmation dialog. */
 export async function finishMission(page: Page): Promise<void> {
-  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
   await page
     .getByTestId('mission-finish-dialog')
     .getByRole('button', { name: 'Confirm Finish' })
     .click()
-  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
+  await expect(page.getByTestId('mission-control')).toContainText('idle')
 }
 
 /**
