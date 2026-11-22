@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 
-import { openModalWorkspaceCount, requestTopModalWorkspaceClose, subscribeModalWorkspaces } from '../modal-workspace-registry'
+import { openModalWorkspaceCount, requestTopModalWorkspaceClose, subscribeModalWorkspaces } from '../../lib/modal-workspace-registry'
 
 /**
  * What to do in the tracking alarm. With a modal workspace open, the advice is

@@ -684,6 +684,33 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('settings-workspace')).toBeVisible()
   })
 
+  test('Settings reopened after a discard does not cover a pending Finish question either', async ({ page }) => {
+    // Was: Settings still held the discarded draft, so the refusal asked to
+    // discard it again and left Settings open over Finish, with Escape cancelling Finish.
+    await open(page)
+    await startMission(page)
+    await page.getByTestId('open-settings-workspace').click()
+    await page.getByTestId('settings-section-advanced').click()
+    await page.getByTestId('settings-primary-root').fill('/missions/draft-root')
+    await page.getByRole('dialog', { name: 'Operational Settings' }).getByTestId('workspace-close-btn').click()
+    await page.getByTestId('settings-discard-changes').click()
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+
+    await page.getByTestId('ws-mission-button').click()
+    await page.getByTestId('mission-finish-btn').click()
+    const finish = page.getByTestId('mission-finish-dialog')
+    await expect(finish).toBeVisible()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(page.getByTestId('settings-discard-confirmation')).toHaveCount(0)
+    await expect(page.locator('[role="dialog"][aria-modal="true"]')).toHaveCount(0)
+    await expect(finish).toContainText('Settings did not open')
+    await page.keyboard.press('Escape')
+    await expect(finish).toHaveCount(0)
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+  })
+
   test('docked Review stays open through a slow Finish, and waits for Settings to close before it fills the screen', async ({ page }) => {
     await open(page)
     await startMission(page)

@@ -7,7 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
-import { registerOpenDecision, subscribeModalWorkspaceRefusals } from './modal-workspace-registry'
+import { registerOpenDecision, subscribeModalWorkspaceRefusals } from '../lib/modal-workspace-registry'
 
 type InlineDecisionDialogProps = {
   readonly labelledBy: string

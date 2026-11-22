@@ -7,7 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
-import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal, reportModalWorkspaceRefusal } from './modal-workspace-registry'
+import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal, reportModalWorkspaceRefusal } from '../lib/modal-workspace-registry'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls immediate mount and unmount. */

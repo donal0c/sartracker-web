@@ -13,12 +13,20 @@ import { useSyncExternalStore } from 'react'
  */
 const ALLOWED_NESTING = { under: 'devices-workspace-title', over: 'settings-workspace-title' } as const
 
+/** Each modal workspace's title id, which the registry keys it by. */
+export const MODAL_WORKSPACE_TITLE_IDS = {
+  devices: 'devices-workspace-title',
+  diagnostics: 'diagnostics-workspace-title',
+  review: 'mission-review-workspace-title',
+  settings: 'settings-workspace-title',
+} as const
+
 /** What the operator calls each modal workspace, by title id. */
 const WORKSPACE_NAMES: Readonly<Record<string, string>> = {
-  'devices-workspace-title': 'All devices',
-  'diagnostics-workspace-title': 'Diagnostics',
-  'mission-review-workspace-title': 'Review',
-  'settings-workspace-title': 'Settings',
+  [MODAL_WORKSPACE_TITLE_IDS.devices]: 'All devices',
+  [MODAL_WORKSPACE_TITLE_IDS.diagnostics]: 'Diagnostics',
+  [MODAL_WORKSPACE_TITLE_IDS.review]: 'Review',
+  [MODAL_WORKSPACE_TITLE_IDS.settings]: 'Settings',
 }
 
 type OpenModal = {
@@ -74,14 +82,23 @@ export function isTopModalWorkspacePanel(panel: HTMLElement): boolean {
   return openModals.at(-1)?.panel() === panel
 }
 
+/** How a workspace is being opened. */
+export type ModalOpenOptions = {
+  /**
+   * The caller is a question that closes itself to open this workspace and
+   * reopens when it closes (the Admin Roster link), so it hides nothing.
+   */
+  readonly replacesQuestion?: boolean
+}
+
 /**
  * Why the modal workspace with this title id may not open now, or null when it
  * may. Only Settings may open over All devices, and nothing opens over a
  * question waiting for an answer (such as Finish mission), so no decision is
  * ever hidden behind a workspace.
  */
-export function modalWorkspaceOpenRefusal(labelledBy: string): string | null {
-  if (document.querySelector('[role="alertdialog"]') !== null) {
+export function modalWorkspaceOpenRefusal(labelledBy: string, options: ModalOpenOptions = {}): string | null {
+  if (options.replacesQuestion !== true && document.querySelector('[role="alertdialog"]') !== null) {
     return 'a question is waiting for an answer'
   }
   if (openModals.length === 0) return null
@@ -89,6 +106,19 @@ export function modalWorkspaceOpenRefusal(labelledBy: string): string | null {
     return null
   }
   return 'another workspace is already open'
+}
+
+/**
+ * Asks whether a modal workspace may open, for its store to call before it sets
+ * itself open. A refused workspace never opens, so nothing of it (such as a
+ * stale Settings draft) has to be closed; the waiting question says why.
+ */
+export function mayOpenModalWorkspace(labelledBy: string, options: ModalOpenOptions = {}): boolean {
+  const refusal = modalWorkspaceOpenRefusal(labelledBy, options)
+  if (refusal === null) return true
+  console.error(`Workspace "${labelledBy}" was not opened: ${refusal}.`)
+  reportModalWorkspaceRefusal(labelledBy)
+  return false
 }
 
 /** Tells whatever is in the way (a waiting question) that a workspace did not open. */

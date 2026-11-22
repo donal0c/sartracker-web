@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { openExternalPath } from '../infrastructure/file-launcher/tauri-file-launcher'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
-import { useWorkspaceBlockerCount } from './modal-workspace-registry'
+import { useWorkspaceBlockerCount } from '../lib/modal-workspace-registry'
 import { useMapTargetStore } from '../features/map/map-target-store'
 import {
   filterMissionReviewMarkers,
