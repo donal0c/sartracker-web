@@ -8593,7 +8593,9 @@ function addPosition(db, input, coverageFaultInjection = {}) {
  * - 'quarantine' (the tracking acknowledgement API): a malformed row is
  *   refused, recorded as a 'rejected' ingest anomaly in the same transaction
  *   and counted in `rejectedPositionCount`; the good rows commit with it.
- * A missing device or any storage failure still rolls back the whole batch.
+ * In 'quarantine' mode a row whose device has no mission record is refused
+ * the same way (`store_unknown_device`) [M-34]. Any storage failure still rolls back the
+ * whole batch, and in 'throw' mode a missing device does too.
  * A reused source position id keeps the stored row, records a conflict
  * anomaly and is counted in `sourceIdentityConflictCount` [STO-1].
  * `refusedSourceIdentityConflicts` names each such refused row by its index
@@ -8659,6 +8661,7 @@ function addPositionsBulk(
   let rejectedPositionCount = 0
   let sourceIdentityConflictCount = 0
   const refusedSourceIdentityConflicts = []
+  const unknownDeviceIds = new Set()
   let replayEligibilityChanged = false
   const acceptedCoveragePositions = []
   let legacyCandidates
@@ -8671,7 +8674,20 @@ function addPositionsBulk(
     const receivedAt = now()
     for (const [positionIndex, position] of positions.entries()) {
       if (deviceExists.get(input.mission_id, position?.device_id) === undefined) {
-        throw new Error(`Device not found: ${position?.device_id}`)
+        if (rowRejectionMode === 'throw') {
+          throw new Error(`Device not found: ${position?.device_id}`)
+        }
+        // One fix for a device with no mission record must not roll back
+        // everyone else's fixes; it is refused, recorded and counted [M-34].
+        recordStoreRejectedPosition(db, {
+          missionId: input.mission_id,
+          reasonClass: 'store_unknown_device',
+          receivedAt,
+          position,
+        })
+        unknownDeviceIds.add(String(position?.device_id))
+        rejectedPositionCount += 1
+        continue
       }
       const validated = validateBulkPositionRow(position, requireFixTimeProvenance)
       if (!validated.valid) {
@@ -8824,6 +8840,11 @@ function addPositionsBulk(
   })
 
   transaction()
+  if (unknownDeviceIds.size > 0) {
+    console.warn(
+      `Mission storage refused fixes for device(s) with no mission record: ${[...unknownDeviceIds].sort().join(', ')}. The other fixes in the batch were stored.`,
+    )
+  }
   return {
     positions: changedIds?.map((id) => getById(db, 'positions', id, 'Position')) ?? [],
     changedPositionCount,
@@ -8919,9 +8940,19 @@ function persistTrackingHistoryBatch(
   )
 
   const transaction = db.transaction(() => {
+    const historyPositions = Array.isArray(input.positions) ? input.positions : []
+    // A history piece names only the rows it refused as source-id conflicts,
+    // and the runtime draws every other row it sent. A fix for a device with
+    // no mission record therefore fails the piece by name instead of being
+    // quarantined unseen; the live path quarantines it [M-34].
+    for (const position of historyPositions) {
+      if (deviceExists.get(input.mission_id, position?.device_id) === undefined) {
+        throw new Error(`Device not found: ${position?.device_id}`)
+      }
+    }
     const added = addPositionsBulk(db, {
       mission_id: input.mission_id,
-      positions: Array.isArray(input.positions) ? input.positions : [],
+      positions: historyPositions,
     }, includePositions, coverageFaultInjection, true, rowRejectionMode)
     positionResult = {
       ...added,

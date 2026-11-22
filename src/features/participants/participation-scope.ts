@@ -168,21 +168,28 @@ export function createParticipationScope(input: {
       }
     },
     filterEvidenceSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
-      const activeDeviceIds = new Set(activeDeviceIdsAt(observedAt))
+      const positions = snapshot.positions.filter((position) =>
+        includesAt(position.device_id, position.timestamp))
+      const breadcrumbs = snapshot.breadcrumbs.filter((position) =>
+        includesAt(position.device_id, position.timestamp))
+      const rawBreadcrumbsForPersistence = snapshot.rawBreadcrumbsForPersistence?.filter(
+        (position) => includesAt(position.device_id, position.timestamp),
+      )
+      // A device whose window closed before any saved poll still has in-window
+      // fixes to store; its device record must be written first, or the store
+      // has no device to file them under [M-34].
+      const evidenceDeviceIds = new Set([
+        ...activeDeviceIdsAt(observedAt),
+        ...positions.map((position) => position.device_id),
+        ...breadcrumbs.map((position) => position.device_id),
+        ...(rawBreadcrumbsForPersistence ?? []).map((position) => position.device_id),
+      ])
       return {
         ...snapshot,
-        devices: snapshot.devices.filter((device) => activeDeviceIds.has(device.device_id)),
-        positions: snapshot.positions.filter((position) =>
-          includesAt(position.device_id, position.timestamp)),
-        breadcrumbs: snapshot.breadcrumbs.filter((position) =>
-          includesAt(position.device_id, position.timestamp)),
-        ...(snapshot.rawBreadcrumbsForPersistence === undefined
-          ? {}
-          : {
-              rawBreadcrumbsForPersistence: snapshot.rawBreadcrumbsForPersistence.filter(
-                (position) => includesAt(position.device_id, position.timestamp),
-              ),
-            }),
+        devices: snapshot.devices.filter((device) => evidenceDeviceIds.has(device.device_id)),
+        positions,
+        breadcrumbs,
+        ...(rawBreadcrumbsForPersistence === undefined ? {} : { rawBreadcrumbsForPersistence }),
       }
     },
   }

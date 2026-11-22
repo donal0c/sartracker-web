@@ -92,6 +92,7 @@ function historyFix(deviceId: string, timestampMs: number, id: string, lat = 52)
  */
 async function startBackfill(
   getBreadcrumbsWithReport: (deviceId: string, from: Date, to: Date) => Promise<BreadcrumbNormalizationResult>,
+  deviceIdsWithoutRecord: readonly string[] = [],
 ): Promise<{
   readonly missionId: string
   readonly realStore: RealStore
@@ -107,10 +108,12 @@ async function startBackfill(
     name: 'Participant Backfill Real Store',
     start_time: new Date(windowFromMs).toISOString(),
   })
-  for (const deviceId of ['1', '2']) {
-    await realStore.upsertDevice({
-      mission_id: mission.id, device_id: deviceId, name: `Tracker ${deviceId}`, color: '#ff0000', status: 'online',
-    })
+  for (const deviceId of ['1', '2', ...deviceIdsWithoutRecord]) {
+    if (!deviceIdsWithoutRecord.includes(deviceId)) {
+      await realStore.upsertDevice({
+        mission_id: mission.id, device_id: deviceId, name: `Tracker ${deviceId}`, color: '#ff0000', status: 'online',
+      })
+    }
     await realStore.upsertParticipantBackfillCheckpoint({
       mission_id: mission.id,
       traccar_device_id: deviceId,
@@ -213,5 +216,25 @@ describe('participant history backfill with the real mission store [DON-338]', (
     // Unchanged behaviour (open decision): the checkpoint still moves past a refused fix.
     expect((await checkpointOf(runtime.realStore, runtime.missionId, '1'))?.completed).toBe(1)
     await expect(runtime.realStore.countPositions(runtime.missionId)).resolves.toBe(2)
+  })
+
+  it('backfills the other devices while one participant device has no mission record yet (M-34)', async () => {
+    const calls: string[] = []
+    const runtime = await startBackfill(async (deviceId, from) => {
+      calls.push(deviceId)
+      return { accepted: [historyFix(deviceId, from.getTime() + 60_000, `${deviceId}-a`)], rejected: [] }
+    }, ['3'])
+
+    await vi.waitFor(async () => {
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '1'))?.completed).toBe(1)
+      expect((await checkpointOf(runtime.realStore, runtime.missionId, '2'))?.completed).toBe(1)
+    }, { timeout: 3_000 })
+    // The device with no record is not fetched, stays incomplete, and is named in the log.
+    expect(calls).not.toContain('3')
+    expect((await checkpointOf(runtime.realStore, runtime.missionId, '3'))?.completed).toBe(0)
+    expect(runtime.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/no mission device record/i),
+      expect.objectContaining({ deviceIds: ['3'] }),
+    )
   })
 })

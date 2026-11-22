@@ -488,6 +488,7 @@ export async function startTrackingRuntime(
   let participantBackfillTask: Promise<void> | null = null
   const participantBackfillRetryStates = new Map<string, ParticipantBackfillRetryState>()
   let lastParticipantBackfillKey: string | null = null
+  let lastParticipantBackfillMissingDevicesKey: string | null = null
   let participantBackfillRetryTimer: ReturnType<typeof setTimeout> | null = null
   const participantScopeWaiters = new Set<() => void>()
   const participantScopeReadyTimeoutMs = dependencies.participantScopeReadyTimeoutMs
@@ -1743,6 +1744,24 @@ export async function startTrackingRuntime(
     })
   }
 
+  /**
+   * Logs, once per change, the participant devices whose history backfill is
+   * waiting because the mission has no device record for them yet [M-34].
+   */
+  function noteParticipantBackfillMissingDevices(
+    missionId: string,
+    deviceIds: readonly string[],
+  ): void {
+    const key = deviceIds.length === 0 ? null : `${missionId}:${deviceIds.join(',')}`
+    if (key === lastParticipantBackfillMissingDevicesKey) return
+    lastParticipantBackfillMissingDevicesKey = key
+    if (key === null) return
+    logger.warn(
+      'Participant history backfill is waiting for devices with no mission device record; other devices continue.',
+      { missionId, deviceIds },
+    )
+  }
+
   async function runNextParticipantBackfillPass(): Promise<ParticipantBackfillPassResult> {
     // Participant backfill consumes only durability acknowledgement, never returned rows.
     const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
@@ -1753,16 +1772,22 @@ export async function startTrackingRuntime(
     const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
       activeMission.id,
     ) ?? []
-    const incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
+    let incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
     if (incomplete.length === 0) return { kind: 'idle' }
     if (dependencies.missionStore.listDevices !== undefined) {
       const devices = await dependencies.missionStore.listDevices(activeMission.id)
       const durableDeviceIds = new Set(devices.map((device) => device.device_id))
-      if (incomplete.some((candidate) => !durableDeviceIds.has(candidate.traccar_device_id))) {
-        return { kind: 'idle' }
-      }
+      // History for a device with no mission record cannot be stored yet.
+      // Skip only that device, by name, so it never stalls everyone else's
+      // backfill [M-34]. Its checkpoint stays incomplete and truthful.
+      const missingDeviceIds = [...new Set(incomplete
+        .filter((candidate) => !durableDeviceIds.has(candidate.traccar_device_id))
+        .map((candidate) => candidate.traccar_device_id))].sort()
+      noteParticipantBackfillMissingDevices(activeMission.id, missingDeviceIds)
+      incomplete = incomplete.filter((candidate) => durableDeviceIds.has(candidate.traccar_device_id))
+      if (incomplete.length === 0) return { kind: 'idle' }
     }
-    const checkpoint = selectParticipantBackfillCheckpoint(checkpoints, Date.now())
+    const checkpoint = selectParticipantBackfillCheckpoint(incomplete, Date.now())
     if (checkpoint === undefined) {
       const retryAtMs = Math.min(...incomplete.map((candidate) =>
         participantBackfillRetryStates.get(participantBackfillKey(candidate))?.retryAtMs ?? 0))

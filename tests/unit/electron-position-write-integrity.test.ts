@@ -266,15 +266,61 @@ describe('mission store position write integrity [DON-338]', () => {
       .resolves.toMatchObject({ rejectedCount: 0 })
   })
 
-  it('keeps the batch atomic for a missing device: nothing is written and the error names it', async () => {
+  it('stores the other devices\' rows around a fix whose device has no row, and records the refusal (M-34)', async () => {
+    const opened = await openMission()
+    const batch = fixes(256)
+    batch[2] = { ...batch[2]!, device_id: 'tracker-unknown' }
+
+    const first = await opened.store.persistTrackingPositionsBulk({
+      mission_id: opened.missionId, positions: batch, checkpoints: [],
+    })
+    const second = await opened.store.persistTrackingPositionsBulk({
+      mission_id: opened.missionId, positions: batch, checkpoints: [],
+    })
+
+    expect(first).toMatchObject({ insertedPositionCount: 255, rejectedPositionCount: 1 })
+    expect(second).toMatchObject({
+      insertedPositionCount: 0, rejectedPositionCount: 1, missionRejectedPositionTotal: 1,
+    })
+    await expect(opened.store.countPositions(opened.missionId)).resolves.toBe(255)
+    await expect(opened.store.listIngestAnomalies(opened.missionId)).resolves.toEqual([
+      expect.objectContaining({
+        kind: 'rejected',
+        reason_class: 'store_unknown_device',
+        device_id: 'tracker-unknown',
+        source_position_id: 'source-2',
+        occurrence_count: 2,
+      }),
+    ])
+  })
+
+  it('keeps the strict bulk API atomic for a missing device: nothing is written and the error names it', async () => {
     const opened = await openMission()
     const batch = fixes(3)
     batch[2] = { ...batch[2]!, device_id: 'tracker-unknown' }
 
-    await expect(opened.store.persistTrackingPositionsBulk({
-      mission_id: opened.missionId, positions: batch, checkpoints: [],
+    await expect(opened.store.addPositionsBulk({
+      mission_id: opened.missionId, positions: batch,
     })).rejects.toThrow(/device not found: tracker-unknown/i)
     await expect(opened.store.countPositions(opened.missionId)).resolves.toBe(0)
+  })
+
+  it('fails a checkpointed history piece by name for a device with no row, so no unsaved fix is reported kept (M-34)', async () => {
+    const opened = await openMission()
+    const batch = fixes(3)
+    batch[1] = { ...batch[1]!, device_id: 'tracker-unknown' }
+
+    await expect(opened.store.persistTrackingPositionsBulk({
+      mission_id: opened.missionId,
+      positions: batch,
+      checkpoints: [{
+        device_id: 'tracker-1',
+        history_from: '2026-08-09T10:00:00.000Z',
+        reconciled_until: '2026-08-09T10:00:02.000Z',
+      }],
+    })).rejects.toThrow(/device not found: tracker-unknown/i)
+    await expect(opened.store.countPositions(opened.missionId)).resolves.toBe(0)
+    await expect(opened.store.listTrackingHistoryCheckpoints(opened.missionId)).resolves.toEqual([])
   })
 
   it('quarantines a bad row in a checkpointed history piece and still records the checkpoint (STO-3)', async () => {
