@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, pressPauseResume } from './helpers/workspace-panels'
 
 test.describe('M10 full mission integration flow', () => {
   test.setTimeout(45_000)
@@ -6,20 +7,22 @@ test.describe('M10 full mission integration flow', () => {
   test('runs a complete mocked SAR mission with restart recovery and persistence checks', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Full Mission Flow')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await injectMockTracking(page)
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
-    await expect(page.getByTestId('tracking-status')).toContainText('2')
-    await page.getByTestId('sidebar-tab-layers').click()
-    await expect(page.getByText('Alpha Team')).toBeVisible()
-    await expect(page.getByText('Bravo Team')).toBeVisible()
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText(/Positions are coming in normally|Tracking is running/u)
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
+    // Each tracked person is listed in the People panel in the new layout.
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-people-panel')).toContainText('Alpha Team')
+    await expect(page.getByTestId('ws-people-panel')).toContainText('Bravo Team')
 
     await clickMap(page, { x: 640, y: 250 })
     await expect(page.getByTestId('marker-dialog')).toBeVisible()
@@ -39,10 +42,10 @@ test.describe('M10 full mission integration flow', () => {
 
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-search_area').click()
-    await clickMap(page, { x: 420, y: 180 })
-    await clickMap(page, { x: 620, y: 180 })
-    await clickMap(page, { x: 540, y: 340 })
-    await rightClickMap(page, { x: 540, y: 340 })
+    await clickMap(page, { x: 560, y: 180 })
+    await clickMap(page, { x: 760, y: 180 })
+    await clickMap(page, { x: 660, y: 340 })
+    await rightClickMap(page, { x: 660, y: 340 })
     await expect(page.getByTestId('drawing-dialog')).toBeVisible()
     await page.getByTestId('drawing-name-input').fill('Sector Alpha')
     await page.getByTestId('drawing-search-area-team-input').fill('Team 1')
@@ -70,21 +73,23 @@ test.describe('M10 full mission integration flow', () => {
     await page.getByTestId('drawing-save-btn').click()
     await expect(page.getByTestId('drawing-dialog')).toBeHidden()
 
-    await page.getByTestId('sidebar-tab-layers').click()
-    const bravoVisibilityToggle = page.getByTestId('layer-visibility-feature-device-bravo')
+    await openWorkspacePanel(page, 'people')
+    const bravoVisibilityToggle = page.getByTestId('ws-position-bravo')
     await expect(bravoVisibilityToggle).toBeVisible({ timeout: 15000 })
     await bravoVisibilityToggle.click()
     await expect(bravoVisibilityToggle).not.toBeChecked()
+    // Close People so the map is wide enough to measure beside the open Map Tools.
+    await page.getByTestId('ws-panel-close').click()
 
     await page.getByTestId('drawing-tool-measure').click()
-    await clickMap(page, { x: 680, y: 240 })
-    await clickMap(page, { x: 820, y: 285 })
+    await clickMap(page, { x: 960, y: 240 })
+    await clickMap(page, { x: 1100, y: 285 })
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
 
     await page.waitForTimeout(1100)
     const activeAtPause = parseDuration(await page.getByTestId('mission-active-search').textContent())
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
     await page.waitForTimeout(1100)
     const pausedActive = parseDuration(await page.getByTestId('mission-active-search').textContent())
     expect(pausedActive).toBeGreaterThanOrEqual(Math.max(0, activeAtPause - 1))
@@ -96,23 +101,26 @@ test.describe('M10 full mission integration flow', () => {
       ),
     ).toBeLessThanOrEqual(1)
 
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.reload()
     await waitForShell(page)
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Resume' }).click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-    await page.getByTestId('sidebar-tab-layers').click()
-    await expect(page.getByText('Alpha Team')).toBeVisible()
+    await openMissionPanel(page)
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await page.getByTestId('start-screen-resume-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-people-panel')).toContainText('Alpha Team')
+
+    await openMissionPanel(page)
 
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
 
     const state = await readHarnessState(page)
     const mission = state.missions.find((candidate) => candidate.name === 'Full Mission Flow')

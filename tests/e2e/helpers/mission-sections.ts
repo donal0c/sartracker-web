@@ -1,5 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
+import { openMissionPanel } from './workspace-panels'
+
 type MissionSectionName = 'participants' | 'outings'
 
 /**
@@ -11,6 +13,15 @@ export async function openMissionSections(
   page: Page,
   names: readonly MissionSectionName[] = ['participants', 'outings'],
 ): Promise<void> {
+  // Classic-fixture callers (classicLayout=1) keep Mission Control in the sidebar
+  // until they migrate (DON-353); only the new layout needs the Mission panel opened.
+  if (await page.getByTestId('simplified-workspace').count() > 0) await openMissionPanel(page)
+  // In the new layout Outings sits inside "More mission options" (DON-341).
+  const more = page.getByTestId('ws-more-mission-options')
+  if (names.includes('outings') && await more.count() > 0
+    && await more.evaluate((element) => element instanceof HTMLDetailsElement && !element.open)) {
+    await more.locator('summary').first().click()
+  }
   for (const name of names) {
     const section = page.getByTestId(`mission-${name}-section`)
     // Right after Start the section may not be mounted yet. Outside an active

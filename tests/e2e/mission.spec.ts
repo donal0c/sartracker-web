@@ -1,23 +1,26 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, pressPauseResume } from './helpers/workspace-panels'
 
 const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 
 test.describe('M5 mission control workflows', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     const title = page.getByTestId('app-title')
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
 
   test('starts a mission with a back-dated offset', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Night Search')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByTestId('current-mission-name')).toContainText('Night Search')
     await expect(page.getByTestId('mission-elapsed')).toHaveText(/^02:0\d:\d\d$/)
   })
@@ -27,6 +30,7 @@ test.describe('M5 mission control workflows', () => {
   }) => {
     const offsetInput = page.getByTestId('mission-offset-input')
     await expect(offsetInput).toHaveAttribute('max', '48')
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Forty Eight Hour History')
     await offsetInput.fill('48')
 
@@ -48,22 +52,27 @@ test.describe('M5 mission control workflows', () => {
 
     await page.getByTestId('mission-start-btn').click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByTestId('mission-elapsed')).toHaveText(/^48:0\d:\d\d$/)
   })
 
   test('pauses and resumes while keeping elapsed time moving and active time frozen', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Training Mission')
     await page.getByTestId('mission-start-btn').click()
 
     await page.waitForTimeout(1100)
     const elapsedBeforePause = await page.getByTestId('mission-elapsed').textContent()
 
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveText('Resume')
 
     // DON-64: paused must be unmistakable and the recovery control always reachable.
+    // In the new layout that is the full-width alarm, whatever panel is open.
+    await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+    await expect(page.getByTestId('ws-alarm-resume')).toBeEnabled()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-phase-chip')).toHaveText('PAUSED')
     await expect(page.getByTestId('mission-paused-banner')).toBeVisible()
     await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
@@ -82,8 +91,8 @@ test.describe('M5 mission control workflows', () => {
       Math.abs(parseDuration(activeDuringPause) - parseDuration(activeAtPause)),
     ).toBeLessThanOrEqual(1)
 
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     const activeAtResume = await page.getByTestId('mission-active-search').textContent()
     await page.waitForTimeout(2100)
@@ -92,14 +101,18 @@ test.describe('M5 mission control workflows', () => {
   })
 
   test('finishes a mission through confirmation and returns to idle state', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Finish Flow')
     await page.getByTestId('mission-start-btn').click()
+
+    await openMissionPanel(page)
 
     await page.getByTestId('mission-finish-btn').click()
     await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeDisabled()
     await expect(page.getByTestId('mission-finish-btn')).toBeDisabled()
@@ -108,9 +121,11 @@ test.describe('M5 mission control workflows', () => {
   test('finish confirmation is an accessible alertdialog and cancels with Escape', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Keyboard Finish Flow')
     await page.getByTestId('mission-start-btn').click()
 
+    await openMissionPanel(page)
     const finishButton = page.getByTestId('mission-finish-btn')
     await finishButton.click()
 
@@ -121,16 +136,19 @@ test.describe('M5 mission control workflows', () => {
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
     await expect(finishButton).toBeFocused()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('validates custody and finalizes only with a verified archive', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Finalize Flow')
     await page.getByTestId('mission-start-btn').click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
     await expect(page.getByTestId('mission-governance-card')).toContainText('Finalize Flow')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finalize-btn').click()
 
     const custodyDialog = page.getByTestId('mission-archive-custody-dialog')
@@ -206,12 +224,14 @@ test.describe('M5 mission control workflows', () => {
     })
     await page.reload()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Known Evidence Gap')
     await page.getByTestId('mission-start-btn').click()
     const missionId = await page.evaluate(
       () => window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null,
     )
     expect(missionId).not.toBeNull()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
@@ -222,10 +242,12 @@ test.describe('M5 mission control workflows', () => {
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
       'rejected-position evidence may have been lost when the app closed unexpectedly',
     )
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finalize-btn').click()
     await submitSyntheticArchiveCustody(page)
 
@@ -239,6 +261,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-evidence-loss-confirm').click()
 
     await expect(evidenceDialog).toBeHidden()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
       'Complete and 100% remain blocked permanently',
     )
@@ -264,12 +287,14 @@ test.describe('M5 mission control workflows', () => {
   })
 
   test('routes an empty Admin Roster through Settings and back to evidence-loss acknowledgement [DON-281]', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Empty Roster Gap')
     await page.getByTestId('mission-start-btn').click()
     const missionId = await page.evaluate(
       () => window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null,
     )
     expect(missionId).not.toBeNull()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
@@ -281,6 +306,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finalize-btn').click()
     await submitSyntheticArchiveCustody(page)
 
@@ -317,6 +343,7 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-evidence-loss-confirm').click()
 
     await expect(evidenceDialog).toBeHidden()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText(
       'Complete and 100% remain blocked permanently',
     )
@@ -350,12 +377,15 @@ test.describe('M5 mission control workflows', () => {
     })
     await page.reload()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Unlock Flow')
     await page.getByTestId('mission-start-btn').click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
     await finalizeWithSyntheticArchiveCustody(page)
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-unlock-btn').click()
     await expect(page.getByTestId('mission-unlock-dialog')).toBeVisible()
     await page.getByTestId('mission-unlock-admin').selectOption('Ops Lead')
@@ -367,20 +397,23 @@ test.describe('M5 mission control workflows', () => {
   })
 
   test('finishes a paused mission without letting active search time advance', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Paused Finish Flow')
     await page.getByTestId('mission-start-btn').click()
 
     await page.waitForTimeout(1100)
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
 
     const activeAtPause = await page.getByTestId('mission-active-search').textContent()
     await page.waitForTimeout(1100)
 
+    await openMissionPanel(page)
+
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     const persistedMission = await page.evaluate(() => {
       const raw = window.sessionStorage.getItem('sartracker:browser-harness')
       if (raw === null) {
@@ -416,22 +449,27 @@ test.describe('M5 mission control workflows', () => {
   })
 
   test('warns before reusing an existing mission name', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Duplicate Test')
     await page.getByTestId('mission-start-btn').click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Duplicate Test')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toContainText(
       'Mission name already exists.',
     )
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('rejects invalid start offsets before creating a mission', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Offset Guardrails')
     await page.getByTestId('mission-offset-input').fill('49')
     await page.getByTestId('mission-start-btn').click()
@@ -439,53 +477,60 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-control')).toContainText(
       'Start offset must be between 0 and 48 hours.',
     )
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
   })
 
   test('surfaces recovery on reload and can resume the mission', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Recovery Flow')
     await page.getByTestId('mission-start-btn').click()
 
     await page.reload()
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
+    await openMissionPanel(page)
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
     await page.getByRole('button', { name: 'Resume' }).click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByTestId('current-mission-name')).toContainText('Recovery Flow')
   })
 
   test('keeps a mission paused before the interruption paused after recovery Resume [DON-283]', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Paused Recovery Flow')
     await page.getByTestId('mission-start-btn').click()
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
 
     await page.reload()
-    const dialog = page.getByTestId('mission-recovery-dialog')
+    const dialog = page.getByTestId('start-screen-resume')
     await expect(dialog).toBeVisible()
-    await expect(dialog).toContainText('A mission you had paused stays paused')
-    await dialog.getByRole('button', { name: 'Resume', exact: true }).click()
+    await expect(dialog).toContainText('If you had paused it, it stays paused')
+    await page.getByTestId('start-screen-resume-btn').click()
 
     await expect(dialog).toBeHidden()
     await expect(page.getByTestId('current-mission-name')).toContainText('Paused Recovery Flow')
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
 
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('offers Archive & Lock for the mission just finished, even when it was backdated [DON-294]', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Training This Morning')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
     await expect(page.getByTestId('mission-governance-card')).toContainText('Training This Morning')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Backdated Incident')
     await page.getByTestId('mission-offset-input').fill('48')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
@@ -493,75 +538,88 @@ test.describe('M5 mission control workflows', () => {
     await expect(chosen).toHaveText(/Backdated Incident/)
 
     // Any finished mission stays reachable: the operator can switch the target.
+    await openMissionPanel(page)
     await page.getByTestId('mission-governance-select').selectOption({ label: 'Training This Morning' })
     await expect(chosen).toHaveText(/Training This Morning/)
     // Finishing a new mission targets it, even after an earlier explicit choice.
     await page.getByTestId('mission-name-input').fill('Third Mission')
     await page.getByTestId('mission-offset-input').fill('24')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
     await expect(chosen).toHaveText(/Third Mission/)
   })
 
+  // The new start screen's "Start a new mission instead" replaces Start Fresh (DON-342).
   test('surfaces recovery on reload and can start fresh', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Fresh Flow')
     await page.getByTestId('mission-start-btn').click()
 
     await page.reload()
-    await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-    await page.getByRole('button', { name: 'Start Fresh' }).click()
+    await openMissionPanel(page)
+    await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+    await page.getByTestId('start-screen-start-new-instead').click()
+    await page.getByTestId('start-screen-confirm-new-yes').click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
 
-  test('moves minimized Mission Control into the top panel without side-panel safety actions', async ({ page }) => {
+  // The old mast's minimize is gone (DON-341): closing the Mission panel does
+  // the same job. The mission stays named in the top bar and its safety actions
+  // come back the moment Mission is reopened.
+  test('closing Mission keeps the mission in the top bar and hides side-panel safety actions until reopened', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Minimize Flow')
     await page.getByTestId('mission-start-btn').click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-    await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
 
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await page.getByTestId('ws-mission-close').click()
 
-    await expect(page.getByTestId('mission-control-dock')).toBeHidden()
-    await expect(page.getByTestId('command-mast-mission-control-minimized')).toBeVisible()
-    await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText('Minimize Flow')
-    await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
-    await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
+    await expect(page.getByTestId('ws-mission-host')).toBeHidden()
+    await expect(page.getByTestId('ws-mission-button')).toContainText('Minimize Flow')
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeHidden()
+    await expect(page.getByTestId('mission-finish-btn')).toBeHidden()
 
-    await page.getByTestId('compact-mission-restore').click()
-
-    await expect(page.getByTestId('mission-control-dock')).toBeVisible()
-    await expect(page.getByTestId('mission-control-collapse-btn')).toBeVisible()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
+    await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
   })
 
-  test('minimizes the active mission while an earlier finished mission awaits Archive & Lock [DON-307]', async ({ page }) => {
+  test('closes Mission for the active mission while an earlier finished mission awaits Archive & Lock [DON-307]', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Yesterday Training')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Today Search')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
+    await page.getByTestId('ws-mission-close').click()
 
-    await expect(page.getByTestId('mission-control-dock')).toBeHidden()
-    await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText('Today Search')
+    await expect(page.getByTestId('ws-mission-host')).toBeHidden()
+    await expect(page.getByTestId('ws-mission-button')).toContainText('Today Search')
   })
 
   test('does not show minimize in paused mission control', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Paused Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
 
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
+    await openMissionPanel(page)
 
     await expect(page.getByTestId('mission-control-collapse-btn')).toHaveCount(0)
     await expect(page.getByTestId('mission-control-expand-btn')).toHaveCount(0)
@@ -570,14 +628,16 @@ test.describe('M5 mission control workflows', () => {
     await expect(page.getByTestId('mission-paused-banner')).toContainText('Mission paused')
   })
 
-  test('keeps expanded Mission Control usable when entering focus mode', async ({ page }) => {
+  // Focus mode is gone (DON-341); Full map is its replacement.
+  test('keeps Mission Control usable after choosing Full map', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Focus-Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
 
-    await page.getByTestId('focus-mode-toggle').click()
-    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-    await expect(page.getByTestId('mission-control-collapsed-summary')).toHaveCount(0)
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
     await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
     await expect(page.getByTestId('mission-elapsed')).toBeVisible()

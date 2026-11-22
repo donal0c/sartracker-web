@@ -10,6 +10,7 @@
  *    before the first live poll succeeds
  */
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 async function waitForShell(page: Page) {
   const title = page.getByTestId('app-title')
@@ -115,11 +116,12 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
   test('operator sees an explicit "showing last known positions" warning when only cached tracking is available', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Cold Start Offline Test')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     // Simulate cold-start-from-cache: snapshot + status the runtime would publish
     // when start-tracking-runtime hydrates from a usable cache and no live poll
@@ -167,21 +169,15 @@ test.describe('V1 regression: cold-start-offline operator-visible warning', () =
       })
     })
 
-    // Tracking status panel sits in the default sidebar tab; click it to reveal.
-    await page.getByTestId('sidebar-tab-tracking').click().catch(() => {
-      // Tab may already be active or named differently in some layouts; the
-      // panel should still be findable below.
-    })
-
-    const trackingStatus = page.getByTestId('tracking-status')
-    await expect(trackingStatus).toBeVisible({ timeout: 5_000 })
-    // The warning copy should clearly tell the operator they are looking at
-    // last known positions, not a live feed. Match on a stable phrase rather
-    // than the full sentence so future copy tweaks don't break the regression.
-    await expect(trackingStatus).toContainText(/last known positions/i)
-    await expect(trackingStatus).toContainText(/offline/i)
-    await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
-    await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
+    // The new layout raises a full-width alarm that cannot be closed, and the
+    // Tracking panel says the map shows the last positions received, not a live feed.
+    const alarm = page.getByTestId('ws-alarm')
+    await expect(alarm).toBeVisible({ timeout: 5_000 })
+    await expect(alarm).toContainText('TRACKING LOST')
+    await expect(alarm).toContainText(/may not be current/i)
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-panel')).toContainText(/last positions received/i)
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('New positions have stopped arriving.')
   })
 })
 
@@ -191,12 +187,13 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
   test('an empty breadcrumb result does not re-show the amber loading warning on the next poll', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Steady Tracking Status')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openWorkspacePanel(page, 'tracking')
 
     const result = await page.evaluate(async () => {
       const [
@@ -284,12 +281,9 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
 
       warningSequence.length = 0
       const isAmberLoadingMessageVisible = () =>
-        Array.from(document.querySelectorAll('[data-testid="tracking-warning"]')).some(
-          (element) =>
-            element.textContent?.includes(
-              'Current fixes loaded; loading breadcrumb history.',
-            ) === true,
-        )
+        document.body.textContent?.includes(
+          'Current fixes loaded; loading breadcrumb history.',
+        ) === true
       let amberLoadingMessageBecameVisible = false
       const observer = new MutationObserver(() => {
         if (isAmberLoadingMessageVisible()) {
@@ -305,6 +299,8 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
       if (scheduledPoll === null) {
         throw new Error('The next tracking poll was not scheduled.')
       }
+      const statusMessageBeforePoll =
+        document.querySelector('[data-testid="ws-tracking-happened"]')?.textContent ?? null
       scheduledPoll()
       while (resolveSteadyBreadcrumbs === null) {
         await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
@@ -312,7 +308,7 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
       await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()))
       const statusMessageWhileHistoryPending =
-        document.querySelector('[data-testid="tracking-warning"]')?.textContent ?? null
+        document.querySelector('[data-testid="ws-tracking-happened"]')?.textContent ?? null
 
       resolveSteadyBreadcrumbs([])
       while (warningSequence.length < 2) {
@@ -325,30 +321,46 @@ test.describe('V1 regression: steady tracking status remains visually stable [DO
       return {
         warningSequence,
         amberLoadingMessageBecameVisible,
+        statusMessageBeforePoll,
         statusMessageWhileHistoryPending,
       }
     })
 
     expect(result.warningSequence).toEqual([null, null])
     expect(result.amberLoadingMessageBecameVisible).toBe(false)
-    expect(result.statusMessageWhileHistoryPending).toBe(
-      'Telemetry stream healthy',
-    )
-    await expect(page.getByTestId('tracking-status')).toContainText(
-      'Telemetry stream healthy',
+    // The Tracking panel's "What has happened" line holds steady across the
+    // poll: no loading wording appears while the breadcrumb history is pending.
+    // Healthy telemetry (was "Telemetry stream healthy"): connected and running,
+    // with no lost, disconnected or loading wording, before and during the poll.
+    expect(result.statusMessageBeforePoll).toMatch(/^(Positions are coming in normally\.|Tracking is running, with something to check\.)/u)
+    expect(result.statusMessageBeforePoll).not.toMatch(/loading|not connected|stopped arriving/iu)
+    await expect(page.getByTestId('ws-tracking-headline')).not.toContainText(/not connected|TRACKING LOST|history not complete/iu)
+    expect(result.statusMessageWhileHistoryPending).toBe(result.statusMessageBeforePoll)
+    await expect(page.getByTestId('ws-tracking-happened')).toHaveText(
+      result.statusMessageBeforePoll ?? '',
     )
   })
 })
 
-test.describe('Mast tracking cell never reads as a positions/stale ratio (sartracker-web-zq9)', () => {
+/** How many current positions the tracking store holds (the old mast's FIX value). */
+async function countTrackedPositions(page: Page): Promise<number> {
+  return page.evaluate(async () => {
+    const { useTrackingStore } = await import('/src/features/tracking/tracking-store.ts')
+    return useTrackingStore.getState().snapshot.positions.length
+  })
+}
+
+// The old mast cell is gone (DON-341); the top bar's tracking line replaced it and keeps the same rule.
+test.describe('Tracking line never reads as a positions/stale ratio (sartracker-web-zq9)', () => {
   test.setTimeout(45_000)
 
-  test('the mast splits FIX and STALE into separate values', async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+  test('the tracking line names out-of-date positions instead of a ratio', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Mast Tracking Ratio Regression')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     // Two healthy positions, one stale-cached. Pre-fix this rendered as the
     // visually impossible "ONLINE 3/1" ratio in the mast.
@@ -372,28 +384,49 @@ test.describe('Mast tracking cell never reads as a positions/stale ratio (sartra
       applyTrackingStatus({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: '2026-04-09T16:00:01.000Z', warning: null })
     })
 
-    const cell = page.getByTestId('mast-tracking-cell')
+    const cell = page.getByTestId('ws-tracking-headline')
     await expect(cell).toBeVisible()
-    await expect(page.getByTestId('mast-tracking-mode')).toHaveText('ONLINE')
-    await expect(page.getByTestId('mast-tracking-fix-value')).toHaveText('3')
-    await expect(page.getByTestId('mast-tracking-stale-value')).toHaveText('1')
+    await expect(cell).toContainText('1 position out of date')
     // Defends against the pre-fix `${positions.length}/${staleCount}` regression
     // that produced impossible ratios such as "3/1" inside the cell.
-    const cellText = (await cell.textContent()) ?? ''
+    // Only the headline words: the "Last update" timestamp after them holds a date.
+    const cellText = ((await cell.textContent()) ?? '').split('Last update')[0]
     expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+    // Connection state (was the mast's ONLINE): Tracking says it is running, not lost or disconnected.
+    await expect(cell).not.toContainText(/not connected|TRACKING LOST/u)
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is running, with something to check.')
+    // Exactly one stale position (was STALE 1), named once in the issue list.
+    await expect(page.getByTestId('ws-tracking-happened').locator('li', { hasText: 'out of date' })).toHaveText(['1 position out of date'])
+    // Exactly three fixes (was FIX 3): three positions held, and each person shows
+    // a position age rather than "No position yet" (a tick shows even without a fix).
+    expect(await countTrackedPositions(page)).toBe(3)
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-people-count')).toHaveText('3')
+    for (const id of ['d1', 'd2', 'd3']) {
+      await expect(page.getByTestId(`ws-person-status-${id}`)).toContainText(/position \d/iu)
+      await expect(page.getByTestId(`ws-person-status-${id}`)).not.toContainText('No position yet')
+    }
   })
 
-  test('idle state shows zero fix and zero stale with no ratio chrome', async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+  test('idle state shows no ratio chrome', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
 
-    const cell = page.getByTestId('mast-tracking-cell')
+    const cell = page.getByTestId('ws-tracking-headline')
     await expect(cell).toBeVisible()
-    await expect(page.getByTestId('mast-tracking-mode')).toHaveText('IDLE')
-    await expect(page.getByTestId('mast-tracking-fix-value')).toHaveText('0')
-    await expect(page.getByTestId('mast-tracking-stale-value')).toHaveText('0')
+    await expect(cell).not.toContainText('out of date')
     const cellText = (await cell.textContent()) ?? ''
     expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+    // Connection state (was IDLE): nothing is connected before a mission starts.
+    await expect(cell).toContainText('Tracking not connected')
+    // No fixes and nothing stale (was FIX 0, STALE 0): no positions held, no roster, nothing out of date.
+    expect(await countTrackedPositions(page)).toBe(0)
+    await expect(page.getByTestId('ws-toggle-people')).toHaveText('People')
+    await expect(page.getByTestId('ws-toggle-people')).toBeDisabled()
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is not connected.')
+    await expect(page.getByTestId('ws-tracking-happened')).not.toContainText('out of date')
   })
 })
 
@@ -403,11 +436,12 @@ test.describe('V1 regression: tracking visibility filter through to MapLibre', (
   test('hiding a single tracking device updates the MapLibre device-circle filter', async ({
     page,
   }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1')
+    await page.goto('/?missionHarness=1')
     await waitForShell(page)
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Tracking Visibility Test')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await seedTrackingDevices(page)
 
@@ -428,14 +462,15 @@ test.describe('V1 regression: tracking visibility filter through to MapLibre', (
       )
       .toEqual(expect.arrayContaining(['feature:device:alpha', 'feature:device:bravo']))
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    // Per-person visibility lives in the People panel in the new layout.
+    await openWorkspacePanel(page, 'people')
 
     // Confirm baseline: the MapLibre filter does not exclude bravo.
     const baseline = await readMapFilterState(page)
     expect(JSON.stringify(baseline.trackingDevicesCircle)).not.toContain('bravo')
 
     // Click the per-device visibility toggle for bravo.
-    const bravoToggle = page.getByTestId('layer-visibility-feature-device-bravo')
+    const bravoToggle = page.getByTestId('ws-position-bravo')
     await expect(bravoToggle).toBeVisible({ timeout: 10_000 })
     await bravoToggle.click()
 

@@ -1,12 +1,14 @@
 import { expect, test } from '@playwright/test'
 
 import { openMissionSections } from './helpers/mission-sections'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 test.describe('BCP-03 explicit outings [DON-270]', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?missionHarness=1&classicLayout=1&missionModel=1')
+    await page.goto('/?missionHarness=1&missionModel=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Outing Model Test')
     await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
@@ -21,6 +23,7 @@ test.describe('BCP-03 explicit outings [DON-270]', () => {
     )
     await expect(page.getByTestId('outing-unassigned-row')).toContainText('Accepted fixes: 0')
 
+    await openMissionPanel(page)
     await page.getByTestId('outing-label-input').fill('Night search')
     await page.getByTestId('outing-start-btn').click()
     await expect(page.getByTestId('active-outing-label')).toHaveText('Active: Night search')
@@ -54,13 +57,16 @@ test.describe('BCP-03 explicit outings [DON-270]', () => {
   })
 
   test('offers but never forces ending an open outing before mission finish', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('outing-start-btn').click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
 
     const offer = page.getByTestId('outing-finish-offer')
     await expect(offer).toContainText('Finishing the mission won’t invent an end time')
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
+    await openMissionSections(page, ['outings'])
     await expect(page.getByTestId('mission-governance-card')).toBeVisible()
     await expect(page.locator('[data-testid^="outing-row-"]').first()).toContainText('Open')
   })
