@@ -13,6 +13,10 @@ import type { MissionStoreModule } from './production-contracts'
 
 const require = createRequire(import.meta.url)
 const sourceFile = require.resolve('../../../../electron/mission-store.cjs')
+// The integrity check on the copy runs for real; only the backup step is faulted [M-44].
+const { runSqliteQuickCheckInWorker } = require('../../../../electron/sqlite-backup-runner.cjs') as {
+  readonly runSqliteQuickCheckInWorker: (input: { readonly targetPath: string }) => Promise<unknown>
+}
 const Database = require('better-sqlite3') as new (file: string, options: { readonly: boolean; fileMustExist: boolean }) => {
   prepare: (sql: string) => { all: () => { name: string }[] }
   close: () => void
@@ -39,7 +43,7 @@ describe('WAR-02A rolling SQLite backup', () => {
             const negative = process.env.WAR02A_NEGATIVE_CONTROL === 'backup-direct-target'
             const module = loadIsolatedCommonJs<MissionStoreModule>(sourceFile, {
               'node:fs/promises': createFaultFileSystem(root, () => plan),
-              './sqlite-backup-runner.cjs': { runSqliteBackupInWorker: adapter.run },
+              './sqlite-backup-runner.cjs': { runSqliteBackupInWorker: adapter.run, runSqliteQuickCheckInWorker },
             }, negative ? {
               from: 'const temporaryPath = `${backupPath}.tmp-${randomUUID()}`',
               to: 'const temporaryPath = backupPath',
@@ -85,7 +89,7 @@ describe('WAR-02A rolling SQLite backup', () => {
       const clock = new VirtualScheduler()
       const adapter = createSqliteBackupAdapter(() => new FaultPlan(), gate)
       const module = loadIsolatedCommonJs<MissionStoreModule>(sourceFile, {
-        './sqlite-backup-runner.cjs': { runSqliteBackupInWorker: adapter.run },
+        './sqlite-backup-runner.cjs': { runSqliteBackupInWorker: adapter.run, runSqliteQuickCheckInWorker },
       })
       store = await module.createElectronMissionStore({ userDataPath: root })
       await store.createMission({ name: 'Held completion' })
