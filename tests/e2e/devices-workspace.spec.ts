@@ -275,11 +275,6 @@ test.describe('M19 devices workspace', () => {
 
     const zoomButton = page.getByTestId('devices-inspector-zoom')
     await expect(zoomButton).toBeVisible()
-    // Tracking is offline here, so the TRACKING LOST alarm shows and the workspace
-    // starts below it (DON-341): at 720 px high the inspector scrolls to Zoom.
-    // The DON-190 contract is the width: the action stays inside the inspector.
-    await zoomButton.scrollIntoViewIfNeeded()
-    await expect(zoomButton).toBeInViewport()
 
     const boxes = await page.evaluate(() => {
       const inspector = document.querySelector('[data-testid="devices-inspector"]')
@@ -299,6 +294,16 @@ test.describe('M19 devices workspace', () => {
 
     expect(boxes.zoomLeft).toBeGreaterThanOrEqual(boxes.inspectorLeft)
     expect(boxes.zoomRight).toBeLessThanOrEqual(boxes.inspectorRight + 1)
+
+    // Tracking is offline here, so the TRACKING LOST alarm shows and the workspace
+    // starts below it (DON-341): at 720 px high the inspector scrolls down to Zoom.
+    // Scroll vertically only, after the width checks, so sideways overflow cannot hide.
+    await page.getByTestId('devices-inspector').evaluate((inspector) => {
+      const zoom = inspector.querySelector('[data-testid="devices-inspector-zoom"]')
+      if (zoom === null) throw new Error('Expected the selected-device zoom button.')
+      inspector.scrollTop += zoom.getBoundingClientRect().bottom - inspector.getBoundingClientRect().bottom + 16
+    })
+    await expect(zoomButton).toBeInViewport()
   })
 
   test('updates rendered breadcrumb colour, size, and global trail mode', async ({ page }) => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react'
 
 import { useFocusModeStore } from '../../features/focus-mode/focus-mode-store'
 import type { PanelArrangement } from '../../features/workspace/panel-arrangement'
+import { MODAL_BACKGROUND_ATTRIBUTE } from '../workspace-overlay'
 import { useWorkspacePanels } from './use-workspace-panels'
 
 /** CSS variable holding where the top bar and alarms end; docked overlays start there. */
@@ -76,15 +77,18 @@ export function SimplifiedWorkspace(props: {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-panel-arrangement={props.arrangement} data-testid="simplified-workspace">
-      <div ref={headerRef}>
+      {/* Everything except the alarm is inert while a modal workspace is open. */}
+      <div {...{ [MODAL_BACKGROUND_ATTRIBUTE]: '' }} ref={headerRef}>
         {panels.top}
         {props.safetyBanner}
       </div>
       <div className="ws-row relative flex min-h-0 flex-1" ref={rowRef}>
-        {panels.side}
+        <div className="contents" {...{ [MODAL_BACKGROUND_ATTRIBUTE]: '' }}>{panels.side}</div>
         <section className={`ws-map-area relative flex-1 overflow-hidden ${panels.slotSide === 'left' ? 'order-2' : '-order-1'}`}>
-          {props.map}
-          {panels.overMap}
+          <div className="contents" {...{ [MODAL_BACKGROUND_ATTRIBUTE]: '' }}>
+            {props.map}
+            {panels.overMap}
+          </div>
           <div className="ws-alarm-slot" ref={alarmRef}>{panels.alarm}</div>
         </section>
       </div>

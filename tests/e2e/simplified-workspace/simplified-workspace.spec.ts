@@ -380,6 +380,62 @@ test.describe('Simplified workspace', () => {
     }
   })
 
+  test('with the alarm showing, a modal workspace still blocks everything behind it except the alarm', async ({ page }) => {
+    // Was: the full-window backdrop blocked these presses. The modal now starts
+    // below the alarm, so the uncovered top bar and side panel must be inert.
+    await open(page)
+    await startMission(page)
+    await feed(page, { lost: true })
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    const workspaces: ReadonlyArray<{ readonly name: string; readonly open: () => Promise<void>; readonly testId: string }> = [
+      { name: 'All devices', testId: 'devices-workspace', open: async () => { await showPeople(page); await page.getByTestId('open-devices-workspace').click() } },
+      { name: 'Settings', testId: 'settings-workspace', open: async () => { await page.getByTestId('open-settings-workspace').click() } },
+      { name: 'Diagnostics', testId: 'diagnostics-workspace', open: async () => { await page.getByTestId('ws-more-button').click(); await page.getByTestId('open-diagnostics-workspace').click() } },
+    ]
+    const pressAt = async (testId: string) => {
+      const box = await page.getByTestId(testId).boundingBox()
+      if (box === null) throw new Error(`${testId} is not on screen.`)
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+    }
+    const focusInsideModal = () => page.evaluate(() => {
+      const dialog = document.querySelector('[role="dialog"][aria-modal="true"]')
+      return dialog !== null && dialog.contains(document.activeElement)
+    })
+    for (const workspace of workspaces) {
+      await workspace.open()
+      await expect(page.getByTestId(workspace.testId), `${workspace.name} open`).toBeVisible()
+      await expect(page.getByTestId('ws-mission-host')).toBeHidden()
+
+      // Pressing the uncovered Mission, Settings or side-panel controls opens nothing underneath.
+      await pressAt('ws-mission-button')
+      await pressAt('open-settings-workspace')
+      if (await page.getByTestId('ws-panel-close').isVisible()) await pressAt('ws-panel-close')
+      await page.waitForTimeout(200)
+      await expect(page.getByTestId('ws-mission-host'), `Mission stays shut behind ${workspace.name}`).toBeHidden()
+      await expect(page.locator('[role="dialog"][aria-modal="true"]'), `only ${workspace.name} is open`).toHaveCount(1)
+      await expect(page.getByTestId(workspace.testId)).toBeVisible()
+
+      // Keyboard focus never leaves the modal.
+      await page.locator('[role="dialog"][aria-modal="true"]').focus()
+      for (let step = 0; step < 40; step += 1) {
+        await page.keyboard.press(step % 7 === 6 ? 'Shift+Tab' : 'Tab')
+        expect(await focusInsideModal(), `focus inside ${workspace.name} after ${step + 1} presses`).toBe(true)
+      }
+      await page.keyboard.press('Escape')
+      await expect(page.getByTestId(workspace.testId)).toBeHidden()
+    }
+
+    // The alarm's own control still works over a modal.
+    await feed(page)
+    await pressPauseResume(page)
+    await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+    await page.keyboard.press('Escape')
+    await page.getByTestId('open-settings-workspace').click()
+    await expect(page.getByTestId('settings-workspace')).toBeVisible()
+    await page.getByTestId('ws-alarm-resume').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+  })
+
   test('lost tracking cannot be missed and pause is loud', async ({ page }) => {
       await open(page)
       await startMission(page)

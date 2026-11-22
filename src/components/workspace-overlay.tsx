@@ -54,12 +54,17 @@ export function WorkspaceOverlay({
     }
 
     returnFocusRef.current = document.activeElement
+    // A modal makes the screen behind it inert. In the new layout it starts below
+    // the tracking alarm, so the uncovered top bar and side panel must not take
+    // presses or focus; the alarm itself (Resume) stays live.
+    const releaseBackground = docked ? null : makeBackgroundInert()
     return () => {
+      releaseBackground?.()
       const returnTarget = returnFocusRef.current
       returnFocusRef.current = null
       restoreFocus(returnTarget)
     }
-  }, [open])
+  }, [docked, open])
 
   useLayoutEffect(() => {
     const panel = panelRef.current
@@ -180,6 +185,32 @@ export function WorkspaceOverlay({
       </div>
     </div>
   )
+}
+
+/** Marks regions that a modal workspace makes inert while it is open. */
+export const MODAL_BACKGROUND_ATTRIBUTE = 'data-modal-background'
+
+/** How many open modal workspaces hold each background region inert. */
+const inertHolds = new WeakMap<HTMLElement, number>()
+
+/**
+ * Makes every marked background region inert and returns the release. Release
+ * runs before focus is restored, so focus can return to the button that opened
+ * the workspace. Nested modals each hold the regions until both close.
+ */
+function makeBackgroundInert(): () => void {
+  const regions = [...document.querySelectorAll<HTMLElement>(`[${MODAL_BACKGROUND_ATTRIBUTE}]`)]
+  for (const region of regions) {
+    inertHolds.set(region, (inertHolds.get(region) ?? 0) + 1)
+    region.inert = true
+  }
+  return () => {
+    for (const region of regions) {
+      const holds = (inertHolds.get(region) ?? 1) - 1
+      inertHolds.set(region, holds)
+      if (holds <= 0) region.inert = false
+    }
+  }
 }
 
 /**
