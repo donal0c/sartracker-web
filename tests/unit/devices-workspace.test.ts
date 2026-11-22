@@ -136,6 +136,26 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="devices-inspector-title"]')).toContain('Bravo Team')
   })
 
+  it('marks a stale row with an unverified fix time in the stale colour, and does not show its status in green [M-21]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({
+      snapshot: { ...SNAPSHOT, positions: SNAPSHOT.positions.map((position) => position.device_id === 'alpha'
+        ? { ...position, fix_time_unverified: true, device_cache_stale: true }
+        : position) },
+      status: { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null },
+    })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+    expect(getText('[data-testid="device-source-alpha"]')).toContain('Stale')
+    expect(getElement('[data-testid="device-source-alpha"]').className).toContain('text-rose-300')
+    expect(getElement('[data-testid="device-status-alpha"]').className).not.toContain('text-emerald-300')
+    // The header no longer calls the feed healthy in green [M-20].
+    expect(getText('[data-testid="devices-tracking-warning"]')).not.toContain('Tracking feed healthy')
+    expect(getElement('[data-testid="devices-tracking-mode"]').className).not.toContain('text-emerald-300')
+  })
+
   it('shows the authoritative fix time and supplied GPS accuracy in the inspector [DON-260]', async () => {
     const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
     useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })

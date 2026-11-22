@@ -798,6 +798,8 @@
             <li><strong>Zoom</strong> jumps the map to the device (not available if it has no fix).</li>
             <li>The <strong>selected device</strong> panel shows status, <strong>Last seen</strong>, <strong>Fix time</strong>, source, GPS accuracy, battery, speed and coordinates. Times are local, with the time zone and UTC offset.</li>
             <li><strong>Reconnect</strong> reloads settings and reconnects to the tracking server. Until a device sends a fresh fix it shows <strong>Unknown</strong> / <em>Last known</em>, not Online.</li>
+            <li>A position that is not current (older than 5 minutes, with a fix time ahead of this laptop's clock, or from an expired cache) always shows <strong>Stale</strong> in red in the <strong>Source</strong> column, also when its time is not verified or tracking is offline (for example <em>Stale · Fix time unverified</em> or <em>Stale · Last known</em>). Its status is then not shown in green, because the device is not reporting a current position.</li>
+            <li>The line under <strong>Tracking health</strong> is green (<em>Tracking feed healthy.</em>) only when tracking is online, nothing is wrong, and every position is current. When positions are not current it reads amber, for example <em>Feed connected · 2 positions not current</em>; when tracking is also offline or not connected it says so first, for example <em>Tracking offline · 2 positions not current</em>.</li>
           </ul>
           <p>Who is tracked, saved and shown is decided only by <strong>Participants</strong> in Mission Control. The Devices workspace does not change it.</p>
 
