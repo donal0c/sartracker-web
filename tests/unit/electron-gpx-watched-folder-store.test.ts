@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url)
 
 type WatchedFolderStore = {
   readonly loadWatchedGpxFolders: (missionId: unknown) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
-  readonly saveWatchedGpxFolders: (input: unknown) => Promise<{ readonly paths: readonly string[] }>
+  readonly saveWatchedGpxFolders: (input: unknown) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
 }
 
 const {
@@ -181,11 +181,15 @@ describe('GPX watched-folder store protections [DON-337 review]', () => {
     await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/b'] })
     const lines = (await readFile(path.join(userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME), 'utf8'))
       .trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
-    expect(lines.map(({ event, missionId, added, removed }) => ({ event, missionId, added, removed }))).toEqual([
-      { event: 'gpx_watched_folders_changed', missionId: 'mission-1', added: ['/drop/a'], removed: [] },
-      { event: 'gpx_watched_folders_changed', missionId: 'mission-1', added: ['/drop/b'], removed: [] },
-      { event: 'gpx_watched_folders_changed', missionId: 'mission-1', added: [], removed: ['/drop/a'] },
+    const requests = lines.filter((line) => line.event === 'gpx_watched_folders_change_requested')
+    expect(requests.map(({ missionId, added, removed }) => ({ missionId, added, removed }))).toEqual([
+      { missionId: 'mission-1', added: ['/drop/a'], removed: [] },
+      { missionId: 'mission-1', added: ['/drop/b'], removed: [] },
+      { missionId: 'mission-1', added: [], removed: ['/drop/a'] },
     ])
+    // Each request is followed by its outcome, matched by attempt id.
+    expect(lines.filter((line) => line.event === 'gpx_watched_folders_changed').map((line) => line.attemptId))
+      .toEqual(requests.map((line) => line.attemptId))
     expect(lines.every((line) => typeof line.at === 'string')).toBe(true)
   })
 
@@ -198,5 +202,66 @@ describe('GPX watched-folder store protections [DON-337 review]', () => {
     await expect(store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a', '/drop/b'] }))
       .rejects.toThrow(/change record could not be written/u)
     await expect(store.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: ['/drop/a'] })
+  })
+
+  it('records a failed write as failed, never as a change, after the request was journalled [review 2]', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })
+    // The journal can still be appended to, but no new file can be created
+    // beside it, so the atomic write of the list fails after the request line.
+    await chmod(userDataPath, 0o500)
+    try {
+      await expect(store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: [] })).rejects.toThrow()
+    } finally {
+      await chmod(userDataPath, 0o700)
+    }
+    await expect(store.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: ['/drop/a'] })
+    const lines = (await readFile(path.join(userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME), 'utf8'))
+      .trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
+    const last = lines.at(-1)
+    const request = lines.at(-2)
+    expect(request).toMatchObject({ event: 'gpx_watched_folders_change_requested', removed: ['/drop/a'] })
+    expect(last).toMatchObject({ event: 'gpx_watched_folders_change_failed', attemptId: request?.attemptId })
+    expect(typeof last?.reason).toBe('string')
+  })
+
+  it('refuses to replace a backup written by a newer version when the main file is missing [review 2]', async () => {
+    const userDataPath = await createUserData()
+    const backupPath = path.join(userDataPath, WATCHED_FOLDERS_BACKUP_FILE_NAME)
+    await writeFile(backupPath, JSON.stringify({ version: 99, missions: {} }), 'utf8')
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await expect(store.loadWatchedGpxFolders('mission-1')).rejects.toThrow(/newer version/u)
+    await expect(store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })).rejects.toThrow(/newer version/u)
+    await expect(readFile(backupPath, 'utf8')).resolves.toContain('"version":99')
+  })
+
+  it('does not overwrite a newer backup even while the main file is readable [review 2]', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })
+    const backupPath = path.join(userDataPath, WATCHED_FOLDERS_BACKUP_FILE_NAME)
+    await writeFile(backupPath, JSON.stringify({ version: 99, missions: {} }), 'utf8')
+    await expect(store.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: ['/drop/a'] })
+    await expect(store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/b'] })).rejects.toThrow(/newer version/u)
+    await expect(readFile(backupPath, 'utf8')).resolves.toContain('"version":99')
+    await expect(store.loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: ['/drop/a'] })
+  })
+
+  it('saves the list but warns and journals it when only the backup copy cannot be updated [review 2]', async () => {
+    const userDataPath = await createUserData()
+    const store = createGpxWatchedFolderStore({ userDataPath })
+    await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/z'] })
+    // A non-empty folder where the backup file belongs cannot be replaced.
+    const backupPath = path.join(userDataPath, WATCHED_FOLDERS_BACKUP_FILE_NAME)
+    await rm(backupPath)
+    await mkdir(path.join(backupPath, 'blocker'), { recursive: true })
+    const result = await store.saveWatchedGpxFolders({ missionId: 'mission-1', paths: ['/drop/a'] })
+    expect(result.paths).toEqual(['/drop/a'])
+    expect(result.warning).toMatch(/saved, but its backup copy could not be updated/u)
+    await expect(createGpxWatchedFolderStore({ userDataPath }).loadWatchedGpxFolders('mission-1')).resolves.toEqual({ paths: ['/drop/a'] })
+    const events = (await readFile(path.join(userDataPath, WATCHED_FOLDERS_AUDIT_FILE_NAME), 'utf8'))
+      .trim().split('\n').map((line) => (JSON.parse(line) as { event: string }).event)
+    expect(events.slice(-3)).toEqual(['gpx_watched_folders_change_requested', 'gpx_watched_folders_changed', 'gpx_watched_folders_backup_failed'])
   })
 })

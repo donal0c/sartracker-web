@@ -57,8 +57,9 @@ function createGpxWatchedFolderStore(options) {
     if (main.status === 'ok' && !main.missing) return { status: 'ok', missions: main.missions, recoveredFromBackup: false, mainDamaged: false }
     if (main.status === 'newer' || main.status === 'unreadable') return main
     const backup = await readWatchedFoldersFile(backupPath)
-    // An unreadable mirror might be the only good copy: never overwrite it.
-    if (backup.status === 'unreadable') return backup
+    // An unreadable mirror might be the only good copy, and a newer one belongs
+    // to a newer SAR Tracker: never overwrite either.
+    if (backup.status === 'unreadable' || backup.status === 'newer') return backup
     if (backup.status === 'ok' && !backup.missing) {
       return { status: 'ok', missions: backup.missions, recoveredFromBackup: true, mainDamaged: main.status === 'damaged' }
     }
@@ -84,13 +85,17 @@ function createGpxWatchedFolderStore(options) {
     }),
     /**
      * Replaces the folders saved for a mission. An empty list forgets them.
+     * `warning` says when the list was saved but its backup copy was not.
      * @param {unknown} input
-     * @returns {Promise<{ paths: string[] }>}
+     * @returns {Promise<{ paths: string[], warning?: string }>}
      */
     saveWatchedGpxFolders: (input) => serialise(async () => {
       const { missionId, paths } = readSaveInput(input)
       const file = await readCurrent()
       if (file.status === 'newer') throw new Error(file.message)
+      // A readable main file does not make a newer mirror safe to overwrite.
+      const backup = await readWatchedFoldersFile(backupPath)
+      if (backup.status === 'newer') throw new Error(backup.message)
       if (file.status === 'unreadable') {
         throw new Error(`The saved watched-folder list could not be read, so nothing was changed: ${file.reason}.`)
       }
@@ -102,26 +107,42 @@ function createGpxWatchedFolderStore(options) {
       } else {
         next[missionId] = { paths, updatedAt: new Date().toISOString() }
       }
-      const at = new Date().toISOString()
-      const change = {
-        at,
-        event: 'gpx_watched_folders_changed',
+      const attemptId = randomUUID()
+      const request = {
+        at: new Date().toISOString(),
+        event: 'gpx_watched_folders_change_requested',
+        attemptId,
         missionId,
         added: paths.filter((entry) => !previous.includes(entry)),
         removed: previous.filter((entry) => !paths.includes(entry)),
         ...(file.status === 'damaged' ? { previousFile: 'damaged_set_aside' } : {}),
         ...(file.status === 'ok' && file.recoveredFromBackup ? { previousFile: 'restored_from_backup' } : {}),
       }
-      // The change is recorded before anything is replaced; no record, no change.
+      // The request is recorded before anything is replaced (no record, no
+      // change), and its outcome after: changed, or failed with the reason.
       try {
-        await appendLineDurably(auditPath, change)
+        await appendLineDurably(auditPath, request)
       } catch (error) {
         throw new Error(`The watched-folder change record could not be written, so the list was not changed: ${describeError(error)}.`)
       }
-      if (file.status === 'damaged' || (file.status === 'ok' && file.mainDamaged)) await keepDamagedCopy(filePath)
+      /** @param {Record<string, unknown>} fields */
+      const recordOutcome = (fields) => appendLineDurably(auditPath, { at: new Date().toISOString(), attemptId, missionId, ...fields })
       const payload = { version: WATCHED_FOLDERS_FILE_VERSION, missions: next }
-      await writeJsonDurably(filePath, payload)
-      await writeJsonDurably(backupPath, payload)
+      try {
+        if (file.status === 'damaged' || (file.status === 'ok' && file.mainDamaged)) await keepDamagedCopy(filePath)
+        await writeJsonDurably(filePath, payload)
+      } catch (error) {
+        await recordOutcome({ event: 'gpx_watched_folders_change_failed', reason: describeError(error) }).catch(() => undefined)
+        throw error
+      }
+      await recordOutcome({ event: 'gpx_watched_folders_changed' }).catch(() => undefined)
+      try {
+        await writeJsonDurably(backupPath, payload)
+      } catch (error) {
+        // The list itself is saved; only its mirror is behind.
+        await recordOutcome({ event: 'gpx_watched_folders_backup_failed', reason: describeError(error) }).catch(() => undefined)
+        return { paths: [...paths], warning: `The watched-folder list was saved, but its backup copy could not be updated: ${describeError(error)}.` }
+      }
       return { paths: [...paths] }
     }),
   }

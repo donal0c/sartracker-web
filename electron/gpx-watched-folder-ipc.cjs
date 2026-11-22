@@ -19,7 +19,7 @@ const SAVE_WATCHED_GPX_FOLDERS_CHANNEL = 'sartracker:save-watched-gpx-folders'
  * @param {{
  *   ipcMain: { handle: (channel: string, listener: (event: unknown, ...args: unknown[]) => unknown) => void },
  *   validateIpcSender: (event: unknown) => void,
- *   watchedFolderStore: { loadWatchedGpxFolders: (missionId: unknown) => Promise<{ paths: string[], warning?: string }>, saveWatchedGpxFolders: (input: unknown) => Promise<{ paths: string[] }> },
+ *   watchedFolderStore: { loadWatchedGpxFolders: (missionId: unknown) => Promise<{ paths: string[], warning?: string }>, saveWatchedGpxFolders: (input: unknown) => Promise<{ paths: string[], warning?: string }> },
  *   fileSystem: { assertWatchableGpxDirectory: (path: string) => void, restoreWatchedGpxDirectory: (path: string) => void },
  *   logEvent: (entry: { level: 'warn', event: string, fields: Record<string, unknown> }) => Promise<unknown> | unknown,
  * }} options
@@ -62,7 +62,11 @@ function registerGpxWatchedFolderHandlers(options) {
       if (paths !== null) {
         for (const directoryPath of paths) fileSystem.assertWatchableGpxDirectory(directoryPath)
       }
-      return await watchedFolderStore.saveWatchedGpxFolders(input)
+      const result = await watchedFolderStore.saveWatchedGpxFolders(input)
+      if (result.warning !== undefined) {
+        await warn('gpx_watched_folders_backup_failed', { folderCount: result.paths.length, reason: redactPaths(result.warning, result.paths) })
+      }
+      return { paths: result.paths }
     } catch (error) {
       await warn('gpx_watched_folders_save_failed', {
         folderCount: paths === null ? null : paths.length,

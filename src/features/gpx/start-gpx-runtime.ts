@@ -202,10 +202,16 @@ export async function startGpxRuntime(
   let refreshToken = 0
   let missionGeneration = 0
   // Saves wait for the mission's saved watches to be restored, and run one at
-  // a time, each writing the list as it stands then [DON-337].
+  // a time, each writing that mission's list as it stands then, even after the
+  // operator moved to another mission. The mission guard only keeps a stale
+  // result off the screen [DON-337].
   let watchRestoration: Promise<void> = Promise.resolve()
   let watchSaves: Promise<void> = Promise.resolve()
-  let watchSaveFailed = false
+  const watchListByMission = new Map<string, readonly string[]>()
+  /** Each mission's latest queued save; reopening that mission waits for it. */
+  const latestSaveByMission = new Map<string, Promise<void>>()
+  /** Missions whose latest save failed, with the warning to show for them. */
+  const watchSaveFailures = new Map<string, string>()
   let importPublication = 0
   let importErrorRevision = 0
   let nextImportCursor: string | null = null
@@ -276,12 +282,9 @@ export async function startGpxRuntime(
       }
 
       const savedWatches = missionId !== previousMissionId
-        ? restoreSavedWatches(missionId, missionGeneration)
+        ? restoreSavedWatches(missionId, missionGeneration, latestSaveByMission.get(missionId) ?? Promise.resolve())
         : Promise.resolve()
-      if (missionId !== previousMissionId) {
-        watchRestoration = savedWatches
-        watchSaveFailed = false
-      }
+      if (missionId !== previousMissionId) watchRestoration = savedWatches
       try {
         const [importPage, outings, issuePage] = await Promise.all([
           readGpxImportProjectionPage(
@@ -408,8 +411,11 @@ export async function startGpxRuntime(
           watchedDirectories: [...state.watchedDirectories, normalizedPath],
         }
         publishRuntime()
-        if (missionId !== null) await saveWatches(missionId, missionToken, 'added')
-      } else if (missionId !== null && watchSaveFailed) {
+        if (missionId !== null) {
+          watchListByMission.set(missionId, state.watchedDirectories)
+          await saveWatches(missionId, missionToken, 'added')
+        }
+      } else if (missionId !== null && watchSaveFailures.has(missionId)) {
         // Choosing a watched folder again retries the save the warning asked for.
         await saveWatches(missionId, missionToken, 'added')
       }
@@ -456,6 +462,7 @@ export async function startGpxRuntime(
       publishRuntime()
       const missionId = state.activeMissionId
       if (missionId !== null) {
+        watchListByMission.set(missionId, state.watchedDirectories)
         void saveWatches(missionId, missionGeneration, 'removed')
       }
     },
@@ -590,9 +597,12 @@ export async function startGpxRuntime(
    * Restores the watches saved for a mission when it opens. Never throws: a
    * failure becomes a warning that no folders are being watched [DON-337].
    */
-  async function restoreSavedWatches(missionId: string, missionToken: number): Promise<void> {
+  async function restoreSavedWatches(missionId: string, missionToken: number, earlierSaves: Promise<void>): Promise<void> {
     const store = dependencies.watchedFolderStore
     if (store === undefined || dependencies.watchSource === undefined) return
+    // This mission's saves queued before the switch finish first, so the load
+    // sees them. Another mission's slow save never holds this one up.
+    await earlierSaves
     let saved: readonly string[]
     let loadWarning: string | null
     try {
@@ -611,16 +621,31 @@ export async function startGpxRuntime(
       publishRuntime()
       return
     }
-    if (missionToken !== missionGeneration || state.activeMissionId !== missionId || saved.length === 0) return
-    const watchedDirectories = [...saved, ...state.watchedDirectories.filter((path) => !saved.includes(path))]
+    // Folders added while the list loaded, or kept after a failed save, stay.
+    const unsaved = watchListByMission.get(missionId) ?? []
+    const watchedDirectories = [...saved, ...unsaved.filter((path) => !saved.includes(path))]
+    watchListByMission.set(missionId, watchedDirectories)
+    if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+    const saveFailure = watchSaveFailures.get(missionId) ?? null
+    if (saved.length === 0) {
+      if (saveFailure === null && watchedDirectories.length === state.watchedDirectories.length) return
+      state = {
+        ...state,
+        watchedDirectories,
+        ...(saveFailure !== null ? { watchNotice: { tone: 'problem' as const, message: saveFailure } } : {}),
+      }
+      publishRuntime()
+      return
+    }
     state = {
       ...state,
       watchedDirectories,
       watchNotice: {
-        tone: loadWarning === null ? 'resumed' : 'problem',
+        tone: loadWarning === null && saveFailure === null ? 'resumed' : 'problem',
         message: [
           `Resumed watching ${saved.length} folder${saved.length === 1 ? '' : 's'} saved for this mission. New GPX files there will import automatically.`,
           loadWarning,
+          saveFailure,
         ].filter((part): part is string => part !== null).join(' '),
       },
       watchResumePending: true,
@@ -638,34 +663,33 @@ export async function startGpxRuntime(
     const store = dependencies.watchedFolderStore
     if (store === undefined) return Promise.resolve()
     const restoration = watchRestoration
+    const isCurrent = () => missionToken === missionGeneration && state.activeMissionId === missionId
     const save = watchSaves.then(async () => {
       await restoration
-      if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+      // The mission's own latest list is saved whichever mission is open now.
+      const paths = watchListByMission.get(missionId) ?? []
       try {
-        await store.saveWatchedFolders(missionId, state.watchedDirectories)
-        if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
-        watchSaveFailed = false
+        await store.saveWatchedFolders(missionId, paths)
+        watchSaveFailures.delete(missionId)
+        if (!isCurrent()) return
         if (state.watchNotice?.tone === 'problem') {
           state = { ...state, watchNotice: null }
           publishRuntime()
         }
       } catch (error) {
-        if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
-        watchSaveFailed = true
         const consequence = change === 'added'
           ? 'The folder is watched now but will be forgotten after a restart; choose it again with Watch Folder to retry saving.'
           : 'The folder may be watched again after a restart; remove it again then.'
-        state = {
-          ...state,
-          watchNotice: {
-            tone: 'problem',
-            message: `The watched folder list could not be saved: ${describeWatchError(error)}. ${consequence}`,
-          },
-        }
+        const message = `The watched folder list could not be saved: ${describeWatchError(error)}. ${consequence}`
+        // Kept for the mission, so it is shown when that mission opens again.
+        watchSaveFailures.set(missionId, message)
+        if (!isCurrent()) return
+        state = { ...state, watchNotice: { tone: 'problem', message } }
         publishRuntime()
       }
     })
     watchSaves = save
+    latestSaveByMission.set(missionId, save)
     return save
   }
 

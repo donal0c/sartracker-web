@@ -218,4 +218,58 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
       message: 'Resumed watching 1 folder saved for this mission. New GPX files there will import automatically. The saved watched-folder list was damaged or missing and was restored from its backup copy. Check the Watched Folders list.',
     })
   })
+
+  it('keeps edits queued before a mission switch for the mission they belong to [review round 2]', async () => {
+    const saved = new Map<string, readonly string[]>([['mission-1', ['/field/a', '/field/b']]])
+    let releaseFirstSave: () => void = () => undefined
+    const store: GpxWatchedFolderStoreBoundary = {
+      loadWatchedFolders: vi.fn(async (missionId: string) => ({ paths: saved.get(missionId) ?? [], warning: null })),
+      saveWatchedFolders: vi.fn()
+        .mockImplementationOnce((missionId: string, paths: readonly string[]) => new Promise<void>((resolve) => {
+          releaseFirstSave = () => { saved.set(missionId, [...paths]); resolve() }
+        }))
+        .mockImplementation(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]) }),
+    }
+    const runtime = await startRuntime({ watchedFolderStore: store })
+    await runtime.controller.refreshMission('mission-1')
+    const adding = runtime.controller.addWatchedDirectory('/field/c')
+    await vi.waitFor(() => expect(store.saveWatchedFolders).toHaveBeenCalledTimes(1))
+    // The removal is queued behind the held save, then the operator switches mission.
+    runtime.controller.removeWatchedDirectory('/field/a')
+    await runtime.controller.refreshMission('mission-2')
+    releaseFirstSave()
+    await adding
+    await vi.waitFor(() => expect(saved.get('mission-1')).toEqual(['/field/b', '/field/c']))
+    expect(runtime.state()?.watchedDirectories).toEqual([])
+
+    // Reopening mission 1 does not bring the removed folder back.
+    await runtime.controller.refreshMission('mission-1')
+    expect(runtime.state()?.watchedDirectories).toEqual(['/field/b', '/field/c'])
+    expect(saved.get('mission-2')).toBeUndefined()
+  })
+
+  it('shows a save that failed after the switch when that mission opens again [review round 2]', async () => {
+    let failFirstSave: () => void = () => undefined
+    const store: GpxWatchedFolderStoreBoundary = {
+      loadWatchedFolders: vi.fn().mockResolvedValue({ paths: [], warning: null }),
+      saveWatchedFolders: vi.fn()
+        .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { failFirstSave = () => reject(new Error('Disk full.')) }))
+        .mockResolvedValue(undefined),
+    }
+    const runtime = await startRuntime({ watchedFolderStore: store })
+    await runtime.controller.refreshMission('mission-1')
+    const adding = runtime.controller.addWatchedDirectory('/field/drop')
+    await vi.waitFor(() => expect(store.saveWatchedFolders).toHaveBeenCalledTimes(1))
+    await runtime.controller.refreshMission('mission-2')
+    failFirstSave()
+    await adding
+    // Not shown on mission 2, which it does not concern.
+    expect(runtime.state()?.watchNotice).toBeNull()
+    await runtime.controller.refreshMission('mission-1')
+    expect(runtime.state()?.watchedDirectories).toEqual(['/field/drop'])
+    expect(runtime.state()?.watchNotice).toEqual({
+      tone: 'problem',
+      message: 'The watched folder list could not be saved: Disk full. The folder is watched now but will be forgotten after a restart; choose it again with Watch Folder to retry saving.',
+    })
+  })
 })
