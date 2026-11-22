@@ -2792,14 +2792,18 @@ describe('Electron main startup', () => {
   })
 
   it.each([
-    ['operational window content load', true],
-    ['operational renderer availability fence', false],
-  ])('keeps the operational window hidden when %s times out', async (heldStage, holdLoad) => {
+    ['operational window content load', 'load'],
+    ['operational renderer availability fence', 'fence'],
+    // DON-354: the page loads but its script never mounts the first screen.
+    ['map screen start', 'mount'],
+  ] as const)('keeps the operational window hidden when %s times out', async (heldStage, heldStep) => {
+    const holdLoad = heldStep === 'load'
     vi.useFakeTimers()
     process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173'
     const held = new Promise<never>(() => {})
     const electronMock = createElectronMock(
       vi.fn(), undefined, true, [], holdLoad ? () => held : undefined,
+      undefined, undefined, heldStep !== 'mount',
     )
     const crashLog = {
       hadUncleanShutdown: vi.fn(async () => false),
@@ -2836,7 +2840,7 @@ describe('Electron main startup', () => {
     }
     const rendererTeardownCoordinator = {
       markRendererUnavailable: vi.fn(async () => undefined),
-      markRendererAvailable: holdLoad ? vi.fn(async () => undefined) : vi.fn(() => held),
+      markRendererAvailable: heldStep === 'fence' ? vi.fn(() => held) : vi.fn(async () => undefined),
       prepare: vi.fn(async () => undefined),
       ensureUnexpectedRendererLossFenced: vi.fn(async () => undefined),
       dispose: vi.fn(),
@@ -2904,7 +2908,9 @@ describe('Electron main startup', () => {
 
     expectStartupFailureWindow(
       electronMock,
-      expect.stringMatching(new RegExp(`${heldStage}.*10 seconds`, 'iu')),
+      heldStep === 'mount'
+        ? expect.stringMatching(/map screen did not start within 10 seconds.*Reinstall SAR Tracker/su)
+        : expect.stringMatching(new RegExp(`${heldStage}.*10 seconds`, 'iu')),
     )
     expect(startupProcessExit).toHaveBeenCalledWith(1)
     expect(electronMock.BrowserWindow.mock.results[0]?.value.show).not.toHaveBeenCalled()
@@ -3872,6 +3878,7 @@ function createElectronMock(
   windowLoadURL: () => Promise<unknown> = () => Promise.resolve(),
   windowShow: () => void = () => undefined,
   startupFailureWindowClosesOnShow = true,
+  rendererMounts = true,
 ) {
   const BrowserWindow = vi.fn(function MockBrowserWindow(options: { title?: string } = {}) {
     let closeHandler: (() => void) | undefined
@@ -3929,7 +3936,16 @@ function createElectronMock(
     BrowserWindow,
     crashReporter: { start: vi.fn() },
     dialog: { showErrorBox: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 0 })) },
-    ipcMain: { handle: vi.fn(), on: vi.fn(), removeListener: vi.fn() },
+    ipcMain: {
+      handle: vi.fn(),
+      // A healthy renderer confirms its first screen mounted [DON-354].
+      on: vi.fn((channel: string, handler: (event: { sender: { id: number } }) => void) => {
+        if (rendererMounts && channel === 'sartracker:renderer-mounted') {
+          queueMicrotask(() => handler({ sender: { id: 1 } }))
+        }
+      }),
+      removeListener: vi.fn(),
+    },
     safeStorage: {
       decryptString: vi.fn(),
       encryptString: vi.fn(),
