@@ -65,7 +65,7 @@ import {
   filterCanonicalFixTimeEvidenceSnapshot,
 } from './canonical-fix-time-evidence'
 import { describeTrackingWarningForDiagnostics } from './tracking-status-diagnostics'
-import { appendTrackingWarnings } from './tracking-warnings'
+import { appendTrackingWarnings, type TrackingWarningCode } from './tracking-warnings'
 import {
   buildStoreWriteWarnings,
   mergeStoreWriteTotals,
@@ -367,6 +367,8 @@ export type StartTrackingRuntimeDependencies = {
   readonly applySnapshot: (snapshot: TrackingSnapshot) => void
   readonly applyStatus: (status: TrackingConnectionStatus) => void
   readonly idleWarning?: string
+  /** Why tracking is idle, as a problem code, when it is more than "not configured" (DON-353). */
+  readonly idleWarningCode?: TrackingWarningCode
   readonly maxPersistedPositionsPerSnapshot?: number
   readonly writeCache?: boolean
   readonly logger?: TrackingRuntimeLogger
@@ -529,7 +531,7 @@ export async function startTrackingRuntime(
       recovered: false,
       lastSuccessAt: null,
       warning: dependencies.idleWarning ?? 'Tracking is not configured.',
-      warningCodes: ['tracking_not_configured'],
+      warningCodes: [dependencies.idleWarningCode ?? 'tracking_not_configured'],
     })
 
     return async () => invalidateTrackingRuntimeGeneration(runtimeGeneration)
@@ -1404,7 +1406,7 @@ export async function startTrackingRuntime(
       lastSuccessAt: latestTrackingStatus?.lastSuccessAt ?? null,
       warning: nextClient === null ? (next.idleWarning ?? 'Tracking is not configured.')
         : 'Reconnecting tracking — retained positions are last known until a fresh response arrives.',
-      warningCodes: [nextClient === null ? 'tracking_not_configured' : 'tracking_reconnecting'],
+      warningCodes: [nextClient === null ? (next.idleWarningCode ?? 'tracking_not_configured') : 'tracking_reconnecting'],
     }
     dependencies.applyStatus(decorateTrackingStatus(latestTrackingStatus))
     try {

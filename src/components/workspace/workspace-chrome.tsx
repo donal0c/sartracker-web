@@ -22,6 +22,7 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
   paused: { happened: 'The mission is paused, so positions are not updating.', map: LAST_RECEIVED, todo: 'Positions stopped because the mission is paused. Press Resume mission in the red bar to start them again.' },
   record: { happened: 'Part of the mission record could not be saved.', map: 'Live positions. They are still updating.', todo: 'Keep this app open and carry on tracking. Do not finish the mission yet. Open More, then Diagnostics, and send the support bundle.' },
   recovery: { happened: 'A mission was interrupted and has not been resumed.', map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
+  credentials: { happened: 'Tracking cannot connect: the saved tracking password or token cannot be used on this computer.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the tracking password or token again, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
   disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
 }
 
@@ -42,7 +43,7 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
     >
       <strong>
         <span aria-hidden="true" className="ws-health-icon">{headline.tone === 'ok' ? '●' : '⚠'}</span>
-        <TrackingProblemWords words={headline.problems} />
+        <TrackingProblemWords leadInAlarm={headline.leadInAlarm === true} remedy={headline.remedy} words={headline.problems} />
         {headline.detail === '' ? null : <span className="ws-health-detail">{headline.detail}</span>}
       </strong>
       <span className="ws-health-time">Last update {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt).replace(/ GMT.*$/, '')}</span>
@@ -222,7 +223,12 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
   const advice = TRACKING_ADVICE[headline.condition]
+  // Positions received before the password stopped working stay on the map;
+  // they must not be described as if none had arrived (DON-353).
+  const mapShowing = headline.lastReceivedShown === true ? LAST_RECEIVED : advice.map
   const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
+  // Settings opens at Tracking sources, where the password or token is entered.
+  const openSettings = useSettingsWorkspaceStore((state) => state.openWorkspace)
 
   return (
     <section className="ws-panel-section" data-testid="ws-tracking-panel" ref={sectionRef} tabIndex={-1}>
@@ -232,7 +238,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           <dt>What has happened</dt>
           <dd data-testid="ws-tracking-happened">{advice.happened}{headline.issues.length === 0 ? null : <ul>{headline.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>}</dd>
           <dt>What the map is showing</dt>
-          <dd>{advice.map} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
+          <dd data-testid="ws-tracking-map">{mapShowing} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
           <dt>What to do</dt>
           <dd data-testid="ws-tracking-advice">{advice.todo}</dd>
         </dl>
@@ -252,6 +258,14 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           type="button"
         >
           {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+        </button> : null}
+        {headline.condition === 'credentials' ? <button
+          className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
+          data-testid="ws-open-tracking-settings"
+          onClick={() => openSettings()}
+          type="button"
+        >
+          Open Settings: Tracking sources
         </button> : null}
         {reconnectError === null ? null : <p className="sar-inline-alert p-2 text-sm" role="alert">{reconnectError}</p>}
         <TrackingStatusPanel variant="simplified" />

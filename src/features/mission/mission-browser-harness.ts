@@ -202,6 +202,9 @@ export async function startMissionBrowserHarness(): Promise<void> {
       ...(runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: runtimeSettings.trackingDisabledReason }),
+      ...(runtimeSettings.trackingDisabledCode === undefined
+        ? {}
+        : { idleWarningCode: runtimeSettings.trackingDisabledCode }),
     })
     const stopTrackingStatusBridge = trackingConfig === null
       ? () => undefined

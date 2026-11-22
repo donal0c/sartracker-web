@@ -4,7 +4,7 @@ import { DESKTOP_PANEL_ARRANGEMENT, panelOpenByDefault, panelSide } from '../../
 import { buildPeopleRows, countPeopleNeedingAttention, formatLastHeard, selectExceptionsForMap } from '../../src/features/workspace/people-model'
 import { describeTrackingHeadline, rememberLastConfirmedAt } from '../../src/features/workspace/tracking-headline'
 import { labelTrackingWarning } from '../../src/features/workspace/tracking-problem-labels'
-import { fitProblemWords, problemWordsText } from '../../src/features/workspace/problem-word-fit'
+import { fitKeepingRemedy, fitProblemWords, problemWordsText } from '../../src/features/workspace/problem-word-fit'
 import type { NormalizedTrackingPosition, TrackingConnectionStatus } from '../../src/features/tracking/tracking-types'
 import type { DeviceWorkspaceRow } from '../../src/features/tracking/device-workspace-model'
 
@@ -96,6 +96,73 @@ describe('tracking headline', () => {
     expect(headline.text).not.toContain('Traccar server')
   })
 
+  it('names a saved tracking password that must be re-entered, not a neutral "not connected" [DON-353]', () => {
+    // The old layout's warning said what to do; the new bar must say it too.
+    const warning = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+    // Before a mission starts, amber is enough: nobody is relying on the map yet.
+    const idle = describeTrackingHeadline({
+      ...base, phase: 'idle', status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+    })
+    expect(idle.condition).toBe('credentials')
+    expect(idle.tone).toBe('warning')
+    expect(idle.alarm).toBeUndefined()
+    expect(idle.problems[0]).toBe('Re-enter password')
+    expect(idle.leadInAlarm).toBeUndefined()
+    // The fix is named by identity, so its place in the ranking does not matter.
+    expect(idle.remedy).toBe('Re-enter password')
+    expect(idle.text).toMatch(/not connected/i)
+    expect(idle.text).toMatch(/Settings/)
+    expect(idle.issues).toContain(warning)
+    expect(idle.lastReceivedShown).toBe(false)
+    // Tracking that is simply not set up still reads as not connected.
+    const plain = describeTrackingHeadline({
+      ...base, phase: 'idle', status: status({ mode: 'idle', warning: 'Tracking is not configured.', warningCodes: ['tracking_not_configured'] }),
+    })
+    expect(plain.condition).toBe('disconnected')
+    expect(plain.problems).toEqual(['Tracking not connected'])
+  })
+
+  it('raises the alarm when a mission loses its tracking password, keeping the credential advice [DON-353]', () => {
+    // Tracking has stopped completely mid-mission: that is TRACKING LOST, not an
+    // amber notice, but the fix is still to re-enter the password in Settings.
+    const warning = 'Stored Traccar credentials are damaged. Tracking is disabled; re-enter the password or token in Settings.'
+    const kept = { device_cache_stale: false } as unknown as NormalizedTrackingPosition
+    for (const [phase, lead] of [['active', 'TRACKING LOST'], ['paused', 'MISSION PAUSED']] as const) {
+      const headline = describeTrackingHeadline({
+        ...base, phase, positions: [kept],
+        status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+      })
+      expect(headline.condition, phase).toBe('credentials')
+      expect(headline.tone, phase).toBe('alert')
+      expect(headline.alarm, phase).toMatch(new RegExp(`^${lead}`))
+      expect(headline.alarm, phase).toMatch(/password or token/)
+      expect(headline.problems.slice(0, 2), phase).toEqual([lead, 'Re-enter password'])
+      // The alarm strip always says the lead, so the bar may drop it for the fix.
+      expect(headline.leadInAlarm, phase).toBe(true)
+      expect(headline.remedy, phase).toBe('Re-enter password')
+      expect(headline.text, phase).toMatch(/Settings/)
+      // The runtime keeps the positions already on the map; they are last received.
+      expect(headline.lastReceivedShown, phase).toBe(true)
+    }
+    // A failed record does not hide that tracking itself has stopped.
+    const recordToo = describeTrackingHeadline({
+      ...base, phase: 'active', evidenceState: 'degraded',
+      status: status({ mode: 'idle', warning, warningCodes: ['tracking_credentials_unreadable'] }),
+    })
+    expect(recordToo.condition).toBe('credentials')
+    expect(recordToo.lastReceivedShown).toBe(false)
+  })
+
+
+  it('only the credential alarm lets its lead yield; lost and paused keep theirs [DON-353]', () => {
+    const lost = describeTrackingHeadline({ ...base, phase: 'active', status: status({ mode: 'offline', warning: 'Traccar offline', warningCodes: ['offline_last_known'] }) })
+    expect(lost.condition).toBe('lost')
+    expect(lost.leadInAlarm).toBeUndefined()
+    expect(lost.remedy).toBeUndefined()
+    const paused = describeTrackingHeadline({ ...base, phase: 'paused', status: status({ mode: 'idle' }) })
+    expect(paused.condition).toBe('paused')
+    expect(paused.leadInAlarm).toBeUndefined()
+  })
   it('keeps the last confirmed time through the null the runtime publishes on pause, per mission', () => {
     expect(rememberLastConfirmedAt('m1', '2026-11-06T11:55:00.000Z')).toBe('2026-11-06T11:55:00.000Z')
     expect(rememberLastConfirmedAt('m1', null)).toBe('2026-11-06T11:55:00.000Z')
@@ -191,5 +258,51 @@ describe('tracking problem words', () => {
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 3)).toBe('History failed · 2 stale · 1 rejected')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 2)).toBe('History failed · 2 stale · +1 more')
     expect(problemWordsText(['History failed', '2 stale', '1 rejected'], 0)).toBe('3 problems')
+    // A lone word that does not fit is counted, never drawn past the bar (DON-353).
+    expect(problemWordsText(['Re-enter password'], 0)).toBe('1 problem')
+    expect(problemWordsText(['Re-enter password'], 0, true)).toBe('1 problem')
+    expect(problemWordsText(['Re-enter password'], 1)).toBe('Re-enter password')
+    // Before a mission: "Re-enter password" (154 px) in 100 px, and zero or negative room.
+    for (const available of [100, 0, -20]) {
+      const fit = fitKeepingRemedy([154], { remedy: 0, dropLead: false }, 16, 72, available, 28)
+      expect(problemWordsText(['Re-enter password'], fit.shown, fit.compact === true)).toBe('1 problem')
+    }
   })
+
+  it('drops the alarm lead before anything else, and person-safety words win over the fix [DON-353]', () => {
+    // Linux fonts: TRACKING LOST 137, 1 stale 70, 1 not moving 100, Re-enter password 154, separator 16, "+N more" 72.
+    // "+N more" 72; the short "+N" 28.
+    const fit = (widths: number[], remedy: number, dropLead: boolean, available: number) =>
+      fitKeepingRemedy(widths, { remedy, dropLead }, 16, 72, available, 28)
+    const words = ['TRACKING LOST', '1 stale', '1 not moving', 'Re-enter password']
+    const text = (shown: { skipLead: boolean; shown: number; compact?: true }, from = words) =>
+      problemWordsText(shown.skipLead ? from.slice(1) : from, shown.shown, shown.compact === true)
+    // Everything fits: nothing changes.
+    expect(fit([137, 154], 1, true, 420)).toEqual({ skipLead: false, shown: 2 })
+    // The lead and the fix do not both fit: the lead, which the alarm strip shows, gives way.
+    expect(fit([137, 154], 1, true, 280)).toEqual({ skipLead: true, shown: 1 })
+    // The fix is found by identity: shown when it fits after the safety words ranked before it.
+    expect(fit([137, 70, 154], 2, true, 330)).toEqual({ skipLead: true, shown: 2 })
+    expect(fit([137, 70, 100, 154], 3, true, 360)).toEqual({ skipLead: true, shown: 3 })
+    // Not enough room for all: the safety words win and the fix is counted (Tracking and the label name it).
+    expect(text(fit([137, 70, 100, 154], 3, true, 330))).toBe('1 stale · 1 not moving · +1 more')
+    // The 1024 px wide-font bar with people flagged has 221 px.
+    expect(text(fit([137, 70, 100, 154], 3, true, 221))).toBe('1 stale · +2 more')
+    // Settings open narrows the bar to 188 px: the safety word keeps its place beside a short count.
+    const notMoving = ['TRACKING LOST', '1 not moving', 'Re-enter password']
+    expect(fit([137, 111, 160], 2, true, 188)).toEqual({ skipLead: true, shown: 1, compact: true })
+    expect(text(fit([137, 111, 160], 2, true, 188), notMoving)).toBe('1 not moving · +1')
+    expect(text(fit([137, 111, 160], 2, true, 261), notMoving)).toBe('1 not moving · +1 more')
+    // Too narrow for any whole word and a count: a count, never a clipped word.
+    expect(text(fit([137, 70, 100, 154], 3, true, 100))).toBe('4 problems')
+    expect(text(fit([137, 111, 160], 2, true, 120), notMoving)).toBe('3 problems')
+    // Words after the fix are counted; the lead stays while it and the fix fit.
+    expect(fit([137, 154, 100], 1, true, 250)).toEqual({ skipLead: true, shown: 1 })
+    expect(fit([137, 154, 100], 1, true, 400)).toEqual({ skipLead: false, shown: 2 })
+    // Before a mission there is no alarm lead to drop; ranking order holds.
+    expect(fit([100, 154], 1, false, 200)).toEqual({ skipLead: false, shown: 1 })
+    // A lone lead is never dropped: it is the whole message.
+    expect(fit([137], 0, true, 100)).toEqual({ skipLead: false, shown: 0 })
+  })
+
 })

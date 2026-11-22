@@ -59,6 +59,7 @@ type ElectronSettingsStore = {
       readonly token?: string
     } | null
     readonly trackingDisabledReason?: string
+    readonly trackingDisabledCode?: string
   }>
   readonly testTrackingConnection: (input: ReturnType<typeof createSettingsDraft>) => Promise<{
     readonly ok: boolean
@@ -245,6 +246,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('keeps the shell operable with tracking disabled when the credential file is unreadable [WAR04-SET-01]', async () => {
@@ -268,6 +270,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('could not be read')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('does not pair settings with a credential from another save generation [WAR04-SET-02]', async () => {
@@ -301,6 +304,59 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('do not match')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
+  })
+
+  // A matching entry whose secret is not a string or an explicit null is
+  // damaged, not cleared: tracking must ask for it again, not read as merely
+  // unconfigured (DON-353).
+  it.each([
+    ['a number', { secret: 42, generation: 'same-generation' }],
+    ['no secret property', { generation: 'same-generation' }],
+    ['an empty string', { secret: '', generation: 'same-generation' }],
+    ['a null entry', null],
+    ['a string entry', 'not-an-object'],
+  ])('reports a matching-generation credential with %s as damaged [DON-353]', async (_shape, entry) => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        credentialGeneration: 'same-generation',
+        dataSource: { providerType: 'traccar_http', baseUrl: 'https://kmrtsar.eu', authMode: 'basic', email: 'sean', autoConnect: true },
+      }),
+      'utf8',
+    )
+    await writeFile(path.join(userDataPath!, 'credentials.json'), JSON.stringify({ version: 2, traccar: { basic: entry } }), 'utf8')
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toContain('damaged')
+    expect(runtime.trackingDisabledReason).toContain('re-enter the password or token in Settings')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
+  })
+
+  it('treats an explicit null secret as an operator clear, not damage [DON-353]', async () => {
+    const store = await createStore({ backend: 'gnome_libsecret' })
+    await writeFile(
+      path.join(userDataPath!, 'settings.json'),
+      JSON.stringify({
+        credentialGeneration: 'same-generation',
+        dataSource: { providerType: 'traccar_http', baseUrl: 'https://kmrtsar.eu', authMode: 'basic', email: 'sean', autoConnect: true },
+      }),
+      'utf8',
+    )
+    await writeFile(
+      path.join(userDataPath!, 'credentials.json'),
+      JSON.stringify({ version: 2, traccar: { basic: { secret: null, generation: 'same-generation' } } }),
+      'utf8',
+    )
+
+    const runtime = await store.loadRuntimeBootstrapSettings(true)
+
+    expect(runtime.trackingConfig).toBeNull()
+    expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('rejects Traccar provider URLs with embedded credentials before persistence [DON-207]', async () => {
@@ -804,6 +860,7 @@ describe('electron settings store', () => {
     const runtime = await store.loadRuntimeBootstrapSettings(true)
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('persists a Traccar secret on Linux even when safeStorage would fall back to basic_text', async () => {
@@ -856,6 +913,7 @@ describe('electron settings store', () => {
     const runtime = await store.loadRuntimeBootstrapSettings(true)
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toBe('A provider secret is required before tracking can start.')
+    expect(runtime.trackingDisabledCode).toBeUndefined()
   })
 
   it('migrates a decryptable legacy secrets.json into the local credential file and leaves it intact', async () => {
@@ -919,6 +977,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('could not be read')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('keeps the shell operable when the legacy credential file is corrupt', async () => {
@@ -942,6 +1001,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('could not be read')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('fails closed when current generated credentials are missing instead of resurrecting a legacy secret', async () => {
@@ -959,6 +1019,7 @@ describe('electron settings store', () => {
 
     expect(runtime.trackingConfig).toBeNull()
     expect(runtime.trackingDisabledReason).toContain('do not match')
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
   })
 
   it('starts without tracking when only an undecryptable legacy secrets.json exists', async () => {
@@ -994,6 +1055,7 @@ describe('electron settings store', () => {
     expect(runtime.trackingDisabledReason).toBe(
       'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.',
     )
+    expect(runtime.trackingDisabledCode).toBe('tracking_credentials_unreadable')
     expect(decryptString).not.toHaveBeenCalled()
     // Migration must not delete or rewrite the legacy file (decision (a)).
     await expect(access(path.join(userDataPath, 'secrets.json'))).resolves.toBeUndefined()
