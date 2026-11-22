@@ -21,14 +21,34 @@ type LayerSpec = {
   layout?: Record<string, unknown>
 }
 
+type MockSourceListener = (event: unknown) => void
+
+/** A GeoJSON source handle that also carries MapLibre's source events. */
+function createMockSourceHandle() {
+  const listeners = new Map<string, Set<MockSourceListener>>()
+  return {
+    setData: vi.fn(),
+    updateData: vi.fn(),
+    on: vi.fn((type: string, listener: MockSourceListener) => {
+      const set = listeners.get(type) ?? new Set<MockSourceListener>()
+      set.add(listener)
+      listeners.set(type, set)
+    }),
+    off: vi.fn((type: string, listener: MockSourceListener) => {
+      listeners.get(type)?.delete(listener)
+    }),
+    fire(type: string, event: Record<string, unknown> = {}) {
+      for (const listener of listeners.get(type) ?? []) listener({ type, ...event })
+    },
+  }
+}
+type MockSourceHandle = ReturnType<typeof createMockSourceHandle>
+
 function createMockMap(options: { readonly missingLayerIds?: readonly string[] } = {}) {
   const layers = new Map<string, LayerSpec>()
   const sources = new Map<string, unknown>()
   const missingLayerIds = new Set(options.missingLayerIds ?? [])
-  const sourceHandles = new Map<string, {
-    readonly setData: ReturnType<typeof vi.fn>
-    readonly updateData: ReturnType<typeof vi.fn>
-  }>()
+  const sourceHandles = new Map<string, MockSourceHandle>()
 
   return {
     layers,
@@ -46,7 +66,7 @@ function createMockMap(options: { readonly missingLayerIds?: readonly string[] }
     }),
     addSource: vi.fn((id: string, config: unknown) => {
       sources.set(id, config)
-      sourceHandles.set(id, { setData: vi.fn(), updateData: vi.fn() })
+      sourceHandles.set(id, createMockSourceHandle())
     }),
     getFilter: vi.fn((id: string) => layers.get(id)?.filter),
     getPaintProperty: vi.fn((id: string, property: string) => layers.get(id)?.paint?.[property]),
@@ -773,5 +793,63 @@ describe('tracking overlay marker configuration', () => {
       expect(JSON.stringify(breadcrumbFilter)).toContain('bravo')
       expect(JSON.stringify(breadcrumbFilter)).not.toContain('alpha')
     })
+  })
+})
+
+describe('tracking source update failures [DON-357]', () => {
+  const devices = [{ device_id: 'alpha', name: 'Alpha', status: 'online' as const, last_seen: null, unique_id: null, category: null }]
+
+  beforeEach(async () => {
+    const { useTrackingMapUpdateStore } = await import('../../src/features/tracking/tracking-map-update-store')
+    useTrackingMapUpdateStore.getState().clearFailure()
+  })
+
+  it('raises a visible failure when the map rejects a tracking update, and resends everything on the next sync', async () => {
+    const map = createMockMap()
+    map.addSource('tracking', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+    const source = map.sourceHandles.get('tracking')!
+    const { syncTrackingOverlay } = await import('../../src/features/tracking/sync-tracking-overlay')
+    const { useTrackingMapUpdateStore } = await import('../../src/features/tracking/tracking-map-update-store')
+
+    syncTrackingOverlay(map as never, { devices, positions: [trackingFix('alpha', 'fix-0', 0)], breadcrumbs: [] }, [], [], true)
+    expect(source.setData).toHaveBeenCalledTimes(1)
+    const second = { devices, positions: [trackingFix('alpha', 'fix-1', 1)], breadcrumbs: [] }
+    syncTrackingOverlay(map as never, second, [], [], true)
+    expect(source.updateData).toHaveBeenCalledTimes(1)
+
+    // MapLibre's worker rejects the diff: the source keeps fix-0 and fires an error.
+    source.fire('dataloading', { dataType: 'source' })
+    source.fire('error', { error: new Error('worker rejected the update') })
+
+    expect(useTrackingMapUpdateStore.getState().failure).toContain('worker rejected the update')
+
+    // Even with nothing new, the next sync must resend the whole picture, not
+    // a diff built on data the map never applied.
+    syncTrackingOverlay(map as never, second, [], [], true)
+    expect(source.setData).toHaveBeenCalledTimes(2)
+    expect(source.updateData).toHaveBeenCalledTimes(1)
+    expect(useTrackingMapUpdateStore.getState().failure).not.toBeNull()
+
+    source.fire('dataloading', { dataType: 'source' })
+    source.fire('data', { dataType: 'source', sourceDataType: 'content' })
+    expect(useTrackingMapUpdateStore.getState().failure).toBeNull()
+  })
+
+  it('keeps the failure while the full resend is also rejected', async () => {
+    const map = createMockMap()
+    map.addSource('tracking', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+    const source = map.sourceHandles.get('tracking')!
+    const { syncTrackingOverlay } = await import('../../src/features/tracking/sync-tracking-overlay')
+    const { useTrackingMapUpdateStore } = await import('../../src/features/tracking/tracking-map-update-store')
+    const snapshot = { devices, positions: [trackingFix('alpha', 'fix-0', 0)], breadcrumbs: [] }
+
+    syncTrackingOverlay(map as never, snapshot, [], [], true)
+    source.fire('dataloading', { dataType: 'source' })
+    source.fire('error', { error: new Error('first') })
+    syncTrackingOverlay(map as never, snapshot, [], [], true)
+    source.fire('dataloading', { dataType: 'source' })
+    source.fire('error', { error: new Error('second') })
+
+    expect(useTrackingMapUpdateStore.getState().failure).toContain('second')
   })
 })

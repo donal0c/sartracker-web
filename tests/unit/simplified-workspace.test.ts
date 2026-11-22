@@ -39,9 +39,29 @@ describe('tracking headline', () => {
   const base = {
     positions: [], ingestRejected: 0, evidenceState: 'healthy', evidenceLossAcknowledged: false, conflictCount: 0,
     stationaryCount: 0, notedCount: 0, coverageStatus: 'complete', hiddenLocationCount: 0, allLocationsHidden: false,
+    mapUpdateFailed: false,
   }
   const status = (overrides: Partial<TrackingConnectionStatus>): TrackingConnectionStatus => ({
     mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: null, warning: null, ...overrides,
+  })
+
+  it('raises the alarm when the map could not draw the latest positions, and keeps it in Tracking [DON-357]', () => {
+    const headline = describeTrackingHeadline({ ...base, phase: 'active', mapUpdateFailed: true, status: status({}) })
+    expect(headline.condition).toBe('map')
+    expect(headline.tone).toBe('alert')
+    expect(headline.problems[0]).toBe('MAP NOT UPDATING')
+    expect(headline.alarm).toMatch(/^MAP NOT UPDATING: .*out of date/)
+    expect(headline.issues).toContain('Map is not showing the latest positions')
+    expect(headline.text).not.toBe('Tracking OK')
+    // Healthy again once a later update is drawn.
+    expect(describeTrackingHeadline({ ...base, phase: 'active', status: status({}) }).condition).toBe('ok')
+  })
+
+  it('still names the map failure when a lost connection leads the alarm [DON-357]', () => {
+    const headline = describeTrackingHeadline({ ...base, phase: 'active', mapUpdateFailed: true, status: status({ mode: 'offline', warning: 'Traccar offline', warningCodes: ['offline_last_known'] }) })
+    expect(headline.condition).toBe('lost')
+    expect(headline.problems).toContain('Map not updating')
+    expect(headline.issues).toContain('Map is not showing the latest positions')
   })
 
   it('names each problem in short words before the reassuring sentence [DON-261]', () => {
