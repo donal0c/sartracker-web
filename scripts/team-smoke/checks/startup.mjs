@@ -10,10 +10,13 @@ import path from 'node:path'
 import Database from 'better-sqlite3'
 
 import { delay, launchApp, observeStartup } from '../lib/app.mjs'
-import { missionPhase, startMission } from '../lib/operator.mjs'
+import { closeWorkspace, missionPhase, startMission } from '../lib/operator.mjs'
+import { openWorkspacePanel } from '../../workspace-panels.mjs'
 import { expectProduct } from '../lib/results.mjs'
 import { STORE_FILE, storeFileHashes } from '../lib/store.mjs'
 
+/** The problem word the top bar shows for an unusable saved password (tracking-problem-labels.ts). */
+const CREDENTIAL_REENTRY_WORD = 'Re-enter password'
 const BAD_SECRET_WARNING =
   'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
 
@@ -76,13 +79,47 @@ export default [
         basic: { encrypted: Buffer.from('not-valid-electron-safe-storage-ciphertext').toString('base64') },
       }))
       const app = await launchApp(ctx, { profile, label: 'bad-credential' })
-      const warning = app.page.getByTestId('tracking-warning')
-      await warning.waitFor({ state: 'attached', timeout: 20_000 })
-      const text = (await warning.textContent())?.trim()
+      // The top bar names the credential problem with its remedy word, the
+      // Tracking panel gives the full warning and an Open Settings button, and
+      // inside a mission the alarm strip says tracking has stopped (DON-341).
+      const headline = app.page.getByTestId('ws-tracking-headline')
+      await headline.waitFor({ state: 'visible', timeout: 20_000 })
+      const problems = app.page.getByTestId('ws-tracking-problems')
+      const problemShown = await problems.filter({ hasText: CREDENTIAL_REENTRY_WORD })
+        .waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, (error) => {
+          if (error?.name === 'TimeoutError') return false
+          throw error
+        })
+      const problemText = problemShown ? await problems.innerText() : await headline.innerText()
+      await openWorkspacePanel(app.page, 'tracking')
+      const text = (await app.page.getByTestId('ws-tracking-panel').innerText()).replace(/\s+/gu, ' ').trim()
+      const remedy = app.page.getByTestId('ws-open-tracking-settings')
+      const remedyShown = await remedy.isVisible()
       await app.shot('shell')
-      expectProduct(text === BAD_SECRET_WARNING, `Tracking warning was "${text}".`)
+      expectProduct(problemShown, `The top bar did not show "${CREDENTIAL_REENTRY_WORD}" for an unusable saved password: "${problemText.replace(/\s+/gu, ' ').slice(0, 200)}".`)
+      expectProduct(text.includes(BAD_SECRET_WARNING), `Tracking panel did not show the re-enter-password warning: "${text.slice(0, 200)}".`)
+      expectProduct(remedyShown, 'The Tracking panel offered no Open Settings button to re-enter the password.')
+      if (remedyShown) {
+        await remedy.click()
+        const settingsOpened = await app.page.getByTestId('settings-provider-secret')
+          .waitFor({ state: 'visible', timeout: 10_000 }).then(() => true, () => false)
+        expectProduct(settingsOpened, 'Open Settings did not open the tracking password field.')
+        await closeWorkspace(app.page)
+      }
+
+      // In a mission tracking has stopped completely, so it is also the alarm.
+      await startMission(app.page, 'Bad Credential Smoke', [])
+      const alarm = app.page.getByTestId('ws-alarm')
+      const alarmShown = await alarm.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, (error) => {
+        if (error?.name === 'TimeoutError') return false
+        throw error
+      })
+      const alarmText = alarmShown ? (await alarm.innerText()).replace(/\s+/gu, ' ').trim() : ''
+      await app.shot('mission-alarm')
       await app.stop()
-      return 'Reached the shell; tracking disabled with the re-enter-password warning.'
+      expectProduct(alarmShown && /TRACKING LOST/u.test(alarmText) && /password or token/u.test(alarmText),
+        `Inside a mission the alarm strip did not say tracking was lost because the saved password cannot be used: "${alarmText.slice(0, 200)}".`)
+      return `Reached the shell; the top bar showed "${CREDENTIAL_REENTRY_WORD}", the Tracking panel gave the warning and an Open Settings button that opened the password field, and inside a mission the alarm read "${alarmText.slice(0, 120)}".`
     },
   },
   {

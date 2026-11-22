@@ -15,6 +15,7 @@ import path from 'node:path'
 import { delay } from './app.mjs'
 import { closeWorkspace } from './operator.mjs'
 import { NotTested } from './results.mjs'
+import { moreMenuItem } from '../../workspace-panels.mjs'
 
 /** The renderer keeps at most this many breadcrumbs. */
 export const DIAGNOSTIC_LOG_CAPACITY = 500
@@ -205,7 +206,8 @@ export async function exportDiagnosticsReport(page, profile, { timeoutMs = 15_00
   let outcome
   try {
     try {
-      await page.getByTestId('open-diagnostics-workspace').click()
+      // Diagnostics is in the top bar's More menu (DON-341).
+      await (await moreMenuItem(page, 'open-diagnostics-workspace')).click()
       const button = page.getByTestId('diagnostics-export-report')
       await button.waitFor({ timeout: 15_000 })
       await page.waitForFunction(() => {

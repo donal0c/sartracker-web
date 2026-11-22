@@ -8,6 +8,7 @@
 
 import { delay, launchApp } from './app.mjs'
 import { connectProvider, finishMission, placeMarker, startMission, switchBasemap } from './operator.mjs'
+import { openWorkspacePanel } from '../../workspace-panels.mjs'
 
 /** Layers a team commonly leaves hidden between missions. */
 const HIDDEN_LAYER_NODES = ['layer-tracking-breadcrumbs', 'group-map-tools', 'group-gpx-tracks']
@@ -30,10 +31,15 @@ export async function seedLivedInProfile(ctx, profile, { providerUrl } = {}) {
   // mission: its saved rows stay in the store. Hidden layers on the live
   // mission are the `controls` check's job.
   const t = (id) => app.page.getByTestId(id)
-  await t('sidebar-tab-layers').click()
-  await t('layer-expand-all-btn').click()
+  // The trails switch lives in the People panel now; it sets the same
+  // breadcrumb layer as the old Layers tick (DON-341).
   const hidden = []
+  await openWorkspacePanel(app.page, 'people')
+  await t('ws-all-trails').uncheck()
+  hidden.push('layer-tracking-breadcrumbs')
+  await openWorkspacePanel(app.page, 'layers')
   for (const node of HIDDEN_LAYER_NODES) {
+    if (node === 'layer-tracking-breadcrumbs') continue
     const toggle = t(`layer-visibility-${node}`)
     if (await toggle.count() === 0) continue
     await toggle.uncheck()
