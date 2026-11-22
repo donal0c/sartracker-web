@@ -7,6 +7,7 @@ import { validateReplayReceipt, validateReplayCorrectnessReceipt } from './quali
 import { createReplayGeometryFixture } from './qualification/replay-probe-fixture.mjs'
 import { isExpectedBlockedReplayRequest } from './qualification/replay-probe-diagnostics.mjs'
 import { buildReplayMapLaunchArgs } from './qualification/replay-map-launch.mjs'
+import { openMissionReview } from './workspace-panels.mjs'
 
 const executablePath = process.argv[2]
 const options = process.argv.slice(4)
@@ -101,7 +102,8 @@ try {
     }
     evidence.frameId = requestAnimationFrame(frame)
   }))
-  await page.getByTestId('open-mission-review-workspace').click()
+  // Review now opens from the top bar's More menu (DON-341).
+  await openMissionReview(page)
   await page.getByRole('button', { name: 'Replay', exact: true }).click()
   await page.getByTestId('mission-replay-seek').click()
   const map = page.getByTestId('mission-replay-map')
