@@ -3109,17 +3109,25 @@ function createElectronMissionStore(options) {
     runMarkerAttachmentIngest: async (missionId, writeAttachment, cleanupAttachment) =>
       enqueueAttachmentLifecycleOperation(missionId, async () => {
         ensureWritableMission(db, missionId)
-        const attachmentPath = await writeAttachment()
+        const written = await writeAttachment()
+        const attachmentPath = typeof written === 'string' ? written : written?.attachmentPath
         try {
+          if (typeof attachmentPath !== 'string' || attachmentPath === '') {
+            throw new Error('Attachment write returned no stored path.')
+          }
+          const custody = typeof written === 'string'
+            ? {}
+            : normalizeMarkerAttachmentCustody(written.custody, missionId, attachmentPath)
           db.transaction(() => {
             ensureWritableMission(db, missionId)
             insertEvent(db, missionId, 'marker_attachment_ingested', now(), {
               attachment_path: attachmentPath,
+              ...custody,
             })
           }).immediate()
           return attachmentPath
         } catch (error) {
-          if (typeof cleanupAttachment === 'function') {
+          if (typeof cleanupAttachment === 'function' && typeof attachmentPath === 'string') {
             try {
               await cleanupAttachment(attachmentPath)
             } catch (cleanupError) {
@@ -12583,6 +12591,43 @@ function validateLatLon(lat, lon, label) {
   }
   if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
     throw new Error(`${label} longitude must be a finite value between -180 and 180.`)
+  }
+}
+
+const MARKER_ATTACHMENT_SHA256 = /^[0-9a-f]{64}$/u
+const MARKER_ATTACHMENT_UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+
+/**
+ * Validates the v2 custody fields a live attachment write reports, so the
+ * ingest event never records custody the archive would later reject [M-41].
+ * Returns only the known fields.
+ */
+function normalizeMarkerAttachmentCustody(custody, missionId, attachmentPath) {
+  const basename = path.basename(attachmentPath)
+  if (
+    custody === null || typeof custody !== 'object'
+    || custody.custody_version !== 2
+    || typeof custody.attachment_id !== 'string'
+    || !MARKER_ATTACHMENT_UUID_V4.test(custody.attachment_id)
+    || !basename.startsWith(`${custody.attachment_id}-`)
+    || !Number.isSafeInteger(custody.size_bytes)
+    || custody.size_bytes < 1
+    || typeof custody.sha256 !== 'string'
+    || !MARKER_ATTACHMENT_SHA256.test(custody.sha256)
+    || custody.relative_path !== `missions/${missionId}/attachments/${basename}`
+    || typeof custody.display_name !== 'string'
+    || custody.display_name.length < 1
+    || Buffer.byteLength(custody.display_name, 'utf8') > 255
+  ) {
+    throw new Error('Attachment custody record is invalid; the attachment was not saved.')
+  }
+  return {
+    custody_version: 2,
+    attachment_id: custody.attachment_id,
+    size_bytes: custody.size_bytes,
+    sha256: custody.sha256,
+    relative_path: custody.relative_path,
+    display_name: custody.display_name,
   }
 }
 

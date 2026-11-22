@@ -1,7 +1,8 @@
 const fs = require('node:fs/promises')
 const fsSync = require('node:fs')
 const path = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
+const { syncDirectoryDurably, writeFileDurably } = require('./durable-file.cjs')
 const {
   MAX_GPX_IMPORT_PATH_LENGTH,
   MAX_GPX_IMPORT_PATHS,
@@ -197,10 +198,28 @@ function createElectronFileSystem(options) {
           missionId,
           'attachments',
         )
-        await fs.mkdir(attachmentDirectory, { recursive: true })
-        const destinationPath = path.join(attachmentDirectory, `${randomUUID()}-${fileName}`)
-        await writeFileAtomically(destinationPath, bytes)
-        return destinationPath
+        await makeDirectoryDurably(attachmentDirectory)
+        const attachmentId = randomUUID()
+        const storedName = `${attachmentId}-${fileName}`
+        const destinationPath = path.join(attachmentDirectory, storedName)
+        // The store commits a durable reference as soon as this resolves, so
+        // the bytes and the directory entry are flushed first; a power cut
+        // must never leave a committed reference to an empty or missing file
+        // [M-41].
+        await writeFileDurably(destinationPath, bytes)
+        return {
+          attachmentPath: destinationPath,
+          // v2 custody lets the archive catch a damaged file instead of
+          // sealing whatever bytes are on disk at finish [M-41].
+          custody: {
+            custody_version: 2,
+            attachment_id: attachmentId,
+            size_bytes: bytes.length,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            relative_path: `missions/${missionId}/attachments/${storedName}`,
+            display_name: fileName,
+          },
+        }
       }, async (attachmentPath) => {
         await fs.rm(attachmentPath, { force: true })
       })
@@ -400,10 +419,22 @@ function getOfficialMapPackageExtensionError(sourcePath) {
   return 'Official map package must be a .mbtiles file.'
 }
 
-async function writeFileAtomically(destinationPath, bytes) {
-  const temporaryPath = `${destinationPath}.tmp-${process.pid}-${Date.now()}`
-  await fs.writeFile(temporaryPath, bytes)
-  await fs.rename(temporaryPath, destinationPath)
+/**
+ * Creates a directory and its missing parents, then flushes the parent entry
+ * of every directory it created, so a new attachment folder survives a power
+ * cut together with the file written into it [M-41].
+ */
+async function makeDirectoryDurably(directoryPath) {
+  const firstCreated = await fs.mkdir(directoryPath, { recursive: true })
+  if (firstCreated === undefined) return
+  const created = []
+  for (let current = directoryPath; ; current = path.dirname(current)) {
+    created.push(current)
+    if (current === firstCreated || path.dirname(current) === current) break
+  }
+  for (const directory of created.reverse()) {
+    await syncDirectoryDurably(path.dirname(directory))
+  }
 }
 
 module.exports = {

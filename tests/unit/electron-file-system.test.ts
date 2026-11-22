@@ -1,4 +1,5 @@
-import { access, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { access, mkdir, mkdtemp, readFile, realpath, rm, symlink, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -6,6 +7,21 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const require = createRequire(import.meta.url)
+const promisesFs = require('node:fs/promises') as typeof import('node:fs/promises')
+const BetterSqlite3 = require('better-sqlite3') as new (
+  file: string,
+  options?: { readonly readonly?: boolean },
+) => {
+  readonly prepare: (sql: string) => { readonly all: (...args: unknown[]) => unknown[] }
+  readonly close: () => void
+}
+const { enumerateArchiveAttachments } = require('../../electron/archive-attachments.cjs') as {
+  readonly enumerateArchiveAttachments: (input: {
+    readonly db: unknown
+    readonly databasePath: string
+    readonly missionId: string
+  }) => readonly { readonly custodyClass: string; readonly sha256: string }[]
+}
 const { createElectronMissionStore } = require('../../electron/mission-store.cjs') as {
   readonly createElectronMissionStore: (options: { readonly userDataPath: string }) => {
     readonly close: () => void
@@ -59,7 +75,7 @@ type ElectronFileSystem = {
     missionStore: {
       readonly runMarkerAttachmentIngest: (
         missionId: string,
-        writeAttachment: () => Promise<string>,
+        writeAttachment: () => Promise<unknown>,
       ) => Promise<string>
     },
   ) => Promise<string>
@@ -185,7 +201,7 @@ describe('Electron filesystem service', () => {
       },
       {
         runMarkerAttachmentIngest: vi.fn(async (_missionId, writeAttachment) =>
-          writeAttachment()),
+          (await writeAttachment() as { readonly attachmentPath: string }).attachmentPath),
       },
     )
 
@@ -201,8 +217,8 @@ describe('Electron filesystem service', () => {
     const missionStore = {
       runMarkerAttachmentIngest: vi.fn(async (
         _missionId: string,
-        writeAttachment: () => Promise<string>,
-      ) => writeAttachment()),
+        writeAttachment: () => Promise<unknown>,
+      ) => (await writeAttachment() as { readonly attachmentPath: string }).attachmentPath),
     }
     const firstPath = await service.ingestMarkerAttachment({
       missionId: 'mission-1', fileName: 'evidence.jpg',
@@ -245,6 +261,92 @@ describe('Electron filesystem service', () => {
       expect(attachmentEventIndex).toBeGreaterThanOrEqual(0)
       expect(finishEventIndex).toBeGreaterThan(attachmentEventIndex)
     } finally {
+      missionStore.close()
+    }
+  })
+
+  it('flushes attachment bytes and directory entries before custody is committed [M-41]', async () => {
+    const service = await createService()
+    const syncedPaths: string[] = []
+    const realOpen = promisesFs.open.bind(promisesFs)
+    const openSpy = vi.spyOn(promisesFs, 'open').mockImplementation(async (...args) => {
+      const handle = await realOpen(...(args as Parameters<typeof promisesFs.open>))
+      const realSync = handle.sync.bind(handle)
+      handle.sync = async () => {
+        syncedPaths.push(String(args[0]))
+        return realSync()
+      }
+      return handle
+    })
+    let syncedBeforeCommit: readonly string[] = []
+    try {
+      const storedPath = await service.ingestMarkerAttachment({
+        missionId: 'mission-fsync',
+        fileName: 'evidence.jpg',
+        bytesBase64: Buffer.from('flushed evidence').toString('base64'),
+      }, {
+        runMarkerAttachmentIngest: async (_missionId, writeAttachment) => {
+          const written = await writeAttachment() as { readonly attachmentPath: string }
+          syncedBeforeCommit = [...syncedPaths]
+          return written.attachmentPath
+        },
+      })
+      const attachmentDirectory = path.dirname(storedPath)
+      expect(syncedBeforeCommit.some((synced) => synced.startsWith(`${storedPath}.`)))
+        .toBe(true)
+      if (process.platform !== 'win32') {
+        expect(syncedBeforeCommit).toContain(attachmentDirectory)
+        // The new mission and attachments folders are themselves named durably.
+        expect(syncedBeforeCommit).toContain(path.dirname(attachmentDirectory))
+        expect(syncedBeforeCommit).toContain(path.join(userDataPath!, 'missions'))
+      }
+      await expect(readFile(storedPath, 'utf8')).resolves.toBe('flushed evidence')
+    } finally {
+      openSpy.mockRestore()
+    }
+  })
+
+  it('records v2 custody so a damaged attachment is caught at archive [M-41]', async () => {
+    const service = await createService()
+    const missionStore = createElectronMissionStore({ userDataPath: userDataPath! })
+    const mission = await missionStore.createMission({ name: 'Attachment custody' })
+    const bytes = Buffer.from('custody evidence bytes')
+    let reader: InstanceType<typeof BetterSqlite3> | null = null
+    try {
+      const storedPath = await service.ingestMarkerAttachment({
+        missionId: mission.id,
+        fileName: 'custody.jpg',
+        bytesBase64: bytes.toString('base64'),
+      }, missionStore)
+      const events = await missionStore.listMissionEvents(mission.id) as readonly {
+        readonly event_type: string
+        readonly details_json: string
+      }[]
+      const ingest = events.find((event) => event.event_type === 'marker_attachment_ingested')
+      const details = JSON.parse(ingest!.details_json) as Record<string, unknown>
+      const basename = path.basename(storedPath)
+      expect(details).toMatchObject({
+        attachment_path: storedPath,
+        custody_version: 2,
+        size_bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+        relative_path: `missions/${mission.id}/attachments/${basename}`,
+        display_name: 'custody.jpg',
+      })
+      expect(basename.startsWith(`${String(details.attachment_id)}-`)).toBe(true)
+
+      const databasePath = path.join(userDataPath!, 'mission-store.sqlite')
+      reader = new BetterSqlite3(databasePath, { readonly: true })
+      const intact = enumerateArchiveAttachments({ db: reader, databasePath, missionId: mission.id })
+      expect(intact).toHaveLength(1)
+      expect(intact[0]!.custodyClass).toBe('v2_digest')
+
+      // A torn write after a power cut leaves fewer bytes than were recorded.
+      await truncate(storedPath, 4)
+      expect(() => enumerateArchiveAttachments({ db: reader, databasePath, missionId: mission.id }))
+        .toThrow(expect.objectContaining({ code: 'ARCHIVE_ATTACHMENT_CHANGED' }))
+    } finally {
+      reader?.close()
       missionStore.close()
     }
   })
