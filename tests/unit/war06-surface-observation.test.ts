@@ -135,6 +135,11 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'hidden', fixes: 2 })
   })
 
+  it('a non-boolean visibility value is unconfirmed, never ready', async () => {
+    withMap(sourceMap, 'true')
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unconfirmed' })
+  })
+
   it('unknown tracking visibility is unconfirmed, never ready', async () => {
     win.window = { __SARTRACKER_MAP__: sourceMap }
     expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unconfirmed', fixes: 2 })

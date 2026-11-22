@@ -27,6 +27,7 @@ import type { RenderableMapId } from '../../lib/map-config'
 import type { CoverageManifest } from '../../infrastructure/mission-store/tauri-mission-store'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapOverlaySync } from './register-map-overlay-sync'
+import { clearTrackingVisibleOnMap, reportTrackingVisibleOnMap } from './tracking-visibility-report'
 
 type UseMapOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -84,19 +85,25 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     }
 
     const synchronizeOverlay = () => {
+      const trackingVisible = getEffectiveTrackingVisible(groupVisibility)
       syncTrackingOverlay(
         map,
-        getEffectiveTrackingVisible(groupVisibility) ? trackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
+        trackingVisible ? trackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
         hiddenDeviceIds,
         hiddenBreadcrumbDeviceIds,
-        getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
+        trackingVisible && breadcrumbsVisible,
         trackingStyle,
         exactBreadcrumbDotState,
         attentionByDevice,
       )
+      reportTrackingVisibleOnMap(trackingVisible)
     }
 
-    return registerMapOverlaySync(map, 'tracking', 'tracking', synchronizeOverlay)
+    const unregister = registerMapOverlaySync(map, 'tracking', 'tracking', synchronizeOverlay)
+    return () => {
+      unregister()
+      clearTrackingVisibleOnMap()
+    }
   }, [
     options.activeBasemapId,
     options.mapReadyVersion,
