@@ -1,5 +1,6 @@
 'use strict'
 
+const { requestRelaunch } = require('./app-relaunch.cjs')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -64,12 +65,7 @@ function applyGpuRenderingPreference(app, userDataPath) {
  */
 function relaunchWithSoftwareRendering(app, userDataPath, chosenAt) {
   writeSoftwareRenderingPreference(userDataPath, chosenAt)
-  const appImagePath = process.env.APPIMAGE
-  if (typeof appImagePath === 'string' && appImagePath.trim() !== '') {
-    app.relaunch({ execPath: appImagePath, args: process.argv.slice(1) })
-  } else {
-    app.relaunch()
-  }
+  requestRelaunch(app)
   app.quit()
 }
 
