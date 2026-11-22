@@ -34,6 +34,13 @@ export type DeviceWorkspaceRow = {
   readonly stationaryAttentionUnreliable: boolean
   readonly attentionAcknowledged: boolean
   readonly attentionElapsedDisplay: string
+  /**
+   * The device status Traccar last reported, kept even while positions are not
+   * updating, so a person's own problem survives a pause [DON-356].
+   */
+  readonly reportedStatus: 'online' | 'offline' | 'unknown'
+  /** True when this person's current fix was never confirmed in the mission store. */
+  readonly currentUnconfirmed: boolean
 }
 
 export type DeviceWorkspaceSummary = {
@@ -118,6 +125,8 @@ export function buildDeviceWorkspaceRows(
         stationaryAttentionUnreliable: attention?.latestFixUnreliable === true,
         attentionAcknowledged: attention?.acknowledged === true,
         attentionElapsedDisplay: formatAttentionElapsed(attention?.elapsedMs),
+        reportedStatus: device.status,
+        currentUnconfirmed: position !== null && unconfirmedCurrentDeviceIds.has(device.device_id),
       } satisfies DeviceWorkspaceRow
     })
     .sort((left, right) => left.name.localeCompare(right.name))

@@ -10,8 +10,8 @@ import { navigateToHarness, pauseMission, resumeMission, startMission } from './
  */
 
 /** Three people; Charlie's latest position was already stale before any pause. */
-async function injectOneStalePerson(page: Page): Promise<void> {
-  await page.evaluate(async () => {
+async function injectOneStalePerson(page: Page, unconfirmedCurrentDeviceIds: readonly string[] = []): Promise<void> {
+  await page.evaluate(async (unconfirmed) => {
     await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot({
       devices: [
         { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: '2026-04-10T12:00:00.000Z', unique_id: null, category: 'person' },
@@ -24,8 +24,9 @@ async function injectOneStalePerson(page: Page): Promise<void> {
         { id: 'pos-charlie', device_id: 'charlie', lat: 51.995, lon: -9.738, altitude: 350, speed: 0, battery: 12, accuracy: 20, timestamp: '2026-04-10T10:30:00.000Z', source: 'cache', data_origin: 'cache', cache_age_seconds: 600, device_cache_stale: true },
       ],
       breadcrumbs: [],
+      ...(unconfirmed.length > 0 ? { unconfirmedCurrentDeviceIds: [...unconfirmed] } : {}),
     }, { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: '2026-04-10T12:00:01.000Z', warning: null })
-  })
+  }, unconfirmedCurrentDeviceIds)
 }
 
 test('a paused mission with one stale person keeps the badge on that person [DON-356]', async ({ page }) => {
@@ -45,4 +46,19 @@ test('a paused mission with one stale person keeps the badge on that person [DON
 
   await resumeMission(page)
   await expect(badge).toHaveText('1 ⚠')
+})
+
+test('a person whose current fix is unconfirmed still counts after the pause [DON-356]', async ({ page }) => {
+  await navigateToHarness(page)
+  await startMission(page, 'Badge unconfirmed mission')
+  // Alpha's recent fix was never confirmed in the store; Charlie was already stale.
+  await injectOneStalePerson(page, ['alpha'])
+  const badge = page.getByTestId('ws-people-attention')
+  await expect(badge).toHaveText('2 ⚠')
+
+  await pauseMission(page)
+  await expect(badge).toHaveText('2 ⚠')
+  await openWorkspacePanel(page, 'people')
+  await expect(page.getByTestId('ws-person-status-alpha')).toContainText('position not confirmed before the pause')
+  await expect(page.getByTestId('ws-person-status-bravo')).toContainText('Last known position')
 })

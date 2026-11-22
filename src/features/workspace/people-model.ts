@@ -68,10 +68,19 @@ function describePerson(row: DeviceWorkspaceRow, nowMs: number, { live, lastConf
   else if (row.status === 'offline') notes.push(`Offline, position ${age}`)
   else if (row.status === 'unknown') notes.push(`Not confirmed, position ${age}`)
   else if (row.stale || row.sourceDisplay === 'Stale') notes.push(`Out of date, position ${age}`)
+  // While paused every row reads "Last known", so name the person's own
+  // problem from before the pause; the badge keeps counting them [DON-356].
+  const pausedOwnProblem = paused && !live
+    ? row.currentUnconfirmed ? 'position not confirmed before the pause'
+      : row.reportedStatus === 'offline' ? 'reported offline before the pause'
+        : row.reportedStatus === 'unknown' ? 'not confirmed before the pause'
+          : null
+    : null
+  if (pausedOwnProblem !== null) notes.push(pausedOwnProblem)
   if (row.fixTimeUnverified) notes.push('position time not verified')
   if (row.ingestWarning !== null) notes.push('bad position report rejected')
   if (notes.length > 0) {
-    const ownProblem = quietBeforeStop || row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
+    const ownProblem = quietBeforeStop || pausedOwnProblem !== null || row.fixTimeUnverified || row.ingestWarning !== null || (live && row.sourceDisplay !== 'Last known')
     const urgency = row.stationaryAttention ? (row.attentionAcknowledged ? 1 : 0) : ownProblem ? 2 : SHARED_OUTAGE_URGENCY
     return { statusText: notes.join(' · '), tone: 'attention', urgency, onlyPaused: paused && !live && urgency === SHARED_OUTAGE_URGENCY }
   }
