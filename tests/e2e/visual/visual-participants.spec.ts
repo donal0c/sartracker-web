@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 
+import { openMissionPanel, openParticipantPickers } from '../helpers/workspace-panels'
 import { navigateToHarness } from './helpers/test-setup'
 import { captureElementAndRegister } from './helpers/verification-manifest'
 
@@ -21,12 +22,12 @@ test.describe('Visual: Mission Participants [DON-271]', () => {
       area: 'mission',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of SAR Tracker's mission-start participant selection step:
-1. The section is clearly headed "MISSION PARTICIPANTS".
-2. It says groups and individual devices can be selected and that nothing is pre-selected.
+1. The section is clearly headed "Who's taking part".
+2. It says to tick the team below and that a team's group can be set in Settings so it is ticked each time.
 3. The selected count is visibly "0 selected".
-4. Separate Groups and Devices picker areas are visible with readable names and current-member/reporting hints.
-5. Every checkbox is visibly unchecked.
-6. A clear notice explains that starting with none keeps reporting devices outside mission evidence and off the operational map until explicitly added.
+4. A Groups picker is visible with readable group names and current-member hints, and a folded "Add one person at a time" option for individual devices.
+5. Every visible checkbox is unchecked.
+6. A clear notice says that with nobody ticked the mission can still start, but nobody will show on the map until they are added.
 7. The surface looks like a deliberate safety decision, not a disabled or failed form.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -39,10 +40,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('participant management shows provenance and pending backfill honestly', async ({ page }) => {
     await seedDiscovery(page, 3)
+    await openParticipantPickers(page)
     await page.getByTestId('participant-device-picker').getByText('Device 1', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Participant Visual Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await openParticipantPickers(page)
     await page.getByTestId('participant-add-ref').selectOption('2')
     const earlier = await localDatetime(page, Date.now() - 60 * 60 * 1_000)
     await page.getByTestId('participant-effective-from').fill(earlier)
@@ -91,11 +95,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'mission',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of SAR Tracker's mission-start participant selection step with a start offset entered:
-1. The section is headed "MISSION PARTICIPANTS" and shows "0 selected".
-2. A clearly visible notice beginning "Start offset" says earlier history is only fetched for participants selected here before Start.
-3. The same notice says a participant added after Start needs "History from: Mission start" to include that history.
-4. The separate no-participants notice is still visible and readable.
-5. Both notices are legible against the background and are not clipped.
+1. The section is headed "Who's taking part" and shows "0 selected".
+2. A clearly visible amber notice says rolling back the start only brings in earlier tracks for people ticked here before Start.
+3. The separate nobody-ticked notice is still visible and readable.
+4. Both notices are legible against the background and are not clipped.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'lookback notice is visible after entering a 48 h offset',
@@ -134,12 +137,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('unfinished participant history blocks mission finish with an actionable warning', async ({ page }) => {
     await seedDiscovery(page, 3)
+    await openParticipantPickers(page)
     await page.getByTestId('participant-device-picker').getByText('Device 1', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Backfill Finish Visual Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
@@ -147,7 +152,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('mission-control')).toContainText(
       'participant history backfill checkpoint(s) are incomplete',
     )
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await captureElementAndRegister(page, 'mission-finish-dialog', {
       testId: 'participant-backfill-finish-fence',

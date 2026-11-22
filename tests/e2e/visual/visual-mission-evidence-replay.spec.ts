@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { openMissionSections } from '../helpers/mission-sections'
+import { openMissionPanel, openMissionReview } from '../helpers/workspace-panels'
 
 import { navigateToHarness, startMission } from './helpers/test-setup'
 import { captureElementAndRegister } from './helpers/verification-manifest'
@@ -21,7 +22,7 @@ test.describe('Visual: mission evidence and replay', () => {
         </trkseg></trk></gpx>`,
       }])
     })
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
     await page.getByTestId('mission-replay-seek').click()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('data known at selected time')
@@ -79,12 +80,13 @@ Report PASS or FAIL for each item and overall.`,
     await page.getByTestId('outing-label-input').fill('Operational period 1')
     await page.getByTestId('outing-start-btn').click()
     await page.getByTestId('drawing-toolbar-expand').click()
-    await page.getByTestId('drawing-tool-search_area').click({ force: true })
-    await clickMap(page, 500, 180); await clickMap(page, 650, 220); await clickMap(page, 540, 340)
-    await page.locator('.maplibregl-canvas').first().click({ position: { x: 540, y: 340 }, button: 'right', force: true })
+    await page.getByTestId('drawing-tool-search_area').click()
+    // Clear of the open map-tools list, which covers the left of the map.
+    await clickMap(page, 650, 180); await clickMap(page, 850, 220); await clickMap(page, 700, 340)
+    await page.locator('.maplibregl-canvas').first().click({ position: { x: 700, y: 340 }, button: 'right', force: true })
     await page.getByTestId('drawing-name-input').fill('Area Alpha')
     await page.getByTestId('drawing-save-btn').click()
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
     await page.getByTestId('search-operation-coordinator').fill('Coordinator One')
     await page.getByTestId('search-operation-area').selectOption({ label: 'Area Alpha' })
@@ -149,10 +151,11 @@ Report PASS or FAIL for each item and overall.`,
 
     await page.keyboard.press('Escape')
     await page.getByTestId('outing-end-btn').click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
     await finalizeWithSyntheticArchiveCustody(page)
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
     await expect(page.getByTestId('search-operations-read-only')).toBeVisible()
     await expect(page.getByTestId('search-operations-workspace')).toContainText('Area Alpha')
@@ -186,6 +189,7 @@ async function clickMap(page: import('@playwright/test').Page, x: number, y: num
 async function finalizeWithSyntheticArchiveCustody(
   page: import('@playwright/test').Page,
 ): Promise<void> {
+  await openMissionPanel(page)
   await page.getByTestId('mission-finalize-btn').click()
   const dialog = page.getByTestId('mission-archive-custody-dialog')
   await expect(dialog).toBeVisible()

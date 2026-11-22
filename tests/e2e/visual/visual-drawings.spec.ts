@@ -317,6 +317,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     }
 
     await page.waitForTimeout(500)
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await expect(page.getByTestId('ws-search-time')).toBeVisible()
 
     await captureAndRegister(page, {
       testId: 'drawing-multiple-on-map',
@@ -326,13 +328,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this screenshot of the SAR Tracker map after the multi-drawing creation flow. NOTE: in headless Playwright, map-pixel click sequences for polygons / text labels can be flaky, so only the range-ring drawing reliably completes its dialog and persists. The expected stable signal in this screenshot is the range-ring overlay plus the surrounding operational shell. Check only:
 1. A range-ring drawing should be visible on the map — concentric rings or dashed circles around a centre point (the reliably-created drawing in this scenario)
 2. The map should be a topographic basemap of the Kerry mountains area in Ireland
-3. The Mission Control panel in the right sidebar should show the mission as ACTIVE with running timers
+3. The top bar should show the mission as running ("Mission ▾ · Running") with a Search time clock
 4. The Map Tools toolbar on the left should be visible and reflect a returned-to-Select state (active-mode chip showing "Select" or similar) after the last drawing completed
-5. The right sidebar / panels should remain visually intact (no error toasts dominating the screen)
+5. The top bar and any open side panel should remain visually intact (no error toasts dominating the screen)
 Do NOT mark FAIL for the absence of search-area polygons, bearing lines, or text labels — those are not reliably produced by the headless drawing flow and are covered by their own dedicated dialog tests.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'multiple drawings created via harness',
+        'top bar mission phase reads Running and Search time is visible',
       ],
     })
   })

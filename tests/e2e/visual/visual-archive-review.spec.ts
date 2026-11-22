@@ -4,6 +4,7 @@ import {
   captureAndRegister,
   captureElementAndRegister,
 } from './helpers/verification-manifest'
+import { openMissionPanel, openMissionReview } from '../helpers/workspace-panels'
 import { navigateToHarness, startMission } from './helpers/test-setup'
 
 const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
@@ -17,7 +18,7 @@ test.describe('Visual: archive-backed Mission Review [DON-253 / BCP-16]', () => 
     await startMission(page, MISSION_NAME)
     const archive = await finalizeWithSyntheticArchiveCustody(page)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     const archiveControl = page.getByTestId('mission-archive-review-control')
     await expect(archiveControl).toContainText(MISSION_NAME)
     await expect(archiveControl).toContainText('Verified encrypted archive')
@@ -82,7 +83,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not interpret t
     const archive = await finalizeWithSyntheticArchiveCustody(page)
 
     await page.setViewportSize({ width: 1440, height: 1600 })
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByTestId(`archive-cleanup-open-${archive.missionId}`).click()
     const dialog = page.getByTestId('mission-archive-cleanup-dialog')
     await expect(dialog).toBeVisible()
@@ -164,7 +165,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL. Do not infer deskt
       await harness.prepareArchiveVerificationRetryFixture(archiveId)
     }, archive.archiveId)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId(`archive-review-select-${archive.archiveId}`)).toContainText(
       'Verification required',
     )
@@ -211,11 +212,13 @@ async function finalizeWithSyntheticArchiveCustody(page: Page): Promise<{
   readonly archivePath: string
   readonly missionId: string
 }> {
+  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page
     .getByTestId('mission-finish-dialog')
     .getByRole('button', { name: 'Confirm Finish' })
     .click()
+  await openMissionPanel(page)
   await page.getByTestId('mission-finalize-btn').click()
   const dialog = page.getByTestId('mission-archive-custody-dialog')
   await expect(dialog).toBeVisible()
