@@ -40,6 +40,12 @@ export type TrackingHeadline = {
   readonly text: string
   /** Short problem words, most urgent first, shown before anything else in the bar and never cut mid-word (DON-261). */
   readonly problems: readonly string[]
+  /**
+   * The first problem word is the alarm strip's own lead, so the bar may drop
+   * it to keep the fix after it visible (DON-353). Only set while the strip,
+   * which cannot be closed, is on screen.
+   */
+  readonly leadInAlarm?: true
   /** The rest of the words, which may be cut short in the bar; the full text is in the label and Tracking. */
   readonly detail: string
   /** Text for the alarm across the map, when it should say more than the headline. */
@@ -139,7 +145,7 @@ export function describeTrackingHeadline(input: {
     const lead = paused ? 'MISSION PAUSED' : 'TRACKING LOST'
     const advice = `${lead}: ${credentialAdvice}`
     return {
-      condition: 'credentials', tone: 'alert', text: prefixed(advice), problems: [lead, ...problems],
+      condition: 'credentials', tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true,
       detail: conditions === '' ? advice : `${advice} · ${conditions}`,
       alarm: `${lead}: the saved tracking password or token cannot be used; positions on the map may not be current`,
       issues, lastReceivedShown,

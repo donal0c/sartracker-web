@@ -43,7 +43,7 @@ function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; re
     >
       <strong>
         <span aria-hidden="true" className="ws-health-icon">{headline.tone === 'ok' ? '●' : '⚠'}</span>
-        <TrackingProblemWords words={headline.problems} />
+        <TrackingProblemWords leadInAlarm={headline.leadInAlarm === true} words={headline.problems} />
         {headline.detail === '' ? null : <span className="ws-health-detail">{headline.detail}</span>}
       </strong>
       <span className="ws-health-time">Last update {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt).replace(/ GMT.*$/, '')}</span>

@@ -24,6 +24,27 @@ export function fitProblemWords(widths: readonly number[], separator: number, mo
   return widths.length
 }
 
+/** Which problem words to show when the first one may give way. */
+export type YieldingLeadFit = { readonly skipLead: boolean; readonly shown: number }
+
+/**
+ * Fits the words when the first one is an alarm lead that the flashing alarm
+ * strip always shows too (DON-353). The lead stays while the word after it,
+ * the fix, also fits; otherwise the lead gives way, so the one thing the
+ * operator must do is never hidden behind "+N more" in a narrow bar.
+ *
+ * @param widths the width of each word, the lead first
+ * @param separator the width of the separator between words
+ * @param more the width of the "+N more" count
+ * @param available the width the words may use
+ * @returns whether to drop the lead, and how many of the remaining words to show
+ */
+export function fitWithYieldingLead(widths: readonly number[], separator: number, more: number, available: number): YieldingLeadFit {
+  const shown = fitProblemWords(widths, separator, more, available)
+  if (shown >= 2 || widths.length < 2) return { skipLead: false, shown }
+  return { skipLead: true, shown: fitProblemWords(widths.slice(1), separator, more, available) }
+}
+
 /**
  * Text for the shown words and the count of the rest.
  *
