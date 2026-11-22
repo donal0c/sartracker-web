@@ -452,19 +452,19 @@
             </thead>
             <tbody>
               <tr>
-                <td>The tracking strip under the top bar</td>
-                <td>Green <strong>Tracking connected</strong> and a recent <strong>Last success</strong> time.</td>
-                <td>Red <strong>Disconnected · retrying</strong>: the dots on the map are the <em>last</em> positions received, not live ones. Amber means read the words and act on them.</td>
+                <td>The tracking status in the top bar (click it for details)</td>
+                <td>Green <strong>Tracking OK</strong>.</td>
+                <td>A red strip under the top bar reading <strong>TRACKING LOST</strong> means the dots on the map are the <em>last</em> positions received, not live ones. Amber words such as <strong>2 stale</strong> or <strong>Re-enter password</strong> name a problem: click the status and follow what the Tracking panel says.</td>
               </tr>
               <tr>
-                <td>The mission chip (top left)</td>
-                <td>Green <strong>ACTIVE</strong>.</td>
-                <td>Red flashing <strong>PAUSED</strong>: the search clock is stopped and live refresh is suspended. Press <strong>Resume</strong> when searching restarts.</td>
+                <td>The mission button (top left)</td>
+                <td><strong>Mission · Running</strong>.</td>
+                <td><strong>Mission · PAUSED</strong>, with a red <strong>MISSION PAUSED</strong> strip: the search clock is stopped and positions are not updating. Open the mission button and press <strong>Resume</strong> when searching restarts. <strong>Needs resuming</strong> means the app restarted mid-mission: resume it before relying on the map.</td>
               </tr>
               <tr>
-                <td><strong>FIX</strong> and <strong>STALE</strong> in the top bar</td>
-                <td>FIX matches the teams you expect; STALE is 0.</td>
-                <td>STALE above 0 means a device has not reported for more than five minutes. Treat its dot as old.</td>
+                <td>Stale positions</td>
+                <td>No <strong>stale</strong> count in the tracking status.</td>
+                <td>A device that has not reported for more than five minutes is counted as stale. Treat its dot as old.</td>
               </tr>
               <tr>
                 <td>The <strong>Maps</strong> menu</td>
@@ -481,12 +481,12 @@
 
           <h3>The 6-step start</h3>
           <ol>
-            <li>Open SAR Tracker. Confirm the tracking strip is green. If it says <strong>Tracking is not configured</strong>, go to <a href="#settings">Settings</a> first.</li>
+            <li>Open SAR Tracker. Confirm the tracking status in the top bar reads <strong>Tracking OK</strong>. If it says <strong>Tracking is not configured</strong>, go to <a href="#settings">Settings</a> first.</li>
             <li>Type a <strong>Mission name</strong> your coordinators will recognise later.</li>
             <li>If the search began before you opened the app, set <strong>Roll back time (hours)</strong> (up to 48).</li>
             <li>Tick the <strong>groups and devices taking part</strong> <em>before</em> you press Start.</li>
             <li>Press <strong>Start</strong>.</li>
-            <li>Check the chip says <strong>ACTIVE</strong> and your teams are on the map.</li>
+            <li>Check the mission button reads <strong>Mission · Running</strong> and your teams are on the map.</li>
           </ol>
           <p>The full detail is in <a href="#mission">Run a mission</a>.</p>
 
@@ -569,7 +569,7 @@
             as mission evidence or shown on the mission map until you add them.
           </div>
           <p>
-            When you press <strong>Start</strong>, the chip turns green <strong>ACTIVE</strong> and
+            When you press <strong>Start</strong>, the mission button reads <strong>Mission · Running</strong> and
             the timers run. The <strong>Active</strong> timer is search time; <strong>Elapsed</strong>
             is total time since the (possibly backdated) start.
           </p>
@@ -616,7 +616,7 @@
           <p>
             <strong>History backfill: pending / retrying</strong> means the earlier track is still
             being fetched from the tracking server. <strong>You cannot finish the mission until it
-            completes.</strong> If it stays pending, check the tracking strip.
+            completes.</strong> If it stays pending, click the tracking status in the top bar.
           </p>
           <p>
             <strong>Unknown roster from an older version.</strong> If a group was selected in an older
@@ -1492,7 +1492,7 @@
           <h3 id="hosted-testing">The hosted test copy</h3>
           <ul>
             <li>It is at <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong> and is for training and quick surface checks only. It keeps mission data in the browser session, has no official maps, and cannot use file pickers or restart recovery. Never use it for a real incident.</li>
-            <li>Confirm the amber <strong>Browser testing mode</strong> banner and <strong>Browser test / Session storage only</strong> in the top bar.</li>
+            <li>Confirm the amber <strong>Browser testing mode</strong> banner under the top bar, which says mission data is stored in this browser session.</li>
             <li>In <strong>Settings → Tracking sources</strong> use the team's <strong>https</strong> Traccar address (from your admin), <strong>Basic</strong> login, <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>. A plain <code>http://</code> address is blocked from this page. After a full page reload, enter the password again.</li>
             <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>roll back time</strong> and tick the teams before Start.</li>
             <li>When you report something, include the URL, mission name, browser, what you expected and what happened, and a screenshot if you can. The checklist is <code>docs/team-testing-feedback-loop.md</code>.</li>

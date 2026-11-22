@@ -55,4 +55,13 @@ describe('operator manual describes current behaviour [DON-301]', () => {
     expect(manual).not.toContain('was lost during runtime shutdown')
     expect(manual).not.toContain('Nothing is selected automatically. Starting')
   })
+
+  it('checks readiness on the new top bar, not the removed classic mast [DON-353]', () => {
+    expect(manual).not.toContain('<strong>FIX</strong> and <strong>STALE</strong> in the top bar')
+    expect(manual).not.toContain('Browser test / Session storage only')
+    expect(manual).not.toContain('Check the chip says <strong>ACTIVE</strong>')
+    expect(manual).toContain('Green <strong>Tracking OK</strong>')
+    expect(manual).toContain('<strong>Mission · Running</strong>')
+    expect(manual).toContain('amber <strong>Browser testing mode</strong> banner under the top bar')
+  })
 })
