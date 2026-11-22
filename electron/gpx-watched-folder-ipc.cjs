@@ -65,6 +65,8 @@ function registerGpxWatchedFolderHandlers(options) {
       const result = await watchedFolderStore.saveWatchedGpxFolders(input)
       if (result.warning !== undefined) {
         await warn('gpx_watched_folders_backup_failed', { folderCount: result.paths.length, reason: redactPaths(result.warning, result.paths) })
+        // The operator is told too: the list saved, its backup needs attention.
+        return { paths: result.paths, warning: result.warning }
       }
       return { paths: result.paths }
     } catch (error) {

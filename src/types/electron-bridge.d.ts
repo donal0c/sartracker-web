@@ -99,7 +99,7 @@ export type SarTrackerElectronBridge = {
   /** Folders saved as watched for a mission; re-allows them for listing after a restart [DON-337]. */
   readonly loadWatchedGpxFolders: (missionId: string) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
   /** Replaces the mission's saved watched folders; only folders chosen by the operator are accepted [DON-337]. */
-  readonly saveWatchedGpxFolders: (input: { readonly missionId: string; readonly paths: readonly string[] }) => Promise<{ readonly paths: readonly string[] }>
+  readonly saveWatchedGpxFolders: (input: { readonly missionId: string; readonly paths: readonly string[] }) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
   readonly ingestMarkerAttachment: (input: {
     readonly missionId: string
     readonly fileName: string

@@ -13,6 +13,7 @@ function createSavedWatches(initial: Record<string, readonly string[]> = {}) {
     loadWatchedFolders: vi.fn(async (missionId: string) => ({ paths: saved.get(missionId) ?? [], warning: null })),
     saveWatchedFolders: vi.fn(async (missionId: string, paths: readonly string[]) => {
       saved.set(missionId, [...paths])
+      return { backupWarning: null }
     }),
   }
   return { saved, store }
@@ -119,7 +120,7 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
       loadWatchedFolders: vi.fn().mockRejectedValue(new Error(
         "Error invoking remote method 'sartracker:load-watched-gpx-folders': Error: Saved watched GPX folders could not be read: the file is damaged.",
       )),
-      saveWatchedFolders: vi.fn().mockResolvedValue(undefined),
+      saveWatchedFolders: vi.fn().mockResolvedValue({ backupWarning: null }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     await runtime.controller.refreshMission('mission-1')
@@ -153,7 +154,7 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
     const store: GpxWatchedFolderStoreBoundary = {
       loadWatchedFolders: vi.fn().mockImplementationOnce(() => new Promise((resolve) => { releaseLoad = (paths) => resolve({ paths, warning: null }) }))
         .mockResolvedValue({ paths: [], warning: null }),
-      saveWatchedFolders: vi.fn().mockResolvedValue(undefined),
+      saveWatchedFolders: vi.fn().mockResolvedValue({ backupWarning: null }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     const first = runtime.controller.refreshMission('mission-1')
@@ -171,7 +172,7 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
       loadWatchedFolders: vi.fn(() => new Promise<{ paths: readonly string[]; warning: null }>((resolve) => {
         releaseLoad = () => resolve({ paths: saved.get('mission-1') ?? [], warning: null })
       })),
-      saveWatchedFolders: vi.fn(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]) }),
+      saveWatchedFolders: vi.fn(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]); return { backupWarning: null } }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     const opening = runtime.controller.refreshMission('mission-1')
@@ -189,7 +190,7 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
       loadWatchedFolders: vi.fn().mockResolvedValue({ paths: [], warning: null }),
       saveWatchedFolders: vi.fn()
         .mockRejectedValueOnce(new Error('Disk full.'))
-        .mockImplementation(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]) }),
+        .mockImplementation(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]); return { backupWarning: null } }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     await runtime.controller.refreshMission('mission-1')
@@ -208,7 +209,7 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
         paths: ['/field/drop'],
         warning: 'The saved watched-folder list was damaged or missing and was restored from its backup copy. Check the Watched Folders list.',
       }),
-      saveWatchedFolders: vi.fn().mockResolvedValue(undefined),
+      saveWatchedFolders: vi.fn().mockResolvedValue({ backupWarning: null }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     await runtime.controller.refreshMission('mission-1')
@@ -225,10 +226,10 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
     const store: GpxWatchedFolderStoreBoundary = {
       loadWatchedFolders: vi.fn(async (missionId: string) => ({ paths: saved.get(missionId) ?? [], warning: null })),
       saveWatchedFolders: vi.fn()
-        .mockImplementationOnce((missionId: string, paths: readonly string[]) => new Promise<void>((resolve) => {
-          releaseFirstSave = () => { saved.set(missionId, [...paths]); resolve() }
+        .mockImplementationOnce((missionId: string, paths: readonly string[]) => new Promise<{ backupWarning: null }>((resolve) => {
+          releaseFirstSave = () => { saved.set(missionId, [...paths]); resolve({ backupWarning: null }) }
         }))
-        .mockImplementation(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]) }),
+        .mockImplementation(async (missionId: string, paths: readonly string[]) => { saved.set(missionId, [...paths]); return { backupWarning: null } }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     await runtime.controller.refreshMission('mission-1')
@@ -253,8 +254,8 @@ describe('watched GPX folders survive a restart [DON-337]', () => {
     const store: GpxWatchedFolderStoreBoundary = {
       loadWatchedFolders: vi.fn().mockResolvedValue({ paths: [], warning: null }),
       saveWatchedFolders: vi.fn()
-        .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { failFirstSave = () => reject(new Error('Disk full.')) }))
-        .mockResolvedValue(undefined),
+        .mockImplementationOnce(() => new Promise<{ backupWarning: null }>((_resolve, reject) => { failFirstSave = () => reject(new Error('Disk full.')) }))
+        .mockResolvedValue({ backupWarning: null }),
     }
     const runtime = await startRuntime({ watchedFolderStore: store })
     await runtime.controller.refreshMission('mission-1')

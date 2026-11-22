@@ -80,7 +80,12 @@ export type GpxSavedWatches = {
 export type GpxWatchedFolderStoreBoundary = {
   /** The mission's saved folders; `warning` says when they came from the backup copy. */
   readonly loadWatchedFolders: (missionId: string) => Promise<GpxSavedWatches>
-  readonly saveWatchedFolders: (missionId: string, paths: readonly string[]) => Promise<void>
+  /** `backupWarning` says when the list saved but its backup copy did not. */
+  readonly saveWatchedFolders: (missionId: string, paths: readonly string[]) => Promise<GpxWatchSaveResult>
+}
+
+export type GpxWatchSaveResult = {
+  readonly backupWarning: string | null
 }
 
 /** The store accepts at most this many paths per native import call. */
@@ -669,10 +674,20 @@ export async function startGpxRuntime(
       // The mission's own latest list is saved whichever mission is open now.
       const paths = watchListByMission.get(missionId) ?? []
       try {
-        await store.saveWatchedFolders(missionId, paths)
+        const { backupWarning } = await store.saveWatchedFolders(missionId, paths)
         watchSaveFailures.delete(missionId)
         if (!isCurrent()) return
-        if (state.watchNotice?.tone === 'problem') {
+        if (backupWarning !== null) {
+          // The list is safe; only its backup copy is behind. Say so plainly.
+          state = {
+            ...state,
+            watchNotice: {
+              tone: 'problem',
+              message: `${backupWarning.replace(/\.$/u, '')}. The folder will still be watched after a restart. Check the disk and free space; the backup is retried on the next change.`,
+            },
+          }
+          publishRuntime()
+        } else if (state.watchNotice?.tone === 'problem') {
           state = { ...state, watchNotice: null }
           publishRuntime()
         }

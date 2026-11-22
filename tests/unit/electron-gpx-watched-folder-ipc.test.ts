@@ -1,11 +1,14 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { runInNewContext } from 'node:vm'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { startGpxRuntime, type GpxRuntimeState } from '../../src/features/gpx/start-gpx-runtime'
+import { createElectronGpxWatchedFolderStore } from '../../src/infrastructure/gpx-watched-folders/electron-gpx-watched-folder-store'
 
 const require = createRequire(import.meta.url)
 
@@ -31,11 +34,12 @@ const { registerGpxWatchedFolderHandlers } = require('../../electron/gpx-watched
 type Bridge = {
   readonly chooseGpxDirectoryPath: () => Promise<string | null>
   readonly loadWatchedGpxFolders: (missionId: string) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
-  readonly saveWatchedGpxFolders: (input: unknown) => Promise<{ readonly paths: readonly string[] }>
+  readonly saveWatchedGpxFolders: (input: unknown) => Promise<{ readonly paths: readonly string[]; readonly warning?: string }>
 }
 
 const directories: string[] = []
 afterEach(async () => {
+  vi.unstubAllGlobals()
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
@@ -142,5 +146,44 @@ describe('watched GPX folders through IPC across a restart [DON-337]', () => {
     expect(() => run.bridge.saveWatchedGpxFolders({ missionId: 'mission-1', paths: 'nope' })).toThrow(/invalid/u)
     expect(() => run.bridge.saveWatchedGpxFolders({ missionId: '', paths: [] })).toThrow(/Mission id is invalid/u)
     expect(() => run.bridge.loadWatchedGpxFolders('x'.repeat(201))).toThrow(/Mission id is invalid/u)
+  })
+
+  it('tells the operator when the list saved but its backup copy could not be updated [review round 3]', async () => {
+    const userDataPath = await mkdtemp(path.join(tmpdir(), 'sartracker-watch-profile-'))
+    const dropDirectory = await mkdtemp(path.join(tmpdir(), 'sartracker-watch-drop-'))
+    directories.push(userDataPath, dropDirectory)
+    const logged: unknown[] = []
+    const { bridge } = startAppRun(userDataPath, dropDirectory, logged)
+    await bridge.saveWatchedGpxFolders({ missionId: 'mission-1', paths: [] })
+    // The backup copy can no longer be replaced: a non-empty folder stands in its place.
+    const backupPath = path.join(userDataPath, 'gpx-watched-folders.backup.json')
+    await rm(backupPath)
+    await mkdir(path.join(backupPath, 'blocker'), { recursive: true })
+
+    // The real adapter and runtime, over the real preload, handlers and store.
+    vi.stubGlobal('sartrackerElectron', bridge)
+    let latest: GpxRuntimeState | null = null
+    const runtime = await startGpxRuntime({
+      gpxStore: {
+        listGpxImports: vi.fn().mockResolvedValue([]),
+        upsertGpxImport: vi.fn(),
+        deleteGpxImport: vi.fn(),
+        importGpxEvidencePaths: vi.fn(async () => ({ imports: [], dispatchDurationMs: 1 })),
+      },
+      watchSource: { listDirectoryFiles: vi.fn(), listWatchedDirectoryPaths: vi.fn(async () => ({ paths: [], omittedCount: 0 })) },
+      watchedFolderStore: createElectronGpxWatchedFolderStore(),
+      applyRuntime: (state) => { latest = state },
+    })
+    await runtime.refreshMission('mission-1')
+    await expect(bridge.chooseGpxDirectoryPath()).resolves.toBe(dropDirectory)
+    await runtime.addWatchedDirectory(dropDirectory)
+
+    const state = latest as GpxRuntimeState | null
+    expect(state?.watchedDirectories).toEqual([dropDirectory])
+    expect(state?.watchNotice?.tone).toBe('problem')
+    expect(state?.watchNotice?.message).toMatch(/^The watched-folder list was saved, but its backup copy could not be updated: .+ The folder will still be watched after a restart\. Check the disk and free space; the backup is retried on the next change\.$/u)
+    await expect(readFile(path.join(userDataPath, 'gpx-watched-folders.json'), 'utf8')).resolves.toContain(JSON.stringify(dropDirectory))
+    expect(logged).toContainEqual({ level: 'warn', event: 'gpx_watched_folders_backup_failed', fields: { folderCount: 1, reason: expect.any(String) } })
+    expect(JSON.stringify(logged)).not.toContain(dropDirectory)
   })
 })

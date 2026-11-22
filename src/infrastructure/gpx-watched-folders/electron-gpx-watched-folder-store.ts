@@ -12,7 +12,8 @@ export function createElectronGpxWatchedFolderStore(): GpxWatchedFolderStoreBoun
       return { paths: saved.paths, warning: saved.warning ?? null }
     },
     saveWatchedFolders: async (missionId, paths) => {
-      await getBridge().saveWatchedGpxFolders({ missionId, paths })
+      const result = await getBridge().saveWatchedGpxFolders({ missionId, paths })
+      return { backupWarning: result.warning ?? null }
     },
   }
 }
