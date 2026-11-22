@@ -1,4 +1,4 @@
-import { openWorkspacePanel } from './workspace-panels.mjs'
+import { openWorkspacePanel, plainClick } from './workspace-panels.mjs'
 
 /** The content each Mission Control section shows once it is open. */
 const SECTION_CONTENT = {
@@ -19,16 +19,17 @@ const SECTION_CONTENT = {
  *
  * @param {import('playwright').Page} page the app window
  * @param {'participants' | 'outings'} name the section to open
- * @param {{ timeoutMs?: number }} [options] how long to wait for the section
+ * @param {{ click?: import('./workspace-panels.mjs').OperatorClick, timeoutMs?: number }} [options]
+ *   who clicks (an audited click for the tracking soak), and how long to wait for the section
  */
-export async function openMissionSection(page, name, { timeoutMs = 5_000 } = {}) {
+export async function openMissionSection(page, name, { click = plainClick, timeoutMs = 5_000 } = {}) {
   const contentSelector = SECTION_CONTENT[name]
   if (contentSelector === undefined) throw new Error(`Unknown Mission Control section "${name}".`)
-  if (await page.getByTestId('simplified-workspace').count() > 0) await openWorkspacePanel(page, 'mission')
+  if (await page.getByTestId('simplified-workspace').count() > 0) await openWorkspacePanel(page, 'mission', { click, timeoutMs: Math.max(timeoutMs, 15_000) })
   const more = page.getByTestId('ws-more-mission-options')
   if (name === 'outings' && await more.count() > 0
     && await more.evaluate((element) => element instanceof HTMLDetailsElement && !element.open)) {
-    await more.locator('summary').first().click()
+    await click(more.locator('summary').first(), 'ws-more-mission-options')
   }
 
   const fold = page.getByTestId(`mission-${name}-section`)
@@ -41,7 +42,10 @@ export async function openMissionSection(page, name, { timeoutMs = 5_000 } = {})
   }
 
   if (await fold.count() > 0) {
-    if (await fold.getAttribute('data-open') === 'false') await page.getByTestId(`mission-${name}-section-toggle`).click()
+    if (await fold.getAttribute('data-open') === 'false') {
+      const toggle = `mission-${name}-section-toggle`
+      await click(page.getByTestId(toggle), toggle)
+    }
     await page.waitForFunction(
       (testId) => document.querySelector(`[data-testid="${testId}"]`)?.getAttribute('data-open') === 'true',
       `mission-${name}-section`,

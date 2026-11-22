@@ -43,6 +43,7 @@ import { startRenderTraceDiagnostics } from '../build/electron-render-trace-diag
 import { startArchiveLaunch } from './qualification/archive-launch.mjs'
 import { openMissionSection } from './mission-sections.mjs'
 import { selectParticipants } from './operator-controls.mjs'
+import { readMenuVersion } from './workspace-panels.mjs'
 import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
@@ -3358,7 +3359,8 @@ async function launchPackagedApp(options, userDataDir, number) {
     const page = context.pages()[0] ?? await context.waitForEvent('page')
     await page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
     await page.locator('.maplibregl-canvas').waitFor({ state: 'attached', timeout: 60_000 })
-    const visibleVersionText = await page.getByTestId('app-title').locator('..').innerText()
+    // The version is shown in the top bar's More menu, not beside the title (DON-341).
+    const visibleVersionText = await readMenuVersion(page, { timeoutMs: 30_000 })
     const packagedBuildHeadMatched = renderedVersionContainsExactHead(
       visibleVersionText,
       options.expectedHead,

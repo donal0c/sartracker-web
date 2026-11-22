@@ -88,14 +88,14 @@ import {
   startTrackingSoakMockServer,
 } from '../build/electron-tracking-soak-mock-server.js'
 import { runCompetingOperationProbe } from './qualification/competing-operation-probe.mjs'
+import { openMissionSection } from './mission-sections.mjs'
 import {
   confirmFinishMission,
   openDevicesWorkspace,
-  openPanel,
-  openParticipantsSection,
   selectParticipants,
   setMissionPaused,
 } from './operator-controls.mjs'
+import { openWorkspacePanel } from './workspace-panels.mjs'
 import {
   readHeapAndStateSample,
   readRendererTrackingStateCounts,
@@ -1237,7 +1237,7 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   )
   await waitForActiveMission(launch.page, 30_000)
   if (missionModelEnabled) {
-    await openParticipantsSection(launch.page, { click: ownedOperatorClick(launch) })
+    await openMissionSection(launch.page, 'participants', { click: ownedOperatorClick(launch), timeoutMs: 15_000 })
     await launch.page.waitForFunction(
       (expectedCount) => {
         const activeList = document.querySelector('[data-testid="participant-active-list"]')
@@ -2045,7 +2045,7 @@ async function createSyntheticFieldOutings(page, missionId, expectedOutingCount,
 async function recordOperatorInteraction(input) {
   // The measured Devices button is in the People panel (DON-341). Opening
   // People is an audited harness click before the measured interaction.
-  await openPanel(input.page, 'people', {
+  await openWorkspacePanel(input.page, 'people', {
     click: ownedOperatorClick({ page: input.page, operatorClickAuditState: input.auditState }),
   })
   const startedAt = performance.now()
@@ -2328,16 +2328,18 @@ async function acknowledgeOperatorClickAudit(page, sequence) {
   }, sequence)
 }
 
-/** Applies the one ownership boundary to every non-measured harness click. */
 /**
  * A click for the shared operator controls that goes through the soak's
  * trusted-click audit, so opening panels and folds is never unexpected input.
+ * It is an ordinary click: Playwright's actionability checks stay on, because
+ * a forced click still produces a trusted event and would pass the audit on a
+ * control an operator could not press (DON-353).
  *
  * @param {{ page: import('playwright').Page, operatorClickAuditState: object }} launch the launch
  * @param {{ timeout?: number }} [clickOptions] options for Playwright's click
  * @returns {import('./operator-controls.mjs').OperatorClick} the audited click
  */
-function ownedOperatorClick(launch, clickOptions = { force: true }) {
+function ownedOperatorClick(launch, clickOptions = {}) {
   return (locator, testId, position) => performLaunchOwnedHarnessClick(
     launch,
     testId,
@@ -2345,6 +2347,7 @@ function ownedOperatorClick(launch, clickOptions = { force: true }) {
   )
 }
 
+/** Applies the one ownership boundary to every non-measured harness click. */
 function performLaunchOwnedHarnessClick(
   launch,
   expectedTestId,

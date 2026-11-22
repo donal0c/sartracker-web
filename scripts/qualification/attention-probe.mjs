@@ -8,7 +8,8 @@ import { createAttentionScenario, startAttentionServer } from './attention-serve
 import { validateAttentionSurface } from './attention-receipts.mjs'
 import { validateCanonicalIngestSurface } from './canonical-ingest-receipts.mjs'
 import { hashCandidateFile } from './candidate-artifacts.mjs'
-import { openDevicesWorkspace, unfoldParticipantPickers } from '../operator-controls.mjs'
+import { openDevicesWorkspace } from '../operator-controls.mjs'
+import { openParticipantPickers } from '../workspace-panels.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
@@ -49,7 +50,7 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
     await page.getByTestId('app-title').waitFor()
     await page.getByTestId('mission-name-input').fill('C06 stationary attention')
     await page.getByTestId('mission-offset-input').fill('1')
-    await unfoldParticipantPickers(page)
+    await openParticipantPickers(page, { require: 'device' })
     const devices = page.getByTestId('participant-device-picker').locator('input[type="checkbox"]')
     await expect(devices).toHaveCount(2, { timeout: 30_000 })
     for (let index = 0; index < 2; index++) await devices.nth(index).check()

@@ -3,7 +3,20 @@
  * an operator does (DON-341). Mirrors tests/e2e/helpers/workspace-panels.ts
  * for the packaged probes, which drive the app through Playwright's Electron
  * driver and so cannot import the TypeScript helper.
+ *
+ * Every helper takes an optional `click(locator, testId, position)`. Probes
+ * that audit every trusted click (the tracking soak) pass their own, where
+ * testId is the first data-testid on the clicked element's path; everyone
+ * else gets an ordinary Playwright click. There is one implementation of each
+ * behaviour, whoever clicks (DON-353).
  */
+
+/**
+ * @typedef {(locator: import('playwright').Locator, testId: string, position?: { x: number, y: number }) => Promise<unknown>} OperatorClick
+ */
+
+/** @type {OperatorClick} */
+export const plainClick = (locator, _testId, position) => locator.click(position === undefined ? {} : { position })
 
 const PANEL_TEST_IDS = {
   mission: 'ws-mission-host',
@@ -11,6 +24,17 @@ const PANEL_TEST_IDS = {
   layers: 'ws-layers-panel',
   tracking: 'ws-tracking-panel',
   tools: 'ws-tools-panel',
+}
+
+// The top-bar button for each panel, and where to press it so the first
+// data-testid on the click's path is the button itself: the Mission button's
+// centre lands on the mission name, so its phase label is pressed; the others
+// are pressed in their padding, clear of badges and problem words.
+const PANEL_BUTTONS = {
+  mission: { testId: 'ws-mission-phase' },
+  people: { testId: 'ws-toggle-people', position: { x: 4, y: 4 } },
+  layers: { testId: 'ws-toggle-layers', position: { x: 4, y: 4 } },
+  tracking: { testId: 'ws-tracking-headline', position: { x: 4, y: 4 } },
 }
 
 /**
@@ -30,9 +54,9 @@ async function settle(page) {
  *
  * @param {import('playwright').Page} page the app window
  * @param {'mission' | 'people' | 'layers' | 'tracking' | 'tools'} panel the panel to open
- * @param {{ timeoutMs?: number }} [options] how long to keep trying
+ * @param {{ click?: OperatorClick, timeoutMs?: number }} [options] who clicks, and how long to keep trying
  */
-export async function openWorkspacePanel(page, panel, { timeoutMs = 15_000 } = {}) {
+export async function openWorkspacePanel(page, panel, { click = plainClick, timeoutMs = 15_000 } = {}) {
   const target = page.getByTestId(PANEL_TEST_IDS[panel])
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -41,13 +65,12 @@ export async function openWorkspacePanel(page, panel, { timeoutMs = 15_000 } = {
       await settle(page)
       if (await target.isVisible()) return
     }
-    if (panel === 'mission') await page.getByTestId('ws-mission-button').click()
-    else if (panel === 'people') await page.getByTestId('ws-toggle-people').click()
-    else if (panel === 'layers') await page.getByTestId('ws-toggle-layers').click()
-    else if (panel === 'tracking') await page.getByTestId('ws-tracking-headline').click()
-    else {
-      await openWorkspacePanel(page, 'layers', { timeoutMs: Math.max(1_000, deadline - Date.now()) })
-      await page.getByTestId('ws-open-tools').click()
+    if (panel === 'tools') {
+      await openWorkspacePanel(page, 'layers', { click, timeoutMs: Math.max(1_000, deadline - Date.now()) })
+      await click(page.getByTestId('ws-open-tools'), 'ws-open-tools')
+    } else {
+      const { testId, position } = PANEL_BUTTONS[panel]
+      await click(page.getByTestId(testId), testId, position)
     }
     await target.waitFor({ state: 'visible', timeout: 1_500 }).catch(() => undefined)
   }
@@ -61,13 +84,13 @@ export async function openWorkspacePanel(page, panel, { timeoutMs = 15_000 } = {
  *
  * @param {import('playwright').Page} page the app window
  * @param {string} testId the item's data-testid
- * @param {{ timeoutMs?: number }} [options] how long to wait for the item
+ * @param {{ click?: OperatorClick, timeoutMs?: number }} [options] who clicks, and how long to wait for the item
  * @returns {Promise<import('playwright').Locator>} the visible item
  */
-export async function moreMenuItem(page, testId, { timeoutMs = 10_000 } = {}) {
+export async function moreMenuItem(page, testId, { click = plainClick, timeoutMs = 10_000 } = {}) {
   const menu = page.getByTestId('ws-more-menu')
   if (!await menu.isVisible()) {
-    await page.getByTestId('ws-more-button').click()
+    await click(page.getByTestId('ws-more-button'), 'ws-more-button')
     await menu.waitFor({ state: 'visible', timeout: timeoutMs })
   }
   const item = menu.getByTestId(testId)
@@ -76,14 +99,40 @@ export async function moreMenuItem(page, testId, { timeoutMs = 10_000 } = {}) {
 }
 
 /**
+ * Reads the app version shown at the foot of the More menu, then closes the
+ * menu again. The top bar itself shows no version (DON-341).
+ *
+ * @param {import('playwright').Page} page the app window
+ * @param {{ click?: OperatorClick, timeoutMs?: number }} [options] who clicks, and how long to wait
+ * @returns {Promise<string>} the version text as shown
+ */
+export async function readMenuVersion(page, { click = plainClick, timeoutMs = 10_000 } = {}) {
+  const menu = page.getByTestId('ws-more-menu')
+  const wasOpen = await menu.isVisible()
+  if (!wasOpen) {
+    await click(page.getByTestId('ws-more-button'), 'ws-more-button')
+    await menu.waitFor({ state: 'visible', timeout: timeoutMs })
+  }
+  const version = menu.locator('.ws-menu-version')
+  await version.waitFor({ state: 'visible', timeout: timeoutMs })
+  const text = (await version.innerText()).trim()
+  if (!wasOpen) {
+    await click(page.getByTestId('ws-more-button'), 'ws-more-button')
+    await menu.waitFor({ state: 'hidden', timeout: timeoutMs })
+  }
+  if (text === '') throw new Error('The More menu shows no app version.')
+  return text
+}
+
+/**
  * Opens Review and replay from the top bar's More menu and waits until it is
  * on screen (DON-341).
  *
  * @param {import('playwright').Page} page the app window
- * @param {{ timeoutMs?: number }} [options] how long to wait for Review
+ * @param {{ click?: OperatorClick, timeoutMs?: number }} [options] who clicks, and how long to wait for Review
  */
-export async function openMissionReview(page, { timeoutMs = 15_000 } = {}) {
-  await (await moreMenuItem(page, 'ws-open-review', { timeoutMs })).click()
+export async function openMissionReview(page, { click = plainClick, timeoutMs = 15_000 } = {}) {
+  await click(await moreMenuItem(page, 'ws-open-review', { click, timeoutMs }), 'ws-open-review')
   await page.getByTestId('mission-review-workspace').waitFor({ state: 'visible', timeout: timeoutMs })
 }
 
@@ -92,18 +141,24 @@ export async function openMissionReview(page, { timeoutMs = 15_000 } = {}) {
  * show the new phase. Pausing asks for confirmation first (DON-341).
  *
  * @param {import('playwright').Page} page the app window
+ * @param {{ click?: OperatorClick, timeoutMs?: number }} [options] who clicks, and how long to wait
  * @returns {Promise<'PAUSED' | 'Running'>} the phase now shown
  */
-export async function pressPauseResume(page) {
-  await openWorkspacePanel(page, 'mission')
+export async function pressPauseResume(page, { click = plainClick, timeoutMs = 10_000 } = {}) {
+  await openWorkspacePanel(page, 'mission', { click, timeoutMs: Math.max(timeoutMs, 15_000) })
   const button = page.getByTestId('mission-pause-resume-btn')
+  await button.waitFor({ state: 'visible', timeout: timeoutMs })
   const pausing = (await button.textContent())?.trim() === 'Pause'
-  await button.click()
-  if (pausing) await page.getByTestId('ws-pause-confirm-yes').click()
+  await click(button, 'mission-pause-resume-btn')
+  if (pausing) {
+    const yes = page.getByTestId('ws-pause-confirm-yes')
+    await yes.waitFor({ state: 'visible', timeout: timeoutMs })
+    await click(yes, 'ws-pause-confirm-yes')
+  }
   const phase = pausing ? 'PAUSED' : 'Running'
   await page.waitForFunction((expected) =>
     document.querySelector('[data-testid="ws-mission-phase"]')?.textContent?.includes(expected) === true,
-  phase, { timeout: 10_000 })
+  phase, { timeout: timeoutMs })
   await settle(page)
   return phase
 }
@@ -117,11 +172,12 @@ export async function pressPauseResume(page) {
  * `require` this only opens whichever folds are there.
  *
  * @param {import('playwright').Page} page the app window
- * @param {{ require?: 'device' | 'group', timeoutMs?: number }} [options] the picker that must be visible
+ * @param {{ require?: 'device' | 'group', click?: OperatorClick, timeoutMs?: number }} [options]
+ *   the picker that must be visible, who clicks, and how long to wait
  * @returns {Promise<import('playwright').Locator | null>} the required picker, or null
  */
-export async function openParticipantPickers(page, { require, timeoutMs = 30_000 } = {}) {
-  await openWorkspacePanel(page, 'mission')
+export async function openParticipantPickers(page, { require, click = plainClick, timeoutMs = 30_000 } = {}) {
+  await openWorkspacePanel(page, 'mission', { click, timeoutMs })
   const outer = page.getByTestId('ws-change-participants')
   const devices = page.getByTestId('ws-pick-devices')
   const picker = require === undefined ? null : page.getByTestId(`participant-${require}-picker`)
@@ -132,9 +188,9 @@ export async function openParticipantPickers(page, { require, timeoutMs = 30_000
       throw new Error(`The participant pickers did not appear in the Mission panel within ${timeoutMs} ms.`)
     }
   }
-  await unfold(outer)
+  await unfold(outer, 'ws-change-participants', click)
   if (require === 'device') await devices.waitFor({ state: 'visible', timeout: timeoutMs })
-  await unfold(devices)
+  await unfold(devices, 'ws-pick-devices', click)
   if (picker === null) return null
   try {
     await picker.waitFor({ state: 'visible', timeout: timeoutMs })
@@ -149,11 +205,13 @@ export async function openParticipantPickers(page, { require, timeoutMs = 30_000
  * Does nothing if the fold is absent or already open.
  *
  * @param {import('playwright').Locator} fold the details element
+ * @param {string} testId its data-testid, the first on the summary click's path
+ * @param {OperatorClick} click who clicks
  */
-async function unfold(fold) {
+async function unfold(fold, testId, click) {
   if (await fold.count() === 0) return
   if (await fold.evaluate((element) => element instanceof HTMLDetailsElement && element.open)) return
-  await fold.locator('summary').first().click()
+  await click(fold.locator('summary').first(), testId)
   await fold.evaluate((element) => new Promise((resolve, reject) => {
     const deadline = Date.now() + 5_000
     const check = () => {

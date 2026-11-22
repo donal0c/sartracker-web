@@ -35,6 +35,8 @@ const B_CURRENT_ID = '701'
 const B_HISTORY_IDS = ['711', '712']
 const CLOSE_TIMEOUT_MS = 20_000
 const CONDITION_TIMEOUT_MS = 45_000
+/** Longest stretch the recovery sampler may go without reading the map before a leak counts as unproven. */
+const MAX_UNOBSERVED_GAP_MS = 2_000
 
 main().catch((error) => {
   console.error(`electron-war06-mission-cache-smoke: ${error instanceof Error ? error.message : String(error)}`)
@@ -713,31 +715,49 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
 }
 
 /**
- * Reads what the operator sees about tracking. The new layout (DON-341) has
- * no always-on tracking readout: the connection mode, the tracking warning
- * and each person's position source are in Devices, opened from People. With
- * `open` (or `requireCounters`) it opens Devices first. Without it, it only
- * reads what is already on screen, so the recovery sampler never changes the
- * renderer; it then reports `devicesVisible: false` and no counts.
+ * Reads what the operator sees about tracking.
  *
- * The fix count is the people with a position; the cache count is those whose
- * source reads Cache (or Stale, which only a cached position past its age
- * limit shows), matching the retired Fixes and Cache counters.
+ * Counts keep the retired counters' meaning: Fixes is the tracking snapshot's
+ * positions and Cache those whose data origin is the cache. The map draws one
+ * device point per snapshot position (tracking-geojson.ts), carrying that
+ * position's origin, so they are read from the map's tracking source on every
+ * sample, with Devices open or not; this is also exactly what is drawn. A map
+ * without the tracking source draws nothing, so its counts are a true zero; a
+ * source that cannot be read gives null counts, never zero.
+ *
+ * The visible readout is read separately: the headline always, and the
+ * connection mode, warning, per-person sources and attention from Devices,
+ * opened first with `open` or `requireCounters` (DON-341).
  */
 async function readOperatorSurface(page, options = {}) {
   if (options.open === true || options.requireCounters === true) {
     await openDevicesWorkspace(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   }
-  const surface = await page.evaluate(() => {
+  const surface = await page.evaluate(async () => {
     const shown = (element) => element !== null && element.getClientRects().length > 0
     const text = (element) => element?.textContent?.trim() ?? ''
     const devicesVisible = shown(document.querySelector('[data-testid="devices-workspace"]'))
     const headline = document.querySelector('[data-testid="ws-tracking-headline"]')
     const all = (prefix) => [...document.querySelectorAll(`[data-testid^="${prefix}"]`)]
+    const readMapCounts = async () => {
+      const source = window.__SARTRACKER_MAP__?.getSource('tracking')
+      if (window.__SARTRACKER_MAP__ === undefined || source === undefined) return { drawn: false, fixes: 0, cache: 0, attention: 0 }
+      const data = typeof source.getData === 'function'
+        ? await source.getData()
+        : typeof source.serialize === 'function' ? source.serialize()?.data : undefined
+      if (data === undefined || data === null || !Array.isArray(data.features)) return null
+      const points = data.features.filter((feature) => feature?.properties?.featureKind === 'device')
+      return {
+        drawn: true,
+        fixes: points.length,
+        cache: points.filter((feature) => feature.properties.dataOrigin === 'cache').length,
+        attention: points.filter((feature) => feature.properties.attention === true).length,
+      }
+    }
     return {
+      mapCounts: await readMapCounts(),
       devicesVisible,
-      headline: headline?.getAttribute('aria-label') ?? '',
-      headlineCondition: headline?.getAttribute('data-condition') ?? '',
+      headline: shown(headline) ? headline.getAttribute('aria-label') ?? text(headline) : '',
       mode: devicesVisible ? text(document.querySelector('[data-testid="devices-tracking-mode"]')) : '',
       warning: devicesVisible ? text(document.querySelector('[data-testid="devices-tracking-warning"]')) : '',
       sources: devicesVisible ? all('device-source-').map(text) : [],
@@ -750,15 +770,19 @@ async function readOperatorSurface(page, options = {}) {
     }
   })
   if (options.requireCounters === true) {
+    assert.notEqual(surface.mapCounts, null, 'The map\'s tracking source could not be read, so the fix and cache counts are unknown.')
     assert.equal(surface.devicesVisible, true, 'Devices did not open, so the tracking readout is not readable on the operator surface.')
   }
-  const currentFixCount = surface.sources.filter((source) => source !== 'No fix').length
-  const cachedDeviceCount = surface.sources.filter((source) => source === 'Cache' || source === 'Stale').length
+  const readable = surface.mapCounts !== null
+  const currentFixCount = readable ? surface.mapCounts.fixes : null
+  const cachedDeviceCount = readable ? surface.mapCounts.cache : null
   return {
     ...surface,
-    counters: surface.devicesVisible ? `Fixes ${currentFixCount} Cache ${cachedDeviceCount}` : '',
+    readable,
+    counters: readable ? `Fixes ${currentFixCount} Cache ${cachedDeviceCount}` : '',
     currentFixCount,
     cachedDeviceCount,
+    mapAttentionCount: readable ? surface.mapCounts.attention : null,
   }
 }
 
@@ -793,10 +817,13 @@ async function observeActionSurface(page, action) {
   let observing = true
   const sampler = (async () => {
     while (observing) {
+      const at = Date.now()
       try {
-        samples.push(await readOperatorSurface(page))
-      } catch {
-        // The renderer can be between startup documents; retain surrounding samples.
+        samples.push({ ...(await readOperatorSurface(page)), at })
+      } catch (error) {
+        // The renderer can be between startup documents. The sample is kept as a
+        // gap in the observation, never as a zero.
+        samples.push({ readable: false, at, error: String(error?.message ?? error).slice(0, 200) })
       }
       await delay(50)
     }
@@ -815,17 +842,34 @@ async function observeActionSurface(page, action) {
   return { result, samples }
 }
 
-/** Reduces startup observations to current/cache counts and warning sightings. */
+/**
+ * Reduces startup observations to current/cache counts and warning sightings.
+ * Unreadable samples are counted as gaps; the maxima cover readable samples
+ * only, and `longestGapMs` says how long the observation was blind.
+ */
 function summarizeSurfaceSamples(samples) {
   const validSamples = samples.filter((sample) => sample !== null && sample !== undefined)
+  const readable = validSamples.filter((sample) => sample.readable === true)
+  let longestGapMs = 0
+  let lastReadableAt = null
+  for (const sample of validSamples) {
+    if (sample.at === undefined) continue
+    if (sample.readable === true) {
+      if (lastReadableAt !== null) longestGapMs = Math.max(longestGapMs, sample.at - lastReadableAt)
+      lastReadableAt = sample.at
+    }
+  }
   return {
     sampleCount: validSamples.length,
+    readableCount: readable.length,
+    unreadableCount: validSamples.length - readable.length,
+    longestGapMs,
     first: validSamples[0] ?? null,
     last: validSamples.at(-1) ?? null,
-    maxCurrentFixCount: Math.max(0, ...validSamples.map((sample) => sample.currentFixCount ?? 0)),
-    maxCachedDeviceCount: Math.max(0, ...validSamples.map((sample) => sample.cachedDeviceCount ?? 0)),
-    discardWarningObserved: validSamples.some((sample) => sample.warning.includes(DISCARDED_CACHE_WARNING)),
-    attentionObserved: validSamples.some((sample) => sample.stationaryAttention !== ''),
+    maxCurrentFixCount: readable.length === 0 ? null : Math.max(...readable.map((sample) => sample.currentFixCount)),
+    maxCachedDeviceCount: readable.length === 0 ? null : Math.max(...readable.map((sample) => sample.cachedDeviceCount)),
+    discardWarningObserved: validSamples.some((sample) => (sample.warning ?? '').includes(DISCARDED_CACHE_WARNING)),
+    attentionObserved: validSamples.some((sample) => (sample.stationaryAttention ?? '') !== '' || (sample.mapAttentionCount ?? 0) > 0),
   }
 }
 
@@ -978,8 +1022,13 @@ function assertMissionBHasNoMissionA(phase, missionAId, label) {
   `${label} did not expose the planned discard warning before fresh data.`)
   assert.equal(phase.surface.currentFixCount, 0, `${label} rendered current fixes under Mission B.`)
   assert.equal(phase.surface.cachedDeviceCount, 0, `${label} rendered cached devices under Mission B.`)
-  assert.equal(phase.surfaceSamples?.maxCurrentFixCount ?? 0, 0, `${label} transiently rendered a current fix.`)
-  assert.equal(phase.surfaceSamples?.maxCachedDeviceCount ?? 0, 0, `${label} transiently rendered a cached device.`)
+  // Only a readable observation proves zero; a blind stretch could hide a flash of Mission A.
+  const samples = phase.surfaceSamples
+  assert.ok((samples?.readableCount ?? 0) > 0, `${label} never read the map during recovery, so no Mission A leak is proven absent.`)
+  assert.ok(samples.longestGapMs <= MAX_UNOBSERVED_GAP_MS,
+    `${label} could not read the map for ${samples.longestGapMs} ms during recovery (limit ${MAX_UNOBSERVED_GAP_MS} ms); a Mission A position shown then would be missed.`)
+  assert.equal(samples.maxCurrentFixCount, 0, `${label} transiently rendered a current fix.`)
+  assert.equal(samples.maxCachedDeviceCount, 0, `${label} transiently rendered a cached device.`)
   assert.equal(phase.surfaceSamples?.attentionObserved ?? false, false, `${label} transiently rendered stationary attention.`)
   assert.equal(phase.surfaceSamples?.discardWarningObserved ?? false, true, `${label} did not expose the planned discard warning during recovery.`)
   assert.equal(phase.ipc.positions.length, 0, `${label} persisted positions while provider data was unavailable.`)
