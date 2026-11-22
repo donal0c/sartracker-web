@@ -18,6 +18,8 @@ const { fileURLToPath, pathToFileURL } = require('node:url')
 let startupWindowReady = false
 
 const { createElectronSettingsStore } = require('./settings-store.cjs')
+const { createGpxWatchedFolderStore } = require('./gpx-watched-folder-store.cjs')
+const { registerGpxWatchedFolderHandlers } = require('./gpx-watched-folder-ipc.cjs')
 const { resolveAllowedWeatherUrl } = require('./external-url-policy.cjs')
 const { createElectronRuntimeFiles } = require('./runtime-files.cjs')
 const { createElectronMissionStore } = require('./mission-store.cjs')
@@ -484,6 +486,126 @@ async function createWindow(
 }
 
 /**
+ * Appends a runtime-log event without letting a log failure break the caller.
+ * A failed write is reported on stderr so it is never silent.
+ *
+ * @param {{ append: (entry: object) => Promise<unknown> }} runtimeLog
+ * @param {object} entry
+ */
+function appendRuntimeEvent(runtimeLog, entry) {
+  void Promise.resolve()
+    .then(() => runtimeLog.append(entry))
+    .catch((error) => {
+      console.error(`[runtime-log] Could not record ${entry.event}:`, error)
+    })
+}
+
+/**
+ * Builds the operator escalation for a map window that is alive but not
+ * answering the close/quit drain [M-48]. The operator chooses to keep waiting
+ * or to close now; closing now seals the loss of unconfirmed track points, so
+ * the mission shows them as possibly missing rather than silently dropping them.
+ *
+ * @param {{ append: (entry: object) => Promise<unknown> }} runtimeLog
+ * @returns {(input: { requestId: string, reason: string, webContents: unknown, signal: AbortSignal }) => Promise<'wait' | 'abandon'>}
+ */
+function createHungRendererEscalation(runtimeLog) {
+  const fallbackShownFor = new Set()
+  return async ({ requestId, reason, webContents, signal }) => {
+    appendRuntimeEvent(runtimeLog, {
+      level: 'warn',
+      event: 'renderer_drain_overdue',
+      fields: { requestId, reason },
+    })
+    const reloading = reason === 'renderer_reload'
+    const action = reloading ? 'reload' : 'close'
+    const actionNow = reloading ? 'Reload now' : 'Close now'
+    // The owning window makes the macOS sheet asynchronous, so the abort
+    // signal can dismiss it when a late drain arrives [DON-361].
+    const owner = resolveOwningWindow(webContents)
+    const options = {
+      type: 'warning',
+      title: 'SAR Tracker is not responding',
+      message: `SAR Tracker's map window is not responding, so it cannot ${action} yet.`,
+      detail: [
+        'Wait gives it more time to save the latest track points.',
+        `${actionNow} goes ahead anyway. Track points not yet saved for the active mission`,
+        'will be marked as possibly missing.',
+      ].join(' '),
+      buttons: ['Wait', actionNow],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      signal,
+    }
+    let response
+    try {
+      ;({ response } = owner === null
+        ? await dialog.showMessageBox(options)
+        : await dialog.showMessageBox(owner, options))
+    } catch (error) {
+      reportDrainEscalationFailure(runtimeLog, error, { requestId, reason }, fallbackShownFor)
+      return 'wait'
+    }
+    if (response === 1) {
+      appendRuntimeEvent(runtimeLog, {
+        level: 'error',
+        event: 'renderer_drain_abandoned',
+        fields: { requestId, reason },
+      })
+      return 'abandon'
+    }
+    appendRuntimeEvent(runtimeLog, {
+      level: 'warn',
+      event: 'renderer_drain_wait_chosen',
+      fields: { requestId, reason },
+    })
+    return 'wait'
+  }
+}
+
+/** Returns the live window that owns the renderer, or null when there is none. */
+function resolveOwningWindow(webContents) {
+  try {
+    const owner = BrowserWindow.fromWebContents?.(webContents) ?? null
+    return owner !== null && !owner.isDestroyed?.() ? owner : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Logs a failed hung-renderer question and shows a blocking error box once per
+ * request, so the operator learns why the window will not close [DON-361].
+ */
+function reportDrainEscalationFailure(runtimeLog, error, context, fallbackShownFor) {
+  appendRuntimeEvent(runtimeLog, {
+    level: 'error',
+    event: 'renderer_drain_escalation_failed',
+    fields: {
+      requestId: context.requestId,
+      reason: context.reason,
+      name: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message : String(error),
+    },
+  })
+  if (fallbackShownFor.has(context.requestId)) return
+  fallbackShownFor.add(context.requestId)
+  try {
+    dialog.showErrorBox(
+      'SAR Tracker is not responding',
+      [
+        "SAR Tracker's map window is not responding and the question about it could not be shown.",
+        'SAR Tracker will keep waiting for it to save the latest track points.',
+        'If it stays stuck, force quit SAR Tracker; unsaved track points will then be marked as possibly missing.',
+      ].join(' '),
+    )
+  } catch {
+    // The runtime log entry above is the remaining record.
+  }
+}
+
+/**
  * Prevents renderer content from navigating the operational window or opening
  * auxiliary windows outside the controlled SAR Tracker shell.
  */
@@ -497,6 +619,12 @@ function installWindowTeardownGuards(
   let closeInProgress = false
   let allowNextUnload = false
   let reloadInProgress = false
+  window.on('unresponsive', () => {
+    appendRuntimeEvent(runtimeLog, { level: 'warn', event: 'renderer_unresponsive', fields: {} })
+  })
+  window.on('responsive', () => {
+    appendRuntimeEvent(runtimeLog, { level: 'info', event: 'renderer_responsive', fields: {} })
+  })
   window.on('close', (event) => {
     if (closeAllowed) return
     event.preventDefault()
@@ -1741,6 +1869,7 @@ async function startElectronApp(startupWatchdog) {
   const settingsStore = createElectronSettingsStore({
     userDataPath,
     safeStorage,
+    runtimeLog,
   })
   const loadRuntimeBootstrapSettings = async (forceConnect = false) =>
     applyTrackingSoakRuntimeOverride(
@@ -1802,6 +1931,12 @@ async function startElectronApp(startupWatchdog) {
   const rendererTeardownCoordinator = createRendererTeardownCoordinator({
     ipcMain,
     missionStore,
+    onDrainOverdue: createHungRendererEscalation(runtimeLog),
+    onDrainOverdueFailed: (error, context) => appendRuntimeEvent(runtimeLog, {
+      level: 'error',
+      event: 'renderer_drain_escalation_failed',
+      fields: { ...context, name: error instanceof Error ? error.name : typeof error },
+    }),
   })
   electronRuntimeContext.rendererTeardownCoordinator = rendererTeardownCoordinator
   if (previousSessionEndedUncleanly) {
@@ -1898,6 +2033,14 @@ async function startElectronApp(startupWatchdog) {
     archiveReviewSessionManager,
     previousSessionEndedUncleanly,
   )
+  // Watched GPX folders survive a restart per mission [DON-337].
+  registerGpxWatchedFolderHandlers({
+    ipcMain,
+    validateIpcSender,
+    watchedFolderStore: createGpxWatchedFolderStore({ userDataPath }),
+    fileSystem,
+    logEvent: (entry) => runtimeLog.append(entry),
+  })
   await createWindow(
     crashLog,
     runtimeLog,

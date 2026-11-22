@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import { useLayerVisibilityStore } from '../layers/layer-visibility-store'
 import { useMissionStore, type MissionRuntimePhase } from '../mission/mission-store'
 import type { NormalizedTrackingPosition, TrackingConnectionStatus } from '../tracking/tracking-types'
+import type { TrackingWarningCode } from '../tracking/tracking-warnings'
 import { useCoverageStore } from '../tracking/coverage-store'
 import { useIngestHealthStore } from '../tracking/ingest-health-store'
 import { selectCoverageStateForMission } from '../tracking/mission-coverage-scope'
@@ -10,7 +11,33 @@ import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { useTrackingStore } from '../tracking/tracking-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
-import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, type RankedProblem } from './tracking-problem-labels'
+import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
+
+/** The routine notice the poller and mission bridge publish while a mission is paused. */
+const PAUSE_NOTICE = 'Live refresh suspended while mission is paused.'
+
+/**
+ * Takes the routine pause notice out of a paused status, keeping every other
+ * warning sent with it. The pause already leads the headline, but a history,
+ * storage or roster warning joined to the notice must still be seen.
+ *
+ * @param status the published tracking status
+ * @param paused whether the mission is paused
+ * @returns the warning text without the pause notice (null when nothing is left) and its codes
+ */
+export function withoutPauseNotice(
+  status: Pick<TrackingConnectionStatus, 'warning' | 'warningCodes'>,
+  paused: boolean,
+): { readonly warning: string | null; readonly warningCodes: readonly TrackingWarningCode[] | undefined } {
+  if (!paused || status.warning === null || !status.warning.includes(PAUSE_NOTICE)) {
+    return { warning: status.warning, warningCodes: status.warningCodes }
+  }
+  const rest = status.warning.replace(PAUSE_NOTICE, '').replace(/\s+/gu, ' ').trim()
+  return {
+    warning: rest === '' ? null : rest,
+    warningCodes: status.warningCodes?.filter((code) => code !== 'mission_paused'),
+  }
+}
 
 let remembered: { readonly missionId: string | null; readonly at: string } | null = null
 
@@ -31,7 +58,7 @@ export function useLastConfirmedAt(): string | null {
   return rememberLastConfirmedAt(missionId, reported)
 }
 
-export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'credentials' | 'disconnected' | 'attention'
+export type TrackingCondition = 'ok' | 'lost' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'disconnected' | 'attention'
 
 export type TrackingHeadline = {
   /** The condition that decides the advice, so a pause is not told to check the internet. */
@@ -89,12 +116,13 @@ export function describeTrackingHeadline(input: {
   const health = describeTrackingHealth(status, phase, staleCount, unverifiedCount)
 
   const paused = phase === 'paused'
-  const isPauseNotice = (warning: string | null) => paused && warning !== null && /live refresh suspended/i.test(warning)
+  // The pause leads the headline, so its own notice is dropped; anything sent with it stays.
+  const shown = withoutPauseNotice(status, paused)
   const issues: string[] = []
   const evidenceFailed = input.evidenceState !== 'healthy' && !input.evidenceLossAcknowledged
   if (evidenceFailed) issues.push('Mission record not fully saved')
   if (input.evidenceState !== 'healthy' && input.evidenceLossAcknowledged) issues.push('Some mission record was lost (acknowledged)')
-  if (status.warning !== null && !isPauseNotice(status.warning)) issues.push(status.warning)
+  if (shown.warning !== null) issues.push(shown.warning)
   if (stationaryCount > 0) issues.push(`${stationaryCount} ${stationaryCount === 1 ? 'person' : 'people'} not moving`)
   if (notedCount > 0) issues.push(`${notedCount} ${notedCount === 1 ? 'person' : 'people'} not moving (noted)`)
   if (staleCount > 0) issues.push(`${staleCount} ${staleCount === 1 ? 'position' : 'positions'} out of date`)
@@ -113,11 +141,9 @@ export function describeTrackingHeadline(input: {
   const ranked: RankedProblem[] = []
   const name = (word: string, rank: number) => { if (!ranked.some((entry) => entry.word === word)) ranked.push({ word, rank }) }
   if (evidenceFailed) name('Record not saved', PROBLEM_RANK.record)
-  if (!isPauseNotice(status.warning)) {
-    for (const entry of rankTrackingWarning(status.warning, status.warningCodes)) {
-      // The TRACKING LOST lead already says it is offline.
-      if (!(lost && entry.word.startsWith('Offline'))) name(entry.word, entry.rank)
-    }
+  for (const entry of rankTrackingWarning(shown.warning, shown.warningCodes)) {
+    // The TRACKING LOST lead already says it is offline.
+    if (!(lost && entry.word.startsWith('Offline'))) name(entry.word, entry.rank)
   }
   if (staleCount > 0) name(`${staleCount} stale`, PROBLEM_RANK.stale)
   if (stationaryCount > 0) name(`${stationaryCount} not moving`, PROBLEM_RANK.notMoving)
@@ -136,7 +162,7 @@ export function describeTrackingHeadline(input: {
     .map((entry) => entry.word)
 
   // The server's own sentence goes in Tracking; the bar keeps the short conditions.
-  const conditions = issues.filter((issue) => issue !== status.warning).join(' · ')
+  const conditions = issues.filter((issue) => issue !== shown.warning).join(' · ')
   const prefixed = (lead: string) => (conditions === '' ? lead : `${lead} · ${conditions}`)
   const summary = issues.join(' · ')
   // A saved password that cannot be used is named, with where to fix it; a
@@ -144,16 +170,22 @@ export function describeTrackingHeadline(input: {
   // running or paused mission tracking has stopped completely, so it is also
   // the alarm; it comes before pause and record so their advice cannot hide
   // the fix (DON-353).
-  const credentialsUnusable = status.mode !== 'online' && status.warningCodes?.includes('tracking_credentials_unreadable') === true
-  const credentialAdvice = 're-enter the tracking password or token in Settings'
+  // Damaged saved settings (M-47) are handled the same way, with their own fix.
+  const reentry = status.mode === 'online'
+    ? null
+    : status.warningCodes?.includes('tracking_settings_unreadable') === true
+      ? { condition: 'settings' as const, remedy: SETTINGS_REENTRY_WORD, advice: 're-enter the Traccar settings in Settings', cause: 'the saved settings were damaged and set aside' }
+      : status.warningCodes?.includes('tracking_credentials_unreadable') === true
+        ? { condition: 'credentials' as const, remedy: CREDENTIAL_REENTRY_WORD, advice: 're-enter the tracking password or token in Settings', cause: 'the saved tracking password or token cannot be used' }
+        : null
   const lastReceivedShown = positions.length > 0
-  if (credentialsUnusable && (phase === 'active' || paused)) {
+  if (reentry !== null && (phase === 'active' || paused)) {
     const lead = paused ? 'MISSION PAUSED' : 'TRACKING LOST'
-    const advice = `${lead}: ${credentialAdvice}`
+    const advice = `${lead}: ${reentry.advice}`
     return {
-      condition: 'credentials', tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true, remedy: CREDENTIAL_REENTRY_WORD,
+      condition: reentry.condition, tone: 'alert', text: prefixed(advice), problems: [lead, ...problems], leadInAlarm: true, remedy: reentry.remedy,
       detail: conditions === '' ? advice : `${advice} · ${conditions}`,
-      alarm: `${lead}: the saved tracking password or token cannot be used; positions on the map may not be current`,
+      alarm: `${lead}: ${reentry.cause}; positions on the map may not be current`,
       issues, lastReceivedShown,
     }
   }
@@ -162,9 +194,9 @@ export function describeTrackingHeadline(input: {
   if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
   // Before a mission starts amber is enough: nobody relies on the map yet.
-  if (credentialsUnusable) {
-    const advice = `Tracking not connected: ${credentialAdvice}`
-    return { condition: 'credentials', tone: 'warning', text: prefixed(advice), problems, remedy: CREDENTIAL_REENTRY_WORD, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
+  if (reentry !== null) {
+    const advice = `Tracking not connected: ${reentry.advice}`
+    return { condition: reentry.condition, tone: 'warning', text: prefixed(advice), problems, remedy: reentry.remedy, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
   }
   if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', problems: ['Tracking not connected'], detail: '', issues }
   if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, problems, detail: summary, issues }

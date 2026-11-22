@@ -67,6 +67,27 @@ type GpxWatchSourceBoundary = {
   readonly listWatchedDirectoryPaths?: (directoryPath: string) => Promise<WatchedGpxDirectoryListing>
 }
 
+/**
+ * Watched folders saved per mission on this computer, so a watch survives a restart [DON-337].
+ * Absent in the browser harness, where watches stay in memory as before.
+ */
+/** Saved watched folders for one mission, as the store returns them [DON-337]. */
+export type GpxSavedWatches = {
+  readonly paths: readonly string[]
+  readonly warning: string | null
+}
+
+export type GpxWatchedFolderStoreBoundary = {
+  /** The mission's saved folders; `warning` says when they came from the backup copy. */
+  readonly loadWatchedFolders: (missionId: string) => Promise<GpxSavedWatches>
+  /** `backupWarning` says when the list saved but its backup copy did not. */
+  readonly saveWatchedFolders: (missionId: string, paths: readonly string[]) => Promise<GpxWatchSaveResult>
+}
+
+export type GpxWatchSaveResult = {
+  readonly backupWarning: string | null
+}
+
 /** The store accepts at most this many paths per native import call. */
 const NATIVE_IMPORT_CHUNK = 100
 /** Matches MAX_WATCHED_GPX_LISTING_PATHS in electron/file-system.cjs. */
@@ -102,11 +123,21 @@ export type GpxImportOperationResult = {
   readonly failures?: readonly GpxImportOperationFailure[]
 }
 
+/** A resumed-watch line, or a problem that leaves folders unwatched after a restart [DON-337]. */
+export type GpxWatchNotice = {
+  readonly tone: 'resumed' | 'problem'
+  readonly message: string
+}
+
 export type GpxRuntimeState = {
   readonly activeMissionId: string | null
   readonly imports: readonly GpxTrackImport[]
   readonly outings: readonly Outing[]
   readonly watchedDirectories: readonly string[]
+  /** Plain words about saved watches resumed after a restart; null when none were resumed [DON-337]. */
+  readonly watchNotice: GpxWatchNotice | null
+  /** Saved watches were restored and have not been scanned yet; the bridge scans them once [DON-337]. */
+  readonly watchResumePending: boolean
   readonly importIssues: readonly GpxImportIssue[]
   /** Every active import the map draws, thinned by the store to one mission-wide budget [DON-350] [M-87]. */
   readonly mapImports: readonly GpxTrackImport[]
@@ -127,6 +158,7 @@ export type GpxRuntimeState = {
 type StartGpxRuntimeDependencies = {
   readonly gpxStore: GpxStoreBoundary
   readonly watchSource?: GpxWatchSourceBoundary
+  readonly watchedFolderStore?: GpxWatchedFolderStoreBoundary
   readonly applyRuntime: (runtime: GpxRuntimeState) => void
 }
 
@@ -140,6 +172,8 @@ export type GpxRuntimeController = {
   readonly addWatchedDirectory: (directoryPath: string) => Promise<GpxImportOperationResult>
   readonly removeWatchedDirectory: (directoryPath: string) => void
   readonly rescanWatchedDirectories: () => Promise<GpxImportOperationResult>
+  /** Scans watches restored after a restart once, so new files import straight away [DON-337]. */
+  readonly resumeWatchedDirectories: () => Promise<GpxImportOperationResult>
   readonly deleteImport: (importId: string) => Promise<boolean>
   readonly assignImportToOuting: (importId: string, outingId: string, assignedBy?: string | null) => Promise<GpxTrackImport | null>
 }
@@ -151,6 +185,8 @@ const EMPTY_RUNTIME: GpxRuntimeState = {
   imports: [],
   outings: [],
   watchedDirectories: [],
+  watchNotice: null,
+  watchResumePending: false,
   importIssues: [],
   mapImports: [],
   mapImportTotal: 0,
@@ -170,6 +206,19 @@ export async function startGpxRuntime(
   let state: GpxRuntimeState = EMPTY_RUNTIME
   let refreshToken = 0
   let missionGeneration = 0
+  // Saves wait for the mission's saved watches to be restored, and run one at
+  // a time, each writing that mission's list as it stands then, even after the
+  // operator moved to another mission. The mission guard only keeps a stale
+  // result off the screen [DON-337].
+  let watchRestoration: Promise<void> = Promise.resolve()
+  let watchSaves: Promise<void> = Promise.resolve()
+  const watchListByMission = new Map<string, readonly string[]>()
+  /** Each mission's latest queued save; reopening that mission waits for it. */
+  const latestSaveByMission = new Map<string, Promise<void>>()
+  /** Missions whose latest save failed, with the warning to show for them. */
+  const watchSaveFailures = new Map<string, string>()
+  /** Missions whose list saved but whose backup copy did not, with the warning. */
+  const watchBackupWarnings = new Map<string, string>()
   let importPublication = 0
   let importErrorRevision = 0
   let nextImportCursor: string | null = null
@@ -183,7 +232,7 @@ export async function startGpxRuntime(
 
   publishRuntime()
 
-  return {
+  const controller: GpxRuntimeController = {
     refreshMission: async (missionId: string | null) => {
       const token = ++refreshToken
       const publication = importPublication
@@ -199,6 +248,8 @@ export async function startGpxRuntime(
         imports: missionId === previousMissionId ? state.imports : [],
         outings: missionId === previousMissionId ? state.outings : [],
         watchedDirectories: missionId === previousMissionId ? state.watchedDirectories : [],
+        watchNotice: missionId === previousMissionId ? state.watchNotice : null,
+        watchResumePending: missionId === previousMissionId ? state.watchResumePending : false,
         importIssues: missionId === previousMissionId ? state.importIssues : [],
         mapImports: missionId === previousMissionId ? state.mapImports : [],
         mapImportTotal: missionId === previousMissionId ? state.mapImportTotal : 0,
@@ -221,6 +272,8 @@ export async function startGpxRuntime(
           imports: [],
           outings: [],
           watchedDirectories: [],
+          watchNotice: null,
+          watchResumePending: false,
           importIssues: [],
           mapImports: [],
           mapImportTotal: 0,
@@ -235,6 +288,10 @@ export async function startGpxRuntime(
         return
       }
 
+      const savedWatches = missionId !== previousMissionId
+        ? restoreSavedWatches(missionId, missionGeneration, latestSaveByMission.get(missionId) ?? Promise.resolve())
+        : Promise.resolve()
+      if (missionId !== previousMissionId) watchRestoration = savedWatches
       try {
         const [importPage, outings, issuePage] = await Promise.all([
           readGpxImportProjectionPage(
@@ -268,6 +325,7 @@ export async function startGpxRuntime(
         }
         publishRuntime()
         await refreshMap(missionId, () => token === refreshToken && state.activeMissionId === missionId)
+        await savedWatches
       } catch (error) {
         if (token !== refreshToken || state.activeMissionId !== missionId) {
           return
@@ -288,6 +346,7 @@ export async function startGpxRuntime(
         }
         publishRuntime()
         await refreshMap(missionId, () => token === refreshToken && state.activeMissionId === missionId)
+        await savedWatches
       }
     },
     loadNextImports: async () => {
@@ -351,16 +410,22 @@ export async function startGpxRuntime(
         return operationResult('empty')
       }
 
+      const missionId = state.activeMissionId
+      const missionToken = missionGeneration
       if (!state.watchedDirectories.includes(normalizedPath)) {
         state = {
           ...state,
           watchedDirectories: [...state.watchedDirectories, normalizedPath],
         }
         publishRuntime()
+        if (missionId !== null) {
+          watchListByMission.set(missionId, state.watchedDirectories)
+          await saveWatches(missionId, missionToken, 'added')
+        }
+      } else if (missionId !== null && watchSaveFailures.has(missionId)) {
+        // Choosing a watched folder again retries the save the warning asked for.
+        await saveWatches(missionId, missionToken, 'added')
       }
-
-      const missionId = state.activeMissionId
-      const missionToken = missionGeneration
 
       if (canListWatchedPaths()) {
         let listing: WatchedGpxDirectoryListing
@@ -402,6 +467,17 @@ export async function startGpxRuntime(
         watchedDirectories: state.watchedDirectories.filter((path) => path !== normalizedPath),
       }
       publishRuntime()
+      const missionId = state.activeMissionId
+      if (missionId !== null) {
+        watchListByMission.set(missionId, state.watchedDirectories)
+        void saveWatches(missionId, missionGeneration, 'removed')
+      }
+    },
+    resumeWatchedDirectories: async () => {
+      if (!state.watchResumePending) return operationResult('empty')
+      state = { ...state, watchResumePending: false }
+      publishRuntime()
+      return await controller.rescanWatchedDirectories()
     },
     rescanWatchedDirectories: async () => {
       if (state.importing) {
@@ -416,6 +492,9 @@ export async function startGpxRuntime(
       if (missionId === null) return operationResult('stale')
       const imported: GpxImportResult[] = []
       const failures: GpxImportOperationFailure[] = []
+      // A folder that cannot be opened is named as a folder, not counted as a GPX file [DON-337].
+      const folderFailures: string[] = []
+      const folderFailureNotices: string[] = []
       let hadFailure = false
       // Published after every folder, so a later folder's import cannot clear an earlier warning.
       const omissions: (string | null)[] = []
@@ -444,13 +523,22 @@ export async function startGpxRuntime(
           if (missionToken !== missionGeneration || state.activeMissionId !== missionId) {
             return operationResult('stale', imported, failures)
           }
+          // Returned with the file failures; described as a folder, not as a GPX file [DON-337].
           failures.push({ fileName: directoryPath, reason: toErrorMessage(error) })
+          folderFailures.push(directoryPath)
+          folderFailureNotices.push(describeUnopenableWatchedFolder(directoryPath, error))
           hadFailure = true
         }
       }
 
       publishScanNotices(
-        [failures.length > 0 ? describeOperationFailures(failures) : null, ...omissions],
+        [
+          fileFailuresOf(failures, folderFailures).length > 0
+            ? describeOperationFailures(fileFailuresOf(failures, folderFailures))
+            : null,
+          ...folderFailureNotices,
+          ...omissions,
+        ],
         missionId,
         missionToken,
       )
@@ -509,6 +597,118 @@ export async function startGpxRuntime(
       publishRuntime()
       return updated
     },
+  }
+  return controller
+
+  /**
+   * Restores the watches saved for a mission when it opens. Never throws: a
+   * failure becomes a warning that no folders are being watched [DON-337].
+   */
+  async function restoreSavedWatches(missionId: string, missionToken: number, earlierSaves: Promise<void>): Promise<void> {
+    const store = dependencies.watchedFolderStore
+    if (store === undefined || dependencies.watchSource === undefined) return
+    // This mission's saves queued before the switch finish first, so the load
+    // sees them. Another mission's slow save never holds this one up.
+    await earlierSaves
+    let saved: readonly string[]
+    let loadWarning: string | null
+    try {
+      const loaded = await store.loadWatchedFolders(missionId)
+      saved = loaded.paths
+      loadWarning = loaded.warning
+    } catch (error) {
+      if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+      state = {
+        ...state,
+        watchNotice: {
+          tone: 'problem',
+          message: `Watched folders saved for this mission could not be loaded, so none are being watched: ${describeWatchError(error)}. Add them again with Watch Folder.`,
+        },
+      }
+      publishRuntime()
+      return
+    }
+    // Folders added while the list loaded, or kept after a failed save, stay.
+    const unsaved = watchListByMission.get(missionId) ?? []
+    const watchedDirectories = [...saved, ...unsaved.filter((path) => !saved.includes(path))]
+    watchListByMission.set(missionId, watchedDirectories)
+    if (missionToken !== missionGeneration || state.activeMissionId !== missionId) return
+    const saveProblems = [watchSaveFailures.get(missionId), watchBackupWarnings.get(missionId)]
+      .filter((message): message is string => message !== undefined)
+    const saveFailure = saveProblems.length === 0 ? null : saveProblems.join(' ')
+    if (saved.length === 0) {
+      if (saveFailure === null && watchedDirectories.length === state.watchedDirectories.length) return
+      state = {
+        ...state,
+        watchedDirectories,
+        ...(saveFailure !== null ? { watchNotice: { tone: 'problem' as const, message: saveFailure } } : {}),
+      }
+      publishRuntime()
+      return
+    }
+    state = {
+      ...state,
+      watchedDirectories,
+      watchNotice: {
+        tone: loadWarning === null && saveFailure === null ? 'resumed' : 'problem',
+        message: [
+          `Resumed watching ${saved.length} folder${saved.length === 1 ? '' : 's'} saved for this mission. New GPX files there will import automatically.`,
+          loadWarning,
+          saveFailure,
+        ].filter((part): part is string => part !== null).join(' '),
+      },
+      watchResumePending: true,
+    }
+    publishRuntime()
+  }
+
+  /**
+   * Saves the mission's watch list as it stands when the save runs: after the
+   * saved watches were restored, so an edit made while they loaded keeps them,
+   * and after any earlier save. A failure is shown until a later save
+   * succeeds [DON-337].
+   */
+  function saveWatches(missionId: string, missionToken: number, change: 'added' | 'removed'): Promise<void> {
+    const store = dependencies.watchedFolderStore
+    if (store === undefined) return Promise.resolve()
+    const restoration = watchRestoration
+    const isCurrent = () => missionToken === missionGeneration && state.activeMissionId === missionId
+    const save = watchSaves.then(async () => {
+      await restoration
+      // The mission's own latest list is saved whichever mission is open now.
+      const paths = watchListByMission.get(missionId) ?? []
+      try {
+        const { backupWarning } = await store.saveWatchedFolders(missionId, paths)
+        watchSaveFailures.delete(missionId)
+        // Kept for the mission before the guard, so it is shown when that
+        // mission opens again, until a save also updates the backup.
+        const backupNotice = backupWarning === null ? null : describeBackupWarning(backupWarning)
+        if (backupNotice === null) watchBackupWarnings.delete(missionId)
+        else watchBackupWarnings.set(missionId, backupNotice)
+        if (!isCurrent()) return
+        if (backupNotice !== null) {
+          // The list is safe; only its backup copy is behind. Say so plainly.
+          state = { ...state, watchNotice: { tone: 'problem', message: backupNotice } }
+          publishRuntime()
+        } else if (state.watchNotice?.tone === 'problem') {
+          state = { ...state, watchNotice: null }
+          publishRuntime()
+        }
+      } catch (error) {
+        const consequence = change === 'added'
+          ? 'The folder is watched now but will be forgotten after a restart; choose it again with Watch Folder to retry saving.'
+          : 'The folder may be watched again after a restart; remove it again then.'
+        const message = `The watched folder list could not be saved: ${describeWatchError(error)}. ${consequence}`
+        // Kept for the mission, so it is shown when that mission opens again.
+        watchSaveFailures.set(missionId, message)
+        if (!isCurrent()) return
+        state = { ...state, watchNotice: { tone: 'problem', message } }
+        publishRuntime()
+      }
+    })
+    watchSaves = save
+    latestSaveByMission.set(missionId, save)
+    return save
   }
 
   async function importFilesIntoRuntime(
@@ -1088,6 +1288,31 @@ function describeOmittedWatchedFiles(directoryPath: string, omittedCount: number
   return `Watched folder ${directoryPath} holds more than ${WATCHED_LISTING_LIMIT} GPX files; `
     + `only the ${WATCHED_LISTING_LIMIT} most recently changed are watched and ${omittedCount} are not. `
     + 'Move older files to another folder.'
+}
+
+/** Operator wording for a list that saved while its backup copy did not [DON-337]. */
+function describeBackupWarning(warning: string): string {
+  return `${warning.replace(/\.$/u, '')}. The folder will still be watched after a restart. Check the disk and free space; the backup is retried on the next change.`
+}
+
+/** Operator words for a watch-store or folder error, without Electron's IPC wrapper text. */
+function describeWatchError(error: unknown): string {
+  return toErrorMessage(error)
+    .replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '')
+    .replace(/\.+$/u, '')
+}
+
+/** The failures that belong to GPX files, leaving out folders that could not be opened. */
+function fileFailuresOf(
+  failures: readonly GpxImportOperationFailure[],
+  folders: readonly string[],
+): readonly GpxImportOperationFailure[] {
+  return failures.filter((failure) => !folders.includes(failure.fileName))
+}
+
+/** Says a watched folder could not be opened, that its new files are not importing, and what to do. */
+function describeUnopenableWatchedFolder(directoryPath: string, error: unknown): string {
+  return `Watched folder ${directoryPath} could not be opened: ${describeWatchError(error)}. New GPX files there are not being imported. Reconnect the folder or drive and press Rescan Watches, or remove it from Watched Folders.`
 }
 
 /** Names a watched folder that could not be listed, in words a volunteer can act on. */

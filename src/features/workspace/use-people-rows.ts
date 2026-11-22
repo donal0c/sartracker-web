@@ -29,6 +29,6 @@ export function usePeopleRows(): readonly PersonRow[] {
   return useMemo(() => buildPeopleRows(
     buildDeviceWorkspaceRows(snapshot, hiddenDeviceIds, ingestHealth, attentionByDevice, mode),
     nowMs,
-    { live: mode === 'online' && phase === 'active', lastConfirmedAt },
+    { live: mode === 'online' && phase === 'active', lastConfirmedAt, paused: phase === 'paused' },
   ), [attentionByDevice, hiddenDeviceIds, ingestHealth, lastConfirmedAt, mode, nowMs, phase, snapshot])
 }
