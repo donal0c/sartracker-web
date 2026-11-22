@@ -469,6 +469,70 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
+  test('paused mission on Full map keeps people and stale information in view [DON-353]', async ({ page }) => {
+    // Replaces the retired collapsed-sidebar capture: with the panel hidden
+    // and the mission paused, who is tracked and who is stale stay readable.
+    await injectOneStalePosition(page)
+    await pauseMission(page)
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
+    await expect(page.getByTestId('ws-people-panel')).toBeHidden()
+    await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+    await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 3')
+    // Paused, no position is live, so all three need a look; the person who
+    // was already stale is told apart in the People panel below.
+    await expect(page.getByTestId('ws-people-attention')).toHaveText('3 ⚠')
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'paused')
+    // The stale person is still named while paused.
+    await expect(page.getByTestId('ws-tracking-problems')).toContainText('1 stale')
+
+    await captureAndRegister(page, {
+      testId: 'tracking-paused-full-map',
+      testName: 'Paused mission on Full map: people count, stale badge and alarm stay visible',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker with the mission paused and the side panel hidden (Full map):
+1. The map fills the width below the top bar; no side panel is open
+2. A bright red alarm strip says "MISSION PAUSED" and that positions are not updating, with a "Resume mission" button
+3. The top bar's People button reads "People 3" with a separate amber attention badge reading "3 ⚠" (paused, no position is live, so everyone needs a look)
+4. The top bar's tracking headline reads as paused (red/high alert) and still names "1 stale"; a callout on the map says Charlie Team was already out of date when updates stopped
+5. A "Show panel" button in the top bar brings the panel back
+6. Nothing in the top bar is cut off or overlapping
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'Full map on: button reads Show panel and the People panel is hidden',
+        'alarm says MISSION PAUSED with a Resume control',
+        'People button reads People 3 with attention badge "3 ⚠" (paused: none live)',
+        'tracking headline condition is paused and names 1 stale',
+      ],
+    })
+
+    // Show panel brings People back, still naming the stale person in words.
+    await page.getByTestId('ws-full-map').click()
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-person-status-charlie')).toContainText('Already out of date when updates stopped')
+    await expect(page.getByTestId('ws-person-status-alpha')).toContainText('Last known position')
+    for (const device of ['alpha', 'bravo', 'charlie']) await expect(page.getByTestId(`ws-person-${device}`)).toBeVisible()
+    await captureElementAndRegister(page, 'ws-people-panel', {
+      testId: 'tracking-paused-people-panel',
+      testName: 'People panel while paused names the stale person in words',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker People panel while the mission is paused:
+1. The panel lists exactly 3 teams: "Alpha Team", "Bravo Team", "Charlie Team"
+2. Charlie Team's row says in words that it was "Already out of date when updates stopped", setting it apart from the others
+3. Alpha and Bravo say "Last known position" with an age, because nothing updates while paused
+4. Each team still has Location and Trail checkboxes
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'Alpha, Bravo and Charlie rows visible while paused',
+        'Charlie row says Already out of date when updates stopped',
+        'Alpha row says Last known position',
+      ],
+    })
+  })
+
   test('map shows readable device labels and less dominant breadcrumb casing', async ({ page }) => {
     // Device names are listed in the People panel beside the map.
     await openWorkspacePanel(page, 'people')
@@ -629,35 +693,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     // stale so the People button shows both a count and an attention badge.
     // This keeps the regression the old mast cell had pinned: it once read
     // "ONLINE 3/1", which scans as the impossible ratio "3 of 1".
-    await page.evaluate(async () => {
-      const snapshot = {
-        devices: [
-          { device_id: 'alpha', name: 'Alpha Team', status: 'online' as const, last_seen: '2026-04-10T12:00:00.000Z', unique_id: null, category: 'person' },
-          { device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: '2026-04-10T11:58:00.000Z', unique_id: null, category: 'person' },
-          { device_id: 'charlie', name: 'Charlie Team', status: 'offline' as const, last_seen: '2026-04-10T10:30:00.000Z', unique_id: null, category: 'person' },
-        ],
-        positions: [
-          { id: 'pos-alpha', device_id: 'alpha', lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85, accuracy: 8, timestamp: '2026-04-10T12:00:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
-          { id: 'pos-bravo', device_id: 'bravo', lat: 52.0012, lon: -9.7501, altitude: 280, speed: 0.5, battery: 42, accuracy: 15, timestamp: '2026-04-10T11:58:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
-          { id: 'pos-charlie', device_id: 'charlie', lat: 51.995, lon: -9.738, altitude: 350, speed: 0, battery: 12, accuracy: 20, timestamp: '2026-04-10T10:30:00.000Z', source: 'cache' as const, cache_age_seconds: 600, device_cache_stale: true },
-        ],
-        breadcrumbs: [],
-      }
-
-      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(snapshot, {
-        mode: 'online',
-        consecutiveFailures: 0,
-        recovered: false,
-        lastSuccessAt: '2026-04-10T12:00:01.000Z',
-        warning: null,
-      })
-    })
-    await page.waitForTimeout(400)
+    await injectOneStalePosition(page)
 
 
     const people = page.getByTestId('ws-toggle-people')
     await expect(people).toContainText('People 3')
-    await expect(page.getByTestId('ws-tracking-headline')).toContainText('stale')
+    // The exact values the old mast pinned (3 tracked, 1 stale), now two parts.
+    await expect(page.getByTestId('ws-people-attention')).toHaveText('1 ⚠')
+    await expect(page.getByTestId('ws-tracking-problems')).toContainText('1 stale')
     const peopleText = (await people.textContent()) ?? ''
     expect(peopleText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
     // Only the problem words: the last-update date below them is not a count.
@@ -670,15 +713,16 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'tracking',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of the SAR Tracker top bar during an active mission with one stale position:
-1. The People button shows "People 3" and, separately, a small amber attention badge with its own number and a warning sign
+1. The People button shows "People 3" and, separately, a small amber attention badge reading exactly "1 ⚠" (the number 1 and a warning sign). Mark FAIL if the badge is missing or shows any other number
 2. The people count and the attention number are two distinct values. They are NOT combined into a single value like "3/1" or "1/3" — that exact regression is what this test exists to prevent. Mark item 2 FAIL only if you see a single visible "<digits>/<digits>" string treated as one value.
-3. The tracking headline names the problem in words (for example "1 stale"), with a last-update time below
+3. The tracking headline names the problem in words as exactly "1 stale", with a last-update time below
 4. The mission button shows the mission as Running, with the search time beside it
 5. The overall theme is dark; the attention badge and headline read as amber warnings, not red alarms
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'People button contains People 3',
-        'tracking headline names the stale position',
+        'attention badge reads exactly "1 ⚠"',
+        'tracking headline problem words contain "1 stale"',
         'neither the People button nor the headline problem words match a digits/digits ratio',
       ],
     })
@@ -836,4 +880,169 @@ async function waitForRenderedTrackingFeatures(page: Page): Promise<void> {
       },
     )
     .toEqual(expect.objectContaining({ ready: true }))
+}
+
+/**
+ * Replaces the tracking snapshot with three people, one of whose latest
+ * positions is stale, so the People button shows a count and an attention
+ * badge and the headline names "1 stale".
+ */
+async function injectOneStalePosition(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const snapshot = {
+      devices: [
+        { device_id: 'alpha', name: 'Alpha Team', status: 'online' as const, last_seen: '2026-04-10T12:00:00.000Z', unique_id: null, category: 'person' },
+        { device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: '2026-04-10T11:58:00.000Z', unique_id: null, category: 'person' },
+        { device_id: 'charlie', name: 'Charlie Team', status: 'offline' as const, last_seen: '2026-04-10T10:30:00.000Z', unique_id: null, category: 'person' },
+      ],
+      positions: [
+        { id: 'pos-alpha', device_id: 'alpha', lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85, accuracy: 8, timestamp: '2026-04-10T12:00:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+        { id: 'pos-bravo', device_id: 'bravo', lat: 52.0012, lon: -9.7501, altitude: 280, speed: 0.5, battery: 42, accuracy: 15, timestamp: '2026-04-10T11:58:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+        { id: 'pos-charlie', device_id: 'charlie', lat: 51.995, lon: -9.738, altitude: 350, speed: 0, battery: 12, accuracy: 20, timestamp: '2026-04-10T10:30:00.000Z', source: 'cache' as const, cache_age_seconds: 600, device_cache_stale: true },
+      ],
+      breadcrumbs: [],
+    }
+
+    await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(snapshot, {
+      mode: 'online',
+      consecutiveFailures: 0,
+      recovered: false,
+      lastSuccessAt: '2026-04-10T12:00:01.000Z',
+      warning: null,
+    })
+  })
+  await page.waitForTimeout(400)
+}
+
+const CREDENTIAL_WARNING = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+
+test.describe('Visual: credential warning and problem words [DON-353]', () => {
+  test.beforeEach(async ({ page }) => {
+    await navigateToHarness(page)
+  })
+
+  test('credential warning before a mission names the fix in the top bar', async ({ page }) => {
+    await page.evaluate(async (warning) => {
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      applyTrackingStatus({
+        mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+        warning, warningCodes: ['tracking_credentials_unreadable'],
+      })
+    }, CREDENTIAL_WARNING)
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+    await expect(headline).toContainText('Re-enter password')
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText(CREDENTIAL_WARNING)
+
+    await captureAndRegister(page, {
+      testId: 'tracking-credentials-before-mission',
+      testName: 'Unreadable tracking password before a mission',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker before any mission, when the saved tracking password cannot be read:
+1. The top bar's tracking headline says "Re-enter password" in whole words, not a neutral "not connected"
+2. A Tracking panel says the stored Traccar credentials could not be decrypted and to re-enter the password or token in Settings
+3. Under "What to do" it points to Settings, Tracking sources
+4. No Reconnect button is offered, because reconnecting cannot help until the password is entered again
+5. The mission setup is still reachable; nothing claims tracking is healthy
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'headline condition is credentials and names Re-enter password',
+        'Tracking panel quotes the credential warning',
+      ],
+    })
+  })
+
+  test('credential warning during a mission is the tracking-lost alarm with the fix', async ({ page }) => {
+    await startMission(page, 'Credential check')
+    await injectCredentialLoss(page, { stale: false, stillPerson: false })
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+    await expect(page.getByTestId('ws-tracking-problems')).toContainText('Re-enter password')
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    await expect(page.getByTestId('ws-alarm')).toContainText('password or token')
+
+    await captureAndRegister(page, {
+      testId: 'tracking-credentials-in-mission',
+      testName: 'Unreadable tracking password during a mission',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker mid-mission when the saved tracking password stops working:
+1. A bright red alarm strip says "TRACKING LOST" and tells the operator to re-enter the password or token
+2. The top bar's tracking headline reads as lost tracking and shows "Re-enter password" in whole words
+3. The mission still shows as Running in the top bar
+4. Last positions remain on the map; nothing claims they are current
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'headline condition is credentials',
+        'problem words contain Re-enter password',
+        'alarm says TRACKING LOST and names the password or token',
+      ],
+    })
+  })
+
+  test('problem words at 1024 px in a wide font keep safety words whole, ahead of the fix', async ({ page }) => {
+    // CI's Linux fonts draw wider than macOS; Verdana/DejaVu reproduce them.
+    await page.addStyleTag({ content: ':root, button { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' })
+    await page.setViewportSize({ width: 1024, height: 720 })
+    await startMission(page, 'Problem word fit')
+    await injectCredentialLoss(page, { stale: true, stillPerson: true })
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('aria-label', /1 position out of date/)
+    await expect(headline).toHaveAttribute('aria-label', /1 person not moving/)
+    const problems = page.getByTestId('ws-tracking-problems')
+    await expect(problems).toContainText('1 stale')
+    const fit = await problems.evaluate((element) => {
+      const bar = element.closest('[data-testid="ws-tracking-headline"]')!.getBoundingClientRect()
+      const box = element.getBoundingClientRect()
+      return { inside: box.right <= bar.right + 0.5 && box.width > 0, clipped: element.scrollWidth > element.clientWidth + 1 }
+    })
+    expect(fit).toEqual({ inside: true, clipped: false })
+
+    await captureElementAndRegister(page, 'ws-top-bar', {
+      testId: 'tracking-problem-words-1024-wide-font',
+      testName: 'Combined problem words at 1024 px in a wide font',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker top bar at 1024 px wide, in a wide font, while tracking is lost (password unreadable), one position is stale and one person is not moving:
+1. The tracking headline shows "1 stale" first, as whole words, not cut mid-word or clipped at the edge
+2. Any further problems are either named in whole words (for example "1 not moving", "Re-enter password") or counted as "+N more"; nothing is silently dropped
+3. "Re-enter password", if shown, never comes before a person-safety word ("stale", "not moving")
+4. No text overlaps the People, Layers or other top-bar buttons
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'aria-label names 1 position out of date and 1 person not moving',
+        'problem words contain 1 stale, inside the bar and not clipped',
+      ],
+    })
+  })
+})
+
+/**
+ * The state the runtime reaches when the saved password stops working
+ * mid-mission: idle, with the positions already received. With stillPerson,
+ * Alpha has not moved for 20 minutes; with stale, Bravo's position is out of date.
+ */
+async function injectCredentialLoss(page: Page, options: { stale: boolean, stillPerson: boolean }): Promise<void> {
+  await page.evaluate(async ({ stale, stillPerson, warning }) => {
+    const now = Date.now()
+    const iso = (ms: number) => new Date(ms).toISOString()
+    const base = { lon: -9.7, altitude: null, speed: null, battery: null, accuracy: 4, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null }
+    const alpha = { ...base, device_id: 'alpha', lat: 52.0, device_cache_stale: false }
+    const alphaFirst = { ...alpha, id: 'a1', timestamp: iso(now - 20 * 60_000) }
+    const alphaLatest = { ...alpha, id: 'a2', lat: 52.00001, timestamp: iso(now - 30_000) }
+    const bravo = { ...base, device_id: 'bravo', id: 'b1', lat: 52.1, device_cache_stale: true, timestamp: iso(now - 10 * 60_000) }
+    await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot({
+      devices: [
+        { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: alphaLatest.timestamp, unique_id: null, category: 'person' },
+        ...(stale ? [{ device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: bravo.timestamp, unique_id: null, category: 'person' }] : []),
+      ],
+      positions: stale ? [alphaLatest, bravo] : [alphaLatest],
+      breadcrumbs: [...(stillPerson ? [alphaFirst] : []), alphaLatest, ...(stale ? [bravo] : [])],
+    }, {
+      mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+      warning, warningCodes: ['tracking_credentials_unreadable'],
+    })
+  }, { ...options, warning: CREDENTIAL_WARNING })
 }
