@@ -7,7 +7,6 @@ import {
   selectParticipants,
   setMissionPaused,
 } from '../../scripts/operator-controls.mjs'
-import { readPeopleLocationTick } from '../../scripts/war06-surface-observation.mjs'
 import { openParticipantPickers, openWorkspacePanel } from '../../scripts/workspace-panels.mjs'
 
 /**
@@ -74,31 +73,5 @@ test.describe('shared operator controls under the soak click audit [DON-353]', (
     await expect(page.getByTestId('devices-workspace')).toBeHidden()
 
     expect(misses).toEqual([])
-  })
-
-  test('the WAR-06 visibility check reads the People Location tick [DON-353]', async ({ page }) => {
-    test.setTimeout(120_000)
-    await page.goto('/?missionHarness=1&missionModel=1')
-    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15_000 })
-    await page.evaluate(async () => {
-      const seen = new Date(Date.now() - 60_000).toISOString()
-      await window.__SARTRACKER_BROWSER_HARNESS__?.setParticipantDiscovery({
-        groups: [],
-        devices: [{ device_id: '3', name: 'Charlie Team', status: 'online', last_seen: seen, unique_id: 'c3', category: null, group_id: null }],
-      })
-    })
-    await openWorkspacePanel(page, 'mission')
-    await page.getByTestId('mission-name-input').fill('Filter Harness')
-    await selectParticipants(page, { kind: 'device', which: 'first' })
-    await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
-
-    expect(await readPeopleLocationTick(page)).toEqual({ everyoneShown: true, mixed: false })
-
-    // Hiding everyone's location clears the tick. (The harness has no positions,
-    // so no person rows to hide one at a time; a hidden person makes it mixed.)
-    await page.getByTestId('ws-all-positions').click()
-    await expect(page.getByTestId('ws-all-positions')).not.toBeChecked()
-    expect((await readPeopleLocationTick(page)).everyoneShown).toBe(false)
   })
 })

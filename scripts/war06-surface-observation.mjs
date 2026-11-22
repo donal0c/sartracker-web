@@ -2,32 +2,39 @@
  * What the WAR-06 mission-boundary probe may treat as observed on the map
  * (DON-353). Kept apart from the probe so the rules are unit-tested.
  *
- * A map reading is one of three states:
- * - `ready`: the tracking source was read, so its device points are exactly
- *   what the map draws. With tracking unfiltered (trackingNodesHiddenInCatalog,
- *   readPeopleLocationTick) they
- *   also equal the tracking snapshot's positions. Only these count as proof.
- * - `not-drawn`: no map or no tracking source yet. Nothing is drawn right now,
- *   which says nothing about the snapshot, so it is never a proven zero; it
- *   only means the map was not blind at that moment.
+ * A map reading is one of these states:
+ * - `ready`: the tracking source was read and the renderer reported tracking
+ *   shown on the map, so its device points are exactly the tracking snapshot's
+ *   positions. Only these count as proof, and only with both counts present.
+ * - `hidden`: the source was read, but tracking is hidden on the map, which
+ *   feeds the map an empty snapshot (use-map-overlays.ts), so a zero proves
+ *   nothing.
+ * - `unconfirmed`: the source was read, but the renderer did not say whether
+ *   tracking is shown.
+ * - `not-drawn`: no map or no tracking source.
  * - `unreadable`: the source exists but could not be read, or the read threw.
  *
- * A read captures the map at some instant between when it starts (`at`) and
- * when it completes (`doneAt`), so the blind stretch between two readings is
- * measured from the earlier one's start to the later one's completion, and the
- * stretches before the first and after the last reading count too.
+ * Any drawn device point counts towards the maxima whatever the state: a
+ * point on the map is a leak whether or not visibility was confirmed.
+ *
+ * The map may take a while to start, so startup is measured apart and the
+ * probe waits for a ready reading before acting. From the first ready reading
+ * on, anything but a ready reading is missing evidence. A read captures the map
+ * at some instant between when it starts (`at`) and when it completes
+ * (`doneAt`), so the blind stretch between two ready readings runs from the
+ * earlier one's start to the later one's completion, and the stretch after the
+ * last one counts too.
  */
-
-import { openWorkspacePanel, plainClick } from './workspace-panels.mjs'
 
 /** Longest stretch the probe may go without seeing the map before a leak counts as unproven. */
 export const MAX_UNOBSERVED_GAP_MS = 2_000
 
 /**
- * Reads the map's tracking source in the renderer. Self-contained, because
- * Playwright sends its source text to the page.
+ * Reads the map's tracking source in the renderer, with whether tracking is
+ * shown on the map. Self-contained, because Playwright sends its source text
+ * to the page.
  *
- * @returns {Promise<{ state: 'ready', fixes: number, cache: number, attention: number }
+ * @returns {Promise<{ state: 'ready' | 'hidden' | 'unconfirmed', fixes: number, cache: number, attention: number }
  *   | { state: 'not-drawn' | 'unreadable', reason: string }>} the reading
  */
 export async function readTrackingSourceInPage() {
@@ -35,6 +42,9 @@ export async function readTrackingSourceInPage() {
   if (map === undefined || map === null) return { state: 'not-drawn', reason: 'no map' }
   const source = map.getSource('tracking')
   if (source === undefined || source === null) return { state: 'not-drawn', reason: 'no tracking source' }
+  // Read before the data, so a change while reading cannot confirm data drawn
+  // under the other setting.
+  const visible = window.__SARTRACKER_TRACKING_VISIBLE__
   let data
   try {
     data = typeof source.getData === 'function'
@@ -47,12 +57,14 @@ export async function readTrackingSourceInPage() {
     return { state: 'unreadable', reason: 'the tracking source has no feature list' }
   }
   const points = data.features.filter((feature) => feature?.properties?.featureKind === 'device')
-  return {
-    state: 'ready',
+  const counts = {
     fixes: points.length,
     cache: points.filter((feature) => feature.properties.dataOrigin === 'cache').length,
     attention: points.filter((feature) => feature.properties.attention === true).length,
   }
+  if (visible === true && window.__SARTRACKER_TRACKING_VISIBLE__ === true) return { state: 'ready', ...counts }
+  if (visible === false) return { state: 'hidden', reason: 'tracking is hidden on the map', ...counts }
+  return { state: 'unconfirmed', reason: 'the renderer did not report whether tracking is shown', ...counts }
 }
 
 /**
@@ -62,7 +74,8 @@ export async function readTrackingSourceInPage() {
  *   currentFixCount?: number | null, cachedDeviceCount?: number | null,
  *   mapAttentionCount?: number | null, stationaryAttention?: string, warning?: string } | null | undefined>} samples
  *   the readings, in any order
- * @param {{ startedAt: number, endedAt: number }} window when the observation began and ended
+ * @param {{ startedAt: number, endedAt: number, actionStartedAt?: number }} window
+ *   when the observation began and ended, and when the observed action began
  * @param {string} [actionWarning] a warning the observed action itself returned
  * @param {string} [discardWarning] the warning text that counts as a discard sighting
  */
@@ -70,31 +83,43 @@ export function summarizeSurfaceSamples(samples, window, actionWarning = '', dis
   if (!Number.isFinite(window?.startedAt) || !Number.isFinite(window?.endedAt) || window.endedAt < window.startedAt) {
     throw new Error('The observation has no valid start and end, so its blind stretches cannot be measured.')
   }
+  const counted = (sample) => Number.isFinite(sample.currentFixCount) && Number.isFinite(sample.cachedDeviceCount)
   const valid = samples.filter((sample) => sample !== null && sample !== undefined)
   const timed = valid.filter((sample) => Number.isFinite(sample.at) && Number.isFinite(sample.doneAt) && sample.doneAt >= sample.at)
-  const ready = timed.filter((sample) => sample.state === 'ready')
-  const seen = timed.filter((sample) => sample.state === 'ready' || sample.state === 'not-drawn')
+  const ready = timed.filter((sample) => sample.state === 'ready' && counted(sample))
     .sort((left, right) => left.at - right.at)
-  let longestGapMs = 0
-  let lastSeenFrom = window.startedAt
-  for (const sample of seen) {
-    longestGapMs = Math.max(longestGapMs, sample.doneAt - lastSeenFrom)
-    lastSeenFrom = Math.max(lastSeenFrom, sample.at)
+  const first = ready[0]
+  let longestGapMs = window.endedAt - window.startedAt
+  if (first !== undefined) {
+    longestGapMs = 0
+    let lastSeenFrom = first.at
+    for (const sample of ready) {
+      longestGapMs = Math.max(longestGapMs, sample.doneAt - lastSeenFrom)
+      lastSeenFrom = Math.max(lastSeenFrom, sample.at)
+    }
+    longestGapMs = Math.max(longestGapMs, window.endedAt - lastSeenFrom)
   }
-  longestGapMs = Math.max(longestGapMs, window.endedAt - lastSeenFrom)
+  const drawn = valid.filter(counted)
+  const ofState = (state) => timed.filter((sample) => sample.state === state).length
   const warningSeen = (text) => discardWarning !== '' && (text ?? '').includes(discardWarning)
   return {
     sampleCount: valid.length,
     readableCount: ready.length,
-    notDrawnCount: timed.filter((sample) => sample.state === 'not-drawn').length,
-    unreadableCount: valid.length - seen.length,
+    invalidCount: timed.filter((sample) => sample.state === 'ready' && !counted(sample)).length,
+    hiddenCount: ofState('hidden'),
+    unconfirmedCount: ofState('unconfirmed'),
+    notDrawnCount: ofState('not-drawn'),
+    notDrawnAfterReadyCount: first === undefined ? 0 : timed.filter((sample) => sample.state === 'not-drawn' && sample.at > first.at).length,
+    unreadableCount: ofState('unreadable'),
     untimedCount: valid.length - timed.length,
+    startupMs: first === undefined ? null : first.doneAt - window.startedAt,
+    readyBeforeAction: first !== undefined && (!Number.isFinite(window.actionStartedAt) || first.doneAt <= window.actionStartedAt),
     longestGapMs,
-    window: { startedAt: window.startedAt, endedAt: window.endedAt },
+    window: { startedAt: window.startedAt, actionStartedAt: window.actionStartedAt ?? null, endedAt: window.endedAt },
     first: valid[0] ?? null,
     last: valid.at(-1) ?? null,
-    maxCurrentFixCount: ready.length === 0 ? null : Math.max(...ready.map((sample) => sample.currentFixCount ?? 0)),
-    maxCachedDeviceCount: ready.length === 0 ? null : Math.max(...ready.map((sample) => sample.cachedDeviceCount ?? 0)),
+    maxCurrentFixCount: drawn.length === 0 ? null : Math.max(...drawn.map((sample) => sample.currentFixCount)),
+    maxCachedDeviceCount: drawn.length === 0 ? null : Math.max(...drawn.map((sample) => sample.cachedDeviceCount)),
     discardWarningObserved: warningSeen(actionWarning) || valid.some((sample) => warningSeen(sample.warning)),
     attentionObserved: valid.some((sample) => (sample.stationaryAttention ?? '') !== '' || (sample.mapAttentionCount ?? 0) > 0),
   }
@@ -106,40 +131,23 @@ const TRACKING_DEVICES_LAYER_NODE_ID = 'layer:tracking:devices'
 /**
  * Names the saved layer-catalog entries that hide tracking positions: the
  * Tracking group, the Location layer, or one person's location under it.
- * When tracking is hidden the map is fed an empty snapshot, and a hidden
- * person is left out, so the source can read 0 while positions exist
- * (use-map-overlays.ts).
+ * Evidence only: the probe proves visibility from the renderer on every
+ * reading, because loading the catalog changes it without a click.
  *
- * @param {ReadonlyArray<{ node_id: string, parent_node_id?: string | null, is_visible: number | boolean }>} entries
- *   the mission's saved layer-catalog entries
+ * @param {ReadonlyArray<{ nodeId: string, parentNodeId?: string | null, isVisible: boolean }>} entries
+ *   the mission's saved layer-catalog entries, as the layer catalog IPC returns them
  * @returns {string[]} the hiding entries' node ids
  */
 export function trackingNodesHiddenInCatalog(entries) {
-  return entries
-    .filter((entry) => entry.is_visible === 0 || entry.is_visible === false)
-    .filter((entry) => entry.node_id === TRACKING_GROUP_NODE_ID
-      || entry.node_id === TRACKING_DEVICES_LAYER_NODE_ID
-      || entry.parent_node_id === TRACKING_DEVICES_LAYER_NODE_ID)
-    .map((entry) => entry.node_id)
-}
-
-/**
- * Reads the People panel's "Everyone · Location" tick, where the operator
- * shows or hides positions in the new layout (Tracking is no longer listed in
- * Layers). It is ticked, not mixed, only when every person's location is shown.
- *
- * @param {import('playwright').Page} page the app window
- * @param {{ click?: import('./workspace-panels.mjs').OperatorClick, timeoutMs?: number }} [options]
- * @returns {Promise<{ everyoneShown: boolean, mixed: boolean }>}
- */
-export async function readPeopleLocationTick(page, { click = plainClick, timeoutMs = 15_000 } = {}) {
-  await openWorkspacePanel(page, 'people', { click, timeoutMs })
-  const tick = page.getByTestId('ws-all-positions')
-  try {
-    await tick.waitFor({ state: 'visible', timeout: timeoutMs })
-  } catch {
-    throw new Error(`The People panel's Everyone Location tick did not appear within ${timeoutMs} ms.`)
+  for (const entry of entries) {
+    if (typeof entry?.nodeId !== 'string' || typeof entry.isVisible !== 'boolean') {
+      throw new Error(`A saved layer-catalog entry cannot be read (${JSON.stringify(entry).slice(0, 200)}), so tracking visibility is unknown.`)
+    }
   }
-  const mixed = (await tick.getAttribute('aria-checked')) === 'mixed'
-  return { everyoneShown: !mixed && await tick.isChecked(), mixed }
+  return entries
+    .filter((entry) => !entry.isVisible)
+    .filter((entry) => entry.nodeId === TRACKING_GROUP_NODE_ID
+      || entry.nodeId === TRACKING_DEVICES_LAYER_NODE_ID
+      || entry.parentNodeId === TRACKING_DEVICES_LAYER_NODE_ID)
+    .map((entry) => entry.nodeId)
 }

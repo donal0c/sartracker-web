@@ -4,11 +4,19 @@ import { readTrackingSourceInPage, summarizeSurfaceSamples, trackingNodesHiddenI
 
 /** A ready reading of zero, read from `at` to `doneAt`. */
 const zero = (at: number, doneAt = at + 10) => ({ state: 'ready', at, doneAt, currentFixCount: 0, cachedDeviceCount: 0 })
+const notDrawn = (at: number, doneAt = at + 5) => ({ state: 'not-drawn', at, doneAt })
 
 describe('WAR-06 blind stretches [DON-353]', () => {
-  it('counts the stretch before the first reading', () => {
-    const summary = summarizeSurfaceSamples([zero(10_000), zero(10_050)], { startedAt: 0, endedAt: 10_100 })
-    expect(summary.longestGapMs).toBe(10_010)
+  it('measures from the first ready reading and reports startup apart', () => {
+    const summary = summarizeSurfaceSamples([notDrawn(0), notDrawn(5_000), zero(9_000), zero(9_050)], { startedAt: 0, actionStartedAt: 9_100, endedAt: 9_100 })
+    expect(summary.startupMs).toBe(9_010)
+    expect(summary.readyBeforeAction).toBe(true)
+    expect(summary.longestGapMs).toBe(60)
+  })
+
+  it('a first ready reading after the action began is not ready before it', () => {
+    const summary = summarizeSurfaceSamples([notDrawn(0), zero(500)], { startedAt: 0, actionStartedAt: 100, endedAt: 600 })
+    expect(summary.readyBeforeAction).toBe(false)
   })
 
   it('counts the stretch after the last reading', () => {
@@ -21,17 +29,46 @@ describe('WAR-06 blind stretches [DON-353]', () => {
     expect(summary.longestGapMs).toBe(5_100)
   })
 
-  it('treats unreadable readings as blind', () => {
-    const samples = [zero(0), { state: 'unreadable', at: 50, doneAt: 60 }, { state: 'unreadable', at: 2_000, doneAt: 2_010 }, zero(3_000)]
-    const summary = summarizeSurfaceSamples(samples, { startedAt: 0, endedAt: 3_020 })
-    expect(summary.longestGapMs).toBe(3_010)
-    expect(summary.unreadableCount).toBe(2)
+  it('after the first ready reading, no map or source is missing evidence', () => {
+    const samples = [zero(0), notDrawn(50), notDrawn(5_000), notDrawn(10_000), zero(10_050)]
+    const summary = summarizeSurfaceSamples(samples, { startedAt: 0, endedAt: 10_070 })
+    expect(summary.longestGapMs).toBe(10_060)
+    expect(summary.notDrawnAfterReadyCount).toBe(3)
   })
 
-  it('a whole observation with no reading is blind throughout', () => {
+  it('losing the tracking source after readiness is blind to the end', () => {
+    const summary = summarizeSurfaceSamples([zero(0), notDrawn(100), notDrawn(3_000)], { startedAt: 0, endedAt: 3_010 })
+    expect(summary.longestGapMs).toBe(3_010)
+  })
+
+  it('treats unreadable, hidden and unconfirmed readings as blind', () => {
+    const samples = [
+      zero(0),
+      { state: 'unreadable', at: 50, doneAt: 60 },
+      { state: 'hidden', at: 1_000, doneAt: 1_010, currentFixCount: 0, cachedDeviceCount: 0 },
+      { state: 'unconfirmed', at: 2_000, doneAt: 2_010, currentFixCount: 0, cachedDeviceCount: 0 },
+      zero(3_000),
+    ]
+    const summary = summarizeSurfaceSamples(samples, { startedAt: 0, endedAt: 3_020 })
+    expect(summary.longestGapMs).toBe(3_010)
+    expect(summary.readableCount).toBe(2)
+    expect(summary.hiddenCount).toBe(1)
+    expect(summary.unconfirmedCount).toBe(1)
+  })
+
+  it('a ready reading without counts is invalid, not a proven zero', () => {
+    const summary = summarizeSurfaceSamples([zero(0), { state: 'ready', at: 50, doneAt: 60 }], { startedAt: 0, endedAt: 3_000 })
+    expect(summary.readableCount).toBe(1)
+    expect(summary.invalidCount).toBe(1)
+    expect(summary.longestGapMs).toBe(3_000)
+  })
+
+  it('a whole observation with no ready reading is blind throughout', () => {
     const summary = summarizeSurfaceSamples([{ state: 'unreadable', at: 0, doneAt: 5 }], { startedAt: 0, endedAt: 4_000 })
     expect(summary.longestGapMs).toBe(4_000)
     expect(summary.readableCount).toBe(0)
+    expect(summary.startupMs).toBeNull()
+    expect(summary.readyBeforeAction).toBe(false)
     expect(summary.maxCurrentFixCount).toBeNull()
   })
 
@@ -42,16 +79,8 @@ describe('WAR-06 blind stretches [DON-353]', () => {
     expect(summary.longestGapMs).toBe(3_000)
   })
 
-  it('no map or source covers the moment but is never a proven zero', () => {
-    const samples = [{ state: 'not-drawn', at: 0, doneAt: 5 }, { state: 'not-drawn', at: 1_000, doneAt: 1_005 }, zero(1_900)]
-    const summary = summarizeSurfaceSamples(samples, { startedAt: 0, endedAt: 1_950 })
-    expect(summary.longestGapMs).toBeLessThanOrEqual(2_000)
-    expect(summary.readableCount).toBe(1)
-    expect(summary.notDrawnCount).toBe(2)
-  })
-
-  it('takes maxima from ready readings only', () => {
-    const samples = [zero(0), { state: 'ready', at: 50, doneAt: 60, currentFixCount: 2, cachedDeviceCount: 1 }]
+  it('a drawn position counts towards the maxima whatever the visibility reading', () => {
+    const samples = [zero(0), { state: 'unconfirmed', at: 50, doneAt: 60, currentFixCount: 2, cachedDeviceCount: 1 }]
     const summary = summarizeSurfaceSamples(samples, { startedAt: 0, endedAt: 70 })
     expect(summary.maxCurrentFixCount).toBe(2)
     expect(summary.maxCachedDeviceCount).toBe(1)
@@ -71,7 +100,15 @@ describe('WAR-06 blind stretches [DON-353]', () => {
 describe('WAR-06 tracking source reading [DON-353]', () => {
   const win = globalThis as unknown as { window?: unknown }
   afterEach(() => { delete win.window })
-  const withMap = (map: unknown) => { win.window = { __SARTRACKER_MAP__: map } }
+  const withMap = (map: unknown, trackingVisible: unknown = true) => {
+    win.window = { __SARTRACKER_MAP__: map, __SARTRACKER_TRACKING_VISIBLE__: trackingVisible }
+  }
+  const features = [
+    { properties: { featureKind: 'device', dataOrigin: 'cache', attention: true } },
+    { properties: { featureKind: 'device', dataOrigin: 'live' } },
+    { properties: { featureKind: 'breadcrumb' } },
+  ]
+  const sourceMap = { getSource: () => ({ getData: () => Promise.resolve({ features }) }) }
 
   it('no map is not drawn, not a zero', async () => {
     win.window = {}
@@ -89,28 +126,37 @@ describe('WAR-06 tracking source reading [DON-353]', () => {
   })
 
   it('counts one device point per position, with cache origin and attention', async () => {
-    const features = [
-      { properties: { featureKind: 'device', dataOrigin: 'cache', attention: true } },
-      { properties: { featureKind: 'device', dataOrigin: 'live' } },
-      { properties: { featureKind: 'breadcrumb' } },
-    ]
-    withMap({ getSource: () => ({ getData: () => Promise.resolve({ features }) }) })
+    withMap(sourceMap)
     expect(await readTrackingSourceInPage()).toEqual({ state: 'ready', fixes: 2, cache: 1, attention: 1 })
+  })
+
+  it('tracking hidden on the map is hidden, never ready', async () => {
+    withMap(sourceMap, false)
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'hidden', fixes: 2 })
+  })
+
+  it('unknown tracking visibility is unconfirmed, never ready', async () => {
+    win.window = { __SARTRACKER_MAP__: sourceMap }
+    expect(await readTrackingSourceInPage()).toMatchObject({ state: 'unconfirmed', fixes: 2 })
   })
 })
 
 describe('WAR-06 saved tracking visibility [DON-353]', () => {
-  it('names the entries that hide tracking positions and nothing else', () => {
+  it('reads the IPC field names and names the entries that hide tracking positions', () => {
     expect(trackingNodesHiddenInCatalog([
-      { node_id: 'group:tracking', is_visible: 0 },
-      { node_id: 'layer:tracking:devices', is_visible: 1 },
-      { node_id: 'device:3', parent_node_id: 'layer:tracking:devices', is_visible: 0 },
-      { node_id: 'layer:tracking:breadcrumbs', is_visible: 0 },
-      { node_id: 'group:helicopters', is_visible: 0 },
+      { nodeId: 'group:tracking', isVisible: false },
+      { nodeId: 'layer:tracking:devices', isVisible: true },
+      { nodeId: 'device:3', parentNodeId: 'layer:tracking:devices', isVisible: false },
+      { nodeId: 'layer:tracking:breadcrumbs', isVisible: false },
+      { nodeId: 'group:helicopters', isVisible: false },
     ])).toEqual(['group:tracking', 'device:3'])
   })
 
   it('a visible catalog hides nothing', () => {
-    expect(trackingNodesHiddenInCatalog([{ node_id: 'layer:tracking:devices', is_visible: 1 }])).toEqual([])
+    expect(trackingNodesHiddenInCatalog([{ nodeId: 'layer:tracking:devices', isVisible: true }])).toEqual([])
+  })
+
+  it('refuses an entry it cannot read rather than calling it visible', () => {
+    expect(() => trackingNodesHiddenInCatalog([{ node_id: 'group:tracking', is_visible: 0 }])).toThrow(/cannot be read/u)
   })
 })

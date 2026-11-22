@@ -22,7 +22,6 @@ import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission
 import { closeWorkspace, confirmFinishMission, openDevicesWorkspace, selectParticipants } from './operator-controls.mjs'
 import {
   MAX_UNOBSERVED_GAP_MS,
-  readPeopleLocationTick,
   readTrackingSourceInPage,
   summarizeSurfaceSamples,
   trackingNodesHiddenInCatalog,
@@ -42,6 +41,8 @@ const B_CURRENT_ID = '701'
 const B_HISTORY_IDS = ['711', '712']
 const CLOSE_TIMEOUT_MS = 20_000
 const CONDITION_TIMEOUT_MS = 45_000
+// How long a launch may take to give its first ready map reading before the probe acts.
+const STARTUP_READY_TIMEOUT_MS = 60_000
 
 main().catch((error) => {
   console.error(`electron-war06-mission-cache-smoke: ${error instanceof Error ? error.message : String(error)}`)
@@ -706,11 +707,10 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
   if (reportExtra.surfaceObservation !== undefined) {
     const { samples, window, actionWarning } = reportExtra.surfaceObservation
     delete reportExtra.surfaceObservation
+    // Each reading proves tracking was shown on the map at that moment; the
+    // saved catalog is kept as evidence of why, if it was not.
     reportExtra.surfaceSamples = summarizeSurfaceSamples(samples, window, actionWarning, DISCARDED_CACHE_WARNING)
-    // Tracking visibility comes from the saved layer tree (visible until it
-    // loads) and changes only by operator action, which the probe does not
-    // take while observing; so its state now is its state throughout.
-    reportExtra.trackingFilter = await readTrackingFilter(launch.page, missionId)
+    reportExtra.savedTrackingHidden = await readSavedTrackingHidden(launch.page, missionId)
   }
   const result = {
     phase,
@@ -733,11 +733,10 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
  * positions and Cache those whose data origin is the cache. The map draws one
  * device point per snapshot position (tracking-geojson.ts), carrying that
  * position's origin, so they are read from the map's tracking source on every
- * sample, with Devices open or not. Counts exist only for a `ready` reading;
- * no map or no source means nothing is drawn, never a proven zero, and an
- * unreadable source gives no counts (war06-surface-observation.mjs). The
- * counts equal the snapshot only while tracking is unfiltered, which
- * capturePhase checks with readTrackingFilter.
+ * sample, with Devices open or not. Only a `ready` reading, taken while the
+ * renderer reported tracking shown on the map, proves a zero; counts read with
+ * tracking hidden or unconfirmed still show anything drawn, and no map, no
+ * source or an unreadable source gives no counts (war06-surface-observation.mjs).
  *
  * The visible readout is read separately: the headline always, and the
  * connection mode, warning, per-person sources and attention from Devices,
@@ -772,33 +771,31 @@ async function readOperatorSurface(page, options = {}) {
     assert.equal(map.state, 'ready', `The map's tracking source was not ready (${map.reason ?? map.state}), so the fix and cache counts are unknown.`)
     assert.equal(surface.devicesVisible, true, 'Devices did not open, so the tracking readout is not readable on the operator surface.')
   }
-  const ready = map.state === 'ready'
+  const drawn = Number.isFinite(map.fixes) && Number.isFinite(map.cache)
   return {
     ...surface,
     map,
     state: map.state,
-    readable: ready,
-    counters: ready ? `Fixes ${map.fixes} Cache ${map.cache}` : '',
-    currentFixCount: ready ? map.fixes : null,
-    cachedDeviceCount: ready ? map.cache : null,
-    mapAttentionCount: ready ? map.attention : null,
+    readable: map.state === 'ready' && drawn,
+    counters: drawn ? `Fixes ${map.fixes} Cache ${map.cache}` : '',
+    currentFixCount: drawn ? map.fixes : null,
+    cachedDeviceCount: drawn ? map.cache : null,
+    mapAttentionCount: drawn && Number.isFinite(map.attention) ? map.attention : null,
   }
 }
 
 /**
- * Whether anything hides tracking positions from the map: the mission's saved
- * layer catalog (read-only IPC) and the People panel's Everyone Location tick.
+ * The mission's saved layer-catalog entries that hide tracking positions,
+ * read through the read-only IPC. Evidence only; the readings prove visibility.
  */
-async function readTrackingFilter(page, missionId) {
+async function readSavedTrackingHidden(page, missionId) {
   const entries = await page.evaluate(async (id) => {
     const store = window.sartrackerElectron?.layerCatalogStore
     if (store === undefined) throw new Error('Layer catalog IPC is unavailable.')
     return store.listMetadata(id)
   }, missionId)
   assert.ok(Array.isArray(entries), 'The layer catalog could not be read, so tracking visibility is unknown.')
-  const hiddenInCatalog = trackingNodesHiddenInCatalog(entries)
-  const people = await readPeopleLocationTick(page, { timeoutMs: CONDITION_TIMEOUT_MS })
-  return { hiddenInCatalog, people, unfiltered: hiddenInCatalog.length === 0 && people.everyoneShown }
+  return trackingNodesHiddenInCatalog(entries)
 }
 
 /** Captures the operator device inspector and coordinates when a row exists. */
@@ -832,7 +829,10 @@ async function captureDeviceWorkspace(launch, evidenceDir, phase) {
  * startup documents) is kept as unreadable, never as a zero.
  *
  * @param {import('playwright').Page} page the app window
- * @returns {{ stop: () => Promise<{ samples: object[], window: { startedAt: number, endedAt: number } }> }}
+ * @returns {{
+ *   waitForReady: (timeoutMs: number) => Promise<void>,
+ *   stop: (actionStartedAt?: number) => Promise<{ samples: object[], window: { startedAt: number, actionStartedAt: number | null, endedAt: number } }>,
+ * }}
  */
 function startSurfaceObserver(page) {
   const samples = []
@@ -852,12 +852,22 @@ function startSurfaceObserver(page) {
   })()
   let stopped = null
   return {
-    stop() {
+    async waitForReady(timeoutMs) {
+      const deadline = Date.now() + timeoutMs
+      while (!samples.some((sample) => sample.readable === true)) {
+        if (!observing || Date.now() > deadline) {
+          const last = samples.at(-1)
+          throw new Error(`The map gave no ready reading within ${timeoutMs} ms of launch (last: ${last?.state ?? 'none'}${last?.map?.reason === undefined ? '' : `, ${last.map.reason}`}), so nothing it shows could be proven.`)
+        }
+        await delay(50)
+      }
+    },
+    stop(actionStartedAt) {
       stopped ??= (async () => {
         observing = false
         const endedAt = Date.now()
         await loop
-        return { samples, window: { startedAt, endedAt } }
+        return { samples, window: { startedAt, actionStartedAt: actionStartedAt ?? null, endedAt } }
       })()
       return stopped
     },
@@ -865,20 +875,23 @@ function startSurfaceObserver(page) {
 }
 
 /**
- * Runs an action while the launch's observer keeps reading the map, then ends
- * the observation. A warning the action returns is kept apart from the
+ * Waits for the launch's first ready map reading, runs an action while the
+ * observer keeps reading the map, then ends the observation. A warning the action returns is kept apart from the
  * readings: it is a sighting, not a timed reading of the map.
  */
 async function observeActionSurface(launch, action) {
   assert.ok(launch.observer !== null, `${launch.label} has no running map observation.`)
   let result
   let failure = null
+  let actionStartedAt
   try {
+    await launch.observer.waitForReady(STARTUP_READY_TIMEOUT_MS)
+    actionStartedAt = Date.now()
     result = await action()
   } catch (error) {
     failure = error
   }
-  const observation = await launch.observer.stop()
+  const observation = await launch.observer.stop(actionStartedAt)
   launch.observer = null
   if (failure !== null) throw failure
   const actionWarning = result !== null && typeof result === 'object' && typeof result.warning === 'string' ? result.warning : ''
@@ -1034,14 +1047,14 @@ function assertMissionBHasNoMissionA(phase, missionAId, label) {
   `${label} did not expose the planned discard warning before fresh data.`)
   assert.equal(phase.surface.currentFixCount, 0, `${label} rendered current fixes under Mission B.`)
   assert.equal(phase.surface.cachedDeviceCount, 0, `${label} rendered cached devices under Mission B.`)
-  // Only a ready reading of unfiltered tracking proves zero; a blind stretch,
-  // including before the first and after the last reading, could hide a flash of Mission A.
+  // Only a ready reading, with tracking shown on the map, proves zero. From the
+  // first one on, any other reading is blind, and a blind stretch could hide a
+  // flash of Mission A.
   const samples = phase.surfaceSamples
-  assert.equal(phase.trackingFilter?.unfiltered, true,
-    `${label} had tracking hidden or a device hidden (${JSON.stringify(phase.trackingFilter ?? null)}), so the map could read 0 while positions existed.`)
   assert.ok((samples?.readableCount ?? 0) > 0, `${label} never read the map during recovery, so no Mission A leak is proven absent.`)
+  assert.equal(samples.readyBeforeAction, true, `${label} had no ready map reading before recovery began, so the start of recovery was not watched.`)
   assert.ok(samples.longestGapMs <= MAX_UNOBSERVED_GAP_MS,
-    `${label} could not read the map for ${samples.longestGapMs} ms during recovery (limit ${MAX_UNOBSERVED_GAP_MS} ms); a Mission A position shown then would be missed.`)
+    `${label} could not read the map with tracking shown for ${samples.longestGapMs} ms during recovery (limit ${MAX_UNOBSERVED_GAP_MS} ms; hidden ${samples.hiddenCount}, unconfirmed ${samples.unconfirmedCount}, not drawn after ready ${samples.notDrawnAfterReadyCount}, invalid ${samples.invalidCount}); a Mission A position shown then would be missed.`)
   assert.equal(samples.maxCurrentFixCount, 0, `${label} transiently rendered a current fix.`)
   assert.equal(samples.maxCachedDeviceCount, 0, `${label} transiently rendered a cached device.`)
   assert.equal(phase.surfaceSamples?.attentionObserved ?? false, false, `${label} transiently rendered stationary attention.`)
