@@ -27,8 +27,18 @@ export function validateAttentionSurface(facts) {
 }
 
 const DOWN_WORDS = /offline|disconnected|not connected|lost/iu
-/** Words that name a state other than live tracking, which recovery must not show. */
-const NOT_LIVE_WORDS = /offline|disconnected|not connected|lost|paused|needs resuming|record not saved/iu
+/**
+ * Words that name a state other than live tracking, which recovery must not
+ * show. Each alternative matches words the app really shows: the headline
+ * leads for a lost, paused, unresumed, disconnected or unsaved mission
+ * ("Mission record not fully saved", "Record not saved", "Not saved",
+ * "Fixes not saved") and the connection problem words ("Offline",
+ * "Tracking login failed", "Reconnecting", "Reconnect failed",
+ * "Not configured"). tests/unit/qualification-attention.test.ts builds each
+ * of those from the app's own headline and problem-word code, so a change of
+ * wording there fails that test instead of passing a broken recovery here.
+ */
+const NOT_LIVE_WORDS = /offline|disconnected|not connected|lost|paused|needs resuming|not (?:fully )?saved|login failed|reconnect|not configured/iu
 
 /** Words each down condition must show, in the visible headline and its label. */
 const DOWN_CONDITION_WORDS = { lost: /TRACKING LOST/u, disconnected: DOWN_WORDS }
