@@ -24,6 +24,7 @@ import { resolveStartupMapRestore } from './startup-map-restore'
 import { createRasterStyle, IRELAND_MAX_BOUNDS } from './map-style'
 import { applyMapStylePreservingCamera } from './apply-map-style-preserving-camera'
 import { isTileErrorEvent } from './is-tile-error-event'
+import { reportTrackingSourceErrors } from './tracking-source-error-report'
 import { registerOfficialMapProtocol } from './official-map-protocol'
 import { registerCoverageTileProtocol } from '../tracking/coverage-tile-protocol'
 import { useCoverageStore } from '../tracking/coverage-store'
@@ -201,6 +202,9 @@ export function useMapInstance(): MapInstanceController {
       })
       return
     }
+    // Before any source exists, so the WAR-06 probe misses none of the
+    // tracking source's errors (DON-353). Write-only.
+    const stopTrackingSourceErrorReport = reportTrackingSourceErrors(map)
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.on('load', () => {
@@ -289,6 +293,7 @@ export function useMapInstance(): MapInstanceController {
         window.cancelAnimationFrame(hoverCoordinateFrameRef.current)
         hoverCoordinateFrameRef.current = null
       }
+      stopTrackingSourceErrorReport()
       map.remove()
       if (typeof window !== 'undefined') {
         delete (window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__

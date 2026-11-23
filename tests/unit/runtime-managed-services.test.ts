@@ -92,6 +92,7 @@ describe('runtime-managed-services', () => {
         ...BASE_SETTINGS,
         trackingConfig: null,
         trackingDisabledReason: 'Stored Traccar credentials could not be decrypted.',
+        trackingDisabledCode: 'tracking_credentials_unreadable',
       },
       missionStore: createMissionStoreStub(),
       startMissionAutosave: vi.fn().mockReturnValue({
@@ -115,6 +116,7 @@ describe('runtime-managed-services', () => {
       expect.objectContaining({
         config: null,
         idleWarning: 'Stored Traccar credentials could not be decrypted.',
+        idleWarningCode: 'tracking_credentials_unreadable',
       }),
     )
   })

@@ -1,0 +1,75 @@
+import { useLayoutEffect, useRef, useState } from 'react'
+
+import { PROBLEM_WORD_SEPARATOR, fitKeepingRemedy, fitProblemWords, problemWordsText } from '../../features/workspace/problem-word-fit'
+
+/**
+ * The problem words at the front of the tracking headline. Each word is shown
+ * whole or counted in "+N more", so a problem is never hidden behind an
+ * ellipsis and the top bar never grows (DON-261). The full sentence is in the
+ * button's label and the Tracking panel.
+ */
+export function TrackingProblemWords(props: {
+  readonly words: readonly string[]
+  readonly leadInAlarm?: boolean
+  readonly remedy?: string | undefined
+}) {
+  const { words } = props
+  const leadInAlarm = props.leadInAlarm === true
+  // The remedy is found by identity: the ranking may put safety words before it.
+  const remedy = props.remedy === undefined ? -1 : words.indexOf(props.remedy)
+  const rowRef = useRef<HTMLSpanElement>(null)
+  const measureRef = useRef<HTMLSpanElement>(null)
+  const [shown, setShown] = useState(words.length)
+  const [skipLead, setSkipLead] = useState(false)
+  const [compact, setCompact] = useState(false)
+  const wordsKey = `${leadInAlarm ? 'lead-in-alarm' : ''}\n${remedy}\n${words.join('\n')}`
+
+  useLayoutEffect(() => {
+    const row = rowRef.current
+    const measure = measureRef.current
+    const line = row?.parentElement
+    if (row === null || measure === null || line === null || line === undefined) return
+    const refit = () => {
+      const parts = Array.from(measure.children, (child) => child.getBoundingClientRect().width)
+      const widths = parts.slice(0, words.length)
+      const separator = parts[words.length] ?? 0
+      const more = parts[words.length + 1] ?? 0
+      const short = parts[words.length + 2] ?? 0
+      const available = line.getBoundingClientRect().right - row.getBoundingClientRect().left
+      if (remedy >= 0) {
+        // The alarm strip always says an alarm lead, so it gives way first; safety words keep their rank.
+        const fit = fitKeepingRemedy(widths, { remedy, dropLead: leadInAlarm }, separator, more, available, short)
+        setSkipLead(fit.skipLead)
+        setCompact(fit.compact === true)
+        setShown(fit.shown)
+      } else {
+        setSkipLead(false)
+        setCompact(false)
+        setShown(fitProblemWords(widths, separator, more, available))
+      }
+    }
+    refit()
+    // Without ResizeObserver (test DOMs) the words are fitted once, not on resize.
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(refit)
+    observer.observe(line)
+    return () => observer.disconnect()
+    // wordsKey stands for the words' content; a new array with the same words needs no refit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wordsKey])
+
+  if (words.length === 0) return null
+  return (
+    <>
+      <span className="ws-health-problems" data-testid="ws-tracking-problems" ref={rowRef}>
+        {problemWordsText(skipLead ? words.slice(1) : words, shown, compact)}
+      </span>
+      <span aria-hidden="true" className="ws-health-measure" ref={measureRef}>
+        {words.map((word) => <span key={word}>{word}</span>)}
+        <span>{PROBLEM_WORD_SEPARATOR}</span>
+        <span>{`+${words.length} more`}</span>
+        <span>{`+${words.length}`}</span>
+      </span>
+    </>
+  )
+}

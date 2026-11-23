@@ -81,6 +81,7 @@ import {
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
   shouldReadCheckpointPositionCount,
+  summarizeTrackingSoakHistoryRequests,
   countDurablePositionsReadOnly,
 } from '../build/electron-tracking-soak-lib.js'
 import {
@@ -90,11 +91,19 @@ import {
 import { runCompetingOperationProbe } from './qualification/competing-operation-probe.mjs'
 import { openMissionSection } from './mission-sections.mjs'
 import {
+  confirmFinishMission,
+  openDevicesWorkspace,
+  selectParticipants,
+  setMissionPaused,
+} from './operator-controls.mjs'
+import { openWorkspacePanel } from './workspace-panels.mjs'
+import {
   readHeapAndStateSample,
   readRendererTrackingStateCounts,
   scheduleEvidenceHeapSample,
   summarizeHeapSamples,
 } from '../build/electron-tracking-soak-memory-lib.js'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -224,7 +233,7 @@ async function main() {
     exactFailureProgress.launchNumber = activeLaunch.number
     let loadedFixtureMission = null
     if (fieldFixtureEvidence !== null) {
-      loadedFixtureMission = await retireLoadedFieldFixtureMission(activeLaunch.page)
+      loadedFixtureMission = await retireLoadedFieldFixtureMission(activeLaunch)
     }
     if (archiveCycleRequired) {
       const seededArchiveMissions = await seedArchiveCycleMissions(
@@ -956,6 +965,22 @@ async function main() {
         ),
       ),
     )
+    // Whether each history reader asked again for its early windows after the
+    // restart, and what the mock answered. Kept on success and failure [DON-367].
+    try {
+      const historyRequestEvidence = mockServer.historyRequestEvidence()
+      await writeFile(
+        path.join(evidenceDir, 'mock-history-requests.jsonl'),
+        historyRequestEvidence.requests.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+        'utf8',
+      )
+      await writeJson(
+        path.join(evidenceDir, 'mock-history-requests-summary.json'),
+        summarizeTrackingSoakHistoryRequests(historyRequestEvidence),
+      )
+    } catch (error) {
+      console.warn(`[tracking-soak] history request evidence could not be written: ${error instanceof Error ? error.message : String(error)}`)
+    }
     await runCleanupStep(() => mockServer.close(), 5_000)
     try {
       await sleepGuard?.stop()
@@ -1207,31 +1232,16 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   const participantSelection = launch.page.getByTestId('participant-selection-step')
   const missionModelEnabled = await participantSelection.isVisible().catch(() => false)
   if (missionModelEnabled) {
-    const deviceCheckboxes = launch.page
-      .getByTestId('participant-device-picker')
-      .locator('input[type="checkbox"]')
-    await deviceCheckboxes.first().waitFor({ timeout: 30_000 }).catch(async () => {
-      const participantText = ((await participantSelection.textContent()) ?? '')
-        .replace(/\s+/gu, ' ')
-        .trim()
-        .slice(0, 1_000)
-      throw new Error(
-        `Mission-model participant roster did not become selectable. Surface: ${participantText}`,
-      )
+    // The device picker may sit inside folds in the new layout (DON-341);
+    // the helper opens them with audited clicks and requires every device.
+    await selectParticipants(launch.page, {
+      click: ownedOperatorClick(launch),
+      which: 'all',
+      expectedCount: expectedDeviceCount,
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Mission-model participant roster did not become selectable: ${message}`)
     })
-    const availableDeviceCount = await deviceCheckboxes.count()
-    if (availableDeviceCount !== expectedDeviceCount) {
-      throw new Error(
-        `Mission-model soak expected ${expectedDeviceCount} selectable devices; observed ${availableDeviceCount}.`,
-      )
-    }
-    for (let index = 0; index < availableDeviceCount; index += 1) {
-      await performLaunchOwnedHarnessClick(
-        launch,
-        'participant-device-picker',
-        () => deviceCheckboxes.nth(index).click({ force: true }),
-      )
-    }
     await launch.page
       .getByTestId('participant-selected-count')
       .filter({ hasText: `${expectedDeviceCount} selected` })
@@ -1240,11 +1250,11 @@ async function startSyntheticMission(launch, missionOffsetHours, expectedDeviceC
   await performLaunchOwnedHarnessClick(
     launch,
     'mission-start-btn',
-    () => launch.page.getByTestId('mission-start-btn').click({ force: true }),
+    () => launch.page.getByTestId('mission-start-btn').click(),
   )
   await waitForActiveMission(launch.page, 30_000)
   if (missionModelEnabled) {
-    await openMissionSection(launch.page, 'participants')
+    await openMissionSection(launch.page, 'participants', { click: ownedOperatorClick(launch), timeoutMs: 15_000 })
     await launch.page.waitForFunction(
       (expectedCount) => {
         const activeList = document.querySelector('[data-testid="participant-active-list"]')
@@ -1541,23 +1551,20 @@ async function runPriorityFaultEvidence({
       historyHoldSource.sourcePositionIds,
     )
     const visibility = []
-    await performLaunchOwnedHarnessClick(
-      launch,
-      'open-devices-workspace',
-      () => page.getByTestId('open-devices-workspace').click({ force: true }),
-    )
+    // Devices opens from People in the new layout (DON-341).
+    await openDevicesWorkspace(page, { click: ownedOperatorClick(launch) })
     const toggle = page.getByTestId('device-visibility-1')
     await toggle.waitFor({ state: 'visible', timeout: 5_000 })
     const before = await toggle.isChecked()
     const hideStartedAt = performance.now()
-    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click({ force: true }))
+    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click())
     await page.waitForFunction(() => document.querySelector('[data-testid="device-visibility-1"]')?.matches(':checked') === false)
     visibility.push({ deviceId: '1', action: 'hide', checkedBefore: before, checkedAfter: false, durationMs: performance.now() - hideStartedAt })
     const showStartedAt = performance.now()
-    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click({ force: true }))
+    await performLaunchOwnedHarnessClick(launch, 'device-visibility-1', () => toggle.click())
     await page.waitForFunction(() => document.querySelector('[data-testid="device-visibility-1"]')?.matches(':checked') === true)
     visibility.push({ deviceId: '1', action: 'show', checkedBefore: false, checkedAfter: true, durationMs: performance.now() - showStartedAt })
-    await performLaunchOwnedHarnessClick(launch, 'workspace-close-btn', () => page.getByTestId('workspace-close-btn').click({ force: true }))
+    await performLaunchOwnedHarnessClick(launch, 'workspace-close-btn', () => page.getByTestId('workspace-close-btn').click())
     await page.getByTestId('devices-workspace').waitFor({ state: 'hidden', timeout: 5_000 })
 
     mockServer.setCurrentMode('offline')
@@ -1741,7 +1748,8 @@ function comparePositionBindings(left, right) {
 }
 
 /** Finish the active fixture mission through the packaged UI before starting the bounded workload. */
-async function retireLoadedFieldFixtureMission(page) {
+async function retireLoadedFieldFixtureMission(launch) {
+  const page = launch.page
   const active = await page.evaluate(async () => {
     const mission = await window.sartrackerElectron?.missionStore.getActiveMission()
     if (mission === null || mission === undefined || typeof mission.id !== 'string'
@@ -1753,11 +1761,8 @@ async function retireLoadedFieldFixtureMission(page) {
   if (active.statusBefore !== 'active') {
     throw new Error(`Field-scale fixture mission must start active; observed ${active.statusBefore}.`)
   }
-  await page.getByTestId('mission-finish-btn').waitFor({ state: 'visible', timeout: 60_000 })
-  await page.getByTestId('mission-finish-btn').click({ force: true })
-  const dialog = page.getByTestId('mission-finish-dialog')
-  await dialog.waitFor({ state: 'visible', timeout: 30_000 })
-  await dialog.getByRole('button', { name: 'Confirm Finish', exact: true }).click()
+  // Finish is in the Mission panel in the new layout (DON-341).
+  await confirmFinishMission(page, { click: ownedOperatorClick(launch), timeoutMs: 60_000 })
   const statusAfter = await page.evaluate(async (missionId) => {
     const mission = await window.sartrackerElectron?.missionStore.getMission(missionId)
     return mission?.status ?? null
@@ -2055,6 +2060,11 @@ async function createSyntheticFieldOutings(page, missionId, expectedOutingCount,
  * event dispatch, workspace state, rendering, and a representative tracking-heavy control.
  */
 async function recordOperatorInteraction(input) {
+  // The measured Devices button is in the People panel (DON-341). Opening
+  // People is an audited harness click before the measured interaction.
+  await openWorkspacePanel(input.page, 'people', {
+    click: ownedOperatorClick({ page: input.page, operatorClickAuditState: input.auditState }),
+  })
   const startedAt = performance.now()
   const auditAtStart = await readOperatorClickAudit(input.page)
   const interactionStartSequence = auditAtStart.lastSequence
@@ -2333,6 +2343,25 @@ async function acknowledgeOperatorClickAudit(page, sequence) {
     audit.acknowledgedSequence = expectedSequence
     return true
   }, sequence)
+}
+
+/**
+ * A click for the shared operator controls that goes through the soak's
+ * trusted-click audit, so opening panels and folds is never unexpected input.
+ * It is an ordinary click: Playwright's actionability checks stay on, because
+ * a forced click still produces a trusted event and would pass the audit on a
+ * control an operator could not press (DON-353).
+ *
+ * @param {{ page: import('playwright').Page, operatorClickAuditState: object }} launch the launch
+ * @param {{ timeout?: number }} [clickOptions] options for Playwright's click
+ * @returns {import('./operator-controls.mjs').OperatorClick} the audited click
+ */
+function ownedOperatorClick(launch, clickOptions = {}) {
+  return (locator, testId, position) => performLaunchOwnedHarnessClick(
+    launch,
+    testId,
+    () => locator.click(position === undefined ? clickOptions : { ...clickOptions, position }),
+  )
 }
 
 /** Applies the one ownership boundary to every non-measured harness click. */
@@ -2740,12 +2769,11 @@ async function waitForActiveMission(page, timeoutMs) {
 }
 
 async function resumeRecoveredMission(launch, expectedMissionId) {
-  await launch.page.getByTestId('mission-recovery-dialog').waitFor({ state: 'attached', timeout: 60_000 })
-  await performLaunchOwnedHarnessClick(
-    launch,
-    'mission-recovery-dialog',
-    () => launch.page.getByRole('button', { name: 'Resume' }).click({ force: true }),
-  )
+  // The Resume card (DON-342); it not appearing, or staying, fails.
+  await resumeThroughRecoveryPrompt(launch.page, {
+    timeoutMs: 60_000,
+    click: (button) => performLaunchOwnedHarnessClick(launch, 'start-screen-resume-btn', () => button.click()),
+  })
   await waitForActiveMission(launch.page, 30_000)
   const missionId = await readActiveMissionId(launch.page)
   if (missionId !== expectedMissionId) {
@@ -2820,18 +2848,10 @@ function assertRendererTargetHealthy(launch) {
 
 /** Pauses the packaged mission and waits until the persisted state agrees. */
 async function ensureMissionPaused(launch) {
-  const mission = await readActiveMission(launch.page)
-  if (mission.status !== 'paused') {
-    await performLaunchOwnedHarnessClick(
-      launch,
-      'mission-pause-resume-btn',
-      () => launch.page.getByTestId('mission-pause-resume-btn').click({ force: true }),
-    )
-  }
-  await launch.page.getByTestId('mission-paused-banner').waitFor({
-    state: 'visible',
-    timeout: 30_000,
-  })
+  await readActiveMission(launch.page)
+  // Pause is in the Mission panel and asks for confirmation (DON-341); the top
+  // bar's phase shows the result, since the panel closes on a phase change.
+  await setMissionPaused(launch.page, true, { click: ownedOperatorClick(launch) })
   await launch.page.waitForFunction(
     async () =>
       (await window.sartrackerElectron?.missionStore.getActiveMission())?.status ===
@@ -2843,18 +2863,8 @@ async function ensureMissionPaused(launch) {
 
 /** Resumes the packaged mission only after the paused restart audit is complete. */
 async function ensureMissionActive(launch) {
-  const mission = await readActiveMission(launch.page)
-  if (mission.status === 'paused') {
-    await performLaunchOwnedHarnessClick(
-      launch,
-      'mission-pause-resume-btn',
-      () => launch.page.getByTestId('mission-pause-resume-btn').click({ force: true }),
-    )
-  }
-  await launch.page.getByTestId('mission-paused-banner').waitFor({
-    state: 'hidden',
-    timeout: 30_000,
-  })
+  await readActiveMission(launch.page)
+  await setMissionPaused(launch.page, false, { click: ownedOperatorClick(launch) })
   await launch.page.waitForFunction(
     async () =>
       (await window.sartrackerElectron?.missionStore.getActiveMission())?.status ===
@@ -3452,16 +3462,10 @@ function startExactAuditMemorySampler(launch) {
 async function openExactDotWorkspace(launch, observeAfterDotsClick) {
   const workspace = launch.page.getByTestId('devices-workspace')
   if (!(await workspace.isVisible())) {
-    await performLaunchOwnedHarnessClick(
-      launch,
-      'open-devices-workspace',
-      () => launch.page.getByTestId('open-devices-workspace').click({
-        timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
-      }),
-    )
-    await workspace.waitFor({
-      state: 'visible',
-      timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    // Devices opens from People in the new layout (DON-341).
+    await openDevicesWorkspace(launch.page, {
+      click: ownedOperatorClick(launch, { timeout: EXACT_PAGE_ACTION_TIMEOUT_MS }),
+      timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
     })
   }
   const dotsButton = launch.page.getByTestId('breadcrumb-mode-dots')
@@ -3599,16 +3603,10 @@ async function auditFinalLineTotalParity(input) {
 async function restoreFinalBreadcrumbLineMode(launch) {
   const workspace = launch.page.getByTestId('devices-workspace')
   if (!(await workspace.isVisible())) {
-    await performLaunchOwnedHarnessClick(
-      launch,
-      'open-devices-workspace',
-      () => launch.page.getByTestId('open-devices-workspace').click({
-        timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
-      }),
-    )
-    await workspace.waitFor({
-      state: 'visible',
-      timeout: EXACT_PAGE_ACTION_TIMEOUT_MS,
+    // Devices opens from People in the new layout (DON-341).
+    await openDevicesWorkspace(launch.page, {
+      click: ownedOperatorClick(launch, { timeout: EXACT_PAGE_ACTION_TIMEOUT_MS }),
+      timeoutMs: EXACT_PAGE_ACTION_TIMEOUT_MS,
     })
   }
   const lineButton = launch.page.getByTestId('breadcrumb-mode-line')

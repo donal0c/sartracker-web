@@ -452,19 +452,19 @@
             </thead>
             <tbody>
               <tr>
-                <td>The tracking strip under the top bar</td>
-                <td>Green <strong>Tracking connected</strong> and a recent <strong>Last success</strong> time.</td>
-                <td>Red <strong>Disconnected · retrying</strong>: the dots on the map are the <em>last</em> positions received, not live ones. Amber means read the words and act on them.</td>
+                <td>The tracking status in the top bar (click it for details)</td>
+                <td>Green <strong>Tracking OK</strong>.</td>
+                <td>A red strip under the top bar reading <strong>TRACKING LOST</strong> means the dots on the map are the <em>last</em> positions received, not live ones. Amber words such as <strong>2 stale</strong> or <strong>Re-enter password</strong> name a problem: click the status and follow what the Tracking panel says.</td>
               </tr>
               <tr>
-                <td>The mission chip (top left)</td>
-                <td>Green <strong>ACTIVE</strong>.</td>
-                <td>Red flashing <strong>PAUSED</strong>: the search clock is stopped and live refresh is suspended. Press <strong>Resume</strong> when searching restarts.</td>
+                <td>The mission button (top left)</td>
+                <td><strong>Mission · Running</strong>.</td>
+                <td><strong>Mission · PAUSED</strong>, with a red <strong>MISSION PAUSED</strong> strip: the search clock is stopped and positions are not updating. Open the mission button and press <strong>Resume</strong> when searching restarts. <strong>Needs resuming</strong> means the app restarted mid-mission: resume it before relying on the map.</td>
               </tr>
               <tr>
-                <td><strong>FIX</strong> and <strong>STALE</strong> in the top bar</td>
-                <td>FIX matches the teams you expect; STALE is 0.</td>
-                <td>STALE above 0 means a device has not reported for more than five minutes. Treat its dot as old.</td>
+                <td>Stale positions</td>
+                <td><strong>Tracking OK</strong> with nothing else after it.</td>
+                <td>A device that has not reported for more than five minutes is counted, for example <strong>2 stale</strong>. Treat its dot as old. When there is not room for every warning, the status shrinks them to <strong>+2 more</strong> or just <strong>3 problems</strong>, so a missing stale count does not prove positions are fresh: click the status and read the full list in the Tracking panel.</td>
               </tr>
               <tr>
                 <td>The <strong>Maps</strong> menu</td>
@@ -481,12 +481,12 @@
 
           <h3>The 6-step start</h3>
           <ol>
-            <li>Open SAR Tracker. Confirm the tracking strip is green. If it says <strong>Tracking is not configured</strong>, go to <a href="#settings">Settings</a> first.</li>
+            <li>Open SAR Tracker. Confirm the tracking status in the top bar reads <strong>Tracking OK</strong>. If it says <strong>Tracking not connected</strong>, click it: the Tracking panel says why (for example, no tracking server is set up yet) and what to do. Usually that means <a href="#settings">Settings</a> first.</li>
             <li>Type a <strong>Mission name</strong> your coordinators will recognise later.</li>
-            <li>If the search began before you opened the app, set <strong>Start offset (hours)</strong> (up to 48).</li>
+            <li>If the search began before you opened the app, set <strong>Roll back time (hours)</strong> (up to 48).</li>
             <li>Tick the <strong>groups and devices taking part</strong> <em>before</em> you press Start.</li>
             <li>Press <strong>Start</strong>.</li>
-            <li>Check the chip says <strong>ACTIVE</strong> and your teams are on the map.</li>
+            <li>Check the mission button reads <strong>Mission · Running</strong> and your teams are on the map.</li>
           </ol>
           <p>The full detail is in <a href="#mission">Run a mission</a>.</p>
 
@@ -498,15 +498,15 @@
           <ol>
             <li><strong>Start the PC and open the AppImage from the desktop.</strong> On PCLinuxOS this is the SAR Tracker AppImage file.</li>
             <li><strong>Enter the mission name.</strong></li>
-            <li><strong>Set the roll back time</strong>: the <strong>Start offset (hours)</strong>, up to 48, if people were out before you opened the app.</li>
-            <li><strong>Start.</strong> Your team's own group (for example KMRT) is already ticked, marked <em>team default</em>, if it was chosen once in Settings → Tracking sources. Its members' tracks are fetched back to the start offset.</li>
+            <li><strong>Set the roll back time</strong>: <strong>Roll back time (hours)</strong>, up to 48, if people were out before you opened the app.</li>
+            <li><strong>Start.</strong> Your team's own group (for example KMRT) is already ticked, marked <em>team default</em>, if it was chosen once in Settings → Tracking sources. Its members' tracks are fetched back to the roll back time.</li>
             <li><strong>Discovery map.</strong> SAR Tracker opens on the map you last chose, so Discovery Topo comes back by itself if its package is ready.</li>
             <li><strong>From here the mission develops:</strong> convert coordinates (<strong>Convert</strong>, bottom right), add the casualty location (a <a href="#markers">Casualty marker</a>), and watch where people are.</li>
             <li><strong>Switch maps when you need to</strong>: OpenTopoMap and ESRI Satellite are in <strong>Maps</strong> (they need internet).</li>
-            <li><strong>Full screen:</strong> turn on <strong>Focus Mode</strong>, then press <strong>F11</strong> on Linux. Press F11 again and <strong>Exit Focus</strong> to come back.</li>
+            <li><strong>Full screen:</strong> press <strong>Full map</strong> in the top bar to close the side panel, then <strong>F11</strong> on Linux. Press F11 again and <strong>Show panel</strong> to come back.</li>
           </ol>
           <p>
-            Add another team after Start in Mission Control → <strong>Participants</strong>, and choose
+            Add another team after Start with the <strong>Mission</strong> button (top left) → <strong>Participants</strong>, and choose
             <strong>History from: Mission start</strong> to bring in their earlier track.
           </p>
         </section>
@@ -522,17 +522,16 @@
               <tr><th>Part</th><th>What it shows</th></tr>
             </thead>
             <tbody>
-              <tr><td><strong>Top bar</strong></td><td>Mission name, chip and start time; <strong>Elapsed</strong> and <strong>Active</strong> (search) timers; device count; <strong>Online / FIX / STALE</strong>; <strong>System status</strong>; and the buttons <strong>Diagnostics</strong>, <strong>Focus Mode</strong>, <strong>Settings</strong>, <strong>Weather</strong> and <strong>Help</strong> (this manual, in a new tab). On screens narrower than about 1640 pixels they show short labels: <strong>DIAG</strong>, <strong>FOCUS</strong>, <strong>SET</strong>, <strong>WX</strong> and <strong>HELP</strong>.</td></tr>
-              <tr><td><strong>Tracking strip</strong></td><td>Whether positions are arriving, and when the last one did. The <strong>Theme</strong> button on the right switches Standard and High contrast.</td></tr>
+              <tr><td><strong>Top bar</strong></td><td>From the left: the <strong>Mission</strong> button (name and state: <em>Start a mission</em>, <em>Running</em>, <em>PAUSED</em> or <em>Needs resuming</em>; press it to pause, finish or add people) with the search clock; the <strong>tracking line</strong>, which says in plain words whether positions are arriving and when the last one did (press it for what to do). When something is wrong it starts with a short word for each problem, most urgent first: people (out of date, not moving, rejected reports) before connection, mission record, history and cache problems, for example <em>2 stale · 1 rejected · History failed</em>; if they do not all fit it ends <em>+2 more</em>. Press it for the full words; <strong>People</strong>, <strong>Layers</strong> and <strong>Full map</strong>; then <strong>Weather</strong>, <strong>Settings</strong> and <strong>More</strong> (Review and replay, Diagnostics, Help, Theme). On narrower screens the team logo is hidden to leave room for the tracking line.</td></tr>
+              <tr><td><strong>Alarm bar</strong></td><td>A flashing red bar across the top of the map when the map cannot be trusted: tracking lost, the mission paused, or the mission record failing. It stays until the cause is fixed. <strong>What to do</strong> opens the Tracking panel. If Settings, Diagnostics or All devices is open, it closes that first; Settings asks before losing unsaved changes, and Keep editing leaves it open.</td></tr>
               <tr><td><strong>Map</strong></td><td>Top left: <strong>Maps</strong> (which map) and <strong>Map Tools</strong> (draw, measure). Bottom: scale, and the position under the cursor in <strong>DD</strong>, <strong>Irish Grid</strong> and <strong>DMS</strong>, with a <strong>Convert</strong> button.</td></tr>
-              <tr><td><strong>Right side</strong></td><td><strong>Mission Control</strong> at the top (start, pause, finish, people, outings; during a mission people and outings fold to one line). Below it three tabs: <strong>Tracking</strong>, <strong>Tools</strong> and <strong>Layers</strong>.</td></tr>
+              <tr><td><strong>Side panel</strong></td><td>One panel at a time, on the right: <strong>People</strong> (who is out, who needs a look), <strong>Layers</strong>, <strong>Tracking</strong> (opened from the tracking line) or <strong>Mission</strong> (opened from the Mission button). <strong>Close</strong> or <strong>Full map</strong> gives the map the whole width. With People closed, anyone who needs a look is listed over the map. Before Start, while a mission waits to be resumed and after Finish, <strong>Layers</strong> (with GPX and helicopters) and <strong>Tracking</strong> still open; <strong>People</strong> is greyed out until a mission is running.</td></tr>
             </tbody>
           </table>
           <div class="note">
-            During a mission, <strong>Participants</strong> and <strong>Outings</strong> fold to one
-            line each so the tab area keeps its room; press <strong>Show</strong> to open one. If the
-            right side is still tight, Mission Control and the tab area each scroll on their own, or use
-            <a href="#display">Focus Mode or Minimize</a> to give the map more room.
+            Warnings are never hidden by closing a panel. Lost or stale tracking, a paused mission and
+            storage problems always show in the top bar or the alarm bar; trail history problems show a
+            <strong>History incomplete</strong> button over the map whenever the Tracking panel is closed.
           </div>
         </section>
 
@@ -541,13 +540,13 @@
 
           <h3 id="mission-start">Start a mission</h3>
           <figure class="screenshot narrow">
-            <img src="assets/start-mission-setup.png" alt="Mission Control before starting: mission name, start offset, and groups and devices ticked" />
-            <figcaption>Ready to start. Hill Team (a group) and Charlie Team (a single device) are ticked.</figcaption>
+            <img src="assets/start-new-mission.png" alt="New mission screen: mission name, roll back time, the team default group ticked, and Start" />
+            <figcaption>When the app opens with no unfinished mission: a name, the roll back time and Start. The team default group is already ticked.</figcaption>
           </figure>
           <ul>
             <li><strong>Mission name</strong>: required. Use plain words, for example the place and date.</li>
-            <li><strong>Start offset (hours)</strong>: backdates the start when the search began before you opened the app. Maximum 48 hours.</li>
-            <li><strong>Mission participants</strong>: tick the <strong>groups</strong> and <strong>devices</strong> that are part of this search. A group covers everyone in it; their own boxes are locked and say <em>included by selected group</em>.
+            <li><strong>Roll back time (hours)</strong>: backdates the start when the search began before you opened the app. Maximum 48 hours.</li>
+            <li><strong>Who's taking part</strong>: your team default group shows already ticked. To change it, open <strong>Change who's taking part</strong> and tick the <strong>groups</strong> that are part of this search; <strong>Add one person at a time</strong> ticks single devices. A group covers everyone in it; their own boxes are locked and say <em>included by selected group</em>.
               Each time this step opens, SAR Tracker re-reads the groups from Traccar, so a group created since you
               started the app appears without a restart. While it reads you see <em>Refreshing Traccar groups…</em>. If the
               read fails, a message with a <strong>Retry</strong> button appears and the groups already listed stay as they were.
@@ -557,20 +556,20 @@
             <strong>Team default group.</strong> In <strong>Settings → Tracking sources → Team default
             group</strong>, choose your team's own Traccar group (for example KMRT). It is then ticked
             automatically in the Start step of every new mission, marked <em>team default</em>, so its
-            members' history is fetched from the Start offset. Untick it if your team is not taking part;
+            members' history is fetched from the roll back time. Untick it if your team is not taking part;
             SAR Tracker will not tick it again for that mission. Nothing else is ever selected
             automatically. If the group is no longer on the tracking server, the Start step says so and
             nothing is ticked.
           </p>
           <div class="note">
             <strong>Earlier history is only fetched for people you tick before Start.</strong> If you
-            use a Start offset, tick everyone who was out during that time first. Someone you add
+            use a roll back time, tick everyone who was out during that time first. Someone you add
             after Start needs an explicit <strong>History from</strong> choice (below). If you start
             with nobody ticked, the app allows it and says so: those devices' positions are not saved
             as mission evidence or shown on the mission map until you add them.
           </div>
           <p>
-            When you press <strong>Start</strong>, the chip turns green <strong>ACTIVE</strong> and
+            When you press <strong>Start</strong>, the mission button reads <strong>Mission · Running</strong> and
             the timers run. The <strong>Active</strong> timer is search time; <strong>Elapsed</strong>
             is total time since the (possibly backdated) start.
           </p>
@@ -617,7 +616,7 @@
           <p>
             <strong>History backfill: pending / retrying</strong> means the earlier track is still
             being fetched from the tracking server. <strong>You cannot finish the mission until it
-            completes.</strong> If it stays pending, check the tracking strip.
+            completes.</strong> If it stays pending, click the tracking status in the top bar.
           </p>
           <p>
             <strong>Unknown roster from an older version.</strong> If a group was selected in an older
@@ -648,23 +647,28 @@
             <li>Outings can cross midnight but cannot overlap.</li>
             <li>With no outing running, new positions are kept as <strong>Unassigned</strong>. That is normal and not an error.</li>
             <li>Pausing the mission does not end the outing.</li>
+            <li>Finishing the mission does not end an open outing either. After Finish, open <strong>More mission options</strong> in the Mission panel: the outing is listed as <strong>Open</strong>.</li>
           </ul>
 
           <h3 id="mission-pause">Pause and resume</h3>
           <div class="shot-row">
             <figure class="screenshot">
-              <img src="assets/mission-paused.jpg" alt="Main screen with a red PAUSED chip and a Mission paused, live refresh suspended strip" />
-              <figcaption>Paused: red chip, and the strip says live refresh is suspended.</figcaption>
+              <img src="assets/mission-paused.jpg" alt="Main screen while paused: the mission button reads Mission PAUSED, the top bar status reads MISSION PAUSED, and a red strip reads MISSION PAUSED: positions are not updating, with a Resume mission button" />
+              <figcaption>Paused: the mission button and the tracking status both say <strong>MISSION PAUSED</strong>, and the red strip across the map says positions are not updating, with <strong>Resume mission</strong>.</figcaption>
             </figure>
             <figure class="screenshot narrow">
-              <img src="assets/mission-paused-controls.png" alt="Mission Control while paused with a red border and an orange Resume button" />
-              <figcaption>A red <strong>Mission Paused</strong> banner with <strong>Resume Mission</strong>; the Pause button also becomes <strong>Resume</strong>.</figcaption>
+              <img src="assets/mission-paused-controls.png" alt="The Mission panel while paused, with a red MISSION PAUSED banner, a Resume Mission button, and Resume and Finish at the foot" />
+              <figcaption>The Mission panel while paused: a red <strong>Mission Paused</strong> banner with <strong>Resume Mission</strong>; the Pause button also becomes <strong>Resume</strong>.</figcaption>
             </figure>
           </div>
           <p>
             <strong>Pause</strong> stops the <strong>Active</strong> search timer; <strong>Elapsed</strong>
             keeps running. <strong>While paused, live position refresh is suspended</strong>, so the
-            map does not update. Press <strong>Resume</strong> to carry on.
+            map does not update. Press <strong>Resume</strong> to carry on. While paused, each person
+            reads <em>Last known position</em> (or <em>No position yet</em>). The amber number on the
+            <strong>People</strong> button counts only people with a problem of their own, such as
+            someone already out of date or reported offline before the pause, or with no position yet;
+            the red strip covers everyone else.
           </p>
 
           <h3 id="mission-finish">Finish</h3>
@@ -674,6 +678,7 @@
           </figure>
           <ol>
             <li>Press <strong>Finish</strong>, then <strong>Confirm Finish</strong> (or <strong>Cancel</strong>).</li>
+            <li>While the Finish question is showing, Settings, Diagnostics and All devices do not open over it; the question says so. Answer it first. If Review is open beside the map, it stays open and fills the screen once Finish is done.</li>
             <li>If an outing is still open, the dialog says so and offers <strong>End outing now</strong>. Finishing does not invent an end time for it.</li>
             <li>The mission returns to <strong>IDLE</strong> and a <a href="#archive"><strong>Mission Governance</strong></a> card appears so you can archive and lock it.</li>
           </ol>
@@ -687,34 +692,27 @@
 
           <h3 id="mission-recovery">If the app restarts or crashes</h3>
           <figure class="screenshot narrow">
-            <img src="assets/recovery-choice.png" alt="Resume Mission question with Resume and Start Fresh buttons" />
-            <figcaption>After a reload or interrupted session, the app asks before doing anything.</figcaption>
+            <img src="assets/start-resume-mission.png" alt="Unfinished mission screen with a large Resume button and a smaller Start a new mission instead button" />
+            <figcaption>When the app opens with an unfinished mission, Resume is the first choice.</figcaption>
           </figure>
           <ul>
+            <li>The top bar says <strong>Needs resuming</strong> and names the mission, and the tracking line says tracking is not live until you choose.</li>
             <li><strong>Resume</strong> keeps the same mission. A mission that was running carries on; one you had paused stays paused until you press Resume on the mission panel.</li>
             <li>The gap between the interruption and your choice counts as paused time, and Review records it as an automatic pause after an unexpected shutdown.</li>
-            <li><strong>Start Fresh</strong> abandons that recovery path. Use it only if the interrupted mission is <em>not</em> the current incident.</li>
+            <li><strong>Start a new mission instead</strong> asks first: <em>Finish it, start new</em> finishes the unfinished mission (its record is kept and can still be reviewed) and opens the new-mission screen. <em>Go back</em> changes nothing. Use it only if the unfinished mission is <em>not</em> the current incident.</li>
             <li>Keep <strong>one</strong> mission open across a multi-day search, even if the app or computer is closed overnight. Finish only at stand-down. Do not start a new mission each day to save space.</li>
+            <li>If only the map window crashes (for example it runs out of memory), SAR Tracker reopens it by itself and shows <strong>SAR Tracker map window reopened</strong>. Press OK, resume the mission if asked, and check that tracking is live and team positions are updating. If the window crashes again and again, SAR Tracker says <strong>map window keeps crashing</strong> and closes; start it again and resume.</li>
+            <li>After a serious fault SAR Tracker says <strong>the app will relaunch</strong>. If it has not reopened within a minute, start it again yourself and resume.</li>
+            <li>If closing takes a long time, SAR Tracker asks <strong>SAR Tracker is not responding</strong>. <em>Wait</em> gives the map window more time to save the latest track points. <em>Close now</em> closes anyway (during a reload the button reads <em>Reload now</em>); any track points not yet saved for the active mission are shown as possibly missing. If even that question cannot be shown, SAR Tracker shows an error and keeps waiting; force quit only if it stays stuck.</li>
           </ul>
         </section>
 
         <section id="display">
           <h2>Make more room, or make it easier to read</h2>
-          <div class="shot-row">
-            <figure class="screenshot">
-              <img src="assets/focus-mode.jpg" alt="Focus Mode Plus: the map fills the window and the right side is a compact panel" />
-              <figcaption>Focus Mode Plus. The map is bigger and the coordinates sit at the bottom.</figcaption>
-            </figure>
-            <figure class="screenshot">
-              <img src="assets/mission-control-minimized.png" alt="Top of the screen with Mission Control minimized to a one-line summary" />
-              <figcaption>Mission Control minimized to a summary line.</figcaption>
-            </figure>
-          </div>
           <ul>
-            <li><strong>Focus Mode</strong> (top bar) gives the map most of the window. Press <strong>Exit Focus</strong> to come back. The tracking strip stays visible.</li>
-            <li><strong>Minimize</strong> (Mission Control header) shrinks Mission Control to one line: mission name, state, search timer, <strong>Review</strong> and <strong>Restore mission</strong>. Restore it to reach <strong>Pause</strong> or <strong>Finish</strong>. The app restores it by itself when something needs a decision.</li>
-            <li><strong>Collapse</strong> (Layers tab) hides the whole right side. <strong>Restore workspace</strong> in the top strip brings it back. Your layer choices are kept.</li>
-            <li><strong>Theme</strong>: Standard or High contrast. The choice is remembered on this computer.</li>
+            <li><strong>Full map</strong> (top bar) closes the side panel so the map fills the window. <strong>Show panel</strong> brings People back. The app remembers your choice if it is closed or restarts. Warnings stay in the top bar and the alarm bar.</li>
+            <li><strong>Close</strong> on any panel does the same for that panel. Your layer choices are kept.</li>
+            <li><strong>Theme</strong> (top bar → <strong>More</strong>): Standard or High contrast. The choice is remembered on this computer.</li>
           </ul>
         </section>
 
@@ -726,32 +724,44 @@
             positions it had and marks them, rather than clearing the map.
           </p>
           <figure class="screenshot narrow">
-            <img src="assets/tracking-tab.png" alt="Tracking tab: ONLINE chip, Open Devices button, device, fix, cache and stale counters, and last success time" />
-            <figcaption>The Tracking tab when the feed is healthy.</figcaption>
+            <img src="assets/tracking-tab.png" alt="Tracking panel: What has happened, What the map is showing with the last update time, What to do, and the mission history coverage box" />
+            <figcaption>The Tracking panel when the feed is healthy. Click the tracking status in the top bar to open it.</figcaption>
           </figure>
 
-          <h3>What the tracking strip and chips are telling you</h3>
+          <h3>What the tracking status and alarm are telling you</h3>
+          <p>
+            The tracking status in the top bar is one line that says whether the map can be trusted.
+            Click it for the Tracking panel, which says <strong>what has happened</strong>,
+            <strong>what the map is showing</strong> and <strong>what to do</strong>. When tracking is lost
+            or the mission is paused, a red alarm strip also runs across the top of the map.
+            When there is not room for every warning, the status shrinks the rest to <strong>+2 more</strong>
+            (or <strong>+2</strong>, or just <strong>3 problems</strong>); click it to read them all.
+          </p>
           <table>
             <thead>
               <tr><th>You see</th><th>It means</th><th>What to do</th></tr>
             </thead>
             <tbody>
-              <tr><td>Green <strong>Tracking connected</strong></td><td>Positions are arriving.</td><td>Nothing. Still check <strong>Last success</strong> is recent.</td></tr>
-              <tr><td>Grey <strong>Tracking not connected · Tracking is not configured</strong></td><td>No tracking server is set up.</td><td>Open <a href="#settings">Settings</a> and connect Traccar.</td></tr>
-              <tr><td>Red <strong>Disconnected · retrying</strong> and a red <strong>OFFLINE</strong> chip</td><td>The server is not answering. The map shows last-known positions.</td><td>Treat every dot as old. Use your independent source. Try <strong>Reconnect</strong> in the Devices workspace.</td></tr>
-              <tr><td>Amber <strong>Mission paused · live refresh suspended</strong></td><td>You paused the mission. No new positions are being fetched.</td><td>Press <strong>Resume</strong> to see live positions again.</td></tr>
-              <tr><td>Amber <strong>Tracking connected · 1 fix times unverified</strong></td><td>The tracker sent a position without a trustworthy fix time. It is shown for safety but is not used as exact trail evidence.</td><td>Use the position with care and note the device. Ask an admin to look if it keeps happening.</td></tr>
-              <tr><td>A device in <strong>STALE</strong></td><td>No report for more than five minutes.</td><td>Call the team. Do not assume the dot is where they are.</td></tr>
-              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Fix time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as STALE until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
-              <tr><td>Red <strong>Tracking not live · cached positions</strong> with <strong>LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record</strong></td><td>The app is waiting for the mission record to accept positions it already has. Until it does, it fetches no new ones, and the dots go STALE on schedule.</td><td>Treat every position as old and call teams for their locations. If it does not clear within a few minutes, save your work, restart the app and tell an admin.</td></tr>
+              <tr><td>Green <strong>Tracking OK</strong></td><td>Positions are arriving.</td><td>Nothing. Still glance at <strong>Last update</strong> under it.</td></tr>
+              <tr><td>Red <strong>TRACKING LOST</strong> in the status, and a red strip across the map: <strong>TRACKING LOST: positions on the map may not be current</strong></td><td>New positions have stopped arriving. The map shows the last positions received; they may not be where people are now.</td><td>Treat every dot as old and use your independent source. Check this computer's internet connection, then press <strong>Reconnect</strong> in the Tracking panel.</td></tr>
+              <tr><td>Red <strong>MISSION PAUSED</strong> in the status and the mission button, and a red strip: <strong>MISSION PAUSED: positions are not updating</strong></td><td>You paused the mission. No new positions are being fetched and the search clock is stopped.</td><td>Press <strong>Resume mission</strong> in the red strip when searching restarts.</td></tr>
+              <tr><td>Red <strong>MAP NOT UPDATING</strong> in the status, and a red strip across the map: <strong>MAP NOT UPDATING: positions drawn on the map may be out of date</strong></td><td>Positions are still arriving, but the map could not draw the latest ones, so the dots and trails on the map are from before it stopped updating.</td><td>Do not rely on dots or trails on the map until the strip clears. Use <strong>People</strong> for when each person was last heard. The app redraws with each new position; if the strip does not clear, open <strong>More</strong>, then <strong>Diagnostics</strong>, and send the support bundle.</td></tr>
+              <tr><td><strong>Re-enter password</strong>: amber before a mission; red with <strong>TRACKING LOST</strong> (or <strong>MISSION PAUSED</strong>) and the alarm during one. On a narrow screen the top bar first leaves out TRACKING LOST (the alarm across the map still says it). Stale or not-moving people come before the fix: a person who has stopped moving may need a radio check. When there is not room for both, <strong>Re-enter password</strong> is counted as <strong>+1 more</strong> (or <strong>+1</strong>). Click the line to see every problem and the fix</td><td>The saved tracking password or token cannot be used on this computer, so tracking cannot connect. Any positions already on the map are the last ones received and may not be where people are now.</td><td>Click the line, then <strong>Open Settings: Tracking sources</strong>. Enter the password or token again and press <strong>Save, Connect &amp; Close</strong>. If the mission is paused, press <strong>Resume mission</strong> afterwards.</td></tr>
+              <tr><td>Grey <strong>Tracking not connected</strong></td><td>Tracking is not connected, for example because no tracking server is set up yet. The Tracking panel says why.</td><td>Click it and follow <strong>What to do</strong>: usually open <a href="#settings">Settings</a>, connect Traccar, then <strong>Reconnect</strong>.</td></tr>
+              <tr><td>Amber <strong>Mission needs resuming</strong></td><td>The app restarted in the middle of a mission and tracking is not live.</td><td>Choose <strong>Resume</strong> if this is the same incident.</td></tr>
+              <tr><td>Red alarm <strong>MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing</strong></td><td>Part of the mission record could not be saved. Positions are still updating.</td><td>Keep the app open and carry on. Do not finish the mission yet. Open <strong>More</strong>, then <strong>Diagnostics</strong>, and send the support bundle.</td></tr>
+              <tr><td>Amber <strong>1 time unverified</strong></td><td>The tracker sent a position without a trustworthy fix time. It is shown for safety but is not used as exact trail evidence.</td><td>Use the position with care and note the device. Ask an admin to look if it keeps happening.</td></tr>
+              <tr><td>Amber <strong>2 stale</strong></td><td>Two devices have not reported for more than five minutes.</td><td>Call the teams. Do not assume the dots are where they are.</td></tr>
+              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Fix time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as stale until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
+              <tr><td>Red <strong>TRACKING LOST</strong>, with <strong>LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record</strong> in the Tracking panel</td><td>The app is waiting for the mission record to accept positions it already has. Until it does, it fetches no new ones, and the dots go stale on schedule.</td><td>Treat every position as old and call teams for their locations. If it does not clear within a few minutes, save your work, restart the app and tell an admin.</td></tr>
             </tbody>
           </table>
           <figure class="screenshot">
-            <img src="assets/tracking-offline.jpg" alt="Red Disconnected retrying strip while last-known team positions stay on the map" />
-            <figcaption>Tracking lost: the strip and the OFFLINE chip are red, and the last-known positions stay on the map.</figcaption>
+            <img src="assets/tracking-offline.jpg" alt="Tracking lost: the top bar status and a red strip across the map read TRACKING LOST, the Tracking panel explains what happened and offers Reconnect, and last-known team positions stay on the map" />
+            <figcaption>Tracking lost: the status and the red strip say <strong>TRACKING LOST</strong>, the Tracking panel says what to do, and the last-known positions stay on the map.</figcaption>
           </figure>
           <p>
-            Other amber or red warnings you may meet in the Tracking tab, and what they mean:
+            Other amber or red warnings you may meet in the Tracking panel, and what they mean:
           </p>
           <table>
             <thead>
@@ -768,6 +778,7 @@
               <tr><td><strong>Breadcrumb history re-check is running behind for</strong> a named device, with times</td><td>The app re-reads older history every five minutes to pick up positions a phone uploaded late. For the named device and times that re-read has been behind for at least ten minutes, so <strong>late-uploaded positions from then may not be on the map yet</strong>. It continues by itself and the warning clears when it has caught up; while the mission is paused it continues when live tracking resumes.</td></tr>
               <tr><td><strong>Breadcrumb history incomplete for</strong> a named device, with times (for example <em>10:05–10:35</em>)</td><td>That stretch of the device's trail could not be loaded from the tracking server and is <strong>missing from the map</strong>. The app keeps retrying about every five minutes and the warning clears when the stretch is filled. Until then do not read that gap as "nobody was there"; check with the team. The warning stays on screen while the mission is paused or the app is offline; while paused it ends <em>retries resume when live tracking resumes</em>, because nothing is retried until then. If the clocks change inside the missing stretch, each time shows its offset (for example <em>01:50 (UTC+1)–01:10 (UTC+0)</em>).</td></tr>
               <tr><td><strong>DEVICE ROSTER INCOMPLETE</strong></td><td>The tracking server sent one or more device entries the app could not read, so a tracker may be missing from the map. Count your trackers against the list, and check the device list in Traccar. The warning stays up, including while the list is refreshing, the mission is paused or the app is offline, until the server sends a complete list.</td></tr>
+              <tr><td><strong>PARTICIPANT HISTORY UNAVAILABLE</strong></td><td>The app has no saved record for the named device in this mission (for example it was removed before it first reported), so its earlier history cannot be downloaded and Finish stays blocked. Other devices carry on. Add the device as a participant again while it is reporting; its history then downloads and the warning clears. If the device is not coming back, tell your technical lead.</td></tr>
               <tr><td><strong>MISSION STORAGE REFUSED FIXES</strong></td><td>Some fixes arrived with a missing or invalid value (for example no time) and were not saved or drawn. All other fixes were saved. The number is the total for this mission and stays on screen. Tell an admin and export a support bundle after the mission.</td></tr>
               <tr><td><strong>TRACKING SERVER REUSED POSITION IDS</strong></td><td>The tracking server sent a different fix under an id it had already used. The fix stored first was kept and the new one is not on the map. The server may have been reset or restored; check with whoever runs it, and check positions against your independent source.</td></tr>
             </tbody>
@@ -781,7 +792,7 @@
           <h3 id="devices">Devices workspace</h3>
           <figure class="screenshot">
             <img src="assets/devices-workspace.png" alt="Devices workspace listing three teams with trail colours, status, last seen and a Zoom button, and a selected-device panel" />
-            <figcaption>Open it with <strong>Open Devices</strong> in the Tracking tab. Close it with <strong>Close</strong> or Esc.</figcaption>
+            <figcaption>Open it with <strong>Open Devices</strong> in the Tracking panel. Close it with <strong>Close</strong> or Esc.</figcaption>
           </figure>
           <ul>
             <li><strong>Filters</strong> along the top: Devices, Hidden, Online, Stale, NoFix. The search box searches inside the chosen filter.</li>
@@ -790,19 +801,21 @@
             <li><strong>Zoom</strong> jumps the map to the device (not available if it has no fix).</li>
             <li>The <strong>selected device</strong> panel shows status, <strong>Last seen</strong>, <strong>Fix time</strong>, source, GPS accuracy, battery, speed and coordinates. Times are local, with the time zone and UTC offset.</li>
             <li><strong>Reconnect</strong> reloads settings and reconnects to the tracking server. Until a device sends a fresh fix it shows <strong>Unknown</strong> / <em>Last known</em>, not Online.</li>
+            <li>A position that is not current (older than 5 minutes, with a fix time ahead of this laptop's clock, or from an expired cache) always shows <strong>Stale</strong> in red in the <strong>Source</strong> column, also when its time is not verified or tracking is offline (for example <em>Stale · Fix time unverified</em> or <em>Stale · Last known</em>). Its status is then not shown in green, because the device is not reporting a current position.</li>
+            <li>The line under <strong>Tracking health</strong> is green (<em>Tracking feed healthy.</em>) only when tracking is online, nothing is wrong, and every position is current. When positions are not current it reads amber, for example <em>Feed connected · 2 positions not current</em>; when tracking is also offline or not connected it says so first, for example <em>Tracking offline · 2 positions not current</em>.</li>
           </ul>
           <p>Who is tracked, saved and shown is decided only by <strong>Participants</strong> in Mission Control. The Devices workspace does not change it.</p>
 
           <h3>Breadcrumbs: line or dots</h3>
           <ul>
             <li><strong>Solid line</strong> draws each trail as a line. On very long routes the line may be simplified for speed; the app then shows <strong>Trail display simplified</strong> and how far the line may differ. The saved history is not simplified.</li>
-            <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail stays on the map while trails are switched on, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking tab says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking tab says so in red and the line still shows the whole trail.</li>
-            <li>If you hide a person's trail in the Layers tab, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking tab says how many trails are hidden. If you switch Trails off in the Layers tab, no line or dots are drawn at all, and the Tracking tab says so. Before any fix has arrived, the Tracking tab says no trail line is on the map yet.</li>
+            <li><strong>Breadcrumb dots</strong> keeps the line, so the whole trail stays on the map while trails are switched on, and marks real recorded fixes as dots on top of it. Up to 10,000 fixes are marked at a time, counted across every device. The Tracking panel says how many are marked out of how many, and for which times; <strong>Earlier</strong> and <strong>Later</strong> move the dots to other times. The dots never use samples in place of real fixes. If the dots cannot load, the Tracking panel says so in red and the line still shows the whole trail.</li>
+            <li>If you hide a person's trail in the Layers panel, their line and dots are not drawn, but their fixes are still counted in the dots numbers; the Tracking panel says how many trails are hidden. If you switch Trails off in the Layers panel, no line or dots are drawn at all, and the Tracking panel says so. Before any fix has arrived, the Tracking panel says no trail line is on the map yet.</li>
             <li>A fix that stands on its own (a device's only fix, or one fix between two silences of more than 30 minutes) is drawn as a small circle in the device's colour, because a line needs two places.</li>
             <li><strong>Breadcrumb size</strong> changes line width and dot size for all devices.</li>
           </ul>
           <p>
-            To hide only a current-position dot or only a trail, use the <a href="#layers">Layers tab</a>.
+            To hide only a current-position dot or only a trail, use the <a href="#layers">Layers panel</a>.
           </p>
 
           <h3 id="stationary">Stationary attention</h3>
@@ -829,7 +842,7 @@
           <h2>Mission history coverage</h2>
           <figure class="screenshot narrow">
             <img src="assets/mission-history-coverage.png" alt="Mission History Coverage panel saying All mission history shown, with an Inspect exact fixes button" />
-            <figcaption>The panel in the Tracking tab. Healthy state.</figcaption>
+            <figcaption>The panel in the Tracking panel. Healthy state.</figcaption>
           </figure>
           <p>
             The thin violet lines on the map are the saved history of the people you have ticked. This panel
@@ -1000,8 +1013,8 @@
         <section id="layers">
           <h2>Layers: show and hide things</h2>
           <figure class="screenshot narrow">
-            <img src="assets/layers-tab.png" alt="Layers tab with a search box, Show Hidden, Expand All and Collapse All, and the layer tree" />
-            <figcaption>The Layers tab. Tick a box to show something on the map; untick to hide it.</figcaption>
+            <img src="assets/layers-tab.png" alt="Layers panel with a search box, Show Hidden, Expand All and Collapse All, and the layer tree" />
+            <figcaption>The Layers panel. Tick a box to show something on the map; untick to hide it.</figcaption>
           </figure>
           <p>
             The tree groups everything on the map: <strong>Tracking</strong> (<strong>Current Location</strong> and
@@ -1045,9 +1058,9 @@
             <li>Closing a marker with unsaved changes asks before discarding them. Choose <strong>Keep editing</strong> to continue or <strong>Discard changes</strong> to close without saving.</li>
             <li>Marker load or placement failures show a warning banner over the map. For a load failure, press <strong>Retry</strong>; markers on the map may be incomplete until the load succeeds.</li>
             <li><strong>Map label size</strong> changes the text on the map. Casualty labels start larger.</li>
-            <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app.</li>
+            <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app. If the app says the attachment <em>could not be saved safely</em>, it was not added: free some disk space and attach the file again.</li>
             <li><strong>Retire</strong> asks twice (<strong>Retire</strong>, then <strong>Retire Marker</strong>; <strong>Keep</strong> cancels). A retired marker leaves the map but its history stays in the record.</li>
-            <li>If a marker sits on top of a drawing, clicking selects the <strong>marker</strong>. To edit the drawing underneath, use the Layers tab.</li>
+            <li>If a marker sits on top of a drawing, clicking selects the <strong>marker</strong>. To edit the drawing underneath, use the Layers panel.</li>
             <li>To place a marker from a grid reference instead of a click, use <a href="#tools"><strong>Marker at GR</strong></a>, or <strong>Create Marker Here</strong> in the <a href="#map">coordinate converter</a>.</li>
           </ul>
         </section>
@@ -1095,7 +1108,7 @@
           <p>
             Search areas start red so they show over hills; you can pick a colour, hide the name on the map
             when labels crowd it, and record team, status, probability of area, terrain and notes. To correct
-            a drawing, click it (or use the Layers tab), then edit or <strong>Retire</strong> it and confirm.
+            a drawing, click it (or use the Layers panel), then edit or <strong>Retire</strong> it and confirm.
             Retiring removes it from the map but keeps its history.
           </p>
           <figure class="screenshot">
@@ -1108,12 +1121,13 @@
           <h2>GPX tracks and helicopters</h2>
           <p>Both live in the <strong>Tools</strong> tab.</p>
           <figure class="screenshot narrow">
-            <img src="assets/tools-tab.png" alt="Tools tab with GPX Tracks controls and one imported track" />
+            <img src="assets/tools-tab.png" alt="GPX and helicopters panel (Layers → <strong>Add GPX, helicopters</strong>) with GPX Tracks controls and one imported track" />
             <figcaption>GPX Tracks with one imported track. In the browser test copy the file buttons are switched off.</figcaption>
           </figure>
           <h3>GPX tracks</h3>
           <ul>
             <li><strong>Import Files</strong> and <strong>Import Folder</strong> add tracks. <strong>Watch Folder</strong> imports new files as they appear, and <strong>Rescan Watches</strong> checks again. These need the desktop app. A watched folder is checked every 30 seconds; files that have not changed are skipped, and the list stays on the page you are reading.</li>
+            <li>Watched folders are saved with the mission on this computer. After a restart, reopening the mission resumes them and says <em>Resumed watching N folders saved for this mission</em>; files dropped in while SAR Tracker was closed are imported straight away. If a watched folder cannot be opened (for example a USB drive is not connected), a red message names the folder and says new files there are not being imported: reconnect it and press <strong>Rescan Watches</strong>, or <strong>Remove</strong> it. If the saved list was damaged and was restored from its backup copy, a red message says so; check the Watched Folders list. If the saved list cannot be read or saved, a red message says so; choose the folder again with <strong>Watch Folder</strong> to retry. If the list was saved but its backup copy could not be updated, a red message says so: the folders are still watched after a restart, but check the disk and free space; the backup is retried on the next change.</li>
             <li>A newly imported track is shown on the map straight away. A track you hid yourself stays hidden. The panel summary says how many tracks are listed and how many are on the map, for example <em>5 listed · 4 on map, 1 hidden in Layers</em>. The list shows 25 tracks per page, but the map draws every track in the mission, not only the page you are reading.</li>
             <li>With many tracks, each one is drawn with less detail so they all fit. If the map still cannot draw every track (more than 512, or a track with too many separate pieces), a yellow notice on the map says <em>Map shows X of Y imported GPX tracks</em> and names the ones left out; the panel summary adds <em>N not drawn</em> and those rows say <strong>Not drawn on map</strong>. If the map could not be refreshed, the notice says so and the map keeps the tracks it last drew.</li>
             <li>Each track's row says <strong>On map</strong>, or <strong>Hidden on map</strong> with the reason (<em>GPX Tracks is off in Layers</em> or <em>this track is off in Layers</em>) and a <strong>Show on map</strong> button. A listed track is not necessarily drawn: check this line if you cannot find a track.</li>
@@ -1144,7 +1158,7 @@
         <section id="review">
           <h2>Review and Replay</h2>
           <p>
-            <strong>Review</strong> (Mission Control header) opens the <strong>Audit Workspace</strong>: what the
+            <strong>Review and replay</strong> (top bar → <strong>More</strong>) opens the <strong>Audit Workspace</strong>: what the
             app has saved for a mission. Nothing in it changes the mission.
           </p>
           <figure class="screenshot">
@@ -1219,7 +1233,7 @@
             <figcaption>The <strong>Mission Governance</strong> card appears after Finish.</figcaption>
           </figure>
           <ol>
-            <li>Find <strong>Mission Governance</strong> in Mission Control. It acts on the mission named there, which starts as the one you finished most recently. If several missions are finished, <strong>choose the right one in the Mission list and check the name</strong> before you go on.</li>
+            <li>Find <strong>Mission Governance</strong> on the new-mission screen, under <strong>Last finished mission: archive and unlock</strong>. It acts on the mission named there, which starts as the one you finished most recently. If several missions are finished, <strong>choose the right one in the Mission list and check the name</strong> before you go on.</li>
             <li>Press <strong>Archive &amp; Lock</strong>.</li>
             <li>Type an <strong>archive passphrase</strong> twice. Use at least 14 characters with at least three of: lower case, upper case, numbers, symbols. Press <strong>Generate one-time recovery code</strong>.</li>
             <li>Write the code down safely. Type it back exactly in the confirmation box.</li>
@@ -1299,7 +1313,7 @@
             blocked again until an admin records the new one.
           </p>
           <p>
-            After an unexpected close, the Tracking tab says <em>rejected-position evidence may have been
+            After an unexpected close, the Tracking panel says <em>rejected-position evidence may have been
             lost when the app closed unexpectedly</em>. This appears only if the app held unsaved rejected
             positions when it closed. If SAR Tracker cannot tell (for example the first start after
             upgrading from beta 13.5 following an unexpected close), it shows the same warning for every
@@ -1440,7 +1454,7 @@
             <li><strong>Copy Report</strong> and <strong>Export Report</strong> give the readable report shown at the bottom of the page. Every report and bundle starts with the SAR Tracker version. A very long report is cut at about 1 MB and says so at the end.</li>
             <li>If the app closed unexpectedly last time, an amber notice at the top of Diagnostics offers a direct <strong>Export Support Bundle</strong> button. It never blocks an active mission.</li>
             <li>Bundles are saved on this computer only. Nothing is sent anywhere automatically. In the browser test copy the bundle holds only a basic environment snapshot.</li>
-            <li>A small amber <strong>Autosave warning</strong> in the top bar means the automatic backup is stale or failed. Keep the app open and export a bundle. A backup that fails around Start, Pause, Resume, Finish, Archive or Unlock shows a persistent alert below the top bar; do not treat the backup as current until it clears.</li>
+            <li>A small amber <strong>Autosave warning</strong> in the top bar means the automatic backup is stale or failed. Keep the app open and export a bundle. A backup that fails around Start, Pause, Resume, Finish, Archive or Unlock shows a persistent alert below the top bar; do not treat the backup as current until it clears. <strong>Disk nearly full</strong> means the backup paused itself so live tracking keeps room to save; free disk space on the laptop and it resumes on its own. <strong>Mission backup refused … integrity check</strong> means the new copy was damaged, so the last good backup was kept: keep the app open and tell your technical lead.</li>
           </ul>
 
           <h3>If SAR Tracker freezes (Linux)</h3>
@@ -1475,6 +1489,9 @@
             <li><strong>SAR Tracker is finishing a backup</strong> or <strong>SAR Tracker is still closing</strong> after you close it: a backup copy or background task was still running. Mission data already recorded is safe. Press OK and wait; SAR Tracker closes by itself when the work finishes. Do not start it again until it has closed (starting it just repeats the message). If it is still running after 10 minutes, restart the computer; the mission reopens normally.</li>
             <li>A database made by a newer version is refused with <strong>SAR Tracker could not start</strong>. Install a matching build; do not downgrade the profile in place.</li>
             <li>If SAR Tracker cannot write to its data folder (for example the folder belongs to another user, was copied with the wrong owner, or the disk is full), it shows a <strong>SAR Tracker could not start</strong> window naming the folder and what to check, then closes. Nothing in the folder is changed. Fix the permission or free space, then start the app again.</li>
+            <li>If the window says the map screen did not start, the installed copy is probably damaged or incomplete. No mission-data damage was confirmed. Reinstall SAR Tracker from the team's release and start it again; if it still fails, keep the data folder as it is and contact support.</li>
+            <li>If the window says <strong>SAR Tracker could not show its mission screen</strong>, copy or screenshot the message, then press <em>Reload clean runtime</em>. No mission-data damage was confirmed. If it happens again, restart SAR Tracker and contact support.</li>
+            <li>If the top bar says <strong>Re-enter settings</strong> and Settings opens with a <strong>Saved settings could not be read</strong> notice, the settings file was damaged (often after a power cut). SAR Tracker kept the damaged file aside (named <code>settings.json.corrupt-…</code> in the data folder) and started with default settings, so tracking is off. Open Settings, enter the Traccar server, user and password again, check the rosters and maps, and press Save, Connect &amp; Close. Do not delete the kept file; the maintainer may need it.</li>
             <li>Only one SAR Tracker runs at a time. If you see two windows, close the extra one.</li>
             <li>Log files: Linux <code>~/.config/sartracker-web/logs/</code> and <code>crashes/</code>; macOS <code>~/Library/Application Support/sartracker-web/</code>; Windows <code>%APPDATA%\sartracker-web\</code>.</li>
           </ul>
@@ -1500,9 +1517,9 @@
           <h3 id="hosted-testing">The hosted test copy</h3>
           <ul>
             <li>It is at <strong>https://sartracker-web.vercel.app/?missionHarness=1</strong> and is for training and quick surface checks only. It keeps mission data in the browser session, has no official maps, and cannot use file pickers or restart recovery. Never use it for a real incident.</li>
-            <li>Confirm the amber <strong>Browser testing mode</strong> banner and <strong>Browser test / Session storage only</strong> in the top bar.</li>
+            <li>Confirm the amber <strong>Browser testing mode</strong> banner under the top bar, which says mission data is stored in this browser session.</li>
             <li>In <strong>Settings → Tracking sources</strong> use the team's <strong>https</strong> Traccar address (from your admin), <strong>Basic</strong> login, <strong>Test Connection</strong>, then <strong>Save, Connect &amp; Close</strong>. A plain <code>http://</code> address is blocked from this page. After a full page reload, enter the password again.</li>
-            <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>Start offset</strong> and tick the teams before Start.</li>
+            <li>If breadcrumb history looks empty, restart the mission with a 24 or 48 hour <strong>roll back time</strong> and tick the teams before Start.</li>
             <li>When you report something, include the URL, mission name, browser, what you expected and what happened, and a screenshot if you can. The checklist is <code>docs/team-testing-feedback-loop.md</code>.</li>
           </ul>
 

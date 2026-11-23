@@ -7,6 +7,7 @@ import {
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
+import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal, reportModalWorkspaceRefusal } from '../lib/modal-workspace-registry'
 
 type WorkspaceOverlayProps = {
   /** Whether the workspace is open. Controls immediate mount and unmount. */
@@ -47,25 +48,47 @@ export function WorkspaceOverlay({
 }: WorkspaceOverlayProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
+  const onCloseRef = useRef(onClose)
+  const refusedRef = useRef(false)
+  useLayoutEffect(() => { onCloseRef.current = onClose })
 
   useLayoutEffect(() => {
+    refusedRef.current = false
     if (!open) {
       return
     }
 
+    // At most one known nesting, and never over a waiting question: a refused
+    // open is closed again before it paints, and the question says why.
+    const refusal = docked ? null : modalWorkspaceOpenRefusal(labelledBy)
+    if (refusal !== null) {
+      refusedRef.current = true
+      console.error(`Workspace "${labelledBy}" was not opened: ${refusal}.`)
+      reportModalWorkspaceRefusal(labelledBy)
+      onCloseRef.current()
+      return
+    }
+
     returnFocusRef.current = document.activeElement
+    // A modal makes the screen behind it inert. In the new layout it starts below
+    // the tracking alarm, so the uncovered top bar and side panel must not take
+    // presses or focus; the alarm itself (Resume) stays live.
+    const releaseBackground = docked ? null : makeBackgroundInert()
+    const unregister = docked ? null : registerOpenModal(labelledBy, () => onCloseRef.current(), () => panelRef.current)
     return () => {
+      releaseBackground?.()
+      unregister?.()
       const returnTarget = returnFocusRef.current
       returnFocusRef.current = null
       restoreFocus(returnTarget)
     }
-  }, [open])
+  }, [docked, labelledBy, open])
 
   useLayoutEffect(() => {
     const panel = panelRef.current
     // Docked mode is non-modal: do not steal focus from the operator's current
     // control (e.g. the active-mission rail) when the panel opens (DON-176).
-    if (!open || panel === null || docked) {
+    if (!open || panel === null || docked || refusedRef.current) {
       return
     }
 
@@ -123,7 +146,10 @@ export function WorkspaceOverlay({
   if (docked) {
     return (
       <div
-        className="pointer-events-none fixed inset-0 z-30 flex"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex"
+        // In the new layout this starts below the top bar and alarms (DON-176);
+        // elsewhere the variable is unset and the panel fills the height.
+        style={{ top: 'var(--sar-workspace-header-bottom, 0px)' }}
       >
         {/*
           Docked panel is left-aligned over the map so it never covers the
@@ -148,7 +174,10 @@ export function WorkspaceOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex"
+      className="fixed inset-x-0 bottom-0 z-50 flex"
+      // In the new layout, while the tracking alarm shows, the modal starts below
+      // it so the alarm and Resume are never hidden; otherwise it fills the window.
+      style={{ top: 'var(--sar-workspace-alarm-bottom, 0px)' }}
     >
       {/* Backdrop — click to close */}
       <button
@@ -176,18 +205,52 @@ export function WorkspaceOverlay({
   )
 }
 
+/** Marks regions that a modal workspace makes inert while it is open. */
+export const MODAL_BACKGROUND_ATTRIBUTE = 'data-modal-background'
+
+/** How many open modal workspaces hold each background region inert. */
+const inertHolds = new WeakMap<HTMLElement, number>()
+
+/**
+ * Makes every marked background region inert and returns the release. Release
+ * runs before focus is restored, so focus can return to the button that opened
+ * the workspace. Nested modals each hold the regions until both close.
+ */
+function makeBackgroundInert(): () => void {
+  const regions = [...document.querySelectorAll<HTMLElement>(`[${MODAL_BACKGROUND_ATTRIBUTE}]`)]
+  for (const region of regions) {
+    inertHolds.set(region, (inertHolds.get(region) ?? 0) + 1)
+    region.inert = true
+  }
+  return () => {
+    for (const region of regions) {
+      const holds = (inertHolds.get(region) ?? 1) - 1
+      inertHolds.set(region, holds)
+      if (holds <= 0) region.inert = false
+    }
+  }
+}
+
 /**
  * Returns true when another modal or alert dialog should receive Escape before
- * the workspace itself.
+ * the workspace itself. Among open modal workspaces the one opened last owns
+ * Escape, so two never defer to each other; any other modal or alert dialog
+ * (for example Settings' unsaved-changes prompt) still comes first.
  */
 function hasTopLayerAboveWorkspace(panel: HTMLElement | null): boolean {
   if (panel === null) {
     return false
   }
 
+  const isModalWorkspace = isModalWorkspacePanel(panel)
+  if (isModalWorkspace && !isTopModalWorkspacePanel(panel)) {
+    return true
+  }
+
   const topLayers = document.querySelectorAll('[aria-modal="true"], [role="alertdialog"]')
   for (const layer of topLayers) {
-    if (layer !== panel) {
+    // Modal workspaces opened earlier sit below this one.
+    if (layer !== panel && !(isModalWorkspace && isModalWorkspacePanel(layer))) {
       return true
     }
   }

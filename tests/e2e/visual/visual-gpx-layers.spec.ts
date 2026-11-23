@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 
+import { openWorkspacePanel } from '../helpers/workspace-panels'
 import { navigateToHarness, startMission } from './helpers/test-setup'
 import { captureElementAndRegister } from './helpers/verification-manifest'
 
@@ -39,14 +40,13 @@ test.describe('Visual: GPX and layer readability', () => {
         },
       ])
     })
-    await page.getByTestId('mission-control-collapse-btn').click()
     await expect(page.getByTestId('mission-control')).not.toBeVisible()
   })
 
   test('GPX colour controls and layer tree remain readable at smaller desktop size', async ({
     page,
   }) => {
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     const alphaImportId = await page.evaluate(() => {
       const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
       return state?.gpxImports.find((entry) => entry.display_name === 'alpha')?.id ?? null
@@ -79,7 +79,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       ],
     })
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-group-gpx-tracks').click()
     await expect(page.getByTestId('layer-panel')).toContainText('GPX Tracks')
     await expect(page.locator('[data-testid^="layer-row-layer-gpx-"]').first()).toBeVisible()

@@ -19,6 +19,9 @@ const CHOOSE_OFFICIAL_MAP_PACKAGE_PATH_CHANNEL = 'sartracker:choose-official-map
 const IMPORT_OFFICIAL_MAP_PACKAGE_CHANNEL = 'sartracker:import-official-map-package'
 const LIST_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-gpx-directory-paths'
 const LIST_WATCHED_GPX_DIRECTORY_PATHS_CHANNEL = 'sartracker:list-watched-gpx-directory-paths'
+// Must match electron/gpx-watched-folder-ipc.cjs [DON-337].
+const LOAD_WATCHED_GPX_FOLDERS_CHANNEL = 'sartracker:load-watched-gpx-folders'
+const SAVE_WATCHED_GPX_FOLDERS_CHANNEL = 'sartracker:save-watched-gpx-folders'
 const INGEST_MARKER_ATTACHMENT_CHANNEL = 'sartracker:ingest-marker-attachment'
 const OPEN_EXTERNAL_PATH_CHANNEL = 'sartracker:open-external-path'
 const OPEN_EXTERNAL_URL_CHANNEL = 'sartracker:open-external-url'
@@ -37,6 +40,8 @@ const COVERAGE_RENDERER_FAILURE_CODES = Object.freeze([
 ])
 const RENDERER_TEARDOWN_REQUEST_CHANNEL = 'sartracker:app-runtime-teardown-requested'
 const RENDERER_TEARDOWN_READY_CHANNEL = 'sartracker:app-runtime-teardown-ready'
+// Must match electron/renderer-mount-gate.cjs (the sandboxed preload cannot require it).
+const RENDERER_MOUNTED_CHANNEL = 'sartracker:renderer-mounted'
 const MISSION_ARCHIVE_PROGRESS_CHANNEL = 'sartracker:mission-archive:progress'
 const ARCHIVE_REVIEW_PROGRESS_CHANNEL = 'sartracker:archive-review:progress'
 const ARCHIVE_REVIEW_CHANNELS = Object.freeze({
@@ -1328,6 +1333,21 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
       projectPr5ScalarForIpc(directoryPath, 'GPX directory path', 4_096),
     )
   },
+  loadWatchedGpxFolders(missionId) {
+    return ipcRenderer.invoke(
+      LOAD_WATCHED_GPX_FOLDERS_CHANNEL,
+      projectPr5ScalarForIpc(missionId, 'Mission id', 200),
+    )
+  },
+  saveWatchedGpxFolders(input) {
+    if (input === null || typeof input !== 'object' || !Array.isArray(input.paths) || input.paths.length > 50) {
+      throw new Error('Watched GPX folders are invalid.')
+    }
+    return ipcRenderer.invoke(SAVE_WATCHED_GPX_FOLDERS_CHANNEL, {
+      missionId: projectPr5ScalarForIpc(input.missionId, 'Mission id', 200),
+      paths: input.paths.map((directoryPath) => projectPr5ScalarForIpc(directoryPath, 'GPX directory path', 4_096)),
+    })
+  },
   ingestMarkerAttachment(input) {
     return ipcRenderer.invoke(INGEST_MARKER_ATTACHMENT_CHANNEL, input)
   },
@@ -1392,6 +1412,9 @@ contextBridge.exposeInMainWorld('sartrackerElectron', {
   },
   acknowledgeAppRuntimeTeardown(input) {
     ipcRenderer.send(RENDERER_TEARDOWN_READY_CHANNEL, input)
+  },
+  signalRendererMounted() {
+    ipcRenderer.send(RENDERER_MOUNTED_CHANNEL)
   },
   archiveReview: Object.freeze({
     supported: process.platform === 'darwin' || process.platform === 'linux',

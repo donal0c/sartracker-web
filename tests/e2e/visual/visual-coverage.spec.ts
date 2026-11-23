@@ -1,10 +1,18 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { seedCoverageMission } from '../helpers/coverage-test-setup'
+import { seedCoverageMission as seedMission } from '../helpers/coverage-test-setup'
+import { expandAllLayers } from '../helpers/layers'
+import { closeMissionPanel, openWorkspacePanel } from '../helpers/workspace-panels'
 import {
   captureAndRegister,
   captureElementAndRegister,
 } from './helpers/verification-manifest'
+
+/** Seeds the coverage mission, then opens Tracking, where the history status now lives (DON-341). */
+async function seedCoverageMission(page: Page): Promise<void> {
+  await seedMission(page)
+  await openWorkspacePanel(page, 'tracking')
+}
 
 test.describe('Visual: complete mission-history coverage [DON-275]', () => {
   test('default complete coverage is calm and explicit', async ({ page }) => {
@@ -259,11 +267,11 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('selected-scope wording and Outside outings filter are explicit', async ({ page }) => {
     await seedCoverageMission(page)
-    await page.getByTestId('mission-control-collapse-btn').click()
-    await page.getByTestId('sidebar-tab-layers').click()
+    await closeMissionPanel(page)
+    await openWorkspacePanel(page, 'layers')
     await expandOnlyCoverageTree(page)
     await page.getByTestId('layer-visibility-feature-coverage-device-alpha').click()
-    await page.getByTestId('sidebar-tab-tracking').click()
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('coverage-status-panel')).toContainText(
       'All selected history shown',
     )
@@ -286,7 +294,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       ],
     })
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-visibility-feature-coverage-period-unassigned-00').click()
     await expect(page.getByTestId('layer-row-feature-coverage-period-unassigned-00'))
       .toContainText('Outside outings')
@@ -332,7 +340,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.evaluate(() => {
       window.__SARTRACKER_MAP__?.jumpTo({ center: [-9.742, 52.012], zoom: 13 })
     })
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await expandOnlyCoverageTree(page)
     await page.getByTestId('layer-visibility-feature-coverage-device-alpha').click()
     const filters = await page.evaluate(() => {
@@ -389,11 +397,12 @@ async function beginDelayedLateFixRefresh(page: Page): Promise<void> {
   })
 }
 
+/**
+ * Opens the Earlier tracks (Mission History) headings. The new Layers panel has
+ * no Collapse All (DON-341), so every heading is opened instead.
+ */
 async function expandOnlyCoverageTree(page: Page): Promise<void> {
-  await page.getByTestId('layer-collapse-all-btn').click()
-  await page.getByTestId('layer-expand-group-coverage').click()
-  await page.getByTestId('layer-expand-layer-coverage-devices').click()
-  await page.getByTestId('layer-expand-layer-coverage-periods').click()
+  await expandAllLayers(page)
 }
 
 async function readCoverageNumbers(page: Page): Promise<{

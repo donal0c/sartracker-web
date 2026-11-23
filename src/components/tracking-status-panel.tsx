@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { resolveMissionHistoryOmissions } from '../features/layers/breadcrumb-coverage-visibility'
 import { isCriticalTrackingTrustWarning } from '../features/tracking/tracking-trust-warning'
+import { describeTrackingFeed, describeTrackingFreshness } from '../features/tracking/persistent-tracking-health'
 import { useDeviceWorkspaceStore } from '../features/tracking/device-workspace-store'
 import { useExactBreadcrumbDotStore } from '../features/tracking/exact-breadcrumb-dot-store'
 import type { ExactBreadcrumbDotState } from '../features/tracking/exact-breadcrumb-dot-controller'
@@ -29,6 +30,8 @@ type TrackingStatusPanelProps = {
   readonly exactBreadcrumbDotState?: ExactBreadcrumbDotState
   readonly onExactBreadcrumbDotsEarlier?: () => void
   readonly onExactBreadcrumbDotsLater?: () => void
+  /** Simplified workspace: only the warnings and history status; the plain summary sits above it. */
+  readonly variant?: 'standard' | 'simplified'
 }
 
 /**
@@ -130,19 +133,32 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
   const criticalTrustWarning = isCriticalTrackingTrustWarning(status.warning)
   const historyTransfer = status.savedHistoryTransfer?.missionId === missionId ? status.savedHistoryTransfer : undefined
   const modeLabel = getTrackingModeLabel(status.mode, status.warning)
+  // Online with old or unverified positions is not healthy: same rule as the
+  // Devices header and the top bar [M-20].
+  const freshnessWarning = describeTrackingFreshness(staleDeviceCount, unverifiedFixTimeCount)
+  const feedHealthy = status.mode === 'online' && !criticalTrustWarning && status.warning === null && freshnessWarning === null
+  // Connection-aware words for old positions: never "Feed connected" while
+  // tracking is offline or not connected [DON-358].
+  const freshnessMessage = freshnessWarning === null
+    ? null
+    : describeTrackingFeed(status, staleDeviceCount, unverifiedFixTimeCount, '')
   const modeChipClassName =
-    status.mode === 'online' && !criticalTrustWarning
+    feedHealthy
       ? 'sar-status-chip-success'
+      : status.mode === 'online' && !criticalTrustWarning
+        ? 'sar-status-chip-warning'
       : status.mode === 'offline' || criticalTrustWarning
         ? 'sar-status-chip-alert'
         : 'sar-status-chip-neutral'
 
+  const simplified = props.variant === 'simplified'
+
   return (
     <div
-      className="sar-panel p-4 text-sm"
+      className={simplified ? 'text-sm' : 'sar-panel p-4 text-sm'}
       data-testid="tracking-status"
     >
-      <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
+      {simplified ? null : <div className="mb-4 flex items-center justify-between border-b border-[var(--sar-line)] pb-3">
         <div>
           <span className="sar-section-label text-amber-300">Tracking System</span>
           <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-stone-300">
@@ -155,8 +171,10 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         >
           <div
             className={`h-2 w-2 rounded-full ${
-              status.mode === 'online' && !criticalTrustWarning
+              feedHealthy
                 ? 'bg-emerald-300'
+                : status.mode === 'online' && !criticalTrustWarning
+                  ? 'bg-amber-300'
                 : status.mode === 'offline' || criticalTrustWarning
                   ? 'bg-red-200 animate-pulse shadow-[0_0_10px_rgba(248,113,113,0.85)]'
                   : 'bg-stone-300'
@@ -164,23 +182,28 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
           />
           <span className="font-bold uppercase text-[11px]">{modeLabel}</span>
         </div>
-      </div>
+      </div>}
 
-      <div className="mb-4 flex">
+      {simplified ? null : <div className="mb-4 flex">
         <button
           className="sar-button w-full px-3 py-2 text-xs font-bold uppercase tracking-[0.1em]"
-          aria-describedby={status.warning === null ? undefined : 'tracking-status-message'}
+          aria-describedby={status.warning === null && freshnessWarning === null ? undefined : 'tracking-status-message'}
           data-testid="open-devices-workspace"
           onClick={() => openWorkspace()}
           type="button"
         >
           Open Devices
         </button>
-      </div>
+      </div>}
 
-      {status.warning === null ? null : (
+      {status.warning === null || simplified ? null : (
         <TrackingStatusMessage tone={criticalTrustWarning ? 'critical' : 'warning'}>
           {status.warning}
+        </TrackingStatusMessage>
+      )}
+      {status.warning !== null || freshnessMessage === null || simplified ? null : (
+        <TrackingStatusMessage tone={freshnessMessage.tone === 'alert' ? 'critical' : 'warning'}>
+          {freshnessMessage.headline}
         </TrackingStatusMessage>
       )}
 
@@ -266,7 +289,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       )}
 
-      {stationaryAttentionCount === 0 ? null : (
+      {stationaryAttentionCount === 0 || simplified ? null : (
         <p
           className="mb-4 border-l-4 border-l-amber-400 bg-amber-400/15 px-3 py-2 text-xs font-medium leading-relaxed text-amber-100"
           data-testid="stationary-attention-summary"
@@ -282,6 +305,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         omittedOutingCount={omittedCoverageOutingCount}
         unassignedOmitted={unassignedCoverageOmitted}
         onInspectExactFixes={() => setBreadcrumbTrailMode('dots')}
+        {...(simplified ? { inspectLabel: 'Show recorded positions' } : {})}
         onRetry={() => void coverageController?.resume()}
       />
 
@@ -325,7 +349,7 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
         </p>
       ) : null}
 
-      <div
+      {simplified ? null : <><div
         className="grid grid-cols-4 border border-[var(--sar-line)] bg-[var(--sar-panel-sunken)] font-mono text-[13px] tracking-tight text-stone-100"
         data-testid="tracking-counters"
       >
@@ -354,12 +378,12 @@ export function TrackingStatusPanel(props: TrackingStatusPanelProps = {}) {
             {formatOperatorLocalTimestamp(status.lastSuccessAt)}
           </span>
         </div>
-        {status.warning === null ? (
+        {feedHealthy ? (
           <TrackingStatusMessage tone="healthy">
             Telemetry stream healthy
           </TrackingStatusMessage>
         ) : null}
-      </div>
+      </div></>}
     </div>
   )
 }

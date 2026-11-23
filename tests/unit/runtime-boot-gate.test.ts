@@ -9,7 +9,7 @@ vi.mock('../../src/infrastructure/support-report/tauri-support-report-store', ()
   exportSupportBundle: exportSupportBundleMock,
 }))
 
-import { CommandMast, RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
+import { RuntimeBootGate, RuntimeSafetyBanner } from '../../src/App'
 import { useAutosaveStatusStore } from '../../src/features/persistence/autosave-status-store'
 import { runtimeFaultReloadTarget } from '../../src/features/runtime/runtime-fault-reload'
 
@@ -28,49 +28,28 @@ describe('RuntimeBootGate', () => {
     useAutosaveStatusStore.getState().reset()
   })
 
-  it('surfaces an autosave warning in the command mast when backup sync is failing', () => {
+  it('surfaces an autosave warning in the safety banner when backup sync is failing [DON-353]', () => {
     useAutosaveStatusStore.getState().markSyncFailed({
       reason: 'mission-finish',
       message: 'disk full',
       now: new Date('2026-05-16T09:00:00.000Z'),
     })
 
-    render(
-      React.createElement(CommandMast, {
-        status: 'ready',
-        runtimeMode: 'electron',
-        onOpenDiagnostics: vi.fn(),
-        onOpenSettings: vi.fn(),
-      }),
-    )
+    // The command mast is gone; the safety banner always carries the warning.
+    render(React.createElement(RuntimeSafetyBanner, { browserTestingMode: false }))
 
-    const warning = document.querySelector('[data-testid="autosave-warning"]')
+    const warning = document.querySelector('[data-testid="focus-autosave-warning"]')
     expect(warning).not.toBeNull()
-    expect(warning?.textContent).toContain('Autosave warning')
-    expect(warning?.getAttribute('title')).toContain('Autosave failing')
-    expect(warning?.getAttribute('aria-label')).toContain('Autosave failing')
+    expect(warning?.textContent).toMatch(/autosave/i)
     expect(warning?.getAttribute('role')).toBe('status')
   })
 
-  it('labels hosted browser mode as session-only testing instead of green operational readiness', () => {
-    render(
-      React.createElement(CommandMast, {
-        status: 'ready',
-        runtimeMode: 'hosted-browser',
-        onOpenDiagnostics: vi.fn(),
-        onOpenSettings: vi.fn(),
-      }),
-    )
+  it('labels hosted browser mode as session-only testing, never live incidents [DON-353]', () => {
+    render(React.createElement(RuntimeSafetyBanner, { browserTestingMode: true }))
 
-    expect(document.querySelector('[data-testid="system-status-value"]')?.textContent).toBe(
-      'Browser test',
-    )
-    expect(document.querySelector('[data-testid="system-status-detail"]')?.textContent).toBe(
-      'Session storage only',
-    )
-    expect(document.querySelector('[data-testid="system-status-value"]')?.className).toContain(
-      'text-amber-300',
-    )
+    const banner = document.querySelector('[data-testid="hosted-browser-testing-banner"]')
+    expect(banner?.textContent).toContain('mission data is stored in this browser session')
+    expect(banner?.textContent).toContain('not live incidents')
   })
 
   it('surfaces lifecycle backup failures as a persistent alert outside the mast', () => {
@@ -83,7 +62,6 @@ describe('RuntimeBootGate', () => {
     render(
       React.createElement(RuntimeSafetyBanner, {
         browserTestingMode: false,
-        focusModeActive: false,
       }),
     )
 

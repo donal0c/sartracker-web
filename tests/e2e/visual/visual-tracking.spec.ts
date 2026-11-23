@@ -3,18 +3,20 @@
  *
  * These tests verify that tracking data displays correctly:
  * - Device positions rendered on map
- * - Tracking status panel with device counts
- * - Online/offline device status indicators
+ * - Tracking panel saying in plain words what happened and what to do
+ * - Lost, paused and attention states in the top bar and alarm strip
  * - Breadcrumb trails visible on map
- * - Layer panel shows tracking devices
+ * - People panel lists tracked devices
  *
  * LIFE-SAFETY CRITICAL: Incorrect tracking display could cause operators to
  * lose awareness of team positions on the mountain.
  */
 import { expect, test, type Page } from '@playwright/test'
+import { openWorkspacePanel } from '../helpers/workspace-panels'
 import {
   navigateToHarness,
   startMission,
+  pauseMission,
   injectStandardTracking,
 } from './helpers/test-setup'
 import {
@@ -32,27 +34,29 @@ test.describe('Visual: Tracking', () => {
     await injectStandardTracking(page)
   })
 
-  test('tracking status panel shows correct device counts and status', async ({ page }) => {
-    await expect(page.getByTestId('tracking-status')).toContainText('online')
-    await expect(page.getByTestId('tracking-status')).toContainText('3')
+  test('Tracking panel explains healthy tracking in plain words', async ({ page }) => {
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'ok')
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('Tracking OK')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Positions are coming in normally')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 3')
 
-    await captureElementAndRegister(page, 'tracking-status', {
+    await captureElementAndRegister(page, 'ws-tracking-panel', {
       testId: 'tracking-status-panel',
-      testName: 'Tracking status panel with 3 devices',
+      testName: 'Tracking panel with healthy tracking',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel. NOTE: this panel is the summary card only — individual device names render in the Layers tab (separate test) and are NOT expected here. Check only what is in frame:
-1. The section header should read "Tracking System" with a "telemetry stream" subtitle (a header of "TRACKING SYSTEM / TELEMETRY STREAM" is correct)
-2. The connection status chip in the header should show "ONLINE" with a green/emerald dot (not "idle" or "offline")
-3. There should be an "Open Devices" button directly below the fixed header, before any counters or dynamic status message
-4. There should be a 4-column counters strip with labels "DEVICES", "FIXES", "CACHE", "STALE"
-5. The DEVICES counter should show "3"
-6. The FIXES counter should be a non-zero number (3 or more, reflecting received GPS fixes)
-7. There should be a "Last success" line showing a time, and a healthy/warning status message line at the bottom
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Tracking panel while tracking is healthy. NOTE: device names and counts are in the People panel and on the People button (separate tests) and are NOT expected here. Check only what is in frame:
+1. The panel is headed "Tracking" with a Close button
+2. Under "What has happened" it says positions are coming in normally
+3. Under "What the map is showing" it says the map shows the latest positions received, with a last-update date and time
+4. Under "What to do" it says nothing needs doing
+5. No red alarm, warning box or Reconnect button is shown
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'tracking-status contains "online"',
-        'tracking-status shows 3 devices',
+        'tracking headline condition is ok and reads Tracking OK',
+        'ws-tracking-happened says positions are coming in normally',
+        'People button counts 3',
       ],
     })
   })
@@ -116,16 +120,13 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
           },
         })
       })
+      await openWorkspacePanel(page, 'tracking')
       await expect(page.getByTestId('tracking-status')).toContainText('1 of 2 selected fixes transferred; history is not yet complete')
       await expect(page.getByRole('progressbar', { name: 'Saved breadcrumb history transfer' })).toHaveAttribute('value', '1')
       await expect(page.getByRole('progressbar', { name: 'Saved breadcrumb history transfer' })).toHaveAttribute('max', '2')
-      await expect(page.getByTestId('tracking-status')).toContainText('online')
-
-      const counters = page.getByTestId('tracking-counters').locator(':scope > div')
-      await expect(counters.nth(0).locator('span').nth(0)).toHaveText('Devices')
-      await expect(counters.nth(0).locator('span').nth(1)).toHaveText('3')
-      await expect(counters.nth(1).locator('span').nth(0)).toHaveText('Fixes')
-      await expect(counters.nth(1).locator('span').nth(1)).toHaveText('3')
+      // Tracking stays live while history loads: no alarm, and all three people keep their positions.
+      await expect(page.getByTestId('ws-alarm')).toHaveCount(0)
+      await expect(page.getByTestId('ws-toggle-people')).toContainText('People 3')
       const harnessState = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__?.readState() ?? null)
       expect(harnessState?.devices).toEqual(expect.arrayContaining([
         expect.objectContaining({ device_id: 'alpha', name: 'Alpha Team' }),
@@ -135,11 +136,11 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         expect.objectContaining({ source_position_id: 'pos-alpha', device_id: 'alpha', lat: 51.9985, lon: -9.7426 }),
         expect.objectContaining({ source_position_id: 'pos-bravo', device_id: 'bravo', lat: 52.0012, lon: -9.7501 }),
       ]))
-      await captureElementAndRegister(page, 'tracking-status', {
+      await captureElementAndRegister(page, 'ws-tracking-panel', {
         testId: 'tracking-breadcrumb-transfer-progress', testName: 'Saved history transfer remains explicitly incomplete',
         area: 'tracking', severity: 'critical',
-        verificationPrompt: 'Verify: 1. Tracking System remains ONLINE. 2. Device count and fixes are nonzero. 3. The status clearly says 1 of 2 selected fixes transferred and history is not yet complete. 4. A visible progress bar is approximately half filled. 5. Progress text and bar are readable and not clipped.',
-        playwrightAssertions: ['Online tracking and existing current fixes remain visible', 'Alpha and Bravo current fixes remain represented in the three-fix counter', 'Partial saved-history progress explicitly says incomplete'],
+        verificationPrompt: 'Verify this screenshot of the SAR Tracker Tracking panel: 1. It is headed "Tracking" and does not describe a tracking failure. 2. The status clearly says 1 of 2 selected fixes transferred and history is not yet complete. 3. A visible progress bar is approximately half filled. 4. Progress text and bar are readable and not clipped.',
+        playwrightAssertions: ['No tracking alarm while history loads', 'Alpha, Bravo and Charlie stay counted on the People button', 'Partial saved-history progress explicitly says incomplete'],
       })
       await page.evaluate(() => {
         const finish = (window as Window & { completeTransportVisual?: () => Promise<void> }).completeTransportVisual
@@ -150,10 +151,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       await page.evaluate(() => (window as Window & { failNextTransportVisual: () => Promise<void> }).failNextTransportVisual())
       await expect(page.getByTestId('saved-history-transfer-status')).toContainText('Saved history could not be loaded')
       await expect(page.getByRole('progressbar', { name: 'Saved breadcrumb history transfer' })).toHaveCount(0)
-      await captureElementAndRegister(page, 'tracking-status', {
+      await captureElementAndRegister(page, 'ws-tracking-panel', {
         testId: 'tracking-breadcrumb-transfer-failed', testName: 'Failed history transfer remains visibly incomplete',
         area: 'tracking', severity: 'critical',
-        verificationPrompt: 'Verify: 1. Tracking remains ONLINE. 2. Saved history could not be loaded is visible. 3. The status explicitly says history remains incomplete. 4. No loading progress bar remains. 5. Device and fix counters remain nonzero.',
+        verificationPrompt: 'Verify this screenshot of the SAR Tracker Tracking panel: 1. It is headed "Tracking". 2. Saved history could not be loaded is visible. 3. The status explicitly says history remains incomplete. 4. No loading progress bar remains.',
         playwrightAssertions: ['Failure is distinguished from completed transfer', 'Incomplete history remains explicit', 'Progress bar is removed after terminal failure'],
       })
     } finally {
@@ -191,6 +192,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       })
     })
 
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('breadcrumb-display-summary')).toContainText(
       '3,000 of at least 12,000 known fixes',
     )
@@ -198,7 +200,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       'Full mission history remains stored',
     )
 
-    await captureElementAndRegister(page, 'tracking-status', {
+    await captureElementAndRegister(page, 'ws-tracking-panel', {
       testId: 'tracking-breadcrumb-bounded-summary',
       testName: 'Tracking status distinguishes bounded display from stored history',
       area: 'tracking',
@@ -208,7 +210,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 2. A distinct informational message should say the trail display is simplified
 3. The message should clearly show "3,000 of at least 12,000 known fixes"
 4. The message should explicitly say the full mission history remains stored
-5. The ONLINE status and normal tracking counters should remain visible
+5. "What has happened" should still say positions are coming in normally
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'breadcrumb-display-summary contains 3,000 of at least 12,000 known fixes',
@@ -229,25 +231,29 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       })
     })
 
-    await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
-    await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'lost')
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('New positions have stopped arriving')
+    await expect(page.getByTestId('ws-tracking-panel')).toContainText('OFFLINE MODE')
 
-    await captureElementAndRegister(page, 'tracking-status', {
+    await captureAndRegister(page, {
       testId: 'tracking-offline-alert',
-      testName: 'Tracking status panel in offline stale-position alert state',
+      testName: 'Tracking lost: red alarm strip, headline and Tracking panel',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel when live telemetry has failed during a mission:
-1. The connection status chip should show "OFFLINE"
-2. The OFFLINE chip should be bright red/high-alert, not amber or neutral
-3. The warning message should include "OFFLINE MODE" and explain that last known positions are being shown
-4. The warning message panel should also be red/high-alert, not a soft amber note
-5. The counters should remain visible so the coordinator can still see device/fix/cache/stale counts
+      verificationPrompt: `Verify this screenshot of SAR Tracker when live telemetry has failed during a mission:
+1. A bright red alarm strip under the top bar says "TRACKING LOST" and that positions on the map may not be current
+2. The tracking headline in the top bar is red/high-alert and says "TRACKING LOST", not amber or neutral
+3. The Tracking panel on the right says new positions have stopped arriving and shows the "OFFLINE MODE" message
+4. The panel says the map shows the last positions received, which may not be where people are now
+5. The panel tells the operator not to rely on the map, to check the internet connection, and offers a Reconnect button
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'tracking-mode-chip has sar-status-chip-alert',
-        'tracking-warning has sar-status-alert-panel',
-        'tracking-warning contains OFFLINE MODE',
+        'tracking headline condition is lost',
+        'alarm strip says TRACKING LOST',
+        'Tracking panel says new positions have stopped arriving',
+        'Tracking panel contains OFFLINE MODE',
       ],
     })
   })
@@ -283,8 +289,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       ])
     })
 
-    await expect(page.getByTestId('tracking-mode-chip')).toContainText('online')
-    await expect(page.getByTestId('tracking-warning')).toContainText('ROSTER UNAVAILABLE')
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'attention')
+    await expect(page.getByTestId('ws-alarm')).toHaveCount(0)
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('ROSTER UNAVAILABLE')
     await expect(page.getByTestId('current-position-ingest-warning')).toContainText(
       'Valid current fixes remain visible',
     )
@@ -293,21 +301,21 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     )
     await page.setViewportSize({ width: 1440, height: 1200 })
 
-    await captureElementAndRegister(page, 'tracking-status', {
+    await captureElementAndRegister(page, 'ws-tracking-panel', {
       testId: 'tracking-current-position-ingest-warning',
       testName: 'Current-position rejection and timestamp provenance warnings',
       area: 'tracking',
       severity: 'high',
       verificationPrompt: `Verify this screenshot of SAR Tracker's current-position health warnings:
-1. The tracking status must remain ONLINE because valid current fixes are still publishing
+1. "What has happened" must say tracking is running, with something to check, because valid current fixes are still publishing
 2. A clear roster warning must say current fixes are using last-known device details
 3. A separate position-data warning must report a rejected row and explicitly say valid current fixes remain visible
 4. A separate FIX TIME UNVERIFIED warning must identify server-receipt provenance, retain the position for immediate safety, and exclude it from exact breadcrumb evidence
-5. The "Open Devices" action must remain visible so the operator can inspect the accepted fix and rejection detail
+5. "What to do" must say to check the items listed and that tracking itself is still running
 6. The warnings should be prominent amber attention states, not a red offline/emergency presentation
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'tracking mode remains online',
+        'tracking headline condition is attention, with no alarm strip',
         'roster warning is visible',
         'rejected-row warning says valid current fixes remain visible',
         'server-receipt timestamp warning states immediate-safety visibility and exact-evidence exclusion',
@@ -326,7 +334,9 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         positions: [latest], breadcrumbs: [first, latest],
       })
     })
-    await expect(page.getByTestId('stationary-attention-summary')).toBeVisible()
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-person-status-alpha')).toContainText('Not moving')
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText('not moving')
     await captureAndRegister(page, {
       testId: 'tracking-stationary-attention-map',
       testName: 'Stationary attention halo remains additive to the current marker',
@@ -335,10 +345,10 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 1. Alpha Team remains visibly represented by its normal current-position marker
 2. A distinct amber attention ring is visible outside that marker
 3. The normal marker remains centered, opaque, and readable rather than hidden or replaced
-4. The tracking summary clearly reports stationary attention
+4. The top-bar tracking headline and the People panel both clearly report Alpha Team as not moving
 5. No copy uses the word emergency
 Report PASS or FAIL for each item, then overall PASS/FAIL.`,
-      playwrightAssertions: ['stationary attention summary visible while current snapshot remains published'],
+      playwrightAssertions: ['People panel and tracking headline report not moving while the current snapshot remains published'],
     })
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByTestId('device-attention-alpha')).toBeVisible()
@@ -366,6 +376,7 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
         affectedDeviceCount: 1, conflictDeviceIds: ['alpha'],
       })
     })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions remain live')
     await expect(page.getByTestId('position-conflict-warning')).toContainText('first accepted fix remains displayed')
     await captureAndRegister(page, {
@@ -376,7 +387,7 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
 1. A critical evidence-health warning clearly says local evidence storage is unavailable
 2. It says current positions remain live and finalization/archive export are blocked
 3. A separate source-conflict warning says the first accepted fix remains displayed
-4. Normal device and fix counters remain visible
+4. Current device markers remain visible on the map
 5. No raw source payload, coordinate, or device identifier is disclosed in the warnings
 Report PASS or FAIL for each item, then overall PASS/FAIL.`,
       playwrightAssertions: ['evidence health warning visible', 'first accepted conflict truth visible'],
@@ -393,26 +404,26 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
       })
     })
 
+    await openWorkspacePanel(page, 'tracking')
     const warning = page.getByTestId('ingest-evidence-health-warning')
     await expect(warning).toContainText(
       'rejected-position evidence may have been lost when the app closed unexpectedly',
     )
     await expect(warning).toContainText('finalization and archive export are blocked')
 
-    await captureElementAndRegister(page, 'tracking-status', {
+    await captureElementAndRegister(page, 'ws-tracking-panel', {
       testId: 'tracking-shutdown-evidence-loss',
       testName: 'Runtime-shutdown evidence loss blocks completeness',
       area: 'tracking',
       severity: 'critical',
       verificationPrompt: `Verify SAR Tracker's runtime-shutdown evidence-loss warning:
-1. Tracking remains ONLINE and the normal tracking counters stay visible because current positions are still the live safety priority.
+1. The panel is headed "Tracking" and does not say tracking was lost, because current positions are still the live safety priority.
 2. A red critical evidence-health warning explicitly says rejected-position evidence may have been lost when the app closed unexpectedly.
 3. The warning says current positions remain live.
 4. The warning explicitly says mission finalization and archive export are blocked.
 5. The presentation does not claim the lost anomaly evidence was saved or recoverable.
 Report PASS or FAIL for each item, then overall PASS/FAIL.`,
       playwrightAssertions: [
-        'tracking remains online',
         'runtime-shutdown evidence loss is explicit',
         'finalization and archive export are blocked',
       ],
@@ -420,8 +431,7 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
   })
 
   test('paused mission refresh suspension is a red stale-position alert', async ({ page }) => {
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pauseMission(page)
     await page.evaluate(async () => {
       const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
       applyTrackingStatus({
@@ -432,55 +442,102 @@ Report PASS or FAIL for each item, then overall PASS/FAIL.`,
         warning: 'Live refresh suspended while mission is paused.',
       })
     })
-    await expect(page.getByTestId('tracking-warning')).toContainText('Live refresh suspended')
-    await expect(page.getByTestId('tracking-mode-chip')).toHaveClass(/sar-status-chip-alert/)
-    await expect(page.getByTestId('tracking-warning')).toHaveClass(/sar-status-alert-panel/)
-    await expect(page.getByTestId('tracking-counters')).toContainText('Devices')
-    await expect(page.getByTestId('tracking-counters')).toContainText('Fixes')
-    await expect(page.getByTestId('tracking-counters')).toContainText('Cache')
-    await expect(page.getByTestId('tracking-counters')).toContainText('Stale')
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'paused')
+    await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+    await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('positions are not updating')
 
-    await captureElementAndRegister(page, 'tracking-status', {
+    await captureAndRegister(page, {
       testId: 'tracking-paused-refresh-alert',
-      testName: 'Tracking status panel while mission pause suspends live refresh',
+      testName: 'Paused mission: red alarm strip, headline and Tracking panel',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker tracking status panel while the mission is paused:
-1. The status/warning area should clearly say "Live refresh suspended while mission is paused" or equivalent
-2. The status chip and warning panel should be bright red/high-alert, because displayed positions may no longer be current
-3. This alert should not look like a normal idle/not-configured state
+      verificationPrompt: `Verify this screenshot of SAR Tracker while the mission is paused:
+1. A bright red alarm strip under the top bar says "MISSION PAUSED" and that positions are not updating, with a "Resume mission" button
+2. The tracking headline in the top bar is red/high-alert and says "MISSION PAUSED"
+3. The Tracking panel says the mission is paused, so positions are not updating
+4. The panel says the map shows the last positions received, which may not be where people are now, and tells the operator to press Resume mission
+5. This should not look like a normal idle or not-configured state
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-control contains paused',
-        'tracking-warning contains Live refresh suspended',
-        'tracking-mode-chip has sar-status-chip-alert',
-        'tracking-warning has sar-status-alert-panel',
+        'mission phase is PAUSED',
+        'tracking headline condition is paused',
+        'alarm strip says MISSION PAUSED with a Resume control',
+        'Tracking panel says positions are not updating',
+      ],
+    })
+  })
+
+  test('paused mission on Full map keeps people and stale information in view [DON-353]', async ({ page }) => {
+    // Replaces the retired collapsed-sidebar capture: with the panel hidden
+    // and the mission paused, who is tracked and who is stale stay readable.
+    await injectOneStalePosition(page)
+    await pauseMission(page)
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
+    await expect(page.getByTestId('ws-people-panel')).toBeHidden()
+    await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+    await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 3')
+    // DON-356: the badge counts only the person already stale before the
+    // pause; the alarm covers everyone else's stopped positions.
+    await expect(page.getByTestId('ws-people-attention')).toHaveText('1 ⚠')
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'paused')
+    // The stale person is still named while paused.
+    await expect(page.getByTestId('ws-tracking-problems')).toContainText('1 stale')
+
+    await captureAndRegister(page, {
+      testId: 'tracking-paused-full-map',
+      testName: 'Paused mission on Full map: people count, stale badge and alarm stay visible',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker with the mission paused and the side panel hidden (Full map):
+1. The map fills the width below the top bar; no side panel is open
+2. A bright red alarm strip says "MISSION PAUSED" and that positions are not updating, with a "Resume mission" button
+3. The top bar's People button reads "People 3" with a separate amber attention badge reading "1 ⚠" (only the person already stale before the pause; the alarm covers everyone else)
+4. The top bar's tracking headline reads as paused (red/high alert) and still names "1 stale"; a callout on the map says Charlie Team was already out of date when updates stopped
+5. A "Show panel" button in the top bar brings the panel back
+6. Nothing in the top bar is cut off or overlapping
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'Full map on: button reads Show panel and the People panel is hidden',
+        'alarm says MISSION PAUSED with a Resume control',
+        'People button reads People 3 with attention badge "1 ⚠" (paused: only the already-stale person) [DON-356]',
+        'tracking headline condition is paused and names 1 stale',
       ],
     })
 
-    await captureElementAndRegister(page, 'tracking-counters', {
-      testId: 'tracking-paused-counter-strip',
-      testName: 'Tracking counters remain available while mission refresh is paused',
+    // Show panel brings People back, still naming the stale person in words.
+    await page.getByTestId('ws-full-map').click()
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-person-status-charlie')).toContainText('Already out of date when updates stopped')
+    await expect(page.getByTestId('ws-person-status-alpha')).toContainText('Last known position')
+    for (const device of ['alpha', 'bravo', 'charlie']) await expect(page.getByTestId(`ws-person-${device}`)).toBeVisible()
+    await captureElementAndRegister(page, 'ws-people-panel', {
+      testId: 'tracking-paused-people-panel',
+      testName: 'People panel while paused names the stale person in words',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of SAR Tracker's tracking counter strip while live refresh is paused:
-1. All four counter labels — "DEVICES", "FIXES", "CACHE", and "STALE" — should be present and readable
-2. Every counter should retain a visible numeric value; none should be blank, cropped, or replaced by the pause alert
-3. The strip should remain visually structured as four distinct columns
+      verificationPrompt: `Verify this screenshot of the SAR Tracker People panel while the mission is paused:
+1. The panel lists exactly 3 teams: "Alpha Team", "Bravo Team", "Charlie Team"
+2. Charlie Team's row says in words that it was "Already out of date when updates stopped", setting it apart from the others
+3. Alpha and Bravo say "Last known position" with an age, because nothing updates while paused
+4. Each team still has Location and Trail checkboxes
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'tracking-counters contains Devices, Fixes, Cache, and Stale',
-        'tracking-counters remains in the DOM while live refresh is paused',
+        'Alpha, Bravo and Charlie rows visible while paused',
+        'Charlie row says Already out of date when updates stopped',
+        'Alpha row says Last known position',
       ],
     })
   })
 
   test('map shows readable device labels and less dominant breadcrumb casing', async ({ page }) => {
-    // Device names appear in the layer tree (Layers tab)
-    await page.getByTestId('sidebar-tab-layers').click()
-    await expect(page.getByText('Alpha Team')).toBeVisible()
-    await expect(page.getByText('Bravo Team')).toBeVisible()
-    await page.getByTestId('sidebar-tab-tracking').click()
+    // Device names are listed in the People panel beside the map.
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-person-alpha')).toContainText('Alpha Team')
+    await expect(page.getByTestId('ws-person-bravo')).toContainText('Bravo Team')
 
     // Zoom the map closer to the device positions for readable labels
     await page.evaluate(() => {
@@ -491,8 +548,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
     await waitForRenderedTrackingFeatures(page)
     await expect
-      .poll(() => page.getByTestId('mission-control').innerText(), {
-        message: 'mission timers are running before tracking map visual capture',
+      .poll(() => page.getByTestId('ws-search-time').innerText(), {
+        message: 'mission search time is running before tracking map visual capture',
         timeout: 3000,
       })
       .not.toContain('00:00:00')
@@ -508,8 +565,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 3. Device text labels should be readable against the topographic map, using dark text with a light/white backing or halo rather than low-contrast colored text
 4. The device markers should be positioned on the mountain terrain in the central area of the map (not off-screen or in corners)
 5. There should be at least one visible breadcrumb trail line in the selected device colour, and the dark casing should be narrow/subdued enough that the selected colour remains obvious
-6. The right sidebar should show the SAR Tracker with mission timers running (time > 00:00:00)
-7. The right sidebar should show tracking controls with status indicators (colored buttons for Pause/Finish)
+6. The top bar should show the mission's search time running (time > 00:00:00)
+7. The People panel on the right should list the tracked teams with Location and Trail checkboxes
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'tracking snapshot injected with Alpha Team and Bravo Team',
@@ -600,106 +657,80 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('layer panel lists all tracked devices', async ({ page }) => {
-    await page.getByTestId('mission-control-collapse-btn').click()
-    await page.getByTestId('sidebar-tab-layers').click()
-    const layerPanel = page.getByTestId('layer-panel')
-    await expect(layerPanel).toBeVisible()
-    await layerPanel.scrollIntoViewIfNeeded()
-    await page.getByTestId('layer-expand-layer-tracking-breadcrumbs').click()
+  test('People panel lists all tracked devices', async ({ page }) => {
+    await openWorkspacePanel(page, 'people')
+    const peoplePanel = page.getByTestId('ws-people-panel')
+    await expect(peoplePanel).toBeVisible()
+    await expect(page.getByTestId('ws-people-count')).toContainText('3')
+    for (const device of ['alpha', 'bravo', 'charlie']) {
+      await expect(page.getByTestId(`ws-person-${device}`)).toBeVisible()
+      await expect(page.getByTestId(`ws-position-${device}`)).toBeChecked()
+      await expect(page.getByTestId(`ws-trail-${device}`)).toBeChecked()
+    }
 
-    // Devices should appear in the layer tree
-    await expect(page.getByTestId('layer-row-feature-device-alpha')).toBeVisible()
-    await expect(page.getByTestId('layer-row-feature-device-bravo')).toBeVisible()
-    await expect(page.getByTestId('layer-row-feature-device-charlie')).toBeVisible()
-    await expect(page.getByTestId('layer-row-feature-tracking-breadcrumb-alpha')).toBeVisible()
-    await expect(page.getByTestId('layer-row-layer-tracking-breadcrumbs')).toBeVisible()
-
-    await captureElementAndRegister(page, 'layer-panel', {
+    await captureElementAndRegister(page, 'ws-people-panel', {
       testId: 'tracking-layer-panel',
-      testName: 'Layer panel with tracked devices',
+      testName: 'People panel with tracked devices',
       area: 'layers',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker Layer Tree with tracking devices:
-1. Under the "Tracking" group, there should be a "Current Location" subgroup
-2. Current Location should list exactly 3 devices: "Alpha Team", "Bravo Team", "Charlie Team"
-3. Each current-location device should have a visibility checkbox (checked by default)
-4. There should also be a separate "Breadcrumbs" subgroup under Tracking
-5. Breadcrumbs should be a separate control surface from Current Location so operators can show current positions with or without trails
-6. The count next to Current Location should show 3
+      verificationPrompt: `Verify this screenshot of the SAR Tracker People panel with tracking devices:
+1. The panel is headed "People" with a count of 3, an "All devices" button and a Close button
+2. It lists exactly 3 teams: "Alpha Team", "Bravo Team", "Charlie Team"
+3. Each team has separate "Location" and "Trail" checkboxes, both ticked by default, so operators can show current positions with or without trails
+4. An "Everyone" row lets the operator change Location and Trail for all teams at once
+5. A team that needs attention (for example Charlie Team, offline) shows a short status in words, not only a colour
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'layer-panel is visible',
-        'Alpha Team text visible',
-        'Bravo Team text visible',
-        'Charlie Team text visible',
+        'People panel is visible with a count of 3',
+        'Alpha, Bravo and Charlie Team rows are visible',
+        'each team has Location and Trail ticked',
       ],
     })
   })
 
-  test('mast tracking cell shows separate fix and stale chips, never a ratio', async ({ page }) => {
+  test('People button shows the people count and attention badge separately, never a ratio', async ({ page }) => {
     // Inject a fresh snapshot where one of the three latest positions is
-    // marked stale so both chips have visible numbers and the warning tone is
-    // exercised. This pins the regression that the original mast cell read
-    // "ONLINE 3/1" — visually scanning as the impossible ratio "3 of 1".
-    await page.evaluate(async () => {
-      const snapshot = {
-        devices: [
-          { device_id: 'alpha', name: 'Alpha Team', status: 'online' as const, last_seen: '2026-04-10T12:00:00.000Z', unique_id: null, category: 'person' },
-          { device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: '2026-04-10T11:58:00.000Z', unique_id: null, category: 'person' },
-          { device_id: 'charlie', name: 'Charlie Team', status: 'offline' as const, last_seen: '2026-04-10T10:30:00.000Z', unique_id: null, category: 'person' },
-        ],
-        positions: [
-          { id: 'pos-alpha', device_id: 'alpha', lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85, accuracy: 8, timestamp: '2026-04-10T12:00:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
-          { id: 'pos-bravo', device_id: 'bravo', lat: 52.0012, lon: -9.7501, altitude: 280, speed: 0.5, battery: 42, accuracy: 15, timestamp: '2026-04-10T11:58:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
-          { id: 'pos-charlie', device_id: 'charlie', lat: 51.995, lon: -9.738, altitude: 350, speed: 0, battery: 12, accuracy: 20, timestamp: '2026-04-10T10:30:00.000Z', source: 'cache' as const, cache_age_seconds: 600, device_cache_stale: true },
-        ],
-        breadcrumbs: [],
-      }
+    // stale so the People button shows both a count and an attention badge.
+    // This keeps the regression the old mast cell had pinned: it once read
+    // "ONLINE 3/1", which scans as the impossible ratio "3 of 1".
+    await injectOneStalePosition(page)
 
-      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(snapshot, {
-        mode: 'online',
-        consecutiveFailures: 0,
-        recovered: false,
-        lastSuccessAt: '2026-04-10T12:00:01.000Z',
-        warning: null,
-      })
-    })
-    await page.waitForTimeout(400)
 
-    const cell = page.getByTestId('mast-tracking-cell')
-    await expect(cell).toBeVisible()
-    // Three glance-readable values — never combined as a single n/n ratio.
-    await expect(page.getByTestId('mast-tracking-mode')).toHaveText('ONLINE')
-    await expect(page.getByTestId('mast-tracking-fix-value')).toHaveText('3')
-    await expect(page.getByTestId('mast-tracking-stale-value')).toHaveText('1')
-    const cellText = (await cell.textContent()) ?? ''
-    expect(cellText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+    const people = page.getByTestId('ws-toggle-people')
+    await expect(people).toContainText('People 3')
+    // The exact values the old mast pinned (3 tracked, 1 stale), now two parts.
+    await expect(page.getByTestId('ws-people-attention')).toHaveText('1 ⚠')
+    await expect(page.getByTestId('ws-tracking-problems')).toHaveText('1 stale')
+    const peopleText = (await people.textContent()) ?? ''
+    expect(peopleText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
+    // Only the problem words: the last-update date below them is not a count.
+    const headlineText = (await page.getByTestId('ws-tracking-problems').textContent()) ?? ''
+    expect(headlineText).not.toMatch(/\b\d+\s*\/\s*\d+\b/)
 
-    await captureElementAndRegister(page, 'command-mast', {
-      testId: 'mast-tracking-cell-active',
-      testName: 'Mast tracking cell during an active mission',
+    await captureElementAndRegister(page, 'ws-top-bar', {
+      testId: 'top-bar-people-count-no-ratio',
+      testName: 'Top bar people count and tracking headline during an active mission',
       area: 'tracking',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker command mast (the top header strip) during an active mission:
-1. The mast contains a narrow tracking cell labelled with the current tracking mode in uppercase (one of "ONLINE", "OFFLINE", or "IDLE"). For this capture the mode label should be "ONLINE"; it may appear as a compact amber label within the tracking cell next to or above the FIX/STALE rows, not as a large full-width header.
-2. The same tracking cell shows two separate stat rows or compact row fragments: a row/fragment whose label is "FIX" with numeric value 3, and a row/fragment whose label is "STALE" with numeric value 1.
-3. The FIX and STALE values are rendered as two distinct numbers in two separate rows. They are NOT combined into a single value like "3/1" or "FIX/STALE 3/1" or "1/3" — that exact regression is what this test exists to prevent. Mark item 3 FAIL only if you see a single visible "<digits>/<digits>" string treated as one value inside the tracking cell.
-4. The mast still shows a "DEVICES" cell with value 3 somewhere to the left of the tracking cell, and a "SYSTEM STATUS" cell to the right. It is OK if mission timing/status cells sit between DEVICES and the tracking cell; do not require DEVICES to be immediately adjacent.
-5. The overall theme is dark with amber accents; tone for the STALE row is amber/warning when the value is greater than zero.
+      verificationPrompt: `Verify this screenshot of the SAR Tracker top bar during an active mission with one stale position:
+1. The People button shows "People 3" and, separately, a small amber attention badge reading exactly "1 ⚠" (the number 1 and a warning sign). Mark FAIL if the badge is missing or shows any other number
+2. The people count and the attention number are two distinct values. They are NOT combined into a single value like "3/1" or "1/3" — that exact regression is what this test exists to prevent. Mark item 2 FAIL only if you see a single visible "<digits>/<digits>" string treated as one value.
+3. The tracking headline names the problem in words as exactly "1 stale", with a last-update time below
+4. The mission button shows the mission as Running, with the search time beside it
+5. The overall theme is dark; the attention badge and headline read as amber warnings, not red alarms
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mast-tracking-cell visible',
-        'mast-tracking-mode is "ONLINE"',
-        'mast-tracking-fix-value is "3"',
-        'mast-tracking-stale-value is "1"',
-        'mast-tracking-cell does not match a digits/digits ratio',
+        'People button contains People 3',
+        'attention badge reads exactly "1 ⚠"',
+        'tracking headline problem words contain "1 stale"',
+        'neither the People button nor the headline problem words match a digits/digits ratio',
       ],
     })
   })
 
-  test('full operational view with tracking and all sidebar panels', async ({ page }) => {
-    await expect(page.getByTestId('mission-elapsed')).not.toHaveText('00:00:00')
+  test('full operational view with tracking, top bar and People panel', async ({ page }) => {
+    await expect(page.getByTestId('ws-search-time')).not.toHaveText('00:00:00')
+    await expect(page.getByTestId('ws-people-panel')).toBeVisible()
 
     await captureAndRegister(page, {
       testId: 'tracking-full-operational',
@@ -707,18 +738,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'tracking',
       severity: 'critical',
       verificationPrompt: `Verify this full-page screenshot of SAR Tracker in operational tracking mode. This broad frame checks layout only; detailed device-marker readability, tracking counts, and layer-list content are verified by separate element/zoomed screenshots in this suite.
-1. LEFT SIDE - MAP: A topographic map should be visible showing the Kerry mountains
-2. LEFT SIDE - TOOLBAR: The Map Tools toolbar should be on the left side of the map
-3. LEFT SIDE - COORDS: A coordinate bar should be at the bottom of the map
-4. TOP HEADER: "Mountain Rescue" and "SAR Tracker" branding should be visible
-5. RIGHT SIDE - MISSION: Mission Control panel should be pinned at top and show an active mission state with timers
-6. RIGHT SIDE - TABS: A segmented tab control with Tracking / Tools / Layers should appear below Mission Control
-7. RIGHT SIDE - TRACKING: A Tracking System panel should be visible below the tabs
-8. The overall layout should be: map taking most of the width, sidebar taking the right portion
-9. Theme should be dark with amber/gold accents
+1. MAP: A topographic map of the Kerry mountains takes most of the width, with tracked team markers on it
+2. TOOLBAR: Maps and Map Tools controls sit at the top left of the map
+3. COORDS: A coordinate bar is at the bottom of the map
+4. TOP BAR: The team logo, a mission button showing the mission as Running, a running Search time clock and the tracking headline are at the top left
+5. TOP BAR: People (with a count), Layers, Full map, Settings and More buttons are at the top right
+6. SIDE PANEL: A People panel on the right lists the tracked teams with Location and Trail checkboxes
+7. Theme should be dark with amber/gold accents
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'full-page screenshot with all panels visible',
+        'search time is running in the top bar',
+        'People panel is open beside the map',
       ],
     })
   })
@@ -850,4 +880,169 @@ async function waitForRenderedTrackingFeatures(page: Page): Promise<void> {
       },
     )
     .toEqual(expect.objectContaining({ ready: true }))
+}
+
+/**
+ * Replaces the tracking snapshot with three people, one of whose latest
+ * positions is stale, so the People button shows a count and an attention
+ * badge and the headline names "1 stale".
+ */
+async function injectOneStalePosition(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const snapshot = {
+      devices: [
+        { device_id: 'alpha', name: 'Alpha Team', status: 'online' as const, last_seen: '2026-04-10T12:00:00.000Z', unique_id: null, category: 'person' },
+        { device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: '2026-04-10T11:58:00.000Z', unique_id: null, category: 'person' },
+        { device_id: 'charlie', name: 'Charlie Team', status: 'offline' as const, last_seen: '2026-04-10T10:30:00.000Z', unique_id: null, category: 'person' },
+      ],
+      positions: [
+        { id: 'pos-alpha', device_id: 'alpha', lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85, accuracy: 8, timestamp: '2026-04-10T12:00:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+        { id: 'pos-bravo', device_id: 'bravo', lat: 52.0012, lon: -9.7501, altitude: 280, speed: 0.5, battery: 42, accuracy: 15, timestamp: '2026-04-10T11:58:00.000Z', source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false },
+        { id: 'pos-charlie', device_id: 'charlie', lat: 51.995, lon: -9.738, altitude: 350, speed: 0, battery: 12, accuracy: 20, timestamp: '2026-04-10T10:30:00.000Z', source: 'cache' as const, cache_age_seconds: 600, device_cache_stale: true },
+      ],
+      breadcrumbs: [],
+    }
+
+    await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(snapshot, {
+      mode: 'online',
+      consecutiveFailures: 0,
+      recovered: false,
+      lastSuccessAt: '2026-04-10T12:00:01.000Z',
+      warning: null,
+    })
+  })
+  await page.waitForTimeout(400)
+}
+
+const CREDENTIAL_WARNING = 'Stored Traccar credentials could not be decrypted. Re-enter the password or token in Settings.'
+
+test.describe('Visual: credential warning and problem words [DON-353]', () => {
+  test.beforeEach(async ({ page }) => {
+    await navigateToHarness(page)
+  })
+
+  test('credential warning before a mission names the fix in the top bar', async ({ page }) => {
+    await page.evaluate(async (warning) => {
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      applyTrackingStatus({
+        mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+        warning, warningCodes: ['tracking_credentials_unreadable'],
+      })
+    }, CREDENTIAL_WARNING)
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+    await expect(headline).toContainText('Re-enter password')
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText(CREDENTIAL_WARNING)
+
+    await captureAndRegister(page, {
+      testId: 'tracking-credentials-before-mission',
+      testName: 'Unreadable tracking password before a mission',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker before any mission, when the saved tracking password cannot be read:
+1. The top bar's tracking headline says "Re-enter password" in whole words, not a neutral "not connected"
+2. A Tracking panel says the stored Traccar credentials could not be decrypted and to re-enter the password or token in Settings
+3. Under "What to do" it points to Settings, Tracking sources
+4. No Reconnect button is offered, because reconnecting cannot help until the password is entered again
+5. The mission setup is still reachable; nothing claims tracking is healthy
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'headline condition is credentials and names Re-enter password',
+        'Tracking panel quotes the credential warning',
+      ],
+    })
+  })
+
+  test('credential warning during a mission is the tracking-lost alarm with the fix', async ({ page }) => {
+    await startMission(page, 'Credential check')
+    await injectCredentialLoss(page, { stale: false, stillPerson: false })
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('data-condition', 'credentials')
+    await expect(page.getByTestId('ws-tracking-problems')).toContainText('Re-enter password')
+    await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+    await expect(page.getByTestId('ws-alarm')).toContainText('password or token')
+
+    await captureAndRegister(page, {
+      testId: 'tracking-credentials-in-mission',
+      testName: 'Unreadable tracking password during a mission',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this full-page screenshot of SAR Tracker mid-mission when the saved tracking password stops working:
+1. A bright red alarm strip across the map says "TRACKING LOST": the saved tracking password or token cannot be used, and positions on the map may not be current
+2. The top bar's tracking headline reads as lost tracking and shows "Re-enter password" in whole words (the re-entry wording is in the headline, not the alarm strip)
+3. The mission still shows as Running in the top bar
+4. Last positions remain on the map; nothing claims they are current
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'headline condition is credentials',
+        'problem words contain Re-enter password',
+        'alarm says TRACKING LOST and that the password or token cannot be used',
+      ],
+    })
+  })
+
+  test('problem words at 1024 px in a wide font keep safety words whole, ahead of the fix', async ({ page }) => {
+    // CI's Linux fonts draw wider than macOS; Verdana/DejaVu reproduce them.
+    await page.addStyleTag({ content: ':root, button { font-family: Verdana, "DejaVu Sans", sans-serif !important; }' })
+    await page.setViewportSize({ width: 1024, height: 720 })
+    await startMission(page, 'Problem word fit')
+    await injectCredentialLoss(page, { stale: true, stillPerson: true })
+    const headline = page.getByTestId('ws-tracking-headline')
+    await expect(headline).toHaveAttribute('aria-label', /1 position out of date/)
+    await expect(headline).toHaveAttribute('aria-label', /1 person not moving/)
+    const problems = page.getByTestId('ws-tracking-problems')
+    await expect(problems).toContainText('1 stale')
+    const fit = await problems.evaluate((element) => {
+      const bar = element.closest('[data-testid="ws-tracking-headline"]')!.getBoundingClientRect()
+      const box = element.getBoundingClientRect()
+      return { inside: box.right <= bar.right + 0.5 && box.width > 0, clipped: element.scrollWidth > element.clientWidth + 1 }
+    })
+    expect(fit).toEqual({ inside: true, clipped: false })
+
+    await captureElementAndRegister(page, 'ws-top-bar', {
+      testId: 'tracking-problem-words-1024-wide-font',
+      testName: 'Combined problem words at 1024 px in a wide font',
+      area: 'tracking',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker top bar at 1024 px wide, in a wide font, while tracking is lost (password unreadable), one position is stale and one person is not moving:
+1. The tracking headline shows "1 stale" first, as whole words, not cut mid-word or clipped at the edge
+2. Any further problems are either named in whole words (for example "1 not moving", "Re-enter password") or counted as "+N more"; nothing is silently dropped
+3. "Re-enter password", if shown, never comes before a person-safety word ("stale", "not moving")
+4. No text overlaps the People, Layers or other top-bar buttons
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'aria-label names 1 position out of date and 1 person not moving',
+        'problem words contain 1 stale, inside the bar and not clipped',
+      ],
+    })
+  })
+})
+
+/**
+ * The state the runtime reaches when the saved password stops working
+ * mid-mission: idle, with the positions already received. With stillPerson,
+ * Alpha has not moved for 20 minutes; with stale, Bravo's position is out of date.
+ */
+async function injectCredentialLoss(page: Page, options: { stale: boolean, stillPerson: boolean }): Promise<void> {
+  await page.evaluate(async ({ stale, stillPerson, warning }) => {
+    const now = Date.now()
+    const iso = (ms: number) => new Date(ms).toISOString()
+    const base = { lon: -9.7, altitude: null, speed: null, battery: null, accuracy: 4, source: 'osmand', data_origin: 'live' as const, cache_age_seconds: null }
+    const alpha = { ...base, device_id: 'alpha', lat: 52.0, device_cache_stale: false }
+    const alphaFirst = { ...alpha, id: 'a1', timestamp: iso(now - 20 * 60_000) }
+    const alphaLatest = { ...alpha, id: 'a2', lat: 52.00001, timestamp: iso(now - 30_000) }
+    const bravo = { ...base, device_id: 'bravo', id: 'b1', lat: 52.1, device_cache_stale: true, timestamp: iso(now - 10 * 60_000) }
+    await window.__SARTRACKER_BROWSER_HARNESS__!.injectTrackingSnapshot({
+      devices: [
+        { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: alphaLatest.timestamp, unique_id: null, category: 'person' },
+        ...(stale ? [{ device_id: 'bravo', name: 'Bravo Team', status: 'online' as const, last_seen: bravo.timestamp, unique_id: null, category: 'person' }] : []),
+      ],
+      positions: stale ? [alphaLatest, bravo] : [alphaLatest],
+      breadcrumbs: [...(stillPerson ? [alphaFirst] : []), alphaLatest, ...(stale ? [bravo] : [])],
+    }, {
+      mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+      warning, warningCodes: ['tracking_credentials_unreadable'],
+    })
+  }, { ...options, warning: CREDENTIAL_WARNING })
 }

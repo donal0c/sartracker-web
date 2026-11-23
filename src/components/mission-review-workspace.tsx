@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 
 import { openExternalPath } from '../infrastructure/file-launcher/tauri-file-launcher'
 import { WorkspaceOverlay, WorkspaceHeader } from './workspace-overlay'
+import { useWorkspaceBlockerCount } from '../lib/modal-workspace-registry'
 import { useMapTargetStore } from '../features/map/map-target-store'
 import {
   filterMissionReviewMarkers,
@@ -66,7 +67,14 @@ export function MissionReviewWorkspace() {
   // map (DON-176): render it as a non-blocking docked, read-only panel. When
   // there is no live mission (idle/recovery review), there are no live controls
   // to protect, so it stays a full-screen modal review surface.
-  const docked = missionPhase === 'active' || missionPhase === 'paused'
+  // When the mission ends while another workspace (Settings, say) or a question
+  // (the Finish confirmation) is open, Review stays docked until it closes,
+  // rather than cover it or be refused and close.
+  const liveDocked = missionPhase === 'active' || missionPhase === 'paused'
+  const blockerCount = useWorkspaceBlockerCount()
+  const [docked, setDocked] = useState(liveDocked)
+  const nextDocked = liveDocked || (docked && open && blockerCount > 0)
+  if (nextDocked !== docked) setDocked(nextDocked)
   const controller = useMissionReviewStore((state) => state.controller)
   const reviewSource = useMissionReviewStore((state) => state.source)
   const archiveSession = useMissionReviewStore((state) => state.archiveSession)

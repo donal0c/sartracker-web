@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { openMissionSections } from './helpers/mission-sections'
+import { openMissionPanel, openMissionReview } from './helpers/workspace-panels'
 
 test('recovers an expired Search Operations page and records without resetting Review [DON-279]', async ({ page }) => {
   await page.goto('/?missionHarness=1&missionModel=1')
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('Train D Review recovery')
   await page.getByTestId('mission-start-btn').click()
   await openMissionSections(page, ['outings'])
@@ -19,7 +21,7 @@ test('recovers an expired Search Operations page and records without resetting R
       geometry_json: '{"type":"Polygon","coordinates":[[[-9.7,52],[-9.69,52],[-9.69,52.01],[-9.7,52]]]}',
     })
   })
-  await page.getByTestId('open-mission-review-workspace').click()
+  await openMissionReview(page)
   await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
   await expect(page.getByTestId('search-operation-areas-page-controls')).toContainText('Showing 25 of 26')
   await page.getByTestId('search-operation-coordinator').fill('Coordinator D')

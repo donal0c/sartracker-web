@@ -70,14 +70,17 @@ describe('DrawingToolbar', () => {
     expect(document.querySelector('[data-testid="drawing-tool-text_label"]')).not.toBeNull()
   })
 
-  it('still shows Select as the active-mode chip when select mode is the fallback', async () => {
+  it('never shows Select when no tool is active; the collapsed toolbar shows no mode chip (DON-341)', async () => {
+    // The team asked three times for "Select" to go from Map Tools.
     const { DrawingToolbar } = await import('../../src/components/drawing-toolbar')
     useDrawingStore.setState({ activeTool: 'select' })
 
     render(React.createElement(DrawingToolbar))
 
     const chip = document.querySelector('[data-testid="drawing-toolbar-active-mode"]')
-    expect(chip?.textContent).toContain('Select')
+    // Collapsed, there is no mode chip at all; expanded, the header says Open.
+    expect(chip).toBeNull()
+    expect(document.body.textContent).not.toContain('Select')
   })
 
   it('shows drawing input failures even when no dialog is open', async () => {

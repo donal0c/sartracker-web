@@ -35,6 +35,8 @@ import {
   runBounded,
 } from '../build/electron-repair-train-d-smoke-lib.js'
 import { openMissionSection } from './mission-sections.mjs'
+import { confirmFinishMission, openReviewFromMission, selectParticipants } from './operator-controls.mjs'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -661,12 +663,8 @@ async function attestPackagedInputs(app, appPath, page) {
 /** Exercises AUD-08 through the operator UI plus real provider-driven backfill. */
 async function runAud08({ launch, provider, evidenceDir }) {
   const page = launch.page
-  const picker = page.getByTestId('participant-group-picker')
-  await boundedPageAction(page,
-    () => picker.getByRole('checkbox').first().waitFor({ state: 'visible' }),
-    'AUD-08 participant group picker',
-  )
-  await boundedPageAction(page, () => picker.getByRole('checkbox').first().check(), 'AUD-08 select participant group')
+  // The group picker may sit inside "Change who's taking part" (DON-341).
+  await boundedPageAction(page, () => selectParticipants(page, { kind: 'group' }), 'AUD-08 select participant group')
   await boundedPageAction(page,
     () => page.getByTestId('mission-name-input').fill('Repair Train D participant backfill'),
     'AUD-08 mission name',
@@ -784,11 +782,7 @@ async function runAud08({ launch, provider, evidenceDir }) {
   await boundedPageScreenshot(page, { path: progressScreenshot, fullPage: true }, 'AUD-08 progress screenshot')
   launch.screenshots.push(progressScreenshot)
 
-  await boundedPageAction(page, () => page.getByTestId('mission-finish-btn').click(), 'AUD-08 open finish dialog')
-  await boundedPageAction(page,
-    () => page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish', exact: true }).click(),
-    'AUD-08 attempt finish',
-  )
+  await boundedPageAction(page, () => confirmFinishMission(page), 'AUD-08 attempt finish from the Mission panel')
   const finishBlocked = await waitForValue(
     () => page.locator('body').innerText(),
     (text) => text.toLowerCase().includes('participant history backfill') && text.toLowerCase().includes('incomplete'),
@@ -881,7 +875,7 @@ async function runAud09({ launch, evidenceDir, profile }) {
   assert.equal(readonly.backup.searchOperationsGeneration, firstPage.generation)
 
   await boundedPageAction(page,
-    () => page.getByTestId('open-mission-review-workspace').click(),
+    () => openReviewFromMission(page),
     'AUD-09 open mission review workspace',
   )
   await boundedPageAction(page,
@@ -1040,12 +1034,8 @@ async function ensureMissionActive(page, missionId) {
     'mission state to hydrate after packaged restart',
   )
   if (state.active?.id === missionId && state.active.status === 'active') return
-  const dialog = page.getByTestId('mission-recovery-dialog')
-  await boundedPageAction(page, () => dialog.waitFor({ state: 'visible' }), 'show mission recovery dialog')
-  await boundedPageAction(page,
-    () => dialog.getByRole('button', { name: 'Resume', exact: true }).click(),
-    'resume recovered mission',
-  )
+  // The Resume card (DON-342); it not appearing, or staying, fails.
+  await boundedPageAction(page, () => resumeThroughRecoveryPrompt(page, { timeoutMs: CONDITION_TIMEOUT_MS }), 'resume recovered mission')
   await waitForValue(
     () => readActiveMission(page),
     (value) => value?.id === missionId && value.status === 'active',

@@ -6,7 +6,7 @@ describe('PR-1 operator manual [DON-268] [DON-269]', () => {
   it('documents stationary attention, tracking loss and the warnings volunteers must act on, with screenshots', () => {
     const manual = readFileSync('public/manual/index.html', 'utf8')
     expect(manual).toContain('not an emergency declaration')
-    expect(manual).toContain('Disconnected · retrying')
+    expect(manual).toContain('TRACKING LOST: positions on the map may not be current')
     expect(manual).toContain('MISSION BREADCRUMB STORAGE FAILED')
     expect(manual).toContain('TRACKING REPLACEMENT EVIDENCE UNSETTLED')
     for (const asset of [

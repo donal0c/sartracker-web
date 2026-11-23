@@ -146,7 +146,8 @@ export function useGovernanceAdminRoster(input: GovernanceAdminRosterInput): Gov
     settingsReturnRef.current = unsubscribe
 
     setDecisionOpen(decision, false)
-    useSettingsWorkspaceStore.getState().openWorkspace('admin-roster')
+    // The decision has just closed itself and reopens on return, so it is not hidden.
+    useSettingsWorkspaceStore.getState().openWorkspace('admin-roster', { replacesQuestion: true })
   }
 
   return {

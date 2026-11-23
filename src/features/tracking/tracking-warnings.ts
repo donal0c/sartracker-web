@@ -23,6 +23,10 @@ export type TrackingWarningCode =
   | 'roster_refreshing'
   | 'roster_unavailable'
   | 'tracking_not_configured'
+  /** The saved tracking password or token cannot be used and must be entered again in Settings. */
+  | 'tracking_credentials_unreadable'
+  /** settings.json was damaged and set aside; the Traccar settings must be entered again (M-47). */
+  | 'tracking_settings_unreadable'
   | 'tracking_reconnecting'
   | 'tracking_reconnect_failed'
   | 'evidence_custody_unsettled'
@@ -36,6 +40,8 @@ export type TrackingWarningCode =
   | 'mission_storage_rows_rejected'
   | 'source_position_id_reused'
   | 'participant_scope'
+  /** A participant's history cannot be downloaded because the mission has no record of the device. */
+  | 'participant_history_unavailable'
   /** A warning that reached the status without a code: reported, never dropped. */
   | 'unclassified'
 

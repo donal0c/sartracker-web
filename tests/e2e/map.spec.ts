@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M2 map shell', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,8 +10,9 @@ test.describe('M2 map shell', () => {
 
   test('renders the map canvas and basemap controls', async ({ page }) => {
     await expect(page.locator('canvas').first()).toBeVisible()
-    await expect(page.getByTestId('system-status-value')).toContainText('Browser test')
-    await expect(page.getByTestId('system-status-detail')).toContainText('Session storage only')
+    // Was the mast's system status cell; the safety banner says it now (DON-341).
+    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText('Browser testing mode')
+    await expect(page.getByTestId('hosted-browser-testing-banner')).toContainText('stored in this browser session')
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
     await expect(page.getByTestId('map-scale-readout')).toBeVisible()
@@ -60,6 +62,8 @@ test.describe('M2 map shell', () => {
 
   test('keeps compact map controls usable on a narrow operator viewport', async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 700 })
+    // The start card opens over the map at startup (DON-342); close it first.
+    await page.getByTestId('ws-mission-close').click()
     await expect(page.getByTestId('basemap-menu-toggle')).toBeVisible()
     await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
 
@@ -141,21 +145,21 @@ test.describe('M2 map shell', () => {
     expect(layout?.appOverflow).toBeLessThanOrEqual(1)
   })
 
-  test('keeps command mast cells distinct at compact desktop widths [DON-258]', async ({
+  test('keeps top bar items distinct at compact desktop widths [DON-258]', async ({
     page,
   }) => {
     for (const width of [1100, 1280]) {
       await page.setViewportSize({ width, height: 720 })
 
       const layout = await page.evaluate(() => {
-        const mast = document.querySelector('[data-testid="command-mast"]')
-        const grid = mast?.firstElementChild
+        // Was the command mast's cells; the top bar replaced the mast (DON-341).
+        const grid = document.querySelector('[data-testid="ws-top-bar"]')
         if (!(grid instanceof HTMLElement)) {
           return null
         }
 
         const cells = [...grid.children].flatMap((child) => {
-          if (!(child instanceof HTMLElement)) {
+          if (!(child instanceof HTMLElement) || getComputedStyle(child).position === 'absolute') {
             return []
           }
           const rect = child.getBoundingClientRect()
@@ -195,9 +199,10 @@ test.describe('M2 map shell', () => {
   })
 
   test('DON-264 keeps a persistent marker overlay warning visible until verified recovery', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Overlay Warning Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(() => {
       type TestMap = {
@@ -241,7 +246,7 @@ test.describe('M2 map shell', () => {
     try {
       await expect(warning).toBeVisible({ timeout: 5_000 })
       await expect(warning).toContainText(/Markers overlay may be missing or stale.*retrying/iu)
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
       await expect(page.getByTestId('mission-control')).not.toContainText('complete')
       const failedDiagnostics = await page.evaluate(() => {
         const events = JSON.parse(window.sessionStorage.getItem('sartracker:diagnostic-events') ?? '[]') as Array<{
@@ -301,7 +306,7 @@ test.describe('M2 map shell', () => {
       })
       expect(recoveredDiagnostics).toHaveLength(1)
       expect(recoveredDiagnostics[0]?.fields?.overlayFamily).toBe('markers')
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
       await expect(page.getByTestId('mission-control')).not.toContainText('complete')
     } finally {
       await page.evaluate(() => {
@@ -327,6 +332,8 @@ test.describe('M2 map shell', () => {
 
   test('keeps concurrent overlay warnings in a bounded keyboard-scrollable map region', async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 700 })
+    // The start card opens over the map at startup (DON-342); close it first.
+    await page.getByTestId('ws-mission-close').click()
     await page.evaluate(async () => {
       const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
         import('/src/features/map/map-overlay-warning-store.ts'),
@@ -427,7 +434,8 @@ test.describe('M2 map shell', () => {
       if (!(warning instanceof HTMLElement)) return false
       const warningRect = warning.getBoundingClientRect()
       const regionRect = element.getBoundingClientRect()
-      return warningRect.top >= regionRect.top && warningRect.bottom <= regionRect.bottom
+      // The top bar's height is fractional, so allow sub-pixel rounding (DON-341).
+      return warningRect.top >= regionRect.top - 1 && warningRect.bottom <= regionRect.bottom + 1
     })).toBe(true)
     await page.screenshot({ path: 'test-results/don264-concurrent-overlay-warnings-bottom.png' })
   })
@@ -535,9 +543,10 @@ test.describe('M2 map shell', () => {
   test('preserves operator camera when the first tracking update arrives [DON-185]', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Tracking Camera Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     const operatorView = {
       center: [-10.45, 51.55] as [number, number],
@@ -631,16 +640,20 @@ test.describe('M2 map shell', () => {
   })
 
   test('shows the operator-facing tracking status panel', async ({ page }) => {
-    await expect(page.getByTestId('tracking-status')).toBeVisible()
-    await expect(page.getByTestId('tracking-status')).toContainText('Tracking')
-    await expect(page.getByTestId('tracking-status')).toContainText('idle')
-    await expect(page.getByTestId('tracking-status')).toContainText('Tracking is not configured.')
+    // Was the Tracking tab's IDLE chip and "Tracking is not configured." (DON-341).
+    await openWorkspacePanel(page, 'tracking')
+    await expect(page.getByTestId('ws-tracking-panel')).toBeVisible()
+    await expect(page.getByTestId('ws-tracking-headline')).toHaveAttribute('data-condition', 'disconnected')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('Tracking is not connected.')
+    await expect(page.getByTestId('ws-tracking-advice')).toContainText('Check the tracking server in Settings')
   })
 
   test('shows the mission control panel shell', async ({ page }) => {
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-control')).toBeVisible()
-    await expect(page.getByTestId('mission-control')).toContainText('Mission Control')
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    // Was the "Mission Control" heading; before Start it is the New mission card (DON-342).
+    await expect(page.getByTestId('mission-control')).toContainText('New mission')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await expect(page.getByTestId('mission-start-btn')).toBeEnabled()
   })
 
@@ -664,7 +677,7 @@ test.describe('M2 map shell', () => {
     await expect(alert.getByRole('button')).toHaveCount(0)
   })
 
-  test('keeps command mast autosave warnings visible and accessible', async ({ page }) => {
+  test('keeps autosave warnings visible and accessible', async ({ page }) => {
     await page.evaluate(async () => {
       const { useAutosaveStatusStore } = await import(
         '/src/features/persistence/autosave-status-store.ts'
@@ -676,14 +689,10 @@ test.describe('M2 map shell', () => {
       })
     })
 
-    const warning = page.getByTestId('autosave-warning')
+    // Was the mast's autosave chip; the safety banner carries the full sentence (DON-341).
+    const warning = page.getByTestId('focus-autosave-warning')
     await expect(warning).toBeVisible()
-    await expect(warning).toContainText('Autosave warning')
-    await expect(warning).toHaveAttribute('title', /Autosave failing: backup volume unavailable/)
-    await expect(warning).toHaveAttribute(
-      'aria-label',
-      /Autosave failing: backup volume unavailable/,
-    )
+    await expect(warning).toContainText(/Autosave failing: backup volume unavailable/)
     await expect(warning).toHaveAttribute('role', 'status')
   })
 

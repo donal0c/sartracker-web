@@ -18,11 +18,14 @@ import {
   closeWorkspace,
   connectProvider,
   finishMission,
+  missionPhase,
   placeMarker,
   resumeIfPrompted,
+  returnReplayToLive,
   startMission,
   switchBasemap,
 } from '../lib/operator.mjs'
+import { moreMenuItem, openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { finalizeQuitFindings, readFinalizeQuitState } from '../lib/finalize-quit.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { seedLivedInProfile } from '../lib/lived-in.mjs'
@@ -44,17 +47,58 @@ async function writeGpx(file) {
 }
 
 /**
+ * After a relaunch, requires the saved watch to be listed with the resumed
+ * line, the file dropped while the app was closed to import, and a file
+ * dropped now to import on the next periodic scan [DON-337]. Returns findings.
+ */
+async function checkWatchResumedAfterRelaunch(app, profile, missionId, watchDirectory, beforeRelaunchFile) {
+  const findings = []
+  const importedPaths = () => withStore(profile, (db) => db.prepare(
+    'SELECT source_path FROM gpx_track_imports WHERE mission_id = ? AND retired_at IS NULL',
+  ).all(missionId).map((row) => row.source_path))
+  const waitForImport = async (file, timeoutMs) => {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (importedPaths().includes(file)) return true
+      await delay(1000)
+    }
+    return false
+  }
+  const summary = await app.page.getByTestId('gpx-import-summary').innerText().catch(() => '')
+  const watchList = await app.page.getByTestId('gpx-watch-list').innerText().catch(() => '')
+  const notice = await app.page.getByTestId('gpx-watch-notice').innerText().catch(() => '')
+  if (!/1 watched/u.test(summary) || !watchList.includes(watchDirectory)) {
+    findings.push(`the watched folder was forgotten after a restart: summary "${summary}" (DON-337)`)
+  }
+  if (!/Resumed watching 1 folder/u.test(notice)) findings.push(`no "Resumed watching" line after a restart: "${notice}" (DON-337)`)
+  if (!await waitForImport(beforeRelaunchFile, 20_000)) {
+    findings.push('a GPX file dropped into the watched folder while the app was closed was not imported after the restart (DON-337)')
+  }
+  const afterRelaunchFile = path.join(watchDirectory, 'dropped-after-restart.gpx')
+  await writeGpx(afterRelaunchFile)
+  // The watch rescans every 30 s.
+  if (!await waitForImport(afterRelaunchFile, 45_000)) {
+    findings.push('a GPX file dropped into the watched folder after the restart was not imported within 45 s (DON-337)')
+  }
+  await app.shot('gpx-watch-resumed')
+  return findings
+}
+
+/**
  * Counts drawn segments of imported GPX tracks after centring on the smoke
  * walk, so "on the map" means rendered, not only stored [DON-319]. A missing
  * map handle is a tool error, not a product result.
  */
-async function drawnGpxSegments(page) {
-  const count = () => page.evaluate(() => {
+async function drawnGpxSegments(page, importId) {
+  // Count only the given import when named: the DON-337 watch imports more
+  // copies of the same walk, which must not stand in for it [DON-319].
+  const count = () => page.evaluate((onlyImportId) => {
     const map = window.__SARTRACKER_MAP__
     if (map === undefined) throw new Error('The map handle is not available; GPX drawing cannot be checked.')
     if (map.getLayer('mission-gpx-imports-line') === undefined) return 0
-    return map.queryRenderedFeatures({ layers: ['mission-gpx-imports-line'] }).length
-  })
+    return map.queryRenderedFeatures({ layers: ['mission-gpx-imports-line'] })
+      .filter((feature) => onlyImportId === undefined || feature.properties?.gpxImportId === onlyImportId).length
+  }, importId)
   await page.evaluate(() => window.__SARTRACKER_MAP__?.jumpTo({ center: [-9.6971, 51.9729], zoom: 14 }))
   let drawn = 0
   for (let attempt = 0; attempt < 10 && drawn === 0; attempt += 1) {
@@ -139,7 +183,7 @@ async function quitDuringFinalizeRound(ctx, profile, { label, waitForAdmission }
   if (archiveId === undefined) {
     findings.push('no archive row was stored')
   } else {
-    await app.page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(app.page)
     await delay(1500)
     await app.page.getByTestId(`archive-review-select-${archiveId}`).click({ timeout: 15_000 })
     await app.page.getByTestId('archive-review-secret').fill(ARCHIVE_PASSPHRASE)
@@ -235,6 +279,7 @@ export default [
     manualSteps: [
       'Import through the native file picker and verify all 30 GPX points and the marker attachment are shown.',
       'Check the GPX track is drawn straight after Import Files and after a watched-folder scan, without a relaunch (the smoke imports through the store bridge, so it checks the draw only after a relaunch) [DON-319].',
+      'Add a watch with Tools → GPX Tracks → Watch Folder (native picker), restart, and check the folder is still listed with the "Resumed watching" line (the smoke saves the watch through the bridge) [DON-337].',
     ],
     async run(ctx) {
       const profile = path.join(ctx.runDir, 'profile')
@@ -260,6 +305,20 @@ export default [
       expectProduct(imported?.imports?.length === 1 && imported.failures?.length === 0,
         `GPX import returned ${JSON.stringify(imported).slice(0, 200)}.`)
 
+      // DON-337: a watched folder must survive a clean restart and keep importing.
+      // The native folder picker cannot be driven, so the watch is saved through
+      // the same bridge call the renderer makes; the profile folder is app-owned.
+      const watchDirectory = path.join(profile, 'gpx-watch')
+      await mkdir(watchDirectory, { recursive: true })
+      const savedWatch = await app.page.evaluate(async (directory) => {
+        const mission = await window.sartrackerElectron.missionStore.getActiveMission()
+        await window.sartrackerElectron.saveWatchedGpxFolders({ missionId: mission.id, paths: [directory] })
+        return { missionId: mission.id, saved: await window.sartrackerElectron.loadWatchedGpxFolders(mission.id) }
+      }, watchDirectory)
+      expectProduct(savedWatch.saved?.paths?.[0] === watchDirectory,
+        `The watched folder was not saved: ${JSON.stringify(savedWatch.saved).slice(0, 200)}.`)
+      const beforeRelaunchFile = path.join(watchDirectory, 'dropped-while-closed.gpx')
+
       // DON-319: the store bridge bypasses the renderer's GPX runtime, which is
       // what refreshes the panel and map after Import Files or a watched-folder
       // scan (no dialog override exists to drive those). So the draw is
@@ -269,18 +328,21 @@ export default [
       const findings = []
       const importId = imported?.imports?.[0]?.id
       await app.stop()
+      await writeGpx(beforeRelaunchFile)
       app = await launchApp(ctx, { profile, label: 'markers-gpx-relaunch' })
       await resumeIfPrompted(app.page, 15_000)
-      await app.page.getByTestId('sidebar-tab-tools').click().catch(() => {})
+      await openWorkspacePanel(app.page, 'tools')
       await delay(1500)
       await app.shot('markers-gpx-relaunch')
-      if (await drawnGpxSegments(app.page) === 0) findings.push('the imported GPX track was not drawn after a relaunch (DON-319)')
+      const watchFindings = await checkWatchResumedAfterRelaunch(app, profile, savedWatch.missionId, watchDirectory, beforeRelaunchFile)
+      findings.push(...watchFindings)
+      if (await drawnGpxSegments(app.page, importId) === 0) findings.push('the imported GPX track was not drawn after a relaunch (DON-319)')
       const basemap = await switchBasemap(app.page)
-      if (await drawnGpxSegments(app.page) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
-      await app.page.getByTestId('sidebar-tab-layers').click()
+      if (await drawnGpxSegments(app.page, importId) === 0) findings.push(`the GPX track was not drawn after switching the basemap to ${basemap} (DON-319)`)
+      await openWorkspacePanel(app.page, 'layers')
       await app.page.getByTestId('layer-visibility-group-gpx-tracks').uncheck()
       const hiddenDrawn = await drawnGpxSegments(app.page)
-      await app.page.getByTestId('sidebar-tab-tools').click()
+      await openWorkspacePanel(app.page, 'tools')
       await delay(1500)
       const summary = await app.page.getByTestId('gpx-import-summary').innerText().catch(() => '')
       const trackState = await app.page.getByTestId(`gpx-map-visibility-${importId}`).innerText().catch(() => '')
@@ -290,7 +352,7 @@ export default [
         findings.push(`a GPX track hidden in Layers was not described as hidden: summary "${summary}", track "${trackState}" (DON-319)`)
       }
       await app.page.getByTestId(`gpx-show-on-map-${importId}`).click()
-      if (await drawnGpxSegments(app.page) === 0) findings.push('"Show on map" did not draw the hidden GPX track again (DON-319)')
+      if (await drawnGpxSegments(app.page, importId) === 0) findings.push('"Show on map" did not draw the hidden GPX track again (DON-319)')
       await app.stop()
       expectProduct(findings.length === 0, `${findings.join('; ')}.`)
       const markers = withStore(profile, (db) => db.prepare('SELECT name FROM markers').all().map((row) => row.name))
@@ -308,6 +370,7 @@ export default [
       expectProduct(attachmentMatch, 'No byte-identical copy of the attached photo was stored in the profile.')
       return `On a ${livedIn}: 2 markers stored; photo attachment stored byte-identical; GPX (30 timed points) imported via the app's import bridge, `
         + 'drawn after a relaunch and after a basemap switch; hidden in Layers it was described as hidden and "Show on map" drew it again. '
+        + 'A watched folder saved before a clean restart was still listed and "Resumed watching" after it; a file dropped while closed and one dropped after the relaunch both imported [DON-337]. '
         + 'Not automated: the draw straight after Import Files or a watched-folder scan (the bridge import bypasses the renderer\'s GPX runtime) and the native file picker; check both by hand.'
     },
   },
@@ -325,7 +388,7 @@ export default [
       await connectProvider(app.page, mock.url)
       await startMission(app.page, 'Replay Smoke', ['Walker Alpha', 'Walker Bravo'])
       await delay(150_000)
-      await t('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1200)
       await app.page.getByRole('button', { name: 'Replay', exact: true }).click()
       await delay(1500)
@@ -337,11 +400,11 @@ export default [
       const state = (await t('mission-replay-reconstructed-state').innerText().catch(() => '')).replace(/\s+/gu, ' ')
       const replayError = await t('mission-replay-error').innerText().catch(() => null)
       await app.shot('replay')
-      await t('mission-replay-return-live').click().catch(() => {})
-      await delay(1000)
+      const leftReplay = await returnReplayToLive(app.page)
       await closeWorkspace(app.page)
-      const phase = (await t('mission-phase-chip').innerText()).trim()
+      const phase = await missionPhase(app.page)
       expectProduct(replayError === null && state !== '', `Replay did not reconstruct state: ${replayError ?? 'empty state'}.`)
+      expectProduct(leftReplay === 'live', `Return to Live / now did not bring back the live map context (${leftReplay}).`)
       expectProduct(/ACTIVE/i.test(phase), `Live mission became ${phase} after replay.`)
       const basemaps = []
       for (const name of ['ESRI Satellite', 'OpenStreetMap', 'ESRI World Topo', 'OpenTopoMap']) {
@@ -375,7 +438,7 @@ export default [
       expectProduct(archived, `Archive did not complete: ${(await bodyText(app.page)).slice(0, 200)}`)
       await app.stop()
       app = await launchApp(ctx, { profile, label: 'archive-2-reopen' })
-      await app.page.getByTestId('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1500)
       await app.page.locator('[data-testid^=archive-review-select-]').first().click()
       await app.page.getByTestId('archive-review-secret').fill('Wrong-Passphrase-123!')
@@ -434,7 +497,7 @@ export default [
       const secretShown = await t('settings-provider-secret').inputValue()
       await closeWorkspace(app.page)
       const exportStarted = Date.now()
-      await t('open-diagnostics-workspace').click()
+      await (await moreMenuItem(app.page, 'open-diagnostics-workspace')).click()
       await delay(1500)
       await t('diagnostics-export-support-bundle').first().click()
       await delay(4000)

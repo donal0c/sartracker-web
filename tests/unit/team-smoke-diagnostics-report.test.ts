@@ -190,15 +190,20 @@ describe('exportDiagnosticsReport [DON-321]', () => {
     pressFails?: boolean, closeFails?: boolean, onExport?: () => Promise<void>
   }) {
     const clicked: string[] = []
-    const control = (testId: string) => ({
+    // Diagnostics lives in the More menu, which is closed until More is pressed (DON-341).
+    let moreOpen = false
+    type Control = { click: () => Promise<void>, waitFor: () => Promise<void>, isVisible: () => Promise<boolean>, getByTestId: (id: string) => Control }
+    const control = (testId: string): Control => ({
       click: async () => {
         clicked.push(testId)
+        if (testId === 'ws-more-button') moreOpen = true
         if (pressFails && testId === 'open-diagnostics-workspace') throw new Error('no such button')
         if (closeFails && testId === 'workspace-close-btn') throw new Error('close detached')
         if (testId === 'diagnostics-export-report') await onExport()
       },
       waitFor: async () => undefined,
-      isVisible: async () => true,
+      isVisible: async () => testId !== 'ws-more-menu' || moreOpen,
+      getByTestId: control,
     })
     return { clicked, page: { getByTestId: control, waitForFunction: async () => undefined } }
   }
@@ -230,6 +235,7 @@ describe('exportDiagnosticsReport [DON-321]', () => {
     try {
       await expect(exportDiagnosticsReport(page, profile, { timeoutMs: 500 }))
         .resolves.toEqual({ name: 'diagnostics-report-now.txt', text: 'report' })
+      expect(clicked.slice(0, 2)).toEqual(['ws-more-button', 'open-diagnostics-workspace'])
       expect(clicked.at(-1)).toBe('workspace-close-btn')
     } finally {
       await rm(profile, { recursive: true, force: true })

@@ -14,6 +14,9 @@ const BACKUP_STAGES = new Set([
   'validated',
   'sanity_check_started',
   'sanity_checked',
+  'integrity_check_started',
+  'integrity_checked',
+  'space_preflight',
   'renamed',
 ])
 

@@ -11,6 +11,16 @@ export const BUNDLE_BUDGETS = [
     maxBytes: 100_000,
     reason: 'MapLibre CSS is expected but should remain bounded.',
   },
+  {
+    // DON-353: with the classic layout chunk gone, Rolldown folds the shared
+    // chunks into main, so first-paint JS moved into one file rather than
+    // grew: about 575 KB before (main 443 KB + shared 132 KB) and after.
+    // Review stays in main on purpose (PR 76 loads it at startup so the first
+    // press is never lost), so the main chunk gets its own bound.
+    pattern: /^index-.*\.js$/,
+    maxBytes: 600_000,
+    reason: 'Main chunk holds first-paint JS, including Review loaded at startup (PR 76).',
+  },
 ]
 
 export function getBundleBudget(filename) {

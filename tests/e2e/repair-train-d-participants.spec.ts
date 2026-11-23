@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openParticipantPickers } from './helpers/workspace-panels'
 
 test('keeps a re-added group visibly pending until every selected member completes [DON-271]', async ({ page }) => {
   await page.goto('/?missionHarness=1&missionModel=1')
@@ -9,10 +10,12 @@ test('keeps a re-added group visibly pending until every selected member complet
       devices: [{ device_id: '22', name: 'Member A', status: 'online', last_seen: new Date().toISOString(), unique_id: 'train-d-a', category: null, group_id: '101' }],
     })
   })
+  await openParticipantPickers(page)
   await page.getByTestId('participant-group-picker').getByText('Train D team', { exact: true }).click()
   await page.getByTestId('mission-name-input').fill('Train D group progress')
   await page.getByTestId('mission-offset-input').fill('2')
   await page.getByTestId('mission-start-btn').click()
+  await openMissionPanel(page)
   await page.getByTestId('participant-active-list').getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByTestId('participant-active-list')).toContainText('No mission participants')
   const earlierLocal = await page.evaluate(async () => {
@@ -49,6 +52,7 @@ test('keeps a re-added group visibly pending until every selected member complet
   await expect(page.getByTestId('participant-backfill-status')).toContainText('pending / retrying for 1/2 required group members')
   await page.getByTestId('participant-backfill-status').scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('pending-group-progress.png'), fullPage: true })
+  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
   await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
@@ -65,6 +69,7 @@ test('shows unknown legacy group scope and keeps Finish closed [DON-271]', async
       devices: [{ device_id: '1', name: 'Member A', status: 'online', last_seen: new Date().toISOString(), unique_id: 'legacy-a', category: null, group_id: '101' }],
     })
   })
+  await openParticipantPickers(page)
   await page.getByTestId('participant-group-picker').getByText('Legacy team', { exact: true }).click()
   await page.getByTestId('mission-name-input').fill('Train D unknown legacy scope')
   await page.getByTestId('mission-offset-input').fill('2')
@@ -82,12 +87,14 @@ test('shows unknown legacy group scope and keeps Finish closed [DON-271]', async
     }))
   })
   await page.reload()
-  await expect(page.getByTestId('mission-recovery-dialog')).toBeVisible()
-  await page.getByTestId('mission-recovery-dialog').getByRole('button', { name: 'Resume', exact: true }).click()
+  await openMissionPanel(page)
+  await expect(page.getByTestId('start-screen-resume')).toBeVisible()
+  await page.getByTestId('start-screen-resume-btn').click()
   await expect(page.getByTestId('participant-backfill-status')).toContainText('unknown historical group scope')
   await expect(page.getByTestId('participant-backfill-status')).not.toContainText('0/0')
   await page.getByTestId('participant-backfill-status').scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('unknown-legacy-scope.png'), fullPage: true })
+  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish', exact: true }).click()
   await expect(page.getByTestId('mission-control')).toContainText('legacy group history scope is unknown')

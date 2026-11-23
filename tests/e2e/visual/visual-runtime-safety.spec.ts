@@ -97,7 +97,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('autosave stale warning chip remains visible in the command mast', async ({ page }) => {
+  test('autosave stale warning remains visible in the safety banner', async ({ page }) => {
     await startMission(page, 'Visual Autosave Stale')
     await page.evaluate(async () => {
       const { useAutosaveStatusStore } = await import(
@@ -116,35 +116,34 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       useAutosaveStatusStore.getState().markObservedElapsed({ elapsedMs: 11_000 })
     })
 
-    const warning = page.getByTestId('autosave-warning')
+    // The old command mast is gone: the warning shows in the safety banner under the top bar.
+    const warning = page.getByTestId('focus-autosave-warning')
     await expect(warning).toBeVisible()
-    await expect(warning).toContainText('Autosave warning')
-    await expect(warning).toHaveAttribute('title', /Autosave stale:/)
-    await expect(warning).toHaveAttribute('aria-label', /Autosave stale:/)
+    await expect(warning).toContainText('Autosave stale:')
     await expect(warning).toHaveAttribute('role', 'status')
+    await expect(page.getByTestId('current-mission-name')).toContainText('Visual Autosave Stale')
 
-    await captureElementAndRegister(page, 'command-mast', {
-      testId: 'runtime-autosave-stale-mast',
-      testName: 'Autosave stale warning in command mast',
+    await captureElementAndRegister(page, 'hosted-browser-testing-banner', {
+      testId: 'runtime-autosave-stale-banner',
+      testName: 'Autosave stale warning in the safety banner',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker command mast with a stale autosave warning:
-1. The mission should be active and named "Visual Autosave Stale"
-2. The System Status area should remain visible in the mast
-3. An amber "Autosave warning" chip should be visible in the System Status area
-4. The warning should not be hidden behind menus, clipped out of the mast, or visually lost
-5. The warning should read as cautionary, not as a green operational-ready state
+      verificationPrompt: `Verify this screenshot of the SAR Tracker safety banner under the top bar with a stale autosave warning:
+1. The browser testing notice should remain visible at the top of the banner
+2. A line beginning "Autosave stale:" should be visible below it
+3. The warning should not be hidden behind menus, clipped, or visually lost
+4. The banner should read as cautionary (amber), not as a green operational-ready state
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'autosave-warning is visible',
-        'autosave-warning title contains Autosave stale',
-        'autosave-warning aria-label contains Autosave stale',
-        'autosave-warning role is status',
+        'focus-autosave-warning is visible in the safety banner',
+        'warning contains Autosave stale',
+        'warning role is status',
+        'top bar names the running mission',
       ],
     })
   })
 
-  test('autosave failure remains visible in focus mode with lifecycle alert detail', async ({ page }) => {
+  test('autosave failure remains visible in the safety banner with lifecycle alert detail', async ({ page }) => {
     await startMission(page, 'Visual Autosave Failure')
     await page.evaluate(async () => {
       const { useAutosaveStatusStore } = await import(
@@ -156,9 +155,6 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         now: new Date('2026-05-16T09:00:00.000Z'),
       })
     })
-    await page.getByTestId('focus-mode-toggle').click()
-
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
     await expect(page.getByTestId('focus-autosave-warning')).toContainText(
       'Autosave failing: backup volume unavailable',
     )
@@ -170,20 +166,19 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     )
 
     await captureElementAndRegister(page, 'hosted-browser-testing-banner', {
-      testId: 'runtime-autosave-failure-focus',
-      testName: 'Autosave failure visible in focus mode',
+      testId: 'runtime-autosave-failure-banner',
+      testName: 'Autosave failure visible in the safety banner',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker focus-mode safety banner stack after a lifecycle autosave failure:
+      verificationPrompt: `Verify this screenshot of the SAR Tracker safety banner stack after a lifecycle autosave failure:
 1. The browser testing notice should remain visible at the top of the banner
-2. The focus-mode autosave warning should include the exact failure message "backup volume unavailable"
+2. The autosave warning should include the exact failure message "backup volume unavailable"
 3. A stronger "Lifecycle backup failed" alert should be visible below the browser testing notice
 4. The lifecycle alert should explain that the mission state change saved but the safety backup did not complete
 5. The lifecycle alert should not have a dismiss button
 6. The failure should read as an obvious safety warning, not as a green/ready state
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'app-shell data-focus-mode is true',
         'focus-autosave-warning contains the injected autosave failure',
         'lifecycle-backup-failure-banner contains Lifecycle backup failed',
         'lifecycle-backup-failure-banner contains backup volume unavailable',
@@ -227,7 +222,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     try {
       await expect(warning).toBeVisible({ timeout: 5_000 })
       await expect(warning).toContainText(/Markers overlay may be missing or stale/u)
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+      await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
       await expect(warning.getByRole('button')).toHaveCount(0)
 
       await captureAndRegister(page, {
@@ -236,7 +232,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         area: 'recovery',
         severity: 'critical',
         verificationPrompt: `Verify this screenshot of SAR Tracker during a persistent marker overlay synchronization failure:
-1. The map workspace and active mission controls remain visible
+1. The map workspace remains visible and the top bar still shows the mission as Running
 2. A high-visibility alert appears over the map and names the Markers overlay
 3. The message says the overlay may be missing or stale and that SAR Tracker is retrying
 4. The guidance tells the operator to verify against an independent operational source and export Diagnostics if the problem remains

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 // Chromium with WebGL switched off reproduces the blocklisted-GPU launch the
 // test box showed without --ignore-gpu-blocklist: a blank window [DON-288].
@@ -15,6 +16,7 @@ test('shows why the map is missing and keeps the shell usable when WebGL is unav
   await expect(page.locator('.maplibregl-canvas')).toHaveCount(0)
 
   // The rest of the shell still works without a map.
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('No WebGL mission')
   await expect(page.getByTestId('mission-name-input')).toHaveValue('No WebGL mission')
   await page.screenshot({ path: 'test-results/don-288-webgl-unavailable.png', fullPage: true })

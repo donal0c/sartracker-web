@@ -51,6 +51,7 @@ import {
 } from '../build/breadcrumb-36h-mock-traccar.js'
 import { hasBreadcrumbReconciliationWarning } from '../build/release-smoke-lib.js'
 import { openMissionSection } from './mission-sections.mjs'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -1510,13 +1511,16 @@ async function resumeRecoveredMission(
   timeoutMs,
   recordMilestone = () => undefined,
 ) {
-  const recoveryDialog = page.getByTestId('mission-recovery-dialog')
-  await recoveryDialog.waitFor({ state: 'attached', timeout: timeoutMs })
-  recordMilestone('recoveryDialogAttached')
-  await recoveryDialog.getByRole('button', { name: 'Resume' }).click({ force: true })
-  recordMilestone('resumeClicked')
-  await recoveryDialog.waitFor({ state: 'detached', timeout: timeoutMs })
-  recordMilestone('recoveryDialogDetached')
+  // The Resume card (DON-342); it not appearing, or staying, fails.
+  await resumeThroughRecoveryPrompt(page, {
+    timeoutMs,
+    click: async (button) => {
+      recordMilestone('recoveryPromptShown')
+      await button.click()
+      recordMilestone('resumeClicked')
+    },
+  })
+  recordMilestone('recoveryPromptGone')
   const mission = await waitForActiveMission(page, timeoutMs)
   recordMilestone('activeMissionObserved')
   if (mission.id !== expectedMissionId) {

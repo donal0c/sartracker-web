@@ -2,22 +2,24 @@
  * Visual verification tests for mission lifecycle.
  *
  * These tests verify the complete mission state machine renders correctly:
- * - Mission start with timers running
- * - Minimized mission control owned by the command mast
- * - Pause state with frozen active search time
+ * - Mission start with timers running in the Mission panel
+ * - The top bar keeping the mission in view while the panel is closed
+ * - Pause state with frozen search time
  * - Finish confirmation dialog
  * - Governance card after finish
- * - Recovery dialog on page reload
+ * - Resume card on page reload
  *
  * LIFE-SAFETY CRITICAL: Mission timers drive search coordination. If the elapsed
  * or active search timers display incorrectly, teams may miscalculate search windows.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { openMissionSections } from '../helpers/mission-sections'
+import { openMissionPanel } from '../helpers/workspace-panels'
 import {
   navigateToHarness,
   startMission,
   pauseMission,
+  finishMission,
 } from './helpers/test-setup'
 import {
   captureElementAndRegister,
@@ -35,9 +37,11 @@ test.describe('Visual: Mission Lifecycle', () => {
     // Let timers advance slightly
     await page.waitForTimeout(2000)
 
+    await openMissionPanel(page)
     const missionControl = page.getByTestId('mission-control')
-    await expect(missionControl).toContainText('active')
+    await expect(missionControl).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByTestId('current-mission-name')).toContainText('Ridge Search Alpha')
+    await expect(page.getByTestId('mission-elapsed')).not.toHaveText('00:00:00')
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
     await expect(page.getByTestId('mission-finish-btn')).toBeEnabled()
 
@@ -46,17 +50,16 @@ test.describe('Visual: Mission Lifecycle', () => {
       testName: 'Mission control in active state',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker Mission Control panel in active state. NOTE: this capture is the Mission Control panel only — the mission name is rendered on the command mast outside this element and is verified by separate shell tests. Check only what is in frame:
-1. The section header should show "MISSION CONTROL" with a "lifecycle and timing" subtitle
-2. There should be an "ACTIVE" status indicator at the top right of the panel header, accompanied by a green dot
-3. There should be two timer displays labelled "ELAPSED" and "ACTIVE SEARCH"
-4. Both timers should show a time greater than 00:00:00 (they should be running)
-5. The timers should show roughly the same time since the mission just started
-6. There should be "Pause" and "Finish" buttons that appear enabled/clickable
-7. The mission name input and Start button should NOT be visible while the mission is active
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Mission panel for a running mission. NOTE: this capture is the Mission panel only (headed "Mission" with a Close button) — the mission name, phase and search time are in the top bar outside this element and are verified by the shell tests. Check only what is in frame:
+1. A "SINCE START" timer should show a time greater than 00:00:00 (it should be running)
+2. A "PEOPLE ON THIS MISSION" summary should be visible
+3. A "Review and replay" button should be visible
+4. There should be "Pause" and "Finish" buttons that appear enabled/clickable
+5. The mission name input and Start button should NOT be visible while the mission is running
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-control contains "active"',
+        'mission-control phase is "active"',
+        'mission-elapsed is past 00:00:00',
         'current-mission-name contains "Ridge Search Alpha"',
         'pause-resume button is enabled',
         'finish button is enabled',
@@ -64,35 +67,35 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('minimized mission control moves lifecycle controls out of the side rail', async ({ page }) => {
-    await startMission(page, 'Minimized Mast Check')
-    await page.getByTestId('mission-control-collapse-btn').click()
+  test('top bar keeps the mission in view while the Mission panel is closed', async ({ page }) => {
+    await startMission(page, 'Top Bar Mission Check')
+    await openMissionPanel(page)
+    await page.getByTestId('ws-mission-close').click()
 
-    await expect(page.getByTestId('mission-control-dock')).toBeHidden()
-    await expect(page.getByTestId('command-mast-mission-control-minimized')).toBeVisible()
-    await expect(page.getByTestId('command-mast-mission-control-minimized')).toContainText(
-      'Minimized Mast Check',
-    )
-    await expect(page.getByTestId('compact-mission-restore')).toBeVisible()
-    await expect(page.getByTestId('mission-pause-resume-btn')).toHaveCount(0)
-    await expect(page.getByTestId('mission-finish-btn')).toHaveCount(0)
+    await expect(page.getByTestId('mission-control')).toBeHidden()
+    await expect(page.getByTestId('current-mission-name')).toContainText('Top Bar Mission Check')
+    await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
+    await expect(page.getByTestId('ws-search-time')).toBeVisible()
+    await expect(page.getByTestId('mission-pause-resume-btn')).toBeHidden()
+    await expect(page.getByTestId('mission-finish-btn')).toBeHidden()
 
-    await captureElementAndRegister(page, 'compact-mission-strip', {
-      testId: 'mission-minimized-mast-state',
-      testName: 'Mission Control minimized into the command mast',
+    await captureElementAndRegister(page, 'ws-top-bar', {
+      testId: 'mission-top-bar-panel-closed',
+      testName: 'Top bar keeps the running mission in view with the Mission panel closed',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this element-scoped screenshot of the minimized Mission Control cell in the top command mast:
-1. It should show the active mission name "Minimized Mast Check".
-2. It should show the active state and Active search timer.
-3. It should show visible Review and Restore mission buttons.
-4. It should look like compact command-mast content rather than the full right-rail Mission Control card.
+      verificationPrompt: `Verify this element-scoped screenshot of the SAR Tracker top bar while the Mission panel is closed:
+1. The mission button should show the mission name "Top Bar Mission Check" and the phase "Running".
+2. A "Search time" clock should be visible beside it.
+3. The tracking headline should be visible.
+4. People, Layers, Full map, Settings and More buttons should be visible.
+5. No Pause or Finish button should be visible in the top bar: those stay in the Mission panel.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-control-dock is hidden',
-        'command mast minimized mission cell is visible',
-        'Restore control is visible in the compact mission strip',
-        'pause and finish controls are absent while minimized',
+        'mission-control is hidden',
+        'top bar shows the mission name and Running phase',
+        'search time is visible in the top bar',
+        'pause and finish controls are absent while the panel is closed',
       ],
     })
   })
@@ -154,30 +157,72 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   })
 
   test('back-dated mission shows offset in elapsed timer', async ({ page }) => {
-    await page.getByTestId('mission-name-input').fill('Delayed Start')
-    await page.getByTestId('mission-offset-input').fill('2')
-    await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await startMission(page, 'Delayed Start', 2)
+    await openMissionPanel(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
-    // Timer should show ~2 hours
+    // Both timers should show ~2 hours: time since start in the panel and
+    // the active search time in the top bar.
     await expect(page.getByTestId('mission-elapsed')).toHaveText(/^02:0\d:\d\d$/)
+    await expect(page.getByTestId('ws-search-time')).toHaveText(/^02:0\d:\d\d$/)
 
     await captureElementAndRegister(page, 'mission-control', {
       testId: 'mission-backdated-offset',
       testName: 'Mission with 2-hour back-dated start',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the Mission Control panel for a back-dated SAR mission. NOTE: this capture is the Mission Control panel only — the mission name renders on the command mast outside this element. Check only what is in frame:
-1. The section header should show "MISSION CONTROL"
-2. The status indicator should show "ACTIVE" with a green dot
-3. The ELAPSED timer should show approximately 02:00:XX (about 2 hours), confirming the back-dating offset
-4. The ACTIVE SEARCH timer should show approximately 02:00:XX (about 2 hours)
-5. Pause and Finish buttons should be visible and appear enabled
-6. The mission name input and Start button should NOT be visible
+      verificationPrompt: `Verify this screenshot of the Mission panel for a back-dated SAR mission. NOTE: this capture is the Mission panel only (headed "Mission" with a Close button) — the mission name and search time are in the top bar outside this element. Check only what is in frame:
+1. The "SINCE START" timer should show approximately 02:00:XX (about 2 hours), confirming the back-dating offset
+2. Pause and Finish buttons should be visible and appear enabled
+3. The mission name input and Start button should NOT be visible
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-control contains "active"',
+        'mission-control phase is "active"',
         'mission-elapsed matches 02:0X:XX pattern',
+      ],
+    })
+
+    await captureElementAndRegister(page, 'ws-top-bar', {
+      testId: 'mission-backdated-search-time',
+      testName: 'Top bar search time for a 2-hour back-dated start',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker top bar for a mission back-dated by 2 hours:
+1. The mission button names "Delayed Start" and shows it as Running
+2. The "Search time" clock reads approximately 02:00:XX (about 2 hours), not 00:00:XX, confirming the back-dating reached the top bar
+3. The clock text is whole and readable, not cut off or overlapping other top-bar items
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'ws-search-time matches 02:0X:XX pattern',
+      ],
+    })
+  })
+
+  test('a workspace opened over the Finish question is refused, and the question says why [DON-353]', async ({ page }) => {
+    await startMission(page, 'Refusal Notice')
+    await openMissionPanel(page)
+    await page.getByTestId('mission-finish-btn').click()
+    const finish = page.getByTestId('mission-finish-dialog')
+    await expect(finish).toBeVisible()
+    await page.getByTestId('open-settings-workspace').click()
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('settings-workspace')).toHaveCount(0)
+    await expect(finish).toContainText('Settings did not open. Answer this question first.')
+
+    await captureElementAndRegister(page, 'mission-finish-dialog', {
+      testId: 'mission-finish-workspace-refused',
+      testName: 'Finish question explains that Settings did not open',
+      area: 'mission',
+      severity: 'critical',
+      verificationPrompt: `Verify this screenshot of the SAR Tracker Finish question after the operator pressed Settings while it was waiting:
+1. The Finish question is still shown, with its confirm and cancel choices
+2. It says in plain words "Settings did not open. Answer this question first."
+3. The notice is visible without scrolling and reads as a notice, not as an error that the mission failed
+4. Nothing suggests the mission has already finished
+Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
+      playwrightAssertions: [
+        'Settings workspace did not open',
+        'Finish dialog says Settings did not open. Answer this question first.',
       ],
     })
   })
@@ -186,13 +231,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await startMission(page, 'Pause Test Mission')
     await page.waitForTimeout(2000)
     await pauseMission(page)
-    await page.waitForTimeout(3500)
+    // Let the clock's last tick land before reading the frozen value.
+    await page.waitForTimeout(1500)
+    const frozenSearchTime = await page.getByTestId('ws-search-time').innerText()
+    await page.waitForTimeout(2000)
+    await openMissionPanel(page)
 
     await expect(page.getByTestId('mission-pause-resume-btn')).toHaveText('Resume')
     await expect(page.getByTestId('mission-finish-btn')).toBeEnabled()
-    await expect(page.getByTestId('mission-elapsed')).not.toHaveText(
-      await page.getByTestId('mission-active-search').innerText(),
-    )
+    // Search time is frozen in the top bar while time since start keeps running.
+    await expect(page.getByTestId('ws-search-time')).toHaveText(frozenSearchTime)
+    await expect(page.getByTestId('mission-elapsed')).not.toHaveText(frozenSearchTime)
     // DON-64: the paused state must be unmistakable — a red alarm chip, an
     // explicit text banner, and a dedicated in-banner Resume control.
     await expect(page.getByTestId('mission-phase-chip')).toHaveText('PAUSED')
@@ -205,19 +254,17 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       testName: 'Mission control in paused state',
       area: 'mission',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the Mission Control panel in PAUSED state. NOTE: this capture is the Mission Control panel only — the mission name renders on the command mast outside this element. Check only what is in frame:
-1. The section header should show "MISSION CONTROL"
-2. The status indicator near the top-right should show "PAUSED" (not "ACTIVE") rendered as a bright RED alarm chip — paused is deliberately loud, not a soft amber state
-3. A prominent RED banner should be visible directly under the header reading "MISSION PAUSED" with explanatory text noting active-search time is frozen
-4. That red banner should contain a clearly visible "RESUME MISSION" button
-5. There should be two timer displays labelled "ELAPSED" and "ACTIVE SEARCH"
-6. The ELAPSED timer should be greater than the ACTIVE SEARCH timer (elapsed keeps running, active freezes on pause)
-7. The main pause/resume button should read "Resume" (not "Pause")
-8. There should be a "Finish" button that appears enabled
-9. The mission name input and Start button should NOT be visible
+      verificationPrompt: `Verify this screenshot of the Mission panel in PAUSED state. NOTE: this capture is the Mission panel only (headed "Mission" with a Close button) — the top bar's frozen search time and the red alarm strip are outside this element. Check only what is in frame:
+1. A bright RED "PAUSED" chip should be in the panel header beside Close
+2. A prominent RED banner should be visible under the header reading "MISSION PAUSED" with explanatory text noting active-search time is frozen — paused is deliberately loud, not a soft amber state
+3. That red banner should contain a clearly visible "RESUME MISSION" button
+4. A "SINCE START" timer should be visible
+5. The main pause/resume button should read "Resume" (not "Pause")
+6. There should be a "Finish" button that appears enabled
+7. The mission name input and Start button should NOT be visible
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-control contains "paused"',
+        'top-bar search time stays frozen while since-start keeps running',
         'mission-phase-chip shows "PAUSED"',
         'mission-paused-banner is visible with Resume control',
         'pause-resume button shows "Resume"',
@@ -228,6 +275,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('finish dialog appears with correct confirmation flow', async ({ page }) => {
     await startMission(page, 'Finish Dialog Test')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
 
     await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
@@ -253,17 +301,12 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
   })
 
   test('governance card appears after mission finishes', async ({ page }) => {
     await startMission(page, 'Governance Test')
-    await page.getByTestId('mission-finish-btn').click()
-    await page
-      .getByTestId('mission-finish-dialog')
-      .getByRole('button', { name: 'Confirm Finish' })
-      .click()
-    await page.waitForTimeout(500)
+    await finishMission(page)
 
     const govCard = page.getByTestId('mission-governance-card')
     await expect(govCard).toBeVisible()
@@ -289,11 +332,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('archive custody surface makes one-time recovery controls explicit', async ({ page }) => {
     await startMission(page, 'Synthetic Archive Custody Visual')
-    await page.getByTestId('mission-finish-btn').click()
-    await page
-      .getByTestId('mission-finish-dialog')
-      .getByRole('button', { name: 'Confirm Finish' })
-      .click()
+    await finishMission(page)
     await page.getByTestId('mission-finalize-btn').click()
 
     const custodyDialog = page.getByTestId('mission-archive-custody-dialog')
@@ -363,10 +402,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       () => window.__SARTRACKER_BROWSER_HARNESS__?.readState().currentMissionId ?? null,
     )
     expect(missionId).not.toBeNull()
-    await page.getByTestId('mission-finish-btn').click()
-    await page.getByTestId('mission-finish-dialog')
-      .getByRole('button', { name: 'Confirm Finish' })
-      .click()
+    await finishMission(page)
     await page.evaluate(async (id) => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.injectEvidenceLoss(id)
     }, missionId!)
@@ -394,42 +430,43 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('recovery dialog appears after simulated crash', async ({ page }) => {
+  test('Resume card appears after simulated crash', async ({ page }) => {
     await startMission(page, 'Recovery Scenario')
     // Simulate crash by reloading
     await page.reload()
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 15000 })
     await page.waitForSelector('canvas', { timeout: 20000 })
-    await page.waitForTimeout(1000)
 
-    const recoveryDialog = page.getByTestId('mission-recovery-dialog')
-    await expect(recoveryDialog).toBeVisible()
+    const resumeCard = page.getByTestId('start-screen-resume')
+    await expect(resumeCard).toBeVisible()
+    await expect(page.getByTestId('start-screen-resume-name')).toHaveText('Recovery Scenario')
+    await expect(page.getByTestId('start-screen-resume-btn')).toBeEnabled()
+    await expect(page.getByTestId('start-screen-start-new-instead')).toBeVisible()
 
-    // Capture just the recovery element for clearer visual verification
-    await captureElementAndRegister(page, 'mission-recovery-dialog', {
-      testId: 'mission-recovery-dialog',
-      testName: 'Crash recovery dialog',
+    await captureElementAndRegister(page, 'start-screen-resume', {
+      testId: 'mission-resume-card',
+      testName: 'Resume card after a crash',
       area: 'recovery',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker mission recovery section (embedded in the right sidebar, NOT a modal overlay):
-1. There should be a "RESUME MISSION" section or heading indicating a previous mission can be resumed
-2. The interrupted mission name "Recovery Scenario" should be displayed
-3. There should be a prominent "Resume" button to continue the interrupted mission
-4. There should be a "Start Fresh" button to abandon the interrupted mission and begin a new one
-5. The recovery section should clearly communicate that a previous mission was interrupted and needs an operator decision before continuing
+      verificationPrompt: `Verify this element-scoped screenshot of the SAR Tracker Resume card shown in the Mission panel after a restart:
+1. It should ask "Carry on with your unfinished mission?"
+2. The interrupted mission name "Recovery Scenario" should be displayed with its start time
+3. It should explain that a running mission carries on tracking and a paused one stays paused until resumed
+4. There should be a prominent "Resume Recovery Scenario" button
+5. There should be a separate, less prominent "Start a new mission instead" button
 6. This is critical for operator safety — if the app crashes during a real SAR operation, the operator must be clearly prompted to resume
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'mission-recovery-dialog is visible',
+        'start-screen-resume is visible',
+        'resume card names the interrupted mission',
+        'Resume and Start a new mission instead are both offered',
       ],
     })
-
-    // Clean up: start fresh
-    await page.getByRole('button', { name: 'Start Fresh' }).click()
   })
 })
 
 async function finalizeWithSyntheticArchiveCustody(page: Page): Promise<void> {
+  await openMissionPanel(page)
   await page.getByTestId('mission-finalize-btn').click()
   const dialog = page.getByTestId('mission-archive-custody-dialog')
   await expect(dialog).toBeVisible()

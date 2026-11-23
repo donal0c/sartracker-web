@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 
 import { openMissionSections } from './mission-sections'
+import { openParticipantPickers } from './workspace-panels'
 
 /** Creates the deterministic participant, outing, and Unassigned coverage scenario. */
 export async function seedCoverageMission(page: Page): Promise<void> {
@@ -29,12 +30,13 @@ export async function seedCoverageMission(page: Page): Promise<void> {
       }
     }
   })
+  await openParticipantPickers(page)
   await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
   await page.getByTestId('participant-device-picker').getByText('Bravo Team', { exact: true }).click()
   await page.getByTestId('mission-name-input').fill('Complete Coverage Mission')
   await page.getByTestId('mission-offset-input').fill('2')
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-control')).toContainText('active')
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   await completeParticipantBackfill(page)
 
   await injectCoverageSnapshot(page, 'unassigned', -60)

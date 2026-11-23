@@ -4,6 +4,17 @@ const TRACKING_POLL_LEDGER_STORAGE_KEY = 'sartracker:tracking-poll-ledger'
 
 export const TRACKING_POLL_LEDGER_MAX_ENTRIES = 720
 
+/**
+ * Re-check backlog ranges kept per reconciliation entry. The counts describe
+ * the whole backlog; only the oldest ranges are kept, so an entry no longer
+ * grows with the number of devices behind [DON-367]. This caps ranges, not
+ * bytes: there is no runtime byte limit on the ledger.
+ */
+export const TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES = 3
+
+/** Longest a recorded entry waits before the ledger is written to session storage [DON-367]. */
+export const TRACKING_POLL_LEDGER_FLUSH_DELAY_MS = 1_000
+
 export type TrackingPollFailureKind =
   | 'authentication'
   | 'timeout'
@@ -76,8 +87,17 @@ export type TrackingBreadcrumbReconciliationEntry = {
   readonly pendingDeviceCount: number
   readonly failedDeviceCount: number
   readonly elapsedMs: number
-  /** Re-check ranges still to be re-read (device id and range only) [DON-338]. */
+  /**
+   * The oldest re-check ranges still to be re-read (device id and range only),
+   * at most TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES of them [DON-338, DON-367].
+   */
   readonly recheckBacklog?: readonly TrackingRecheckBacklogRange[]
+  /** Devices with re-check ranges outstanding, counted over the whole backlog. */
+  readonly recheckBacklogDeviceCount?: number
+  /** Re-check ranges outstanding, counted over the whole backlog. */
+  readonly recheckBacklogRangeCount?: number
+  /** Outstanding ranges not kept in `recheckBacklog`. */
+  readonly recheckBacklogOmittedRangeCount?: number
 }
 
 /** One device range the 5-minute re-check has not re-read yet. */
@@ -139,18 +159,29 @@ export function classifyTrackingFailure(error: unknown): TrackingPollFailureKind
   return 'unknown'
 }
 
+/**
+ * The ledger lives in memory and is written to session storage at most once
+ * per TRACKING_POLL_LEDGER_FLUSH_DELAY_MS and when the page is hidden. Before
+ * DON-367 every diagnostic re-read, re-validated and re-wrote the whole stored
+ * ledger, which used most of the renderer once the 5-minute re-check started.
+ * Session storage is read once, when the ledger is first used.
+ */
+let retainedEntries: TrackingPollLedgerEntry[] | null = null
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+let pageHideListenerInstalled = false
+
 /** Stores one identity-free tracking diagnostic entry in a bounded session ledger. */
 export function recordTrackingPollLedgerEntry(entry: TrackingPollLedgerEntry): void {
   const normalized = normalizeTrackingPollLedgerEntry(entry)
   if (typeof window === 'undefined' || normalized === null) {
     return
   }
-  const next = [...readTrackingPollLedger(), normalized].slice(-TRACKING_POLL_LEDGER_MAX_ENTRIES)
-  try {
-    window.sessionStorage.setItem(TRACKING_POLL_LEDGER_STORAGE_KEY, JSON.stringify(next))
-  } catch {
-    // Diagnostic retention must never interfere with live tracking.
+  const entries = loadRetainedEntries()
+  entries.push(normalized)
+  if (entries.length > TRACKING_POLL_LEDGER_MAX_ENTRIES) {
+    entries.splice(0, entries.length - TRACKING_POLL_LEDGER_MAX_ENTRIES)
   }
+  scheduleFlush()
 }
 
 /** Reads the bounded tracking poll ledger for diagnostics export. */
@@ -158,14 +189,53 @@ export function readTrackingPollLedger(): readonly TrackingPollLedgerEntry[] {
   if (typeof window === 'undefined') {
     return []
   }
+  return [...loadRetainedEntries()]
+}
+
+/** Writes any recorded entries to session storage now. */
+export function flushTrackingPollLedger(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  if (typeof window === 'undefined' || retainedEntries === null) {
+    return
+  }
+  try {
+    window.sessionStorage.setItem(TRACKING_POLL_LEDGER_STORAGE_KEY, JSON.stringify(retainedEntries))
+  } catch {
+    // Diagnostic retention must never interfere with live tracking.
+  }
+}
+
+/** Clears the tracking poll ledger for tests and validation harness resets. */
+export function clearTrackingPollLedger(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+  retainedEntries = null
+  if (typeof window !== 'undefined') {
+    window.sessionStorage.removeItem(TRACKING_POLL_LEDGER_STORAGE_KEY)
+  }
+}
+
+function loadRetainedEntries(): TrackingPollLedgerEntry[] {
+  if (retainedEntries === null) {
+    retainedEntries = readStoredEntries().slice(-TRACKING_POLL_LEDGER_MAX_ENTRIES)
+  }
+  return retainedEntries
+}
+
+function readStoredEntries(): TrackingPollLedgerEntry[] {
   try {
     const raw = window.sessionStorage.getItem(TRACKING_POLL_LEDGER_STORAGE_KEY)
     if (raw === null) {
       return []
     }
-    const parsed = JSON.parse(raw) as readonly unknown[]
+    const parsed = JSON.parse(raw) as unknown
     return Array.isArray(parsed)
-      ? parsed.flatMap((entry) => {
+      ? parsed.flatMap((entry: unknown) => {
           const normalized = normalizeTrackingPollLedgerEntry(entry)
           return normalized === null ? [] : [normalized]
         })
@@ -175,11 +245,23 @@ export function readTrackingPollLedger(): readonly TrackingPollLedgerEntry[] {
   }
 }
 
-/** Clears the tracking poll ledger for tests and validation harness resets. */
-export function clearTrackingPollLedger(): void {
-  if (typeof window !== 'undefined') {
-    window.sessionStorage.removeItem(TRACKING_POLL_LEDGER_STORAGE_KEY)
+function scheduleFlush(): void {
+  installPageHideFlush()
+  if (flushTimer !== null) {
+    return
   }
+  flushTimer = setTimeout(flushTrackingPollLedger, TRACKING_POLL_LEDGER_FLUSH_DELAY_MS)
+}
+
+function installPageHideFlush(): void {
+  if (pageHideListenerInstalled) {
+    return
+  }
+  pageHideListenerInstalled = true
+  window.addEventListener('pagehide', flushTrackingPollLedger)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushTrackingPollLedger()
+  })
 }
 
 /** Formats tracking poll evidence and states whether an incident falls inside retained coverage. */
@@ -250,21 +332,69 @@ function describeIncidentCoverage(
   return 'inside retained range'
 }
 
-/** Keeps the well-formed re-check backlog ranges of a ledger entry, if any. */
-function normalizeRecheckBacklog(
-  input: unknown,
-): { readonly recheckBacklog?: readonly TrackingRecheckBacklogRange[] } {
+type NormalizedRecheckBacklog = {
+  readonly recheckBacklog?: readonly TrackingRecheckBacklogRange[]
+  readonly recheckBacklogDeviceCount?: number
+  readonly recheckBacklogRangeCount?: number
+  readonly recheckBacklogOmittedRangeCount?: number
+}
+
+/**
+ * Keeps the oldest well-formed re-check backlog ranges of a ledger entry,
+ * ordered by start time across all devices (ties by device id, then end), with
+ * counts over the whole backlog. Counts already stored with a trimmed entry are
+ * kept; otherwise they are counted from the ranges given [DON-367].
+ */
+function normalizeRecheckBacklog(candidate: Record<string, unknown>): NormalizedRecheckBacklog {
+  const input = candidate.recheckBacklog
   if (!Array.isArray(input)) return {}
-  const ranges: TrackingRecheckBacklogRange[] = []
+  const kept: { readonly deviceId: string; readonly fromMs: number; readonly toMs: number }[] = []
+  const deviceIds = new Set<string>()
+  let validCount = 0
   for (const entry of input as readonly unknown[]) {
     if (typeof entry !== 'object' || entry === null) continue
     const range = entry as Record<string, unknown>
-    const from = normalizeTimestamp(range.from)
-    const to = normalizeTimestamp(range.to)
-    if (typeof range.deviceId !== 'string' || from === null || to === null) continue
-    ranges.push({ deviceId: range.deviceId, from, to })
+    if (typeof range.deviceId !== 'string' || typeof range.from !== 'string' || typeof range.to !== 'string') continue
+    const fromMs = Date.parse(range.from)
+    const toMs = Date.parse(range.to)
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) continue
+    validCount += 1
+    deviceIds.add(range.deviceId)
+    const candidateRange = { deviceId: range.deviceId, fromMs, toMs }
+    const at = kept.findIndex((existing) => compareBacklogRanges(candidateRange, existing) < 0)
+    if (at === -1) {
+      if (kept.length < TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES) kept.push(candidateRange)
+    } else {
+      kept.splice(at, 0, candidateRange)
+      if (kept.length > TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES) kept.pop()
+    }
   }
-  return { recheckBacklog: ranges }
+  const ranges: TrackingRecheckBacklogRange[] = kept.map((range) => ({
+    deviceId: range.deviceId,
+    from: new Date(range.fromMs).toISOString(),
+    to: new Date(range.toMs).toISOString(),
+  }))
+  const omitted = validCount - ranges.length
+  const storedRangeCount = normalizeCount(candidate.recheckBacklogRangeCount)
+  const storedDeviceCount = normalizeCount(candidate.recheckBacklogDeviceCount)
+  const storedOmitted = normalizeCount(candidate.recheckBacklogOmittedRangeCount)
+  const trimmedBefore = storedRangeCount !== null && storedOmitted !== null && storedDeviceCount !== null
+  return {
+    recheckBacklog: ranges,
+    recheckBacklogDeviceCount: trimmedBefore ? storedDeviceCount : deviceIds.size,
+    recheckBacklogRangeCount: trimmedBefore ? storedRangeCount : ranges.length + omitted,
+    recheckBacklogOmittedRangeCount: trimmedBefore ? storedOmitted : omitted,
+  }
+}
+
+/** Oldest start first; ties by device id, then by end. */
+function compareBacklogRanges(
+  left: { readonly deviceId: string; readonly fromMs: number; readonly toMs: number },
+  right: { readonly deviceId: string; readonly fromMs: number; readonly toMs: number },
+): number {
+  if (left.fromMs !== right.fromMs) return left.fromMs - right.fromMs
+  if (left.deviceId !== right.deviceId) return left.deviceId < right.deviceId ? -1 : 1
+  return left.toMs - right.toMs
 }
 
 function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEntry | null {
@@ -314,7 +444,7 @@ function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEnt
       pendingDeviceCount: counts[4]!,
       failedDeviceCount: counts[5]!,
       elapsedMs: counts[6]!,
-      ...normalizeRecheckBacklog(candidate.recheckBacklog),
+      ...normalizeRecheckBacklog(candidate),
     }
   }
   const phase = normalizePhase(candidate.phase)

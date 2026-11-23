@@ -29,6 +29,28 @@ export async function startTrackingSoakMockServer(options) {
     prioritySourceActive: false,
   }
   const requestLog = []
+  // Every history request, kept apart from the bounded request log so device
+  // polls cannot crowd it out. It shows whether a reader asked for a window
+  // after a restart, and what the mock answered [DON-367].
+  const historyRequests = []
+  let droppedHistoryRequests = 0
+  const resumes = []
+  const recordHistoryRequest = (requestUrl, status, returned, reply) => {
+    if (historyRequests.length >= MAX_HISTORY_REQUEST_EVIDENCE) {
+      droppedHistoryRequests += 1
+      return
+    }
+    historyRequests.push({
+      atMs: Date.now(),
+      deviceId: requestUrl.searchParams.get('deviceId'),
+      from: requestUrl.searchParams.get('from'),
+      to: requestUrl.searchParams.get('to'),
+      batch: state.completedBatches,
+      status,
+      returned,
+      reply,
+    })
+  }
   let historyMode = 'allow'
   let currentMode = 'allow'
   let persistChain = Promise.resolve()
@@ -95,7 +117,8 @@ export async function startTrackingSoakMockServer(options) {
       if (request.method === 'GET' && requestUrl.pathname === '/api/positions') {
         const deviceId = requestUrl.searchParams.get('deviceId')
         if (deviceId !== null && historyMode === 'hold-503') {
-        recordRequest(request, requestUrl, 503, startedAtMs, requestLog)
+          recordHistoryRequest(requestUrl, 503, 0, 'held')
+          recordRequest(request, requestUrl, 503, startedAtMs, requestLog)
           sendJson(response, 503, { error: 'synthetic history hold' })
           return
         }
@@ -120,6 +143,14 @@ export async function startTrackingSoakMockServer(options) {
             requestUrl.searchParams.get('to'),
           )
         sendJson(response, 200, positions)
+        if (deviceId !== null) {
+          recordHistoryRequest(
+            requestUrl,
+            200,
+            positions.length,
+            describeBreadcrumbReply(options, state.completedBatches, Number(deviceId), requestUrl.searchParams.get('from')),
+          )
+        }
         recordRequest(request, requestUrl, 200, startedAtMs, requestLog, positions, sourceResponseState)
         return
       }
@@ -153,6 +184,7 @@ export async function startTrackingSoakMockServer(options) {
     baseUrl: `http://127.0.0.1:${address.port}`,
     snapshot: () => ({ ...state }),
     resume: async () => {
+      resumes.push({ atMs: Date.now(), batch: state.completedBatches })
       consumedPauseCheckpoints.add(state.completedBatches)
       state.paused = false
       await persistState()
@@ -190,6 +222,11 @@ export async function startTrackingSoakMockServer(options) {
       currentMode = next
     },
     requestLog: () => requestLog.map((entry) => ({ ...entry })),
+    historyRequestEvidence: () => ({
+      requests: historyRequests.map((entry) => ({ ...entry })),
+      resumes: resumes.map((entry) => ({ ...entry })),
+      droppedRequests: droppedHistoryRequests,
+    }),
     prioritySnapshot: () => ({
       historyMode,
       currentMode,
@@ -368,6 +405,23 @@ function buildAllCurrentPositions(options, batch, prioritySourceVersion = 0) {
         ),
       )
   return [...moving, ...stationary]
+}
+
+/** Upper bound on retained history-request evidence; later requests are counted, not kept. */
+const MAX_HISTORY_REQUEST_EVIDENCE = 250_000
+
+/**
+ * Names which reply a history request received: the exact window, the current
+ * batch (a window starting after every published fix), or nothing (a device
+ * that never moves).
+ */
+function describeBreadcrumbReply(options, batch, deviceId, from) {
+  if (!Number.isInteger(deviceId) || deviceId < 1 || deviceId > options.movingDeviceCount || batch < 1) {
+    return 'not-moving'
+  }
+  const latestSyntheticTimestampMs =
+    options.baseTimeMs + (batch * options.productionPollsPerBatch - 1) * options.intervalMs
+  return parseRequestTimestamp(from) > latestSyntheticTimestampMs ? 'current-batch' : 'window'
 }
 
 function buildBreadcrumbPositions(options, batch, deviceId, from, to) {

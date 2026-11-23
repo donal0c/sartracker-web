@@ -22,6 +22,7 @@ import {
   readWebGlRendererInfoFromDocument,
   validateFinalLineTotalAudit,
   shouldReadCheckpointPositionCount,
+  summarizeTrackingSoakHistoryRequests,
   countDurablePositionsReadOnly,
 } from '../../build/electron-tracking-soak-lib.js'
 import { startTrackingSoakMockServer } from '../../build/electron-tracking-soak-mock-server.js'
@@ -1314,5 +1315,31 @@ describe('tracking soak counts durable rows off the app main thread [DON-313]', 
       writer.close()
       await rm(directory, { recursive: true, force: true })
     }
+  })
+})
+
+describe('tracking soak history-request evidence [DON-367]', () => {
+  it('names, per device, the oldest window asked for after the last restart', () => {
+    const summary = summarizeTrackingSoakHistoryRequests({
+      resumes: [{ atMs: 100, batch: 3 }],
+      droppedRequests: 0,
+      requests: [
+        { atMs: 50, deviceId: '1', from: '2026-02-01T00:00:00.000Z', to: '2026-02-01T02:00:00.000Z', batch: 3, status: 200, returned: 540, reply: 'window' },
+        { atMs: 150, deviceId: '1', from: '2026-02-02T20:00:00.000Z', to: '2026-02-02T22:00:00.000Z', batch: 6, status: 200, returned: 180, reply: 'current-batch' },
+        { atMs: 160, deviceId: '10', from: '2026-02-01T00:00:00.000Z', to: '2026-02-01T02:00:00.000Z', batch: 6, status: 200, returned: 722, reply: 'window' },
+        { atMs: 170, deviceId: '2', from: '2026-02-01T02:00:00.000Z', to: '2026-02-01T04:00:00.000Z', batch: 6, status: 200, returned: 358, reply: 'window' },
+      ],
+    })
+
+    expect(summary).toEqual({
+      schemaVersion: 1,
+      lastResumeAtMs: 100,
+      droppedRequests: 0,
+      devices: [
+        { deviceId: '1', requests: 2, requestsAfterLastResume: 1, exactWindowRequestsAfterLastResume: 0, oldestFromAfterLastResume: '2026-02-02T20:00:00.000Z' },
+        { deviceId: '2', requests: 1, requestsAfterLastResume: 1, exactWindowRequestsAfterLastResume: 1, oldestFromAfterLastResume: '2026-02-01T02:00:00.000Z' },
+        { deviceId: '10', requests: 1, requestsAfterLastResume: 1, exactWindowRequestsAfterLastResume: 1, oldestFromAfterLastResume: '2026-02-01T00:00:00.000Z' },
+      ],
+    })
   })
 })

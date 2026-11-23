@@ -13,6 +13,7 @@ import { syncTrackingOverlay } from '../tracking/sync-tracking-overlay'
 import { useExactBreadcrumbDotStore } from '../tracking/exact-breadcrumb-dot-store'
 import { useTrackingStylePreferences } from '../tracking/tracking-style-store'
 import { useTrackingStore } from '../tracking/tracking-store'
+import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { useCoverageStore } from '../tracking/coverage-store'
 import {
   isCoverageOverlayAttached,
@@ -27,6 +28,7 @@ import type { RenderableMapId } from '../../lib/map-config'
 import type { CoverageManifest } from '../../infrastructure/mission-store/tauri-mission-store'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import { registerMapOverlaySync } from './register-map-overlay-sync'
+import { clearTrackingVisibleOnMap, reportTrackingVisibleOnMap } from './tracking-visibility-report'
 
 type UseMapOverlaysOptions = {
   readonly activeBasemapId: RenderableMapId
@@ -45,6 +47,10 @@ const EMPTY_TRACKING_SNAPSHOT: ReturnType<typeof useTrackingStore.getState>['sna
  */
 export function useMapOverlays(options: UseMapOverlaysOptions): void {
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
+  // A rejected tracking update resyncs straight away rather than waiting for
+  // the next poll; only the change to failed triggers it, so a map that keeps
+  // rejecting is not retried in a loop [DON-357].
+  const trackingMapUpdateFailed = useTrackingMapUpdateStore((state) => state.failure !== null)
   const groupVisibility = useLayerVisibilityStore((state) => state.groupVisibility)
   const hiddenDeviceIds = useLayerVisibilityStore((state) => state.hiddenDeviceIds)
   const hiddenBreadcrumbDeviceIds = useLayerVisibilityStore((state) => state.hiddenBreadcrumbDeviceIds)
@@ -84,19 +90,25 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     }
 
     const synchronizeOverlay = () => {
+      const trackingVisible = getEffectiveTrackingVisible(groupVisibility)
       syncTrackingOverlay(
         map,
-        getEffectiveTrackingVisible(groupVisibility) ? trackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
+        trackingVisible ? trackingSnapshot : EMPTY_TRACKING_SNAPSHOT,
         hiddenDeviceIds,
         hiddenBreadcrumbDeviceIds,
-        getEffectiveTrackingVisible(groupVisibility) && breadcrumbsVisible,
+        trackingVisible && breadcrumbsVisible,
         trackingStyle,
         exactBreadcrumbDotState,
         attentionByDevice,
       )
+      reportTrackingVisibleOnMap(trackingVisible)
     }
 
-    return registerMapOverlaySync(map, 'tracking', 'tracking', synchronizeOverlay)
+    const unregister = registerMapOverlaySync(map, 'tracking', 'tracking', synchronizeOverlay)
+    return () => {
+      unregister()
+      clearTrackingVisibleOnMap()
+    }
   }, [
     options.activeBasemapId,
     options.mapReadyVersion,
@@ -109,6 +121,7 @@ export function useMapOverlays(options: UseMapOverlaysOptions): void {
     exactBreadcrumbDotState,
     trackingSnapshot,
     attentionByDevice,
+    trackingMapUpdateFailed,
   ])
 
   useEffect(() => {

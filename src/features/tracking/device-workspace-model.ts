@@ -7,6 +7,7 @@ import {
 import type { DeviceStationaryAttention } from './stationary-attention-store'
 import { selectNewestKnownFixes } from './newest-known-fix'
 import { formatOperatorLocalTimestamp } from './operator-time'
+import { describeTrackingFeed, type TrackingFeedTone } from './persistent-tracking-health'
 
 export type DeviceWorkspaceRow = {
   readonly deviceId: string
@@ -20,6 +21,8 @@ export type DeviceWorkspaceRow = {
   readonly lastSeen: string | null
   readonly lastSeenDisplay: string
   readonly fixTimeDisplay: string
+  /** Raw time of the position being shown, which can be older than last contact. */
+  readonly fixTime: string | null
   readonly sourceDisplay: string
   readonly fixTimeUnverified: boolean
   readonly ingestWarning: string | null
@@ -32,6 +35,13 @@ export type DeviceWorkspaceRow = {
   readonly stationaryAttentionUnreliable: boolean
   readonly attentionAcknowledged: boolean
   readonly attentionElapsedDisplay: string
+  /**
+   * The device status Traccar last reported, kept even while positions are not
+   * updating, so a person's own problem survives a pause [DON-356].
+   */
+  readonly reportedStatus: 'online' | 'offline' | 'unknown'
+  /** True when this person's current fix was never confirmed in the mission store. */
+  readonly currentUnconfirmed: boolean
 }
 
 export type DeviceWorkspaceSummary = {
@@ -43,6 +53,9 @@ export type DeviceWorkspaceSummary = {
   readonly lastSuccessAtDisplay: string
   readonly warning: string | null
   readonly mode: TrackingConnectionStatus['mode']
+  /** The header sentence: healthy only when the feed is online, unwarned and every position fresh [M-20]. */
+  readonly headline: string
+  readonly tone: TrackingFeedTone
 }
 
 export type DeviceWorkspaceFilter = 'all' | 'hidden' | 'online' | 'nofix' | 'stale'
@@ -83,20 +96,11 @@ export function buildDeviceWorkspaceRows(
         lastSeen: device.last_seen,
         lastSeenDisplay: formatOperatorLocalTimestamp(device.last_seen),
         fixTimeDisplay: formatOperatorLocalTimestamp(position?.timestamp ?? null),
-        sourceDisplay:
-          position === null
-            ? 'No fix'
-            : position.fix_time_ahead_of_clock === true
-              ? 'Fix time ahead of laptop clock'
-            : position.fix_time_unverified === true
-              ? 'Fix time unverified'
-            : (connectionMode !== 'online' || unconfirmedCurrentDeviceIds.has(device.device_id)) && position.data_origin === 'live'
-              ? 'Last known'
-            : position.device_cache_stale
-              ? 'Stale'
-              : position.data_origin === 'cache'
-                ? 'Cache'
-                : 'Live',
+        fixTime: position?.timestamp ?? null,
+        sourceDisplay: describeSource(
+          position,
+          connectionMode !== 'online' || unconfirmedCurrentDeviceIds.has(device.device_id),
+        ),
         fixTimeUnverified: position?.fix_time_unverified === true,
         ingestWarning: rejected === undefined
           ? null
@@ -115,9 +119,50 @@ export function buildDeviceWorkspaceRows(
         stationaryAttentionUnreliable: attention?.latestFixUnreliable === true,
         attentionAcknowledged: attention?.acknowledged === true,
         attentionElapsedDisplay: formatAttentionElapsed(attention?.elapsedMs),
+        reportedStatus: device.status,
+        currentUnconfirmed: position !== null && unconfirmedCurrentDeviceIds.has(device.device_id),
       } satisfies DeviceWorkspaceRow
     })
     .sort((left, right) => left.name.localeCompare(right.name))
+}
+
+const STALE_SOURCE_PREFIX = 'Stale · '
+
+/**
+ * Labels where a row's position came from. Staleness is never one option in
+ * that list: a stale position always says Stale, alongside its provenance, so
+ * an unverified fix time or a lost connection cannot hide it [M-21].
+ *
+ * @param position the newest known fix, or null
+ * @param notLive tracking is not online, or this device is not confirmed current
+ * @returns the label shown in the row's Source column and the inspector
+ */
+function describeSource(
+  position: TrackingSnapshot['positions'][number] | null,
+  notLive: boolean,
+): string {
+  if (position === null) return 'No fix'
+  const provenance = position.fix_time_ahead_of_clock === true
+    ? 'Fix time ahead of laptop clock'
+    : position.fix_time_unverified === true
+      ? 'Fix time unverified'
+      : notLive && position.data_origin === 'live'
+        ? 'Last known'
+        : null
+  if (!position.device_cache_stale) return provenance ?? (position.data_origin === 'cache' ? 'Cache' : 'Live')
+  return provenance === null ? 'Stale' : `${STALE_SOURCE_PREFIX}${provenance}`
+}
+
+/**
+ * The provenance part of a row's Source label, without the Stale marker.
+ *
+ * @param row the device row
+ * @returns for example 'Last known' for both 'Last known' and 'Stale · Last known'
+ */
+export function sourceProvenance(row: Pick<DeviceWorkspaceRow, 'sourceDisplay'>): string {
+  return row.sourceDisplay.startsWith(STALE_SOURCE_PREFIX)
+    ? row.sourceDisplay.slice(STALE_SOURCE_PREFIX.length)
+    : row.sourceDisplay
 }
 
 function formatAttentionElapsed(elapsedMs: number | undefined): string {
@@ -183,6 +228,12 @@ export function buildDeviceWorkspaceSummary(
     lastSuccessAtDisplay: formatOperatorLocalTimestamp(status.lastSuccessAt),
     warning: status.warning,
     mode: status.mode,
+    ...describeTrackingFeed(
+      status,
+      rows.filter((row) => row.stale).length,
+      rows.filter((row) => row.fixTimeUnverified).length,
+      'Tracking feed healthy.',
+    ),
   }
 }
 

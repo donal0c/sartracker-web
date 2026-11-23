@@ -71,20 +71,6 @@ body {
   margin: 0;
 }
 
-/* Operational awareness stays outside panels, with deliberate wrapping at zoom. */
-.sar-awareness-strip {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  border-bottom: 1px solid var(--sar-line);
-  background: var(--sar-panel);
-}
-.sar-persistent-health { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.75rem; padding: 0.35rem 0.6rem; font-size: 12px; }
-.sar-compact-mission { display: flex; align-items: center; gap: 0.65rem; font-size: 12px; }
-.sar-compact-mission > span:first-child { max-width: 12rem; }
 .sar-device-list-scroll { scrollbar-gutter: stable; }
 .sar-device-grid { min-width: 59.5rem; }
 .sar-devices-inspector { padding: 1rem; }
@@ -97,7 +83,6 @@ body {
   .sar-devices-layout .sar-device-list-scroll { max-height: 45vh; }
   .sar-devices-layout > aside { flex-shrink: 0; overflow: visible; }
 }
-.sar-operational-sidebar { flex-shrink: 0; min-height: 0; max-width: 42vw; }
 .sar-workspace-content { min-height: 0; }
 .sar-mission-dock-focus { max-height: 48vh; }
 .sar-mission-header { flex-wrap: wrap; gap: 0.5rem; }
@@ -108,12 +93,6 @@ body {
 [data-theme='high-contrast'] :is(.sar-panel, .sar-sidebar, .sar-control-dock, .sar-rail-section) { background: #000; border-color: #bdbdbd; }
 [data-theme='high-contrast'] :is(button, input, select, textarea) { border-color: #bdbdbd; }
 [data-theme='high-contrast'] button:disabled { opacity: 1; border-style: dashed; color: #bdbdbd; cursor: not-allowed; }
-@media (max-width: 1100px) {
-  .sar-awareness-strip { max-height: 30vh; overflow-y: auto; }
-  .sar-compact-mission { flex-wrap: wrap; }
-  .sar-global-mast { overflow-x: auto; }
-  .sar-command-mast-grid { min-width: 1100px; }
-}
 
 @layer components {
   .sar-shell {
@@ -133,30 +112,6 @@ body {
     box-shadow:
       -34px 0 70px rgba(0, 0, 0, 0.5),
       inset 1px 0 rgba(255, 255, 255, 0.035);
-  }
-
-  .sar-command-mast {
-    border-bottom: 1px solid rgba(214, 204, 190, 0.12);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
-      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 55%),
-      #15130f;
-    box-shadow: inset 0 -1px rgba(0, 0, 0, 0.42);
-  }
-
-  .sar-global-mast {
-    border-bottom: 1px solid rgba(214, 204, 190, 0.13);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 52%),
-      linear-gradient(90deg, rgba(244, 183, 74, 0.08), transparent 34%),
-      #12100d;
-    box-shadow:
-      0 18px 42px rgba(0, 0, 0, 0.28),
-      inset 0 -1px rgba(0, 0, 0, 0.48);
-  }
-
-  .sar-command-mast-grid {
-    grid-template-columns: 300px 220px 118px 118px 76px 64px 160px repeat(5, minmax(0, 1fr));
   }
 
   .sar-mast-button {
@@ -190,25 +145,11 @@ body {
   }
 
   @media (max-width: 1400px) {
-    .sar-command-mast-grid {
-      grid-template-columns: 280px 170px 112px 112px 64px 56px 128px repeat(5, minmax(56px, 1fr));
-    }
-
     .sar-mast-button {
       padding: 0 0.35rem;
       font-size: 9px;
       letter-spacing: 0.04em;
     }
-
-    .sar-mast-readout {
-      padding-left: 0.5rem;
-      padding-right: 0.5rem;
-    }
-
-    .sar-mast-readout > p:last-child {
-      font-size: 1.125rem;
-    }
-
   }
 
   /* Full labels need about 110 px per button; below this width they ran
@@ -220,16 +161,6 @@ body {
 
     .sar-mast-label-short {
       display: inline;
-    }
-  }
-
-  @media (max-width: 1180px) {
-    .sar-command-mast-grid {
-      grid-template-columns: 224px 180px 96px 96px 64px 56px 112px repeat(5, minmax(54px, 1fr));
-    }
-
-    .sar-mast-readout > p:last-child {
-      font-size: 1rem;
     }
   }
 
@@ -745,3 +676,127 @@ body {
     }
   }
 }
+
+
+/* ------------------------------------------------------------------ */
+/* Simplified workspace: the desktop default (DON-341). */
+/* ------------------------------------------------------------------ */
+
+[data-panel-arrangement] { --ws-bg: #000; --ws-raised: #1c1c1c; --ws-line: #8c8c8c; --ws-text: #fff; --ws-muted: #e4e4e4; font-size: 15px; }
+.ws-top-bar { display: flex; flex-shrink: 0; align-items: stretch; gap: 0.6rem; min-height: 56px; padding: 0.35rem 0.75rem; background: var(--ws-bg); border-bottom: 2px solid var(--ws-line); color: var(--ws-text); }
+.ws-logo { height: 44px; width: 52px; flex-shrink: 0; align-self: center; object-fit: contain; background: #fff; }
+.ws-mission-button { display: flex; min-width: 11rem; max-width: 17rem; flex-direction: column; justify-content: center; border: 1px solid var(--ws-line); padding: 0.1rem 0.6rem; text-align: left; line-height: 1.2; }
+.ws-mission-button:hover, .ws-bar-button:hover { background: var(--ws-raised); }
+.ws-mission-name { overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.ws-mission-phase { font-size: 13px; font-weight: 700; }
+.ws-phase-active { color: #6ee7b7; }
+.ws-phase-paused { color: #fca5a5; }
+.ws-phase-idle, .ws-phase-recovery { color: #fcd34d; }
+.ws-clocks { display: flex; flex-shrink: 0; align-items: center; gap: 0.9rem; }
+.ws-clocks div { display: flex; flex-direction: column; line-height: 1.2; }
+.ws-clocks span { font-size: 12px; color: var(--ws-muted); }
+.ws-clocks strong { font-family: ui-monospace, Menlo, monospace; font-size: 17px; font-weight: 800; }
+.ws-health { position: relative; display: flex; min-width: 0; overflow: hidden; flex: 1; flex-direction: column; justify-content: center; border: 1px solid transparent; padding: 0.1rem 0.7rem; text-align: left; line-height: 1.25; }
+/* One line, so a long message never grows the top bar and moves what is under the pointer (DON-261). The short problem words come first and are never cut; only the rest may end in "…". The full words are in the label and the Tracking panel. */
+.ws-health strong { display: flex; min-width: 0; font-size: 15px; line-height: 1.2; white-space: nowrap; }
+.ws-health-icon { flex-shrink: 0; margin-right: 0.35rem; }
+.ws-health-problems { flex-shrink: 0; }
+.ws-health-measure { position: absolute; top: 0; left: 0; visibility: hidden; pointer-events: none; white-space: pre; }
+.ws-health-detail { min-width: 0; margin-left: 0.5rem; overflow: hidden; font-weight: 500; text-overflow: ellipsis; }
+.ws-health-time { font-size: 12px; color: var(--ws-muted); white-space: nowrap; }
+.ws-health-ok strong { color: #6ee7b7; }
+.ws-health-neutral strong { color: #e7e5e4; }
+.ws-health-warning { border-color: #fbbf24; background: rgba(251, 191, 36, 0.16); }
+.ws-health-warning strong { color: #fde68a; }
+.ws-health-alert { border-color: #fff; background: #b91c1c; }
+.ws-health-alert strong, .ws-health-alert .ws-health-time { color: #fff; }
+.ws-bar-actions { display: flex; flex-shrink: 0; align-items: stretch; gap: 0.35rem; }
+.ws-bar-button { display: inline-flex; align-items: center; gap: 0.4rem; border: 1px solid var(--ws-line); padding: 0 0.7rem; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.ws-bar-button[aria-pressed='true'] { background: #fff; color: #000; }
+.ws-badge { background: #fbbf24; color: #000; padding: 0 0.35rem; font-size: 13px; font-weight: 800; }
+.ws-menu { position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 60; display: grid; width: 15rem; gap: 0.25rem; border: 1px solid var(--ws-line); background: var(--ws-bg); padding: 0.5rem; box-shadow: 0 12px 32px rgba(0,0,0,0.6); }
+.ws-menu > button, .ws-menu > a { padding: 0.5rem 0.6rem; text-align: left; font-size: 14px; }
+.ws-menu > button:hover, .ws-menu > a:hover { background: var(--ws-raised); }
+.ws-menu-row { padding: 0.25rem 0; }
+.ws-menu-version { padding: 0.25rem 0.6rem 0; font-size: 11px; color: var(--ws-muted); overflow-wrap: anywhere; }
+/* At narrow widths the logo, mission name and bar buttons give up room so
+   three tracking problems can be read in full, in the wider fonts of the
+   team's Linux laptops too (DON-261). The bar's height does not change. */
+@media (max-width: 1180px) {
+  .ws-top-bar { gap: 0.4rem; }
+  .ws-logo { display: none; }
+  .ws-mission-button { min-width: 8rem; }
+  .ws-health { padding: 0.1rem 0.5rem; }
+  .ws-bar-actions { gap: 0.25rem; }
+  .ws-bar-button { padding: 0 0.4rem; font-size: 13px; }
+}
+
+.ws-alarm { display: flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 1rem; padding: 0.5rem 1rem; background: #dc2626; color: #fff; font-size: 17px; animation: ws-alarm-flash 1.1s steps(2, jump-none) infinite; }
+.ws-alarm-slot { position: absolute; top: 0; left: 0; right: 0; z-index: 50; }
+.ws-map-area .maplibregl-ctrl-top-left, .ws-map-area .maplibregl-ctrl-top-right { top: var(--ws-alarm-height, 0px); }
+.ws-map-area .sar-control-dock { margin-top: var(--ws-alarm-height, 0px); }
+.ws-alarm button { flex-shrink: 0; background: #fff; color: #7f1d1d; padding: 0.3rem 0.9rem; font-size: 15px; font-weight: 800; }
+@keyframes ws-alarm-flash { from { background: #dc2626; } to { background: #7f1d1d; } }
+@media (prefers-reduced-motion: reduce) { .ws-alarm { animation: none; } }
+
+.ws-side { z-index: 20; display: flex; width: 370px; max-width: 42vw; flex-shrink: 0; flex-direction: column; min-height: 0; background: var(--ws-bg); color: var(--ws-text); }
+.ws-side[data-empty='true'] { width: 0; }
+.ws-side-right { border-left: 2px solid var(--ws-line); }
+.ws-side-left { width: 350px; border-right: 2px solid var(--ws-line); }
+.ws-side[data-empty='true'] { border: 0; }
+.ws-panel-section { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.ws-panel-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 0 0.75rem 0.75rem; }
+.ws-section-head { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.5rem 0.5rem 0.75rem; }
+.ws-section-head h2 { font-size: 17px; font-weight: 800; white-space: nowrap; }
+.ws-count { font-family: ui-monospace, Menlo, monospace; font-weight: 500; color: var(--ws-muted); }
+.ws-link-button { padding: 0.15rem 0.5rem; border: 1px solid var(--ws-line); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.ws-link-button:hover { background: var(--ws-raised); }
+.ws-people-grid { display: grid; grid-template-columns: minmax(0, 1fr) 3.8rem 3rem; align-items: center; }
+.ws-people-all { flex-shrink: 0; border-top: 1px solid var(--ws-line); border-bottom: 1px solid var(--ws-line); padding: 0.3rem 0.5rem 0.3rem 0.75rem; font-size: 14px; font-weight: 700; }
+.ws-tick-column { display: flex; justify-content: center; }
+.ws-tick-column label { display: flex; flex-direction: column-reverse; align-items: center; gap: 0.1rem; font-size: 12px; font-weight: 600; line-height: 1.1; }
+[data-panel-arrangement] input[type='checkbox'] { height: 22px; width: 22px; flex-shrink: 0; accent-color: #fbbf24; }
+.ws-people-search { margin: 0.4rem 0.75rem; flex-shrink: 0; padding: 0.35rem 0.6rem; font-size: 15px; }
+.ws-person { border-bottom: 1px solid #3f3f3f; padding: 0.2rem 0.5rem; }
+.ws-person-main { display: flex; min-width: 0; align-items: center; gap: 0.55rem; padding: 0.15rem 0.25rem; text-align: left; }
+.ws-person-main:hover:not(:disabled) { background: var(--ws-raised); }
+.ws-person-main > span:last-child { display: block; }
+.ws-swatch { height: 16px; width: 16px; flex-shrink: 0; border: 1px solid #fff; border-radius: 50%; }
+.ws-person-name { display: block; overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.ws-person-status { display: block; font-size: 13px; color: var(--ws-muted); }
+.ws-person-attention { background: rgba(251, 191, 36, 0.16); border-left: 4px solid #fbbf24; }
+.ws-person-attention .ws-person-status { color: #fde68a; font-weight: 700; }
+.ws-ack { margin: 0.15rem 0 0.25rem 2rem; border: 1px solid #fbbf24; padding: 0.15rem 0.6rem; font-size: 13px; font-weight: 700; color: #fde68a; }
+.ws-empty { padding: 1rem 0.75rem; color: var(--ws-muted); }
+.ws-close { flex-shrink: 0; border: 1px solid var(--ws-line); padding: 0.1rem 0.55rem; font-size: 13px; font-weight: 600; }
+.ws-close:disabled { opacity: 0.5; }
+.ws-plain-lines dt { margin-top: 0.6rem; font-size: 13px; font-weight: 700; color: var(--ws-muted); }
+.ws-plain-lines dd { font-size: 15px; }
+.ws-plain-lines li { list-style: disc; margin-left: 1.1rem; }
+.ws-exceptions { position: absolute; right: 0.75rem; top: calc(7.25rem + var(--ws-alarm-height, 0px)); z-index: 25; display: flex; max-width: min(24rem, 60%); flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+.ws-exceptions button { border: 1px solid #000; border-left: 4px solid #000; background: #fbbf24; color: #000; padding: 0.2rem 0.6rem; font-size: 14px; text-align: left; box-shadow: 0 4px 12px rgba(0,0,0,0.45); }
+
+[data-panel-arrangement] [data-testid='layer-panel'] { padding: 0 0.5rem 0.5rem; }
+[data-panel-arrangement] [data-testid='layer-tree'] { padding: 0; }
+[data-panel-arrangement] [data-testid='layer-tree-search'] { font-size: 15px; }
+[data-panel-arrangement] .sar-tree-row { padding-top: 0.3rem; padding-bottom: 0.3rem; margin-bottom: 0; font-size: 15px; }
+[data-panel-arrangement] .sar-tree-row span { font-size: 15px; }
+/* Maps and Map Tools side by side, so they take one row of the map instead of two. */
+[data-panel-arrangement] [data-testid='basemap-switcher'] { max-width: 13rem; }
+[data-panel-arrangement] [data-testid='drawing-toolbar'] { left: 14.5rem; top: 1rem; }
+
+[data-testid='ws-mission-host'].ws-panel-section { position: relative; overflow-y: auto; }
+.ws-mission-card { position: absolute; left: 50%; top: calc(1.25rem + var(--ws-alarm-height, 0px)); z-index: 40; max-height: calc(100% - 2.5rem - var(--ws-alarm-height, 0px)); width: 540px; max-width: calc(100% - 1.5rem); transform: translateX(-50%); overflow-y: auto; border: 2px solid #fff; background: var(--ws-bg); color: var(--ws-text); box-shadow: 0 24px 64px rgba(0,0,0,0.65); }
+.ws-mission-close { position: absolute; right: 0.6rem; top: 0.6rem; z-index: 1; background: var(--ws-bg); }
+[data-panel-arrangement] [data-testid='mission-control'] { border: 0; background: transparent; box-shadow: none; }
+[data-panel-arrangement] [data-testid='mission-control'] .sar-section-label { font-size: 17px; letter-spacing: 0; text-transform: none; color: #fff; }
+[data-panel-arrangement] [data-testid='mission-control'] label, [data-panel-arrangement] [data-testid='mission-control'] p.text-\[11px\] { font-size: 14px; letter-spacing: 0; text-transform: none; }
+[data-panel-arrangement] .sar-mission-header { padding-right: 4rem; }
+[data-panel-arrangement] [data-testid='mission-name-input'], [data-panel-arrangement] [data-testid='mission-offset-input'] { font-size: 16px; }
+[data-panel-arrangement] [data-testid='mission-start-btn'] { font-size: 17px; padding: 0.8rem; }
+/* Irish Grid first, as the coordinators asked (Eamonn, May 2026). */
+[data-panel-arrangement] [data-testid='coordinate-readout-group'] > :nth-child(1) { order: 3; }
+[data-panel-arrangement] [data-testid='coordinate-readout-group'] > :nth-child(2) { order: 2; }
+[data-panel-arrangement] [data-testid='coordinate-readout-group'] > :nth-child(3) { order: 1; }
+[data-panel-arrangement] [data-testid='coordinate-readout-group'] > :nth-child(4) { order: 4; }
+[data-panel-arrangement] [data-testid='coordinate-readout-group'] > :nth-child(5) { order: 5; }

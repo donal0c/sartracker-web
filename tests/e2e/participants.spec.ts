@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { openMissionSections } from './helpers/mission-sections'
+import { openMissionPanel, openParticipantPickers } from './helpers/workspace-panels'
 
 test.describe('mission participants [DON-271]', () => {
   test.beforeEach(async ({ page }) => {
@@ -30,17 +31,21 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('settings-save').click()
     await page.keyboard.press('Escape')
 
+    await openParticipantPickers(page)
     const step = page.getByTestId('participant-selection-step')
     const hillTeam = page.getByTestId('participant-group-picker').getByRole('checkbox', { name: /Hill Team/u })
     await expect(hillTeam).toBeChecked()
     await expect(step).toContainText('team default')
-    await expect(step).toContainText("Your team's default group is ticked")
+    await expect(page.getByTestId('ws-default-group-summary')).toContainText('Hill Team')
     await step.screenshot({ path: 'test-results/don-296-start-step.png' })
 
     await hillTeam.uncheck()
     await expect(hillTeam).not.toBeChecked()
-    await hillTeam.check()
+    // Re-ticking the default group folds the list back under its summary line.
+    await hillTeam.click()
+    await expect(page.getByTestId('ws-default-group-summary')).toContainText('Hill Team')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Default Group Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-participants-section-summary')).toContainText('1 group')
@@ -49,13 +54,17 @@ test.describe('mission participants [DON-271]', () => {
   })
 
   test('keeps pre-start selections for a mission started after finishing an earlier one [DON-292]', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Earlier Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await openMissionPanel(page)
     await expect(page.getByTestId('participant-selection-step')).toBeVisible()
 
+    await openParticipantPickers(page)
     await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
     await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
     await expect(page.getByTestId('participant-selected-count')).not.toContainText('0 selected')
@@ -77,6 +86,7 @@ test.describe('mission participants [DON-271]', () => {
     const selection = page.getByTestId('participant-selection-step')
     await expect(selection).toBeVisible()
     await expect(page.getByTestId('participant-selected-count')).toContainText('0 selected')
+    await openParticipantPickers(page)
     await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
     await expect(page.getByTestId('participant-selected-count')).toContainText('1 selected')
 
@@ -91,8 +101,9 @@ test.describe('mission participants [DON-271]', () => {
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().devices.map((device) => device.device_id),
     )
     expect(initiallyPersistedDeviceIds).toEqual(['1'])
-    await expect(page.getByTestId('tracking-status')).toContainText('1')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
 
+    await openMissionPanel(page)
     await page.getByTestId('participant-add-ref').selectOption('2')
     const earlierLocalTime = await page.evaluate(() => {
       const value = new Date(Date.now() - 60 * 60 * 1_000)
@@ -105,14 +116,14 @@ test.describe('mission participants [DON-271]', () => {
     await expect(page.getByTestId('participant-backfill-status').last()).toContainText('pending')
 
     await injectTwoDeviceSnapshot(page)
-    await expect(page.getByTestId('tracking-status')).toContainText('2')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
 
     const bravoRow = page.getByTestId('participant-active-list').locator('div.sar-readout').filter({ hasText: 'Bravo Team' })
     await bravoRow.getByRole('button', { name: 'Remove' }).click()
     await expect(page.getByTestId('participant-active-list')).not.toContainText('Bravo Team')
 
     await injectSnapshotWithoutCurrentFixes(page)
-    await expect(page.getByTestId('tracking-status')).toContainText('2')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
     const retainedEvidenceDeviceIds = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().positions.map((position) => position.device_id),
     )
@@ -120,13 +131,15 @@ test.describe('mission participants [DON-271]', () => {
   })
 
   test('requires an explicit history start for a late add and backfills the lookback From mission start [DON-291]', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Lookback Late Add')
     await page.getByTestId('mission-offset-input').fill('48')
     await expect(page.getByTestId('participant-lookback-notice')).toContainText(
-      'Earlier history is only fetched for participants selected here',
+      'Roll back only brings in earlier tracks for people ticked here before Start.',
     )
     await page.getByTestId('mission-start-btn').click()
 
+    await openMissionPanel(page)
     await page.getByTestId('participant-add-ref').selectOption('1')
     await expect(page.getByTestId('participant-add-btn')).toBeDisabled()
     await page.getByTestId('participant-history-start-mission').check()
@@ -162,6 +175,7 @@ test.describe('mission participants [DON-271]', () => {
         }],
       })
     })
+    await openParticipantPickers(page)
     await page.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
     const groupCoveredDevice = page.getByTestId('participant-device-picker')
       .locator('label').filter({ hasText: 'Alpha Team' }).locator('input')
@@ -204,11 +218,13 @@ test.describe('mission participants [DON-271]', () => {
   })
 
   test('shows a late-selected participant stale current fix without backdating mission evidence', async ({ page }) => {
+    await openParticipantPickers(page)
     await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Stale Current Position Mission')
     await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
 
+    await openMissionPanel(page)
     await page.getByTestId('participant-add-ref').selectOption('2')
     await page.getByTestId('participant-history-start-now').check()
     await page.getByTestId('participant-add-btn').click()
@@ -250,7 +266,7 @@ test.describe('mission participants [DON-271]', () => {
       })
     })
 
-    await expect(page.getByTestId('tracking-status')).toContainText('2')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
     const persistedDeviceIds = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().positions.map(
         (position) => position.device_id,
@@ -261,11 +277,14 @@ test.describe('mission participants [DON-271]', () => {
   })
 
   test('keeps the mission active and explains why finish is blocked during history backfill', async ({ page }) => {
+    await openParticipantPickers(page)
     await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Backfill Finish Fence Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+
+    await openMissionPanel(page)
 
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog')
@@ -275,7 +294,7 @@ test.describe('mission participants [DON-271]', () => {
     await expect(page.getByTestId('mission-control')).toContainText(
       'participant history backfill checkpoint(s) are incomplete',
     )
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     const mission = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().missions.at(-1),
     )
@@ -293,10 +312,12 @@ test.describe('mission participants [DON-271]', () => {
         }],
       })
     })
+    await openParticipantPickers(page)
     await page.getByTestId('participant-device-picker').getByText('Alpha Team', { exact: true }).click()
     await page.getByTestId('mission-name-input').fill('Unique Participant Path Mission')
     await page.getByTestId('mission-start-btn').click()
 
+    await openMissionPanel(page)
     await page.getByTestId('participant-add-kind').selectOption('group')
     await page.getByTestId('participant-add-ref').selectOption('101')
     await page.getByTestId('participant-history-start-now').check()
@@ -330,6 +351,7 @@ test.describe('mission participants [DON-271]', () => {
     await expect(page.getByTestId('participant-envelope-warning')).toContainText(
       'all selected devices will still be included',
     )
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Envelope Warning Mission')
     await page.getByTestId('mission-start-btn').click()
     const activeParticipants = await page.evaluate(() =>

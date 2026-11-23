@@ -108,6 +108,11 @@ export type AppSettings = {
   readonly officialMaps: OfficialMapSettings
   readonly weather: WeatherSettings
   readonly advanced: AdvancedSettings
+  /**
+   * Present when settings.json was damaged and set aside, so these are
+   * defaults until the operator saves; says what to re-enter (M-47).
+   */
+  readonly settingsRecoveryNotice?: string
 }
 
 export type AppSettingsDraft = {
@@ -136,6 +141,12 @@ export type RuntimeBootstrapSettings = {
     readonly token?: string
   } | null
   readonly trackingDisabledReason?: string
+  /**
+   * Set when the saved tracking password or token cannot be used and must be
+   * entered again (DON-353), or when settings.json was damaged and set aside so
+   * the Traccar settings must be entered again (M-47).
+   */
+  readonly trackingDisabledCode?: 'tracking_credentials_unreadable' | 'tracking_settings_unreadable'
   readonly stationaryAttentionConfig?: {
     readonly heartbeatWindowMs: number
     readonly heartbeatToleranceMs: number

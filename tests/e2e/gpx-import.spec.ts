@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { openMissionSections } from './helpers/mission-sections'
+import { expandAllLayers } from './helpers/layers'
 import { readFileSync } from 'node:fs'
 import { captureAndRegister } from './visual/helpers/verification-manifest'
+import { closeMissionPanel, openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M22 GPX import parity', () => {
   test.beforeEach(async ({ page }) => {
@@ -10,11 +12,12 @@ test.describe('M22 GPX import parity', () => {
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('GPX Mission')
     await page.getByTestId('mission-start-btn').click()
     await openMissionSections(page, ['outings'])
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-    await page.getByTestId('sidebar-tab-tools').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-panel')).toBeVisible()
   })
 
@@ -32,7 +35,7 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-panel')).toContainText('2 listed · 2 on map')
     await expect(page.getByTestId('gpx-import-error')).toContainText('malformed.gpx')
     await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await closeMissionPanel(page)
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
       testId: 'repair-train-b-partial-batch', testName: 'Malformed file does not hide valid imports', area: 'layers', severity: 'critical',
@@ -44,6 +47,7 @@ test.describe('M22 GPX import parity', () => {
   test('renders imported GPX tracks in the panel, layer catalog, review workspace, and map source', async ({
     page,
   }) => {
+    await openMissionPanel(page)
     await page.getByTestId('outing-label-input').fill('Team Alpha outing')
     await page.getByTestId('outing-start-btn').click()
     await page.evaluate(async () => {
@@ -69,6 +73,8 @@ test.describe('M22 GPX import parity', () => {
       ])
     })
 
+    // The outing was started in Mission; the GPX panel is in Tools (DON-341).
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-list')).toContainText('alpha')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
     const importId = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__
@@ -85,13 +91,15 @@ test.describe('M22 GPX import parity', () => {
       return { matches: imported?.outing_id === outing?.id, revision: imported?.revision_sequence }
     })).toEqual({ matches: true, revision: 2 })
 
-    await page.getByTestId('sidebar-tab-layers').click()
-    await page.getByTestId('layer-expand-group-gpx-tracks').click()
+    await openWorkspacePanel(page, 'layers')
+    await expandAllLayers(page)
     await expect(page.getByTestId('layer-tree')).toContainText('GPX Tracks')
     await expect(page.getByTestId('layer-tree')).toContainText('alpha')
 
-    await page.getByTestId('layer-tree').getByText('alpha', { exact: true }).click()
-    await expect(page.getByTestId('layer-inspector')).toContainText('gpx_tracks')
+    // Only items open the inspector now; the track's heading folds instead (DON-341).
+    await page.getByTestId(`layer-select-feature-gpx-${importId}`).click()
+    // Was the heading's layer kind (gpx_tracks); the item's details name its source file.
+    await expect(page.getByTestId('layer-inspector')).toContainText('/tracks/alpha.gpx')
 
     await expect.poll(async () => {
       return page.evaluate(() => {
@@ -104,7 +112,8 @@ test.describe('M22 GPX import parity', () => {
       })
     }, { timeout: 10000 }).toBeGreaterThan(0)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Imports')
     await expect(page.getByTestId('mission-review-workspace')).toContainText('GPX Import Created')
@@ -137,11 +146,11 @@ test.describe('M22 GPX import parity', () => {
     await expect.poll(drawnSegments, { timeout: 10_000 }).toBeGreaterThan(0)
 
     // The operator (or an older saved layer state) turns GPX Tracks off in Layers.
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-visibility-group-gpx-tracks').click()
     await expect.poll(drawnSegments, { timeout: 10_000 }).toBe(0)
 
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 0 on map, 1 hidden in Layers')
     await expect(page.getByTestId(`gpx-map-visibility-${importId}`)).toContainText('Hidden on map')
 
@@ -153,6 +162,7 @@ test.describe('M22 GPX import parity', () => {
   test('keeps exact GPX geometry and settles import when the outing ends [AUD-01 AUD-05 AUD-10]', async ({ page }) => {
     const source = readFileSync('tests/fixtures/gpx-extension-fidelity.gpx', 'utf8')
       .replace('>Ridge party<', '><![CDATA[Ridge party]]><')
+    await openMissionPanel(page)
     await page.getByTestId('outing-label-input').fill('Import race outing')
     await page.getByTestId('outing-start-btn').click()
     await expect(page.getByTestId('active-outing-label')).toBeVisible()
@@ -166,7 +176,10 @@ test.describe('M22 GPX import parity', () => {
       ])
       Object.assign(window, { releaseGpxDigest: () => { crypto.subtle.digest = original; release?.() }, pendingGpxImport: pending })
     }, source)
+    // GPX is in Tools and End Outing in Mission; one side panel shows at a time (DON-341).
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-files')).toContainText('Importing')
+    await openMissionPanel(page)
     await page.getByTestId('outing-end-btn').click()
     await expect(page.getByTestId('outing-no-active-notice')).toBeVisible()
     await page.evaluate(async () => {
@@ -174,11 +187,12 @@ test.describe('M22 GPX import parity', () => {
       gate.releaseGpxDigest()
       await gate.pendingGpxImport
     })
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('gpx-import-files')).not.toContainText('Importing')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('1 listed · 1 on map')
     const geometry = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().gpxImports[0].geometry_json)
     expect(JSON.parse(geometry)).toEqual({ type: 'MultiLineString', coordinates: [[[-9.7, 52], [-9.701, 52.001]]] })
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await closeMissionPanel(page)
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
       testId: 'repair-train-b-gpx-settlement', testName: 'GPX import settles after End Outing', area: 'layers', severity: 'critical',
@@ -223,7 +237,7 @@ test.describe('M22 GPX import parity', () => {
     await expect(page.getByTestId('gpx-import-list')).toContainText('second')
     await expect(page.getByTestId('gpx-import-panel')).toContainText('2 listed · 2 on map')
     await expect(page.getByTestId('gpx-import-error')).toHaveCount(0)
-    await page.getByTestId('mission-control-collapse-btn').click()
+    await closeMissionPanel(page)
     await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
     await captureAndRegister(page, {
       testId: 'repair-train-b-admission-recovery', testName: 'Competing import retry succeeds', area: 'layers', severity: 'critical',
@@ -354,7 +368,7 @@ test.describe('M22 GPX import parity', () => {
       )
       .toBe('#F032E6')
 
-    await page.getByTestId('sidebar-tab-layers').click()
+    await openWorkspacePanel(page, 'layers')
     await page.getByTestId('layer-expand-group-gpx-tracks').click()
 
     const alphaRow = page

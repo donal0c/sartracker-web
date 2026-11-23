@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { TrackingSnapshot } from '../../src/features/tracking/tracking-types'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 type BrowserRepairControl = {
   deliverOld: () => Promise<void>
@@ -10,9 +11,10 @@ type BrowserRepairControl = {
 
 test('keeps online status and identifies cached rows after partial live hydration [DON-267 Claude review]', async ({ page }, testInfo) => {
   await page.goto('/?missionHarness=1')
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill('WAR06 Mixed Recovery')
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-control')).toContainText('active')
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   await page.evaluate(async () => {
     const [{ startTrackingRuntime }, { useMissionStore }, { applyTrackingSnapshot, applyTrackingStatus },
       { createParticipationScope }] = await Promise.all([
@@ -76,9 +78,10 @@ for (const route of ['delayed history', 'participant hydration'] as const) {
   test(`rejects old mission ${route} while showing fresh selected current positions [DON-267]`, async ({ page }, testInfo) => {
     await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toBeVisible()
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('WAR06 Mission A')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     await page.evaluate(async (route) => {
       const [{ startTrackingRuntime }, { useMissionStore }, { applyTrackingSnapshot, applyTrackingStatus },
@@ -144,25 +147,34 @@ for (const route of ['delayed history', 'participant hydration'] as const) {
       ;(window as unknown as { war06: BrowserRepairControl }).war06 = control
       if (route === 'participant hydration') { loading = true; await control.deliverOld() }
     }, route)
-    await expect(page.getByTestId('stationary-attention-summary')).toBeVisible()
+    // Stationary attention is shown on the person's row in the People panel in the new layout.
+    const notMoving = page.locator('[data-testid^="ws-person-status-"]').filter({ hasText: 'Not moving' })
+    await openWorkspacePanel(page, 'people')
+    await expect(notMoving.first()).toBeVisible()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('WAR06 Mission B')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByText('WAR06 Mission B', { exact: true })).toBeVisible()
     await page.evaluate(async (route) => {
       const control = (window as unknown as { war06: BrowserRepairControl }).war06
       if (route === 'delayed history') await control.deliverOld()
       control.ready()
     }, route)
-    await expect(page.getByTestId('stationary-attention-summary')).toHaveCount(0)
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-people-panel')).toBeVisible()
+    await expect(notMoving).toHaveCount(0)
     await page.getByTestId('open-devices-workspace').click()
     await expect(page.getByText('OLD MISSION A', { exact: true })).toHaveCount(0)
     await page.evaluate(() => (window as unknown as { war06: BrowserRepairControl }).war06.fresh())
     await expect(page.getByText('FRESH MISSION B', { exact: true }).first()).toBeVisible()
     await expect(page.getByTestId('devices-workspace')).toContainText('Live')
-    await expect(page.getByTestId('stationary-attention-summary')).toHaveCount(0)
+    await openWorkspacePanel(page, 'people')
+    await expect(page.getByTestId('ws-people-panel')).toBeVisible()
+    await expect(notMoving).toHaveCount(0)
     await page.screenshot({ path: testInfo.outputPath(`war06-${route.replaceAll(' ', '-')}.png`), fullPage: true })
     await page.evaluate(() => (window as unknown as { war06: BrowserRepairControl }).war06.stop())
   })

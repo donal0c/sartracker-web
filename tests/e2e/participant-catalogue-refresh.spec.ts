@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openMissionSections } from './helpers/mission-sections'
+import { openMissionPanel, openParticipantPickers } from './helpers/workspace-panels'
 
 const KMRT = { group_id: 'group-kmrt', name: 'KMRT', parent_group_id: null }
 const MISC = { group_id: 'group-misc', name: 'Miscellaneous', parent_group_id: null }
@@ -41,8 +42,10 @@ test.describe('Traccar group choices refresh on demand [DON-330]', () => {
 
     await setServer(page, { groups: [KMRT, MISC], devices: [KMRT_DEVICE, MISC_DEVICE] })
     // Finishing a mission returns to mission setup, which refreshes the catalogue.
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Round trip')
     await page.getByTestId('mission-start-btn').click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
 
@@ -51,11 +54,13 @@ test.describe('Traccar group choices refresh on demand [DON-330]', () => {
 
     await groups.getByRole('checkbox', { name: /Miscellaneous/u }).check()
     await expect(page.getByTestId('participant-selected-count')).toContainText('1 selected')
+    await openParticipantPickers(page)
     await expect(page.getByTestId('participant-device-picker').getByRole('checkbox', { name: /KMRT One/u })).not.toBeChecked()
     await expect(page.getByTestId('participant-device-picker').getByRole('checkbox', { name: /Misc One/u })).toBeChecked()
   })
 
   test('Add group in an active mission refreshes the list and enrols nothing until the group is chosen', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Active add')
     await page.getByTestId('mission-start-btn').click()
     await openMissionSections(page, ['participants'])
@@ -80,6 +85,7 @@ test.describe('Traccar group choices refresh on demand [DON-330]', () => {
   })
 
   test('a failed refresh is an error with Retry, keeps existing choices, and never looks like an empty list', async ({ page }) => {
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Failing refresh')
     await page.getByTestId('mission-start-btn').click()
     await openMissionSections(page, ['participants'])

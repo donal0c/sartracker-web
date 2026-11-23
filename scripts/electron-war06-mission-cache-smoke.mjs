@@ -18,6 +18,14 @@ import { execFileSync } from 'node:child_process'
 
 import { _electron as electron } from 'playwright'
 import { extractFile } from '@electron/asar'
+import { resumeRecoveredMission as resumeThroughRecoveryPrompt } from './mission-recovery.mjs'
+import { closeWorkspace, confirmFinishMission, openDevicesWorkspace, selectParticipants } from './operator-controls.mjs'
+import {
+  MAX_UNOBSERVED_GAP_MS,
+  readTrackingSourceInPage,
+  summarizeSurfaceSamples,
+  trackingNodesHiddenInCatalog,
+} from './war06-surface-observation.mjs'
 
 const require = createRequire(import.meta.url)
 const Database = require('better-sqlite3')
@@ -33,6 +41,8 @@ const B_CURRENT_ID = '701'
 const B_HISTORY_IDS = ['711', '712']
 const CLOSE_TIMEOUT_MS = 20_000
 const CONDITION_TIMEOUT_MS = 45_000
+// How long a launch may take to give its first ready map reading before the probe acts.
+const STARTUP_READY_TIMEOUT_MS = 60_000
 
 main().catch((error) => {
   console.error(`electron-war06-mission-cache-smoke: ${error instanceof Error ? error.message : String(error)}`)
@@ -155,10 +165,10 @@ async function main() {
 
     provider.setAvailable(false)
     activeLaunch = await launchPackaged(appPath, profile, 'mission-a-offline-restart', report)
-    const positiveSamples = await observeActionSurface(activeLaunch.page, async () => {
+    const positiveSamples = await observeActionSurface(activeLaunch, async () => {
       await resumeRecoverableMission(activeLaunch.page, missionA.id)
       await waitForValue(
-        () => readOperatorSurface(activeLaunch.page),
+        () => readOperatorSurface(activeLaunch.page, { open: true }),
         (surface) => surface.mode.toLowerCase() === 'offline'
           && surface.currentFixCount > 0 && surface.cachedDeviceCount > 0,
         'same-mission restart to show retained cache',
@@ -169,7 +179,7 @@ async function main() {
       evidenceDir,
       'mission-a-offline-restart',
       missionA.id,
-      { surfaceSamples: [...activeLaunch.startupSamples, ...positiveSamples.samples] },
+      { surfaceObservation: positiveSamples },
     )
     assert.equal(missionAOffline.surface.mode.toLowerCase(), 'offline')
     assert.match(missionAOffline.surface.counters, /Cache\s*1/i)
@@ -220,10 +230,10 @@ async function main() {
     }
 
     activeLaunch = await launchPackaged(appPath, profile, 'mission-b-keyed-a-rejected', report)
-    const keyedObservation = await observeActionSurface(activeLaunch.page, async () => {
+    const keyedObservation = await observeActionSurface(activeLaunch, async () => {
       await resumeRecoverableMission(activeLaunch.page, missionB.id)
       return waitForValue(
-        () => readOperatorSurface(activeLaunch.page),
+        () => readOperatorSurface(activeLaunch.page, { open: true }),
         (surface) => surface.warning.includes(DISCARDED_CACHE_WARNING),
         'planned keyed-cache discard warning for Mission B',
       )
@@ -236,7 +246,7 @@ async function main() {
       {
         cache: await readCache(cachePath),
         discardWarning: keyedObservation.result.warning,
-        surfaceSamples: [...activeLaunch.startupSamples, ...keyedObservation.samples],
+        surfaceObservation: keyedObservation,
       },
     )
     assertCacheMatchesMission(keyedReject.cache, missionA.id, [A_CURRENT_ID, ...A_HISTORY_IDS])
@@ -258,10 +268,10 @@ async function main() {
     }
 
     activeLaunch = await launchPackaged(appPath, profile, 'mission-b-legacy-rejected', report)
-    const legacyObservation = await observeActionSurface(activeLaunch.page, async () => {
+    const legacyObservation = await observeActionSurface(activeLaunch, async () => {
       await resumeRecoverableMission(activeLaunch.page, missionB.id)
       return waitForValue(
-        () => readOperatorSurface(activeLaunch.page),
+        () => readOperatorSurface(activeLaunch.page, { open: true }),
         (surface) => surface.warning.includes(DISCARDED_CACHE_WARNING),
         'planned legacy-cache discard warning for Mission B',
       )
@@ -274,7 +284,7 @@ async function main() {
       {
         cache: legacyPayload,
         discardWarning: legacyObservation.result.warning,
-        surfaceSamples: [...activeLaunch.startupSamples, ...legacyObservation.samples],
+        surfaceObservation: legacyObservation,
       },
     )
     assert.equal(legacyReject.cache?.mission_id, undefined, 'Legacy fixture unexpectedly carried a mission identity.')
@@ -287,7 +297,7 @@ async function main() {
     provider.setAvailable(true)
     await waitForValue(
       async () => ({
-        surface: await readOperatorSurface(activeLaunch.page),
+        surface: await readOperatorSurface(activeLaunch.page, { open: true }),
         cache: await readCache(cachePath),
       }),
       (observation) => observation.surface.mode.toLowerCase() === 'online'
@@ -521,7 +531,7 @@ async function launchPackaged(appPath, profile, label, report) {
     process: null,
     diagnostics: { consoleErrors: [], pageErrors: [], processStderr: [] },
     screenshots: [],
-    startupSamples: [],
+    observer: null,
     close: null,
   }
   launch.app = await electron.launch({
@@ -546,6 +556,10 @@ async function launchPackaged(appPath, profile, label, report) {
     launch.diagnostics.processStderr.push(sanitizeDiagnosticText(String(chunk)))
     if (launch.diagnostics.processStderr.length > 40) launch.diagnostics.processStderr.shift()
   })
+  // No init script: Playwright cannot get one into a packaged app's first
+  // window before it loads. The renderer reports the tracking source's errors
+  // itself from the moment the map is created; a map without that report reads
+  // as uncaptured, which is blind, so the probe fails loudly.
   launch.page = await launch.app.firstWindow()
   launch.page.on('console', (message) => {
     if (message.type() === 'error') launch.diagnostics.consoleErrors.push(sanitizeDiagnosticText(message.text()))
@@ -553,9 +567,10 @@ async function launchPackaged(appPath, profile, label, report) {
   launch.page.on('pageerror', (error) => {
     launch.diagnostics.pageErrors.push(sanitizeDiagnosticText(error.message))
   })
-  const startupObservation = await observeActionSurface(launch.page, () =>
-    launch.page.getByTestId('app-title').waitFor({ timeout: CLOSE_TIMEOUT_MS }))
-  launch.startupSamples = startupObservation.samples
+  // One continuous observation from the first window until the observed
+  // action ends, so there is no unwatched stretch between startup and recovery.
+  launch.observer = startSurfaceObserver(launch.page)
+  await launch.page.getByTestId('app-title').waitFor({ timeout: CLOSE_TIMEOUT_MS })
   report.launches.push({ label, executablePath: appPath, launchedAt: new Date().toISOString() })
   return launch
 }
@@ -612,9 +627,9 @@ async function attestPackagedInputs(app, appPath) {
 
 /** Performs the real operator setup for Mission A, including participant selection. */
 async function prepareMissionA(page) {
-  const picker = page.getByTestId('participant-device-picker')
-  await picker.getByRole('checkbox').first().waitFor({ timeout: CONDITION_TIMEOUT_MS })
-  await picker.getByRole('checkbox').first().check()
+  // The picker may sit inside folds in the new layout (DON-341); the helper
+  // opens whichever exist and requires the picker.
+  await selectParticipants(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await page.getByTestId('mission-name-input').fill('WAR-06 Mission A')
   // Keep the synthetic history rows inside the real mission evidence window.
   // This is still operator setup through the production control, rather than
@@ -625,9 +640,8 @@ async function prepareMissionA(page) {
 
 /** Resumes the recoverable mission through the operator-facing recovery control. */
 async function resumeRecoverableMission(page, missionId) {
-  const dialog = page.getByTestId('mission-recovery-dialog')
-  await dialog.waitFor({ state: 'visible', timeout: CONDITION_TIMEOUT_MS })
-  await dialog.getByRole('button', { name: 'Resume', exact: true }).click()
+  // The Resume card (DON-342); it not appearing, or staying, fails.
+  await resumeThroughRecoveryPrompt(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await waitForValue(
     () => readActiveMission(page),
     (mission) => mission?.id === missionId && mission.status === 'active',
@@ -637,10 +651,7 @@ async function resumeRecoverableMission(page, missionId) {
 
 /** Finishes a mission through the operator-facing decision dialog. */
 async function finishMission(page, missionId) {
-  await page.getByTestId('mission-finish-btn').click()
-  const dialog = page.getByTestId('mission-finish-dialog')
-  await dialog.waitFor({ state: 'visible', timeout: CONDITION_TIMEOUT_MS })
-  await dialog.getByRole('button', { name: 'Confirm Finish', exact: true }).click()
+  await confirmFinishMission(page, { timeoutMs: CONDITION_TIMEOUT_MS })
   await waitForValue(
     () => readActiveMission(page),
     (mission) => mission === null,
@@ -697,8 +708,19 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
   const cache = extra.cache ?? await readCache(path.join(await readUserDataPath(launch.page), CACHE_FILE_NAME))
   const reportExtra = { ...extra }
   delete reportExtra.cache
-  if (Array.isArray(reportExtra.surfaceSamples)) {
-    reportExtra.surfaceSamples = summarizeSurfaceSamples(reportExtra.surfaceSamples)
+  if (reportExtra.surfaceObservation !== undefined) {
+    const { samples, window, actionWarning } = reportExtra.surfaceObservation
+    delete reportExtra.surfaceObservation
+    // Each reading proves tracking was shown on the map at that moment; the
+    // saved catalog is kept as evidence of why, if it was not.
+    reportExtra.surfaceSamples = summarizeSurfaceSamples(samples, window, actionWarning, DISCARDED_CACHE_WARNING)
+    // A failed source update keeps the old payload, so any reading after it is
+    // untrustworthy; a healthy run never has one.
+    assert.deepEqual(reportExtra.surfaceSamples.trackingSourceErrors, [],
+      `${phase}: ${reportExtra.surfaceSamples.trackingSourceErrors.join('; ')}. The map's positions could not be trusted after that.`)
+    assert.equal(reportExtra.surfaceSamples.uncapturedCount, 0,
+      `${phase}: the renderer was not reporting tracking-source errors for ${reportExtra.surfaceSamples.uncapturedCount} readings, so a failed update could have been missed.`)
+    reportExtra.savedTrackingHidden = await readSavedTrackingHidden(launch.page, missionId)
   }
   const result = {
     phase,
@@ -714,36 +736,82 @@ async function capturePhase(launch, evidenceDir, phase, missionId, extra = {}) {
   return result
 }
 
-/** Reads the current operator-visible text without mutating renderer state. */
+/**
+ * Reads what the operator sees about tracking.
+ *
+ * Counts keep the retired counters' meaning: Fixes is the tracking snapshot's
+ * positions and Cache those whose data origin is the cache. The map draws one
+ * device point per snapshot position (tracking-geojson.ts), carrying that
+ * position's origin, so they are read from the map's tracking source on every
+ * sample, with Devices open or not. Only a `ready` reading, taken while the
+ * renderer reported tracking shown on the map, proves a zero; counts read with
+ * tracking hidden or unconfirmed still show anything drawn, and no map, no
+ * source or an unreadable source gives no counts (war06-surface-observation.mjs).
+ *
+ * The visible readout is read separately: the headline always, and the
+ * connection mode, warning, per-person sources and attention from Devices,
+ * opened first with `open` or `requireCounters` (DON-341).
+ */
 async function readOperatorSurface(page, options = {}) {
+  if (options.open === true || options.requireCounters === true) {
+    await openDevicesWorkspace(page, { timeoutMs: CONDITION_TIMEOUT_MS })
+  }
+  const map = await page.evaluate(readTrackingSourceInPage)
   const surface = await page.evaluate(() => {
-    const text = (testId) => document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
+    const shown = (element) => element !== null && element.getClientRects().length > 0
+    const text = (element) => element?.textContent?.trim() ?? ''
+    const devicesVisible = shown(document.querySelector('[data-testid="devices-workspace"]'))
+    const headline = document.querySelector('[data-testid="ws-tracking-headline"]')
+    const all = (prefix) => [...document.querySelectorAll(`[data-testid^="${prefix}"]`)]
     return {
-      mode: text('tracking-mode-chip'),
-      warning: text('tracking-warning'),
-      counters: text('tracking-counters'),
-      stationaryAttention: text('stationary-attention-summary'),
+      devicesVisible,
+      headline: shown(headline) ? headline.getAttribute('aria-label') ?? text(headline) : '',
+      mode: devicesVisible ? text(document.querySelector('[data-testid="devices-tracking-mode"]')) : '',
+      warning: devicesVisible ? text(document.querySelector('[data-testid="devices-tracking-warning"]')) : '',
+      sources: devicesVisible ? all('device-source-').map(text) : [],
+      stationaryAttention: devicesVisible
+        ? all('device-attention-')
+          .filter((element) => !element.dataset.testid.startsWith('device-attention-unavailable-'))
+          .map(text).filter((value) => value !== '').join(' · ')
+        : '',
       body: document.body.innerText,
     }
   })
   if (options.requireCounters === true) {
-    assert.match(surface.counters, /Fixes\s*\d+/i, 'Tracking fixes counter is not readable on the operator surface.')
-    assert.match(surface.counters, /Cache\s*\d+/i, 'Tracking cache counter is not readable on the operator surface.')
+    assert.equal(map.state, 'ready', `The map's tracking source was not ready (${map.reason ?? map.state}), so the fix and cache counts are unknown.`)
+    assert.equal(surface.devicesVisible, true, 'Devices did not open, so the tracking readout is not readable on the operator surface.')
   }
+  const drawn = Number.isFinite(map.fixes) && Number.isFinite(map.cache)
   return {
     ...surface,
-    currentFixCount: readCounter(surface.counters, 'Fixes'),
-    cachedDeviceCount: readCounter(surface.counters, 'Cache'),
+    map,
+    state: map.state,
+    readable: map.state === 'ready' && drawn,
+    counters: drawn ? `Fixes ${map.fixes} Cache ${map.cache}` : '',
+    currentFixCount: drawn ? map.fixes : null,
+    cachedDeviceCount: drawn ? map.cache : null,
+    mapAttentionCount: drawn && Number.isFinite(map.attention) ? map.attention : null,
   }
+}
+
+/**
+ * The mission's saved layer-catalog entries that hide tracking positions,
+ * read through the read-only IPC. Evidence only; the readings prove visibility.
+ */
+async function readSavedTrackingHidden(page, missionId) {
+  const entries = await page.evaluate(async (id) => {
+    const store = window.sartrackerElectron?.layerCatalogStore
+    if (store === undefined) throw new Error('Layer catalog IPC is unavailable.')
+    return store.listMetadata(id)
+  }, missionId)
+  assert.ok(Array.isArray(entries), 'The layer catalog could not be read, so tracking visibility is unknown.')
+  return trackingNodesHiddenInCatalog(entries)
 }
 
 /** Captures the operator device inspector and coordinates when a row exists. */
 async function captureDeviceWorkspace(launch, evidenceDir, phase) {
-  const openButton = launch.page.getByTestId('open-devices-workspace')
-  if (await openButton.count() === 0) return { visible: false }
-  await openButton.click()
-  const workspace = launch.page.getByTestId('devices-workspace')
-  await workspace.waitFor({ state: 'visible', timeout: CONDITION_TIMEOUT_MS })
+  // Devices opens from People in the new layout (DON-341).
+  const workspace = await openDevicesWorkspace(launch.page, { timeoutMs: CONDITION_TIMEOUT_MS })
   const row = launch.page.getByTestId(`device-select-name-${DEVICE_ID}`)
   const layout = workspace.locator('..')
   if (await row.count() > 0) {
@@ -755,8 +823,7 @@ async function captureDeviceWorkspace(launch, evidenceDir, phase) {
   const screenshotPath = path.join(evidenceDir, `${phase}-devices.png`)
   await launch.page.screenshot({ path: screenshotPath })
   launch.screenshots.push(screenshotPath)
-  const closeButton = launch.page.getByTestId('workspace-close-btn')
-  if (await closeButton.count() > 0) await closeButton.click()
+  await closeWorkspace(launch.page, { timeoutMs: CONDITION_TIMEOUT_MS })
   return {
     visible: true,
     screenshotPath,
@@ -766,52 +833,87 @@ async function captureDeviceWorkspace(launch, evidenceDir, phase) {
   }
 }
 
-/** Samples the visible renderer while recovery and cache admission are settling. */
-async function observeActionSurface(page, action) {
+/**
+ * Reads the map continuously from now until stopped. Each reading records when
+ * it started and completed; a read that throws (the renderer can be between
+ * startup documents) is kept as unreadable, never as a zero.
+ *
+ * @param {import('playwright').Page} page the app window
+ * @returns {{
+ *   waitForReady: (timeoutMs: number) => Promise<void>,
+ *   stop: (actionStartedAt?: number) => Promise<{ samples: object[], window: { startedAt: number, actionStartedAt: number | null, endedAt: number } }>,
+ * }}
+ */
+function startSurfaceObserver(page) {
   const samples = []
+  const startedAt = Date.now()
   let observing = true
-  const sampler = (async () => {
+  const loop = (async () => {
     while (observing) {
+      const at = Date.now()
       try {
-        samples.push(await readOperatorSurface(page))
-      } catch {
-        // The renderer can be between startup documents; retain surrounding samples.
+        const surface = await readOperatorSurface(page)
+        samples.push({ ...surface, at, doneAt: Date.now() })
+      } catch (error) {
+        samples.push({ state: 'unreadable', readable: false, at, doneAt: Date.now(), error: String(error?.message ?? error).slice(0, 200) })
       }
       await delay(50)
     }
   })()
-  let result
-  try {
-    result = await action()
-  } finally {
-    observing = false
-    await sampler
-  }
-  if (result !== null && typeof result === 'object'
-    && 'warning' in result && typeof result.warning === 'string') {
-    samples.push(result)
-  }
-  return { result, samples }
-}
-
-/** Reduces startup observations to current/cache counts and warning sightings. */
-function summarizeSurfaceSamples(samples) {
-  const validSamples = samples.filter((sample) => sample !== null && sample !== undefined)
+  let stopped = null
   return {
-    sampleCount: validSamples.length,
-    first: validSamples[0] ?? null,
-    last: validSamples.at(-1) ?? null,
-    maxCurrentFixCount: Math.max(0, ...validSamples.map((sample) => sample.currentFixCount ?? 0)),
-    maxCachedDeviceCount: Math.max(0, ...validSamples.map((sample) => sample.cachedDeviceCount ?? 0)),
-    discardWarningObserved: validSamples.some((sample) => sample.warning.includes(DISCARDED_CACHE_WARNING)),
-    attentionObserved: validSamples.some((sample) => sample.stationaryAttention !== ''),
+    async waitForReady(timeoutMs) {
+      const deadline = Date.now() + timeoutMs
+      for (;;) {
+        // Failure first: a ready reading before it does not outweigh it.
+        const failure = samples.find((sample) => sample.state === 'failed')
+        if (failure !== undefined) throw new Error(`Before the probe acted, ${failure.map?.reason ?? 'the tracking source reported an error'}.`)
+        // The packaged renderer must report tracking-source errors from map
+        // creation; without that report no reading can be trusted.
+        const uncaptured = samples.find((sample) => sample.state === 'uncaptured')
+        if (uncaptured !== undefined) throw new Error(`Before the probe acted, ${uncaptured.map?.reason ?? 'the renderer was not reporting tracking-source errors'}.`)
+        if (samples.some((sample) => sample.readable === true)) return
+        if (!observing || Date.now() > deadline) {
+          const last = samples.at(-1)
+          throw new Error(`The map gave no ready reading within ${timeoutMs} ms of launch (last: ${last?.state ?? 'none'}${last?.map?.reason === undefined ? '' : `, ${last.map.reason}`}), so nothing it shows could be proven.`)
+        }
+        await delay(50)
+      }
+    },
+    stop(actionStartedAt) {
+      stopped ??= (async () => {
+        observing = false
+        const endedAt = Date.now()
+        await loop
+        return { samples, window: { startedAt, actionStartedAt: actionStartedAt ?? null, endedAt } }
+      })()
+      return stopped
+    },
   }
 }
 
-/** Reads a named integer from the four-column tracking counter readout. */
-function readCounter(text, label) {
-  const value = text.match(new RegExp(`${label}\\s*(\\d+)`, 'i'))?.[1]
-  return value === undefined ? 0 : Number(value)
+/**
+ * Waits for the launch's first ready map reading, runs an action while the
+ * observer keeps reading the map, then ends the observation. A warning the action returns is kept apart from the
+ * readings: it is a sighting, not a timed reading of the map.
+ */
+async function observeActionSurface(launch, action) {
+  assert.ok(launch.observer !== null, `${launch.label} has no running map observation.`)
+  let result
+  let failure = null
+  let actionStartedAt
+  try {
+    await launch.observer.waitForReady(STARTUP_READY_TIMEOUT_MS)
+    actionStartedAt = Date.now()
+    result = await action()
+  } catch (error) {
+    failure = error
+  }
+  const observation = await launch.observer.stop(actionStartedAt)
+  launch.observer = null
+  if (failure !== null) throw failure
+  const actionWarning = result !== null && typeof result === 'object' && typeof result.warning === 'string' ? result.warning : ''
+  return { result, samples: observation.samples, window: observation.window, actionWarning }
 }
 
 /** Reads mission evidence through the exposed read-only preload methods. */
@@ -963,8 +1065,16 @@ function assertMissionBHasNoMissionA(phase, missionAId, label) {
   `${label} did not expose the planned discard warning before fresh data.`)
   assert.equal(phase.surface.currentFixCount, 0, `${label} rendered current fixes under Mission B.`)
   assert.equal(phase.surface.cachedDeviceCount, 0, `${label} rendered cached devices under Mission B.`)
-  assert.equal(phase.surfaceSamples?.maxCurrentFixCount ?? 0, 0, `${label} transiently rendered a current fix.`)
-  assert.equal(phase.surfaceSamples?.maxCachedDeviceCount ?? 0, 0, `${label} transiently rendered a cached device.`)
+  // Only a ready reading, with tracking shown on the map, proves zero. From the
+  // first one on, any other reading is blind, and a blind stretch could hide a
+  // flash of Mission A.
+  const samples = phase.surfaceSamples
+  assert.ok((samples?.readableCount ?? 0) > 0, `${label} never read the map during recovery, so no Mission A leak is proven absent.`)
+  assert.equal(samples.readyBeforeAction, true, `${label} had no ready map reading before recovery began, so the start of recovery was not watched.`)
+  assert.ok(samples.longestGapMs <= MAX_UNOBSERVED_GAP_MS,
+    `${label} could not read the map with tracking shown for ${samples.longestGapMs} ms during recovery (limit ${MAX_UNOBSERVED_GAP_MS} ms; hidden ${samples.hiddenCount}, unconfirmed ${samples.unconfirmedCount}, update pending ${samples.pendingCount}, not drawn after ready ${samples.notDrawnAfterReadyCount}, invalid ${samples.invalidCount}); a Mission A position shown then would be missed.`)
+  assert.equal(samples.maxCurrentFixCount, 0, `${label} transiently rendered a current fix.`)
+  assert.equal(samples.maxCachedDeviceCount, 0, `${label} transiently rendered a cached device.`)
   assert.equal(phase.surfaceSamples?.attentionObserved ?? false, false, `${label} transiently rendered stationary attention.`)
   assert.equal(phase.surfaceSamples?.discardWarningObserved ?? false, true, `${label} did not expose the planned discard warning during recovery.`)
   assert.equal(phase.ipc.positions.length, 0, `${label} persisted positions while provider data was unavailable.`)
@@ -1019,6 +1129,8 @@ function summarizeMission(mission) {
 
 /** Closes the packaged app and requires a clean exit code from the child process. */
 async function closeLaunch(launch, report) {
+  await launch.observer?.stop()
+  launch.observer = null
   const startedAt = Date.now()
   let closeError = null
   try {

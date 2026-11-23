@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { openMissionPanel, openMissionReview } from './helpers/workspace-panels'
 
 const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 const MISSION_NAME = 'Archive Review Browser Proof'
@@ -10,7 +11,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     await openBrowserHarness(page)
     const archive = await createVerifiedSyntheticArchive(page)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     const workspace = page.getByTestId('mission-review-workspace')
     const archiveControl = page.getByTestId('mission-archive-review-control')
     await expect(workspace).toBeVisible()
@@ -40,6 +41,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     await expect(page.getByTestId(/^mission-review-open-path-/u)).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-replay-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Replay is read-only')
     await expect(banner).toBeVisible()
@@ -67,7 +69,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     await openBrowserHarness(page)
     const archive = await createVerifiedSyntheticArchive(page)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     const archiveControl = page.getByTestId('mission-archive-review-control')
     await expect(page.getByTestId(`archive-storage-state-${archive.missionId}`)).toHaveText(
       'Storage: live',
@@ -128,13 +130,14 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Replay is read-only')
     await expect(page.getByRole('button', { name: /delete|unlock|archive live rows/i })).toHaveCount(0)
+    await openMissionPanel(page)
     await page.getByTestId('mission-review-close-archive').click()
     await expect(page.getByTestId('mission-review-archive-banner')).toHaveCount(0)
 
     await page.reload()
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker', { timeout: 15_000 })
     await page.waitForSelector('canvas', { timeout: 20_000 })
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId(`archive-storage-state-${archive.missionId}`)).toHaveText(
       'Storage: archived',
     )
@@ -155,7 +158,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
       await harness.prepareArchiveVerificationRetryFixture(archiveId)
     }, archive.archiveId)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     const archiveSelect = page.getByTestId(`archive-review-select-${archive.archiveId}`)
     await expect(archiveSelect).toContainText('Verification required')
     await expect(archiveSelect).toBeDisabled()
@@ -210,7 +213,7 @@ test.describe('C9 archive-backed Mission Review operator flow [DON-253 / BCP-16]
       )
     })
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByTestId(`archive-cleanup-open-${archive.missionId}`).click()
     const cleanup = page.getByTestId('mission-archive-cleanup-dialog')
     await page.getByTestId('archive-cleanup-secret').fill(SYNTHETIC_ARCHIVE_PASSPHRASE)
@@ -249,15 +252,18 @@ async function createVerifiedSyntheticArchive(page: Page): Promise<{
   readonly missionId: string
   readonly recoveryCode: string
 }> {
+  await openMissionPanel(page)
   await page.getByTestId('mission-name-input').fill(MISSION_NAME)
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-control')).toContainText('active')
+  await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page
     .getByTestId('mission-finish-dialog')
     .getByRole('button', { name: 'Confirm Finish' })
     .click()
 
+  await openMissionPanel(page)
   await page.getByTestId('mission-finalize-btn').click()
   const dialog = page.getByTestId('mission-archive-custody-dialog')
   await expect(dialog).toBeVisible()

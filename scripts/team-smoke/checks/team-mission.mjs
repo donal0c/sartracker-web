@@ -22,11 +22,12 @@ import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
 import {
-  ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission,
-  missionPhase, openMissionSection, placeMarker, resumeIfPrompted, startMission,
+  ARCHIVE_PASSPHRASE, archiveMission, bodyText, closeWorkspace, connectProvider, finishMission, returnReplayToLive,
+  missionPhase, openMissionSection, outageWarning, placeMarker, resumeIfPrompted, startMission, trackingStatus,
 } from '../lib/operator.mjs'
+import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
-import { expectProduct } from '../lib/results.mjs'
+import { expectProduct, NotTested } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
 
@@ -92,15 +93,8 @@ async function writeGpxFiles(inbox) {
   return [timedFile, untimedFile]
 }
 
-/** Reads the visible tracking health text. */
-export async function trackingStatus(page) {
-  const parts = []
-  for (const id of ['tracking-warning', 'mast-tracking-cell', 'persistent-tracking-health', 'stationary-attention-summary']) {
-    const locator = page.getByTestId(id)
-    if (await locator.count() > 0) parts.push(await locator.first().innerText().catch(() => ''))
-  }
-  return parts.join(' / ').replace(/\s+/gu, ' ').trim()
-}
+/** Reads the visible tracking health text (see operator.mjs). */
+export { trackingStatus }
 
 /** Adds a participant during the mission with an explicit history choice. */
 export async function addAfterStart(page, kind, label, historyFrom) {
@@ -133,12 +127,12 @@ export async function waitForBackfill(page, budgetMs) {
 async function drawSearchArea(page, name) {
   const canvas = page.locator('.maplibregl-canvas').first()
   await page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
-  await page.getByTestId('drawing-tool-search_area').click({ force: true })
+  await page.getByTestId('drawing-tool-search_area').click()
   for (const position of [{ x: 440, y: 220 }, { x: 620, y: 220 }, { x: 540, y: 360 }]) {
-    await canvas.click({ position, force: true })
+    await canvas.click({ position })
     await delay(300)
   }
-  await canvas.click({ position: { x: 540, y: 360 }, button: 'right', force: true })
+  await canvas.click({ position: { x: 540, y: 360 }, button: 'right' })
   await page.getByTestId('drawing-dialog').waitFor({ timeout: 10_000 })
   await page.getByTestId('drawing-name-input').fill(name)
   await page.getByTestId('drawing-save-btn').click()
@@ -150,7 +144,7 @@ async function drawSearchArea(page, name) {
 /** Places a casualty marker, first confirming save is blocked until required fields are set. */
 export async function placeCasualty(page, { name, x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-dialog').getByText('Casualty', { exact: true }).click()
   await t('marker-name-input').fill(name)
@@ -165,7 +159,7 @@ export async function placeCasualty(page, { name, x, y }) {
 /** Opens the marker at a point and deletes it through the two-stage confirmation. */
 async function deleteMarkerAt(page, { x, y }) {
   const t = (id) => page.getByTestId(id)
-  await page.locator('.maplibregl-canvas').first().click({ position: { x, y }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x, y } })
   await t('marker-dialog').waitFor({ timeout: 10_000 })
   await t('marker-delete-btn').click()
   const confirmationShown = await t('marker-delete-confirmation').isVisible()
@@ -221,13 +215,19 @@ export default [
 
       // Start 48 h back with a group and one device ticked before Start.
       const t = (id) => app.page.getByTestId(id)
+      await openWorkspacePanel(app.page, 'mission')
       await t('mission-name-input').fill(MISSION)
       await t('mission-offset-input').fill(String(LOOKBACK_HOURS))
-      await t('participant-group-picker').getByText('KMRT Hasty', { exact: true }).click()
-      await t('participant-device-picker').getByText('Dog Handler', { exact: true }).click()
+      // Both pickers sit in folds that start closed; open them and wait for the entries.
+      const devicePicker = await openParticipantPickers(app.page, { require: 'device' })
+      const groupPicker = await openParticipantPickers(app.page, { require: 'group' })
+      await groupPicker.getByText('KMRT Hasty', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+      await groupPicker.getByText('KMRT Hasty', { exact: true }).click()
+      await devicePicker.getByText('Dog Handler', { exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+      await devicePicker.getByText('Dog Handler', { exact: true }).click()
       const missionStartPressedAt = Date.now()
       await t('mission-start-btn').click()
-      await openMissionSection(app.page, 'participants')
+      await openMissionSection(app.page, 'participants', { timeoutMs: 20_000 })
       await t('participant-management').waitFor({ timeout: 20_000 })
       await delay(1500)
       const missionStart = Date.parse(await app.page.evaluate(async () =>
@@ -271,16 +271,20 @@ export default [
       await delay(20_000)
       const status = await trackingStatus(app.page)
       await app.shot('indicators')
-      if (!/stationary attention/i.test(status)) findings.push(`no stationary attention for devices still for hours: "${status.slice(0, 160)}"`)
+      if (!/not moving/i.test(status)) findings.push(`no "not moving" warning for devices still for hours: "${status.slice(0, 160)}"`)
       if (!/stale/i.test(status)) findings.push(`no stale warning for a device silent 70 min: "${status.slice(0, 160)}"`)
-      // DON-307: Minimize must work while yesterday's finished mission awaits Archive & Lock.
-      await t('mission-control-collapse-btn').click()
-      await delay(800)
-      const minimizedShown = await t('command-mast-mission-control-minimized').isVisible().catch(() => false)
-      const dockHidden = !(await t('mission-control-dock').isVisible().catch(() => false))
-      if (!minimizedShown || !dockHidden) findings.push('Minimize did nothing while an earlier finished mission awaited Archive & Lock (DON-307)')
-      await t('compact-mission-restore').click().catch(() => {})
-      await delay(800)
+      // DON-307: the Mission panel must close while yesterday's finished
+      // mission awaits Archive & Lock, leaving the mission in the top bar.
+      // Automation errors propagate (NOT TESTED); only a panel that stays open is a product finding.
+      await openWorkspacePanel(app.page, 'mission')
+      await t('ws-mission-close').click()
+      const panelClosed = await t('ws-mission-host').waitFor({ state: 'hidden', timeout: 5_000 }).then(() => true, (error) => {
+        if (error?.name === 'TimeoutError') return false
+        throw error
+      })
+      const topBarShown = await t('current-mission-name').isVisible()
+      if (!panelClosed || !topBarShown) findings.push('The Mission panel would not close while an earlier finished mission awaited Archive & Lock (DON-307)')
+      await openWorkspacePanel(app.page, 'people')
       await t('open-devices-workspace').click()
       await delay(1500)
       const deviceList = await t('device-list-scroll').innerText()
@@ -439,14 +443,17 @@ export default [
       }
 
       // Provider outage: visible, then backfilled.
-      const beforeOutage = await trackingStatus(app.page)
+      // Evidence is the alarm strip plus the headline's warning, both on screen;
+      // one already showing before the outage proves nothing about it.
+      const beforeOutage = await outageWarning(app.page)
+      if (beforeOutage !== '') throw new NotTested(`The tracking alarm was already showing before the outage: "${beforeOutage.slice(0, 160)}".`)
       mock.setOffline(true)
       let outageShown = ''
       const outageStarted = Date.now()
       while (Date.now() - outageStarted < 60_000) {
         await delay(5000)
-        const during = await trackingStatus(app.page)
-        if (outageShown === '' && during !== beforeOutage && /unreachable|offline|error|retry|fail|lost|degraded|disconnect/i.test(during)) {
+        const during = await outageWarning(app.page)
+        if (outageShown === '' && during !== '') {
           outageShown = during
           await app.shot('outage')
         }
@@ -493,10 +500,10 @@ export default [
       // Map Tools after a relaunch on a lived-in catalog (DON-118): Measure must work.
       const canvas = app.page.locator('.maplibregl-canvas').first()
       await app.page.getByTestId('drawing-toolbar-expand').click().catch(() => {})
-      await app.page.getByTestId('drawing-tool-measure').click({ force: true })
-      await canvas.click({ position: { x: 680, y: 240 }, force: true })
+      await app.page.getByTestId('drawing-tool-measure').click()
+      await canvas.click({ position: { x: 680, y: 240 } })
       await delay(400)
-      await canvas.click({ position: { x: 820, y: 300 }, force: true })
+      await canvas.click({ position: { x: 820, y: 300 } })
       await delay(1500)
       const measured = (await app.page.getByTestId('measurement-count').innerText().catch(() => '0')).trim()
       await app.shot('measure-after-relaunch')
@@ -509,7 +516,7 @@ export default [
       if (!deletion.confirmationShown || !deletion.keptOpen) findings.push('marker delete did not require a second confirmation, or Keep did not keep it')
 
       // Replay into the backfilled window (24 h after mission start).
-      await app.page.getByTestId('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1500)
       await app.page.getByRole('button', { name: 'Replay', exact: true }).click()
       await delay(1500)
@@ -520,8 +527,8 @@ export default [
       const replayError = await app.page.getByTestId('mission-replay-error').innerText().catch(() => null)
       const replayRecords = /(\d+) \/ (\d+) selected-time records read/u.exec(await bodyText(app.page))
       await app.shot('replay-day-1')
-      await app.page.getByTestId('mission-replay-return-live').click().catch(() => {})
-      await delay(1000)
+      const leftReplay = await returnReplayToLive(app.page)
+      if (leftReplay !== 'live') findings.push(`Return to Live / now did not bring back the live map context (${leftReplay})`)
       await closeWorkspace(app.page)
       if (replayError !== null || replayState === '') findings.push(`replay 24 h into the backfilled window failed: ${replayError ?? 'empty state'}`)
       // Replay folds evidence at max(fixTime, recorded_at), so history fetched by
@@ -559,6 +566,7 @@ export default [
       expectProduct(governanceName.includes(MISSION),
         `Archive & Lock offered a different mission after finishing "${MISSION}": "${governanceName.slice(0, 120)}" (DON-294).`)
       let recoveryCode = ''
+      await openWorkspacePanel(app.page, 'mission')
       await t('mission-finalize-btn').click()
       await delay(800)
       await t('archive-passphrase').fill(ARCHIVE_PASSPHRASE)
@@ -580,7 +588,7 @@ export default [
       ).get(MISSION)?.id)
       expectProduct(archiveId !== undefined, `No archive row was stored for "${MISSION}".`)
       app = await launchApp(ctx, { profile, label: 'team-3-reopen' })
-      await app.page.getByTestId('open-mission-review-workspace').click()
+      await openMissionReview(app.page)
       await delay(1500)
       await app.page.getByTestId(`archive-review-select-${archiveId}`).click({ timeout: 15_000 })
       await app.page.getByTestId('archive-review-slot-recovery').click()

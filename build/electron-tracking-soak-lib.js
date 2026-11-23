@@ -1115,6 +1115,42 @@ export function shouldReadCheckpointPositionCount({ completedBatches, targetBatc
   return completedBatches >= targetBatch
 }
 
+/**
+ * Summarizes the mock's history-request evidence per device: how many requests
+ * it made, and after the last restart how many, the oldest window start it
+ * asked for, and how many were answered with an exact window. It answers
+ * whether a history reader asked again for an early window after a restart
+ * [DON-367].
+ */
+export function summarizeTrackingSoakHistoryRequests(evidence) {
+  const lastResumeAtMs = evidence.resumes.at(-1)?.atMs ?? null
+  const devices = new Map()
+  for (const request of evidence.requests) {
+    const device = devices.get(request.deviceId) ?? {
+      deviceId: request.deviceId,
+      requests: 0,
+      requestsAfterLastResume: 0,
+      exactWindowRequestsAfterLastResume: 0,
+      oldestFromAfterLastResume: null,
+    }
+    device.requests += 1
+    if (lastResumeAtMs !== null && request.atMs >= lastResumeAtMs) {
+      device.requestsAfterLastResume += 1
+      if (request.reply === 'window') device.exactWindowRequestsAfterLastResume += 1
+      if (device.oldestFromAfterLastResume === null || request.from < device.oldestFromAfterLastResume) {
+        device.oldestFromAfterLastResume = request.from
+      }
+    }
+    devices.set(request.deviceId, device)
+  }
+  return {
+    schemaVersion: 1,
+    lastResumeAtMs,
+    droppedRequests: evidence.droppedRequests,
+    devices: [...devices.values()].sort((left, right) => Number(left.deviceId) - Number(right.deviceId)),
+  }
+}
+
 /** Calculates interval slopes without conflating retained positions and redundant telemetry. */
 export function buildTrackingGrowthEvidence(checkpoints) {
   const normalized = checkpoints.map((checkpoint) => ({ ...checkpoint }))

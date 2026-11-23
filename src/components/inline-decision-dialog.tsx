@@ -1,11 +1,13 @@
 import {
   useEffect,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from 'react'
 
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
+import { registerOpenDecision, subscribeModalWorkspaceRefusals } from '../lib/modal-workspace-registry'
 
 type InlineDecisionDialogProps = {
   readonly labelledBy: string
@@ -21,6 +23,15 @@ export function InlineDecisionDialog(props: InlineDecisionDialogProps) {
   const { onCancel } = props
   const panelRef = useRef<HTMLDivElement>(null)
   const returnFocusRef = useRef<Element | null>(null)
+  const [refusedWorkspace, setRefusedWorkspace] = useState<string | null>(null)
+
+  // A workspace does not open over this question; say so here and bring the
+  // question back to the keyboard, so the press is never silently lost.
+  useEffect(() => registerOpenDecision(), [])
+  useEffect(() => subscribeModalWorkspaceRefusals((workspaceName) => {
+    setRefusedWorkspace(workspaceName)
+    panelRef.current?.focus()
+  }), [])
 
   useEffect(() => {
     returnFocusRef.current = document.activeElement
@@ -37,6 +48,8 @@ export function InlineDecisionDialog(props: InlineDecisionDialogProps) {
   useEffect(() => {
     const handleDocumentKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      // Behind an open workspace this question is out of reach; Escape is that workspace's.
+      if (panelRef.current?.closest('[inert]') != null) return
       event.preventDefault()
       event.stopPropagation()
       event.stopImmediatePropagation()
@@ -68,6 +81,11 @@ export function InlineDecisionDialog(props: InlineDecisionDialogProps) {
       role="alertdialog"
       tabIndex={-1}
     >
+      {refusedWorkspace === null ? null : (
+        <p className="mb-2 text-[13px] font-semibold text-amber-300" data-testid="decision-refused-workspace" role="status">
+          {refusedWorkspace} did not open. Answer this question first.
+        </p>
+      )}
       {props.children}
     </div>
   )

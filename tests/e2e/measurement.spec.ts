@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+import { armMapTool } from './helpers/map-tools'
 
 test.describe('M9 measurement workflows', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,16 +9,21 @@ test.describe('M9 measurement workflows', () => {
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Measurement Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    // Full map: the open Map Tools and its measurement list cover the left of
+    // the map, so the map clicks below land to their right (DON-341).
+    await backToFullMap(page)
     await page.getByTestId('drawing-toolbar-expand').click()
   })
 
   test('creates multiple measurements and clears them manually', async ({ page }) => {
     await expect(page.getByTestId('measurement-panel')).toBeHidden()
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     await expect(page.getByTestId('measurement-panel')).toBeHidden()
+    await backToFullMap(page)
 
     await page.getByTestId('drawing-tool-measure').click()
     await expect(page.getByTestId('measurement-status')).toContainText('Click the first point')
@@ -27,7 +34,7 @@ test.describe('M9 measurement workflows', () => {
     await clickMap(page, { x: 820, y: 300 })
 
     await expect(page.getByTestId('measurement-mode')).toHaveText('idle')
-    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Select')
+    await expect(page.getByTestId('drawing-toolbar-active-mode')).toContainText('Open')
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
     await expect(page.getByTestId('measurement-list')).toContainText(/km|m/)
     await expect(page.getByTestId('measurement-list')).toContainText('°')
@@ -60,13 +67,14 @@ test.describe('M9 measurement workflows', () => {
     await clickMap(page, { x: 820, y: 300 })
     await expect(page.getByTestId('measurement-count')).toHaveText('1')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()
     await page
       .getByTestId('mission-finish-dialog')
       .getByRole('button', { name: 'Confirm Finish' })
       .click()
 
-    await expect(page.getByTestId('mission-control')).toContainText('idle')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'idle')
     await expect(page.getByTestId('measurement-count')).toHaveText('0')
     await expect(page.getByTestId('drawing-tool-measure')).toBeDisabled()
   })
@@ -120,8 +128,9 @@ test.describe('M9 measurement workflows', () => {
       .toBeGreaterThan(0)
 
     await hideMapToolsGroup(page)
-    await page.getByTestId('sidebar-tab-tools').click()
-    await page.getByTestId('drawing-tool-line').click({ force: true })
+    await openWorkspacePanel(page, 'tools')
+    await backToFullMap(page)
+    await armMapTool(page, 'line')
     await expect
       .poll(async () => (await readVisibilityState(page)).drawingTypeVisibility.line)
       .toBe(true)
@@ -141,26 +150,33 @@ test.describe('M9 measurement workflows', () => {
   })
 })
 
+/** Closes whichever side panel is open (Tools opens over Layers), leaving the whole map. */
+async function backToFullMap(page: import('@playwright/test').Page) {
+  const fullMap = page.getByTestId('ws-full-map')
+  if ((await fullMap.textContent())?.trim() === 'Full map') await fullMap.click()
+  await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+}
+
+/** How far right the clicks move so they clear the open Map Tools (DON-341). */
+const CLEAR_OF_MAP_TOOLS = 220
+
 async function clickMap(
   page: import('@playwright/test').Page,
   position: { x: number; y: number },
 ) {
-  await page.getByTestId('map-container').click({ position })
+  await page.getByTestId('map-container').click({ position: { x: position.x + CLEAR_OF_MAP_TOOLS, y: position.y } })
 }
 
 async function rightClickMap(
   page: import('@playwright/test').Page,
   position: { x: number; y: number },
 ) {
-  await page.getByTestId('map-container').click({ position, button: 'right' })
+  await page.getByTestId('map-container').click({ position: { x: position.x + CLEAR_OF_MAP_TOOLS, y: position.y }, button: 'right' })
 }
 
 async function hideMapToolsGroup(page: import('@playwright/test').Page) {
-  await page.getByTestId('sidebar-tab-layers').click()
-  const showHiddenInput = page.getByTestId('layer-show-hidden-toggle').locator('input')
-  if (!(await showHiddenInput.isChecked())) {
-    await page.getByTestId('layer-show-hidden-toggle').click()
-  }
+  // The Layers panel always lists hidden items, unticked (DON-341).
+  await openWorkspacePanel(page, 'layers')
   const mapToolsGroup = page.getByTestId('layer-visibility-group-map-tools')
   await expect(mapToolsGroup).toBeVisible()
   if (await mapToolsGroup.isChecked()) {
@@ -169,6 +185,7 @@ async function hideMapToolsGroup(page: import('@playwright/test').Page) {
   await expect
     .poll(async () => (await readVisibilityState(page)).groupVisibility.mapTools)
     .toBe(false)
+  await backToFullMap(page)
 }
 
 async function readVisibilityState(page: import('@playwright/test').Page) {

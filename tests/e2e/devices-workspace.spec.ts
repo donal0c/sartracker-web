@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel } from './helpers/workspace-panels'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,9 +8,10 @@ test.describe('M19 devices workspace', () => {
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Devices Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedTrackingWorkspace(page)
   })
 
@@ -90,16 +92,25 @@ test.describe('M19 devices workspace', () => {
     await expect(opener).toBeFocused()
   })
 
-  test('keeps the Open Devices pointer target fixed while tracking messages change [DON-261]', async ({
+  for (const width of [1280, 1024]) {
+  test(`keeps the Open Devices pointer target fixed while tracking messages change, ${width} px wide [DON-261]`, async ({
     page,
   }) => {
+    // A long message wrapped to two lines on Linux fonts in CI, growing the top
+    // bar and moving the panel; 1024 px makes it long enough to wrap anywhere.
+    await page.setViewportSize({ width, height: 720 })
     const opener = page.getByTestId('open-devices-workspace')
-    const initialBox = await opener.boundingBox()
-    if (initialBox === null) {
-      throw new Error('Open Devices pointer target is unavailable.')
+    // Measured on screen: the TRACKING LOST alarm runs across the map, so
+    // nothing under the pointer may move when it appears (DON-341).
+    const screenTop = async () => {
+      const box = await opener.boundingBox()
+      if (box === null) {
+        throw new Error('Open Devices pointer target disappeared.')
+      }
+      return box.y
     }
 
-    const observedTops = [initialBox.y]
+    const observedTops = [await screenTop()]
     for (const warning of [
       null,
       'Current fixes loaded; loading breadcrumb history.',
@@ -127,15 +138,54 @@ test.describe('M19 devices workspace', () => {
         )
         await new Promise((resolve) => window.requestAnimationFrame(resolve))
       }, warning)
-      const box = await opener.boundingBox()
-      if (box === null) {
-        throw new Error('Open Devices pointer target disappeared.')
-      }
-      observedTops.push(box.y)
+      observedTops.push(await screenTop())
     }
 
     expect(Math.max(...observedTops) - Math.min(...observedTops)).toBeLessThan(0.5)
   })
+  }
+
+  // Font widths differ by OS: the team's Linux laptops draw wider than macOS.
+  // Verdana (macOS, Windows) and DejaVu Sans (Linux) are the wide case.
+  for (const font of [null, 'Verdana, "DejaVu Sans", sans-serif'] as const) {
+  test(`shows every tracking problem in full at 1024 px, with the pointer target fixed${font === null ? '' : ', in a wide font'} [DON-261]`, async ({ page }) => {
+    // Runtime warnings can put a reassuring sentence first and add counts after
+    // it. An ellipsis on one long line hid the problems behind "…"; these are
+    // amber states with no separate red alarm, so they must stay readable.
+    if (font !== null) await page.addStyleTag({ content: `:root, button { font-family: ${font} !important; }` })
+    await page.setViewportSize({ width: 1024, height: 720 })
+    const opener = page.getByTestId('open-devices-workspace')
+    const topBefore = (await opener.boundingBox())?.y
+    await page.evaluate(async () => {
+      const [{ applyTrackingSnapshot, applyTrackingStatus }, { applyCurrentPositionRejections }] = await Promise.all([
+        import('/src/features/tracking/tracking-store.ts'),
+        import('/src/features/tracking/ingest-health-store.ts'),
+      ])
+      const position = (id: string) => ({
+        id: `${id}-current`, device_id: id, lat: 51.9985, lon: -9.7426, altitude: 320, speed: 1, battery: 85,
+        accuracy: 8, timestamp: new Date().toISOString(), timestamp_source: 'server' as const, source: 'osmand',
+        data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: true,
+      })
+      applyTrackingSnapshot({ devices: [], positions: [position('alpha'), position('bravo')], breadcrumbs: [] })
+      applyTrackingStatus({
+        mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: new Date().toISOString(),
+        warning: 'Current fixes loaded; refreshing device roster. BREADCRUMB HISTORY REFRESH FAILED — current fixes remain live; exact history will retry.',
+        warningCodes: ['roster_refreshing', 'history_refresh_failed'],
+      })
+      applyCurrentPositionRejections([{ deviceId: 'alpha', reason: 'invalid_coordinates', rowIndex: 1 }])
+    })
+
+    const problems = page.getByTestId('ws-tracking-problems')
+    await expect(problems).toHaveText('2 stale · 1 rejected · History failed')
+    const clipped = await problems.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      const bar = element.closest('[data-testid="ws-tracking-headline"]')?.getBoundingClientRect()
+      return element.scrollWidth > element.clientWidth + 0.5 || bar === undefined || box.right > bar.right + 0.5
+    })
+    expect(clipped).toBe(false)
+    expect((await opener.boundingBox())?.y).toBe(topBefore)
+  })
+  }
 
   test('makes workspace controls actionable immediately when opened [DON-260]', async ({
     page,
@@ -195,13 +245,14 @@ test.describe('M19 devices workspace', () => {
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
     await expect(page.getByTestId('devices-inspector-title')).toContainText('Bravo Team')
-    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    // Was the Tracking tab beside Devices; tracking health now stays in the top bar (DON-341).
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
 
     await page.getByTestId('device-zoom-alpha').click()
 
     await expect(page.getByTestId('devices-workspace')).toBeVisible()
-    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('marker-at-grid-panel')).toBeHidden()
     await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Alpha Team')
   })
@@ -271,7 +322,6 @@ test.describe('M19 devices workspace', () => {
 
     const zoomButton = page.getByTestId('devices-inspector-zoom')
     await expect(zoomButton).toBeVisible()
-    await expect(zoomButton).toBeInViewport()
 
     const boxes = await page.evaluate(() => {
       const inspector = document.querySelector('[data-testid="devices-inspector"]')
@@ -291,6 +341,16 @@ test.describe('M19 devices workspace', () => {
 
     expect(boxes.zoomLeft).toBeGreaterThanOrEqual(boxes.inspectorLeft)
     expect(boxes.zoomRight).toBeLessThanOrEqual(boxes.inspectorRight + 1)
+
+    // Tracking is offline here, so the TRACKING LOST alarm shows and the workspace
+    // starts below it (DON-341): at 720 px high the inspector scrolls down to Zoom.
+    // Scroll vertically only, after the width checks, so sideways overflow cannot hide.
+    await page.getByTestId('devices-inspector').evaluate((inspector) => {
+      const zoom = inspector.querySelector('[data-testid="devices-inspector-zoom"]')
+      if (zoom === null) throw new Error('Expected the selected-device zoom button.')
+      inspector.scrollTop += zoom.getBoundingClientRect().bottom - inspector.getBoundingClientRect().bottom + 16
+    })
+    await expect(zoomButton).toBeInViewport()
   })
 
   test('updates rendered breadcrumb colour, size, and global trail mode', async ({ page }) => {
@@ -501,9 +561,10 @@ test.describe('Operational tracking overlay readiness [DON-263]', () => {
       await page.goto('/?missionHarness=1')
       await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10_000 })
       await page.waitForSelector('canvas', { timeout: 15_000 })
+      await openMissionPanel(page)
       await page.getByTestId('mission-name-input').fill('Pending Basemap Mission')
       await page.getByTestId('mission-start-btn').click()
-      await expect(page.getByTestId('mission-control')).toContainText('active')
+      await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
       await seedTrackingWorkspace(page)
 
       await expect.poll(() => heldTileCount).toBeGreaterThan(0)

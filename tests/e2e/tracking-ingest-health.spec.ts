@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionPanel, openWorkspacePanel, openDevicesWorkspace } from './helpers/workspace-panels'
 
 test.describe('BCP-01 current-position ingest health', () => {
   test.use({ timezoneId: 'Europe/Dublin' })
@@ -7,9 +8,10 @@ test.describe('BCP-01 current-position ingest health', () => {
     await page.goto('/?missionHarness=1')
     await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15_000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('BCP-01 Ingest Health')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('keeps valid fixes visible beside rejection, roster, and unverified-time warnings [DON-267]', async ({
@@ -62,19 +64,21 @@ test.describe('BCP-01 current-position ingest health', () => {
       ])
     })
 
-    await expect(page.getByTestId('tracking-status')).toContainText(
-      'Last success22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
+    await openWorkspacePanel(page, 'tracking')
+    // Was "Last success" and the warning line in the Tracking tab (DON-341).
+    await expect(page.getByTestId('ws-tracking-panel')).toContainText(
+      'Last update: 22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
     )
-    await expect(page.getByTestId('tracking-warning')).toContainText('ROSTER UNAVAILABLE')
+    await expect(page.getByTestId('ws-tracking-happened')).toContainText('ROSTER UNAVAILABLE')
     await expect(page.getByTestId('current-position-ingest-warning')).toContainText(
       'Valid current fixes remain visible',
     )
     await expect(page.getByTestId('fix-time-unverified-warning')).toContainText(
       'uses server receipt clock, not verified Traccar fixTime',
     )
-    await expect(page.getByTestId('tracking-counters')).toContainText('1')
+    await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
 
-    await page.getByTestId('open-devices-workspace').click()
+    await openDevicesWorkspace(page)
     await expect(page.getByTestId('device-ingest-warning-alpha')).toContainText(
       'Position row rejected',
     )
@@ -105,6 +109,7 @@ test.describe('BCP-01 current-position ingest health', () => {
         breadcrumbs: [],
       })
     })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('current-position-ingest-warning')).toBeVisible()
 
     await page.evaluate(async () => {
@@ -137,6 +142,7 @@ test.describe('BCP-01 current-position ingest health', () => {
         affectedDeviceCount: 1, conflictDeviceIds: ['alpha'],
       })
     })
+    await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions remain live')
     await expect(page.getByTestId('position-conflict-warning')).toContainText('first accepted fix remains displayed')
   })

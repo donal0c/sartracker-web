@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import path from 'node:path'
+import { openMissionPanel, openMissionReview, openWorkspacePanel, pressPauseResume } from './helpers/workspace-panels'
 
 const SYNTHETIC_ARCHIVE_PASSPHRASE = 'Synthetic!Archive123'
 
@@ -10,9 +11,10 @@ test.describe('M15 mission review workspace', () => {
     await title.waitFor({ state: 'visible', timeout: 10000 })
     await expect(title).toContainText('SAR Tracker')
     await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
     await page.getByTestId('mission-name-input').fill('Review Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
   })
 
   test('shows mission details, audit history, and opens archive paths', async ({ page }) => {
@@ -20,11 +22,13 @@ test.describe('M15 mission review workspace', () => {
     await createSearchArea(page, 'Finalized Area')
     await injectTrackingSnapshot(page)
 
+    await openMissionPanel(page)
+
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
     await finalizeWithSyntheticArchiveCustody(page)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-review-workspace').getByText('Review Mission', { exact: true })).toBeVisible()
     await expect
@@ -64,7 +68,7 @@ test.describe('M15 mission review workspace', () => {
   test('DON-176: Review is docked and leaves active-mission controls operable', async ({ page }) => {
     // Open Review while a mission is active. The docked workspace must NOT cover
     // or intercept the mission-control rail or the map underneath.
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
 
     // No full-screen "Close workspace" backdrop should be intercepting clicks.
@@ -75,10 +79,10 @@ test.describe('M15 mission review workspace', () => {
 
     // Critical active-mission controls remain operable WITHOUT closing Review.
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     // The map remains clickable (marker dialog opens) while Review stays open.
     // Click in the clear map band to the right of the docked panel and left of
@@ -101,11 +105,13 @@ test.describe('M15 mission review workspace', () => {
     page,
   }) => {
     await createSearchArea(page, 'Finish Fence Area')
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Search Passes', exact: true }).click()
 
     await expect(page.getByTestId('search-operation-area')).toBeEnabled()
     await expect(page.getByTestId('search-operations-read-only')).toHaveCount(0)
+
+    await openMissionPanel(page)
 
     await page.getByTestId('mission-finish-btn').click()
     await page
@@ -121,7 +127,7 @@ test.describe('M15 mission review workspace', () => {
   })
 
   test('DON-203: Escape closes only the top dialog over docked Review', async ({ page }) => {
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
 
@@ -139,8 +145,10 @@ test.describe('M15 mission review workspace', () => {
   test('DON-203: Escape closes only the active-mission confirmation over docked Review', async ({
     page,
   }) => {
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
+
+    await openMissionPanel(page)
 
     await page.getByTestId('mission-finish-btn').click()
     await expect(page.getByTestId('mission-finish-dialog')).toBeVisible()
@@ -157,7 +165,7 @@ test.describe('M15 mission review workspace', () => {
     // Inject tracking positions. Position truth belongs in the position store, not duplicate events.
     await injectTrackingSnapshot(page)
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
 
     const auditLog = page.getByTestId('mission-review-event-log')
@@ -184,8 +192,9 @@ test.describe('M15 mission review workspace', () => {
     await createMarker(page, { name: 'Boot Print', typeLabel: 'Clue', position: { x: 440, y: 220 } })
     await createMarker(page, { name: 'Loose Scree', typeLabel: 'Hazard', position: { x: 560, y: 310 } })
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Marker Log' }).click()
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-review-marker-log')).toBeVisible()
 
     await page.getByTestId('mission-review-marker-search').fill('Boot')
@@ -202,15 +211,16 @@ test.describe('M15 mission review workspace', () => {
   })
 
   test('DON-278: live Pause and Resume preserve an unsubmitted replay time exactly', async ({ page }) => {
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
     const historicalDraft = '2026-08-28T12:00'
+    await openMissionPanel(page)
     await page.getByTestId('mission-replay-time').fill(historicalDraft)
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('paused')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'paused')
     await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
-    await page.getByTestId('mission-pause-resume-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
+    await pressPauseResume(page)
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await expect(page.getByTestId('mission-replay-time')).toHaveValue(historicalDraft)
     await page.getByTestId('mission-replay-seek').click()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText(
@@ -237,10 +247,11 @@ test.describe('M15 mission review workspace', () => {
         </trkseg></trk></gpx>`,
       }])
     })
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
 
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Live map context')
+    await openMissionPanel(page)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeEnabled()
     await page.getByTestId('mission-replay-seek').click()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText(
@@ -301,8 +312,9 @@ test.describe('M15 mission review workspace', () => {
         })),
       })
     })
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-replay-seek').click()
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('500 / 502 dated points')
     await expect(page.getByTestId('mission-replay-workspace')).toContainText('Showing dated points 1–500 of 502')
@@ -317,8 +329,9 @@ test.describe('M15 mission review workspace', () => {
   })
 
   test('DON-278: browser replay rejects a future selected time like packaged Electron', async ({ page }) => {
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-replay-time').fill('2099-01-01T12:00')
     await page.getByTestId('mission-replay-seek').click()
 
@@ -331,7 +344,7 @@ test.describe('M15 mission review workspace', () => {
   })
 
   test('DON-278: retired GPX is absent from later browser replay like packaged Electron', async ({ page }) => {
-    await page.getByTestId('sidebar-tab-tools').click()
+    await openWorkspacePanel(page, 'tools')
     await page.evaluate(async () => {
       await window.__SARTRACKER_BROWSER_HARNESS__?.importGpxFiles([{
         sourcePath: '/tracks/retired-replay.gpx',
@@ -348,8 +361,9 @@ test.describe('M15 mission review workspace', () => {
       'Its evidence remains in mission history.',
     )
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Replay', exact: true }).click()
+    await openMissionPanel(page)
     await page.getByTestId('mission-replay-seek').click()
 
     await expect(page.getByTestId('mission-replay-exact-track-evidence')).toContainText(
@@ -370,7 +384,7 @@ test.describe('M15 mission review workspace', () => {
       attachmentPath: path.resolve('tests/fixtures/marker-evidence.txt'),
     })
 
-    await page.getByTestId('open-mission-review-workspace').click()
+    await openMissionReview(page)
     await page.getByRole('button', { name: 'Marker Log' }).click()
 
     await expect(page.getByTestId('mission-review-marker-detail')).toContainText('Evidence Cache')
@@ -379,6 +393,7 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-marker-detail')).toContainText('marker-evidence.txt')
     await expect(page.getByTestId('mission-review-marker-history')).toContainText('Marker Created')
 
+    await openMissionPanel(page)
     await page.getByTestId('mission-review-marker-open-attachment').click()
     await expect.poll(async () => {
       return page.evaluate(() => {
@@ -454,11 +469,13 @@ async function createMarker(
 async function createSearchArea(page: import('@playwright/test').Page, name: string) {
   await page.getByTestId('drawing-toolbar-expand').click()
   await page.getByTestId('drawing-tool-search_area').click({ force: true })
-  await page.locator('.maplibregl-canvas').first().click({ position: { x: 500, y: 180 }, force: true })
-  await page.locator('.maplibregl-canvas').first().click({ position: { x: 650, y: 220 }, force: true })
-  await page.locator('.maplibregl-canvas').first().click({ position: { x: 540, y: 340 }, force: true })
+  // In the new layout the map starts at the window's left edge, under the open
+  // Map Tools list; draw to its right so no click lands on a tool button.
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 700, y: 180 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 850, y: 220 }, force: true })
+  await page.locator('.maplibregl-canvas').first().click({ position: { x: 740, y: 340 }, force: true })
   await page.locator('.maplibregl-canvas').first().click({
-    position: { x: 540, y: 340 },
+    position: { x: 740, y: 340 },
     button: 'right',
     force: true,
   })

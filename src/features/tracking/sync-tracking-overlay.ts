@@ -27,6 +27,9 @@ import {
 } from './tracking-style-store'
 import type { TrackingSnapshot } from './tracking-types'
 import type { DeviceStationaryAttention } from './stationary-attention-store'
+import { watchTrackingSourceUpdates, type TrackingSourceUpdateWatch } from './tracking-source-update-watch'
+import { useTrackingMapUpdateStore } from './tracking-map-update-store'
+import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 
 export const TRACKING_SOURCE_ID = 'tracking'
 export const TRACKING_EXACT_BREADCRUMB_DOTS_SOURCE_ID = 'tracking-breadcrumb-dots-exact'
@@ -78,6 +81,47 @@ type IncrementalTrackingSourceState = {
   readonly lineFeatureIdsByDevice: ReadonlyMap<string, readonly string[]>
 }
 const incrementalTrackingSourceStateByMap = new WeakMap<object, IncrementalTrackingSourceState>()
+const trackingSourceWatchByMap = new WeakMap<object, { readonly source: GeoJSONSource, readonly watch: TrackingSourceUpdateWatch }>()
+
+/**
+ * Returns the update watch for this map's current tracking source, replacing
+ * the watch when the source itself was replaced (for example by a style
+ * change) [DON-357].
+ */
+function ensureTrackingSourceWatch(map: maplibregl.Map, source: GeoJSONSource): TrackingSourceUpdateWatch {
+  const current = trackingSourceWatchByMap.get(map)
+  if (current !== undefined && current.source === source) return current.watch
+  current?.watch.stop()
+  const watch = watchTrackingSourceUpdates(source, {
+    startFailed: useTrackingMapUpdateStore.getState().failure !== null,
+    tiles: {
+      refresh: () => map.refreshTiles(TRACKING_SOURCE_ID),
+      settled: () => map.isSourceLoaded(TRACKING_SOURCE_ID) === true,
+    },
+    onFailure: (message) => {
+      const alreadyFailed = useTrackingMapUpdateStore.getState().failure !== null
+      useTrackingMapUpdateStore.getState().reportFailure(message)
+      if (alreadyFailed) return
+      void recordDiagnosticEvent({
+        level: 'error',
+        category: 'map',
+        event: 'tracking_source_update_failed',
+        fields: { reason: message },
+      })
+    },
+    onRecovered: () => {
+      useTrackingMapUpdateStore.getState().clearFailure()
+      void recordDiagnosticEvent({
+        level: 'info',
+        category: 'map',
+        event: 'tracking_source_update_recovered',
+        fields: {},
+      })
+    },
+  })
+  trackingSourceWatchByMap.set(map, { source, watch })
+  return watch
+}
 
 /**
  * Synchronizes tracking source/layers and applies the current device visibility filters.
@@ -371,6 +415,7 @@ function syncIncrementalTrackingSource(
     map.addSource(TRACKING_SOURCE_ID, { type: 'geojson', data })
     const addedSource = map.getSource(TRACKING_SOURCE_ID) as GeoJSONSource | undefined
     if (addedSource !== undefined) {
+      ensureTrackingSourceWatch(map, addedSource)
       incrementalTrackingSourceStateByMap.set(
         map,
         createIncrementalSourceState(addedSource, snapshot, styleKey, attentionKey, data),
@@ -379,7 +424,11 @@ function syncIncrementalTrackingSource(
     return
   }
 
+  const watch = ensureTrackingSourceWatch(map, source)
   if (
+    // A rejected update left the map on data the diffs no longer match, so
+    // everything is sent again, even when nothing new arrived [DON-357].
+    watch.needsFullResync() ||
     previous === undefined ||
     previous.source !== source ||
     previous.styleKey !== styleKey ||
@@ -391,6 +440,7 @@ function syncIncrementalTrackingSource(
       style,
       attentionByDevice,
     )
+    watch.noteFullResync()
     source.setData(data)
     incrementalTrackingSourceStateByMap.set(
       map,

@@ -12,6 +12,7 @@ import { _electron as electron } from 'playwright'
 import { extractFile } from '@electron/asar'
 import { MAX_GPX_SOURCE_BYTES, readBoundedGpxSource } from '../electron/gpx-source-reader.cjs'
 import { openMissionSection } from './mission-sections.mjs'
+import { openWorkspacePanel } from './workspace-panels.mjs'
 
 const executablePath = path.resolve(process.argv[2] ?? '')
 assert.ok(process.argv[2], 'Pass the packaged Electron executable path.')
@@ -107,13 +108,15 @@ try {
   page = await app.firstWindow()
   attachDiagnostics(page, app)
   await page.getByTestId('app-title').waitFor({ timeout: 30_000 })
+  await openWorkspacePanel(page, 'mission')
   await page.getByTestId('mission-name-input').fill('Packaged GPX fidelity')
   await page.getByTestId('mission-start-btn').click()
   await openMissionSection(page, 'outings')
   await page.getByTestId('outing-label-input').fill('Import race outing')
   await page.getByTestId('outing-start-btn').click()
   await page.getByTestId('active-outing-label').waitFor()
-  await page.getByTestId('sidebar-tab-tools').click()
+  // GPX import is in Tools, End Outing in Mission; one side panel shows at a time (DON-341).
+  await openWorkspacePanel(page, 'tools')
   await choose(sourcePath)
   await page.getByTestId('gpx-import-files').click()
   await page.getByTestId('gpx-import-status').filter({ hasText: 'Imported 1 GPX file.' }).waitFor()
@@ -121,8 +124,10 @@ try {
   await page.getByTestId('gpx-import-files').click()
   await page.getByTestId('gpx-import-files').filter({ hasText: 'Importing' }).waitFor()
   const started = Date.now()
+  await openMissionSection(page, 'outings')
   await page.getByTestId('outing-end-btn').click()
   await page.getByTestId('outing-no-active-notice').waitFor()
+  await openWorkspacePanel(page, 'tools')
   assert.ok(await page.getByTestId('gpx-import-files').isDisabled(), 'Outing must end before import settles.')
   await page.waitForFunction(() => {
     const button = document.querySelector('[data-testid="gpx-import-files"]')
@@ -173,7 +178,7 @@ try {
     sourceSha256: boundaryProbe.exact.sha256,
     output,
   })
-  await page.getByTestId('mission-control-collapse-btn').click()
+  await openWorkspacePanel(page, 'tools')
   await page.getByTestId('gpx-import-panel').scrollIntoViewIfNeeded()
   await page.screenshot({ path: path.join(output, 'settled.png') })
   report.beforeRestart = await inspect()
@@ -259,7 +264,7 @@ async function captureFailureDiagnostics() {
     uiState = await page.evaluate(() => ({
       missionControl: document.querySelector('[data-testid="mission-control"]')?.textContent?.trim() ?? null,
       missionPhase: document.querySelector('[data-testid="mission-control"]')?.getAttribute('data-mission-phase') ?? null,
-      missionPhaseChip: document.querySelector('[data-testid="mission-phase-chip"]')?.textContent?.trim() ?? null,
+      topBarMissionPhase: document.querySelector('[data-testid="ws-mission-phase"]')?.textContent?.trim() ?? null,
       outingSection: document.querySelector('[data-testid="outing-controls-section"]')?.textContent?.trim() ?? null,
       outingLabelInput: Boolean(document.querySelector('[data-testid="outing-label-input"]')),
       outingStartButton: Boolean(document.querySelector('[data-testid="outing-start-btn"]')),

@@ -37,6 +37,8 @@ export type RuntimeBootstrapSettings = {
     readonly token?: string
   } | null
   readonly trackingDisabledReason?: string
+  /** Why tracking needs re-entry in Settings: password/token (DON-353) or damaged settings (M-47). */
+  readonly trackingDisabledCode?: 'tracking_credentials_unreadable' | 'tracking_settings_unreadable'
 }
 
 export type RuntimeServiceHandles = {
@@ -334,6 +336,9 @@ export async function createManagedRuntimeServices(
       ...(dependencies.runtimeSettings.trackingDisabledReason === undefined
         ? {}
         : { idleWarning: dependencies.runtimeSettings.trackingDisabledReason }),
+      ...(dependencies.runtimeSettings.trackingDisabledCode === undefined
+        ? {}
+        : { idleWarningCode: dependencies.runtimeSettings.trackingDisabledCode }),
     })
     const stopTrackingStatusBridge = trackingConfig === null
       ? NOOP_STOP

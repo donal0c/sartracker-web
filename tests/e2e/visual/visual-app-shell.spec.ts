@@ -15,7 +15,8 @@
  * operation could cause operators to miss critical information.
  */
 import { expect, test } from '@playwright/test'
-import { navigateToHarness } from './helpers/test-setup'
+import { openWorkspacePanel } from '../helpers/workspace-panels'
+import { navigateToHarness, startMission } from './helpers/test-setup'
 import {
   captureAndRegister,
   captureElementAndRegister,
@@ -32,8 +33,8 @@ test.describe('Visual: App Shell', () => {
     await expect(page.locator('canvas').first()).toBeVisible()
     await expect(page.getByTestId('basemap-switcher')).toBeVisible()
     await expect(page.getByTestId('map-scale-readout')).toBeVisible()
-    await expect(page.getByTestId('mission-control')).toBeVisible()
-    await expect(page.getByTestId('tracking-status')).toBeVisible()
+    await expect(page.getByTestId('ws-mission-button')).toBeVisible()
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('drawing-toolbar')).toBeVisible()
 
     await captureAndRegister(page, {
@@ -41,19 +42,20 @@ test.describe('Visual: App Shell', () => {
       testName: 'App shell in idle state',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of the SAR Tracker application in idle state.
+      verificationPrompt: `Verify this screenshot of the SAR Tracker application in idle state, before any mission.
 
 Important context for the reviewer:
 - This capture is taken in a headless browser shortly after first paint. Map tiles are still loading, so the map area may show a partially-rendered topographic surface or an overlaid "Loading OpenTopoMap basemap" status badge — both are acceptable idle-state appearances. Do NOT fail the screenshot just because the basemap raster is incomplete or because a "Loading" / "Some tiles failed to load" health badge is visible.
 - The compact Maps menu is closed by default in this idle-state capture and renders as a single "MAPS" / "OpenTopoMap" dropdown control near the top-left of the map. Do NOT expect four visible basemap buttons here — the four-button switcher is a separate test that opens the menu.
+- The "New mission" start card may be open over the map; that is acceptable.
 
 Check:
-1. The command mast (top header strip) shows "Mountain Rescue" and "SAR Tracker" title text near the top-left.
-2. A "MISSION CONTROL" section is pinned in the right-hand sidebar showing "idle" status with both timers at "00:00:00".
-3. Below Mission Control there is a segmented tab control with three tabs labelled "Tracking", "Tools", and "Layers".
-4. A "TRACKING" section is visible (the Tracking tab is active by default), showing an idle / no-active-mission state. Empty / placeholder content is correct here.
+1. A single top bar runs across the window, with the team logo or "SAR Tracker" branding at its left.
+2. The top bar has a Mission button saying no mission is running yet (for example "Start a mission" and "No mission running").
+3. The top bar has a tracking line saying in whole words whether tracking is connected; before a mission it is not a red alarm.
+4. The top bar has readable buttons such as Layers, Settings and More.
 5. A compact Maps control is visible near the top-left of the map area — a single dropdown-style chip labelled "MAPS" with the currently selected basemap name (e.g. "OpenTopoMap"). It does NOT need to be expanded.
-6. A collapsed Map Tools toolbar is visible on the left side of the map, showing a "MAP TOOLS" header with the current active mode label (for example "SELECT" or "Mission required").
+6. A collapsed Map Tools toolbar is visible near the top-left of the map, labelled "MAP TOOLS".
 7. A compact "MAP SCALE" readout is visible over the map above the bottom coordinate strip.
 8. A coordinate bar is visible along the bottom edge of the map area.
 9. The overall theme is dark (dark stone/black backgrounds with light text and amber accents).
@@ -63,8 +65,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
         'canvas is visible',
         'basemap-switcher is visible',
         'map-scale-readout is visible',
-        'mission-control is visible',
-        'tracking-status is visible',
+        'Mission button is visible',
+        'tracking headline is visible',
         'drawing-toolbar is visible',
       ],
     })
@@ -204,7 +206,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 2. The coordinate readouts should be grouped together near the lower centre of the map area, not spread across the whole bottom edge.
 3. The coordinate group should show DD, Irish Grid, and DMS fields with readable values.
 4. The Convert button may remain on the lower-right side of the coordinate strip, but it must not push the coordinate group off centre.
-5. The top command mast, Maps control, Map Tools control, right sidebar tabs, and Mission Control panel should remain visible without horizontal overflow or critical clipping.
+5. The top bar, Maps control and Map Tools control should remain visible without horizontal overflow or critical clipping.
 6. The map scale and coordinate strip should not cover each other.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -216,18 +218,15 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     })
   })
 
-  test('focus mode keeps mission, layer, and coordinate awareness visible', async ({ page }) => {
-    await page.getByTestId('mission-name-input').fill('Visual Focus Mode')
-    await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('mission-control')).toContainText('active')
-
-    await page.getByTestId('focus-mode-toggle').click()
-    await expect(page.getByTestId('app-shell')).toHaveAttribute('data-focus-mode', 'true')
-    await expect(page.getByTestId('focus-mode-sidebar')).toBeVisible()
-    await expect(page.getByTestId('mission-control')).toContainText('Visual Focus Mode')
-    await expect(page.getByTestId('focus-sidebar-tab-tracking')).toBeVisible()
-    await expect(page.getByTestId('focus-sidebar-tab-layers')).toBeVisible()
-    await expect(page.getByTestId('layer-panel')).toBeVisible()
+  // Was Focus mode; Full map replaced it in the new layout (DON-341).
+  test('full map keeps mission, tracking, and coordinate awareness visible', async ({ page }) => {
+    await startMission(page, 'Visual Full Map')
+    await openWorkspacePanel(page, 'layers')
+    await page.getByTestId('ws-full-map').click()
+    await expect(page.locator('[data-testid="ws-side"][data-empty="true"]')).toBeAttached()
+    await expect(page.getByTestId('ws-layers-panel')).toBeHidden()
+    await expect(page.getByTestId('ws-mission-button')).toContainText('Visual Full Map')
+    await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
     await expect(page.getByTestId('map-scale-readout')).toBeVisible()
 
     const mapContainer = page.getByTestId('map-container')
@@ -236,31 +235,27 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     if (bounds) {
       await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
     }
-    await expect(page.getByTestId('focus-mode-coordinate-display')).toContainText('°')
-    await expect(page.getByTestId('coordinate-display')).toHaveCount(0)
+    await expect(page.getByTestId('coordinate-display')).toContainText('°')
 
     await captureAndRegister(page, {
-      testId: 'shell-focus-mode',
-      testName: 'Focus mode map-first operational shell',
+      testId: 'shell-full-map',
+      testName: 'Full map, map-first operational shell',
       area: 'app-shell',
       severity: 'critical',
-      verificationPrompt: `Verify this screenshot of SAR Tracker in Focus Mode Plus:
-1. The map should remain the dominant surface and be wider than the normal shell
-2. The normal full sidebar header/tabs should be replaced by a reduced Focus Mode Plus sidebar
-3. The reduced sidebar should keep Mission Control visible with the active mission name and timers
-4. A clearly labelled Tracking tab should remain visible in the reduced sidebar so operators can reach tracking status
-5. The Layers tab should be active and Layer Workspace should remain visible in the reduced sidebar
-6. A mirrored focus coordinate display should be visible on top of the map
-7. The Maps control, Map Tools toolbar, and metric map scale should remain visible on the map
+      verificationPrompt: `Verify this screenshot of SAR Tracker with Full map on during a running mission:
+1. No side panel is open: the map takes the whole width below the top bar.
+2. The top bar still names the running mission "Visual Full Map" with readable timers.
+3. The top bar still shows the tracking line in whole words, so tracking awareness is kept.
+4. The top bar offers a way back to the panels (for example "Show panel").
+5. The Maps control, Map Tools toolbar and metric map scale remain visible on the map.
+6. The coordinate strip along the bottom shows coordinates with degree symbols.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
-        'app-shell data-focus-mode is true',
-        'focus-mode-sidebar is visible',
-        'mission-control contains active mission',
-        'Tracking and Layers tabs are visible',
-        'layer-panel is visible',
+        'side panel area is empty',
+        'Mission button names the running mission',
+        'tracking headline is visible',
         'map-scale-readout is visible',
-        'focus-mode-coordinate-display contains coordinates',
+        'coordinate-display contains coordinates',
       ],
     })
   })

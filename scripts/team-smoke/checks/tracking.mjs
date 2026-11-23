@@ -9,6 +9,7 @@
  * (DON-299 classes 2-3) [DON-315, DON-316].
  */
 
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
 import { delay, launchApp } from '../lib/app.mjs'
@@ -18,10 +19,11 @@ import { seedLivedInProfile } from '../lib/lived-in.mjs'
 import { markerBehindFindings, readMarkerFixes, requireRoadSpeedFixes } from '../lib/marker-fix.mjs'
 import { ROAD_DEVICE, startMockTraccar } from '../lib/mock-traccar.mjs'
 import {
-  addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, resumeIfPrompted,
-  startMission, startMissionWithLookback, togglePause,
+  addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, outageWarning,
+  resumeIfPrompted, startMission, startMissionWithLookback, togglePause, trackingStatus as readTrackingStatus,
 } from '../lib/operator.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
+import { openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { missionFixes } from '../lib/store.mjs'
 
 const WALKERS = ['Walker Alpha', 'Walker Bravo']
@@ -268,47 +270,51 @@ async function markerAtNewestFix(app, mock, profile, name) {
  */
 export function midMissionControls(page) {
   const t = (id) => page.getByTestId(id)
-  const layerToggle = (nodeTestId) => ({
+  // The tracking layers are the People panel's Everyone ticks in the new layout (DON-353).
+  const everyoneTicks = (ids) => ({
     async press() {
-      await t('sidebar-tab-layers').click()
-      await t('layer-expand-all-btn').click()
-      await t(`layer-visibility-${nodeTestId}`).uncheck()
+      await openWorkspacePanel(page, 'people')
+      for (const id of ids) await t(id).uncheck()
     },
     async undo() {
-      await t('sidebar-tab-layers').click()
-      await t(`layer-visibility-${nodeTestId}`).check()
+      await openWorkspacePanel(page, 'people')
+      for (const id of ids) await t(id).check()
     },
   })
   return [
-    { label: 'the devices layer was hidden', ...layerToggle('layer-tracking-devices') },
-    { label: 'the breadcrumbs layer was hidden', ...layerToggle('layer-tracking-breadcrumbs') },
-    { label: 'the whole Tracking group was hidden', ...layerToggle('group-tracking') },
+    { label: 'every location was hidden', ...everyoneTicks(['ws-all-positions']) },
+    { label: 'every trail was hidden', ...everyoneTicks(['ws-all-trails']) },
+    { label: 'every location and trail was hidden', ...everyoneTicks(['ws-all-positions', 'ws-all-trails']) },
     {
-      // The toggle is rendered in the mast, the focus sidebar and the
-      // collapsed-rail strip; press the one the operator can see.
-      label: 'Focus Mode was on',
-      press: () => t('focus-mode-toggle').filter({ visible: true }).first().click(),
-      undo: () => t('focus-mode-toggle').filter({ visible: true }).first().click(),
+      // Full map replaced Focus Mode: the button closes the side panel and reads "Show panel" until pressed again.
+      label: 'Full map was on',
+      async press() {
+        await t('ws-full-map').click()
+        await t('ws-full-map').filter({ hasText: 'Show panel' }).waitFor()
+      },
+      async undo() {
+        await t('ws-full-map').click()
+        await t('ws-full-map').filter({ hasText: 'Full map' }).waitFor()
+      },
     },
     {
-      // The Devices button is on the Tracking tab; the layer controls above
-      // leave Layers selected (box run 3d, 2 Oct 2026).
+      // All devices is in the People panel's header.
       label: 'the Devices workspace was open',
       async press() {
-        await t('sidebar-tab-tracking').click()
+        await openWorkspacePanel(page, 'people')
         await t('open-devices-workspace').click()
       },
       undo: () => closeWorkspace(page),
     },
     {
       label: 'Review was open',
-      press: () => t('open-mission-review-workspace').click(),
+      press: () => openMissionReview(page),
       undo: () => closeWorkspace(page),
     },
     {
       label: 'Replay was showing',
       async press() {
-        await t('open-mission-review-workspace').click()
+        await openMissionReview(page)
         await page.getByRole('button', { name: 'Replay', exact: true }).click()
         await t('mission-replay-seek').click()
       },
@@ -400,7 +406,10 @@ export default [
   {
     check: 'Mission lifecycle and crash recovery',
     id: 'lifecycle',
-    manualSteps: ['Close with the window X, reopen and confirm no false unexpected-shutdown report and no evidence-health warning in Tracking.'],
+    manualSteps: [
+      'Close with the window X, reopen and confirm no false unexpected-shutdown report and no evidence-health warning in Tracking.',
+      'During the renderer-crash phase, confirm the "SAR Tracker map window reopened" notice is on screen and tells you to check that tracking is live.',
+    ],
     async run(ctx) {
       const name = 'Lifecycle Smoke'
       const findings = []
@@ -439,16 +448,38 @@ export default [
       await requireEvidenceHealthy('SIGKILL')
       await requireLive('resumed after SIGKILL', 100_000)
 
-      // Renderer crash closes the app by design; relaunch and resume.
-      const session = await app.page.context().newCDPSession(app.page)
+      // A renderer crash reopens the map window in the same process, with a
+      // notice [M-45] [DON-359]. The process must stay up, the replacement
+      // window must show the app, and walkers must keep recording live there.
+      const crashedPage = app.page
+      const session = await crashedPage.context().newCDPSession(crashedPage)
       void session.send('Page.crash').catch(() => {})
-      await Promise.race([app.exited, delay(20_000)])
-      await app.kill()
+      const replacement = await waitForReplacementPage(crashedPage, () => app.alive(), 60_000)
+      expectProduct(app.alive(), 'The app process exited after a renderer crash instead of reopening the map window.')
+      expectProduct(replacement !== null, 'No replacement map window opened within 60 s of a renderer crash.')
+      app.page = replacement
+      app.page.on('dialog', (dialog) => { void dialog.accept().catch(() => {}) })
+      await app.page.getByTestId('app-shell').waitFor({ state: 'attached', timeout: 60_000 })
+      await app.shot('renderer-crash-replacement')
+      // The notice is a native dialog CDP cannot read; its runtime-log record
+      // is the evidence that it was raised. Its wording is a manual step.
+      const recovered = await waitForRuntimeEvent(profile, 'renderer_window_recovered', 30_000)
+      if (!recovered) findings.push('the reopened map window left no renderer_window_recovered record, so its notice was not raised')
+      await resumeIfPrompted(app.page, 15_000)
+      expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE in the reopened map window.')
+      await requireEvidenceHealthy('a renderer crash')
+      await requireLive('in the window reopened after a renderer crash', 100_000)
+
+      // Quit normally from the reopened window: the next launch must still
+      // report the crash, because a renderer fault keeps the session unclean.
+      await app.stop('SIGTERM')
       app = await launchApp(ctx, { profile, label: 'lifecycle-3-after-renderer-crash' })
+      const crashStateAfterRendererCrash = await app.page.evaluate(() => window.sartrackerElectron.readCrashRecoveryState())
+      if (crashStateAfterRendererCrash?.uncleanShutdown !== true) findings.push('a renderer crash followed by a normal quit was not reported as an unexpected shutdown on the next launch')
       expectProduct(await resumeIfPrompted(app.page), 'No recovery prompt after renderer crash.')
       expectProduct(await missionPhase(app.page) === 'ACTIVE', 'Mission not ACTIVE after resuming from renderer crash.')
-      await requireEvidenceHealthy('a renderer crash')
-      await requireLive('resumed after a renderer crash', 100_000)
+      await requireEvidenceHealthy('a renderer crash and normal quit')
+      await requireLive('resumed after a renderer crash and normal quit', 100_000)
 
       // Graceful quit, then a normal relaunch must not claim a crash. The
       // window X button cannot be driven faithfully over CDP; check it by hand.
@@ -475,14 +506,7 @@ export default [
     async run(ctx) {
       const name = 'Smoke Mission O'
       const { mock, profile, app, firstExpectedByDevice } = await trackedMission(ctx, 'outage', name)
-      const trackingStatus = async () => {
-        const parts = []
-        for (const id of ['tracking-warning', 'mast-tracking-cell', 'persistent-tracking-health']) {
-          const locator = app.page.getByTestId(id)
-          if (await locator.count() > 0) parts.push(await locator.first().innerText().catch(() => ''))
-        }
-        return parts.join(' / ').replace(/\s+/gu, ' ').trim()
-      }
+      const trackingStatus = () => readTrackingStatus(app.page)
       await delay(30_000)
       // One phone loses signal: the other walker must keep recording live,
       // and the held stretch must arrive whole when signal returns [DON-316].
@@ -503,15 +527,19 @@ export default [
       expectProduct(oneDeviceFindings.length === 0, `${oneDeviceFindings.join('; ')}.`)
       await delay(20_000)
       const before = await trackingStatus()
+      // Evidence is the alarm strip plus the headline's warning, both on screen;
+      // one already showing before the outage proves nothing about it.
+      const alarmBefore = await outageWarning(app.page)
+      if (alarmBefore !== '') throw new NotTested(`The tracking alarm was already showing before the outage: "${alarmBefore.slice(0, 160)}".`)
       const preservedFixes = missionFixes(profile, name)
       mock.setOffline(true)
       const outageStarted = Date.now()
       let warned = ''
-      // Hold the full 90 s outage whatever the UI shows, sampling the tracking status.
+      // Hold the full 90 s outage whatever the UI shows, sampling the alarm and headline.
       while (Date.now() - outageStarted < 90_000) {
         await delay(5000)
-        const status = await trackingStatus()
-        if (warned === '' && status !== before && /unreachable|offline|error|retry|fail|stale|lost|degraded|disconnect/i.test(status)) {
+        const status = await outageWarning(app.page)
+        if (warned === '' && status !== '') {
           warned = status
           await app.shot('during-outage')
         }
@@ -520,7 +548,7 @@ export default [
       await delay(60_000)
       await app.shot('after-outage')
       await app.stop()
-      expectProduct(warned !== '', `No tracking warning during a 90 s provider outage. Status stayed: "${before.slice(0, 160)}".`)
+      expectProduct(warned !== '', `No tracking alarm with a visible warning during a 90 s provider outage. Status stayed: "${before.slice(0, 160)}".`)
       const result = verifyFixes(mock, missionFixes(profile, name), { firstExpectedByDevice, preservedFixes })
       return `While Walker Alpha had no signal for 75 s, Walker Bravo kept recording live and Alpha's held fixes arrived on release, before the outage. `
         + `During the 90 s outage the tracking status showed "${warned.slice(0, 160)}"; after reconnect ${result.fixes} fixes, `
@@ -528,3 +556,43 @@ export default [
     },
   },
 ]
+
+/**
+ * Waits for a new app page in the same browser after the given page's
+ * renderer crashed, failing fast if the process exits [DON-359].
+ *
+ * @param {import('playwright').Page} crashedPage
+ * @param {() => boolean} isRunning
+ * @param {number} timeoutMs
+ * @returns {Promise<import('playwright').Page | null>}
+ */
+async function waitForReplacementPage(crashedPage, isRunning, timeoutMs) {
+  const context = crashedPage.context()
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline && isRunning()) {
+    const page = context.pages().find((candidate) =>
+      candidate !== crashedPage && !candidate.isClosed() && !candidate.url().startsWith('devtools'))
+    if (page !== undefined) return page
+    await delay(500)
+  }
+  return null
+}
+
+/**
+ * Polls the profile's runtime log for one event name.
+ *
+ * @param {string} profile app user-data folder
+ * @param {string} event
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>}
+ */
+async function waitForRuntimeEvent(profile, event, timeoutMs) {
+  const file = path.join(profile, 'logs', 'runtime.log')
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const text = await readFile(file, 'utf8').catch(() => '')
+    if (text.split('\n').some((line) => line.includes(`"event":"${event}"`))) return true
+    await delay(1000)
+  }
+  return false
+}
