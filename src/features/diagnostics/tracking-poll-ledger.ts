@@ -6,8 +6,9 @@ export const TRACKING_POLL_LEDGER_MAX_ENTRIES = 720
 
 /**
  * Re-check backlog ranges kept per reconciliation entry. The counts describe
- * the whole backlog; only the oldest ranges are kept, so a full ledger stays
- * small enough to write without starving the renderer [DON-367].
+ * the whole backlog; only the oldest ranges are kept, so an entry no longer
+ * grows with the number of devices behind [DON-367]. This caps ranges, not
+ * bytes: there is no runtime byte limit on the ledger.
  */
 export const TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES = 3
 
@@ -339,34 +340,41 @@ type NormalizedRecheckBacklog = {
 }
 
 /**
- * Keeps the oldest well-formed re-check backlog ranges of a ledger entry, with
+ * Keeps the oldest well-formed re-check backlog ranges of a ledger entry,
+ * ordered by start time across all devices (ties by device id, then end), with
  * counts over the whole backlog. Counts already stored with a trimmed entry are
  * kept; otherwise they are counted from the ranges given [DON-367].
  */
 function normalizeRecheckBacklog(candidate: Record<string, unknown>): NormalizedRecheckBacklog {
   const input = candidate.recheckBacklog
   if (!Array.isArray(input)) return {}
-  const ranges: TrackingRecheckBacklogRange[] = []
+  const kept: { readonly deviceId: string; readonly fromMs: number; readonly toMs: number }[] = []
   const deviceIds = new Set<string>()
-  let omitted = 0
+  let validCount = 0
   for (const entry of input as readonly unknown[]) {
     if (typeof entry !== 'object' || entry === null) continue
     const range = entry as Record<string, unknown>
-    if (typeof range.deviceId !== 'string') continue
-    if (ranges.length >= TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES) {
-      // Counted, not kept: no timestamp work for ranges that are left out.
-      if (typeof range.from === 'string' && typeof range.to === 'string') {
-        deviceIds.add(range.deviceId)
-        omitted += 1
-      }
-      continue
-    }
-    const from = normalizeTimestamp(range.from)
-    const to = normalizeTimestamp(range.to)
-    if (from === null || to === null) continue
+    if (typeof range.deviceId !== 'string' || typeof range.from !== 'string' || typeof range.to !== 'string') continue
+    const fromMs = Date.parse(range.from)
+    const toMs = Date.parse(range.to)
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) continue
+    validCount += 1
     deviceIds.add(range.deviceId)
-    ranges.push({ deviceId: range.deviceId, from, to })
+    const candidateRange = { deviceId: range.deviceId, fromMs, toMs }
+    const at = kept.findIndex((existing) => compareBacklogRanges(candidateRange, existing) < 0)
+    if (at === -1) {
+      if (kept.length < TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES) kept.push(candidateRange)
+    } else {
+      kept.splice(at, 0, candidateRange)
+      if (kept.length > TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES) kept.pop()
+    }
   }
+  const ranges: TrackingRecheckBacklogRange[] = kept.map((range) => ({
+    deviceId: range.deviceId,
+    from: new Date(range.fromMs).toISOString(),
+    to: new Date(range.toMs).toISOString(),
+  }))
+  const omitted = validCount - ranges.length
   const storedRangeCount = normalizeCount(candidate.recheckBacklogRangeCount)
   const storedDeviceCount = normalizeCount(candidate.recheckBacklogDeviceCount)
   const storedOmitted = normalizeCount(candidate.recheckBacklogOmittedRangeCount)
@@ -377,6 +385,16 @@ function normalizeRecheckBacklog(candidate: Record<string, unknown>): Normalized
     recheckBacklogRangeCount: trimmedBefore ? storedRangeCount : ranges.length + omitted,
     recheckBacklogOmittedRangeCount: trimmedBefore ? storedOmitted : omitted,
   }
+}
+
+/** Oldest start first; ties by device id, then by end. */
+function compareBacklogRanges(
+  left: { readonly deviceId: string; readonly fromMs: number; readonly toMs: number },
+  right: { readonly deviceId: string; readonly fromMs: number; readonly toMs: number },
+): number {
+  if (left.fromMs !== right.fromMs) return left.fromMs - right.fromMs
+  if (left.deviceId !== right.deviceId) return left.deviceId < right.deviceId ? -1 : 1
+  return left.toMs - right.toMs
 }
 
 function normalizeTrackingPollLedgerEntry(input: unknown): TrackingPollLedgerEntry | null {

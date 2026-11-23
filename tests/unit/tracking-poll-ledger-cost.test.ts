@@ -73,13 +73,16 @@ describe('tracking poll ledger write cost under the 5-minute re-check [DON-367]'
     expect(getItem).not.toHaveBeenCalled()
   })
 
-  it('keeps a full ledger of re-check entries small, and says how many backlog ranges it left out', () => {
+  it('keeps a full ledger of re-check entries to a few ranges each, and says how many backlog ranges it left out', () => {
     fillLedgerWithRecheckEntries()
 
     const stored = readTrackingPollLedger()
     const bytes = JSON.stringify(stored).length
     expect(stored).toHaveLength(TRACKING_POLL_LEDGER_MAX_ENTRIES)
-    expect(bytes).toBeLessThanOrEqual(512 * 1024)
+    // A bound for this 32-device fixture, not a runtime byte limit: each entry
+    // keeps at most TRACKING_POLL_LEDGER_MAX_BACKLOG_RANGES ranges. Before
+    // DON-367 the same fixture stored about 2.2 MB.
+    expect(bytes).toBeLessThanOrEqual(640 * 1024)
 
     const latest = stored.at(-1)
     expect(latest?.kind).toBe('breadcrumb_reconciliation')
@@ -125,5 +128,35 @@ describe('tracking poll ledger write cost under the 5-minute re-check [DON-367]'
     const stored = JSON.parse(window.sessionStorage.getItem('sartracker:tracking-poll-ledger') ?? '[]') as unknown[]
     expect(stored).toHaveLength(1)
     flushTrackingPollLedger()
+  })
+
+  it('keeps the oldest backlog ranges across all devices, not the first devices in id order', () => {
+    const entry = reconciliationEntry(0)
+    if (entry.kind !== 'breadcrumb_reconciliation') throw new Error('fixture is a reconciliation entry')
+    // Reconciler order: device id, then time. Device 4 holds the oldest window.
+    recordTrackingPollLedgerEntry({
+      ...entry,
+      recheckBacklog: [
+        { deviceId: '1', from: '2026-11-22T01:00:00.000Z', to: '2026-11-22T03:00:00.000Z' },
+        { deviceId: '2', from: '2026-11-22T01:00:00.000Z', to: '2026-11-22T03:00:00.000Z' },
+        { deviceId: '3', from: '2026-11-21T20:00:00.000Z', to: '2026-11-21T22:00:00.000Z' },
+        { deviceId: '4', from: '2026-11-01T08:00:00.000Z', to: '2026-11-01T10:00:00.000Z' },
+        { deviceId: '4', from: '2026-11-22T01:00:00.000Z', to: '2026-11-22T03:00:00.000Z' },
+        { deviceId: '5', from: '2026-11-21T20:00:00.000Z', to: '2026-11-21T22:00:00.000Z' },
+      ],
+    })
+
+    const [stored] = readTrackingPollLedger()
+    if (stored?.kind !== 'breadcrumb_reconciliation') throw new Error('expected a reconciliation entry')
+    expect(stored.recheckBacklog).toEqual([
+      { deviceId: '4', from: '2026-11-01T08:00:00.000Z', to: '2026-11-01T10:00:00.000Z' },
+      { deviceId: '3', from: '2026-11-21T20:00:00.000Z', to: '2026-11-21T22:00:00.000Z' },
+      { deviceId: '5', from: '2026-11-21T20:00:00.000Z', to: '2026-11-21T22:00:00.000Z' },
+    ])
+    expect(stored).toMatchObject({
+      recheckBacklogDeviceCount: 5,
+      recheckBacklogRangeCount: 6,
+      recheckBacklogOmittedRangeCount: 3,
+    })
   })
 })
