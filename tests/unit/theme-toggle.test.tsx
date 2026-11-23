@@ -42,3 +42,19 @@ it('keeps the applied theme and exposes a failed preference write', () => {
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('could not save')
   act(() => root.unmount())
 })
+
+it('keeps a choice that could not be saved for the rest of the session when the menu reopens', () => {
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage unavailable') })
+  const first = document.createElement('div')
+  const firstRoot = createRoot(first)
+  act(() => firstRoot.render(<ThemeToggle />))
+  act(() => first.querySelector('button')!.click())
+  act(() => firstRoot.unmount())
+  // Reopening More mounts a fresh toggle; storage still holds the old choice.
+  const second = document.createElement('div')
+  const secondRoot = createRoot(second)
+  act(() => secondRoot.render(<ThemeToggle />))
+  expect(second.querySelector('button')!.textContent).toBe('Theme: Light')
+  expect(document.documentElement.dataset.theme).toBe('light')
+  act(() => secondRoot.unmount())
+})

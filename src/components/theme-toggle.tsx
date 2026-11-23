@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 
-import { applyTheme, readTheme, saveTheme, type ThemeName } from '../lib/theme-preference'
+import { applyTheme, readAppliedTheme, saveTheme, type ThemeName } from '../lib/theme-preference'
 
 /** Switches between the dark and light themes and reports unavailable preference storage. */
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<ThemeName>(readTheme)
+  const [theme, setTheme] = useState<ThemeName>(readAppliedTheme)
   const [error, setError] = useState(false)
   useEffect(() => { applyTheme(theme) }, [theme])
   const light = theme === 'light'

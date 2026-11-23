@@ -25,6 +25,17 @@ export function applyTheme(theme: ThemeName): void {
   document.documentElement.dataset.theme = theme
 }
 
+/**
+ * The theme on the page now: the saved choice applied before first paint, or a
+ * later choice that applied but could not be saved. Falls back to the saved
+ * preference when nothing has been applied yet.
+ */
+export function readAppliedTheme(): ThemeName {
+  const applied = document.documentElement.dataset.theme
+  if (applied === 'light' || applied === 'standard') return applied
+  return readTheme()
+}
+
 /** Saves the choice for the next launch; false when storage refused the write. */
 export function saveTheme(theme: ThemeName): boolean {
   try { window.localStorage.setItem(THEME_KEY, String(theme === 'light')); return true } catch { return false }
