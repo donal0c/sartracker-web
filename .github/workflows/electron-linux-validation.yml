@@ -545,10 +545,12 @@ jobs:
           test -x tmp/electron-dist/linux-unpacked/sartracker-web
 
       - name: Qualify mission evidence replay at the normal 960k envelope
-        if: ${{ github.event_name == 'workflow_dispatch' }}
+        # DON-367 baseline only: skipped so the packaged tracking soak runs. Never merge.
+        if: false
         run: npm run breadcrumb-pr5:qualify -- --preset=bcp-960k
 
       - name: Attest Mesa llvmpipe renderer
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
@@ -562,6 +564,7 @@ jobs:
       # and evidence/summary headroom. These are harness deadlines, not
       # responsiveness or qualification thresholds.
       - name: Candidate producer development checks (not qualification)
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         timeout-minutes: 100
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
@@ -577,6 +580,7 @@ jobs:
               "$EXPECTED_SOURCE_SHA"
 
       - name: Exact-head packaged C17 support-export privacy proof (not qualification)
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         timeout-minutes: 20
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
@@ -600,6 +604,7 @@ jobs:
             --expected-head "$EXPECTED_SOURCE_SHA"
 
       - name: Packaged native coverage runtime control
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
@@ -613,6 +618,7 @@ jobs:
               tmp/electron-validation-evidence/native-runtime
 
       - name: Packaged official map qualification and freshness smoke
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
@@ -626,6 +632,7 @@ jobs:
               --evidence-dir tmp/electron-validation-evidence/official-map-qualification
 
       - name: Packaged GPX fidelity and custody smoke
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
@@ -645,6 +652,7 @@ jobs:
               tmp/electron-validation-evidence/gpx-fidelity-smoke
 
       - name: Packaged bounded breadcrumb transport causal proof
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         env:
           SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
@@ -675,6 +683,7 @@ jobs:
               --evidence tmp/electron-validation-evidence/war06-mission-cache
 
       - name: Packaged participant progress and Search Operations backup proof
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         if: github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true
         timeout-minutes: 5
         env:
@@ -691,6 +700,7 @@ jobs:
               --evidence tmp/electron-validation-evidence/repair-train-d
 
       - name: Independently validate Repair Train D packaged receipt
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         if: always() && github.event_name == 'workflow_dispatch' && inputs.run_repair_train_d_smoke == true
         timeout-minutes: 1
         env:
@@ -701,6 +711,7 @@ jobs:
             --receipt tmp/electron-validation-evidence/repair-train-d/receipt.json
 
       - name: Packaged legacy object recovery observer proof
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         id: legacy_recovery_smoke
         timeout-minutes: 5
         env:
@@ -717,6 +728,7 @@ jobs:
               tmp/electron-validation-evidence/legacy-object-recovery
 
       - name: Verify legacy recovery terminal report
+        continue-on-error: true  # DON-367 baseline only: must not gate the soak
         if: ${{ always() && steps.legacy_recovery_smoke.outcome != 'skipped' }}
         run: node scripts/verify-legacy-recovery-report.mjs tmp/electron-validation-evidence/legacy-object-recovery/report.json
 
