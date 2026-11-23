@@ -127,6 +127,66 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
     }
   })
 
+  it('refuses a closed past window while fixes it covers are still unpublished, and serves it once they are [soak harness]', async () => {
+    // The soak's compressed clock dates every not-yet-published fix in the past.
+    // A history reader given a closed past window before those fixes exist would
+    // record the window as read and never ask again. Real Traccar fixes that have
+    // not arrived yet are dated near the present, so the mock refuses such a read
+    // instead of answering it as complete.
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-unpublished-'))
+    temporaryDirectories.push(directory)
+    const baseTimeMs = Date.parse('2026-02-01T00:00:00.000Z')
+    const server = await startTrackingSoakMockServer({
+      statePath: path.join(directory, 'state.json'),
+      baseTimeMs,
+      intervalMs: 5_000,
+      deviceCount: 4,
+      movingDeviceCount: 4,
+      productionPollsPerBatch: 180,
+      maximumBatches: 3,
+    })
+    const headers = { Cookie: 'JSESSIONID=tracking-soak' }
+    const history = (from: number, to: number) => fetch(`${server.baseUrl}/api/positions?${new URLSearchParams({
+      deviceId: '1', from: new Date(from).toISOString(), to: new Date(to).toISOString(),
+    })}`, { headers })
+    const batchEnd = (batch: number) => baseTimeMs + (batch * 180 - 1) * 5_000
+
+    try {
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+
+      // A two-hour window from the base covers batches 2 and 3, not yet published.
+      const early = await history(baseTimeMs, baseTimeMs + 2 * 60 * 60_000)
+      expect(early.status).toBe(503)
+      // Only batch 1 is published, and every window inside it is complete.
+      const published = await history(baseTimeMs, batchEnd(1))
+      expect(published.status).toBe(200)
+      expect(await published.json()).toHaveLength(180)
+      // A window reaching into batch 2 is refused until batch 2 is published.
+      const reachingBatchTwo = await history(baseTimeMs, batchEnd(1) + 5_000)
+      expect(reachingBatchTwo.status).toBe(503)
+
+      // A live window ending at the present is served with what exists so far.
+      const live = await history(baseTimeMs, Date.now())
+      expect(live.status).toBe(200)
+      expect(await live.json()).toHaveLength(180)
+
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      const late = await history(baseTimeMs, baseTimeMs + 2 * 60 * 60_000)
+      expect(late.status).toBe(200)
+      expect(await late.json()).toHaveLength(540)
+
+      const refused = server.requestLog().filter((entry) => entry.status === 503)
+      expect(refused).toHaveLength(2)
+      expect(refused.every((entry) => entry.kind === 'history' && entry.reason === 'unpublished-fixes')).toBe(true)
+      // Refusals are not the priority scenario's deliberate history hold.
+      expect(server.prioritySnapshot().heldHistoryRequests).toBe(0)
+      expect(server.prioritySnapshot().unpublishedHistoryRefusals).toBe(2)
+    } finally {
+      await server.close()
+    }
+  })
+
   it('retains bounded current/history fault observations for priority coverage', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-priority-'))
     temporaryDirectories.push(directory)

@@ -104,6 +104,18 @@ export async function startTrackingSoakMockServer(options) {
           sendJson(response, 503, { error: 'synthetic current provider outage' })
           return
         }
+        if (deviceId !== null && historyWindowAwaitsUnpublishedFixes(
+          options,
+          state.completedBatches,
+          Number(deviceId),
+          requestUrl.searchParams.get('from'),
+          requestUrl.searchParams.get('to'),
+          Date.now(),
+        )) {
+          recordRequest(request, requestUrl, 503, startedAtMs, requestLog, null, null, 'unpublished-fixes')
+          sendJson(response, 503, { error: 'synthetic history window not yet published' })
+          return
+        }
         const positions = deviceId === null
           ? (options.priorityFaults
               ? buildAllCurrentPositions(
@@ -196,7 +208,9 @@ export async function startTrackingSoakMockServer(options) {
       currentRequests: requestLog.filter((entry) => entry.kind === 'current').length,
       currentSuccesses: requestLog.filter((entry) => entry.kind === 'current' && entry.status === 200).length,
       currentFailures: requestLog.filter((entry) => entry.kind === 'current' && entry.status === 503).length,
-      heldHistoryRequests: requestLog.filter((entry) => entry.kind === 'history' && entry.status === 503).length,
+      heldHistoryRequests: requestLog.filter((entry) =>
+        entry.kind === 'history' && entry.status === 503 && entry.reason === undefined).length,
+      unpublishedHistoryRefusals: requestLog.filter((entry) => entry.reason === 'unpublished-fixes').length,
       requests: requestLog.slice(-100),
     }),
     close: () =>
@@ -212,7 +226,7 @@ function monotonicNowMs() {
 }
 
 /** Retain a bounded provider transcript without request bodies or credentials. */
-function recordRequest(request, requestUrl, status, startedAtMs, requestLog, sourcePositions = null, sourceResponseState = null) {
+function recordRequest(request, requestUrl, status, startedAtMs, requestLog, sourcePositions = null, sourceResponseState = null, reason = undefined) {
   const completedAtMs = monotonicNowMs()
   const entry = {
     method: request.method ?? 'GET',
@@ -224,6 +238,7 @@ function recordRequest(request, requestUrl, status, startedAtMs, requestLog, sou
     completedAtMs,
     durationMs: Math.max(0, completedAtMs - startedAtMs),
   }
+  if (reason !== undefined) entry.reason = reason
   if (Array.isArray(sourcePositions) && sourceResponseState !== null) {
     sourceResponseState.sequence += 1
     entry.sourceResponseSequence = sourceResponseState.sequence
@@ -368,6 +383,48 @@ function buildAllCurrentPositions(options, batch, prioritySourceVersion = 0) {
         ),
       )
   return [...moving, ...stationary]
+}
+
+/**
+ * How close to the present a window's end must be to count as a live read.
+ * Live history windows end at the reader's clock; backfill and recheck windows
+ * end hours or days in the past.
+ */
+const LIVE_HISTORY_WINDOW_END_TOLERANCE_MS = 15 * 60 * 1_000
+
+/**
+ * True when a closed past history window covers synthetic fixes the mock has
+ * scheduled but not yet published.
+ *
+ * The soak dates its accelerated fixes on a historical clock, so every fix a
+ * later batch will publish already lies in the past. Real Traccar fixes that
+ * have not arrived yet are dated near the present. Answering such a window
+ * with only the published fixes would let a history reader record the window
+ * as read before fixes inside it exist, which the field cannot produce. The
+ * mock refuses that read instead, the way an unavailable provider does; the
+ * reader keeps its cursor and asks again. Live windows ending at the present
+ * are served as before.
+ */
+export function historyWindowAwaitsUnpublishedFixes(options, batch, deviceId, from, to, nowMs) {
+  if (!Number.isInteger(deviceId) || deviceId < 1 || deviceId > options.movingDeviceCount) {
+    return false
+  }
+  const requestedFromMs = parseRequestTimestamp(from)
+  const requestedToMs = parseRequestTimestamp(to)
+  if (requestedFromMs === null || requestedToMs === null) return false
+  if (requestedToMs >= nowMs - LIVE_HISTORY_WINDOW_END_TOLERANCE_MS) return false
+  const firstUnpublishedIndex = Math.max(0, batch) * options.productionPollsPerBatch
+  const lastPlannedIndex = options.maximumBatches * options.productionPollsPerBatch - 1
+  if (firstUnpublishedIndex > lastPlannedIndex) return false
+  const firstCoveredIndex = Math.max(
+    firstUnpublishedIndex,
+    Math.ceil((requestedFromMs - options.baseTimeMs) / options.intervalMs),
+  )
+  const lastCoveredIndex = Math.min(
+    lastPlannedIndex,
+    Math.floor((requestedToMs - options.baseTimeMs) / options.intervalMs),
+  )
+  return firstCoveredIndex <= lastCoveredIndex
 }
 
 function buildBreadcrumbPositions(options, batch, deviceId, from, to) {
