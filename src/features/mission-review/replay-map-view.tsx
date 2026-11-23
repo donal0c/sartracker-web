@@ -85,7 +85,7 @@ export function ReplayMapView({ evidence }: { readonly evidence: ReplayMapState 
         const hits = map.queryRenderedFeatures(event.point, { layers })
         const feature = hits[0]
         if (!feature) return
-        new maplibregl.Popup({ className: 'text-stone-900' }).setLngLat(event.lngLat).setText(`${feature.properties?.label ?? feature.properties?.objectName ?? 'Evidence'} ${feature.properties?.time ?? ''}`).addTo(map)
+        new maplibregl.Popup({ className: 'text-black' }).setLngLat(event.lngLat).setText(`${feature.properties?.label ?? feature.properties?.objectName ?? 'Evidence'} ${feature.properties?.time ?? ''}`).addTo(map)
       })
     })
     return () => { abort.abort(); mapRef.current = null; map.remove() }

@@ -118,7 +118,7 @@ export function ChoiceButton(props: {
       aria-pressed={props.active}
       className={`border px-3 py-2 text-[11px] font-bold uppercase tracking-wider transition ${
         props.active
-          ? 'border-amber-300/50 bg-amber-500 text-stone-950'
+          ? 'border-amber-300/50 bg-amber-500 text-black'
           : 'sar-button'
       }`}
       data-testid={props.testId}
