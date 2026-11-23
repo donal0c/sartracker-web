@@ -95,6 +95,8 @@ body {
 .sar-map-popup { color: #1c1917; }
 .sar-shell input::placeholder { color: var(--sar-text-dim); opacity: 1; }
 .sar-shell :is(button, a, input, select, textarea):focus-visible { outline: 3px solid var(--sar-focus); outline-offset: 2px; }
+/* On the red alarms, focus stays yellow in both themes: 3:1 on every flash frame. */
+.ws-alarm, .sar-status-chip-paused { --sar-focus: #facc15; }
 /* Light theme (DON-344, SAR-QA-029): light grey panels, dark text, strong
    borders. It replaced the black "High contrast" theme. The Tailwind hues the
    components use are swapped by src/lib/theme-palette.ts; the rules here cover

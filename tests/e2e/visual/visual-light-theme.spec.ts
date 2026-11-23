@@ -79,6 +79,45 @@ async function computedContrast(locator: Locator, frames: readonly number[] = [0
   }, frames)
 }
 
+/**
+ * WCAG contrast of a keyboard-focused control's outline against the surface
+ * around it (the parent's background), paused at each animation time in ms so
+ * every phase of a flashing alarm is measured. Focus is moved by keyboard so
+ * :focus-visible applies, and CSS transitions are allowed to finish first.
+ */
+async function focusRingContrast(page: Page, locator: Locator, frames: readonly number[]): Promise<number> {
+  await page.keyboard.press('Shift')
+  await locator.focus()
+  await expect(locator).toBeFocused()
+  return locator.evaluate(async (element, times) => {
+    await Promise.all(element.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished))
+    if (!element.matches(':focus-visible')) throw new Error('control is not :focus-visible')
+    const parse = (css: string) => (css.match(/[\d.]+/g) ?? []).map(Number)
+    const lum = (rgb: number[]) => {
+      const [r, g, b] = rgb.slice(0, 3).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }) as [number, number, number]
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const surround = (): number[] => {
+      for (let node = element.parentElement; node !== null; node = node.parentElement) {
+        const rgba = parse(getComputedStyle(node).backgroundColor)
+        if (rgba.length >= 3 && (rgba[3] ?? 1) >= 0.99) return rgba
+      }
+      return [255, 255, 255]
+    }
+    const animations: Animation[] = []
+    for (let node = element.parentElement; node !== null; node = node.parentElement) animations.push(...node.getAnimations())
+    let lowest = Infinity
+    for (const time of times) {
+      for (const animation of animations) { animation.pause(); animation.currentTime = time }
+      const a = lum(parse(getComputedStyle(element).outlineColor))
+      const b = lum(surround())
+      lowest = Math.min(lowest, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05))
+    }
+    for (const animation of animations) animation.play()
+    return lowest
+  }, frames)
+}
+
 /** Both halves of the 1.1 s paused/alarm flash. */
 const FLASH_FRAMES = [100, 800] as const
 
@@ -288,16 +327,6 @@ test.describe('Visual: light theme [DON-344]', () => {
     const warning = page.getByTestId('ingest-evidence-health-warning')
     await expect(warning).toBeVisible()
     expect(await computedContrast(warning, FLASH_FRAMES), 'tracking evidence warning').toBeGreaterThanOrEqual(4.5)
-
-    // The hidden-marker notice opens in MapLibre's white popup.
-    await page.evaluate(async () => {
-      const { openMapNotice } = await import('/src/features/map/map-notice-popup.ts')
-      const map = window.__SARTRACKER_MAP__!
-      openMapNotice(map, map.getCenter(), 'A hidden marker is near this location.')
-    })
-    const notice = page.locator('.maplibregl-popup-content', { hasText: 'A hidden marker is near this location.' })
-    await expect(notice).toBeVisible()
-    expect(await computedContrast(notice), 'hidden-marker notice').toBeGreaterThanOrEqual(4.5)
   })
 
   test('recovery Resume reads at rest and on hover', async ({ page }) => {
@@ -312,4 +341,76 @@ test.describe('Visual: light theme [DON-344]', () => {
     await resume.hover()
     expect(await computedContrast(resume), 'recovery Resume on hover').toBeGreaterThanOrEqual(4.5)
   })
+
+  for (const theme of ['light', 'standard'] as const) {
+    test(`keyboard focus stands out on the red alarm controls in both flash phases (${theme})`, async ({ page }) => {
+      if (theme === 'light') await openLight(page)
+      else {
+        await page.goto('/?missionHarness=1')
+        await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+        await page.waitForSelector('canvas', { timeout: 20_000 })
+      }
+      await startMission(page)
+      await pressPauseResume(page)
+      await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
+      await openMissionPanel(page)
+      expect(await focusRingContrast(page, page.getByTestId('ws-alarm-resume'), FLASH_FRAMES), 'alarm Resume mission focus').toBeGreaterThanOrEqual(3)
+      expect(await focusRingContrast(page, page.getByTestId('mission-paused-banner-resume-btn'), FLASH_FRAMES), 'paused banner Resume focus').toBeGreaterThanOrEqual(3)
+      await pressPauseResume(page)
+      await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot(
+        { devices: [], positions: [], breadcrumbs: [] },
+        { mode: 'offline', consecutiveFailures: 2, recovered: false, lastSuccessAt: '2026-09-09T08:00:00Z', warning: 'Connection lost. Retained positions may be stale.' },
+      ))
+      await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')
+      expect(await focusRingContrast(page, page.getByTestId('ws-alarm-details'), FLASH_FRAMES), 'alarm What to do focus').toBeGreaterThanOrEqual(3)
+    })
+  }
+
+  test('clicking near a hidden marker shows a readable notice in the white map popup', async ({ page }) => {
+    await openLight(page)
+    await startMission(page)
+    await page.evaluate(async () => {
+      const [{ getBrowserHarnessStore }, { applyMarkerRuntime }] = await Promise.all([
+        import('/src/features/browser-validation/browser-harness-store.ts'),
+        import('/src/features/markers/marker-store.ts'),
+      ])
+      const raw = window.sessionStorage.getItem('sartracker:browser-harness')
+      const missionId = raw === null ? null : (JSON.parse(raw) as { currentMissionId: string | null }).currentMissionId
+      if (missionId === null) throw new Error('No active mission')
+      const store = getBrowserHarnessStore()
+      await store.upsertMarker({
+        id: 'marker-clue-1', mission_id: missionId, type: 'clue', name: 'Boot Print', lat: 51.95, lon: -9.85,
+        irish_grid_e: 480000, irish_grid_n: 580000, display_order: 1, clue_type: 'Footprint', confidence: 0.8,
+      })
+      applyMarkerRuntime({ activeMissionId: missionId, markers: await store.listMarkers(missionId), loading: false, saving: false, error: null, dialog: null })
+    })
+    await openWorkspacePanel(page, 'layers')
+    await expandAllLayers(page)
+    const markerToggle = page.getByTestId('layer-visibility-feature-marker-marker-clue-1')
+    await expect(markerToggle).toBeVisible({ timeout: 10_000 })
+    await markerToggle.click()
+    await expect(markerToggle).not.toBeChecked()
+    await page.evaluate(() => window.__SARTRACKER_MAP__!.jumpTo({ center: [-9.85, 51.95], zoom: 15 }))
+    await expect.poll(() => page.evaluate(() => {
+      const map = window.__SARTRACKER_MAP__!
+      return map.queryRenderedFeatures(map.project([-9.85, 51.95]), { layers: ['mission-markers-hitbox'] })
+        .filter((feature) => feature.properties?.markerId === 'marker-clue-1').length
+    })).toBe(0)
+    const point = await page.evaluate(() => {
+      const map = window.__SARTRACKER_MAP__!
+      const bounds = map.getCanvas().getBoundingClientRect()
+      const projected = map.project([-9.85, 51.95])
+      return { x: bounds.x + projected.x, y: bounds.y + projected.y }
+    })
+    await page.mouse.click(point.x, point.y)
+    const notice = page.locator('.maplibregl-popup-content', { hasText: 'A hidden marker is near this location.' })
+    await expect(notice).toBeVisible()
+    expect(await computedContrast(notice), 'hidden-marker notice').toBeGreaterThanOrEqual(4.5)
+    await captureAndRegister(page, {
+      testId: 'light-theme-hidden-marker-notice', testName: 'Light theme hidden-marker notice', area: 'markers', severity: 'high',
+      verificationPrompt: `${BASE_PROMPT} Check 1. A white popup on the map says a hidden marker is near this location, in dark readable words. 2. The Layers panel is light grey with dark text.`,
+      playwrightAssertions: ['hidden-marker popup text reaches 4.5:1 on white'],
+    })
+  })
 })
+

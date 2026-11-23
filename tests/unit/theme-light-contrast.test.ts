@@ -118,8 +118,8 @@ describe('alarm words stay readable through the flash (WCAG AA 4.5:1)', () => {
   it('paused banner and tracking warning: every red frame carries white text', () => {
     const frames = [
       ...blockBackgrounds('@keyframes sar-paused-flash'),
-      ...blockBackgrounds('.sar-status-chip-paused {'),
-      ...blockBackgrounds('.sar-status-chip-paused {', reducedMotion),
+      ...blockBackgrounds('  .sar-status-chip-paused {'),
+      ...blockBackgrounds('  .sar-status-chip-paused {', reducedMotion),
       ...blockBackgrounds('.sar-status-alert-panel {', reducedMotion),
       ...blockBackgrounds('.sar-status-chip-alert,', reducedMotion),
     ]
@@ -128,17 +128,33 @@ describe('alarm words stay readable through the flash (WCAG AA 4.5:1)', () => {
   })
 
   it('paused Resume button: every frame carries its light label', () => {
-    const frames = [...blockBackgrounds('@keyframes sar-resume-flash'), ...blockBackgrounds('.sar-action-resume-paused {'), ...blockBackgrounds('.sar-action-resume-paused:hover')]
+    const frames = [...blockBackgrounds('@keyframes sar-resume-flash'), ...blockBackgrounds('.sar-action-resume-paused {'), ...blockBackgrounds('.sar-action-resume-paused:hover'), ...blockBackgrounds('.sar-action-resume-paused {', reducedMotion)]
+    expect(frames.length).toBeGreaterThanOrEqual(5)
     for (const bg of frames) expect(contrast('#fff7ed', bg), `label on ${bg}`).toBeGreaterThanOrEqual(4.5)
   })
 
   it('the paused detail and tracking warning use fixed white, not a themed palette class', () => {
     const panel = readFileSync(resolve(__dirname, '../../src/components/mission-control-panel.tsx'), 'utf8')
     expect(panel).not.toMatch(/leading-snug text-red-50/)
-    for (const rule of ['.sar-status-chip-paused {', '.sar-status-alert-panel {', '.sar-status-chip-alert {']) {
+    for (const rule of ['  .sar-status-chip-paused {', '.sar-status-alert-panel {', '.sar-status-chip-alert {']) {
       const at = css.indexOf(rule)
       expect(css.slice(at, css.indexOf('}', at))).toMatch(/color: #ffffff;/)
     }
+  })
+
+  it('draws keyboard focus at 3:1 on every red alarm frame, in both themes', () => {
+    const scoped = tokens('.ws-alarm, .sar-status-chip-paused')
+    const focus = scoped['--sar-focus']
+    expect(focus, 'alarm surfaces must set their own --sar-focus').toBeDefined()
+    const reds = [
+      ...[...css.matchAll(/@keyframes ws-alarm-flash \{([^\n]*)\}/g)].flatMap((m) => [...m[1]!.matchAll(/#[0-9a-f]{6}/gi)].map((c) => c[0])),
+      ...blockBackgrounds('.ws-alarm {'),
+      ...blockBackgrounds('@keyframes sar-paused-flash'),
+      ...blockBackgrounds('  .sar-status-chip-paused {'),
+      ...blockBackgrounds('  .sar-status-chip-paused {', reducedMotion),
+    ]
+    expect(reds.length).toBeGreaterThanOrEqual(6)
+    for (const bg of reds) expect(contrast(focus!, bg), `focus ${focus} on ${bg}`).toBeGreaterThanOrEqual(3)
   })
 })
 
