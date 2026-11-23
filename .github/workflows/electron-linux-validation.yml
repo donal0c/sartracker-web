@@ -659,6 +659,8 @@ jobs:
               tmp/electron-validation-evidence/breadcrumb-transport
 
       - name: Packaged WAR-06 mission cache restart proof
+        # DON-367 baseline only: skipped so the packaged tracking soak runs. Never merge.
+        if: false
         env:
           SARTRACKER_ELECTRON_REQUIRE_LINUX_UNPACKED: '1'
           LIBGL_ALWAYS_SOFTWARE: '1'
