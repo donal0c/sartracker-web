@@ -30,6 +30,7 @@ function tokens(selector: string): Record<string, string> {
 }
 
 const sar = tokens(":root[data-theme='light']")
+const sarDark = tokens(':root')
 const ws = tokens("[data-theme='light'] [data-panel-arrangement]")
 const light = (hue: ThemedHue, shade: Shade) => resolvePaletteHex('light', hue, shade)
 
@@ -76,4 +77,68 @@ describe('light theme contrast (WCAG AA)', () => {
       expect(contrast(ws[name]!, ws['--ws-bg']!), name).toBeGreaterThanOrEqual(4.5)
     }
   })
+
+  it('keeps the top-bar status words readable when the mission button is hovered', () => {
+    for (const name of ['--ws-ok', '--ws-warning', '--ws-caution', '--ws-danger']) {
+      expect(contrast(ws[name]!, ws['--ws-raised']!), `${name} on hover`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('draws the keyboard focus outline at 3:1 on the light panels', () => {
+    const focus = sar['--sar-focus']
+    expect(focus, 'light theme must define --sar-focus').toBeDefined()
+    expect(css).toMatch(/:focus-visible \{ outline: 3px solid var\(--sar-focus\)/)
+    for (const bg of ['--sar-ink', '--sar-panel', '--sar-panel-raised', '--sar-panel-sunken']) {
+      expect(contrast(focus!, sar[bg]!), `focus on ${bg}`).toBeGreaterThanOrEqual(3)
+    }
+    expect(contrast(focus!, light('rose', '950')), 'focus on the startup fault card').toBeGreaterThanOrEqual(3)
+    expect(sarDark['--sar-focus'], 'dark theme keeps its yellow focus outline').toBe('#facc15')
+  })
 })
+
+/** Background colours declared inside one rule or keyframes block of index.css. */
+function blockBackgrounds(opener: string, from = 0): string[] {
+  const at = css.indexOf(opener, from)
+  expect(at, `index.css must contain ${opener}`).toBeGreaterThanOrEqual(0)
+  let depth = 0
+  let end = at
+  for (let i = css.indexOf('{', at); i < css.length; i++) {
+    if (css[i] === '{') depth++
+    if (css[i] === '}' && --depth === 0) { end = i; break }
+  }
+  return [...css.slice(at, end).matchAll(/background:\s*(#[0-9a-f]{6})/gi)].map((m) => m[1]!)
+}
+
+describe('alarm words stay readable through the flash (WCAG AA 4.5:1)', () => {
+  // The paused banner detail, the paused chip heading and the tracking
+  // evidence-loss warning are small text; every frame of the flash, the
+  // resting colour and the reduced-motion colour must carry white words.
+  const reducedMotion = css.indexOf('@media (prefers-reduced-motion: reduce)')
+
+  it('paused banner and tracking warning: every red frame carries white text', () => {
+    const frames = [
+      ...blockBackgrounds('@keyframes sar-paused-flash'),
+      ...blockBackgrounds('.sar-status-chip-paused {'),
+      ...blockBackgrounds('.sar-status-chip-paused {', reducedMotion),
+      ...blockBackgrounds('.sar-status-alert-panel {', reducedMotion),
+      ...blockBackgrounds('.sar-status-chip-alert,', reducedMotion),
+    ]
+    expect(frames.length).toBeGreaterThanOrEqual(5)
+    for (const bg of frames) expect(contrast('#ffffff', bg), `white on ${bg}`).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('paused Resume button: every frame carries its light label', () => {
+    const frames = [...blockBackgrounds('@keyframes sar-resume-flash'), ...blockBackgrounds('.sar-action-resume-paused {'), ...blockBackgrounds('.sar-action-resume-paused:hover')]
+    for (const bg of frames) expect(contrast('#fff7ed', bg), `label on ${bg}`).toBeGreaterThanOrEqual(4.5)
+  })
+
+  it('the paused detail and tracking warning use fixed white, not a themed palette class', () => {
+    const panel = readFileSync(resolve(__dirname, '../../src/components/mission-control-panel.tsx'), 'utf8')
+    expect(panel).not.toMatch(/leading-snug text-red-50/)
+    for (const rule of ['.sar-status-chip-paused {', '.sar-status-alert-panel {', '.sar-status-chip-alert {']) {
+      const at = css.indexOf(rule)
+      expect(css.slice(at, css.indexOf('}', at))).toMatch(/color: #ffffff;/)
+    }
+  })
+})
+

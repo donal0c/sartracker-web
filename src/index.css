@@ -36,6 +36,10 @@
   --sar-line: rgba(232, 222, 207, 0.34);
   --sar-line-strong: rgba(250, 204, 21, 0.72);
   --sar-selection-edge: #facc15;
+  /** Keyboard focus outline; the light theme swaps in a deep blue. */
+  --sar-focus: #facc15;
+  /** Focus-mode coordinate mirror backdrop. */
+  --sar-mirror-bg: rgba(9, 8, 7, 0.94);
   --sar-selection-fill: rgba(250, 204, 21, 0.28);
   --sar-text: #f4f1ec;
   /** Primary body text alternate – legible at distance. */
@@ -87,8 +91,10 @@ body {
 .sar-mission-dock-focus { max-height: 48vh; }
 .sar-mission-header { flex-wrap: wrap; gap: 0.5rem; }
 :where(.sar-shell) .text-stone-400, :where(.sar-shell) .text-stone-500 { color: var(--sar-text-dim); }
+/* MapLibre draws popups white in both themes, so their words are a fixed dark. */
+.sar-map-popup { color: #1c1917; }
 .sar-shell input::placeholder { color: var(--sar-text-dim); opacity: 1; }
-.sar-shell :is(button, a, input, select, textarea):focus-visible { outline: 3px solid #facc15; outline-offset: 2px; }
+.sar-shell :is(button, a, input, select, textarea):focus-visible { outline: 3px solid var(--sar-focus); outline-offset: 2px; }
 /* Light theme (DON-344, SAR-QA-029): light grey panels, dark text, strong
    borders. It replaced the black "High contrast" theme. The Tailwind hues the
    components use are swapped by src/lib/theme-palette.ts; the rules here cover
@@ -98,6 +104,8 @@ body {
   --sar-panel: #eef0f3;
   --sar-panel-raised: #f8f9fa;
   --sar-panel-sunken: #e4e7eb;
+  --sar-focus: #1d4ed8;
+  --sar-mirror-bg: rgba(238, 240, 243, 0.95);
   --sar-line: #6b737d;
   --sar-line-strong: rgba(180, 83, 9, 0.85);
   --sar-selection-edge: #b45309;
@@ -578,7 +586,7 @@ body {
   .sar-status-chip-alert {
     border: 1px solid rgba(248, 113, 113, 0.95);
     background: #dc2626;
-    color: #fff5f5;
+    color: #ffffff;
     font-weight: 900;
     box-shadow: 0 0 16px rgba(248, 113, 113, 0.72);
     animation: sar-alert-glow 1.1s ease-in-out infinite;
@@ -588,7 +596,7 @@ body {
   .sar-status-alert-panel {
     border-left-color: #f87171;
     background: rgba(127, 29, 29, 0.72);
-    color: #fff5f5;
+    color: #ffffff;
     font-weight: 800;
     box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.28);
     animation: sar-paused-flash 1.1s steps(1, end) infinite;
@@ -614,7 +622,7 @@ body {
   .sar-status-chip-paused {
     border: 1px solid rgba(248, 113, 113, 0.95);
     background: #b91c1c;
-    color: #fff5f5;
+    color: #ffffff;
     font-weight: 900;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
     animation: sar-paused-flash 1.1s steps(1, end) infinite;
@@ -633,13 +641,13 @@ body {
   }
 
   .sar-action-resume-paused:hover:not(:disabled) {
-    background: #dc2626;
+    background: #991b1b;
   }
 
   @keyframes sar-paused-flash {
     0%,
     50% {
-      background: #ef4444;
+      background: #dc2626;
       box-shadow: 0 0 14px rgba(248, 113, 113, 0.65);
     }
     50.01%,
@@ -652,7 +660,7 @@ body {
   @keyframes sar-resume-flash {
     0%,
     50% {
-      background: #ea580c;
+      background: #c2410c;
     }
     50.01%,
     100% {
@@ -679,7 +687,7 @@ body {
   @media (prefers-reduced-motion: reduce) {
     .sar-status-chip-paused {
       animation: none;
-      background: #ef4444;
+      background: #dc2626;
     }
 
     .sar-status-chip-alert,
@@ -690,7 +698,7 @@ body {
 
     .sar-action-resume-paused {
       animation: none;
-      background: #dc2626;
+      background: #b91c1c;
     }
   }
 
@@ -779,7 +787,7 @@ body {
 
 [data-panel-arrangement] { --ws-bg: #000000; --ws-raised: #1c1c1c; --ws-line: #8c8c8c; --ws-text: #ffffff; --ws-muted: #e4e4e4; --ws-ok: #6ee7b7; --ws-warning: #fde68a; --ws-caution: #fcd34d; --ws-danger: #fca5a5; --ws-neutral: #e7e5e4; --ws-attention-bg: rgba(251, 191, 36, 0.16); --ws-attention-edge: #fbbf24; --ws-row-line: #3f3f3f; --ws-edge: #ffffff; --ws-pressed-bg: #ffffff; --ws-pressed-text: #000000; --ws-shadow: rgba(0, 0, 0, 0.6); font-size: 15px; }
 /* Light theme (DON-344): the same layout on light grey, with darker status words. */
-[data-theme='light'] [data-panel-arrangement] { --ws-bg: #eef0f3; --ws-raised: #dde1e6; --ws-line: #5f6771; --ws-text: #0b0d10; --ws-muted: #3a4048; --ws-ok: #047857; --ws-warning: #92400e; --ws-caution: #92400e; --ws-danger: #b91c1c; --ws-neutral: #22262b; --ws-attention-bg: rgba(245, 158, 11, 0.22); --ws-attention-edge: #b45309; --ws-row-line: #b8bfc7; --ws-edge: #0b0d10; --ws-pressed-bg: #15181c; --ws-pressed-text: #ffffff; --ws-shadow: rgba(15, 23, 42, 0.3); }
+[data-theme='light'] [data-panel-arrangement] { --ws-bg: #eef0f3; --ws-raised: #dde1e6; --ws-line: #5f6771; --ws-text: #0b0d10; --ws-muted: #3a4048; --ws-ok: #065f46; --ws-warning: #92400e; --ws-caution: #92400e; --ws-danger: #b91c1c; --ws-neutral: #22262b; --ws-attention-bg: rgba(245, 158, 11, 0.22); --ws-attention-edge: #b45309; --ws-row-line: #b8bfc7; --ws-edge: #0b0d10; --ws-pressed-bg: #15181c; --ws-pressed-text: #ffffff; --ws-shadow: rgba(15, 23, 42, 0.3); }
 .ws-top-bar { display: flex; flex-shrink: 0; align-items: stretch; gap: 0.6rem; min-height: 56px; padding: 0.35rem 0.75rem; background: var(--ws-bg); border-bottom: 2px solid var(--ws-line); color: var(--ws-text); }
 .ws-logo { height: 44px; width: 52px; flex-shrink: 0; align-self: center; object-fit: contain; background: #fff; }
 .ws-mission-button { display: flex; min-width: 11rem; max-width: 17rem; flex-direction: column; justify-content: center; border: 1px solid var(--ws-line); padding: 0.1rem 0.6rem; text-align: left; line-height: 1.2; }

@@ -82,7 +82,7 @@ export function MapRendererUnavailable({ reason }: MapRendererUnavailableProps) 
               saved first, and the app remembers this choice for later starts.
             </p>
             <button
-              className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-black disabled:opacity-40"
+              className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-[#0c0a09] disabled:opacity-40"
               data-testid="restart-with-software-rendering"
               disabled={restarting || gpuState === null}
               onClick={() => void restart()}

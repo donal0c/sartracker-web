@@ -6,6 +6,7 @@ import { ensureMarkerImages } from '../markers/sync-marker-overlay'
 import { registerOfficialMapProtocol } from '../map/official-map-protocol'
 import { loadAppSettings } from '../../infrastructure/settings-store/tauri-settings-store'
 import { resolveReplayBasemap, type ReplayBasemap } from './resolve-replay-basemap'
+import { openMapNotice } from '../map/map-notice-popup'
 
 /** Associates recovery with the exact failed tile, never a neighbouring successful tile. */
 function sourceFailureKey(sourceId: string, event: unknown): string {
@@ -85,7 +86,7 @@ export function ReplayMapView({ evidence }: { readonly evidence: ReplayMapState 
         const hits = map.queryRenderedFeatures(event.point, { layers })
         const feature = hits[0]
         if (!feature) return
-        new maplibregl.Popup({ className: 'text-black' }).setLngLat(event.lngLat).setText(`${feature.properties?.label ?? feature.properties?.objectName ?? 'Evidence'} ${feature.properties?.time ?? ''}`).addTo(map)
+        openMapNotice(map, event.lngLat, `${feature.properties?.label ?? feature.properties?.objectName ?? 'Evidence'} ${feature.properties?.time ?? ''}`)
       })
     })
     return () => { abort.abort(); mapRef.current = null; map.remove() }

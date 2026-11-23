@@ -45,6 +45,43 @@ async function expectRedAlarm(locator: Locator, what: string, words: Locator = l
   expect(luminanceOf(color), `${what} text ${color}`).toBeGreaterThan(0.9)
 }
 
+/**
+ * Computed WCAG contrast of an element's text against the first opaque
+ * background behind it, read from the rendered page. With `frames`, the
+ * element's (or an ancestor's) CSS animations are paused at each time in ms and
+ * the lowest ratio is returned, so every phase of a flash is measured.
+ */
+async function computedContrast(locator: Locator, frames: readonly number[] = [0]): Promise<number> {
+  return locator.first().evaluate((element, times) => {
+    const parse = (css: string) => (css.match(/[\d.]+/g) ?? []).map(Number)
+    const lum = (rgb: number[]) => {
+      const [r, g, b] = rgb.slice(0, 3).map((v) => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }) as [number, number, number]
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const backgroundBehind = (start: Element): number[] => {
+      for (let node: Element | null = start; node !== null; node = node.parentElement) {
+        const rgba = parse(getComputedStyle(node).backgroundColor)
+        if (rgba.length >= 3 && (rgba[3] ?? 1) >= 0.99) return rgba
+      }
+      return [255, 255, 255]
+    }
+    const animations: Animation[] = []
+    for (let node: Element | null = element; node !== null; node = node.parentElement) animations.push(...node.getAnimations())
+    let lowest = Infinity
+    for (const time of times) {
+      for (const animation of animations) { animation.pause(); animation.currentTime = time }
+      const a = lum(parse(getComputedStyle(element).color))
+      const b = lum(backgroundBehind(element))
+      lowest = Math.min(lowest, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05))
+    }
+    for (const animation of animations) animation.play()
+    return lowest
+  }, frames)
+}
+
+/** Both halves of the 1.1 s paused/alarm flash. */
+const FLASH_FRAMES = [100, 800] as const
+
 async function openLight(page: Page): Promise<void> {
   await page.addInitScript(() => localStorage.setItem('sartracker:high-contrast', 'true'))
   await page.goto('/?missionHarness=1')
@@ -195,5 +232,84 @@ test.describe('Visual: light theme [DON-344]', () => {
       verificationPrompt: `${BASE_PROMPT} Check 1. The finish confirmation is readable: dark text on a light surface, with clearly bordered buttons. 2. The destructive action is clearly marked (red or amber) and its label is readable.`,
       playwrightAssertions: ['finish confirmation shown'],
     })
+  })
+
+  test('alarm instructions, hover labels, map notices and keyboard focus meet WCAG AA', async ({ page }) => {
+    await openLight(page)
+    await startMission(page)
+
+    // Running on the top bar while the mission button is hovered.
+    await page.getByTestId('ws-mission-phase').hover()
+    expect(await computedContrast(page.getByTestId('ws-mission-phase')), 'Running on hover').toBeGreaterThanOrEqual(4.5)
+
+    // Confirm Finish, at rest and hovered.
+    await openMissionPanel(page)
+    await page.getByTestId('mission-finish-btn').click()
+    const confirmFinish = page.getByRole('button', { name: 'Confirm Finish' })
+    expect(await computedContrast(confirmFinish), 'Confirm Finish').toBeGreaterThanOrEqual(4.5)
+    await confirmFinish.hover()
+    expect(await computedContrast(confirmFinish), 'Confirm Finish on hover').toBeGreaterThanOrEqual(4.5)
+    await page.getByRole('button', { name: 'Cancel' }).click()
+
+    // Keyboard focus is drawn in a colour that stands out from the light panel.
+    await page.getByTestId('mission-finish-btn').focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    await page.waitForFunction(() => (document.activeElement as HTMLElement).getAnimations().length === 0)
+    const focus = await page.evaluate(() => {
+      const active = document.activeElement as HTMLElement
+      return { target: active.dataset.testid ?? active.textContent ?? '', outline: getComputedStyle(active).outlineColor, width: getComputedStyle(active).outlineWidth, panel: getComputedStyle(document.querySelector('.ws-side')!).backgroundColor }
+    })
+    expect(Number.parseFloat(focus.width), 'focus outline width').toBeGreaterThanOrEqual(2)
+    const ratio = (a: string, b: string) => { const [x, y] = [luminanceOf(a), luminanceOf(b)].sort((p, q) => q - p) as [number, number]; return (x + 0.05) / (y + 0.05) }
+    expect(ratio(focus.outline, focus.panel), `focus ${focus.outline} on ${focus.panel} (${focus.target})`).toBeGreaterThanOrEqual(3)
+
+    // Paused banner detail and its Resume, through both flash phases.
+    await pressPauseResume(page)
+    await openMissionPanel(page)
+    const banner = page.getByTestId('mission-paused-banner')
+    await expect(banner).toBeVisible()
+    expect(await computedContrast(banner.locator('p').nth(1), FLASH_FRAMES), 'paused detail').toBeGreaterThanOrEqual(4.5)
+    expect(await computedContrast(banner.locator('p').first(), FLASH_FRAMES), 'paused heading').toBeGreaterThanOrEqual(4.5)
+    expect(await computedContrast(page.getByTestId('mission-paused-banner-resume-btn'), FLASH_FRAMES), 'paused Resume').toBeGreaterThanOrEqual(4.5)
+
+    await pressPauseResume(page)
+
+    // Tracking evidence-loss warning, through both flash phases.
+    await page.evaluate(async () => {
+      const { applyIngestEvidenceHealth } = await import('/src/features/tracking/ingest-health-store.ts')
+      applyIngestEvidenceHealth({
+        state: 'degraded', reason: 'ledger_projection_failed', pendingCount: 1,
+        corruptCount: 0, conflictCount: 1, rejectedCount: 0,
+        affectedDeviceCount: 1, conflictDeviceIds: ['alpha'],
+      })
+    })
+    await openWorkspacePanel(page, 'tracking')
+    const warning = page.getByTestId('ingest-evidence-health-warning')
+    await expect(warning).toBeVisible()
+    expect(await computedContrast(warning, FLASH_FRAMES), 'tracking evidence warning').toBeGreaterThanOrEqual(4.5)
+
+    // The hidden-marker notice opens in MapLibre's white popup.
+    await page.evaluate(async () => {
+      const { openMapNotice } = await import('/src/features/map/map-notice-popup.ts')
+      const map = window.__SARTRACKER_MAP__!
+      openMapNotice(map, map.getCenter(), 'A hidden marker is near this location.')
+    })
+    const notice = page.locator('.maplibregl-popup-content', { hasText: 'A hidden marker is near this location.' })
+    await expect(notice).toBeVisible()
+    expect(await computedContrast(notice), 'hidden-marker notice').toBeGreaterThanOrEqual(4.5)
+  })
+
+  test('recovery Resume reads at rest and on hover', async ({ page }) => {
+    await openLight(page)
+    await startMission(page)
+    await page.reload()
+    await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+    await openMissionPanel(page)
+    const resume = page.getByTestId('start-screen-resume-btn')
+    await expect(resume).toBeVisible({ timeout: 15_000 })
+    expect(await computedContrast(resume), 'recovery Resume').toBeGreaterThanOrEqual(4.5)
+    await resume.hover()
+    expect(await computedContrast(resume), 'recovery Resume on hover').toBeGreaterThanOrEqual(4.5)
   })
 })

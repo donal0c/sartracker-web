@@ -259,7 +259,7 @@ export function MissionControlPanel({
             <p className="font-mono text-[13px] font-black uppercase tracking-[0.12em]">
               {phasePresentation.banner.heading}
             </p>
-            <p className="mt-1 text-[12px] font-semibold leading-snug text-red-50">
+            <p className="mt-1 text-[12px] font-semibold leading-snug text-white">
               {phasePresentation.banner.detail}
             </p>
           </div>
@@ -598,7 +598,7 @@ export function MissionControlPanel({
           </p>
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 bg-amber-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-amber-500"
+              className="flex-1 bg-[#b45309] px-3 py-2 text-[12px] font-semibold text-white hover:bg-[#92400e]"
               onClick={() => void resumeRecoverable()}
               type="button"
             >
@@ -708,7 +708,7 @@ export function MissionControlPanel({
           {actionError !== null ? <MissionActionError message={actionError} /> : null}
           <div className="mt-4 flex gap-2">
             <button
-              className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-500"
+              className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-700"
               onClick={() => void confirmFinish()}
               type="button"
             >

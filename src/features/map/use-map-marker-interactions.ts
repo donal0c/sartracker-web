@@ -12,6 +12,7 @@ import {
   shouldIgnoreMarkerMapClick,
 } from './map-marker-interactions'
 import { resolveClickedMapTarget } from './map-click-target-resolver'
+import { openMapNotice } from './map-notice-popup'
 import { useMapInteractionMode } from './use-map-interaction-mode'
 
 type UseMapMarkerInteractionsOptions = {
@@ -130,10 +131,7 @@ export function useMapMarkerInteractions(
 
       const lngLat = map.unproject([point.x, point.y])
       if (target.kind === 'hidden_evidence') {
-        hiddenEvidenceNotice = new maplibregl.Popup({ className: 'text-stone-900', closeOnClick: false })
-          .setLngLat(lngLat)
-          .setText('A hidden marker is near this location. Show its layer in Map Workspace before editing or placing another marker here.')
-          .addTo(map)
+        hiddenEvidenceNotice = openMapNotice(map, lngLat, 'A hidden marker is near this location. Show its layer in Map Workspace before editing or placing another marker here.', { closeOnClick: false })
         return
       }
       if (markerActiveMissionId !== currentMissionId) {
