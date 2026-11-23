@@ -10,6 +10,7 @@ import {
 
 describe('tracking poll ledger', () => {
   beforeEach(() => {
+    clearTrackingPollLedger()
     window.sessionStorage.clear()
   })
 
