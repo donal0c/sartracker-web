@@ -81,6 +81,7 @@ import {
   partitionOperatorClickAudit,
   readWebGlRendererInfoFromDocument,
   shouldReadCheckpointPositionCount,
+  summarizeTrackingSoakHistoryRequests,
   countDurablePositionsReadOnly,
 } from '../build/electron-tracking-soak-lib.js'
 import {
@@ -964,6 +965,22 @@ async function main() {
         ),
       ),
     )
+    // Whether each history reader asked again for its early windows after the
+    // restart, and what the mock answered. Kept on success and failure [DON-367].
+    try {
+      const historyRequestEvidence = mockServer.historyRequestEvidence()
+      await writeFile(
+        path.join(evidenceDir, 'mock-history-requests.jsonl'),
+        historyRequestEvidence.requests.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+        'utf8',
+      )
+      await writeJson(
+        path.join(evidenceDir, 'mock-history-requests-summary.json'),
+        summarizeTrackingSoakHistoryRequests(historyRequestEvidence),
+      )
+    } catch (error) {
+      console.warn(`[tracking-soak] history request evidence could not be written: ${error instanceof Error ? error.message : String(error)}`)
+    }
     await runCleanupStep(() => mockServer.close(), 5_000)
     try {
       await sleepGuard?.stop()
