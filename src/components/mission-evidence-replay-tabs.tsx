@@ -79,7 +79,7 @@ export function MissionReplayTab(props: {
             <option value="0">Second occurrence · Greenwich Mean Time (UTC+00)</option>
           </select>
         </label> : null}
-        <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="mission-replay-seek" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
+        <button className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-[#0c0a09] disabled:opacity-40" data-testid="mission-replay-seek" disabled={selectedTime.iso === null || props.controller === null || props.replay.loading} onClick={() => selectedTime.iso === null ? undefined : void props.controller?.seekReplay(selectedTime.iso, {
           ...(deviceFilterIds.length === 0 ? {} : { deviceIds: deviceFilterIds }),
           ...(outingFilterIds.length === 0 ? {} : { outingIds: outingFilterIds }),
         }, true)} type="button">{props.replay.loading ? 'Loading evidence…' : 'Replay data known at this time'}</button>
@@ -308,7 +308,7 @@ export function SearchOperationsTab(props: {
         <input className="bg-stone-950 p-2" data-testid="search-pass-tracks" maxLength={40_200} onChange={(event) => setTrackEvidenceIds(event.target.value)} placeholder="Track evidence IDs, comma separated" value={trackEvidenceIds} />
         <input className="bg-stone-950 p-2" data-testid="search-pass-notes" maxLength={2_000} onChange={(event) => setPassNotes(event.target.value)} placeholder="Pass notes" value={passNotes} />
       </div>
-      <button className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-stone-950 disabled:opacity-40" data-testid="search-pass-record" disabled={props.readOnly || assignment === null || coordinatorName.trim() === '' || passStartedLocal.trim() === '' || passEndedLocal.trim() === ''} onClick={() => void recordPass()} type="button">Record coordinator-declared completed pass</button>
+      <button className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-[#0c0a09] disabled:opacity-40" data-testid="search-pass-record" disabled={props.readOnly || assignment === null || coordinatorName.trim() === '' || passStartedLocal.trim() === '' || passEndedLocal.trim() === ''} onClick={() => void recordPass()} type="button">Record coordinator-declared completed pass</button>
       </fieldset>
       {message !== null ? <p className="mt-3 text-sm text-emerald-200" data-testid="search-operation-feedback">{message}</p> : null}
       {error !== null ? <p className="mt-3 text-sm text-rose-200" data-testid="search-operation-error" role="alert">{error}</p> : null}

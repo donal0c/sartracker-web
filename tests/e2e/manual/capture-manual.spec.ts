@@ -52,6 +52,7 @@ const JPEG_SHOTS = new Set([
   'review-replay',
   'review-search-passes',
   'stationary-attention-map',
+  'theme-light',
   'tracking-offline',
 ])
 const JPEG_QUALITY = 85
@@ -290,6 +291,23 @@ test.describe('manual screenshots: running a mission', () => {
     await shot(page, 'devices-workspace')
     await page.keyboard.press('Escape')
     // Focus Mode was retired with the old screen (DON-341); the manual describes Full map instead.
+  })
+})
+
+test.describe('manual screenshots: light theme', () => {
+  test('main screen and More menu in the light theme [DON-344]', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('sartracker:high-contrast', 'true'))
+    await openHarness(page)
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await startDemoMission(page)
+    await injectStationaryAlpha(page)
+    await openWorkspacePanel(page, 'people')
+    await shot(page, 'theme-light')
+    await page.getByTestId('ws-more-button').click()
+    await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Light')
+    const menu = await page.getByTestId('ws-more-menu').boundingBox()
+    if (menu === null) throw new Error('The More menu has no bounding box.')
+    await shot(page, 'theme-menu', { x: menu.x - 8, y: 0, width: menu.width + 16, height: menu.y + menu.height + 8 })
   })
 })
 

@@ -132,13 +132,16 @@ test('a pause from Full map shows the alarm, and its Resume brings tracking back
   await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
 })
 
-test('high contrast is operator accessible and survives reload', async ({ page }) => {
-  // The theme toggle moved under More (DON-341).
+test('the light theme is operator accessible and survives reload', async ({ page }) => {
+  // The theme toggle moved under More (DON-341); High contrast became the light theme (DON-344).
   await page.getByTestId('ws-more-button').click()
+  await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Dark')
   await page.getByTestId('theme-toggle').click()
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'high-contrast')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Light')
   await page.reload()
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'high-contrast')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.getByTestId('ws-top-bar')).toHaveCSS('background-color', 'rgb(238, 240, 243)')
 })
 
 test('brightened secondary controls retain their hover affordance', async ({ page }) => {

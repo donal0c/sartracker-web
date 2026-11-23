@@ -2,6 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      /* Theme before first paint (DON-344); mirrors src/lib/theme-preference.ts. */
+      (function () {
+        var theme = 'standard'
+        try { if (window.localStorage.getItem('sartracker:high-contrast') === 'true') theme = 'light' } catch (error) { /* storage unavailable: keep the default */ }
+        document.documentElement.dataset.theme = theme
+      })()
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
