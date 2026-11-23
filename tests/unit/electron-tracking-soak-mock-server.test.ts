@@ -127,6 +127,57 @@ describe('deterministic tracking soak mock server [DON-246]', () => {
     }
   })
 
+  it('keeps every history request with its window, reply and restart boundary as evidence [DON-367]', async () => {
+    // The CI soak lost late fixes after a restart with no record of whether the
+    // history recheck ever asked for their window. The mock keeps every history
+    // request so the evidence answers that directly.
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-history-log-'))
+    temporaryDirectories.push(directory)
+    const baseTimeMs = Date.parse('2026-02-01T00:00:00.000Z')
+    const server = await startTrackingSoakMockServer({
+      statePath: path.join(directory, 'state.json'),
+      baseTimeMs,
+      intervalMs: 5_000,
+      deviceCount: 4,
+      movingDeviceCount: 4,
+      productionPollsPerBatch: 180,
+      maximumBatches: 3,
+      pauseCheckpoints: [1],
+    })
+    const headers = { Cookie: 'JSESSIONID=tracking-soak' }
+    const history = (deviceId: string, from: number, to: number) => fetch(`${server.baseUrl}/api/positions?${new URLSearchParams({
+      deviceId, from: new Date(from).toISOString(), to: new Date(to).toISOString(),
+    })}`, { headers })
+
+    try {
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      await history('1', baseTimeMs, baseTimeMs + 2 * 60 * 60_000)
+      await server.resume()
+      await fetch(`${server.baseUrl}/api/devices`, { headers })
+      await history('1', baseTimeMs, baseTimeMs + 2 * 60 * 60_000)
+      await history('2', baseTimeMs + 3 * 60 * 60_000, baseTimeMs + 4 * 60 * 60_000)
+      for (let index = 0; index < 2_100; index += 1) await fetch(`${server.baseUrl}/api/devices`, { headers })
+
+      const evidence = server.historyRequestEvidence()
+      expect(evidence.requests.map(({ deviceId, batch, status, returned, reply }) => ({ deviceId, batch, status, returned, reply }))).toEqual([
+        { deviceId: '1', batch: 1, status: 200, returned: 180, reply: 'window' },
+        { deviceId: '1', batch: 2, status: 200, returned: 360, reply: 'window' },
+        { deviceId: '2', batch: 2, status: 200, returned: 180, reply: 'current-batch' },
+      ])
+      expect(evidence.requests[0]).toMatchObject({
+        from: new Date(baseTimeMs).toISOString(),
+        to: new Date(baseTimeMs + 2 * 60 * 60_000).toISOString(),
+      })
+      expect(evidence.resumes).toHaveLength(1)
+      expect(evidence.resumes[0]!.batch).toBe(1)
+      expect(evidence.requests[1]!.atMs).toBeGreaterThanOrEqual(evidence.resumes[0]!.atMs)
+      // Device polls do not crowd history requests out of the evidence.
+      expect(evidence.droppedRequests).toBe(0)
+    } finally {
+      await server.close()
+    }
+  })
+
   it('retains bounded current/history fault observations for priority coverage', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'sartracker-soak-priority-'))
     temporaryDirectories.push(directory)
