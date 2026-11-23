@@ -385,6 +385,7 @@ async function main() {
         await ensureMissionActive(activeLaunch)
       }
       await mockServer.resume()
+      startResumeCpuProfiles(activeLaunch)
       restartCheckpointsPassed += 1
       if (archiveCycleCursor < archiveCycleMissions.length) {
         archiveCycleEntries.push(await runArchiveCycleWhileTracking(
@@ -3956,6 +3957,7 @@ async function waitForBackupEvent(page, missionId, timeoutMs) {
 async function closeLaunch(launch, mainRoundTrips, rendererGaps) {
   launch.closePromise ??= (async () => {
     launch.closed = true
+    await runCleanupStep(() => finishResumeCpuProfiles(launch), 150_000)
     launch.rendererLifecycle.beginCleanup()
     await runCleanupStep(() => collectOperatorClickAuditTail(launch), 500)
     await runCleanupStep(
@@ -4103,6 +4105,73 @@ async function finishMainStartupProfile(launch) {
   } catch (error) {
     return { available: false, reason: describeError(error) }
   }
+}
+
+/**
+ * DON-367 diagnostic only (throwaway branch, never merged): when
+ * SARTRACKER_SOAK_RESUME_CPU_PROFILE_MS is set, CPU-profiles the main process
+ * and the renderer of launch SARTRACKER_SOAK_RESUME_CPU_PROFILE_LAUNCH
+ * (default 2) from the moment the mock resumes, for that many milliseconds.
+ * Each profile is written as soon as it stops, so a later soak timeout still
+ * leaves it in the evidence. Never throws and never changes the verdict.
+ */
+function startResumeCpuProfiles(launch) {
+  const durationMs = Number(process.env.SARTRACKER_SOAK_RESUME_CPU_PROFILE_MS ?? 0)
+  const launchNumber = Number(process.env.SARTRACKER_SOAK_RESUME_CPU_PROFILE_LAUNCH ?? 2)
+  if (!(durationMs > 0) || launch.number !== launchNumber || launch.resumeCpuProfiles !== undefined) return
+  const startedAt = new Date().toISOString()
+  const targets = [
+    {
+      target: 'main',
+      send: (method, params) => launch.mainInspector.send(method, params, method === 'Profiler.stop' ? 120_000 : 10_000),
+    },
+    {
+      target: 'renderer',
+      send: launch.rendererSession === null || launch.rendererSession === undefined
+        ? null
+        : (method, params) => withDeadline(
+          launch.rendererSession.send(method, params),
+          method === 'Profiler.stop' ? 120_000 : 10_000,
+          `renderer ${method}`,
+        ),
+    },
+  ]
+  launch.resumeCpuProfiles = targets.map(({ target, send }) => {
+    const abort = new AbortController()
+    const file = `resume-cpu-${target}-launch-${launch.number}.cpuprofile`
+    const promise = (async () => {
+      if (send === null) return { target, available: false, reason: 'renderer CDP session unavailable' }
+      const outcome = await runTimedProfile({
+        send,
+        start: ['Profiler.enable', ['Profiler.setSamplingInterval', { interval: 1_000 }], 'Profiler.start'],
+        stop: 'Profiler.stop',
+        durationMs,
+        signal: abort.signal,
+      })
+      const stoppedAt = new Date().toISOString()
+      if (!outcome.ok || outcome.profile === undefined) {
+        return { target, startedAt, stoppedAt, available: false, reason: outcome.ok ? 'no profile returned' : outcome.reason }
+      }
+      return { target, startedAt, stoppedAt, ...(await saveProfile(launch, file, outcome.profile, summarizeCpuProfile)) }
+    })().catch((error) => ({ target, available: false, reason: describeError(error) }))
+      .then(async (summary) => {
+        console.log(`[tracking-soak] resume cpu profile launch=${launch.number} target=${target} available=${summary.available}${summary.reason ? ` reason=${summary.reason}` : ''}`)
+        await writeJson(
+          path.join(launch.evidenceDir, `resume-cpu-${target}-launch-${launch.number}-summary.json`),
+          { ...summary, requestedDurationMs: durationMs },
+        ).catch(() => undefined)
+        return summary
+      })
+    return { abort, promise }
+  })
+  console.log(`[tracking-soak] resume cpu profiles started launch=${launch.number} durationMs=${durationMs} at=${startedAt}`)
+}
+
+/** Stops any still-running resume profiles and waits for them to be written. */
+async function finishResumeCpuProfiles(launch) {
+  if (launch.resumeCpuProfiles === undefined) return
+  for (const profile of launch.resumeCpuProfiles) profile.abort.abort()
+  await Promise.all(launch.resumeCpuProfiles.map((profile) => profile.promise))
 }
 
 /** Writes a raw profile and returns its summary, or why it could not. */

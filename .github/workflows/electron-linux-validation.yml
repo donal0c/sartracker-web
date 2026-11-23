@@ -735,6 +735,9 @@ jobs:
       - name: Packaged tracking soak (CI profile)
         if: ${{ github.event_name == 'workflow_dispatch' }}
         env:
+          # DON-367 diagnostic branch only: profile main and renderer for 10 min after the launch-2 resume.
+          SARTRACKER_SOAK_RESUME_CPU_PROFILE_MS: '600000'
+          SARTRACKER_SOAK_RESUME_CPU_PROFILE_LAUNCH: '2'
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
         run: |
