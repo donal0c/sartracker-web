@@ -228,7 +228,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
           onConfirm={async (input) => controller?.resolveLegacyRoster(input) ?? null} />
       ))}
       {removedGroupHistory.map((participant) => <p className="text-xs" key={participant.id}>
-          Removed group {participant.team_name ?? participant.mission_team_id}: {formatGroupBackfillStatus(participant)}
+          Removed group {participant.team_name ?? participant.mission_team_id}: {simplified ? formatGroupEarlierPositionsPlain(participant) : formatGroupBackfillStatus(participant)}
         </p>)}
     </>
   )
@@ -463,9 +463,15 @@ function formatGroupEarlierPositionsPlain(participant: Parameters<typeof formatG
   }
   const total = participant.backfill_member_count ?? 0
   const completed = participant.backfill_completed_count ?? 0
+  // Where the member list came from stays on screen: it is provenance, not detail.
+  const source = participant.backfill_scope_attested === true
+    ? ' (members confirmed by a coordinator)'
+    : participant.backfill_scope_inferred === true
+    ? ' (members worked out from saved records)'
+    : ''
   return completed === total
-    ? `Earlier positions: loaded for ${total} ${total === 1 ? 'person' : 'people'}`
-    : `Earlier positions: loading for ${total - completed} of ${total} people`
+    ? `Earlier positions: loaded for ${total} ${total === 1 ? 'person' : 'people'}${source}`
+    : `Earlier positions: loading for ${total - completed} of ${total} people${source}`
 }
 
 function ParticipantPickerList(props: {

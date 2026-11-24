@@ -219,6 +219,21 @@ describe('ParticipantControlsSection [DON-271]', () => {
       expect(document.querySelector('[data-testid="participant-backfill-status"]')?.textContent)
         .toContain('Earlier positions: loading for 6 of 6 people')
     })
+
+    it('keeps where a group\'s member list came from on screen, also for a removed group', () => {
+      useParticipantStore.setState({ participants: [
+        { ...group, backfill_scope_inferred: true, backfill_completed_count: 6 },
+        { ...group, id: 'old', team_name: 'Old Team', removed_at: '2026-11-24T08:00:00.000Z', removed_by: 'Coordinator',
+          backfill_scope_attested: true, backfill_completed_count: 2 },
+      ] as never })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'admin' }))
+      expect(document.querySelector('[data-testid="participant-backfill-status"]')?.textContent)
+        .toContain('loaded for 6 people (members worked out from saved records)')
+      act(() => root?.unmount())
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      expect(document.querySelector('[data-testid="participant-warnings"]')?.textContent)
+        .toContain('Removed group Old Team: Earlier positions: loading for 4 of 6 people (members confirmed by a coordinator)')
+    })
   })
 
   it('surfaces active-mission membership bookkeeping failures', () => {

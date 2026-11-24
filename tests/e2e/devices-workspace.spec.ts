@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openMissionPanel } from './helpers/workspace-panels'
+import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,6 +13,8 @@ test.describe('M19 devices workspace', () => {
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedTrackingWorkspace(page)
+    // Start leaves the map clear (DON-368); Open Devices is in People.
+    await openWorkspacePanel(page, 'people')
   })
 
   test('opens the dedicated workspace, renders the roster, and supports selection plus zoom', async ({

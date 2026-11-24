@@ -286,8 +286,9 @@ export function MissionControlPanel({
           />
         ) : null}
 
-        {/* Simplified: mission time shows once, as Search time in the top bar (rule 3, DON-368). */}
-        {simplified ? null : <div className="grid gap-3 sm:grid-cols-2">
+        {/* Simplified: mission time shows once, as Search time in the top bar (rule 3, DON-368).
+            The readouts stay in the page, never on screen, as Active Search already did. */}
+        <div className={simplified ? 'hidden' : 'grid gap-3 sm:grid-cols-2'} data-testid="mission-clocks">
           <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
             <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
@@ -300,7 +301,7 @@ export function MissionControlPanel({
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
             </p>
           </div>
-        </div>}
+        </div>
 
         {/* Setup Inputs - Only visible in Idle */}
         {phase === 'idle' ? (

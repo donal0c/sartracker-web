@@ -62,6 +62,7 @@ test('keeps online status and identifies cached rows after partial live hydratio
     notify()
     ;(window as unknown as { war06Stop: () => Promise<void> }).war06Stop = stop
   })
+  await openWorkspacePanel(page, 'people')
   await page.getByTestId('open-devices-workspace').click()
   const workspace = page.getByTestId('devices-workspace')
   await expect(workspace).toContainText('Showing last known positions from cache')

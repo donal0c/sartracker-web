@@ -132,8 +132,8 @@ describe('MissionControlPanel in the simplified workspace', () => {
   it('shows mission time once: no Since start clock in the running Mission panel [DON-368]', async () => {
     mocks.model = createModel({ phase: 'active' })
     await renderPanel()
-    expect(query('[data-testid="mission-elapsed"]')).toBeNull()
-    expect(document.body.textContent).not.toContain('Since start')
+    // Never on screen: the clocks block is display:none in the simplified panel.
+    expect(query('[data-testid="mission-clocks"]')?.className).toBe('hidden')
   })
 
   it('folds who is taking part behind one button, with a one-line summary [DON-368]', async () => {
