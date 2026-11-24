@@ -77,13 +77,23 @@ export function saveTheme(theme: ThemeName): boolean {
   try { window.localStorage.setItem(THEME_KEY, String(theme === 'light')); return true } catch { return false }
 }
 
-/** Applies the preference before runtime bootstrap, including boot and fault shells. */
+/** Clears the startup read-failure mark once a later choice has been saved. */
+export function clearThemeReadFailure(): void {
+  delete document.documentElement.dataset.themeReadFailed
+}
+
+/**
+ * Applies the preference before runtime bootstrap, including boot and fault
+ * shells. The inline <head> script normally applied it already; that theme is
+ * kept, so a second storage read can never overwrite a saved dark choice.
+ * Storage is read here only when no theme is on <html> yet.
+ */
 export function applySavedTheme(): void {
+  const applied = document.documentElement.dataset.theme
+  if (applied === 'light' || applied === 'standard') return
   const { theme, error } = readStoredTheme()
   applyTheme(theme)
   if (error === null) return
-  // The inline <head> script may already have reported this launch's failure.
-  if (themeReadFailed()) return
   document.documentElement.dataset.themeReadFailed = 'true'
   console.error(THEME_READ_FAILURE, error)
 }

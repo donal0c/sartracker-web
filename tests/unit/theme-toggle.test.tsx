@@ -67,12 +67,29 @@ it('keeps a choice that could not be saved for the rest of the session when the 
   act(() => secondRoot.unmount())
 })
 
-it('says so when the saved theme could not be read at startup', () => {
+it('says the startup read failed, and clears that once a new choice is saved', () => {
   document.documentElement.dataset.theme = 'light'
   document.documentElement.dataset.themeReadFailed = 'true'
   const host = document.createElement('div')
   const root = createRoot(host)
   act(() => root.render(<ThemeToggle />))
-  expect(host.querySelector('[role="status"]')?.textContent).toBe('Could not read the saved theme, so the default Light theme is in use.')
+  expect(host.querySelector('[role="status"]')?.textContent).toBe('Could not read the saved theme at startup, so SAR Tracker opened in Light.')
+  act(() => host.querySelector('button')!.click())
+  expect(host.querySelector('button')!.textContent).toBe('Theme: Dark')
+  expect(host.querySelector('[role="status"]')).toBeNull()
+  expect(document.documentElement.dataset.themeReadFailed).toBeUndefined()
+  act(() => root.unmount())
+})
+
+it('keeps the startup notice when the new choice could not be saved either', () => {
+  document.documentElement.dataset.theme = 'light'
+  document.documentElement.dataset.themeReadFailed = 'true'
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Storage unavailable') })
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  act(() => root.render(<ThemeToggle />))
+  act(() => host.querySelector('button')!.click())
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('at startup')
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('could not save')
   act(() => root.unmount())
 })

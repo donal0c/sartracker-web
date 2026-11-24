@@ -54,3 +54,15 @@ it('saves the choice under the existing key and reports a failed write', () => {
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('Full') })
   expect(saveTheme('light')).toBe(false)
 })
+
+it('keeps the theme the <head> script already applied instead of reading storage again', () => {
+  // A saved dark choice applied before first paint must survive a renderer-side
+  // storage failure (Codex round 1 on PR #104).
+  document.documentElement.dataset.theme = 'standard'
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Unavailable') })
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  applySavedTheme()
+  expect(document.documentElement.dataset.theme).toBe('standard')
+  expect(document.documentElement.dataset.themeReadFailed).toBeUndefined()
+  expect(logged).not.toHaveBeenCalled()
+})
