@@ -577,8 +577,8 @@
 
           <h3 id="mission-people">Add or remove a team during the mission</h3>
           <figure class="screenshot narrow">
-            <img src="assets/mission-control-active.png" alt="Mission Control during an active mission: Pause and Finish, and a one-line summary of who is taking part" />
-            <figcaption>Mission Control while active. Pause and Finish always show; who is taking part is one line. The search clock is in the top bar.</figcaption>
+            <img src="assets/mission-control-active.png" alt="The Mission panel during an active mission: People on this mission as one line, Change who's taking part folded, Review and replay, More mission options, Pause and Finish" />
+            <figcaption>The Mission panel while running. Who is taking part is one line; Pause and Finish always show. The search clock is in the top bar.</figcaption>
           </figure>
           <p>
             During a mission, <strong>People on this mission</strong> is one line, such as
@@ -769,7 +769,7 @@
               <tr><td>Red alarm <strong>MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing</strong></td><td>Part of the mission record could not be saved. Positions are still updating.</td><td>Keep the app open and carry on. Do not finish the mission yet. Open <strong>More</strong>, then <strong>Diagnostics</strong>, and send the support bundle.</td></tr>
               <tr><td>Amber <strong>1 time unverified</strong></td><td>The tracker sent a position without a trustworthy fix time. It is shown for safety but is not used as exact trail evidence.</td><td>Use the position with care and note the device. Ask an admin to look if it keeps happening.</td></tr>
               <tr><td>Amber <strong>2 stale</strong></td><td>Two devices have not reported for more than five minutes.</td><td>Call the teams. Do not assume the dots are where they are.</td></tr>
-              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Fix time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as stale until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
+              <tr><td>Amber <strong>FIX TIME AHEAD OF THIS LAPTOP</strong>; device shows <strong>Position time ahead of laptop clock</strong></td><td>A fix time is more than two minutes later than this laptop's clock. Either the laptop clock is behind or the tracker sends the wrong time zone. The device counts as stale until its fixes are back in step.</td><td>Check the laptop's date and time. If only one device is affected, call the team and ask an admin to check that tracker's time setting. Do not treat its dot as live.</td></tr>
               <tr><td>Red <strong>TRACKING LOST</strong>, with <strong>LIVE REFRESH SUSPENDED — new positions are not being saved to the mission record</strong> in the Tracking panel</td><td>The app is waiting for the mission record to accept positions it already has. Until it does, it fetches no new ones, and the dots go stale on schedule.</td><td>Treat every position as old and call teams for their locations. If it does not clear within a few minutes, save your work, restart the app and tell an admin.</td></tr>
             </tbody>
           </table>
@@ -806,22 +806,26 @@
             support report if it stays.
           </p>
 
-          <h3 id="devices">Devices workspace</h3>
+          <h3 id="devices">All devices</h3>
           <figure class="screenshot">
-            <img src="assets/devices-workspace.png" alt="Devices workspace listing three teams with trail colours, status, last seen and a Zoom button, and a selected-device panel" />
-            <figcaption>Open it with <strong>Open Devices</strong> in the Tracking panel. Close it with <strong>Close</strong> or Esc.</figcaption>
+            <img src="assets/devices-workspace.png" alt="All devices at full width listing two teams with trail colours, status, last seen, source and a Zoom button, and a selected-device panel" />
+            <figcaption>Open it with <strong>All devices</strong> at the top of the People panel. Close it with <strong>Close</strong> or Esc.</figcaption>
+          </figure>
+          <figure class="screenshot">
+            <img src="assets/devices-docked.png" alt="All devices narrowed to a strip on the left after Zoom, with the device ringed on the map beside it and Stale written under a stale device's name" />
+            <figcaption>After <strong>Zoom</strong>: the list narrows and the device is ringed on the map beside it. A stale position says <em>Stale</em> under the name.</figcaption>
           </figure>
           <ul>
             <li><strong>Filters</strong> along the top: Devices, Hidden, Online, Stale, No position. The search box searches inside the chosen filter.</li>
             <li><strong>Trail</strong> colour: click a swatch to pick a colour for that device's dot and trail.</li>
             <li><strong>Visible</strong>: untick <em>Shown</em> to hide a device's dot without removing it from the mission.</li>
-            <li><strong>Zoom</strong> jumps the map to the device (not available if it has no position) and narrows the list to a strip on the left, as Review does, so you can see the map. Press <strong>Full width</strong> to widen it again.</li>
+            <li><strong>Zoom</strong> jumps the map to the device (not available if it has no position) and narrows the list to a strip on the left, as Review does. The device is placed in the part of the map you can still see, and your filter and search stay as they were. In the narrow list a position that is not live says so under the name, for example <em>Stale</em>, <em>Saved earlier</em> or <em>Last known</em>. Press <strong>Full width</strong> to widen it again.</li>
             <li>The <strong>selected device</strong> panel shows status, <strong>Last seen</strong>, <strong>Position time</strong>, source, GPS accuracy, battery, speed and coordinates. Times are local, with the time zone and UTC offset.</li>
             <li><strong>Reconnect</strong> reloads settings and reconnects to the tracking server. Until a device sends a fresh fix it shows <strong>Unknown</strong> / <em>Last known</em>, not Online.</li>
-            <li>A position that is not current (older than 5 minutes, with a fix time ahead of this laptop's clock, or from an expired cache) always shows <strong>Stale</strong> in red in the <strong>Source</strong> column, also when its time is not verified or tracking is offline (for example <em>Stale · Fix time unverified</em> or <em>Stale · Last known</em>). Its status is then not shown in green, because the device is not reporting a current position.</li>
+            <li>A position that is not current (older than 5 minutes, with a fix time ahead of this laptop's clock, or from an expired cache) always shows <strong>Stale</strong> in red in the <strong>Source</strong> column, also when its time is not verified or tracking is offline (for example <em>Stale · Position time not confirmed</em> or <em>Stale · Last known</em>). Its status is then not shown in green, because the device is not reporting a current position.</li>
             <li>The line under <strong>Tracking health</strong> is green (<em>Tracking feed healthy.</em>) only when tracking is online, nothing is wrong, and every position is current. When positions are not current it reads amber, for example <em>Feed connected · 2 positions not current</em>; when tracking is also offline or not connected it says so first, for example <em>Tracking offline · 2 positions not current</em>.</li>
           </ul>
-          <p>Who is tracked, saved and shown is decided only by <strong>Participants</strong> in Mission Control. The Devices workspace does not change it.</p>
+          <p>Who is tracked, saved and shown is decided only by <strong>People on this mission</strong> in the Mission panel. All devices does not change it.</p>
 
           <h3>Breadcrumbs: line or dots</h3>
           <ul>
