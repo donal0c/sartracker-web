@@ -503,11 +503,11 @@
             <li><strong>Discovery map.</strong> SAR Tracker opens on the map you last chose, so Discovery Topo comes back by itself if its package is ready.</li>
             <li><strong>From here the mission develops:</strong> convert coordinates (<strong>Convert</strong>, bottom right), add the casualty location (a <a href="#markers">Casualty marker</a>), and watch where people are.</li>
             <li><strong>Switch maps when you need to</strong>: OpenTopoMap and ESRI Satellite are in <strong>Maps</strong> (they need internet).</li>
-            <li><strong>Full screen:</strong> press <strong>Full map</strong> in the top bar to close the side panel, then <strong>F11</strong> on Linux. Press F11 again and <strong>Show panel</strong> to come back.</li>
+            <li><strong>Full screen:</strong> after Start the map is already clear; press <strong>F11</strong> on Linux. Press <strong>People</strong> or <strong>Show panel</strong> in the top bar when you want the list of people. A problem never waits for that: it shows in the top bar and the red alarm bar.</li>
           </ol>
           <p>
-            Add another team after Start with the <strong>Mission</strong> button (top left) → <strong>Participants</strong>, and choose
-            <strong>History from: Mission start</strong> to bring in their earlier track.
+            Add another team after Start with the <strong>Mission</strong> button (top left) → <strong>Change who's taking part</strong>, and choose
+            <strong>Show their positions from: Mission start</strong> to bring in their earlier track.
           </p>
         </section>
 
@@ -524,7 +524,7 @@
             <tbody>
               <tr><td><strong>Top bar</strong></td><td>From the left: the <strong>Mission</strong> button (name and state: <em>Start a mission</em>, <em>Running</em>, <em>PAUSED</em> or <em>Needs resuming</em>; press it to pause, finish or add people) with the search clock; the <strong>tracking line</strong>, which says in plain words whether positions are arriving and when the last one did (press it for what to do). When something is wrong it starts with a short word for each problem, most urgent first: people (out of date, not moving, rejected reports) before connection, mission record, history and cache problems, for example <em>2 stale · 1 rejected · History failed</em>; if they do not all fit it ends <em>+2 more</em>. Press it for the full words; <strong>People</strong>, <strong>Layers</strong> and <strong>Full map</strong>; then <strong>Weather</strong>, <strong>Settings</strong> and <strong>More</strong> (Review and replay, Diagnostics, Help, Theme). On narrower screens the team logo is hidden to leave room for the tracking line.</td></tr>
               <tr><td><strong>Alarm bar</strong></td><td>A flashing red bar across the top of the map when the map cannot be trusted: tracking lost, the mission paused, or the mission record failing. It stays until the cause is fixed. <strong>What to do</strong> opens the Tracking panel. If Settings, Diagnostics or All devices is open, it closes that first; Settings asks before losing unsaved changes, and Keep editing leaves it open.</td></tr>
-              <tr><td><strong>Map</strong></td><td>Top left: <strong>Maps</strong> (which map) and <strong>Map Tools</strong> (draw, measure). Bottom: scale, and the position under the cursor in <strong>DD</strong>, <strong>Irish Grid</strong> and <strong>DMS</strong>, with a <strong>Convert</strong> button.</td></tr>
+              <tr><td><strong>Map</strong></td><td>Top left: <strong>Maps</strong> (which map) and <strong>Map Tools</strong> (draw, measure). Map Tools stops above the coordinate bar and scrolls inside on a small screen. Bottom: scale, and the position under the cursor in <strong>DD</strong>, <strong>Irish Grid</strong> and <strong>DMS</strong>, with a <strong>Convert</strong> button.</td></tr>
               <tr><td><strong>Side panel</strong></td><td>One panel at a time, on the right: <strong>People</strong> (who is out, who needs a look), <strong>Layers</strong>, <strong>Tracking</strong> (opened from the tracking line) or <strong>Mission</strong> (opened from the Mission button). <strong>Close</strong> or <strong>Full map</strong> gives the map the whole width. With People closed, anyone who needs a look is listed over the map. Before Start, while a mission waits to be resumed and after Finish, <strong>Layers</strong> (with GPX and helicopters) and <strong>Tracking</strong> still open; <strong>People</strong> is greyed out until a mission is running.</td></tr>
             </tbody>
           </table>
@@ -570,53 +570,60 @@
           </div>
           <p>
             When you press <strong>Start</strong>, the mission button reads <strong>Mission · Running</strong> and
-            the timers run. The <strong>Active</strong> timer is search time; <strong>Elapsed</strong>
-            is total time since the (possibly backdated) start.
+            the <strong>Search time</strong> clock in the top bar runs. It is the only mission clock on
+            screen; the Mission panel no longer repeats it, and the mission record still keeps the
+            total time since the (possibly backdated) start.
           </p>
 
           <h3 id="mission-people">Add or remove a team during the mission</h3>
           <figure class="screenshot narrow">
-            <img src="assets/mission-control-active.png" alt="Mission Control during an active mission: timers, Pause and Finish, and one-line Participants and Outings summaries with Show buttons" />
-            <figcaption>Mission Control while active. Timers and Pause / Finish always show; Participants and Outings fold to one line.</figcaption>
+            <img src="assets/mission-control-active.png" alt="Mission Control during an active mission: Pause and Finish, and a one-line summary of who is taking part" />
+            <figcaption>Mission Control while active. Pause and Finish always show; who is taking part is one line. The search clock is in the top bar.</figcaption>
           </figure>
           <p>
-            During a mission, <strong>Participants</strong> and <strong>Outings</strong> show a
-            one-line summary, such as <em>1 group, 1 device · history complete</em>. Press
-            <strong>Show</strong> to open a section and <strong>Hide</strong> to fold it again.
-            <strong>A section that needs you stays open by itself</strong> and its button reads
-            <strong>Needs attention</strong>: nobody selected, history still loading or failing, an
-            older roster to resolve, a membership notice to acknowledge, a tracking scope warning, or
-            a participant or outing error. That includes history for a team you have removed, because
-            Finish still waits for it. It folds only once the problem is cleared. A mistake in a form
-            you are filling in does not hold the section open, but folding never discards it or
-            what you were typing: press <strong>Show</strong> and it is still there.
+            During a mission, <strong>People on this mission</strong> is one line, such as
+            <em>1 group, 1 device · history complete</em>. Press <strong>Change who's taking part</strong>
+            to add or remove someone; press it again to fold it. <strong>Anything that needs you is shown
+            in words above that button and is never folded away</strong>, and the line is marked
+            <strong>Needs attention</strong>: nobody selected, earlier positions still loading or failing,
+            an older roster to resolve, a change in a group's members to read, or an error. That includes
+            earlier positions for a team you have removed, because Finish still waits for them. The
+            <strong>Mission</strong> button in the top bar shows <strong>⚠ Needs attention</strong> on its
+            first line. Folding never discards what you were typing.
+          </p>
+          <p>
+            Outings are not shown in the Mission panel while the mission runs, unless one needs your
+            attention. Their records and behaviour are unchanged; see <a href="#mission-outings">Outings</a>.
           </p>
           <figure class="screenshot narrow">
-            <img src="assets/mission-participants-open.png" alt="Mission Control with Participants opened: participant rows, the add-a-team form and History from choices" />
-            <figcaption>Participants opened with Show: who is selected, their history status, and the add-a-team form.</figcaption>
+            <img src="assets/mission-participants-open.png" alt="Mission Control with Change who's taking part opened: rows with Remove, the add form and Show their positions from choices" />
+            <figcaption>Change who's taking part, opened: who is taking part, each with Remove, and the add form.</figcaption>
           </figure>
           <ol>
-            <li>In <strong>Participants</strong> (press <strong>Show</strong> first), choose <strong>Individual device</strong> or <strong>Traccar group</strong>, then pick one from the list.
-              Choosing <strong>Traccar group</strong> re-reads the groups from Traccar first, so a newly created group is listed
-              (a failed read shows a message and <strong>Retry</strong>; nothing is added until you press <strong>Add participant</strong>).</li>
-            <li>Choose <strong>History from</strong>. There is no default, and <strong>Add participant</strong> stays greyed out until you choose:
+            <li>Press <strong>Change who's taking part</strong>, choose <strong>One person</strong> or <strong>A group</strong>, then pick one from the list.
+              Choosing <strong>A group</strong> re-reads the groups from Traccar first, so a newly created group is listed
+              (a failed read shows a message and <strong>Retry</strong>; nothing is added until you press <strong>Add</strong>).</li>
+            <li>Choose <strong>Show their positions from</strong>. There is no default, and <strong>Add</strong> stays greyed out until you choose:
               <ul>
                 <li><strong>Mission start</strong>: brings in their track back to the mission start.</li>
                 <li><strong>Now</strong>: records only from this moment.</li>
                 <li><strong>Custom</strong>: from a time you enter.</li>
               </ul>
             </li>
-            <li>Press <strong>Add participant</strong>.</li>
+            <li>Press <strong>Add</strong>.</li>
           </ol>
           <p>
             Choose carefully: <em>Mission start</em> could count a late joiner's earlier travel as
-            part of this mission. To take someone out, press <strong>Remove</strong> on their row.
+            part of this mission. To take someone out, press <strong>Change who's taking part</strong>, then
+            <strong>Remove</strong> on their row.
             That stops collecting from now on; what is already saved stays saved.
           </p>
           <p>
-            <strong>History backfill: pending / retrying</strong> means the earlier track is still
+            <strong>Earlier positions: still loading</strong> means the earlier track is still
             being fetched from the tracking server. <strong>You cannot finish the mission until it
-            completes.</strong> If it stays pending, click the tracking status in the top bar.
+            completes.</strong> If it stays loading, click the tracking status in the top bar. If it
+            fails, the Mission panel says so in words, for example <em>Earlier positions for Hill Team
+            could not be loaded</em>.
           </p>
           <p>
             <strong>Unknown roster from an older version.</strong> If a group was selected in an older
@@ -630,7 +637,7 @@
           <p>
             If someone joins or leaves a selected group on the tracking server, an amber notice appears
             (for example <em>2 joined Hill Team</em>) saying no earlier evidence was invented. Read it,
-            then press <strong>Acknowledge membership notices</strong>.
+            then press <strong>Got it</strong>.
           </p>
 
           <h3 id="mission-outings">Outings</h3>
@@ -643,7 +650,7 @@
             starts or ends one for you.
           </p>
           <ul>
-            <li>During a mission press <strong>Show</strong> on <strong>Outings</strong> first. Type a name and press <strong>Start outing</strong>. Press <strong>End now</strong> when the period ends. <strong>Edit</strong> changes the boundaries; it never changes recorded positions.</li>
+            <li>Outings are kept out of the Mission panel while a mission runs, to keep it short; they show there again after Finish, or straight away if one needs your attention. Type a name and press <strong>Start outing</strong>. Press <strong>End now</strong> when the period ends. <strong>Edit</strong> changes the boundaries; it never changes recorded positions.</li>
             <li>Outings can cross midnight but cannot overlap.</li>
             <li>With no outing running, new positions are kept as <strong>Unassigned</strong>. That is normal and not an error.</li>
             <li>Pausing the mission does not end the outing.</li>
@@ -662,8 +669,7 @@
             </figure>
           </div>
           <p>
-            <strong>Pause</strong> stops the <strong>Active</strong> search timer; <strong>Elapsed</strong>
-            keeps running. <strong>While paused, live position refresh is suspended</strong>, so the
+            <strong>Pause</strong> stops the <strong>Search time</strong> clock. <strong>While paused, live position refresh is suspended</strong>, so the
             map does not update. Press <strong>Resume</strong> to carry on. While paused, each person
             reads <em>Last known position</em> (or <em>No position yet</em>). The amber number on the
             <strong>People</strong> button counts only people with a problem of their own, such as
@@ -810,11 +816,11 @@
             <figcaption>Open it with <strong>Open Devices</strong> in the Tracking panel. Close it with <strong>Close</strong> or Esc.</figcaption>
           </figure>
           <ul>
-            <li><strong>Filters</strong> along the top: Devices, Hidden, Online, Stale, NoFix. The search box searches inside the chosen filter.</li>
+            <li><strong>Filters</strong> along the top: Devices, Hidden, Online, Stale, No position. The search box searches inside the chosen filter.</li>
             <li><strong>Trail</strong> colour: click a swatch to pick a colour for that device's dot and trail.</li>
             <li><strong>Visible</strong>: untick <em>Shown</em> to hide a device's dot without removing it from the mission.</li>
-            <li><strong>Zoom</strong> jumps the map to the device (not available if it has no fix).</li>
-            <li>The <strong>selected device</strong> panel shows status, <strong>Last seen</strong>, <strong>Fix time</strong>, source, GPS accuracy, battery, speed and coordinates. Times are local, with the time zone and UTC offset.</li>
+            <li><strong>Zoom</strong> jumps the map to the device (not available if it has no position) and narrows the list to a strip on the left, as Review does, so you can see the map. Press <strong>Full width</strong> to widen it again.</li>
+            <li>The <strong>selected device</strong> panel shows status, <strong>Last seen</strong>, <strong>Position time</strong>, source, GPS accuracy, battery, speed and coordinates. Times are local, with the time zone and UTC offset.</li>
             <li><strong>Reconnect</strong> reloads settings and reconnects to the tracking server. Until a device sends a fresh fix it shows <strong>Unknown</strong> / <em>Last known</em>, not Online.</li>
             <li>A position that is not current (older than 5 minutes, with a fix time ahead of this laptop's clock, or from an expired cache) always shows <strong>Stale</strong> in red in the <strong>Source</strong> column, also when its time is not verified or tracking is offline (for example <em>Stale · Fix time unverified</em> or <em>Stale · Last known</em>). Its status is then not shown in green, because the device is not reporting a current position.</li>
             <li>The line under <strong>Tracking health</strong> is green (<em>Tracking feed healthy.</em>) only when tracking is online, nothing is wrong, and every position is current. When positions are not current it reads amber, for example <em>Feed connected · 2 positions not current</em>; when tracking is also offline or not connected it says so first, for example <em>Tracking offline · 2 positions not current</em>.</li>
@@ -1072,7 +1078,7 @@
             <li><strong>Treatment log</strong>: type each update in <strong>New Treatment Update</strong> and press <strong>Add Update</strong>, or press <strong>Save</strong> to add the typed update and save the marker together. Each entry is timestamped and earlier ones stay in the log.</li>
             <li>Closing a marker with unsaved changes asks before discarding them. Choose <strong>Keep editing</strong> to continue or <strong>Discard changes</strong> to close without saving.</li>
             <li>Marker load or placement failures show a warning banner over the map. For a load failure, press <strong>Retry</strong>; markers on the map may be incomplete until the load succeeds.</li>
-            <li><strong>Map label size</strong> changes the text on the map. Casualty labels start larger.</li>
+            <li><strong>Map label size</strong> changes the text on the map. Casualty labels start larger, and the casualty marker is a large red star on a white disc with a dark ring, so it stands out from place names on any map.</li>
             <li>An <strong>evidence attachment</strong> (photo or file) can travel with the marker in the desktop app. If the app says the attachment <em>could not be saved safely</em>, it was not added: free some disk space and attach the file again.</li>
             <li><strong>Retire</strong> asks twice (<strong>Retire</strong>, then <strong>Retire Marker</strong>; <strong>Keep</strong> cancels). A retired marker leaves the map but its history stays in the record.</li>
             <li>If a marker sits on top of a drawing, clicking selects the <strong>marker</strong>. To edit the drawing underneath, use the Layers panel.</li>
@@ -1173,18 +1179,18 @@
         <section id="review">
           <h2>Review and Replay</h2>
           <p>
-            <strong>Review and replay</strong> (top bar → <strong>More</strong>) opens the <strong>Audit Workspace</strong>: what the
+            <strong>Review and replay</strong> (top bar → <strong>More</strong>) opens <strong>Review and replay</strong>: what the
             app has saved for a mission. Nothing in it changes the mission.
           </p>
           <figure class="screenshot">
-            <img src="assets/review-docked.jpg" alt="Audit Workspace docked on the left of a live map, with tabs Mission Details, Replay, Search Passes, Marker Log and Layer Console" />
+            <img src="assets/review-docked.jpg" alt="Review and replay docked on the left of a live map, with tabs Mission Details, Replay, Search Passes, Marker Log and Layer Console" />
             <figcaption>While a mission is active or paused, Review docks on the left. The map and Mission Control stay live beside it.</figcaption>
           </figure>
           <ul>
             <li>Close it with <strong>Close</strong> or <strong>Esc</strong> to get the map back. If a marker form is open on top, the first Esc closes the form.</li>
             <li>With no active mission, Review opens full screen with a <strong>mission selector</strong>.</li>
             <li>Tabs: <strong>Mission Details</strong> (counts, dates, the audit log), <strong>Replay</strong>, <strong>Search Passes</strong>, <strong>Marker Log</strong>, <strong>Layer Console</strong>.</li>
-            <li>The audit log hides raw position chatter by default. Tick <strong>Show tracking telemetry</strong> to see it.</li>
+            <li>The audit log hides raw position chatter by default. Tick <strong>Show every position update</strong> to see it.</li>
           </ul>
 
           <h3>Replay</h3>
