@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 
-import { applyTheme, readAppliedTheme, saveTheme, type ThemeName } from '../lib/theme-preference'
+import { applyTheme, readAppliedTheme, saveTheme, themeReadFailed, type ThemeName } from '../lib/theme-preference'
 
-/** Switches between the dark and light themes and reports unavailable preference storage. */
+/** Switches between the light default and the dark night theme, and reports unavailable preference storage. */
 export function ThemeToggle() {
   const [theme, setTheme] = useState<ThemeName>(readAppliedTheme)
   const [error, setError] = useState(false)
@@ -13,7 +13,8 @@ export function ThemeToggle() {
       const next: ThemeName = light ? 'standard' : 'light'
       setTheme(next)
       setError(!saveTheme(next))
-    }} title={light ? 'Switch to the dark theme' : 'Switch to the light theme'} type="button">Theme: {light ? 'Light' : 'Dark'}</button>
+    }} title={light ? 'Switch to the dark theme for night use' : 'Switch to the light theme'} type="button">Theme: {light ? 'Light' : 'Dark'}</button>
+    {themeReadFailed() && <span role="status" className="text-xs text-amber-200">Could not read the saved theme, so the default Light theme is in use.</span>}
     {error && <span role="alert" className="text-xs text-amber-200">Theme applied; could not save for next launch.</span>}
   </div>
 }

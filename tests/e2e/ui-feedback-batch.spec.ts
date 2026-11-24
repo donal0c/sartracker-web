@@ -132,16 +132,18 @@ test('a pause from Full map shows the alarm, and its Resume brings tracking back
   await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
 })
 
-test('the light theme is operator accessible and survives reload', async ({ page }) => {
-  // The theme toggle moved under More (DON-341); High contrast became the light theme (DON-344).
-  await page.getByTestId('ws-more-button').click()
-  await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Dark')
-  await page.getByTestId('theme-toggle').click()
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-  await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Light')
-  await page.reload()
+test('the light theme is the default, and dark is operator accessible and survives reload', async ({ page }) => {
+  // The theme toggle moved under More (DON-341); light became the default (DON-344).
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await expect(page.getByTestId('ws-top-bar')).toHaveCSS('background-color', 'rgb(238, 240, 243)')
+  await page.getByTestId('ws-more-button').click()
+  await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Light')
+  await page.getByTestId('theme-toggle').click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard')
+  await expect(page.getByTestId('theme-toggle')).toHaveText('Theme: Dark')
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard')
+  await expect(page.getByTestId('ws-top-bar')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
 })
 
 test('brightened secondary controls retain their hover affordance', async ({ page }) => {
@@ -154,9 +156,11 @@ test('brightened secondary controls retain their hover affordance', async ({ pag
   const button = page.getByTestId('helicopter-hide-empty-slots')
   await expect(button).toBeVisible()
   await page.mouse.move(0, 0)
-  await expect(button).not.toHaveCSS('color', 'rgb(231, 229, 228)')
+  // Light is the default theme (DON-344), so compare against the resting colour
+  // rather than pinning one theme's value.
+  const resting = await button.evaluate((element) => getComputedStyle(element).color)
   await button.hover()
-  await expect(button).toHaveCSS('color', 'rgb(231, 229, 228)')
+  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).color)).not.toBe(resting)
 })
 
 test('a pause that fails after Mission was closed reopens Mission and stays flagged', async ({ page }) => {
