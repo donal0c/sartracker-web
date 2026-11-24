@@ -141,15 +141,15 @@ function describeSource(
   position: TrackingSnapshot['positions'][number] | null,
   notLive: boolean,
 ): string {
-  if (position === null) return 'No fix'
+  if (position === null) return 'No position'
   const provenance = position.fix_time_ahead_of_clock === true
-    ? 'Fix time ahead of laptop clock'
+    ? 'Position time ahead of laptop clock'
     : position.fix_time_unverified === true
-      ? 'Fix time unverified'
+      ? 'Position time not confirmed'
       : notLive && position.data_origin === 'live'
         ? 'Last known'
         : null
-  if (!position.device_cache_stale) return provenance ?? (position.data_origin === 'cache' ? 'Cache' : 'Live')
+  if (!position.device_cache_stale) return provenance ?? (position.data_origin === 'cache' ? 'Saved earlier' : 'Live')
   return provenance === null ? 'Stale' : `${STALE_SOURCE_PREFIX}${provenance}`
 }
 

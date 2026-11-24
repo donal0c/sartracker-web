@@ -82,7 +82,7 @@ test.describe('BCP-01 current-position ingest health', () => {
     await expect(page.getByTestId('device-ingest-warning-alpha')).toContainText(
       'Position row rejected',
     )
-    await expect(page.getByTestId('device-source-alpha')).toContainText('Fix time unverified')
+    await expect(page.getByTestId('device-source-alpha')).toContainText('Position time not confirmed')
     await expect(page.getByTestId('device-fix-time-alpha')).toHaveText(
       '22/08/2026, 16:10:17 GMT+01:00 (Europe/Dublin)',
     )

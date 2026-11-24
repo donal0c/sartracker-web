@@ -67,7 +67,7 @@ test('keeps online status and identifies cached rows after partial live hydratio
   await expect(workspace).toContainText('Showing last known positions from cache')
   await expect(page.getByTestId('devices-tracking-mode')).toHaveText('online')
   await expect(page.getByTestId('device-source-live-device')).toHaveText('Live')
-  await expect(page.getByTestId('device-source-cache-device')).toHaveText('Cache')
+  await expect(page.getByTestId('device-source-cache-device')).toHaveText('Saved earlier')
   await page.getByTestId('device-select-name-live-device').click()
   await expect(page.getByTestId('devices-inspector')).toContainText('53.20000, -8.20000')
   await page.screenshot({ path: testInfo.outputPath('war06-mixed-cache-live.png'), fullPage: true })
