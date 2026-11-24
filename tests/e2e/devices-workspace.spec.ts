@@ -1266,6 +1266,16 @@ test.describe('Review docked with People closed at 1180x760 [DON-369]', () => {
     await expect(body).toHaveAttribute('data-panel-open', 'true')
     const toolsHeight = () => page.evaluate(() => Math.round(document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect().height ?? 0))
     const roomyHeight = await toolsHeight()
+    // One measurement, made while the map is clear, gives the right-hand pane its Clear control.
+    const area = await page.locator('.ws-map-area').boundingBox()
+    const tools = await page.getByTestId('drawing-toolbar').boundingBox()
+    expect(area).not.toBeNull()
+    expect(tools).not.toBeNull()
+    const x = (tools!.x + tools!.width + area!.x + area!.width) / 2 - 10
+    const y = area!.y + area!.height * 0.42
+    await page.mouse.click(x, y)
+    await page.mouse.click(x, y + 50)
+    await expect(page.getByTestId('measurement-count')).toHaveText('1')
 
     // The alarm, the tracking rows with "more", and every overlay warning family arrive after Map Tools opened.
     await page.evaluate(async () => {
@@ -1281,7 +1291,7 @@ test.describe('Review docked with People closed at 1180x760 [DON-369]', () => {
     await expect.poll(() => body.evaluate((element) => element.clientHeight), { timeout: 10_000 }).toBeGreaterThanOrEqual(96)
     await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight + 1)).toBe(true)
     await page.getByTestId('drawing-toolbar-collapse').scrollIntoViewIfNeeded()
-    // Its "Map Tools" label at the left stays clear even where the warnings, drawn on top, cover its right.
+    // Its "Map Tools" label is clear and can be clicked.
     await expect.poll(() => page.evaluate(() => {
       const collapse = document.querySelector('[data-testid="drawing-toolbar-collapse"]')
       if (collapse === null) return 'missing'
@@ -1289,7 +1299,18 @@ test.describe('Review docked with People closed at 1180x760 [DON-369]', () => {
       const top = document.elementFromPoint(box.left + 40, box.top + 12)
       return top !== null && collapse.contains(top) ? 'reachable' : `covered by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
     }), { timeout: 10_000 }).toBe('reachable')
-    await expectMapWarningsOnTop(page, 'full warning stack')
+    // Codex r4: open Map Tools is drawn over the warnings, so its right-hand pane works while they show.
+    await page.getByTestId('measurement-clear-btn').scrollIntoViewIfNeeded()
+    await page.getByTestId('measurement-clear-btn').click()
+    await page.getByTestId('measurement-clear-keep-btn').scrollIntoViewIfNeeded()
+    await page.getByTestId('measurement-clear-keep-btn').click()
+    await expect(page.getByTestId('measurement-count')).toHaveText('1')
+    await page.getByTestId('measurement-clear-btn').scrollIntoViewIfNeeded()
+    await page.getByTestId('measurement-clear-btn').click()
+    await page.getByTestId('measurement-clear-confirm-btn').scrollIntoViewIfNeeded()
+    await page.getByTestId('measurement-clear-confirm-btn').click()
+    await expect(page.getByTestId('measurement-count')).toHaveText('0')
+    await expect(page.getByTestId('map-degraded-alert').locator('[data-testid^="map-overlay-warning-layout-fixture"]')).toHaveCount(3)
     // The warning stack stops below the tracking shortcuts and scrolls, so neither covers the other.
     await expect.poll(() => page.evaluate(() => {
       const shortcuts = document.querySelector('[data-testid="ws-exceptions"]')?.getBoundingClientRect()
@@ -1303,7 +1324,18 @@ test.describe('Review docked with People closed at 1180x760 [DON-369]', () => {
       const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
       useGpxStore.setState({ mapCoverageNotice: 'Layout fixture: 2 of 5 GPX tracks are not shown on the map.' })
     })
-    await expect.poll(() => uncovered(page, 'gpx-map-coverage-notice'), { timeout: 10_000 }).toBe('uncovered')
+    await expect.poll(() => page.evaluate(() => {
+      const notice = document.querySelector('[data-testid="gpx-map-coverage-notice"]')
+      const alerts = document.querySelector('[data-testid="map-degraded-alert"]')
+      if (notice === null || alerts === null) return 'missing'
+      const a = notice.getBoundingClientRect()
+      const b = alerts.getBoundingClientRect()
+      const left = Math.max(a.left, b.left), right = Math.min(a.right, b.right), top = Math.max(a.top, b.top), bottom = Math.min(a.bottom, b.bottom)
+      if (left >= right || top >= bottom) return 'notice on top'
+      const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+      // Open Map Tools may be drawn over both, as before DON-369; the warnings never cover the notice.
+      return hit !== null && alerts.contains(hit) ? 'covered by the warnings' : 'notice on top'
+    }), { timeout: 10_000 }).toBe('notice on top')
     await expect.poll(toolsHeight, { timeout: 10_000 }).toBeGreaterThanOrEqual(MAP_TOOLS_MIN_USABLE_HEIGHT_PX)
     // Measure is still reachable by scrolling the body.
     await page.getByTestId('drawing-tool-measure').scrollIntoViewIfNeeded()

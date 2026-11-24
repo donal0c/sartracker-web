@@ -34,7 +34,7 @@ export function MapDegradedAlert({ mapHealth, offlineReadiness }: MapDegradedAle
   return (
     <div
       aria-label={`Active map alerts${overlayWarnings.length > 0 ? `, ${overlayWarningCountLabel}` : ''}`}
-      className="pointer-events-none absolute bottom-[calc(var(--sar-coordinate-bar-height,72px)+0.5rem)] right-3 z-30 flex max-h-[min(50%,calc(100%-var(--sar-coordinate-bar-height,72px)-1.5rem))] max-w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2 overflow-y-auto"
+      className="pointer-events-none absolute bottom-[calc(var(--sar-coordinate-bar-height,72px)+0.5rem)] right-3 z-[15] flex max-h-[min(50%,calc(100%-var(--sar-coordinate-bar-height,72px)-1.5rem))] max-w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2 overflow-y-auto"
       data-testid="map-degraded-alert"
       ref={regionRef}
       role="region"

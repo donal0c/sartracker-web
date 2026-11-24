@@ -19,7 +19,7 @@ export function GpxMapCoverageNotice() {
   return (
     <div
       aria-live="polite"
-      className="sar-gpx-map-coverage-notice pointer-events-auto absolute left-4 z-30 max-w-[min(24rem,calc(100%-2rem))] border border-amber-300/80 bg-stone-950/95 px-3 py-1.5 text-[11px] font-bold text-amber-100 shadow-lg shadow-black/40"
+      className="sar-gpx-map-coverage-notice pointer-events-auto absolute left-4 z-[15] max-w-[min(24rem,calc(100%-2rem))] border border-amber-300/80 bg-stone-950/95 px-3 py-1.5 text-[11px] font-bold text-amber-100 shadow-lg shadow-black/40"
       data-testid="gpx-map-coverage-notice"
       ref={noticeRef}
       role="status"
