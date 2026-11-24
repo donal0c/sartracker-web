@@ -69,7 +69,7 @@ test.describe('Visual: GPX and layer readability', () => {
 1. There should be two imported tracks visible, "alpha" and "bravo".
 2. At least one imported track row should show a "Track colour" control with multiple colour swatches.
 3. The colour control should include a hex input field and a visible colour preview square.
-4. The source path / secondary text should be readable against the dark background.
+4. The source path / secondary text should be readable against the light grey panel background.
 5. The controls should not overlap, clip, or overflow horizontally.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
@@ -97,7 +97,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 3. Visibility checkboxes should be noticeably larger than tiny default checkboxes and should look easy to click.
 4. Layer labels should use a readable font size and should not look cramped.
 5. The tree should not show horizontal overflow, clipped labels, or overlapping controls.
-6. Muted/detail text in the tree should remain readable against the dark background.
+6. Muted/detail text in the tree should remain readable against the light grey panel background.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'layer-panel visible',

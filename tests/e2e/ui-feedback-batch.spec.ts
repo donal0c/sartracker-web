@@ -156,11 +156,11 @@ test('brightened secondary controls retain their hover affordance', async ({ pag
   const button = page.getByTestId('helicopter-hide-empty-slots')
   await expect(button).toBeVisible()
   await page.mouse.move(0, 0)
-  // Light is the default theme (DON-344), so compare against the resting colour
-  // rather than pinning one theme's value.
-  const resting = await button.evaluate((element) => getComputedStyle(element).color)
+  // In the light default (DON-344) the label rests at the dim text colour
+  // (#454c55) and settles on the darker stone-200 (#22262b) on hover.
+  await expect(button).toHaveCSS('color', 'rgb(69, 76, 85)')
   await button.hover()
-  await expect.poll(() => button.evaluate((element) => getComputedStyle(element).color)).not.toBe(resting)
+  await expect(button).toHaveCSS('color', 'rgb(34, 38, 43)')
 })
 
 test('a pause that fails after Mission was closed reopens Mission and stays flagged', async ({ page }) => {
