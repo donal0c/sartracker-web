@@ -56,8 +56,8 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await expect(page.getByTestId('participant-active-list')).toContainText('Device 2')
     const backfillStatuses = page.getByTestId('participant-backfill-status')
     await expect(backfillStatuses).toHaveCount(2)
-    await expect(backfillStatuses.first()).toContainText('pending')
-    await expect(backfillStatuses.last()).toContainText('pending')
+    await expect(backfillStatuses.first()).toContainText('still loading')
+    await expect(backfillStatuses.last()).toContainText('still loading')
     // The required history-start choice makes the section taller than the
     // visible panel; frame it from its heading so every checklist item is in view.
     await page.getByTestId('participant-management').evaluate((section) => section.scrollIntoView({ block: 'start' }))
@@ -68,13 +68,14 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       area: 'mission',
       severity: 'critical',
       verificationPrompt: `Verify this screenshot of active-mission participant management:
-1. The section is clearly headed "PARTICIPANTS" and shows an active-device count.
+This is the simplified panel's "Change who's taking part" fold, in plain words (DON-368); its heading sits above the fold and is not part of this capture.
+1. The list starts at its top edge: the first row is not cut off.
 2. Device 1 and Device 2 are separately listed; neither identity is merged or ambiguous.
-3. Each row visibly states device kind, explicit provenance, and an effective timestamp.
-4. The later-added device visibly states that history backfill is pending or retrying, not complete.
+3. Each row says whether it is one person or a group and the time from which their positions count ("from …"). A coordinator's own choice carries no extra note.
+4. Both devices visibly say their earlier positions are still loading, not loaded.
 5. Each participant has a distinct Remove action.
-6. The lower add-participant controls include individual/group choice, device choice, a "History from (required)" choice listing Mission start (with its time), Now (no earlier history) and Custom with a time field, and an Add participant action.
-7. No text suggests a pending backfill delays the current live position.
+6. The lower add controls include a One person / A group choice, a device choice, a "Show their positions from" choice listing Mission start (with its time), Now (no earlier history) and Custom with a time field, and an Add action.
+7. No text suggests loading earlier positions delays the current live position.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'both participant rows are visible',
@@ -142,7 +143,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     await page.getByTestId('mission-name-input').fill('Backfill Finish Visual Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+    await expect(page.getByTestId('participant-backfill-status')).toContainText('still loading')
 
     await openMissionPanel(page)
     await page.getByTestId('mission-finish-btn').click()

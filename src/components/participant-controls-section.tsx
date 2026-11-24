@@ -10,6 +10,7 @@ import {
 import { useParticipantStore } from '../features/participants/participant-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
+import type { ParticipantProvenance } from '../infrastructure/mission-store/tauri-mission-store'
 
 const COORDINATOR_ACTOR = 'Mission coordinator'
 const NO_EARLIER_HISTORY_STATUS = 'History: from when added; no earlier history requested'
@@ -265,7 +266,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
               </p>
               <p className="mt-1 text-[11px] text-stone-300">
                 {simplified
-                  ? `${participant.kind === 'group' ? 'Group' : 'One person'} · from ${formatTimestamp(participant.effective_from)}`
+                  ? `${participant.kind === 'group' ? 'Group' : 'One person'}${plainProvenance(participant.provenance)} · from ${formatTimestamp(participant.effective_from)}`
                   : `${participant.kind} · ${participant.provenance} · effective ${formatTimestamp(participant.effective_from)}`}
               </p>
               {participant.kind === 'device' && participant.backfill_completed !== undefined ? (
@@ -453,6 +454,16 @@ function formatGroupBackfillStatus(participant: {
   return completed === total
     ? `complete for ${total}/${total} ${memberLabel}`
     : `pending / retrying for ${total - completed}/${total} ${memberLabel}`
+}
+
+/**
+ * How someone came to be on the mission, in plain words. A coordinator's own
+ * choice needs no note; anything an older version decided stays visible (DON-368).
+ */
+function plainProvenance(provenance: ParticipantProvenance): string {
+  if (provenance === 'grandfathered') return ' · carried over from an older version'
+  if (provenance === 'legacy_auto') return ' · added automatically by an older version'
+  return ''
 }
 
 /** The group history line in the simplified panel's plain words (DON-368). */

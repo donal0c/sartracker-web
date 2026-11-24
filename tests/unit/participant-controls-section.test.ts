@@ -220,6 +220,17 @@ describe('ParticipantControlsSection [DON-271]', () => {
         .toContain('Earlier positions: loading for 6 of 6 people')
     })
 
+    it('says in plain words when an older version, not a coordinator, put someone on the mission', () => {
+      useParticipantStore.setState({ participants: [
+        { ...group, provenance: 'grandfathered' as const },
+        { ...group, id: 'auto', team_name: 'Auto Team', provenance: 'legacy_auto' as const },
+      ] as never })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'admin' }))
+      const list = document.querySelector('[data-testid="participant-active-list"]')?.textContent ?? ''
+      expect(list).toContain('Group · carried over from an older version · from')
+      expect(list).toContain('Group · added automatically by an older version · from')
+    })
+
     it('keeps where a group\'s member list came from on screen, also for a removed group', () => {
       useParticipantStore.setState({ participants: [
         { ...group, backfill_scope_inferred: true, backfill_completed_count: 6 },
