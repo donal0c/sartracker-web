@@ -261,7 +261,7 @@ function hasTopLayerAboveWorkspace(panel: HTMLElement | null): boolean {
 type WorkspaceHeaderProps = {
   /** Stable id used by the parent dialog's aria-labelledby. */
   readonly titleId: string
-  /** Small uppercase subtitle (e.g. "Diagnostics Workspace"). */
+  /** Small uppercase subtitle (e.g. "Diagnostics"). */
   readonly subtitle: string
   /** Large heading text (e.g. "Operational Diagnostics"). */
   readonly title: string

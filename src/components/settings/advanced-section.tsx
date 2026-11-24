@@ -92,13 +92,13 @@ export function AdvancedSection({ draft, setDraft, validationErrors }: AdvancedS
       </SettingsGroup>
 
       <SettingsGroup
-        title="Tracking cache and replay"
+        title="Last known positions and replay"
         description="Keep the last good positions when Traccar is unreachable, and the default window for replaying past tracks."
       >
         <div className="grid gap-4 md:grid-cols-2">
           <ToggleField
             checked={draft.dataSource.trackingCacheEnabled}
-            label="Tracking cache enabled"
+            label="Keep last known positions"
             testId="settings-tracking-cache-enabled"
             onChange={(checked) =>
               updateDraft(setDraft, (current) => ({

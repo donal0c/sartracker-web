@@ -702,7 +702,7 @@ export function MissionControlPanel({
             className="mt-2 text-[13px] leading-relaxed text-stone-300"
             id={MISSION_FINISH_DESCRIPTION_ID}
           >
-            This will stop timers and return to IDLE. Data remains saved.
+            This stops the mission clock and returns to the start screen. Everything recorded stays saved.
           </p>
           <OpenOutingFinishOffer />
           {actionError !== null ? <MissionActionError message={actionError} /> : null}
