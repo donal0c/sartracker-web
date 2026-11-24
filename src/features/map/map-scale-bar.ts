@@ -162,17 +162,17 @@ function unavailable(reason: string): MapScaleState {
   return { status: 'unavailable', message: MAP_SCALE_UNAVAILABLE_MESSAGE, reason }
 }
 
-/** Web Mercator, and so MapLibre, cannot show a latitude beyond this. */
-const WEB_MERCATOR_MAX_LATITUDE = 85.051129
+/** The DON-339 readout clamps beyond 85°, so the scale refuses any latitude past it instead. */
+const MAX_MEASURABLE_LATITUDE = 85
 
 /**
  * True for a latitude the map can show and a real, non-negative zoom. The DON-339
- * readout would otherwise measure a NaN latitude at the equator, or clamp 90° to 85°.
+ * readout would otherwise measure a NaN latitude at the equator, or clamp 85.03° to 85°.
  */
 function isMeasurableCamera(latitude: number, zoom: number): boolean {
   return (
     Number.isFinite(latitude) &&
-    Math.abs(latitude) <= WEB_MERCATOR_MAX_LATITUDE &&
+    Math.abs(latitude) <= MAX_MEASURABLE_LATITUDE &&
     Number.isFinite(zoom) &&
     zoom >= 0
   )

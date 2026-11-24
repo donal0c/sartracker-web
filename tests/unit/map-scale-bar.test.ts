@@ -176,11 +176,15 @@ describe('[DON-369] segmented map scale bar', () => {
 
   it('[Codex r2] measures right up to the live map limits', () => {
     expect(describeMapScale({ latitude: 52, zoom: 22, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('ready')
-    expect(describeMapScale({ latitude: 85.05, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('ready')
+    expect(describeMapScale({ latitude: 85, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('ready')
+    expect(describeMapScale({ latitude: -85, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('ready')
     expect(describeMapScale({ latitude: 52, zoom: 4, mapWidthPx: 480, minZoom: 5, maxZoom: 22 }).status).toBe('unavailable')
   })
 
-  it('[Codex r2] rejects a latitude beyond Web Mercator rather than clamping it to 85°', () => {
+  it('[Codex r3] rejects any latitude beyond the DON-339 85° clamp rather than clamping it', () => {
+    expect(describeMapScale({ latitude: 85.01, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('unavailable')
+    expect(describeMapScale({ latitude: -85.05, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('unavailable')
+    expect(buildMapScaleBar({ latitude: 85.01, zoom: 13, maxWidthPx: 140 })).toBeNull()
     expect(buildMapScaleBar({ latitude: 90, zoom: 13, maxWidthPx: 140 })).toBeNull()
     expect(buildMapScaleBar({ latitude: -86, zoom: 13, maxWidthPx: 140 })).toBeNull()
   })

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { expect, test } from '@playwright/test'
 import { openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
 
@@ -1110,6 +1111,7 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
   test.use({ viewport: { width: 1180, height: 768 } })
 
   test.beforeEach(async ({ page }) => {
+    await serveBlankTiles(page)
     await page.goto('/?missionHarness=1')
     await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
     await page.waitForSelector('canvas', { timeout: 15000 })
@@ -1134,7 +1136,7 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
 
   test('[Codex r2] measures, reads, clears and closes Map Tools beside Review while map warnings stay showing', async ({ page }) => {
     await raiseTrackingOverlayWarning(page, ['tracking', 'measurements'])
-    await expect(page.getByTestId('map-degraded-alert').locator('[role="alert"], [role="status"]')).toHaveCount(2)
+    await expect(page.getByTestId('map-degraded-alert').locator('[data-testid^="map-overlay-warning-layout-fixture"]')).toHaveCount(2)
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-measure').click()
     await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
@@ -1166,7 +1168,7 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
 
     await page.getByTestId('drawing-toolbar-collapse').click()
     await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
-    await expect(page.getByTestId('map-degraded-alert').locator('[role="alert"], [role="status"]')).toHaveCount(2)
+    await expect(page.getByTestId('map-degraded-alert').locator('[data-testid^="map-overlay-warning-layout-fixture"]')).toHaveCount(2)
     await expectMapWarningsOnTop(page, 'Map Tools closed')
   })
 })
@@ -1229,6 +1231,105 @@ test.describe('Review docked with People closed at the narrowest supported width
   })
 })
 
+test.describe('Review docked with People closed at 1180x760 [DON-369]', () => {
+  test.use({ viewport: { width: 1180, height: 760 } })
+
+  test('[Codex r3] keeps the Map Tools header, collapse control and a scrolling body usable when the alarm and a full warning stack arrive', async ({ page }) => {
+    await serveBlankTiles(page)
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Narrow Review Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    // Five teams have gone quiet: three are named on the map, then "+2 more".
+    await page.evaluate(async () => {
+      const now = Date.now()
+      const at = (ms: number) => new Date(ms).toISOString()
+      const quiet = ['alpha', 'bravo', 'charlie', 'delta', 'echo']
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: quiet.map((id) => ({ device_id: id, name: `${id} Team`, status: 'offline', last_seen: at(now - 40 * 60_000), unique_id: null, category: null })),
+          positions: quiet.map((id, index) => ({ id: `pos-${id}`, device_id: id, lat: 52 + index * 0.01, lon: -9.6, altitude: null, speed: null, battery: null, accuracy: null, timestamp: at(now - 40 * 60_000), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false })),
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: at(now), warning: null },
+      )
+    })
+    await openMissionReview(page)
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-exceptions-more')).toBeVisible()
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-measure').click()
+    const body = page.locator('.sar-map-tools-body')
+    await expect(body).toHaveAttribute('data-panel-open', 'true')
+    const toolsHeight = () => page.evaluate(() => Math.round(document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect().height ?? 0))
+    const roomyHeight = await toolsHeight()
+
+    // The alarm, the tracking rows with "more", and every overlay warning family arrive after Map Tools opened.
+    await page.evaluate(async () => {
+      const { useTrackingMapUpdateStore } = await import('/src/features/tracking/tracking-map-update-store.ts')
+      useTrackingMapUpdateStore.getState().reportFailure('Layout fixture: the map could not draw the latest positions.')
+    })
+    await expect(page.getByTestId('ws-alarm')).toContainText('MAP NOT UPDATING')
+    await raiseTrackingOverlayWarning(page, ['tracking', 'measurements', 'drawings'])
+    await expect(page.getByTestId('map-degraded-alert').locator('[data-testid^="map-overlay-warning-layout-fixture"]')).toHaveCount(3)
+
+    // Map Tools keeps a usable minimum: the header and collapse control can be reached and the body scrolls.
+    await expect.poll(toolsHeight, { timeout: 10_000 }).toBeGreaterThanOrEqual(MAP_TOOLS_MIN_USABLE_HEIGHT_PX)
+    await expect.poll(() => body.evaluate((element) => element.clientHeight), { timeout: 10_000 }).toBeGreaterThanOrEqual(96)
+    await expect.poll(() => body.evaluate((element) => element.scrollHeight > element.clientHeight + 1)).toBe(true)
+    await page.getByTestId('drawing-toolbar-collapse').scrollIntoViewIfNeeded()
+    // Its "Map Tools" label at the left stays clear even where the warnings, drawn on top, cover its right.
+    await expect.poll(() => page.evaluate(() => {
+      const collapse = document.querySelector('[data-testid="drawing-toolbar-collapse"]')
+      if (collapse === null) return 'missing'
+      const box = collapse.getBoundingClientRect()
+      const top = document.elementFromPoint(box.left + 40, box.top + 12)
+      return top !== null && collapse.contains(top) ? 'reachable' : `covered by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
+    }), { timeout: 10_000 }).toBe('reachable')
+    await expectMapWarningsOnTop(page, 'full warning stack')
+    // The warning stack stops below the tracking shortcuts and scrolls, so neither covers the other.
+    await expect.poll(() => page.evaluate(() => {
+      const shortcuts = document.querySelector('[data-testid="ws-exceptions"]')?.getBoundingClientRect()
+      const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
+      if (shortcuts === undefined || alerts === undefined) return 'missing'
+      return alerts.top >= shortcuts.bottom ? 'apart' : `warnings start ${Math.round(alerts.top)}, shortcuts end ${Math.round(shortcuts.bottom)}`
+    }), { timeout: 10_000 }).toBe('apart')
+    await expect.poll(() => uncovered(page, 'ws-exceptions-more'), { timeout: 10_000 }).toBe('uncovered')
+    // A GPX notice keeps the order it had before DON-369: drawn over the warnings, never under them.
+    await page.evaluate(async () => {
+      const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
+      useGpxStore.setState({ mapCoverageNotice: 'Layout fixture: 2 of 5 GPX tracks are not shown on the map.' })
+    })
+    await expect.poll(() => uncovered(page, 'gpx-map-coverage-notice'), { timeout: 10_000 }).toBe('uncovered')
+    await expect.poll(toolsHeight, { timeout: 10_000 }).toBeGreaterThanOrEqual(MAP_TOOLS_MIN_USABLE_HEIGHT_PX)
+    // Measure is still reachable by scrolling the body.
+    await page.getByTestId('drawing-tool-measure').scrollIntoViewIfNeeded()
+    await expect(page.getByTestId('drawing-tool-measure')).toBeVisible()
+
+    // The warnings clear and Map Tools grows back to its full height.
+    await page.evaluate(async () => {
+      const [{ useTrackingMapUpdateStore }, { useMapOverlayWarningStore }] = await Promise.all([
+        import('/src/features/tracking/tracking-map-update-store.ts'),
+        import('/src/features/map/map-overlay-warning-store.ts'),
+      ])
+      useTrackingMapUpdateStore.getState().clearFailure()
+      const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
+      useGpxStore.setState({ mapCoverageNotice: null })
+      for (const family of ['tracking', 'measurements', 'drawings']) {
+        useMapOverlayWarningStore.getState().clearWarning(`layout-fixture-${family}` as never)
+      }
+    })
+    await expect(page.getByTestId('map-degraded-alert')).toHaveCount(0)
+    await expect.poll(toolsHeight, { timeout: 10_000 }).toBeGreaterThanOrEqual(roomyHeight - 1)
+    await page.getByTestId('drawing-toolbar-collapse').scrollIntoViewIfNeeded()
+    await page.getByTestId('drawing-toolbar-collapse').click()
+    await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
+  })
+})
+
 /** Checks Map Tools and the warnings named on the map are each inside the map, uncovered, and apart. */
 async function expectMapToolsApartFromWarnings(page: import('@playwright/test').Page, label: string): Promise<void> {
   await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: label }).toBe('inside')
@@ -1244,6 +1345,18 @@ async function expectMapToolsApartFromWarnings(page: import('@playwright/test').
 
 /** The narrowest map a docked panel may leave beside itself (DON-368). */
 const MIN_DOCKED_MAP_WIDTH_PX = 480
+/** A real tile PNG, served for every outside request so a live tile outage cannot add map warnings. */
+const BLANK_TILE_PNG = Buffer.from(
+  (createRequire(import.meta.url)('../../electron/official-map-no-coverage.cjs') as { NO_COVERAGE_TILE_BASE64: string }).NO_COVERAGE_TILE_BASE64,
+  'base64',
+)
+
+/** Serves blank tiles, so the map warnings these layout checks count are only the ones they raise. */
+async function serveBlankTiles(page: import('@playwright/test').Page): Promise<void> {
+  await page.context().route(/^https?:\/\/(?!127\.0\.0\.1|localhost)/, (route) => route.fulfill({ status: 200, contentType: 'image/png', body: BLANK_TILE_PNG }))
+}
+/** Codex r3 (DON-369): Map Tools never shrinks below this, so its header and collapse control stay reachable. */
+const MAP_TOOLS_MIN_USABLE_HEIGHT_PX = 144
 
 /** Opens Map Tools, then Measure and Marker at GR, and checks each stays inside the map, uncovered. */
 async function expectMapToolsPanelsInsideMap(page: import('@playwright/test').Page): Promise<void> {
@@ -1340,9 +1453,15 @@ async function expectMapWarningsOnTop(page: import('@playwright/test').Page, lab
     const previous = scale.style.pointerEvents
     scale.style.pointerEvents = 'auto'
     try {
+      // The stack scrolls when it is capped, so only the part of each warning inside it is checked.
+      const stack = alerts.getBoundingClientRect()
       for (const item of items) {
-        const box = item.getBoundingClientRect()
-        const y = box.top + box.height / 2
+        const itemBox = item.getBoundingClientRect()
+        const visibleTop = Math.max(itemBox.top, stack.top)
+        const visibleBottom = Math.min(itemBox.bottom, stack.bottom)
+        if (visibleBottom - visibleTop < 4) continue
+        const box = { left: itemBox.left, right: itemBox.right, width: itemBox.width }
+        const y = (visibleTop + visibleBottom) / 2
         for (const x of [box.left + 6, box.left + box.width / 2, box.right - 6]) {
           const top = document.elementFromPoint(x, y)
           if (top === null || !item.contains(top)) {
