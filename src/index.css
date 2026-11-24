@@ -584,7 +584,15 @@ body {
   /* Room for the "0" label centred on the left end and the unit after the last label. */
   .sar-map-scale-body { padding: 0.45rem 2.1rem 0 0.3rem; }
 
-  .sar-map-scale-bar { box-shadow: 0 0 0 1.5px var(--sar-map-scale-outline); }
+  /* The frame is drawn inside the bar, over the blocks, so the painted ends are exactly the measured ends (Codex r1). */
+  .sar-map-scale-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1.5px solid var(--sar-map-scale-outline);
+    pointer-events: none;
+  }
+  .sar-map-scale-unavailable { font-size: 13px; font-weight: 800; line-height: 1.2; padding-top: 0.6rem; }
   .sar-map-scale-block-dark { background: #0b0d10; }
   .sar-map-scale-block-light { background: #ffffff; }
   .sar-map-scale-tick { color: var(--sar-text-strong, var(--sar-text)); }

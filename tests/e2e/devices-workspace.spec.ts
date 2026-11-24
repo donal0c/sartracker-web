@@ -660,6 +660,16 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await expectMapScaleClear(page, 'All devices docked at 1366')
   })
 
+  test('[Codex r1] keeps a map warning readable over the scale and open Map Tools beside the docked list', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await raiseTrackingOverlayWarning(page)
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-measure').click()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    await expectMapWarningsOnTop(page, 'All devices docked at 1366 with Measure open')
+  })
+
   test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
@@ -1096,6 +1106,14 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
     await expectMapToolsPanelsInsideMap(page)
     await expectMapScaleClear(page, 'Review docked at 1180')
   })
+
+  test('[Codex r1] keeps a map warning readable over the scale and open Map Tools beside Review', async ({ page }) => {
+    await raiseTrackingOverlayWarning(page)
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-measure').click()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    await expectMapWarningsOnTop(page, 'Review docked at 1180 with Measure open')
+  })
 })
 
 test.describe('Review docked with People closed at the narrowest supported width [DON-368]', () => {
@@ -1208,6 +1226,51 @@ async function expectMapScaleClear(page: import('@playwright/test').Page, label:
     }
     return 'clear'
   }), { timeout: 10_000, message: label }).toBe('clear')
+}
+
+/** Raises the persistent tracking overlay warning that the map shows full width at the bottom right. */
+async function raiseTrackingOverlayWarning(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(async () => {
+    const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
+      import('/src/features/map/map-overlay-warning-store.ts'),
+      import('/src/lib/map-health.ts'),
+    ])
+    const warning = createMapOverlaySyncWarning('tracking', 'tracking')
+    useMapOverlayWarningStore.getState().raiseWarning({ ...warning, registrationId: 'layout-fixture-tracking' as typeof warning.registrationId })
+  })
+  await expect(page.getByTestId('map-degraded-alert')).toBeVisible()
+}
+
+/**
+ * Codex r1 (DON-369): every map warning is drawn on top, readable across its
+ * whole width, even where the scale chip or open Map Tools share the corner.
+ * The scale ignores the pointer, so it is made hit-testable for the check only.
+ */
+async function expectMapWarningsOnTop(page: import('@playwright/test').Page, label: string): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const alerts = document.querySelector('[data-testid="map-degraded-alert"]')
+    const scale = document.querySelector('[data-testid="map-scale-readout"]')
+    if (!(alerts instanceof HTMLElement) || !(scale instanceof HTMLElement)) return 'missing'
+    const items = [...alerts.children].filter((child): child is HTMLElement => child instanceof HTMLElement)
+    if (items.length === 0) return 'no warnings'
+    const previous = scale.style.pointerEvents
+    scale.style.pointerEvents = 'auto'
+    try {
+      for (const item of items) {
+        const box = item.getBoundingClientRect()
+        const y = box.top + box.height / 2
+        for (const x of [box.left + 6, box.left + box.width / 2, box.right - 6]) {
+          const top = document.elementFromPoint(x, y)
+          if (top === null || !item.contains(top)) {
+            return `warning "${item.textContent?.slice(0, 30)}" covered at ${Math.round(x)},${Math.round(y)} by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
+          }
+        }
+      }
+      return 'on top'
+    } finally {
+      scale.style.pointerEvents = previous
+    }
+  }), { timeout: 10_000, message: label }).toBe('on top')
 }
 
 /** 'inside' when the element lies within the map area and nothing else is drawn over its centre. */

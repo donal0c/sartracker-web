@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   MAP_SCALE_BAR_SEGMENT_COUNT,
+  MAP_SCALE_UNAVAILABLE_MESSAGE,
   buildMapScaleBar,
   chooseMapScaleBarMaxWidth,
+  describeMapScale,
 } from '../../src/features/map/map-scale-bar'
 import { buildMapScaleReadout } from '../../src/features/map/map-scale-readout'
 
@@ -127,12 +129,42 @@ describe('[DON-369] segmented map scale bar', () => {
     expect(chooseMapScaleBarMaxWidth(1600)).toBe(200)
     expect(chooseMapScaleBarMaxWidth(480)).toBe(144)
     expect(chooseMapScaleBarMaxWidth(300)).toBe(96)
-    expect(chooseMapScaleBarMaxWidth(Number.NaN)).toBe(140)
-    expect(chooseMapScaleBarMaxWidth(0)).toBe(140)
   })
 
-  it('draws nothing for a camera it cannot measure', () => {
-    expect(buildMapScaleBar({ latitude: 52, zoom: Number.NaN, maxWidthPx: 140 })).toBeNull()
+  it('[Codex r1] has no width budget for a map that has not been measured, rather than a guessed 140 px', () => {
+    expect(chooseMapScaleBarMaxWidth(Number.NaN)).toBeNull()
+    expect(chooseMapScaleBarMaxWidth(Number.POSITIVE_INFINITY)).toBeNull()
+    expect(chooseMapScaleBarMaxWidth(0)).toBeNull()
+    expect(chooseMapScaleBarMaxWidth(-20)).toBeNull()
+  })
+
+  it('[Codex r1] rejects a camera it cannot measure instead of measuring at the equator', () => {
+    for (const latitude of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 90.5, -91]) {
+      expect(buildMapScaleBar({ latitude, zoom: 13, maxWidthPx: 140 }), `latitude ${latitude}`).toBeNull()
+    }
+    for (const zoom of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(buildMapScaleBar({ latitude: 52, zoom, maxWidthPx: 140 }), `zoom ${zoom}`).toBeNull()
+    }
     expect(buildMapScaleBar({ latitude: 52, zoom: 13, maxWidthPx: 0 })).toBeNull()
+    expect(buildMapScaleBar({ latitude: 52, zoom: 13, maxWidthPx: Number.NaN })).toBeNull()
+  })
+
+  it('[Codex r1] says the scale is unavailable, in words, whenever the live map cannot be measured', () => {
+    const ready = describeMapScale({ latitude: 52, zoom: 13, mapWidthPx: 480 })
+    expect(ready.status).toBe('ready')
+    expect(ready.status === 'ready' ? ready.bar.totalLabel : null).toBe('500 m')
+
+    for (const input of [
+      { latitude: Number.NaN, zoom: 13, mapWidthPx: 480 },
+      { latitude: Number.POSITIVE_INFINITY, zoom: 13, mapWidthPx: 480 },
+      { latitude: 52, zoom: Number.NaN, mapWidthPx: 480 },
+      { latitude: 52, zoom: 13, mapWidthPx: 0 },
+      { latitude: 52, zoom: 13, mapWidthPx: Number.NaN },
+    ]) {
+      const state = describeMapScale(input)
+      expect(state.status, JSON.stringify(input)).toBe('unavailable')
+      expect(state.status === 'unavailable' ? state.message : '').toBe(MAP_SCALE_UNAVAILABLE_MESSAGE)
+    }
+    expect(MAP_SCALE_UNAVAILABLE_MESSAGE).toBe('Map scale unavailable')
   })
 })

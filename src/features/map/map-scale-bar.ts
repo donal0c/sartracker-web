@@ -11,8 +11,6 @@ import { buildMapScaleReadout } from './map-scale-readout'
 /** Equal alternating black and white blocks drawn along the bar. */
 export const MAP_SCALE_BAR_SEGMENT_COUNT = 4
 
-/** Width budget used before the map has reported its own width. */
-const DEFAULT_MAX_WIDTH_PX = 140
 const MIN_MAX_WIDTH_PX = 96
 const MAX_MAX_WIDTH_PX = 200
 /** Share of the map width the bar may take, so it shrinks beside a docked panel. */
@@ -60,10 +58,11 @@ export type BuildMapScaleBarInput = {
 /**
  * Chooses how wide the bar may be for a map of the given width: about 30% of
  * the map, between 96 and 200 px, so it stays clear of the panels on a narrow map.
+ * Returns null for a map with no measurable width: there is no safe guess.
  */
-export function chooseMapScaleBarMaxWidth(mapWidthPx: number): number {
+export function chooseMapScaleBarMaxWidth(mapWidthPx: number): number | null {
   if (!Number.isFinite(mapWidthPx) || mapWidthPx <= 0) {
-    return DEFAULT_MAX_WIDTH_PX
+    return null
   }
 
   return Math.max(MIN_MAX_WIDTH_PX, Math.min(MAX_MAX_WIDTH_PX, Math.round(mapWidthPx * MAP_WIDTH_SHARE)))
@@ -74,7 +73,7 @@ export function chooseMapScaleBarMaxWidth(mapWidthPx: number): number {
  * cannot be measured (the bar is then not drawn rather than drawn wrong).
  */
 export function buildMapScaleBar(input: BuildMapScaleBarInput): MapScaleBar | null {
-  if (!Number.isFinite(input.zoom) || !Number.isFinite(input.maxWidthPx) || input.maxWidthPx <= 0) {
+  if (!isMeasurableCamera(input.latitude, input.zoom) || !Number.isFinite(input.maxWidthPx) || input.maxWidthPx <= 0) {
     return null
   }
 
@@ -119,6 +118,50 @@ export function buildMapScaleBar(input: BuildMapScaleBarInput): MapScaleBar | nu
       { ...end, labelVisible: true },
     ],
   }
+}
+
+/** Shown on the map, in place of the bar, whenever the scale cannot be measured. */
+export const MAP_SCALE_UNAVAILABLE_MESSAGE = 'Map scale unavailable'
+
+export type MapScaleState =
+  | { readonly status: 'ready'; readonly bar: MapScaleBar }
+  | { readonly status: 'unavailable'; readonly message: string; readonly reason: string }
+
+export type DescribeMapScaleInput = {
+  readonly latitude: number
+  readonly zoom: number
+  readonly mapWidthPx: number
+}
+
+/**
+ * What the map scale should show for the live map: the bar, or, when the camera
+ * or map width cannot be measured, a visible "Map scale unavailable" with the reason.
+ */
+export function describeMapScale(input: DescribeMapScaleInput): MapScaleState {
+  const maxWidthPx = chooseMapScaleBarMaxWidth(input.mapWidthPx)
+  if (maxWidthPx === null) {
+    return unavailable(`map width ${String(input.mapWidthPx)} px cannot be measured`)
+  }
+  if (!isMeasurableCamera(input.latitude, input.zoom)) {
+    return unavailable(`camera latitude ${String(input.latitude)}, zoom ${String(input.zoom)} cannot be measured`)
+  }
+  const bar = buildMapScaleBar({ latitude: input.latitude, zoom: input.zoom, maxWidthPx })
+  return bar === null
+    ? unavailable(`no scale distance fits ${maxWidthPx} px at zoom ${input.zoom}`)
+    : { status: 'ready', bar }
+}
+
+/** Builds the unavailable state with its reason for the log. */
+function unavailable(reason: string): MapScaleState {
+  return { status: 'unavailable', message: MAP_SCALE_UNAVAILABLE_MESSAGE, reason }
+}
+
+/**
+ * True for a real latitude (-90 to 90) and a real, non-negative zoom. The DON-339
+ * readout would otherwise measure a NaN latitude at the equator.
+ */
+function isMeasurableCamera(latitude: number, zoom: number): boolean {
+  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(zoom) && zoom >= 0
 }
 
 /**

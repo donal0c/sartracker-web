@@ -2,11 +2,7 @@ import type maplibregl from 'maplibre-gl'
 import type { RefObject } from 'react'
 import { useEffect, useState } from 'react'
 
-import {
-  buildMapScaleBar,
-  chooseMapScaleBarMaxWidth,
-  type MapScaleBar,
-} from '../features/map/map-scale-bar'
+import { describeMapScale, type MapScaleState } from '../features/map/map-scale-bar'
 
 type MapScaleReadoutProps = {
   readonly mapRef: RefObject<maplibregl.Map | null>
@@ -15,10 +11,11 @@ type MapScaleReadoutProps = {
 /**
  * Renders the segmented metric scale bar (DON-369) over the map without relying
  * on MapLibre's default control placement, which would collide with the
- * coordinate strip. Distances and widths come from `buildMapScaleBar`.
+ * coordinate strip. Distances and widths come from `describeMapScale`; when the
+ * map cannot be measured it says "Map scale unavailable" instead of hiding.
  */
 export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
-  const [bar, setBar] = useState<MapScaleBar | null>(null)
+  const [scale, setScale] = useState<MapScaleState | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -36,15 +33,20 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
         return
       }
 
+      let lastUnavailableReason: string | null = null
       const update = () => {
         const center = map.getCenter()
-        setBar(
-          buildMapScaleBar({
-            latitude: center.lat,
-            zoom: map.getZoom(),
-            maxWidthPx: chooseMapScaleBarMaxWidth(map.getContainer().clientWidth),
-          }),
-        )
+        const next = describeMapScale({
+          latitude: center.lat,
+          zoom: map.getZoom(),
+          mapWidthPx: map.getContainer().clientWidth,
+        })
+        // Log once per new failure, not on every frame of a move.
+        if (next.status === 'unavailable' && next.reason !== lastUnavailableReason) {
+          console.warn(`[map-scale] ${next.message}: ${next.reason}`)
+        }
+        lastUnavailableReason = next.status === 'unavailable' ? next.reason : null
+        setScale(next)
       }
 
       update()
@@ -68,16 +70,38 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
     }
   }, [mapRef])
 
-  if (bar === null) {
+  // Before the map exists there is nothing to measure yet.
+  if (scale === null) {
     return null
   }
 
+  if (scale.status === 'unavailable') {
+    return (
+      <div
+        className="sar-map-scale pointer-events-none absolute left-4 z-10"
+        data-state="unavailable"
+        data-testid="map-scale-readout"
+        role="status"
+        title="Current map scale"
+      >
+        <p className="sar-map-scale-heading text-[12px] font-black uppercase leading-none tracking-[0.14em]">
+          Map Scale
+        </p>
+        <p className="sar-map-scale-unavailable" data-testid="map-scale-unavailable">
+          {scale.message}
+        </p>
+      </div>
+    )
+  }
+
+  const { bar } = scale
   const lastTick = bar.ticks.length - 1
 
   return (
     <div
       aria-label={`Map scale: the bar is ${bar.totalLabel}`}
       className="sar-map-scale pointer-events-none absolute left-4 z-10"
+      data-state="ready"
       data-testid="map-scale-readout"
       role="img"
       title="Current map scale"
