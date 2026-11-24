@@ -165,12 +165,13 @@ describe('MissionControlPanel in the simplified workspace', () => {
     expect(query('[data-testid="participants-stub-admin"]')?.closest('[hidden]')).not.toBeNull()
   })
 
-  it('hides Outings from the running mission, keeping them after Finish [DON-368]', async () => {
+  it('keeps Outings folded in More mission options while running, and shows them after Finish [DON-368]', async () => {
     mocks.model = createModel({ phase: 'active' })
     await renderPanel()
-    expect(query('[data-testid="mission-outings-section"]')).toBeNull()
-    expect(query('[data-testid="outings-stub"]')).toBeNull()
-    expect(query('[data-testid="ws-more-mission-options"]')).toBeNull()
+    // Rule 5 is only partly met until DON-100 (named days): Outings stay reachable, folded.
+    const more = query('[data-testid="ws-more-mission-options"]')
+    expect(more?.tagName).toBe('DETAILS')
+    expect(more?.hasAttribute('open')).toBe(false)
     act(() => root?.unmount())
     host?.remove()
 

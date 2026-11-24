@@ -457,10 +457,10 @@ export function MissionControlPanel({
         ) : null}
 
         {/* After Finish the start screen still lists the finished mission's outings, so one left open reads "Open" (DON-270). */}
-        {/* Rule 5 (DON-368): no Outings while a mission runs, unless an outing error needs
-            seeing. The data and behaviour stay; after Finish the outings show again. */}
+        {/* Rule 5 is only partly met (DON-368): Outings stay folded in More mission options
+            while a mission runs, until DON-100 replaces them with named days. */}
         {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified
-          && ((!startScreen && outingNeedsAttention) || (phase === 'idle' && governanceMission !== null)) ? (
+          && (!startScreen || (phase === 'idle' && governanceMission !== null)) ? (
           <MoreMissionOptions open={outingNeedsAttention}>
             <MissionSectionDisclosure
               collapsible={sectionsCollapsible}

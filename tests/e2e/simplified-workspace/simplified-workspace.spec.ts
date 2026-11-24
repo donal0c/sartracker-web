@@ -319,14 +319,14 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByText('Since start')).toHaveCount(0)
   })
 
-  test('in a running Mission panel, people fold behind one button, Outings are gone, and adding takes two clicks [DON-368]', async ({ page }) => {
+  test('in a running Mission panel, people fold behind one button, Outings stay folded, and adding takes two clicks [DON-368]', async ({ page }) => {
     await open(page)
     await startMission(page)
     await openWorkspacePanel(page, 'mission')
     await expect(page.getByTestId('mission-participants-section-summary')).toContainText('group')
     await expect(page.getByTestId('participant-add-btn')).toBeHidden()
-    await expect(page.getByTestId('mission-outings-section')).toHaveCount(0)
-    await expect(page.getByTestId('ws-more-mission-options')).toHaveCount(0)
+    await expect(page.getByTestId('mission-outings-section')).toBeHidden()
+    await expect(page.getByTestId('ws-more-mission-options')).not.toHaveAttribute('open')
     await page.getByTestId('mission-participants-section-toggle').click()
     await expect(page.getByTestId('participant-add-btn')).toBeVisible()
     await expect(page.getByTestId('participant-active-list').getByRole('button', { name: 'Remove' }).first()).toBeVisible()
