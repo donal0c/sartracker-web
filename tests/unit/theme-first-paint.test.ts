@@ -17,7 +17,12 @@ function runInlineScript(): void {
   new Function(inline?.[1] ?? '')()
 }
 
-afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); delete document.documentElement.dataset.theme })
+afterEach(() => {
+  vi.restoreAllMocks()
+  localStorage.clear()
+  delete document.documentElement.dataset.theme
+  delete document.documentElement.dataset.themeReadFailed
+})
 
 describe('theme before first paint', () => {
   it('sets the theme from an inline <head> script, before any stylesheet or module script', () => {
@@ -30,7 +35,7 @@ describe('theme before first paint', () => {
     expect(html.indexOf('<script type="module"')).toBeGreaterThan(html.indexOf('</head>'))
   })
 
-  it.each([['true', 'light'], ['false', 'standard'], [null, 'standard'], ['yes', 'standard']] as const)(
+  it.each([['true', 'light'], ['false', 'standard'], [null, 'light'], ['yes', 'light']] as const)(
     'agrees with the app for saved value %s',
     (saved, expected) => {
       if (saved !== null) localStorage.setItem('sartracker:high-contrast', saved)
@@ -42,9 +47,12 @@ describe('theme before first paint', () => {
     },
   )
 
-  it('falls back to the standard theme without throwing when storage is unavailable', () => {
+  it('falls back to the light default when storage is unavailable, and records the failure', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('Unavailable') })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     expect(() => runInlineScript()).not.toThrow()
-    expect(document.documentElement.dataset.theme).toBe('standard')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(document.documentElement.dataset.themeReadFailed).toBe('true')
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('could not read the saved theme'), expect.any(Error))
   })
 })

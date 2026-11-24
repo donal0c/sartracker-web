@@ -58,7 +58,7 @@ Check:
 6. A collapsed Map Tools toolbar is visible near the top-left of the map, labelled "MAP TOOLS".
 7. A compact "MAP SCALE" readout is visible over the map above the bottom coordinate strip.
 8. A coordinate bar is visible along the bottom edge of the map area.
-9. The overall theme is dark (dark stone/black backgrounds with light text and amber accents).
+9. The overall theme is the light default (DON-344): light grey top bar and panels with dark text, strong borders and amber accents. The map itself is not themed.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'app-title contains "SAR Tracker"',

@@ -26,3 +26,18 @@ test('the light theme is on <html> before any app script runs', async ({ page })
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await expect(page.getByTestId('app-shell')).toHaveCount(0)
 })
+
+test('a fresh profile with nothing saved opens light before any app script runs', async ({ page }) => {
+  // Light is the default (DON-344, team rule 13: higher contrast by default).
+  await page.route('**/src/main.tsx', (route) => route.fulfill({ contentType: 'application/javascript', body: '' }))
+  await page.goto('/?missionHarness=1')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+  await expect(page.locator('html')).not.toHaveAttribute('data-theme-read-failed', 'true')
+})
+
+test('a saved dark choice stays dark from the first paint', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('sartracker:high-contrast', 'false'))
+  await page.route('**/src/main.tsx', (route) => route.fulfill({ contentType: 'application/javascript', body: '' }))
+  await page.goto('/?missionHarness=1')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard')
+})

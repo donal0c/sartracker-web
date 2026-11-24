@@ -1,23 +1,54 @@
 /**
  * Device-local display theme (DON-344).
  *
- * "standard" is the dark theme and stays the default. "light" is the light grey
- * high-contrast theme the team asked for (SAR-QA-029); it replaced the old black
- * "High contrast" theme, so the saved key keeps its old name and an operator who
- * chose High contrast before now opens in the light theme.
+ * "light" is the default: light grey panels, dark writing, strong borders, as
+ * the team asked (SAR-QA-029; simplification brief rule 13, "Higher contrast by
+ * default"). "standard" is the dark theme, kept for night use.
  *
- * index.html repeats `readTheme` + `applySavedTheme` in a tiny inline <head>
- * script so the theme is on <html> before the first paint; a unit test runs that
- * script against this module so the two cannot drift.
+ * The saved key keeps its High contrast era name. 'true' means light and
+ * 'false' means dark; nothing saved means the light default. 'false' is only
+ * ever written by pressing the toggle, so it cannot tell "chose Dark" apart
+ * from "turned High contrast on and off again" before DON-344: both stay dark.
+ *
+ * index.html repeats `readThemePreference` + `applySavedTheme` in a tiny inline
+ * <head> script so the theme is on <html> before the first paint; a unit test
+ * runs that script against this module so the two cannot drift.
  */
 export type ThemeName = 'standard' | 'light'
 
-/** Kept from the High contrast era; the value 'true' means the light theme. */
+/** Kept from the High contrast era; 'true' means light, 'false' means dark. */
 export const THEME_KEY = 'sartracker:high-contrast'
+
+/** The theme used when nothing usable is saved. */
+export const DEFAULT_THEME: ThemeName = 'light'
+
+/** Logged when storage cannot be read, so the fallback is never silent. */
+export const THEME_READ_FAILURE = 'SAR Tracker could not read the saved theme; using the default Light theme.'
+
+/** The saved theme, and whether storage could not be read at all. */
+export interface ThemePreference {
+  readonly theme: ThemeName
+  readonly readFailed: boolean
+}
+
+/** Reads storage once, keeping the error so callers can surface it. */
+function readStoredTheme(): { readonly theme: ThemeName; readonly error: unknown } {
+  try {
+    return { theme: window.localStorage.getItem(THEME_KEY) === 'false' ? 'standard' : DEFAULT_THEME, error: null }
+  } catch (error) {
+    return { theme: DEFAULT_THEME, error: error ?? new Error('Storage read failed') }
+  }
+}
+
+/** Reads the device-local choice; a failed read falls back to the default. */
+export function readThemePreference(): ThemePreference {
+  const { theme, error } = readStoredTheme()
+  return { theme, readFailed: error !== null }
+}
 
 /** Reads a device-local display choice without making startup depend on storage. */
 export function readTheme(): ThemeName {
-  try { return window.localStorage.getItem(THEME_KEY) === 'true' ? 'light' : 'standard' } catch { return 'standard' }
+  return readThemePreference().theme
 }
 
 /** Puts a theme on the document root, where the stylesheet reads it. */
@@ -36,12 +67,33 @@ export function readAppliedTheme(): ThemeName {
   return readTheme()
 }
 
+/** True when startup could not read the saved theme and used the default. */
+export function themeReadFailed(): boolean {
+  return document.documentElement.dataset.themeReadFailed === 'true'
+}
+
 /** Saves the choice for the next launch; false when storage refused the write. */
 export function saveTheme(theme: ThemeName): boolean {
   try { window.localStorage.setItem(THEME_KEY, String(theme === 'light')); return true } catch { return false }
 }
 
-/** Applies the preference before runtime bootstrap, including boot and fault shells. */
+/** Clears the startup read-failure mark once a later choice has been saved. */
+export function clearThemeReadFailure(): void {
+  delete document.documentElement.dataset.themeReadFailed
+}
+
+/**
+ * Applies the preference before runtime bootstrap, including boot and fault
+ * shells. The inline <head> script normally applied it already; that theme is
+ * kept, so a second storage read can never overwrite a saved dark choice.
+ * Storage is read here only when no theme is on <html> yet.
+ */
 export function applySavedTheme(): void {
-  applyTheme(readTheme())
+  const applied = document.documentElement.dataset.theme
+  if (applied === 'light' || applied === 'standard') return
+  const { theme, error } = readStoredTheme()
+  applyTheme(theme)
+  if (error === null) return
+  document.documentElement.dataset.themeReadFailed = 'true'
+  console.error(THEME_READ_FAILURE, error)
 }

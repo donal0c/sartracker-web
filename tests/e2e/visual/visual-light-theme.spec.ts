@@ -346,8 +346,11 @@ test.describe('Visual: light theme [DON-344]', () => {
     test(`keyboard focus stands out on the red alarm controls in both flash phases (${theme})`, async ({ page }) => {
       if (theme === 'light') await openLight(page)
       else {
+        // Light is the default (DON-344), so dark has to be chosen explicitly.
+        await page.addInitScript(() => localStorage.setItem('sartracker:high-contrast', 'false'))
         await page.goto('/?missionHarness=1')
         await expect(page.getByTestId('app-title')).toContainText('SAR Tracker')
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'standard')
         await page.waitForSelector('canvas', { timeout: 20_000 })
       }
       await startMission(page)

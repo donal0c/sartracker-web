@@ -717,7 +717,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 2. The people count and the attention number are two distinct values. They are NOT combined into a single value like "3/1" or "1/3" — that exact regression is what this test exists to prevent. Mark item 2 FAIL only if you see a single visible "<digits>/<digits>" string treated as one value.
 3. The tracking headline names the problem in words as exactly "1 stale", with a last-update time below
 4. The mission button shows the mission as Running, with the search time beside it
-5. The overall theme is dark; the attention badge and headline read as amber warnings, not red alarms
+5. The top bar is the light default theme (light grey with dark text); the attention badge and headline read as amber warnings, not red alarms
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'People button contains People 3',
@@ -744,7 +744,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 4. TOP BAR: The team logo, a mission button showing the mission as Running, a running Search time clock and the tracking headline are at the top left
 5. TOP BAR: People (with a count), Layers, Full map, Settings and More buttons are at the top right
 6. SIDE PANEL: A People panel on the right lists the tracked teams with Location and Trail checkboxes
-7. Theme should be dark with amber/gold accents
+7. Theme is the light default (light grey panels with dark text), with amber warnings and red only for alarms
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       playwrightAssertions: [
         'search time is running in the top bar',
