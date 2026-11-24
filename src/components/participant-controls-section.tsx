@@ -191,9 +191,11 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
   const removedGroupHistory = participants.filter((participant) => participant.removed_at !== null
     && (participant.backfill_scope_attested || participant.backfill_scope_unknown))
   // A group whose earlier positions could not be worked out is a problem the
-  // operator must see, so in the simplified panel it sits above the fold.
+  // operator must see, so in the simplified panel it sits above the fold. A
+  // removed group counts too: Finish still waits for its history, and its own
+  // line points to this warning.
   const groupHistoryProblems = simplified
-    ? activeParticipants.filter((participant) => participant.kind === 'group' && Boolean(participant.backfill_scope_error))
+    ? participants.filter((participant) => participant.kind === 'group' && Boolean(participant.backfill_scope_error))
     : []
 
   const warnings = (
@@ -221,7 +223,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
       {error !== null ? <p className="text-xs text-rose-300" data-testid="participant-error" role="alert">{error}</p> : null}
       {groupHistoryProblems.map((participant) => (
         <p className="sar-inline-alert p-2 text-xs text-amber-100" data-testid="participant-history-problem" key={participant.id}>
-          Earlier positions for {participant.team_name ?? participant.traccar_group_id ?? 'this group'} could not be loaded: {participant.backfill_scope_error}
+          Earlier positions for {participant.removed_at === null ? '' : 'removed group '}{participant.team_name ?? participant.traccar_group_id ?? 'this group'} could not be loaded: {participant.backfill_scope_error}
         </p>
       ))}
       {legacyRosters.map((participant) => (

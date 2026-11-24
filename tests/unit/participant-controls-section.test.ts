@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { ParticipantControlsSection } from '../../src/components/participant-controls-section'
+import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsked } from '../../scripts/team-smoke/lib/history-status.mjs'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { ParticipantRuntimeController } from '../../src/features/participants/start-participant-runtime'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
@@ -244,6 +245,59 @@ describe('ParticipantControlsSection [DON-271]', () => {
       render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
       expect(document.querySelector('[data-testid="participant-warnings"]')?.textContent)
         .toContain('Removed group Old Team: Earlier positions: loading for 4 of 6 people (members confirmed by a coordinator)')
+    })
+
+    it('shows why a removed group\'s earlier positions could not load, not only a pointer to it', () => {
+      useParticipantStore.setState({ participants: [
+        { ...group, id: 'old', team_name: 'Old Team', removed_at: '2026-11-24T08:00:00.000Z', removed_by: 'Coordinator',
+          backfill_scope_unknown: true, backfill_scope_error: 'Stored roster attestation is invalid.' },
+      ] as never })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      const warnings = document.querySelector('[data-testid="participant-warnings"]')?.textContent ?? ''
+      expect(warnings).toContain('Earlier positions for removed group Old Team could not be loaded: Stored roster attestation is invalid.')
+      expect(warnings).toContain('Removed group Old Team: Earlier positions: could not be loaded (see the warning above)')
+    })
+  })
+
+  describe('release smoke reads the history lines the operator sees [DON-368]', () => {
+    const base = {
+      mission_id: 'mission-1', mission_team_id: null, provenance: 'explicit' as const,
+      added_by: 'Mission coordinator', removed_at: null, removed_by: null,
+    }
+    const earlier = { effective_from: '2026-11-24T05:00:00.000Z', added_at: '2026-11-24T07:00:00.000Z' }
+    const now = { effective_from: '2026-11-24T07:00:00.000Z', added_at: '2026-11-24T07:00:00.000Z' }
+    const participants = [
+      { ...base, ...earlier, id: 'loaded', kind: 'device', traccar_device_id: '1', backfill_completed: 1 },
+      { ...base, ...earlier, id: 'loading', kind: 'device', traccar_device_id: '2', backfill_completed: 0 },
+      { ...base, ...now, id: 'none', kind: 'device', traccar_device_id: '3', backfill_completed: 1 },
+      { ...base, ...earlier, id: 'group-loading', kind: 'group', traccar_device_id: null, traccar_group_id: '9',
+        team_name: 'Hill Team', backfill_member_count: 3, backfill_completed_count: 1, backfill_scope_unknown: false },
+      { ...base, ...earlier, id: 'group-loaded', kind: 'group', traccar_device_id: null, traccar_group_id: '8',
+        team_name: 'Lake Team', backfill_member_count: 2, backfill_completed_count: 2, backfill_scope_unknown: false },
+    ]
+
+    for (const variant of ['simplified', 'standard'] as const) {
+      it(`classifies every ${variant} status line the smoke waits on`, () => {
+        useParticipantStore.setState({ participants: participants as never })
+        render(React.createElement(ParticipantControlsSection, variant === 'simplified'
+          ? { phase: 'active', variant: 'simplified', part: 'admin' }
+          : { phase: 'active' }))
+        const statuses = [...document.querySelectorAll('[data-testid="participant-backfill-status"]')]
+          .map((element) => element.textContent ?? '')
+        expect(statuses).toHaveLength(5)
+        const [loaded, loading, none, groupLoading, groupLoaded] = statuses
+        expect([loaded, groupLoaded].every(historyLoaded)).toBe(true)
+        expect([loading, groupLoading].every(historyStillLoading)).toBe(true)
+        expect([loading, groupLoading].some(historyLoaded)).toBe(false)
+        expect(noEarlierHistoryAsked(none)).toBe(true)
+        expect(historyLoaded(none)).toBe(false)
+        expect(statuses.filter(historySettled)).toEqual([loaded, none, groupLoaded])
+      })
+    }
+
+    it('never reads a group that could not load as loaded', () => {
+      expect(historyLoaded('Earlier positions: could not be loaded (see the warning above)')).toBe(false)
+      expect(historySettled('Earlier positions: who was in this group earlier is unknown; check before finishing')).toBe(false)
     })
   })
 

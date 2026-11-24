@@ -6,6 +6,7 @@ import {
   renderLeafletFallbackOverlays,
 } from '../../src/features/map/leaflet-fallback-renderer'
 import type { Drawing, Marker } from '../../src/infrastructure/mission-store/tauri-mission-store'
+import { getMarkerImageSvg } from '../../src/features/markers/sync-marker-overlay'
 import { createBreadcrumbAccumulator } from '../../src/features/tracking/breadcrumb-accumulator'
 import type { ExactBreadcrumbDotState } from '../../src/features/tracking/exact-breadcrumb-dot-controller'
 import type {
@@ -248,6 +249,34 @@ describe('Leaflet fallback renderer', () => {
     })
 
     expect(group.getLayers()).toHaveLength(0)
+  })
+
+  it('draws the casualty with the same white-disc red-star symbol as MapLibre [DON-368]', () => {
+    const group = L.layerGroup()
+    renderLeafletFallbackOverlays(group, {
+      trackingSnapshot: createTrackingSnapshot(),
+      trackingVisible: false,
+      breadcrumbsVisible: false,
+      hiddenDeviceIds: [],
+      hiddenBreadcrumbDeviceIds: [],
+      markers: [{ ...createMarker(), id: 'casualty-1', type: 'casualty', name: 'Walker' }],
+      markerTypeVisibility: { ipp_lkp: true, clue: true, hazard: true, casualty: true },
+      hiddenMarkerIds: [],
+      drawings: [],
+      drawingTypeVisibility: {
+        line: true, search_area: true, range_ring: true, bearing_line: true, search_sector: true, text_label: true,
+      },
+      hiddenDrawingIds: [],
+      selectedDrawingId: null,
+    })
+
+    const casualty = group.getLayers().filter((layer): layer is L.Marker => layer instanceof L.Marker)
+    expect(casualty).toHaveLength(1)
+    const icon = casualty[0].options.icon as L.DivIcon
+    expect(icon.options.html).toBe(getMarkerImageSvg('casualty'))
+    expect(icon.options.iconSize).toEqual([60, 60])
+    expect(casualty[0].getTooltip()?.getContent()).toBe('Walker')
+    expect(group.getLayers().some((layer) => layer instanceof L.CircleMarker)).toBe(false)
   })
 
   it('honours hidden device, marker, and drawing visibility inputs', () => {
