@@ -542,6 +542,74 @@ test.describe('M19 devices workspace', () => {
   })
 })
 
+test.describe('All devices docked after Zoom [DON-368]', () => {
+  test.use({ viewport: { width: 1366, height: 768 } })
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Docked Devices Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await seedTrackingWorkspace(page)
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+  })
+
+  test('puts the zoomed device in the map that is still visible beside the docked list, with People open', async ({ page }) => {
+    await page.getByTestId('device-zoom-bravo').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Bravo Team')
+
+    // Wait for the camera to settle, then check the device is right of the dock
+    // and inside the map canvas, not underneath the list.
+    await expect.poll(() => page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      if (map.isMoving()) return 'moving'
+      const canvas = map.getCanvas().getBoundingClientRect()
+      const dock = document.querySelector('[data-testid="devices-workspace"]')?.closest('[role="dialog"]')?.getBoundingClientRect()
+      if (dock === undefined) return 'no dock'
+      const point = map.project([-9.50722, 52.05944])
+      const x = canvas.left + point.x
+      const y = canvas.top + point.y
+      return x > dock.right + 24 && x < canvas.right - 24 && y > canvas.top + 24 && y < canvas.bottom - 24
+        ? 'visible'
+        : `hidden at ${Math.round(x)},${Math.round(y)}; dock ends ${Math.round(dock.right)}, map ${Math.round(canvas.left)}-${Math.round(canvas.right)}`
+    }), { timeout: 15_000 }).toBe('visible')
+  })
+
+  test('keeps the filter, search and keyboard focus when Zoom docks the list', async ({ page }) => {
+    await page.getByTestId('device-filter-stale').click()
+    await page.getByTestId('device-list-search').fill('Bravo')
+    await expect(page.getByTestId('device-row-alpha')).toBeHidden()
+
+    await page.getByTestId('device-zoom-bravo').focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+
+    await expect(page.getByTestId('device-filter-stale')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('device-list-search')).toHaveValue('Bravo')
+    await expect(page.getByTestId('device-row-alpha')).toBeHidden()
+    await expect(page.getByTestId('device-zoom-bravo')).toBeFocused()
+  })
+
+  test('keeps each device\'s position trust in words beside its name, and does not claim the map is live', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+
+    // Bravo's position is stale: colour alone must not say so.
+    await expect(page.getByTestId('device-trust-bravo')).toBeVisible()
+    await expect(page.getByTestId('device-trust-bravo')).toHaveText('Stale')
+    // Tracking is offline in this fixture, so Alpha's position is the last known one.
+    await expect(page.getByTestId('device-trust-alpha')).toBeVisible()
+    await expect(page.getByTestId('device-trust-alpha')).toHaveText('Last known')
+    await expect(page.getByTestId('devices-docked-note')).not.toContainText('live')
+  })
+})
+
 test.describe('Operational tracking overlay readiness [DON-263]', () => {
   test('renders current positions and breadcrumbs while basemap tiles remain pending', async ({
     context,

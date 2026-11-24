@@ -157,7 +157,7 @@ function DevicesWorkspaceContent(props: {
           data-testid="devices-docked-note"
           role="status"
         >
-          The map stays live beside this list. Full width shows each device&apos;s details and trail settings.
+          This list is narrow so the map shows beside it. Full width shows each device&apos;s details and trail settings.
         </p>
       ) : null}
 
@@ -279,6 +279,7 @@ function DevicesWorkspaceContent(props: {
                         ? 'border-amber-500/60 bg-amber-500/10 text-amber-200'
                         : 'border-stone-700 bg-stone-900/40 text-stone-300 hover:border-stone-500'
                     }`}
+                    aria-pressed={activeFilter === tab.id}
                     data-testid={`device-filter-${tab.id}`}
                     key={tab.id}
                     onClick={() => setActiveFilter(tab.id)}
@@ -552,6 +553,16 @@ function DeviceRow(props: {
         type="button"
       >
         <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
+        {compact && props.row.hasFix && props.row.sourceDisplay !== 'Live' ? (
+          // The narrow list has no Source column, so a position that is not
+          // live says so in words beside the name, never by colour alone.
+          <p
+            className={`mt-1 truncate text-[11px] font-bold ${props.row.stale ? 'text-rose-300' : 'text-amber-300'}`}
+            data-testid={`device-trust-${props.row.deviceId}`}
+          >
+            {props.row.sourceDisplay}
+          </p>
+        ) : null}
         {props.row.stationaryAttention ? (
           <p
             className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"

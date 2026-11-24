@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { MAP_LEFT_OCCLUSION_ATTRIBUTE } from '../features/map/use-map-location-target'
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal, reportModalWorkspaceRefusal } from '../lib/modal-workspace-registry'
 
@@ -69,7 +70,6 @@ export function WorkspaceOverlay({
       return
     }
 
-    returnFocusRef.current = document.activeElement
     // A modal makes the screen behind it inert. In the new layout it starts below
     // the tracking alarm, so the uncovered top bar and side panel must not take
     // presses or focus; the alarm itself (Resume) stays live.
@@ -78,11 +78,25 @@ export function WorkspaceOverlay({
     return () => {
       releaseBackground?.()
       unregister?.()
+    }
+  }, [docked, labelledBy, open])
+
+  // Focus goes back to the opener only when the workspace closes, not when it
+  // switches between full width and docked (DON-368): Zoom keeps its focus.
+  // Declared after the effect above so its cleanup runs after the background
+  // is released, and so it sees whether that open was refused.
+  useLayoutEffect(() => {
+    if (!open || refusedRef.current) {
+      return
+    }
+
+    returnFocusRef.current = document.activeElement
+    return () => {
       const returnTarget = returnFocusRef.current
       returnFocusRef.current = null
       restoreFocus(returnTarget)
     }
-  }, [docked, labelledBy, open])
+  }, [open])
 
   useLayoutEffect(() => {
     const panel = panelRef.current
@@ -139,61 +153,44 @@ export function WorkspaceOverlay({
     return null
   }
 
-  // Docked mode: the container must not capture pointer events outside the
-  // panel, so the active-mission rail and map underneath stay clickable. There
-  // is no dismiss backdrop and no focus trap; Esc and the header close button
-  // remain the close affordances.
-  if (docked) {
-    return (
-      <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex"
-        // In the new layout this starts below the top bar and alarms (DON-176);
-        // elsewhere the variable is unset and the panel fills the height.
-        style={{ top: 'var(--sar-workspace-header-bottom, 0px)' }}
-      >
-        {/*
-          Docked panel is left-aligned over the map so it never covers the
-          right-hand operational sidebar where Pause/Finish live (DON-176). A
-          fixed, modest width keeps a usable map band clear to its right. It
-          opens at the left edge.
-        */}
-        <div
-          aria-labelledby={labelledBy}
-          className={`sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl`}
-          data-map-interaction-boundary="true"
-          onKeyDown={handleKeyDown}
-          ref={panelRef}
-          role="dialog"
-          tabIndex={-1}
-        >
-          {children}
-        </div>
-      </div>
-    )
-  }
-
+  // One element tree for both modes, so switching between full width and
+  // docked keeps the content mounted with its filters, search and focus
+  // (DON-368). Docked mode: the container does not capture pointer events
+  // outside the panel, so the active-mission rail and map underneath stay
+  // clickable. There is no dismiss backdrop and no focus trap; Esc and the
+  // header close button remain the close affordances. The docked panel is
+  // left-aligned over the map so it never covers the right-hand operational
+  // sidebar where Pause/Finish live (DON-176), and marks the map it covers so
+  // a zoom target lands beside it.
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 flex"
-      // In the new layout, while the tracking alarm shows, the modal starts below
-      // it so the alarm and Resume are never hidden; otherwise it fills the window.
-      style={{ top: 'var(--sar-workspace-alarm-bottom, 0px)' }}
+      className={docked ? 'pointer-events-none fixed inset-x-0 bottom-0 z-30 flex' : 'fixed inset-x-0 bottom-0 z-50 flex'}
+      // Docked, it starts below the top bar and alarms (DON-176); as a modal it
+      // starts below the tracking alarm so the alarm and Resume are never hidden.
+      // Elsewhere the variables are unset and it fills the window.
+      style={{ top: docked ? 'var(--sar-workspace-header-bottom, 0px)' : 'var(--sar-workspace-alarm-bottom, 0px)' }}
     >
-      {/* Backdrop — click to close */}
-      <button
-        aria-label="Close workspace"
-        className="absolute inset-0 bg-stone-950/82"
-        onClick={onClose}
-        tabIndex={-1}
-        type="button"
-      />
+      {docked ? null : (
+        // Backdrop — click to close
+        <button
+          aria-label="Close workspace"
+          className="absolute inset-0 bg-stone-950/82"
+          onClick={onClose}
+          tabIndex={-1}
+          type="button"
+        />
+      )}
 
-      {/* Sliding panel */}
       <div
         aria-labelledby={labelledBy}
-        aria-modal="true"
-        className={`sar-sidebar relative z-10 ml-auto flex h-full w-full ${maxWidth} flex-col`}
+        aria-modal={docked ? undefined : 'true'}
+        className={
+          docked
+            ? `sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl`
+            : `sar-sidebar relative z-10 ml-auto flex h-full w-full ${maxWidth} flex-col`
+        }
         data-map-interaction-boundary="true"
+        {...(docked ? { [MAP_LEFT_OCCLUSION_ATTRIBUTE]: 'true' } : {})}
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"

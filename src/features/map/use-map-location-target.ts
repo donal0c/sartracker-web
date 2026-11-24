@@ -36,6 +36,7 @@ export function useMapLocationTarget(options: UseMapLocationTargetOptions): void
     const releaseCamera = activeTarget === null ? undefined : navigateMapToTarget(
       map, [activeTarget.longitude, activeTarget.latitude],
       () => useMapTargetStore.getState().isTargetCurrent(activeTarget.id),
+      { screenOffsetX: leftOcclusionPx(map.getContainer()) / 2 },
     )
     const dispose = registerMapOverlaySync(map, 'coordinate-target', 'coordinate-target', () => {
       if (activeTarget === null || !useMapTargetStore.getState().isTargetCurrent(activeTarget.id)) {
@@ -50,6 +51,27 @@ export function useMapLocationTarget(options: UseMapLocationTargetOptions): void
       releaseCamera?.()
     }
   }, [targetId, options.mapRef, options.mapReadyVersion])
+}
+
+/** Marks a window docked over the left of the map (for example All devices after Zoom). */
+export const MAP_LEFT_OCCLUSION_ATTRIBUTE = 'data-map-left-occlusion'
+
+/**
+ * How many pixels of the map's left side a docked window covers, so a target
+ * is centred in the map still visible to its right (DON-368).
+ *
+ * @param container the map container
+ * @returns covered width in pixels, leaving at least a quarter of the map
+ */
+function leftOcclusionPx(container: HTMLElement): number {
+  const map = container.getBoundingClientRect()
+  let covered = 0
+  for (const panel of document.querySelectorAll<HTMLElement>(`[${MAP_LEFT_OCCLUSION_ATTRIBUTE}]`)) {
+    const rect = panel.getBoundingClientRect()
+    if (rect.width === 0 || rect.left > map.left + 1 || rect.bottom <= map.top || rect.top >= map.bottom) continue
+    covered = Math.max(covered, rect.right - map.left)
+  }
+  return Math.min(Math.max(0, covered), map.width * 0.75)
 }
 
 /** Restores the request marker without rewriting unchanged source data on idle. */
