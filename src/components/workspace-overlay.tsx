@@ -50,6 +50,7 @@ export function WorkspaceOverlay({
   const returnFocusRef = useRef<Element | null>(null)
   const onCloseRef = useRef(onClose)
   const refusedRef = useRef(false)
+  const dockKeyRef = useRef<object>({})
   useLayoutEffect(() => { onCloseRef.current = onClose })
 
   useLayoutEffect(() => {
@@ -107,7 +108,11 @@ export function WorkspaceOverlay({
       return
     }
 
-    const key = {}
+    const key = dockKeyRef.current
+    const outer = panel.parentElement
+    // The dock opened last is drawn on top and owns Escape (DON-368).
+    dockedPanelOrder.push(key)
+    if (outer !== null) outer.style.zIndex = String(DOCKED_Z_INDEX + dockedPanelOrder.length - 1)
     const publish = () => {
       dockedPanelWidths.set(key, panel.getBoundingClientRect().width)
       publishDockedPanelWidth()
@@ -118,6 +123,8 @@ export function WorkspaceOverlay({
     return () => {
       observer?.disconnect()
       dockedPanelWidths.delete(key)
+      dockedPanelOrder.splice(dockedPanelOrder.indexOf(key), 1)
+      outer?.style.removeProperty('z-index')
       publishDockedPanelWidth()
     }
   }, [docked, open])
@@ -149,13 +156,18 @@ export function WorkspaceOverlay({
       if (hasTopLayerAboveWorkspace(panelRef.current)) {
         return
       }
+      // Review and All devices can both be docked: one Escape closes only the
+      // one opened last, not both (DON-368).
+      if (docked && dockedPanelOrder.at(-1) !== dockKeyRef.current) {
+        return
+      }
 
       event.preventDefault()
       onClose()
     }
     document.addEventListener('keydown', onDocumentKeyDown)
     return () => document.removeEventListener('keydown', onDocumentKeyDown)
-  }, [onClose, open])
+  }, [docked, onClose, open])
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
@@ -255,6 +267,10 @@ export const DOCKED_PANEL_WIDTH_VAR = '--sar-docked-panel-width'
  * (DON-368).
  */
 const dockedPanelWidths = new Map<object, number>()
+/** Open docked panels, oldest first; the last one is on top and owns Escape. */
+const dockedPanelOrder: object[] = []
+/** Matches the docked container's z-30 class; later docks stack above it. */
+const DOCKED_Z_INDEX = 30
 
 /** Publishes the widest open docked panel, or clears the space when none is open. */
 function publishDockedPanelWidth(): void {

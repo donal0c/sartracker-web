@@ -918,12 +918,12 @@ body {
 [data-panel-arrangement] .sar-tree-row span { font-size: 15px; }
 /* Maps and Map Tools side by side, so they take one row of the map instead of two. */
 [data-panel-arrangement] [data-testid='basemap-switcher'] { max-width: 13rem; }
-[data-panel-arrangement] [data-testid='drawing-toolbar'] { left: 14.5rem; top: 1rem; }
-/* Rule 15 (DON-368): Map Tools stops above the 72 px coordinate bar, even with the alarm showing; its list scrolls inside. */
-[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: calc(100% - 1rem - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - 0.75rem); }
+[data-panel-arrangement] [data-testid='drawing-toolbar'] { --sar-map-tools-top: 1rem; left: 14.5rem; top: max(var(--sar-map-tools-top), calc(var(--ws-exceptions-bottom, 0px) - var(--ws-alarm-height, 0px) + 0.5rem)); }
+/* Rule 15 (DON-368): Map Tools starts below any warnings named on the map and stops above the coordinate bar, even with the alarm showing; its list scrolls inside. */
+[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: calc(100% - max(var(--sar-map-tools-top), calc(var(--ws-exceptions-bottom, 0px) - var(--ws-alarm-height, 0px) + 0.5rem)) - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - 0.75rem); }
 [data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-height: none; min-height: 0; flex: 0 1 auto; }
 @container (max-width: 820px) {
-  [data-panel-arrangement] [data-testid='drawing-toolbar'] { left: 1rem; top: 5.25rem; max-width: calc(100% - 5rem); max-height: calc(100% - 5.25rem - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - 0.75rem); }
+  [data-panel-arrangement] [data-testid='drawing-toolbar'] { --sar-map-tools-top: 5.25rem; left: 1rem; max-width: calc(100% - 5rem); }
   [data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-width: 100%; }
 }
 

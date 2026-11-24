@@ -1,16 +1,39 @@
+import { useLayoutEffect, useRef } from 'react'
+
 import { useMapTargetStore } from '../../features/map/map-target-store'
 import { selectExceptionsForMap, type PersonRow } from '../../features/workspace/people-model'
 
 const MAX_EXCEPTIONS_ON_MAP = 3
+/** Bottom of the warnings on the map, measured from the top of the map area. */
+export const EXCEPTIONS_BOTTOM_VAR = '--ws-exceptions-bottom'
 
 /** With People closed, whoever needs a look is still named on the map, in words. */
 export function ExceptionsOnMap(props: { readonly people: readonly PersonRow[]; readonly onShowAll: () => void }) {
   const queueTarget = useMapTargetStore((state) => state.queueTarget)
   const exceptions = selectExceptionsForMap(props.people)
-  if (exceptions.length === 0) return null
+  const listRef = useRef<HTMLDivElement>(null)
+  const shown = exceptions.length > 0
+
+  // Map Tools starts below these warnings, so its open panels never cover
+  // them and they never cover its controls (DON-368).
+  useLayoutEffect(() => {
+    const list = listRef.current
+    const scope = list?.parentElement
+    if (!shown || list === null || scope === null || scope === undefined) return undefined
+    const publish = () => scope.style.setProperty(EXCEPTIONS_BOTTOM_VAR, `${list.offsetTop + list.offsetHeight}px`)
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(list)
+    return () => {
+      observer?.disconnect()
+      scope.style.removeProperty(EXCEPTIONS_BOTTOM_VAR)
+    }
+  }, [shown])
+
+  if (!shown) return null
   const extra = exceptions.length - MAX_EXCEPTIONS_ON_MAP
   return (
-    <div className="ws-exceptions" data-map-interaction-boundary="true" data-testid="ws-exceptions">
+    <div className="ws-exceptions" data-map-interaction-boundary="true" data-testid="ws-exceptions" ref={listRef}>
       {exceptions.slice(0, MAX_EXCEPTIONS_ON_MAP).map((person) => (
         <button
           data-testid={`ws-exception-${person.deviceId}`}

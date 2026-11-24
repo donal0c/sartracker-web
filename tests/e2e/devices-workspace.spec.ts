@@ -659,6 +659,26 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await expectMapToolsPanelsInsideMap(page)
   })
 
+  test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await page.evaluate(async () => {
+      const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
+        import('/src/features/map/map-overlay-warning-store.ts'),
+        import('/src/lib/map-health.ts'),
+      ])
+      const warning = createMapOverlaySyncWarning('tracking', 'tracking')
+      useMapOverlayWarningStore.getState().raiseWarning({ ...warning, registrationId: 'layout-fixture-tracking' as typeof warning.registrationId })
+    })
+    await expect(page.getByTestId('map-degraded-alert')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => {
+      const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
+      const bar = document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect()
+      if (alerts === undefined || bar === undefined) return 'missing'
+      return alerts.bottom <= bar.top ? 'clear' : `warnings end ${Math.round(alerts.bottom)}, bar starts ${Math.round(bar.top)}`
+    }), { timeout: 10_000 }).toBe('clear')
+  })
+
   test('keeps the filter, search and keyboard focus when Zoom docks the list', async ({ page }) => {
     await page.getByTestId('device-filter-stale').click()
     await page.getByTestId('device-list-search').fill('Bravo')
@@ -1070,6 +1090,58 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
       .toBeGreaterThanOrEqual(MIN_DOCKED_MAP_WIDTH_PX)
     await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-alarm-details"]'), { timeout: 10_000 }).toBe('inside')
     await expectMapToolsPanelsInsideMap(page)
+  })
+})
+
+test.describe('Review docked with People closed at the narrowest supported width [DON-368]', () => {
+  test.use({ viewport: { width: 1180, height: 768 } })
+
+  test('shows the tracking warnings on the map clear of the open Map Tools panels', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Narrow Review Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    // Tracking is up and one device has gone quiet, so that person is named on the map.
+    await page.evaluate(async () => {
+      const now = Date.now()
+      const at = (ms: number) => new Date(ms).toISOString()
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: [
+            { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: at(now), unique_id: null, category: null },
+            { device_id: 'bravo', name: 'Bravo Team', status: 'offline', last_seen: at(now - 40 * 60_000), unique_id: null, category: null },
+          ],
+          positions: [
+            { id: 'pos-alpha', device_id: 'alpha', lat: 51.99917, lon: -9.74406, altitude: null, speed: null, battery: null, accuracy: null, timestamp: at(now), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false },
+            { id: 'pos-bravo', device_id: 'bravo', lat: 52.05944, lon: -9.50722, altitude: null, speed: null, battery: null, accuracy: null, timestamp: at(now - 40 * 60_000), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false },
+          ],
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: at(now), warning: null },
+      )
+    })
+    await openMissionReview(page)
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-exceptions')).toBeVisible()
+
+    await page.getByTestId('drawing-toolbar-expand').click()
+    for (const tool of ['measure', 'marker_at_grid']) {
+      await page.getByTestId(`drawing-tool-${tool}`).click()
+      await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+      await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: tool }).toBe('inside')
+      await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-exceptions"]'), { timeout: 10_000, message: `${tool} warnings` }).toBe('inside')
+      await expect.poll(() => page.evaluate(() => {
+        const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
+        const warnings = document.querySelector('[data-testid="ws-exceptions"]')?.getBoundingClientRect()
+        if (tools === undefined || warnings === undefined) return 'missing'
+        const overlap = tools.left < warnings.right && warnings.left < tools.right && tools.top < warnings.bottom && warnings.top < tools.bottom
+        return overlap ? `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} meets warnings ${Math.round(warnings.top)}-${Math.round(warnings.bottom)}` : 'apart'
+      }), { timeout: 10_000, message: tool }).toBe('apart')
+    }
   })
 })
 

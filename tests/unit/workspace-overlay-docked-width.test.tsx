@@ -27,12 +27,16 @@ afterEach(() => {
   document.documentElement.style.removeProperty(DOCKED_PANEL_WIDTH_VAR)
 })
 
-function render(reviewOpen: boolean, devicesOpen: boolean): void {
+function render(reviewOpen: boolean, devicesOpen: boolean, onClose: { review?: () => void; devices?: () => void } = {}): void {
   act(() => root.render(createElement('div', null,
-    createElement(WorkspaceOverlay, { open: reviewOpen, docked: true, labelledBy: 'review', maxWidth: 'max-w-xl', onClose: () => {}, children: 'Review' }),
-    createElement(WorkspaceOverlay, { open: devicesOpen, docked: true, labelledBy: 'devices', maxWidth: 'max-w-md', onClose: () => {}, children: 'Devices' }),
+    createElement(WorkspaceOverlay, { open: reviewOpen, docked: true, labelledBy: 'review', maxWidth: 'max-w-xl', onClose: onClose.review ?? (() => {}), children: 'Review' }),
+    createElement(WorkspaceOverlay, { open: devicesOpen, docked: true, labelledBy: 'devices', maxWidth: 'max-w-md', onClose: onClose.devices ?? (() => {}), children: 'Devices' }),
   )))
 }
+
+const pressEscapeOnPage = () => act(() => {
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+})
 
 const published = () => document.documentElement.style.getPropertyValue(DOCKED_PANEL_WIDTH_VAR)
 
@@ -51,4 +55,33 @@ it('keeps the map beside Review when docked All devices closes first [DON-368]',
   render(true, true)
   render(true, false)
   expect(published()).toBe('576px')
+})
+
+it('closes only the most recently opened dock on one Escape [DON-368]', () => {
+  const review = vi.fn()
+  const devices = vi.fn()
+  render(true, false, { review, devices })
+  render(true, true, { review, devices })
+
+  pressEscapeOnPage()
+  expect(devices).toHaveBeenCalledOnce()
+  expect(review).not.toHaveBeenCalled()
+})
+
+it('closes Review, not All devices, when Review was docked last [DON-368]', () => {
+  const review = vi.fn()
+  const devices = vi.fn()
+  render(false, true, { review, devices })
+  render(true, true, { review, devices })
+
+  pressEscapeOnPage()
+  expect(review).toHaveBeenCalledOnce()
+  expect(devices).not.toHaveBeenCalled()
+})
+
+it('draws the most recently opened dock on top [DON-368]', () => {
+  render(false, true)
+  render(true, true)
+  const zOf = (label: string) => Number((document.querySelector(`[aria-labelledby="${label}"]`)?.parentElement as HTMLElement).style.zIndex)
+  expect(zOf('review')).toBeGreaterThan(zOf('devices'))
 })
