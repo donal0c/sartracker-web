@@ -291,6 +291,88 @@ test.describe('Simplified workspace', () => {
     await expect(page.getByTestId('ws-people-visibility-error')).toHaveCount(0)
   })
 
+  test('after Start the map is clear: People does not open by itself, and lost tracking still shows [DON-368]', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-people-panel')).toHaveCount(0)
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
+    // Safety warnings never wait for a panel: the alarm and the top bar say so.
+    await feed(page, { lost: true })
+    await expectAlarmOverMap(page)
+    await expect(page.getByTestId('ws-tracking-headline')).toContainText(/TRACKING LOST/i)
+  })
+
+  test('a Mission warning badges the phase line and does not make the top bar taller [DON-368]', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    const barHeight = () => page.getByTestId('ws-mission-button').evaluate((element) => element.getBoundingClientRect().height)
+    const before = await barHeight()
+    await page.evaluate(async () => {
+      const { useParticipantStore } = await import('/src/features/participants/participant-store.ts')
+      useParticipantStore.setState({ rosterError: 'Could not read the Traccar groups.' })
+    })
+    await expect(page.getByTestId('ws-mission-phase').getByTestId('ws-mission-attention')).toBeVisible()
+    expect(Math.abs(await barHeight() - before), 'Mission button height').toBeLessThanOrEqual(1)
+    // Mission time shows once: Search time in the top bar, no Since start in the panel.
+    await openWorkspacePanel(page, 'mission')
+    await expect(page.getByText('Since start')).toHaveCount(0)
+  })
+
+  test('in a running Mission panel, people fold behind one button, Outings are gone, and adding takes two clicks [DON-368]', async ({ page }) => {
+    await open(page)
+    await startMission(page)
+    await openWorkspacePanel(page, 'mission')
+    await expect(page.getByTestId('mission-participants-section-summary')).toContainText('group')
+    await expect(page.getByTestId('participant-add-btn')).toBeHidden()
+    await expect(page.getByTestId('mission-outings-section')).toHaveCount(0)
+    await expect(page.getByTestId('ws-more-mission-options')).toHaveCount(0)
+    await page.getByTestId('mission-participants-section-toggle').click()
+    await expect(page.getByTestId('participant-add-btn')).toBeVisible()
+    await expect(page.getByTestId('participant-active-list').getByRole('button', { name: 'Remove' }).first()).toBeVisible()
+    await shot(page, '12-mission-panel-fold')
+  })
+
+  for (const size of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }] as const) {
+    test(`Map Tools at ${size.width}×${size.height} in Full map stays above the coordinate bar, with readable words [DON-368]`, async ({ page }) => {
+      await page.setViewportSize(size)
+      await open(page)
+      await startMission(page)
+      await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+      // The tracking-lost alarm pushes the tools down; they must still stop above the bar.
+      await feed(page, { lost: true })
+      await page.getByTestId('drawing-toolbar-expand').click()
+      await expect(page.getByTestId('drawing-tool-marker_at_grid')).toBeAttached()
+      const layout = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect() ?? null
+        const size = (element: Element | null | undefined) => element === null || element === undefined ? 0 : Number.parseFloat(getComputedStyle(element).fontSize)
+        const toolbar = box('[data-testid="drawing-toolbar"]')
+        const bar = box('[data-testid="coordinate-display"]')
+        const labels = [...document.querySelectorAll('[data-testid="coordinate-display"] .sar-meta-label')]
+        return {
+          toolbarBottom: toolbar?.bottom ?? Number.POSITIVE_INFINITY,
+          barTop: bar?.top ?? 0,
+          toolButton: size(document.querySelector('[data-testid="drawing-tool-line"]')),
+          toolsHeading: size([...document.querySelectorAll('[data-testid="drawing-toolbar"] p')].find((element) => element.textContent === 'Map Tools')),
+          mapsHeading: size([...document.querySelectorAll('[data-testid="basemap-menu-toggle"] span')].find((element) => element.textContent?.trim() === 'Maps')),
+          scaleHeading: size([...document.querySelectorAll('[data-testid="map-scale-readout"] p')].find((element) => element.textContent?.trim() === 'Map Scale')),
+          coordinateLabels: labels.map((element) => size(element)),
+        }
+      })
+      expect(layout.toolbarBottom, 'Map Tools ends above the coordinate bar').toBeLessThanOrEqual(layout.barTop)
+      expect(layout.toolButton, 'Map Tools buttons').toBeGreaterThanOrEqual(13)
+      expect(layout.toolsHeading, 'Map Tools heading').toBeGreaterThanOrEqual(12)
+      expect(layout.mapsHeading, 'Maps heading').toBeGreaterThanOrEqual(12)
+      expect(layout.scaleHeading, 'Map Scale heading').toBeGreaterThanOrEqual(12)
+      expect(layout.coordinateLabels.length, 'coordinate labels found').toBeGreaterThanOrEqual(3)
+      for (const label of layout.coordinateLabels) expect(label, 'coordinate label').toBeGreaterThanOrEqual(12)
+      // The last tool can be scrolled to and pressed.
+      await page.getByTestId('drawing-tool-marker_at_grid').scrollIntoViewIfNeeded()
+      await expect(page.getByTestId('drawing-tool-marker_at_grid')).toBeInViewport()
+      await shot(page, `13-map-tools-${size.width}`)
+    })
+  }
+
   test('a participant warning opens Mission and stays on the Mission button, without locking Tracking', async ({ page }) => {
     const setRosterError = (message: string | null) => page.evaluate(async (value) => {
       const path = '/src/features/participants/participant-store.ts'
@@ -304,8 +386,13 @@ test.describe('Simplified workspace', () => {
 
     await setRosterError('Could not read the Traccar groups.')
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
-    await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'true')
+    // The warning is on screen in words; the admin form stays folded (DON-368).
+    await expect(page.getByTestId('participant-roster-error')).toBeVisible()
+    await expect(page.getByTestId('mission-participants-section-attention')).toBeVisible()
+    await expect(page.getByTestId('participant-add-btn')).toBeHidden()
     await expect(page.getByTestId('ws-mission-attention')).toBeVisible()
+    // The badge sits on the phase line, so the top bar never grows a third line.
+    await expect(page.getByTestId('ws-mission-phase').getByTestId('ws-mission-attention')).toBeVisible()
 
     // The operator can still reach Tracking (for example Reconnect); the warning stays on the Mission button.
     await page.getByTestId('ws-tracking-headline').click()
@@ -323,7 +410,7 @@ test.describe('Simplified workspace', () => {
     await page.getByTestId('participant-group-picker').getByLabel(/Rescue Team/).check()
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
-    await expect(page.getByTestId('participant-backfill-status').first()).toContainText('pending')
+    await expect(page.getByTestId('participant-backfill-status').first()).toContainText('loading')
 
     // Finish is refused while participant history is still loading.
     await page.getByTestId('ws-mission-button').click()
@@ -901,7 +988,8 @@ test.describe('Simplified workspace', () => {
     test('map can fill the screen, and layers still open large', async ({ page }) => {
       await open(page)
       await startMission(page)
-      await page.getByTestId('ws-full-map').click()
+      // After Start the map is already clear (rule 1, DON-368).
+      await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
       await expect(page.getByTestId('ws-people-panel')).toHaveCount(0)
       await expect(page.getByTestId('ws-tracking-headline')).toBeVisible()
       // People closed: the problems are still named on the map, most urgent first.

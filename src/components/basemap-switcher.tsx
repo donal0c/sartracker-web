@@ -55,10 +55,10 @@ export function BasemapSwitcher({
         onClick={() => setMenuOpen((open) => !open)}
         type="button"
       >
-        <span className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-200">
+        <span className="text-[12px] font-black uppercase tracking-[0.2em] text-amber-200">
           Maps
         </span>
-        <span className="border border-stone-500 bg-[var(--sar-panel-raised)] px-2 py-1 text-[11px] font-bold text-stone-50">
+        <span className="border border-stone-500 bg-[var(--sar-panel-raised)] px-2 py-1 text-[12px] font-bold text-stone-50">
           {getRenderableMapLabel(activeBasemapId)}
         </span>
         <span aria-hidden="true" className="text-stone-200">
@@ -70,7 +70,7 @@ export function BasemapSwitcher({
         <div className="mt-2 grid min-w-56 gap-2 border-t border-[var(--sar-line)] pt-2">
           {catalogueGroups.map((group) => (
             <section data-testid={`map-catalogue-group-${group.id}`} key={group.id}>
-              <h3 className="mb-1 px-1 text-[10px] font-black uppercase tracking-[0.16em] text-stone-300">
+              <h3 className="mb-1 px-1 text-[12px] font-black uppercase tracking-[0.14em] text-stone-300">
                 {group.label}
               </h3>
               <div className="grid gap-1.5">

@@ -268,6 +268,13 @@ body {
     text-transform: uppercase;
   }
 
+  /** Coordinate bar labels: read at a glance over the map (DON-368, rule 13). */
+  .sar-coordinate-label {
+    color: var(--sar-text-muted);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
+
   .sar-button {
     border: 1px solid rgba(168, 162, 158, 0.32);
     background:
@@ -792,10 +799,11 @@ body {
 [data-theme='light'] [data-panel-arrangement] { --ws-bg: #eef0f3; --ws-raised: #dde1e6; --ws-line: #5f6771; --ws-text: #0b0d10; --ws-muted: #3a4048; --ws-ok: #065f46; --ws-warning: #92400e; --ws-caution: #92400e; --ws-danger: #b91c1c; --ws-neutral: #22262b; --ws-attention-bg: rgba(245, 158, 11, 0.22); --ws-attention-edge: #b45309; --ws-row-line: #b8bfc7; --ws-edge: #0b0d10; --ws-pressed-bg: #15181c; --ws-pressed-text: #ffffff; --ws-shadow: rgba(15, 23, 42, 0.3); }
 .ws-top-bar { display: flex; flex-shrink: 0; align-items: stretch; gap: 0.6rem; min-height: 56px; padding: 0.35rem 0.75rem; background: var(--ws-bg); border-bottom: 2px solid var(--ws-line); color: var(--ws-text); }
 .ws-logo { height: 44px; width: 52px; flex-shrink: 0; align-self: center; object-fit: contain; background: #fff; }
-.ws-mission-button { display: flex; min-width: 11rem; max-width: 17rem; flex-direction: column; justify-content: center; border: 1px solid var(--ws-line); padding: 0.1rem 0.6rem; text-align: left; line-height: 1.2; }
+.ws-mission-button { display: flex; min-width: 11rem; max-width: 20rem; flex-direction: column; justify-content: center; border: 1px solid var(--ws-line); padding: 0.1rem 0.6rem; text-align: left; line-height: 1.2; }
 .ws-mission-button:hover, .ws-bar-button:hover { background: var(--ws-raised); }
 .ws-mission-name { overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.ws-mission-phase { font-size: 13px; font-weight: 700; }
+.ws-mission-phase { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.ws-mission-badge { margin-left: 0.4rem; }
 .ws-phase-active { color: var(--ws-ok); }
 .ws-phase-paused { color: var(--ws-danger); }
 .ws-phase-idle, .ws-phase-recovery { color: var(--ws-caution); }
@@ -891,6 +899,9 @@ body {
 /* Maps and Map Tools side by side, so they take one row of the map instead of two. */
 [data-panel-arrangement] [data-testid='basemap-switcher'] { max-width: 13rem; }
 [data-panel-arrangement] [data-testid='drawing-toolbar'] { left: 14.5rem; top: 1rem; }
+/* Rule 15 (DON-368): Map Tools stops above the 72 px coordinate bar, even with the alarm showing; its list scrolls inside. */
+[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: calc(100% - 1rem - var(--ws-alarm-height, 0px) - 72px - 0.75rem); }
+[data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-height: none; min-height: 0; flex: 0 1 auto; }
 
 [data-testid='ws-mission-host'].ws-panel-section { position: relative; overflow-y: auto; }
 .ws-mission-card { position: absolute; left: 50%; top: calc(1.25rem + var(--ws-alarm-height, 0px)); z-index: 40; max-height: calc(100% - 2.5rem - var(--ws-alarm-height, 0px)); width: 540px; max-width: calc(100% - 1.5rem); transform: translateX(-50%); overflow-y: auto; border: 2px solid var(--ws-edge); background: var(--ws-bg); color: var(--ws-text); box-shadow: 0 24px 64px var(--ws-shadow); }

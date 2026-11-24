@@ -81,7 +81,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
         <div className="flex min-w-0 items-center justify-end gap-2 border-l border-[var(--sar-line)] px-4">
           {activeTarget !== null ? (
             <span
-              className="min-w-0 truncate border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[11px] font-sans font-bold uppercase tracking-[0.2em] text-amber-100"
+              className="min-w-0 truncate border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[12px] font-sans font-bold uppercase tracking-[0.16em] text-amber-100"
               data-testid="coordinate-target-indicator"
               >
               {activeTarget.label ?? 'Target Active'}
@@ -133,7 +133,7 @@ function InstrumentCell(props: {
 
   return (
     <div className="flex min-w-0 flex-col justify-center">
-      <p className="sar-meta-label">
+      <p className="sar-meta-label sar-coordinate-label">
         {props.label}
       </p>
       <p className={`mt-1 truncate text-[17px] font-black leading-none max-[1320px]:text-[14px] ${props.valueClassName ?? ''}`}>

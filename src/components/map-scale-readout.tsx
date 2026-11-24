@@ -84,7 +84,7 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
           {readout.label}
         </span>
       </div>
-      <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-amber-200">
+      <p className="mt-1.5 text-[12px] font-black uppercase tracking-[0.14em] text-amber-200">
         Map Scale
       </p>
     </div>
