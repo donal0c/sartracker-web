@@ -738,6 +738,36 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await expectMapWarningsOnTop(page, 'full warning stack over the 480 px docked map')
   })
 
+  test('[Codex r6] keeps a tile-failure warning and the GPX notice in separate bands on the narrow docked map', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect().height ?? 0)))
+      .toBeGreaterThan(80)
+    // Every new OpenTopoMap tile fails, so the map shows its short tile-failure warning.
+    await page.context().route('https://*.opentopomap.org/**', (route) => route.abort())
+    await page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      map?.jumpTo({ center: [-8.2, 53.3], zoom: 12.3 })
+    })
+    await expect(page.getByTestId('map-degraded-alert')).toContainText(/tiles failed/i, { timeout: 15_000 })
+    await page.evaluate(async () => {
+      const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
+      useGpxStore.setState({ mapCoverageNotice: 'Layout fixture: 2 of 5 GPX tracks are not shown on the map because they could not be drawn.' })
+    })
+    await expect(page.getByTestId('gpx-map-coverage-notice')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => {
+      const notice = document.querySelector('[data-testid="gpx-map-coverage-notice"]')?.getBoundingClientRect()
+      const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
+      const scale = document.querySelector('[data-testid="map-scale-readout"]')?.getBoundingClientRect()
+      if (notice === undefined || alerts === undefined || scale === undefined) return 'missing'
+      if (alerts.bottom > notice.top) return `warnings end ${Math.round(alerts.bottom)}, notice starts ${Math.round(notice.top)}`
+      if (notice.bottom > scale.top) return `notice ends ${Math.round(notice.bottom)}, scale starts ${Math.round(scale.top)}`
+      return 'separate'
+    }), { timeout: 10_000 }).toBe('separate')
+    await expect.poll(() => uncovered(page, 'gpx-map-coverage-notice'), { timeout: 10_000 }).toBe('uncovered')
+    await expectMapWarningsOnTop(page, 'tile warning with the GPX notice')
+  })
+
   test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
