@@ -1,5 +1,8 @@
+import { useRef } from 'react'
+
 import type { MapHealth } from '../lib/map-health'
 import type { OfflineMapReadiness } from '../features/map/offline-map-readiness'
+import { MAP_ALERTS_HEIGHT_VAR, usePublishMapOverlayHeight } from './map-overlay-space'
 
 type MapDegradedAlertProps = {
   readonly mapHealth: MapHealth
@@ -12,6 +15,9 @@ type MapDegradedAlertProps = {
  * basemap state; successful and loading basemap states stay suppressed (DON-95).
  */
 export function MapDegradedAlert({ mapHealth, offlineReadiness }: MapDegradedAlertProps) {
+  const regionRef = useRef<HTMLDivElement>(null)
+  // Map Tools stops above the warnings, so neither is drawn over the other (DON-369).
+  usePublishMapOverlayHeight(regionRef, MAP_ALERTS_HEIGHT_VAR)
   const showMapDegraded = mapHealth.status === 'degraded'
   const showOfflineWarning = offlineReadiness.tone === 'danger' || offlineReadiness.tone === 'warning'
   const overlayWarnings = mapHealth.overlayWarnings ?? []
@@ -30,6 +36,7 @@ export function MapDegradedAlert({ mapHealth, offlineReadiness }: MapDegradedAle
       aria-label={`Active map alerts${overlayWarnings.length > 0 ? `, ${overlayWarningCountLabel}` : ''}`}
       className="pointer-events-none absolute bottom-[calc(var(--sar-coordinate-bar-height,72px)+0.5rem)] right-3 z-30 flex max-h-[min(50%,calc(100%-var(--sar-coordinate-bar-height,72px)-1.5rem))] max-w-[min(22rem,calc(100%-2rem))] flex-col items-end gap-2 overflow-y-auto"
       data-testid="map-degraded-alert"
+      ref={regionRef}
       role="region"
       tabIndex={0}
     >

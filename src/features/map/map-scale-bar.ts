@@ -131,6 +131,9 @@ export type DescribeMapScaleInput = {
   readonly latitude: number
   readonly zoom: number
   readonly mapWidthPx: number
+  /** The live map's own zoom limits; a zoom outside them is not measured. */
+  readonly minZoom: number
+  readonly maxZoom: number
 }
 
 /**
@@ -145,6 +148,9 @@ export function describeMapScale(input: DescribeMapScaleInput): MapScaleState {
   if (!isMeasurableCamera(input.latitude, input.zoom)) {
     return unavailable(`camera latitude ${String(input.latitude)}, zoom ${String(input.zoom)} cannot be measured`)
   }
+  if (!(input.zoom >= input.minZoom && input.zoom <= input.maxZoom)) {
+    return unavailable(`zoom ${input.zoom} is outside the map's limits ${String(input.minZoom)}-${String(input.maxZoom)}`)
+  }
   const bar = buildMapScaleBar({ latitude: input.latitude, zoom: input.zoom, maxWidthPx })
   return bar === null
     ? unavailable(`no scale distance fits ${maxWidthPx} px at zoom ${input.zoom}`)
@@ -156,12 +162,20 @@ function unavailable(reason: string): MapScaleState {
   return { status: 'unavailable', message: MAP_SCALE_UNAVAILABLE_MESSAGE, reason }
 }
 
+/** Web Mercator, and so MapLibre, cannot show a latitude beyond this. */
+const WEB_MERCATOR_MAX_LATITUDE = 85.051129
+
 /**
- * True for a real latitude (-90 to 90) and a real, non-negative zoom. The DON-339
- * readout would otherwise measure a NaN latitude at the equator.
+ * True for a latitude the map can show and a real, non-negative zoom. The DON-339
+ * readout would otherwise measure a NaN latitude at the equator, or clamp 90° to 85°.
  */
 function isMeasurableCamera(latitude: number, zoom: number): boolean {
-  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(zoom) && zoom >= 0
+  return (
+    Number.isFinite(latitude) &&
+    Math.abs(latitude) <= WEB_MERCATOR_MAX_LATITUDE &&
+    Number.isFinite(zoom) &&
+    zoom >= 0
+  )
 }
 
 /**

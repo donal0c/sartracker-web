@@ -40,6 +40,8 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
           latitude: center.lat,
           zoom: map.getZoom(),
           mapWidthPx: map.getContainer().clientWidth,
+          minZoom: map.getMinZoom(),
+          maxZoom: map.getMaxZoom(),
         })
         // Log once per new failure, not on every frame of a move.
         if (next.status === 'unavailable' && next.reason !== lastUnavailableReason) {

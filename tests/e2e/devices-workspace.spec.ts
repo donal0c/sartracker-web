@@ -660,6 +660,31 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await expectMapScaleClear(page, 'All devices docked at 1366')
   })
 
+  test('[Codex r2] keeps the GPX coverage notice clear of the scale and Map Tools when the coordinate bar wraps', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await page.evaluate(async () => {
+      const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
+      useGpxStore.setState({ mapCoverageNotice: 'Layout fixture: 2 of 5 GPX tracks are not shown on the map.' })
+    })
+    await expect(page.getByTestId('gpx-map-coverage-notice')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect().height ?? 0)))
+      .toBeGreaterThan(80)
+    await expectMapScaleClear(page, 'GPX notice, Map Tools closed')
+    await expect.poll(() => uncovered(page, 'gpx-map-coverage-notice'), { timeout: 10_000 }).toBe('uncovered')
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-measure').click()
+    await expectMapScaleClear(page, 'GPX notice, Measure open')
+    await expect.poll(() => page.evaluate(() => {
+      const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
+      const notice = document.querySelector('[data-testid="gpx-map-coverage-notice"]')?.getBoundingClientRect()
+      if (tools === undefined || notice === undefined) return 'missing'
+      const meets = tools.left < notice.right && notice.left < tools.right && tools.top < notice.bottom && notice.top < tools.bottom
+      return meets ? `Map Tools ends ${Math.round(tools.bottom)}, notice starts ${Math.round(notice.top)}` : 'apart'
+    }), { timeout: 10_000 }).toBe('apart')
+    await expect.poll(() => uncovered(page, 'gpx-map-coverage-notice'), { timeout: 10_000 }).toBe('uncovered')
+  })
+
   test('[Codex r1] keeps a map warning readable over the scale and open Map Tools beside the docked list', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
@@ -1107,12 +1132,42 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
     await expectMapScaleClear(page, 'Review docked at 1180')
   })
 
-  test('[Codex r1] keeps a map warning readable over the scale and open Map Tools beside Review', async ({ page }) => {
-    await raiseTrackingOverlayWarning(page)
+  test('[Codex r2] measures, reads, clears and closes Map Tools beside Review while map warnings stay showing', async ({ page }) => {
+    await raiseTrackingOverlayWarning(page, ['tracking', 'measurements'])
+    await expect(page.getByTestId('map-degraded-alert').locator('[role="alert"], [role="status"]')).toHaveCount(2)
     await page.getByTestId('drawing-toolbar-expand').click()
     await page.getByTestId('drawing-tool-measure').click()
     await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
-    await expectMapWarningsOnTop(page, 'Review docked at 1180 with Measure open')
+    await expectMapToolsApartFromAlerts(page, 'Measure open')
+    await expectMapWarningsOnTop(page, 'Measure open')
+
+    // Two map clicks in the strip of map right of Map Tools and above the warnings.
+    const area = await page.locator('.ws-map-area').boundingBox()
+    const tools = await page.getByTestId('drawing-toolbar').boundingBox()
+    expect(area).not.toBeNull()
+    expect(tools).not.toBeNull()
+    const x = (tools!.x + tools!.width + area!.x + area!.width) / 2 - 10
+    const y = area!.y + area!.height * 0.42
+    await page.mouse.click(x, y)
+    await page.mouse.click(x, y + 50)
+    await expect(page.getByTestId('measurement-count')).toHaveText('1')
+
+    // The result can be read: it is on screen and nothing is drawn over it.
+    await page.getByTestId('measurement-list').scrollIntoViewIfNeeded()
+    await expect(page.getByTestId('measurement-list')).toContainText(/\d+(\.\d+)?\s*(m|km)/)
+    await expect.poll(() => uncovered(page, 'measurement-list'), { timeout: 10_000 }).toBe('uncovered')
+    await expectMapToolsApartFromAlerts(page, 'measurement made')
+
+    // Clear Measurements takes the real click (Playwright refuses a click another element would receive).
+    await page.getByTestId('measurement-clear-btn').scrollIntoViewIfNeeded()
+    await page.getByTestId('measurement-clear-btn').click()
+    await page.getByTestId('measurement-clear-confirm-btn').click()
+    await expect(page.getByTestId('measurement-count')).toHaveText('0')
+
+    await page.getByTestId('drawing-toolbar-collapse').click()
+    await expect(page.getByTestId('drawing-toolbar-expand')).toBeVisible()
+    await expect(page.getByTestId('map-degraded-alert').locator('[role="alert"], [role="status"]')).toHaveCount(2)
+    await expectMapWarningsOnTop(page, 'Map Tools closed')
   })
 })
 
@@ -1220,6 +1275,8 @@ async function expectMapScaleClear(page: import('@playwright/test').Page, label:
     }
     if (scale.bottom > coordinates.top) return `scale bottom ${Math.round(scale.bottom)} below coordinate bar top ${Math.round(coordinates.top)}`
     if (meets(scale, tools)) return `meets Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)}`
+    const gpxNotice = rect('[data-testid="gpx-map-coverage-notice"]')
+    if (gpxNotice !== undefined && meets(scale, gpxNotice)) return `meets the GPX notice ${Math.round(gpxNotice.top)}-${Math.round(gpxNotice.bottom)}`
     for (const dialog of document.querySelectorAll('[role="dialog"]')) {
       const box = dialog.getBoundingClientRect()
       if (box.width > 0 && meets(scale, box)) return `under the docked panel ${dialog.getAttribute('data-testid') ?? ''}`
@@ -1228,17 +1285,44 @@ async function expectMapScaleClear(page: import('@playwright/test').Page, label:
   }), { timeout: 10_000, message: label }).toBe('clear')
 }
 
-/** Raises the persistent tracking overlay warning that the map shows full width at the bottom right. */
-async function raiseTrackingOverlayWarning(page: import('@playwright/test').Page): Promise<void> {
-  await page.evaluate(async () => {
+/** Raises persistent overlay warnings, which the map stacks at the bottom right, full width on a narrow map. */
+async function raiseTrackingOverlayWarning(
+  page: import('@playwright/test').Page,
+  families: readonly ('tracking' | 'measurements' | 'drawings')[] = ['tracking'],
+): Promise<void> {
+  await page.evaluate(async (names) => {
     const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
       import('/src/features/map/map-overlay-warning-store.ts'),
       import('/src/lib/map-health.ts'),
     ])
-    const warning = createMapOverlaySyncWarning('tracking', 'tracking')
-    useMapOverlayWarningStore.getState().raiseWarning({ ...warning, registrationId: 'layout-fixture-tracking' as typeof warning.registrationId })
-  })
+    for (const family of names) {
+      const warning = createMapOverlaySyncWarning(family, family)
+      useMapOverlayWarningStore.getState().raiseWarning({ ...warning, registrationId: `layout-fixture-${family}` as typeof warning.registrationId })
+    }
+  }, families)
   await expect(page.getByTestId('map-degraded-alert')).toBeVisible()
+}
+
+/** Codex r2 (DON-369): Map Tools and the map warnings each get their own space; neither is drawn over the other. */
+async function expectMapToolsApartFromAlerts(page: import('@playwright/test').Page, label: string): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
+    const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
+    if (tools === undefined || alerts === undefined) return 'missing'
+    const meets = tools.left < alerts.right && alerts.left < tools.right && tools.top < alerts.bottom && alerts.top < tools.bottom
+    return meets ? `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} meets warnings ${Math.round(alerts.top)}-${Math.round(alerts.bottom)}` : 'apart'
+  }), { timeout: 10_000, message: label }).toBe('apart')
+}
+
+/** 'uncovered' when the element's centre is not drawn over by anything else. */
+async function uncovered(page: import('@playwright/test').Page, testId: string): Promise<string> {
+  return page.evaluate((id) => {
+    const element = document.querySelector(`[data-testid="${id}"]`)
+    if (element === null) return 'missing'
+    const box = element.getBoundingClientRect()
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height, 30) / 2)
+    return top !== null && element.contains(top) ? 'uncovered' : `covered by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
+  }, testId)
 }
 
 /**

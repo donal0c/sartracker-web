@@ -150,21 +150,38 @@ describe('[DON-369] segmented map scale bar', () => {
   })
 
   it('[Codex r1] says the scale is unavailable, in words, whenever the live map cannot be measured', () => {
-    const ready = describeMapScale({ latitude: 52, zoom: 13, mapWidthPx: 480 })
+    const ready = describeMapScale({ latitude: 52, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 })
     expect(ready.status).toBe('ready')
     expect(ready.status === 'ready' ? ready.bar.totalLabel : null).toBe('500 m')
 
-    for (const input of [
+    for (const camera of [
       { latitude: Number.NaN, zoom: 13, mapWidthPx: 480 },
       { latitude: Number.POSITIVE_INFINITY, zoom: 13, mapWidthPx: 480 },
       { latitude: 52, zoom: Number.NaN, mapWidthPx: 480 },
       { latitude: 52, zoom: 13, mapWidthPx: 0 },
       { latitude: 52, zoom: 13, mapWidthPx: Number.NaN },
+      // Codex r2: past the live map's limits, never clamped to a nearby answer.
+      { latitude: 52, zoom: 25, mapWidthPx: 480 },
+      { latitude: 52, zoom: 22.5, mapWidthPx: 480 },
+      { latitude: 90, zoom: 13, mapWidthPx: 480 },
+      { latitude: -85.06, zoom: 13, mapWidthPx: 480 },
     ]) {
+      const input = { ...camera, minZoom: 0, maxZoom: 22 }
       const state = describeMapScale(input)
       expect(state.status, JSON.stringify(input)).toBe('unavailable')
       expect(state.status === 'unavailable' ? state.message : '').toBe(MAP_SCALE_UNAVAILABLE_MESSAGE)
     }
     expect(MAP_SCALE_UNAVAILABLE_MESSAGE).toBe('Map scale unavailable')
+  })
+
+  it('[Codex r2] measures right up to the live map limits', () => {
+    expect(describeMapScale({ latitude: 52, zoom: 22, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('ready')
+    expect(describeMapScale({ latitude: 85.05, zoom: 13, mapWidthPx: 480, minZoom: 0, maxZoom: 22 }).status).toBe('ready')
+    expect(describeMapScale({ latitude: 52, zoom: 4, mapWidthPx: 480, minZoom: 5, maxZoom: 22 }).status).toBe('unavailable')
+  })
+
+  it('[Codex r2] rejects a latitude beyond Web Mercator rather than clamping it to 85°', () => {
+    expect(buildMapScaleBar({ latitude: 90, zoom: 13, maxWidthPx: 140 })).toBeNull()
+    expect(buildMapScaleBar({ latitude: -86, zoom: 13, maxWidthPx: 140 })).toBeNull()
   })
 })

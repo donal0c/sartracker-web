@@ -153,11 +153,11 @@ test.describe('map scale bar (DON-339 / M-01)', () => {
     expect(wide).toBeGreaterThan(160)
     expect(wide).toBeLessThanOrEqual(200)
 
+    // Only the window changes: the map's own resize must redraw the scale.
     await page.setViewportSize({ width: 520, height: 900 })
+    await expect(page.getByTestId('map-scale-label')).toHaveText('500 m')
     const narrowMapWidth = await page.getByTestId('map-container').evaluate((element) => element.clientWidth)
     expect(narrowMapWidth * 0.3, 'the narrow map leaves under 170 px for the bar').toBeLessThan(169)
-    await jumpTo(page, { lng: -9, lat: 52, zoom: 13 })
-    await expect(page.getByTestId('map-scale-label')).toHaveText('500 m')
     const narrow = await scaleBarWidth(page)
     expect(narrow).toBeGreaterThan(80)
     expect(narrow).toBeLessThan(90)
@@ -181,6 +181,31 @@ test.describe('map scale bar (DON-339 / M-01)', () => {
       return { width, paintedWidth: width + 2 * (outerSpread + outline + overhang) }
     })
     expect(painted.paintedWidth - painted.width, 'paint beyond the measured ends').toBeLessThan(0.5)
+  })
+
+  test('[Codex r2] says "Map scale unavailable" past the live map\'s zoom and latitude limits', async ({ page }) => {
+    await expect(page.getByTestId('map-scale-bar')).toBeVisible()
+    const maxZoom = await page.evaluate(() => (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__?.getMaxZoom() ?? Number.NaN)
+    expect(Number.isFinite(maxZoom)).toBe(true)
+    for (const camera of [{ lat: 52, zoom: maxZoom + 3 }, { lat: 90, zoom: 13 }]) {
+      await page.evaluate((target) => {
+        const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+        if (map === undefined) throw new Error('Map instance is not exposed.')
+        const forced = map as unknown as { getCenter: () => { lat: number; lng: number }; getZoom: () => number }
+        forced.getCenter = () => ({ lat: target.lat, lng: -9 })
+        forced.getZoom = () => target.zoom
+        map.fire('zoom')
+      }, camera)
+      await expect(page.getByTestId('map-scale-readout'), JSON.stringify(camera)).toContainText('Map scale unavailable')
+      await expect(page.getByTestId('map-scale-bar')).toHaveCount(0)
+    }
+    await page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      delete (map as unknown as { getCenter?: unknown }).getCenter
+      delete (map as unknown as { getZoom?: unknown }).getZoom
+      map?.fire('zoom')
+    })
+    await expect(page.getByTestId('map-scale-bar')).toBeVisible()
   })
 
   test('[Codex r1] says "Map scale unavailable" when the camera cannot be measured, then recovers', async ({ page }) => {
@@ -209,7 +234,6 @@ async function jumpTo(page: Page, camera: { readonly lng: number; readonly lat: 
   await page.evaluate((target) => {
     const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
     if (map === undefined) throw new Error('Map instance is not exposed.')
-    map.resize()
     map.jumpTo({ center: [target.lng, target.lat], zoom: target.zoom, bearing: 0, pitch: 0 })
   }, camera)
   await page.waitForTimeout(100)
