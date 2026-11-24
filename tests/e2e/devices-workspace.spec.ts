@@ -657,6 +657,7 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
     await expectMapToolsPanelsInsideMap(page)
+    await expectMapScaleClear(page, 'All devices docked at 1366')
   })
 
   test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
@@ -1093,6 +1094,7 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
       .toBeGreaterThanOrEqual(MIN_DOCKED_MAP_WIDTH_PX)
     await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-alarm-details"]'), { timeout: 10_000 }).toBe('inside')
     await expectMapToolsPanelsInsideMap(page)
+    await expectMapScaleClear(page, 'Review docked at 1180')
   })
 })
 
@@ -1179,6 +1181,33 @@ async function expectMapToolsPanelsInsideMap(page: import('@playwright/test').Pa
     await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
     await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: tool }).toBe('inside')
   }
+}
+
+/**
+ * DON-369: the segmented scale bar lies inside the visible map, wholly above the
+ * coordinate bar, and apart from Map Tools and any docked panel. The bar ignores
+ * the pointer, so this compares boxes rather than hit-testing.
+ */
+async function expectMapScaleClear(page: import('@playwright/test').Page, label: string): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
+    const scale = rect('[data-testid="map-scale-readout"]')
+    const map = rect('.ws-map-area')
+    const coordinates = rect('[data-testid="coordinate-display"]')
+    const tools = rect('[data-testid="drawing-toolbar"]')
+    if (scale === undefined || map === undefined || coordinates === undefined || tools === undefined) return 'missing'
+    const meets = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    if (scale.left < map.left - 1 || scale.right > map.right + 1 || scale.top < map.top - 1) {
+      return `outside the map: ${Math.round(scale.left)}-${Math.round(scale.right)} vs ${Math.round(map.left)}-${Math.round(map.right)}`
+    }
+    if (scale.bottom > coordinates.top) return `scale bottom ${Math.round(scale.bottom)} below coordinate bar top ${Math.round(coordinates.top)}`
+    if (meets(scale, tools)) return `meets Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)}`
+    for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+      const box = dialog.getBoundingClientRect()
+      if (box.width > 0 && meets(scale, box)) return `under the docked panel ${dialog.getAttribute('data-testid') ?? ''}`
+    }
+    return 'clear'
+  }), { timeout: 10_000, message: label }).toBe('clear')
 }
 
 /** 'inside' when the element lies within the map area and nothing else is drawn over its centre. */

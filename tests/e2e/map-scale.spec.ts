@@ -90,6 +90,68 @@ test.describe('map scale bar (DON-339 / M-01)', () => {
     await expect(page.getByTestId('basemap-offline-readiness')).toContainText('Official package validated')
     await expectScaleMatchesMapLibre(page)
   })
+
+  test('[DON-369] draws four alternating blocks and a half-way tick that MapLibre agrees with', async ({ page }) => {
+    await selectBasemap(page, 'opentopomap')
+    for (const camera of CAMERAS) {
+      await page.evaluate((target) => {
+        const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+        map?.jumpTo({ center: [target.lng, target.lat], zoom: target.zoom, bearing: 0, pitch: 0 })
+      }, camera)
+      await page.waitForTimeout(100)
+
+      const result = await page.evaluate(() => {
+        const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+        const bar = document.querySelector('[data-testid="map-scale-bar"]')
+        const end = document.querySelector('[data-testid="map-scale-label"]')
+        if (map === undefined || !(bar instanceof HTMLElement) || !(end instanceof HTMLElement)) {
+          throw new Error('Scale bar or map is missing.')
+        }
+        const barRect = bar.getBoundingClientRect()
+        const segments = [...bar.querySelectorAll('[data-testid="map-scale-segment"]')].map((segment) => ({
+          width: segment.getBoundingClientRect().width,
+          background: getComputedStyle(segment).backgroundColor,
+        }))
+        const ticks = [...document.querySelectorAll('[data-testid="map-scale-tick"]')].map((tick) => {
+          const rect = tick.getBoundingClientRect()
+          return { text: tick.textContent?.trim() ?? '', centreOffset: rect.left + rect.width / 2 - barRect.left }
+        })
+        const endNumber = end.firstChild?.textContent?.trim() ?? ''
+        const unit = document.querySelector('[data-testid="map-scale-unit"]')?.textContent?.trim() ?? ''
+        const canvas = map.getCanvas()
+        const y = canvas.clientHeight / 2
+        const x = canvas.clientWidth / 2
+        const half = ticks.find((tick) => tick.text !== '0')
+        const measuredHalfM = half === undefined ? null : map.unproject([x, y]).distanceTo(map.unproject([x + half.centreOffset, y]))
+        return { barWidth: barRect.width, segments, ticks, endNumber, unit, measuredHalfM }
+      })
+
+      expect(result.segments).toHaveLength(4)
+      const totalSegmentWidth = result.segments.reduce((sum, segment) => sum + segment.width, 0)
+      expect(Math.abs(totalSegmentWidth - result.barWidth)).toBeLessThan(1)
+      expect(result.segments[0].background).not.toBe(result.segments[1].background)
+      expect(result.segments[0].background).toBe(result.segments[2].background)
+      expect(result.ticks[0].text).toBe('0')
+      const totalM = Number(result.endNumber) * (result.unit === 'km' ? 1000 : 1)
+      const halfTick = result.ticks.find((tick) => tick.text !== '0')
+      if (halfTick !== undefined && result.measuredHalfM !== null) {
+        expect(Number(halfTick.text) * (result.unit === 'km' ? 1000 : 1)).toBe(totalM / 2)
+        expect(Math.abs(result.measuredHalfM - totalM / 2) / (totalM / 2)).toBeLessThan(0.03)
+      }
+    }
+  })
+
+  test('[DON-369] shrinks the bar on a narrow map', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const wide = await page.getByTestId('map-scale-bar').evaluate((element) => element.getBoundingClientRect().width)
+    await page.setViewportSize({ width: 700, height: 900 })
+    await expect.poll(async () => {
+      const mapWidth = await page.getByTestId('map-container').evaluate((element) => element.clientWidth)
+      const barWidth = await page.getByTestId('map-scale-bar').evaluate((element) => element.getBoundingClientRect().width)
+      return barWidth <= Math.max(96, mapWidth * 0.3) + 1
+    }).toBe(true)
+    expect(wide).toBeLessThanOrEqual(200)
+  })
 })
 
 /** Switches the basemap through the operator menu. */
