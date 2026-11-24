@@ -35,6 +35,18 @@ describe('useMapLocationTarget', () => {
     reactActEnvironment.IS_REACT_ACT_ENVIRONMENT = undefined
   })
 
+  it('measures the map again before flying, so a panel that just docked beside it is allowed for [DON-368]', () => {
+    const harness = createMapHarness({ styleLoaded: true, styleLayers: [{ id: 'base-layer' }] })
+    renderHook(harness.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.05, -10.84, 'Edge device')
+    })
+
+    expect(harness.resize).toHaveBeenCalledOnce()
+    expect(harness.resize.mock.invocationCallOrder[0]).toBeLessThan(harness.flyTo.mock.invocationCallOrder[0] ?? 0)
+  })
+
   it('applies a repeated Go To after the prior target has expired [AUD-06]', () => {
     const harness = createMapHarness({
       styleLoaded: true,
@@ -390,6 +402,7 @@ function createMapHarness(input: {
   readonly addSource: ReturnType<typeof vi.fn>
   readonly emit: (event: MapEventName) => void
   readonly flyTo: ReturnType<typeof vi.fn>
+  readonly resize: ReturnType<typeof vi.fn>
   readonly jumpTo: ReturnType<typeof vi.fn>
   readonly map: maplibregl.Map
   readonly replaceStyle: (next: {
@@ -411,8 +424,9 @@ function createMapHarness(input: {
   })
   const flyTo = vi.fn()
   const jumpTo = vi.fn()
-  const container = document.createElement('div')
+  const resize = vi.fn()
   const map = {
+    resize,
     addLayer,
     addSource,
     flyTo,
@@ -420,7 +434,6 @@ function createMapHarness(input: {
     getCenter: () => ({ lng: -9.74, lat: 51.99 }),
     getBearing: () => 0,
     getPitch: () => 0,
-    getContainer: () => container,
     setStyle: vi.fn(),
     once: (event: MapEventName, listener: MapEventListener) => {
       const wrapped = () => { listeners.get(event)?.delete(wrapped); listener() }
@@ -454,6 +467,7 @@ function createMapHarness(input: {
     flyTo,
     jumpTo,
     map,
+    resize,
     replaceStyle: (next) => {
       styleLayers = [...next.styleLayers]
       styleLoaded = next.styleLoaded

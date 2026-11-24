@@ -175,6 +175,8 @@ async function lookbackPhase(ctx) {
     `Lookback history did not complete within 180 s of provider recovery: ${JSON.stringify(statuses)}.`)
   await delay(20_000)
   await app.shot('lookback-complete-map')
+  // The history rows leave Mission open; All devices is in People [DON-368].
+  await openWorkspacePanel(app.page, 'people')
   await app.page.getByTestId('open-devices-workspace').click()
   await delay(1500)
   const deviceList = await app.page.getByTestId('device-list-scroll').innerText()

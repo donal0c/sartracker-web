@@ -216,7 +216,12 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
         </p>
       ))}
       {membershipNotices.length > 0 ? (
-        <button className="sar-button px-2 py-1 text-xs" onClick={() => controller?.clearMembershipNotices()} type="button">
+        <button
+          className="sar-button px-2 py-1 text-xs"
+          data-testid="participant-membership-notices-ack"
+          onClick={() => controller?.clearMembershipNotices()}
+          type="button"
+        >
           {simplified ? 'Got it' : 'Acknowledge membership notices'}
         </button>
       ) : null}

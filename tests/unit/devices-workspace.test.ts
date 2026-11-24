@@ -353,7 +353,7 @@ describe('DevicesWorkspace', () => {
     expect(useDeviceWorkspaceStore.getState().docked).toBe(true)
     // Docked, as Review does: no modal backdrop over the map, and narrow.
     expect(dialog().getAttribute('aria-modal')).toBeNull()
-    expect(dialog().className).toContain('max-w-xl')
+    expect(dialog().className).toContain('max-w-md')
     expect(document.querySelector('[aria-label="Close workspace"]')).toBeNull()
 
     click('[data-testid="devices-full-width"]')

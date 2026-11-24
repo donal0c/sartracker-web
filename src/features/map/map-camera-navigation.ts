@@ -8,7 +8,7 @@ export type MapCameraSnapshot = {
 }
 
 type CameraMap = Pick<MapLibreMap, 'getCenter' | 'getZoom' | 'getBearing' | 'getPitch'>
-type NavigationMap = CameraMap & Pick<MapLibreMap, 'flyTo' | 'jumpTo' | 'on' | 'off'>
+type NavigationMap = CameraMap & Pick<MapLibreMap, 'flyTo' | 'jumpTo' | 'on' | 'off' | 'resize'>
 type NavigationIntent = {
   readonly camera: MapCameraSnapshot
   readonly isCurrent: () => boolean
@@ -28,49 +28,13 @@ export function getMapNavigationCamera(map: object): MapCameraSnapshot | undefin
   return intent?.isCurrent() ? intent.camera : undefined
 }
 
-/**
- * The camera centre that puts `target` `screenOffsetX` pixels right of the
- * map's middle at `zoom` and `bearing`. A window docked over the left of the
- * map uses it so the target lands in the part of the map still visible
- * (DON-368). The destination is computed rather than passed to MapLibre as an
- * offset, so a style change mid-flight restores the same shifted view.
- *
- * @param target [longitude, latitude] to show
- * @param zoom destination zoom
- * @param bearing map bearing in degrees
- * @param screenOffsetX pixels right of centre the target should appear; 0 centres it
- * @returns [longitude, latitude] for the camera centre
- */
-export function centerForScreenOffset(
-  target: [number, number],
-  zoom: number,
-  bearing: number,
-  screenOffsetX: number,
-): [number, number] {
-  if (!Number.isFinite(screenOffsetX) || screenOffsetX === 0) return target
-  const [longitude, latitude] = target
-  const worldSize = 512 * 2 ** zoom
-  const x = (longitude + 180) / 360
-  const y = (1 - Math.log(Math.tan(Math.PI / 4 + (latitude * Math.PI) / 360)) / Math.PI) / 2
-  // Screen right points along (cos θ, sin θ) in Web Mercator x/y at bearing θ.
-  const theta = (bearing * Math.PI) / 180
-  const centreX = x - (screenOffsetX / worldSize) * Math.cos(theta)
-  const centreY = y - (screenOffsetX / worldSize) * Math.sin(theta)
-  const centreLongitude = centreX * 360 - 180
-  const centreLatitude = (Math.atan(Math.sinh(Math.PI * (1 - 2 * centreY))) * 180) / Math.PI
-  return [centreLongitude, centreLatitude]
-}
-
 /** Keeps style changes on the requested destination until expiry or an operator gesture. */
 export function navigateMapToTarget(
   map: NavigationMap,
-  target: [number, number],
+  center: [number, number],
   isCurrent: () => boolean,
-  options: { readonly screenOffsetX?: number } = {},
 ): () => void {
-  const zoom = Math.max(map.getZoom(), 14)
-  const center = centerForScreenOffset(target, zoom, map.getBearing(), options.screenOffsetX ?? 0)
-  const intent = { camera: { ...captureMapCamera(map), center, zoom }, isCurrent }
+  const intent = { camera: { ...captureMapCamera(map), center, zoom: Math.max(map.getZoom(), 14) }, isCurrent }
   navigationIntents.set(map, intent)
   const release = () => {
     if (navigationIntents.get(map) === intent) navigationIntents.delete(map)
@@ -89,6 +53,9 @@ export function navigateMapToTarget(
   map.on('movestart', onMoveStart)
   map.on('style.load', onStyleLoad)
   map.on('remove', release)
+  // A panel may have docked beside the map in the same render (All devices after Zoom),
+  // so measure the canvas again before choosing where the target lands (DON-368).
+  map.resize()
   map.flyTo({ center, zoom: intent.camera.zoom, essential: true }, NAVIGATION_EVENT)
   return release
 }

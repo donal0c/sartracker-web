@@ -45,7 +45,7 @@ export function DevicesWorkspace() {
       labelledBy={DEVICES_WORKSPACE_TITLE_ID}
       open={open}
       onClose={closeWorkspace}
-      maxWidth={docked ? 'max-w-xl' : 'max-w-7xl'}
+      maxWidth={docked ? 'max-w-md' : 'max-w-7xl'}
       docked={docked}
     >
       <DevicesWorkspaceContent closeWorkspace={closeWorkspace} docked={docked} />
@@ -553,14 +553,14 @@ function DeviceRow(props: {
         type="button"
       >
         <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
-        {compact && props.row.hasFix && props.row.sourceDisplay !== 'Live' ? (
+        {compact && (!props.row.hasFix || props.row.sourceDisplay !== 'Live') ? (
           // The narrow list has no Source column, so a position that is not
-          // live says so in words beside the name, never by colour alone.
+          // live, or missing, says so in words beside the name, never by colour alone.
           <p
             className={`mt-1 truncate text-[11px] font-bold ${props.row.stale ? 'text-rose-300' : 'text-amber-300'}`}
             data-testid={`device-trust-${props.row.deviceId}`}
           >
-            {props.row.sourceDisplay}
+            {props.row.hasFix ? props.row.sourceDisplay : 'No position'}
           </p>
         ) : null}
         {props.row.stationaryAttention ? (
@@ -596,8 +596,8 @@ function DeviceRow(props: {
       />}
       <span
         className={`font-semibold uppercase ${
-          // A stale position must not read as reporting now in green [M-21].
-          props.row.status === 'online' && !props.row.stale
+          // A stale or missing position must not read as reporting now in green [M-21, DON-368].
+          props.row.status === 'online' && props.row.hasFix && !props.row.stale
             ? 'text-emerald-300'
             : props.row.status === 'offline'
               ? 'text-amber-300'

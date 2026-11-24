@@ -17,6 +17,7 @@ function createMap() {
     getStyle: () => ({ version: 8, sources: {}, layers: [{ id: 'previous', type: 'background' }] }),
     setStyle: vi.fn(),
     flyTo: vi.fn(),
+    resize: vi.fn(),
     jumpTo: vi.fn((next: typeof camera) => { camera = next }),
   })
   return { map, camera: () => camera }

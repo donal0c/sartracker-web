@@ -7,6 +7,8 @@ import { useWorkspacePanels } from './use-workspace-panels'
 
 /** CSS variable holding where the top bar and alarms end; docked overlays start there. */
 export const WORKSPACE_HEADER_BOTTOM_VAR = '--sar-workspace-header-bottom'
+/** Top of the side panel and map row; a docked panel sits in the row beside the map (DON-368). */
+export const WORKSPACE_ROW_TOP_VAR = '--sar-workspace-row-top'
 /** CSS variable holding the alarm's height over the map; map controls and cards start below it. */
 export const WORKSPACE_ALARM_HEIGHT_VAR = '--ws-alarm-height'
 /** CSS variable set only while the alarm shows: where it ends. Modal workspaces start there. */
@@ -57,6 +59,7 @@ export function SimplifiedWorkspace(props: {
     const publish = () => {
       const alarmBox = alarm.getBoundingClientRect()
       root.style.setProperty(WORKSPACE_HEADER_BOTTOM_VAR, `${Math.max(header.getBoundingClientRect().bottom, alarmBox.bottom)}px`)
+      root.style.setProperty(WORKSPACE_ROW_TOP_VAR, `${row.getBoundingClientRect().top}px`)
       row.style.setProperty(WORKSPACE_ALARM_HEIGHT_VAR, `${alarmBox.height}px`)
       // All devices, Settings and Diagnostics must never hide a TRACKING LOST or PAUSED alarm.
       if (alarmBox.height > 0) root.style.setProperty(WORKSPACE_ALARM_BOTTOM_VAR, `${alarmBox.bottom}px`)
@@ -71,6 +74,7 @@ export function SimplifiedWorkspace(props: {
       observer?.disconnect()
       window.removeEventListener('resize', publish)
       root.style.removeProperty(WORKSPACE_HEADER_BOTTOM_VAR)
+      root.style.removeProperty(WORKSPACE_ROW_TOP_VAR)
       root.style.removeProperty(WORKSPACE_ALARM_BOTTOM_VAR)
     }
   }, [])

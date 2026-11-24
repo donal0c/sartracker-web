@@ -6,7 +6,6 @@ import {
   type ReactNode,
 } from 'react'
 
-import { MAP_LEFT_OCCLUSION_ATTRIBUTE } from '../features/map/use-map-location-target'
 import { focusFirstElement, restoreFocus, trapTabKey } from '../lib/focus-management'
 import { isModalWorkspacePanel, isTopModalWorkspacePanel, modalWorkspaceOpenRefusal, registerOpenModal, reportModalWorkspaceRefusal } from '../lib/modal-workspace-registry'
 
@@ -98,6 +97,27 @@ export function WorkspaceOverlay({
     }
   }, [open])
 
+  // Docked, the panel takes real space: its width is published so the map
+  // row moves right by it, keeping the map, its coordinate readouts and Map
+  // Tools beside the panel rather than under it, and a zoom target in view
+  // (DON-368).
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!open || !docked || panel === null) {
+      return
+    }
+
+    const root = document.documentElement
+    const publish = () => root.style.setProperty(DOCKED_PANEL_WIDTH_VAR, `${panel.getBoundingClientRect().width}px`)
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(panel)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty(DOCKED_PANEL_WIDTH_VAR)
+    }
+  }, [docked, open])
+
   useLayoutEffect(() => {
     const panel = panelRef.current
     // Docked mode is non-modal: do not steal focus from the operator's current
@@ -159,16 +179,16 @@ export function WorkspaceOverlay({
   // outside the panel, so the active-mission rail and map underneath stay
   // clickable. There is no dismiss backdrop and no focus trap; Esc and the
   // header close button remain the close affordances. The docked panel is
-  // left-aligned over the map so it never covers the right-hand operational
-  // sidebar where Pause/Finish live (DON-176), and marks the map it covers so
-  // a zoom target lands beside it.
+  // left-aligned so it never covers the right-hand operational sidebar where
+  // Pause/Finish live (DON-176); the map row makes room for it.
   return (
     <div
       className={docked ? 'pointer-events-none fixed inset-x-0 bottom-0 z-30 flex' : 'fixed inset-x-0 bottom-0 z-50 flex'}
-      // Docked, it starts below the top bar and alarms (DON-176); as a modal it
+      // Docked, it starts at the top of the map row, beside the alarm that spans
+      // the map (DON-176, DON-368); as a modal it
       // starts below the tracking alarm so the alarm and Resume are never hidden.
       // Elsewhere the variables are unset and it fills the window.
-      style={{ top: docked ? 'var(--sar-workspace-header-bottom, 0px)' : 'var(--sar-workspace-alarm-bottom, 0px)' }}
+      style={{ top: docked ? 'var(--sar-workspace-row-top, var(--sar-workspace-header-bottom, 0px))' : 'var(--sar-workspace-alarm-bottom, 0px)' }}
     >
       {docked ? null : (
         // Backdrop — click to close
@@ -190,7 +210,6 @@ export function WorkspaceOverlay({
             : `sar-sidebar relative z-10 ml-auto flex h-full w-full ${maxWidth} flex-col`
         }
         data-map-interaction-boundary="true"
-        {...(docked ? { [MAP_LEFT_OCCLUSION_ATTRIBUTE]: 'true' } : {})}
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"
@@ -201,6 +220,9 @@ export function WorkspaceOverlay({
     </div>
   )
 }
+
+/** Width of an open docked workspace panel; the map row is padded by it (DON-368). */
+export const DOCKED_PANEL_WIDTH_VAR = '--sar-docked-panel-width'
 
 /** Marks regions that a modal workspace makes inert while it is open. */
 export const MODAL_BACKGROUND_ATTRIBUTE = 'data-modal-background'

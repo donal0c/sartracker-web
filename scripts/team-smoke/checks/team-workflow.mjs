@@ -272,7 +272,15 @@ export default [
       } else if (!finalNotices.some((notice) => backAgain.test(notice)) || finalNotices.some((notice) => stillTracking.test(notice))) {
         findings.push(`after the KMRT roster came back, the notices did not say nothing changed: "${finalNotices.join(' / ').slice(0, 200)}" (DON-300 item 8)`)
       }
-      await app.page.getByRole('button', { name: 'Acknowledge membership notices' }).click().catch(() => {})
+      // Clearing the notices is an operator step: if Got it cannot be pressed, say so [DON-368].
+      if (finalNotices.length > 0) {
+        try {
+          await t('participant-membership-notices-ack').click({ timeout: 5000 })
+          await t('participant-membership-notice').first().waitFor({ state: 'detached', timeout: 5000 })
+        } catch (error) {
+          findings.push(`Got it did not clear the membership notices: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`)
+        }
+      }
 
       // Replay must use the same offline Discovery map, not the online default [DON-314].
       if (mapPackage !== undefined) {

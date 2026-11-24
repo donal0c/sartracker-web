@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 
 import {
   formatIrishGridReference,
@@ -15,6 +15,9 @@ type CoordinateBarProps = {
   readonly longitude: number | null
 }
 
+/** Height of the coordinate bar; map chrome above it (scale, Map Tools) keeps clear of it. */
+export const COORDINATE_BAR_HEIGHT_VAR = '--sar-coordinate-bar-height'
+
 type CoordinateDisplayParts = {
   readonly wgs84Display: string
   readonly gridDisplay: string
@@ -24,6 +27,22 @@ type CoordinateDisplayParts = {
 export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   const openDialog = useCoordinateToolStore((state) => state.openDialog)
   const activeTarget = useMapTargetStore((state) => state.activeTarget)
+  const barRef = useRef<HTMLDivElement>(null)
+
+  // The readouts wrap onto more rows on a narrow map (DON-368), so publish the real height.
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    if (bar === null) return undefined
+    const root = document.documentElement
+    const publish = () => root.style.setProperty(COORDINATE_BAR_HEIGHT_VAR, `${bar.getBoundingClientRect().height}px`)
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(bar)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty(COORDINATE_BAR_HEIGHT_VAR)
+    }
+  }, [])
 
   const displays =
     latitude !== null && longitude !== null
@@ -39,16 +58,17 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
 
   return (
     <div
+      ref={barRef}
       className="sar-instrument-strip absolute inset-x-0 bottom-0 z-10 font-mono text-base font-semibold text-stone-100"
       data-testid="coordinate-display"
     >
-      <div className="grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch">
+      <div className="sar-coordinate-grid grid min-h-[72px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch">
         <span data-testid="coords-combined" className="sr-only">{content}</span>
 
-        <div aria-hidden="true" />
+        <div aria-hidden="true" className="sar-coordinate-spacer" />
 
         <div
-          className="flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4 max-[1320px]:gap-2 max-[1320px]:px-3"
+          className="sar-coordinate-readouts flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4 max-[1320px]:gap-2 max-[1320px]:px-3"
           data-testid="coordinate-readout-group"
         >
           <InstrumentCell label="DD" valueClassName="text-stone-100" testId="coords-wgs84">
@@ -56,7 +76,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
           </InstrumentCell>
           <span
             aria-hidden="true"
-            className="text-stone-500"
+            className="sar-coordinate-separator text-stone-500"
           >
             |
           </span>
@@ -69,7 +89,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
           </InstrumentCell>
           <span
             aria-hidden="true"
-            className="text-stone-500"
+            className="sar-coordinate-separator text-stone-500"
           >
             |
           </span>
@@ -78,7 +98,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
           </InstrumentCell>
         </div>
 
-        <div className="flex min-w-0 items-center justify-end gap-2 border-l border-[var(--sar-line)] px-4">
+        <div className="sar-coordinate-actions flex min-w-0 items-center justify-end gap-2 border-l border-[var(--sar-line)] px-4">
           {activeTarget !== null ? (
             <span
               className="min-w-0 truncate border border-amber-500/40 bg-amber-500/12 px-2 py-1 text-[12px] font-sans font-bold uppercase tracking-[0.16em] text-amber-100"
@@ -136,7 +156,7 @@ function InstrumentCell(props: {
       <p className="sar-meta-label sar-coordinate-label">
         {props.label}
       </p>
-      <p className={`mt-1 truncate text-[17px] font-black leading-none max-[1320px]:text-[14px] ${props.valueClassName ?? ''}`}>
+      <p className={`sar-coordinate-value mt-1 truncate text-[17px] font-black leading-none max-[1320px]:text-[14px] ${props.valueClassName ?? ''}`}>
         <span data-testid={props.testId}>{value}</span>
       </p>
     </div>

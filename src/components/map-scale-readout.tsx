@@ -66,7 +66,7 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
 
   return (
     <div
-      className="sar-map-scale pointer-events-none absolute bottom-[5.75rem] left-4 z-10"
+      className="sar-map-scale pointer-events-none absolute bottom-[calc(var(--sar-coordinate-bar-height,72px)+1.25rem)] left-4 z-10"
       data-testid="map-scale-readout"
       title="Current map scale"
     >
