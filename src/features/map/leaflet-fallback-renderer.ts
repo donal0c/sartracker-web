@@ -222,12 +222,13 @@ function renderMarkerOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackOve
     }
 
     L.circleMarker(toLatLng(feature.geometry.coordinates), {
-      radius: markerType === 'casualty' ? 10 : 8,
-      color: markerType === 'clue' ? '#111827' : '#FFFFFF',
+      // The casualty stands out on any basemap: larger, with a dark ring (DON-368).
+      radius: markerType === 'casualty' ? 14 : 8,
+      color: markerType === 'clue' || markerType === 'casualty' ? '#111827' : '#FFFFFF',
       fillColor: MARKER_COLORS[markerType],
       fillOpacity: 0.98,
       opacity: 1,
-      weight: 2.5,
+      weight: markerType === 'casualty' ? 3.5 : 2.5,
     })
       .bindTooltip(readStringProperty(properties, 'name') ?? markerType, {
         className: 'sar-leaflet-label',

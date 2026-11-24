@@ -17,8 +17,10 @@ export const BUNDLE_BUDGETS = [
     // grew: about 575 KB before (main 443 KB + shared 132 KB) and after.
     // Review stays in main on purpose (PR 76 loads it at startup so the first
     // press is never lost), so the main chunk gets its own bound.
+    // DON-368: the folded people controls and docked All devices added about
+    // 2 KB (601.5 KB); the bound moves to 610 KB rather than splitting Mission.
     pattern: /^index-.*\.js$/,
-    maxBytes: 600_000,
+    maxBytes: 610_000,
     reason: 'Main chunk holds first-paint JS, including Review loaded at startup (PR 76).',
   },
 ]
