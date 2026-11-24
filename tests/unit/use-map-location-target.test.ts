@@ -411,6 +411,7 @@ function createMapHarness(input: {
   })
   const flyTo = vi.fn()
   const jumpTo = vi.fn()
+  const container = document.createElement('div')
   const map = {
     addLayer,
     addSource,
@@ -419,6 +420,7 @@ function createMapHarness(input: {
     getCenter: () => ({ lng: -9.74, lat: 51.99 }),
     getBearing: () => 0,
     getPitch: () => 0,
+    getContainer: () => container,
     setStyle: vi.fn(),
     once: (event: MapEventName, listener: MapEventListener) => {
       const wrapped = () => { listeners.get(event)?.delete(wrapped); listener() }
