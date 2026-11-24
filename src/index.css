@@ -960,15 +960,15 @@ body {
 /* Rule 15 (DON-368): Map Tools starts below any warnings named on the map and stops above the coordinate bar, even with the alarm showing; its list scrolls inside. */
 /* Map Tools and the warnings both move down with the alarm, so the clearance below the warnings is alarm-free. */
 [data-panel-arrangement] .ws-map-area:has(.ws-exceptions) [data-testid='drawing-toolbar'] { --ws-map-tools-clearance: calc(var(--ws-exceptions-top) + var(--ws-exceptions-height, 0px) + 0.5rem); }
-/* DON-369: it also stops above whichever is taller of the bottom-left column (map scale, then any GPX notice)
-   and the map warnings at the bottom right, so Map Tools and the warnings each keep their own space.
+/* DON-369: it also stops above the map scale band, then above whichever is taller of any GPX notice
+   and the map warnings (which sit above the scale band, never beside it), so Map Tools and the warnings each keep their own space.
    It never shrinks below 9rem, so its header and collapse control stay reachable and its body scrolls;
    where that minimum meets a tall warning stack, open Map Tools (z-20) is drawn over the warnings (z-15), as before DON-369, so its controls work. */
-[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: max(9rem, calc(100% - max(var(--sar-map-tools-top), var(--ws-map-tools-clearance, 0px)) - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - max(var(--sar-map-scale-gap) + var(--sar-map-scale-height) + var(--sar-gpx-notice-reserve, 0px), 0.5rem + var(--sar-map-alerts-height, 0px)) - 0.5rem)); }
+[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: max(9rem, calc(100% - max(var(--sar-map-tools-top), var(--ws-map-tools-clearance, 0px)) - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - var(--sar-map-scale-gap) - var(--sar-map-scale-height) - max(var(--sar-gpx-notice-reserve, 0px), 0.5rem + var(--sar-map-alerts-height, 0px)) - 0.5rem)); }
 [data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-height: none; min-height: 0; flex: 0 1 auto; }
 /* DON-369 (Codex r3): the map warnings stop below the tracking shortcuts named on the map and scroll inside, so neither covers the other.
    They never shrink below 6rem, so a warning is always shown; on a map too short for both, the shortcuts (z-25) are drawn on top, as before DON-369. */
-[data-panel-arrangement] .ws-map-area:has(.ws-exceptions) [data-testid='map-degraded-alert'] { max-height: max(6rem, min(50%, calc(100% - var(--sar-coordinate-bar-height, 72px) - 0.5rem - var(--ws-exceptions-top) - var(--ws-alarm-height, 0px) - var(--ws-exceptions-height, 0px) - 0.5rem))); }
+[data-panel-arrangement] .ws-map-area:has(.ws-exceptions) [data-testid='map-degraded-alert'] { max-height: max(6rem, min(50%, calc(100% - var(--sar-coordinate-bar-height, 72px) - var(--sar-map-scale-gap) - var(--sar-map-scale-height) - 0.5rem - var(--ws-exceptions-top) - var(--ws-alarm-height, 0px) - var(--ws-exceptions-height, 0px) - 0.5rem))); }
 @container (max-width: 820px) {
   [data-panel-arrangement] [data-testid='drawing-toolbar'] { --sar-map-tools-top: 5.25rem; left: 1rem; max-width: calc(100% - 5rem); }
   [data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-width: 100%; }

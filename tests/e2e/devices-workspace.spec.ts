@@ -696,6 +696,48 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await expectMapWarningsOnTop(page, 'All devices docked at 1366 with Measure open')
   })
 
+  test('[Codex r5] keeps the whole map scale and every map warning uncovered on the narrow docked map', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('.ws-map-area')?.getBoundingClientRect().width ?? 0)))
+      .toBeLessThanOrEqual(560)
+    await expect.poll(() => page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      map?.jumpTo({ center: [-9, 52], zoom: 13.74, bearing: 0, pitch: 0 })
+      return map?.isMoving() === false ? 'still' : 'moving'
+    })).toBe('still')
+    await raiseTrackingOverlayWarning(page, ['tracking', 'measurements', 'drawings'])
+    await expect(page.getByTestId('map-degraded-alert').locator('[data-testid^="map-overlay-warning-layout-fixture"]')).toHaveCount(3)
+    await expect(page.getByTestId('map-scale-label')).toBeVisible()
+    // The bar, every tick label, the end label and its unit are drawn with nothing over them.
+    await expect.poll(() => page.evaluate(() => {
+      const scale = document.querySelector('[data-testid="map-scale-readout"]')
+      if (!(scale instanceof HTMLElement)) return 'missing'
+      const previous = scale.style.pointerEvents
+      scale.style.pointerEvents = 'auto'
+      for (const child of scale.querySelectorAll<HTMLElement>('*')) child.style.pointerEvents = 'auto'
+      try {
+        const parts = [...scale.querySelectorAll<HTMLElement>('[data-testid="map-scale-bar"], [data-testid="map-scale-tick"], [data-testid="map-scale-label"], [data-testid="map-scale-unit"]')]
+        if (parts.length < 4) return `only ${parts.length} scale parts`
+        for (const part of parts) {
+          const box = part.getBoundingClientRect()
+          const y = box.top + box.height / 2
+          for (const x of [box.left + 1, box.left + box.width / 2, box.right - 1]) {
+            const top = document.elementFromPoint(x, y)
+            if (top === null || !scale.contains(top)) {
+              return `${part.dataset.testid} "${part.textContent}" covered at ${Math.round(x)},${Math.round(y)} by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
+            }
+          }
+        }
+        return 'uncovered'
+      } finally {
+        scale.style.pointerEvents = previous
+        for (const child of scale.querySelectorAll<HTMLElement>('*')) child.style.pointerEvents = ''
+      }
+    }), { timeout: 10_000 }).toBe('uncovered')
+    await expectMapWarningsOnTop(page, 'full warning stack over the 480 px docked map')
+  })
+
   test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
@@ -1141,7 +1183,6 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
     await page.getByTestId('drawing-tool-measure').click()
     await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
     await expectMapToolsApartFromAlerts(page, 'Measure open')
-    await expectMapWarningsOnTop(page, 'Measure open')
 
     // Two map clicks in the strip of map right of Map Tools and above the warnings.
     const area = await page.locator('.ws-map-area').boundingBox()
@@ -1448,14 +1489,23 @@ async function raiseTrackingOverlayWarning(
   await expect(page.getByTestId('map-degraded-alert')).toBeVisible()
 }
 
-/** Codex r2 (DON-369): Map Tools and the map warnings each get their own space; neither is drawn over the other. */
+/** Codex r2 (DON-369): Map Tools and the map warnings each get their own space; only at Map Tools' 9rem floor may they meet, with Map Tools on top. */
 async function expectMapToolsApartFromAlerts(page: import('@playwright/test').Page, label: string): Promise<void> {
   await expect.poll(() => page.evaluate(() => {
     const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
     const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
     if (tools === undefined || alerts === undefined) return 'missing'
     const meets = tools.left < alerts.right && alerts.left < tools.right && tools.top < alerts.bottom && alerts.top < tools.bottom
-    return meets ? `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} meets warnings ${Math.round(alerts.top)}-${Math.round(alerts.bottom)}` : 'apart'
+    if (!meets) return 'apart'
+    // Codex r4/r5: on a map too short for both, Map Tools keeps its 9rem floor and is drawn over the warnings.
+    const left = Math.max(tools.left, alerts.left), right = Math.min(tools.right, alerts.right)
+    const top = Math.max(tools.top, alerts.top), bottom = Math.min(tools.bottom, alerts.bottom)
+    const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+    const toolbar = document.querySelector('[data-testid="drawing-toolbar"]')
+    const atFloor = Math.round(tools.height) <= 145
+    return atFloor && toolbar !== null && hit !== null && toolbar.contains(hit)
+      ? 'apart'
+      : `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} (${Math.round(tools.height)} px) meets warnings ${Math.round(alerts.top)}-${Math.round(alerts.bottom)}`
   }), { timeout: 10_000, message: label }).toBe('apart')
 }
 
