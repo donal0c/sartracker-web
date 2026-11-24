@@ -10,9 +10,11 @@ import {
 import { useParticipantStore } from '../features/participants/participant-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
+import type { ParticipantProvenance } from '../infrastructure/mission-store/tauri-mission-store'
 
 const COORDINATOR_ACTOR = 'Mission coordinator'
 const NO_EARLIER_HISTORY_STATUS = 'History: from when added; no earlier history requested'
+const NO_EARLIER_POSITIONS_PLAIN = 'Positions from when added; no earlier ones asked for'
 
 type ParticipantControlsSectionProps = {
   readonly phase: 'idle' | 'active' | 'paused' | 'recovery'
@@ -20,10 +22,16 @@ type ParticipantControlsSectionProps = {
   readonly lookbackRequested?: boolean
   /** Simplified workspace: plain words, with individual devices tucked behind the groups. */
   readonly variant?: 'standard' | 'simplified'
+  /**
+   * During a mission, which part to render: `warnings` (always on screen) or
+   * `admin` (the list and add form, folded behind "Change who's taking part").
+   * Omitted renders both together (DON-368).
+   */
+  readonly part?: 'warnings' | 'admin'
 }
 
 /** Renders explicit mission-start selection and append-only participant management. */
-export function ParticipantControlsSection({ phase, lookbackRequested = false, variant = 'standard' }: ParticipantControlsSectionProps) {
+export function ParticipantControlsSection({ phase, lookbackRequested = false, variant = 'standard', part }: ParticipantControlsSectionProps) {
   const simplified = variant === 'simplified'
   const selection = useParticipantSelectionViewModel()
   const controller = useParticipantStore((state) => state.controller)
@@ -177,12 +185,21 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
     )
   }
 
-  return (
-    <section className="sar-module space-y-3 p-3" data-testid="participant-management">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-amber-300">Participants</p>
-        <span className="font-mono text-[11px] text-stone-200">{envelope.activeDeviceCount} active devices</span>
-      </div>
+  const legacyRosters = participants.filter((participant) => participant.kind === 'group'
+    && participant.starting_member_device_ids_json == null && participant.backfill_scope_unknown
+    && !participant.backfill_scope_error)
+  const removedGroupHistory = participants.filter((participant) => participant.removed_at !== null
+    && (participant.backfill_scope_attested || participant.backfill_scope_unknown))
+  // A group whose earlier positions could not be worked out is a problem the
+  // operator must see, so in the simplified panel it sits above the fold. A
+  // removed group counts too: Finish still waits for its history, and its own
+  // line points to this warning.
+  const groupHistoryProblems = simplified
+    ? participants.filter((participant) => participant.kind === 'group' && Boolean(participant.backfill_scope_error))
+    : []
+
+  const warnings = (
+    <>
       {envelope.warning !== null ? (
         <p className="border border-rose-400/50 bg-rose-950/40 p-2 text-xs font-semibold text-rose-100" data-testid="participant-envelope-warning">
           {envelope.warning}
@@ -199,22 +216,44 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
         </p>
       ))}
       {membershipNotices.length > 0 ? (
-        <button className="sar-button px-2 py-1 text-xs" onClick={() => controller?.clearMembershipNotices()} type="button">
-          Acknowledge membership notices
+        <button
+          className="sar-button px-2 py-1 text-xs"
+          data-testid="participant-membership-notices-ack"
+          onClick={() => controller?.clearMembershipNotices()}
+          type="button"
+        >
+          {simplified ? 'Got it' : 'Acknowledge membership notices'}
         </button>
       ) : null}
-      {error !== null ? <p className="text-xs text-rose-300">{error}</p> : null}
-      {participants.filter((participant) => participant.kind === 'group'
-        && participant.starting_member_device_ids_json == null && participant.backfill_scope_unknown
-        && !participant.backfill_scope_error).map((participant) => (
+      {error !== null ? <p className="text-xs text-rose-300" data-testid="participant-error" role="alert">{error}</p> : null}
+      {groupHistoryProblems.map((participant) => (
+        <p className="sar-inline-alert p-2 text-xs text-amber-100" data-testid="participant-history-problem" key={participant.id}>
+          Earlier positions for {participant.removed_at === null ? '' : 'removed group '}{participant.team_name ?? participant.traccar_group_id ?? 'this group'} could not be loaded: {participant.backfill_scope_error}
+        </p>
+      ))}
+      {legacyRosters.map((participant) => (
         <LegacyRosterRecoveryForm key={participant.id} participant={participant} saving={saving}
           onConfirm={async (input) => controller?.resolveLegacyRoster(input) ?? null} />
       ))}
-      {participants.filter((participant) => participant.removed_at !== null
-        && (participant.backfill_scope_attested || participant.backfill_scope_unknown))
-        .map((participant) => <p className="text-xs" key={participant.id}>
-          Removed group {participant.team_name ?? participant.mission_team_id}: {formatGroupBackfillStatus(participant)}
+      {removedGroupHistory.map((participant) => <p className="text-xs" key={participant.id}>
+          Removed group {participant.team_name ?? participant.mission_team_id}: {simplified ? formatGroupEarlierPositionsPlain(participant) : formatGroupBackfillStatus(participant)}
         </p>)}
+    </>
+  )
+
+  if (part === 'warnings') {
+    const anyWarning = envelope.warning !== null || rosterError !== null || membershipNotices.length > 0
+      || error !== null || groupHistoryProblems.length > 0 || legacyRosters.length > 0 || removedGroupHistory.length > 0
+    return anyWarning ? <div className="space-y-2" data-testid="participant-warnings">{warnings}</div> : null
+  }
+
+  return (
+    <section className="sar-module space-y-3 p-3" data-testid="participant-management">
+      {simplified ? null : <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-amber-300">Participants</p>
+        <span className="font-mono text-[11px] text-stone-200">{envelope.activeDeviceCount} active devices</span>
+      </div>}
+      {part === 'admin' ? null : warnings}
 
       <div className="space-y-2" data-testid="participant-active-list">
         {activeParticipants.length === 0 ? (
@@ -233,13 +272,17 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                   : deviceLabel(participant.traccar_device_id, availableDevices)}
               </p>
               <p className="mt-1 text-[11px] text-stone-300">
-                {participant.kind} · {participant.provenance} · effective {formatTimestamp(participant.effective_from)}
+                {simplified
+                  ? `${participant.kind === 'group' ? 'Group' : 'One person'}${plainProvenance(participant.provenance)} · from ${formatTimestamp(participant.effective_from)}`
+                  : `${participant.kind} · ${participant.provenance} · effective ${formatTimestamp(participant.effective_from)}`}
               </p>
               {participant.kind === 'device' && participant.backfill_completed !== undefined ? (
                 <p className="mt-1 text-[11px] text-stone-300" data-testid="participant-backfill-status">
                   {participantRequestedEarlierHistory(participant)
-                    ? `History backfill: ${participant.backfill_completed === 1 ? 'complete' : 'pending / retrying'}`
-                    : NO_EARLIER_HISTORY_STATUS}
+                    ? simplified
+                      ? `Earlier positions: ${participant.backfill_completed === 1 ? 'loaded' : 'still loading'}`
+                      : `History backfill: ${participant.backfill_completed === 1 ? 'complete' : 'pending / retrying'}`
+                    : simplified ? NO_EARLIER_POSITIONS_PLAIN : NO_EARLIER_HISTORY_STATUS}
                 </p>
               ) : null}
               {participant.kind === 'group' &&
@@ -249,8 +292,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                   {participantRequestedEarlierHistory(participant) ||
                     participant.backfill_scope_unknown === true ||
                     participant.backfill_scope_error
-                    ? `History backfill: ${formatGroupBackfillStatus(participant)}`
-                    : NO_EARLIER_HISTORY_STATUS}
+                    ? simplified ? formatGroupEarlierPositionsPlain(participant) : `History backfill: ${formatGroupBackfillStatus(participant)}`
+                    : simplified ? NO_EARLIER_POSITIONS_PLAIN : NO_EARLIER_HISTORY_STATUS}
                 </p>
               ) : null}
             </div>
@@ -278,8 +321,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
           // Opening Add group re-reads the Traccar groups [DON-330].
           if (nextKind === 'group') void controller?.refreshCatalogue()
         }} value={addKind}>
-          <option value="device">Individual device</option>
-          <option value="group">Traccar group</option>
+          <option value="device">{simplified ? 'One person' : 'Individual device'}</option>
+          <option value="group">{simplified ? 'A group' : 'Traccar group'}</option>
         </select>
         {addKind === 'group' ? (
           <div className="sm:col-span-2">
@@ -298,7 +341,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
           })}
         </select>
         <fieldset className="space-y-1 text-[11px] text-stone-300 sm:col-span-2" data-testid="participant-history-start">
-          <legend className="font-semibold text-stone-200">History from (required)</legend>
+          <legend className="font-semibold text-stone-200">{simplified ? 'Show their positions from' : 'History from (required)'}</legend>
           <label className="flex items-center gap-2">
             <input checked={historyStart === 'mission-start'} data-testid="participant-history-start-mission" name="participant-history-start" onChange={() => chooseHistoryStart('mission-start')} type="radio" />
             Mission start{missionStartTime === null ? '' : ` (${formatTimestamp(missionStartTime)})`}
@@ -352,7 +395,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
           }}
           type="button"
         >
-          Add participant
+          {simplified ? 'Add' : 'Add participant'}
         </button>
       </div>
     </section>
@@ -418,6 +461,35 @@ function formatGroupBackfillStatus(participant: {
   return completed === total
     ? `complete for ${total}/${total} ${memberLabel}`
     : `pending / retrying for ${total - completed}/${total} ${memberLabel}`
+}
+
+/**
+ * How someone came to be on the mission, in plain words. A coordinator's own
+ * choice needs no note; anything an older version decided stays visible (DON-368).
+ */
+function plainProvenance(provenance: ParticipantProvenance): string {
+  if (provenance === 'grandfathered') return ' · carried over from an older version'
+  if (provenance === 'legacy_auto') return ' · added automatically by an older version'
+  return ''
+}
+
+/** The group history line in the simplified panel's plain words (DON-368). */
+function formatGroupEarlierPositionsPlain(participant: Parameters<typeof formatGroupBackfillStatus>[0]): string {
+  if (participant.backfill_scope_error) return 'Earlier positions: could not be loaded (see the warning above)'
+  if (participant.backfill_scope_unknown === true) {
+    return 'Earlier positions: who was in this group earlier is unknown; check before finishing'
+  }
+  const total = participant.backfill_member_count ?? 0
+  const completed = participant.backfill_completed_count ?? 0
+  // Where the member list came from stays on screen: it is provenance, not detail.
+  const source = participant.backfill_scope_attested === true
+    ? ' (members confirmed by a coordinator)'
+    : participant.backfill_scope_inferred === true
+    ? ' (members worked out from saved records)'
+    : ''
+  return completed === total
+    ? `Earlier positions: loaded for ${total} ${total === 1 ? 'person' : 'people'}${source}`
+    : `Earlier positions: loading for ${total - completed} of ${total} people${source}`
 }
 
 function ParticipantPickerList(props: {

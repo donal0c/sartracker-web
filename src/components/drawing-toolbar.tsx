@@ -70,7 +70,7 @@ export function DrawingToolbar() {
         </p>
       ) : null}
       {expanded ? (
-        <div className="max-h-[calc(100vh-12rem)] w-72 overflow-y-auto p-3 data-[panel-open=true]:w-[34rem]" data-panel-open={activePanel === null ? 'false' : 'true'}>
+        <div className="sar-map-tools-body max-h-[calc(100vh-12rem)] w-72 overflow-y-auto p-3 data-[panel-open=true]:w-[34rem]" data-panel-open={activePanel === null ? 'false' : 'true'}>
           <button
             aria-expanded="true"
             className="w-full text-left"
@@ -79,9 +79,9 @@ export function DrawingToolbar() {
             type="button"
           >
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Map Tools</p>
+              <p className="text-[12px] font-black uppercase tracking-[0.2em] text-amber-200">Map Tools</p>
               <p
-                className="mt-1 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300"
+                className="mt-1 font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-stone-300"
                 data-testid="drawing-toolbar-active-mode"
               >
                 {disabled ? 'Mission required' : activeDefinition?.label ?? 'Open'}
@@ -96,7 +96,7 @@ export function DrawingToolbar() {
 
                 return (
                   <button
-                    className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                    className={`min-h-14 border px-2 py-2 text-center text-[13px] uppercase tracking-[0.03em] transition ${
                       isActive
                         ? 'border-amber-300 bg-amber-300/22 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.4)]'
                         : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-amber-300 hover:bg-stone-800'
@@ -134,7 +134,7 @@ export function DrawingToolbar() {
                 )
               })}
               <button
-                className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                className={`min-h-14 border px-2 py-2 text-center text-[13px] uppercase tracking-[0.03em] transition ${
                   measurementMode === 'armed'
                     ? 'border-cyan-300 bg-cyan-300/22 text-cyan-50 shadow-[inset_0_0_0_1px_rgba(103,232,249,0.4)]'
                     : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-cyan-300 hover:bg-stone-800'
@@ -166,7 +166,7 @@ export function DrawingToolbar() {
                 <span className="block font-black">Measure</span>
               </button>
               <button
-                className={`min-h-14 border px-2 py-2 text-center text-[11px] uppercase tracking-[0.08em] transition ${
+                className={`min-h-14 border px-2 py-2 text-center text-[13px] uppercase tracking-[0.03em] transition ${
                   activePanel === 'marker_at_grid'
                     ? 'border-amber-300 bg-amber-300/22 text-amber-50 shadow-[inset_0_0_0_1px_rgba(244,183,74,0.4)]'
                     : 'border-stone-500 bg-[var(--sar-panel-raised)] text-stone-100 hover:border-amber-300 hover:bg-stone-800'
@@ -202,7 +202,7 @@ export function DrawingToolbar() {
               <MarkerAtGridPanel />
             ) : null}
           </div>
-          <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[10px] font-bold uppercase tracking-[0.1em] text-stone-300">
+          <p className="mt-3 border-t border-[var(--sar-line)] pt-2 text-[12px] font-bold uppercase tracking-[0.1em] text-stone-300">
             LPB {Object.values(LPB_CATEGORIES).length} categories
           </p>
         </div>
@@ -214,10 +214,10 @@ export function DrawingToolbar() {
           onClick={() => setExpanded(true)}
           type="button"
         >
-          <span className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-200">Map Tools</span>
+          <span className="text-[12px] font-black uppercase tracking-[0.2em] text-amber-200">Map Tools</span>
           {/* The team asked three times for "Select" to go; the chip shows only an active tool. */}
           {activeDefinition === undefined ? null : <span
-            className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-stone-50"
+            className="border border-stone-500 bg-[var(--sar-panel-raised)] px-3 py-1 text-[12px] font-bold uppercase tracking-[0.14em] text-stone-50"
             data-testid="drawing-toolbar-active-mode"
           >
             {activeDefinition.label}

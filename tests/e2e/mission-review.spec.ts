@@ -85,9 +85,9 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
 
     // The map remains clickable (marker dialog opens) while Review stays open.
-    // Click in the clear map band to the right of the docked panel and left of
-    // the operational sidebar.
-    await page.getByTestId('map-container').click({ position: { x: 720, y: 300 } })
+    // The docked panel moves the map aside (DON-368), so the whole map beside it
+    // is clear; click its middle.
+    await page.getByTestId('map-container').click()
     await expect(page.getByTestId('marker-dialog')).toBeVisible()
     await page.getByTestId('marker-dialog').getByRole('button', { name: 'Cancel' }).click()
 
@@ -131,7 +131,7 @@ test.describe('M15 mission review workspace', () => {
     await expect(page.getByTestId('mission-review-workspace')).toBeVisible()
     await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
 
-    await page.getByTestId('map-container').click({ position: { x: 720, y: 300 } })
+    await page.getByTestId('map-container').click()
     await expect(page.getByTestId('marker-dialog')).toBeVisible()
 
     await page.keyboard.press('Escape')

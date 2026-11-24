@@ -105,6 +105,12 @@ export async function openParticipantPickers(page: Page): Promise<void> {
       await fold.locator('summary').first().click()
     }
   }
+  // During a mission the list and add form fold behind "Change who's taking part" (DON-368).
+  const running = page.getByTestId('mission-participants-section')
+  if (await running.count() > 0 && await running.getAttribute('data-open') === 'false') {
+    await page.getByTestId('mission-participants-section-toggle').click()
+    await expect(running).toHaveAttribute('data-open', 'true')
+  }
 }
 
 /**

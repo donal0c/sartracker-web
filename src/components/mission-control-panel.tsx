@@ -286,14 +286,16 @@ export function MissionControlPanel({
           />
         ) : null}
 
-        <div className={`grid gap-3 sm:grid-cols-2 ${simplified ? (startScreen ? 'hidden' : 'sm:!grid-cols-1') : ''}`}>
+        {/* Simplified: mission time shows once, as Search time in the top bar (rule 3, DON-368).
+            The readouts stay in the page, never on screen, as Active Search already did. */}
+        <div className={simplified ? 'hidden' : 'grid gap-3 sm:grid-cols-2'} data-testid="mission-clocks">
           <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">{simplified ? 'Since start' : 'Elapsed'}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
             <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'} ${simplified ? 'hidden' : ''}`}>
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
             <p className={`mt-1 font-mono font-black leading-none text-emerald-400 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
@@ -419,14 +421,28 @@ export function MissionControlPanel({
         {/* During a mission Pause/Finish sit above the sections, so a section
             held open by a warning can never push them out of view [DON-300]. */}
         {phase !== 'idle' && !resumeChoice ? (
-          <MissionSectionDisclosure
-            collapsible={sectionsCollapsible}
-            section={participantSection}
-            testId="mission-participants-section"
-            title={simplified ? 'People on this mission' : 'Participants'}
-          >
-            <ParticipantControlsSection phase={phase} />
-          </MissionSectionDisclosure>
+          simplified ? (
+            // The full admin folds behind one button; warnings stay above it (DON-368).
+            <MissionSectionDisclosure
+              alwaysShown={<ParticipantControlsSection part="warnings" phase={phase} variant="simplified" />}
+              collapsible={sectionsCollapsible}
+              foldLabel="Change who's taking part"
+              section={participantSection}
+              testId="mission-participants-section"
+              title="People on this mission"
+            >
+              <ParticipantControlsSection part="admin" phase={phase} variant="simplified" />
+            </MissionSectionDisclosure>
+          ) : (
+            <MissionSectionDisclosure
+              collapsible={sectionsCollapsible}
+              section={participantSection}
+              testId="mission-participants-section"
+              title="Participants"
+            >
+              <ParticipantControlsSection phase={phase} />
+            </MissionSectionDisclosure>
+          )
         ) : null}
 
         {simplified && !startScreen ? (
@@ -442,6 +458,8 @@ export function MissionControlPanel({
         ) : null}
 
         {/* After Finish the start screen still lists the finished mission's outings, so one left open reads "Open" (DON-270). */}
+        {/* Rule 5 is only partly met (DON-368): Outings stay folded in More mission options
+            while a mission runs, until DON-100 replaces them with named days. */}
         {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified
           && (!startScreen || (phase === 'idle' && governanceMission !== null)) ? (
           <MoreMissionOptions open={outingNeedsAttention}>
@@ -702,7 +720,7 @@ export function MissionControlPanel({
             className="mt-2 text-[13px] leading-relaxed text-stone-300"
             id={MISSION_FINISH_DESCRIPTION_ID}
           >
-            This will stop timers and return to IDLE. Data remains saved.
+            This stops the mission clock and returns to the start screen. Everything recorded stays saved.
           </p>
           <OpenOutingFinishOffer />
           {actionError !== null ? <MissionActionError message={actionError} /> : null}

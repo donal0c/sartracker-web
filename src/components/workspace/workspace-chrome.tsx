@@ -74,9 +74,12 @@ function MissionSummary(props: { readonly attention: boolean; readonly onOpen: (
         title="Pause, finish, add people, review"
         type="button"
       >
-        <span className={`ws-mission-phase ws-phase-${phase}`} data-testid="ws-mission-phase">{phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Mission ▾ · Running' : phase === 'paused' ? 'Mission ▾ · PAUSED' : 'Mission ▾ · Needs resuming'}</span>
+        {/* The badge sits on the phase line so the top bar never grows a third line (DON-368). */}
+        <span className={`ws-mission-phase ws-phase-${phase}`} data-testid="ws-mission-phase">
+          {phase === 'idle' ? 'Start a mission ▾' : phase === 'active' ? 'Mission ▾ · Running' : phase === 'paused' ? 'Mission ▾ · PAUSED' : 'Mission ▾ · Needs resuming'}
+          {props.attention ? <span className="ws-badge ws-mission-badge" data-testid="ws-mission-attention" role="status">⚠ Needs attention</span> : null}
+        </span>
         <span className="ws-mission-name" data-testid="current-mission-name">{shownName}</span>
-        {props.attention ? <span className="ws-badge" data-testid="ws-mission-attention" role="status">⚠ Needs attention</span> : null}
       </button>
       {mission === null ? null : (
         <div className="ws-clocks" data-testid="ws-clocks">

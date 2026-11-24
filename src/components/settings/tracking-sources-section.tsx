@@ -50,7 +50,7 @@ export function TrackingSourcesSection(props: TrackingSourcesSectionProps) {
 
       <SettingsGroup
         title="Traccar connection"
-        description="Where live positions come from. Secrets stay out of mission SQLite and browser storage."
+        description="Where live positions come from. Passwords and keys are never saved with mission records."
         testId="settings-data-sources"
       >
         {validationContext?.hostedBrowserMode === true ? (

@@ -634,13 +634,15 @@ test.describe('M5 mission control workflows', () => {
     await page.getByTestId('mission-name-input').fill('Focus-Minimize Guard')
     await page.getByTestId('mission-start-btn').click()
 
-    await page.getByTestId('ws-full-map').click()
+    // Start leaves the map clear already (DON-368).
     await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await openMissionPanel(page)
     await expect(page.getByTestId('mission-pause-resume-btn')).toBeVisible()
     await expect(page.getByTestId('mission-finish-btn')).toBeVisible()
-    await expect(page.getByTestId('mission-elapsed')).toBeVisible()
+    // Mission time shows once, in the top bar (DON-368).
+    await expect(page.getByTestId('ws-search-time')).toBeVisible()
   })
 
 })

@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { ParticipantControlsSection } from '../../src/components/participant-controls-section'
+import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsked } from '../../scripts/team-smoke/lib/history-status.mjs'
 import { useMissionStore } from '../../src/features/mission/mission-store'
 import type { ParticipantRuntimeController } from '../../src/features/participants/start-participant-runtime'
 import { useParticipantStore } from '../../src/features/participants/participant-store'
@@ -169,6 +170,134 @@ describe('ParticipantControlsSection [DON-271]', () => {
     it('shows no lookback notice when the mission starts now', () => {
       render(React.createElement(ParticipantControlsSection, { phase: 'idle', lookbackRequested: false }))
       expect(document.querySelector('[data-testid="participant-lookback-notice"]')).toBeNull()
+    })
+  })
+
+  describe('simplified running panel: warnings above the fold, changes inside it [DON-368]', () => {
+    const group = {
+      id: 'hill', mission_id: 'mission-1', kind: 'group' as const, traccar_device_id: null, mission_team_id: 'team',
+      traccar_group_id: '101', team_name: 'Hill Team', provenance: 'explicit' as const,
+      effective_from: '2026-11-24T05:37:16.000Z', added_at: '2026-11-24T07:37:16.000Z', added_by: 'Mission coordinator',
+      removed_at: null, removed_by: null, backfill_member_count: 6, backfill_completed_count: 0,
+      backfill_scope_unknown: false, starting_member_device_ids_json: '[]',
+    }
+
+    it('shows every warning, in plain words, and none of the admin form', () => {
+      useParticipantStore.setState({
+        participants: [{ ...group, backfill_scope_error: 'Group roster could not be read.' }],
+        envelope: { activeDeviceCount: 6, warning: 'Tracking scope is wider than this mission.' } as never,
+        membershipNotices: ['6 devices in Hill Team are missing from the tracking server.'],
+        rosterError: 'Group membership could not be recorded: disk busy',
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      const text = document.body.textContent ?? ''
+      expect(text).toContain('Tracking scope is wider than this mission.')
+      expect(text).toContain('missing from the tracking server')
+      expect(text).toContain('disk busy')
+      expect(text).toContain('Earlier positions for Hill Team could not be loaded: Group roster could not be read.')
+      expect(document.querySelector('[data-testid="participant-add-btn"]')).toBeNull()
+      expect(document.querySelector('[data-testid="participant-active-list"]')).toBeNull()
+    })
+
+    it('renders nothing when there is nothing to warn about', () => {
+      useParticipantStore.setState({ participants: [group] })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      expect(host?.textContent).toBe('')
+    })
+
+    it('lists people with Remove and the add form in plain words, without repeating the warnings', () => {
+      useParticipantStore.setState({
+        participants: [group],
+        envelope: { activeDeviceCount: 6, warning: 'Tracking scope is wider than this mission.' } as never,
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'admin' }))
+      const management = document.querySelector('[data-testid="participant-management"]')?.textContent ?? ''
+      expect(management).toContain('Hill Team')
+      expect(management).toContain('Remove')
+      expect(document.querySelector('[data-testid="participant-add-btn"]')).not.toBeNull()
+      expect(management).not.toContain('Tracking scope is wider')
+      expect(management).not.toMatch(/explicit|backfill|effective|Traccar group|Individual device/)
+      expect(document.querySelector('[data-testid="participant-backfill-status"]')?.textContent)
+        .toContain('Earlier positions: loading for 6 of 6 people')
+    })
+
+    it('says in plain words when an older version, not a coordinator, put someone on the mission', () => {
+      useParticipantStore.setState({ participants: [
+        { ...group, provenance: 'grandfathered' as const },
+        { ...group, id: 'auto', team_name: 'Auto Team', provenance: 'legacy_auto' as const },
+      ] as never })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'admin' }))
+      const list = document.querySelector('[data-testid="participant-active-list"]')?.textContent ?? ''
+      expect(list).toContain('Group · carried over from an older version · from')
+      expect(list).toContain('Group · added automatically by an older version · from')
+    })
+
+    it('keeps where a group\'s member list came from on screen, also for a removed group', () => {
+      useParticipantStore.setState({ participants: [
+        { ...group, backfill_scope_inferred: true, backfill_completed_count: 6 },
+        { ...group, id: 'old', team_name: 'Old Team', removed_at: '2026-11-24T08:00:00.000Z', removed_by: 'Coordinator',
+          backfill_scope_attested: true, backfill_completed_count: 2 },
+      ] as never })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'admin' }))
+      expect(document.querySelector('[data-testid="participant-backfill-status"]')?.textContent)
+        .toContain('loaded for 6 people (members worked out from saved records)')
+      act(() => root?.unmount())
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      expect(document.querySelector('[data-testid="participant-warnings"]')?.textContent)
+        .toContain('Removed group Old Team: Earlier positions: loading for 4 of 6 people (members confirmed by a coordinator)')
+    })
+
+    it('shows why a removed group\'s earlier positions could not load, not only a pointer to it', () => {
+      useParticipantStore.setState({ participants: [
+        { ...group, id: 'old', team_name: 'Old Team', removed_at: '2026-11-24T08:00:00.000Z', removed_by: 'Coordinator',
+          backfill_scope_unknown: true, backfill_scope_error: 'Stored roster attestation is invalid.' },
+      ] as never })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      const warnings = document.querySelector('[data-testid="participant-warnings"]')?.textContent ?? ''
+      expect(warnings).toContain('Earlier positions for removed group Old Team could not be loaded: Stored roster attestation is invalid.')
+      expect(warnings).toContain('Removed group Old Team: Earlier positions: could not be loaded (see the warning above)')
+    })
+  })
+
+  describe('release smoke reads the history lines the operator sees [DON-368]', () => {
+    const base = {
+      mission_id: 'mission-1', mission_team_id: null, provenance: 'explicit' as const,
+      added_by: 'Mission coordinator', removed_at: null, removed_by: null,
+    }
+    const earlier = { effective_from: '2026-11-24T05:00:00.000Z', added_at: '2026-11-24T07:00:00.000Z' }
+    const now = { effective_from: '2026-11-24T07:00:00.000Z', added_at: '2026-11-24T07:00:00.000Z' }
+    const participants = [
+      { ...base, ...earlier, id: 'loaded', kind: 'device', traccar_device_id: '1', backfill_completed: 1 },
+      { ...base, ...earlier, id: 'loading', kind: 'device', traccar_device_id: '2', backfill_completed: 0 },
+      { ...base, ...now, id: 'none', kind: 'device', traccar_device_id: '3', backfill_completed: 1 },
+      { ...base, ...earlier, id: 'group-loading', kind: 'group', traccar_device_id: null, traccar_group_id: '9',
+        team_name: 'Hill Team', backfill_member_count: 3, backfill_completed_count: 1, backfill_scope_unknown: false },
+      { ...base, ...earlier, id: 'group-loaded', kind: 'group', traccar_device_id: null, traccar_group_id: '8',
+        team_name: 'Lake Team', backfill_member_count: 2, backfill_completed_count: 2, backfill_scope_unknown: false },
+    ]
+
+    for (const variant of ['simplified', 'standard'] as const) {
+      it(`classifies every ${variant} status line the smoke waits on`, () => {
+        useParticipantStore.setState({ participants: participants as never })
+        render(React.createElement(ParticipantControlsSection, variant === 'simplified'
+          ? { phase: 'active', variant: 'simplified', part: 'admin' }
+          : { phase: 'active' }))
+        const statuses = [...document.querySelectorAll('[data-testid="participant-backfill-status"]')]
+          .map((element) => element.textContent ?? '')
+        expect(statuses).toHaveLength(5)
+        const [loaded, loading, none, groupLoading, groupLoaded] = statuses
+        expect([loaded, groupLoaded].every(historyLoaded)).toBe(true)
+        expect([loading, groupLoading].every(historyStillLoading)).toBe(true)
+        expect([loading, groupLoading].some(historyLoaded)).toBe(false)
+        expect(noEarlierHistoryAsked(none)).toBe(true)
+        expect(historyLoaded(none)).toBe(false)
+        expect(statuses.filter(historySettled)).toEqual([loaded, none, groupLoaded])
+      })
+    }
+
+    it('never reads a group that could not load as loaded', () => {
+      expect(historyLoaded('Earlier positions: could not be loaded (see the warning above)')).toBe(false)
+      expect(historySettled('Earlier positions: who was in this group earlier is unknown; check before finishing')).toBe(false)
     })
   })
 

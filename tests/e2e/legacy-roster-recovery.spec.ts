@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from './helpers/mission-sections'
 import { openMissionPanel } from './helpers/workspace-panels'
 
 for (const resolution of ['attested-empty', 'supplied-members'] as const) {
@@ -22,7 +23,7 @@ for (const resolution of ['attested-empty', 'supplied-members'] as const) {
     await page.getByTestId('start-screen-resume-btn').click()
     const form = page.getByTestId('legacy-roster-recovery')
     await expect(form).toContainText('removed group')
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await expect(form.getByTestId('legacy-roster-confirm')).toBeDisabled()
     await form.getByLabel('Coordinator name').fill('Coordinator Jane')
     await form.getByLabel('Recovery reason and evidence consulted').fill('Checked incident roster with team lead')
@@ -33,7 +34,8 @@ for (const resolution of ['attested-empty', 'supplied-members'] as const) {
     await form.screenshot({ path: test.info().outputPath(`attestation-${resolution}.png`) })
     await form.getByTestId('legacy-roster-confirm').click()
     await expect(form).toHaveCount(0)
-    await expect(page.getByTestId('participant-management')).toContainText('coordinator-attested group members')
+    // Provenance stays on screen in plain words, outside the fold (DON-368).
+    await expect(page.getByTestId('participant-warnings')).toContainText('members confirmed by a coordinator')
     await page.evaluate(() => {
       const state = window.__SARTRACKER_BROWSER_HARNESS__!.readState()
       if (state.missionParticipants[0]!.starting_member_device_ids_json !== null) throw new Error('Original roster overwritten')
@@ -41,7 +43,7 @@ for (const resolution of ['attested-empty', 'supplied-members'] as const) {
       if (state.missionEvents.filter((event) => event.event_type === 'participant_roster_attested').length !== 1) throw new Error('Missing audit')
     })
     if (resolution === 'supplied-members') {
-      await openMissionPanel(page)
+      await openMissionSections(page, ['participants'])
       await page.getByTestId('mission-finish-btn').click()
       await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish', exact: true }).click()
       await expect(page.getByTestId('mission-control')).toContainText('backfill')
@@ -59,7 +61,7 @@ for (const resolution of ['attested-empty', 'supplied-members'] as const) {
         await useParticipantStore.getState().controller.refreshMission(state.missions[0]!.id)
       })
     }
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish', exact: true }).click()
     await expect.poll(() => page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().missions[0]!.status)).toBe('finished')

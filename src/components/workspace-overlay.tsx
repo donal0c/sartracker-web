@@ -50,6 +50,7 @@ export function WorkspaceOverlay({
   const returnFocusRef = useRef<Element | null>(null)
   const onCloseRef = useRef(onClose)
   const refusedRef = useRef(false)
+  const dockKeyRef = useRef<object>({})
   useLayoutEffect(() => { onCloseRef.current = onClose })
 
   useLayoutEffect(() => {
@@ -69,7 +70,6 @@ export function WorkspaceOverlay({
       return
     }
 
-    returnFocusRef.current = document.activeElement
     // A modal makes the screen behind it inert. In the new layout it starts below
     // the tracking alarm, so the uncovered top bar and side panel must not take
     // presses or focus; the alarm itself (Resume) stays live.
@@ -78,11 +78,56 @@ export function WorkspaceOverlay({
     return () => {
       releaseBackground?.()
       unregister?.()
+    }
+  }, [docked, labelledBy, open])
+
+  // Focus goes back to the opener only when the workspace closes, not when it
+  // switches between full width and docked (DON-368): Zoom keeps its focus.
+  // Declared after the effect above so its cleanup runs after the background
+  // is released, and so it sees whether that open was refused.
+  useLayoutEffect(() => {
+    if (!open || refusedRef.current) {
+      return
+    }
+
+    returnFocusRef.current = document.activeElement
+    return () => {
       const returnTarget = returnFocusRef.current
       returnFocusRef.current = null
       restoreFocus(returnTarget)
     }
-  }, [docked, labelledBy, open])
+  }, [open])
+
+  // Docked, the panel takes real space: its width is published so the map
+  // row moves right by it, keeping the map, its coordinate readouts and Map
+  // Tools beside the panel rather than under it, and a zoom target in view
+  // (DON-368).
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!open || !docked || panel === null) {
+      return
+    }
+
+    const key = dockKeyRef.current
+    const outer = panel.parentElement
+    // The dock opened last is drawn on top and owns Escape (DON-368).
+    dockedPanelOrder.push(key)
+    if (outer !== null) outer.style.zIndex = String(DOCKED_Z_INDEX + dockedPanelOrder.length - 1)
+    const publish = () => {
+      dockedPanelWidths.set(key, panel.getBoundingClientRect().width)
+      publishDockedPanelWidth()
+    }
+    publish()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
+    observer?.observe(panel)
+    return () => {
+      observer?.disconnect()
+      dockedPanelWidths.delete(key)
+      dockedPanelOrder.splice(dockedPanelOrder.indexOf(key), 1)
+      outer?.style.removeProperty('z-index')
+      publishDockedPanelWidth()
+    }
+  }, [docked, open])
 
   useLayoutEffect(() => {
     const panel = panelRef.current
@@ -111,13 +156,18 @@ export function WorkspaceOverlay({
       if (hasTopLayerAboveWorkspace(panelRef.current)) {
         return
       }
+      // Review and All devices can both be docked: one Escape closes only the
+      // one opened last, not both (DON-368).
+      if (docked && dockedPanelOrder.at(-1) !== dockKeyRef.current) {
+        return
+      }
 
       event.preventDefault()
       onClose()
     }
     document.addEventListener('keydown', onDocumentKeyDown)
     return () => document.removeEventListener('keydown', onDocumentKeyDown)
-  }, [onClose, open])
+  }, [docked, onClose, open])
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     if (event.key === 'Escape') {
@@ -139,70 +189,97 @@ export function WorkspaceOverlay({
     return null
   }
 
-  // Docked mode: the container must not capture pointer events outside the
-  // panel, so the active-mission rail and map underneath stay clickable. There
-  // is no dismiss backdrop and no focus trap; Esc and the header close button
-  // remain the close affordances.
-  if (docked) {
-    return (
-      <div
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex"
-        // In the new layout this starts below the top bar and alarms (DON-176);
-        // elsewhere the variable is unset and the panel fills the height.
-        style={{ top: 'var(--sar-workspace-header-bottom, 0px)' }}
-      >
-        {/*
-          Docked panel is left-aligned over the map so it never covers the
-          right-hand operational sidebar where Pause/Finish live (DON-176). A
-          fixed, modest width keeps a usable map band clear to its right. It
-          opens at the left edge.
-        */}
-        <div
-          aria-labelledby={labelledBy}
-          className={`sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl`}
-          data-map-interaction-boundary="true"
-          onKeyDown={handleKeyDown}
-          ref={panelRef}
-          role="dialog"
-          tabIndex={-1}
-        >
-          {children}
-        </div>
-      </div>
-    )
-  }
-
+  // One element tree for both modes, so switching between full width and
+  // docked keeps the content mounted with its filters, search and focus
+  // (DON-368). Docked mode: the container does not capture pointer events
+  // outside the panel, so the active-mission rail and map underneath stay
+  // clickable. There is no dismiss backdrop and no focus trap; Esc and the
+  // header close button remain the close affordances. The docked panel is
+  // left-aligned so it never covers the right-hand operational sidebar where
+  // Pause/Finish live (DON-176); the map row makes room for it.
   return (
     <div
-      className="fixed inset-x-0 bottom-0 z-50 flex"
-      // In the new layout, while the tracking alarm shows, the modal starts below
-      // it so the alarm and Resume are never hidden; otherwise it fills the window.
-      style={{ top: 'var(--sar-workspace-alarm-bottom, 0px)' }}
+      className={docked ? 'pointer-events-none fixed inset-x-0 bottom-0 z-30 flex' : 'fixed inset-x-0 bottom-0 z-50 flex'}
+      // Docked, it starts at the top of the map row, beside the alarm that spans
+      // the map (DON-176, DON-368); as a modal it
+      // starts below the tracking alarm so the alarm and Resume are never hidden.
+      // Elsewhere the variables are unset and it fills the window.
+      style={{ top: docked ? 'var(--sar-workspace-row-top, var(--sar-workspace-header-bottom, 0px))' : 'var(--sar-workspace-alarm-bottom, 0px)' }}
     >
-      {/* Backdrop — click to close */}
-      <button
-        aria-label="Close workspace"
-        className="absolute inset-0 bg-stone-950/82"
-        onClick={onClose}
-        tabIndex={-1}
-        type="button"
-      />
+      {docked ? null : (
+        // Backdrop — click to close
+        <button
+          aria-label="Close workspace"
+          className="absolute inset-0 bg-stone-950/82"
+          onClick={onClose}
+          tabIndex={-1}
+          type="button"
+        />
+      )}
 
-      {/* Sliding panel */}
       <div
         aria-labelledby={labelledBy}
-        aria-modal="true"
-        className={`sar-sidebar relative z-10 ml-auto flex h-full w-full ${maxWidth} flex-col`}
+        aria-modal={docked ? undefined : 'true'}
+        className={
+          docked
+            ? `sar-sidebar pointer-events-auto mr-auto flex h-full w-full ${maxWidth} flex-col border-r border-[var(--sar-line)] shadow-2xl`
+            : `sar-sidebar relative z-10 ml-auto flex h-full w-full ${maxWidth} flex-col`
+        }
         data-map-interaction-boundary="true"
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"
+        style={docked ? { maxWidth: dockedPanelMaxWidth(maxWidth) } : undefined}
         tabIndex={-1}
       >
         {children}
       </div>
     </div>
   )
+}
+
+/** Narrowest map a docked panel may leave beside itself and the side panel (DON-368). */
+export const MIN_DOCKED_MAP_WIDTH = '30rem'
+/** Narrowest a docked panel gets while making room for that map (DON-368). */
+export const MIN_DOCKED_PANEL_WIDTH = '20rem'
+const DOCKED_PANEL_WIDTHS: Readonly<Record<string, string>> = { 'max-w-md': '28rem', 'max-w-xl': '36rem' }
+
+/**
+ * A docked panel narrows before the map gets narrower than
+ * {@link MIN_DOCKED_MAP_WIDTH}, so the map, Map Tools and the alarm action stay
+ * usable beside it and the side panel (DON-368).
+ */
+function dockedPanelMaxWidth(maxWidthClass: string): string {
+  const preferred = DOCKED_PANEL_WIDTHS[maxWidthClass]
+  if (preferred === undefined) {
+    throw new Error(`Docked workspace width "${maxWidthClass}" has no known size; add it to DOCKED_PANEL_WIDTHS.`)
+  }
+  return `max(${MIN_DOCKED_PANEL_WIDTH}, min(${preferred}, calc(100vw - var(--sar-workspace-side-width, 0px) - ${MIN_DOCKED_MAP_WIDTH})))`
+}
+
+/** Width of an open docked workspace panel; the map row is padded by it (DON-368). */
+export const DOCKED_PANEL_WIDTH_VAR = '--sar-docked-panel-width'
+
+/**
+ * Widths of every docked panel still open. Review and All devices can both be
+ * docked, one over the other on the left, so the map row makes room for the
+ * widest one still open; closing one never hands the map back under another
+ * (DON-368).
+ */
+const dockedPanelWidths = new Map<object, number>()
+/** Open docked panels, oldest first; the last one is on top and owns Escape. */
+const dockedPanelOrder: object[] = []
+/** Matches the docked container's z-30 class; later docks stack above it. */
+const DOCKED_Z_INDEX = 30
+
+/** Publishes the widest open docked panel, or clears the space when none is open. */
+function publishDockedPanelWidth(): void {
+  const root = document.documentElement
+  if (dockedPanelWidths.size === 0) {
+    root.style.removeProperty(DOCKED_PANEL_WIDTH_VAR)
+    return
+  }
+  root.style.setProperty(DOCKED_PANEL_WIDTH_VAR, `${Math.max(...dockedPanelWidths.values())}px`)
 }
 
 /** Marks regions that a modal workspace makes inert while it is open. */
@@ -261,7 +338,7 @@ function hasTopLayerAboveWorkspace(panel: HTMLElement | null): boolean {
 type WorkspaceHeaderProps = {
   /** Stable id used by the parent dialog's aria-labelledby. */
   readonly titleId: string
-  /** Small uppercase subtitle (e.g. "Diagnostics Workspace"). */
+  /** Small uppercase subtitle (e.g. "Diagnostics"). */
   readonly subtitle: string
   /** Large heading text (e.g. "Operational Diagnostics"). */
   readonly title: string

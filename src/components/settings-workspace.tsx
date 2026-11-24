@@ -155,7 +155,7 @@ export function SettingsWorkspace({ open, onClose, focusTarget = null }: Setting
         maxWidth="max-w-5xl"
       >
         <WorkspaceHeader
-          subtitle="Settings Workspace"
+          subtitle="Settings"
           titleId={SETTINGS_WORKSPACE_TITLE_ID}
           title="Operational Settings"
           onClose={handleRequestClose}

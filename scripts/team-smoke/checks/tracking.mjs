@@ -22,6 +22,7 @@ import {
   addParticipantAfterStart, bodyText, closeWorkspace, connectProvider, missionPhase, openMissionSection, outageWarning,
   resumeIfPrompted, startMission, startMissionWithLookback, togglePause, trackingStatus as readTrackingStatus,
 } from '../lib/operator.mjs'
+import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsked } from '../lib/history-status.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { openMissionReview, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { missionFixes } from '../lib/store.mjs'
@@ -159,7 +160,7 @@ async function lookbackPhase(ctx) {
   await delay(20_000)
   const failingStatuses = await participantHistoryStatuses(app.page)
   await app.shot('lookback-history-failing')
-  expectProduct(failingStatuses.length === 3 && failingStatuses.every((status) => /pending|retrying/i.test(status)),
+  expectProduct(failingStatuses.length === 3 && failingStatuses.every(historyStillLoading),
     `History outage was not shown as incomplete: ${JSON.stringify(failingStatuses)}.`)
 
   mock.setHistoryFailing(false)
@@ -167,13 +168,15 @@ async function lookbackPhase(ctx) {
   let statuses = failingStatuses
   while (Date.now() < completeBy) {
     statuses = await participantHistoryStatuses(app.page)
-    if (statuses.length === 3 && statuses.every((status) => /complete/i.test(status))) break
+    if (statuses.length === 3 && statuses.every(historyLoaded)) break
     await delay(5000)
   }
-  expectProduct(statuses.every((status) => /complete/i.test(status)),
+  expectProduct(statuses.every(historyLoaded),
     `Lookback history did not complete within 180 s of provider recovery: ${JSON.stringify(statuses)}.`)
   await delay(20_000)
   await app.shot('lookback-complete-map')
+  // The history rows leave Mission open; All devices is in People [DON-368].
+  await openWorkspacePanel(app.page, 'people')
   await app.page.getByTestId('open-devices-workspace').click()
   await delay(1500)
   const deviceList = await app.page.getByTestId('device-list-scroll').innerText()
@@ -206,7 +209,7 @@ async function lookbackPhase(ctx) {
   expectProduct(liveAfterRestart > 0, 'Walker Juliet recorded no live fixes after restart.')
   verifyLookbackFixes(mock, after, { missionStart, until: Date.now(), expectedDevices: [11, 12, 14], excludedDevices: [13], tailToleranceMs: 90_000 })
 
-  return `${LOOKBACK_HOURS} h lookback (start ${new Date(missionStart).toISOString()}): during a history outage all 3 participant rows showed pending; `
+  return `${LOOKBACK_HOURS} h lookback (start ${new Date(missionStart).toISOString()}): during a history outage all 3 participant rows showed still loading; `
     + `after recovery ${before.length} stored fixes equal the provider, none before start (1 s boundary band), unselected device absent, `
     + `pre-selected and late "From mission start" devices complete ${JSON.stringify(perDevice)}; `
     + `shown in the device list; ${after.length - before.length} further fixes after restart with all earlier rows preserved.`
@@ -244,10 +247,10 @@ async function markerAtNewestFix(app, mock, profile, name) {
   let statuses = []
   while (Date.now() < refreshedBy) {
     statuses = await participantHistoryStatuses(app.page)
-    if (statuses.length > 0 && statuses.every((status) => /complete|no earlier history requested/i.test(status))) break
+    if (statuses.length > 0 && statuses.every(historySettled)) break
     await delay(5000)
   }
-  expectProduct(statuses.every((status) => /complete|no earlier history requested/i.test(status)),
+  expectProduct(statuses.every(historySettled),
     `History refresh for the road-speed vehicle did not complete within 120 s: ${JSON.stringify(statuses)}.`)
   // Let several polls pass so the trail and the marker have both moved on.
   await delay(75_000)

@@ -57,7 +57,7 @@ test('tracking health stays in the top bar whichever panel is open, and Review o
 
   // Was: the minimised mission strip's Review and Restore buttons.
   await openMissionReview(page)
-  await expect(page.getByRole('heading', { name: 'Audit Workspace', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review and replay', exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
   await openMissionPanel(page)
   await expect(page.getByTestId('mission-control')).toBeVisible()

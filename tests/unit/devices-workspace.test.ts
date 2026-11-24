@@ -165,7 +165,8 @@ describe('DevicesWorkspace', () => {
     await waitForElement('[data-testid="devices-workspace"]')
 
     const inspectorText = getText('[data-testid="devices-inspector"]')
-    expect(inspectorText).toContain('Fix Time')
+    expect(inspectorText).toContain('Position Time')
+    expect(inspectorText).not.toContain('Fix Time')
     expect(inspectorText).toContain('GPS Accuracy')
     expect(inspectorText).toContain('7.5 m')
   })
@@ -334,6 +335,56 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="breadcrumb-mode-description"]')).toBe(
       'The line shows the whole trail of each device.',
     )
+  })
+
+  it('docks narrow on Zoom so the device is not centred under the window, and goes back to full width on request [DON-368]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+    const dialog = () => getElement('[role="dialog"][aria-labelledby="devices-workspace-title"]')
+    expect(dialog().getAttribute('aria-modal')).toBe('true')
+
+    click('[data-testid="device-zoom-alpha"]')
+
+    expect(useMapTargetStore.getState().activeTarget).not.toBeNull()
+    expect(useDeviceWorkspaceStore.getState().docked).toBe(true)
+    // Docked, as Review does: no modal backdrop over the map, and narrow.
+    expect(dialog().getAttribute('aria-modal')).toBeNull()
+    expect(dialog().className).toContain('max-w-md')
+    expect(document.querySelector('[aria-label="Close workspace"]')).toBeNull()
+
+    click('[data-testid="devices-full-width"]')
+    expect(useDeviceWorkspaceStore.getState().docked).toBe(false)
+    expect(dialog().getAttribute('aria-modal')).toBe('true')
+  })
+
+  it('opens full width again after a docked window is closed [DON-368]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    click('[data-testid="devices-inspector-zoom"]')
+    expect(useDeviceWorkspaceStore.getState().docked).toBe(true)
+    act(() => useDeviceWorkspaceStore.getState().closeWorkspace())
+    act(() => useDeviceWorkspaceStore.getState().openWorkspace())
+    expect(useDeviceWorkspaceStore.getState().docked).toBe(false)
+  })
+
+  it('uses plain words: no NoFix, Fix time or Workspace on screen [DON-368]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="devices-workspace"]')
+
+    const text = document.body.textContent ?? ''
+    expect(text).not.toMatch(/NoFix|Fix time|Fix Time|Workspace/)
+    expect(getText('[data-testid="device-filter-nofix"]')).toContain('No position')
   })
 
   function render(element: React.ReactElement): void {

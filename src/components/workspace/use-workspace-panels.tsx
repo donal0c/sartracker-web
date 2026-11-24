@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { countPeopleNeedingAttention } from '../../features/workspace/people-model'
 import { persistFullMap, readStoredFullMap } from '../../features/workspace/full-map-preference'
@@ -63,6 +63,14 @@ export function useWorkspacePanels(input: {
   }, [])
   const openTrackingAdvice = useOpenTrackingAdvice(showTrackingAdvice)
   useEffect(() => { setBaseState(defaultBase()) }, [defaultBase])
+  // Rule 1 (DON-368): Start leaves the map clear. People opens when asked for;
+  // safety warnings never wait for it, they are in the top bar and the alarm.
+  // Not persisted, so the operator's own Full map choice is left as it was.
+  const previousPhase = useRef(phase)
+  useEffect(() => {
+    if (previousPhase.current === 'idle' && phase === 'active') setBaseState(null)
+    previousPhase.current = phase
+  }, [phase])
 
   const running = phase === 'active' || phase === 'paused'
   const isSetup = phase === 'idle' || phase === 'recovery'

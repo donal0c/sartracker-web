@@ -26,7 +26,7 @@ for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1920, 108
     await expect(page.getByTestId('map-scale-readout')).toBeVisible()
     await captureAndRegister(page, {
       testId: `ui-feedback-top-bar-${width}`, testName: `Top-bar safety ${width}x${height}`, area: 'app-shell', severity: 'critical',
-      verificationPrompt: 'Check 1. A red TRACKING LOST alarm strip across the map is readable and says what to do. 2. The top bar names the mission "Ridge search — team exercise" and shows it is running, with readable timers. 3. The tracking line in the top bar reads as lost tracking, in whole words, not cut mid-word. 4. The People, Layers, Full map, Settings and More buttons are readable and not overlapped. 5. The People panel may be open beside the map after Start; it must not cover the alarm. 6. The map scale and coordinates are readable and do not overlap the alarm. Map tiles loading or unavailable are acceptable and are not a failure.',
+      verificationPrompt: 'Check 1. A red TRACKING LOST alarm strip across the map is readable and says what to do. 2. The top bar names the mission "Ridge search — team exercise" and shows it is running, with readable timers. 3. The tracking line in the top bar reads as lost tracking, in whole words, not cut mid-word. 4. The People, Layers, Show panel (it reads Full map when a panel is open), Settings and More buttons are readable and not overlapped. 5. After Start the map is clear: no panel is open beside it, and nothing covers the alarm. 6. The map scale and coordinates are readable and do not overlap the alarm. Map tiles loading or unavailable are acceptable and are not a failure.',
       playwrightAssertions: ['TRACKING LOST alarm visible', 'tracking headline visible', 'mission panel closed', 'scale visible'],
     })
   })
@@ -51,7 +51,7 @@ for (const [width, height] of [[1280, 720], [1920, 1080]]) {
       },
       { mode: 'offline', consecutiveFailures: 2, recovered: false, lastSuccessAt: '2026-09-09T08:00:00Z', warning: 'Connection lost. Retained positions may be stale.' },
     ))
-    await page.getByTestId('ws-full-map').click()
+    // Start already left the map clear (DON-368).
     await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
     await expect(page.getByTestId('ws-people-panel')).toBeHidden()
     await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING LOST')

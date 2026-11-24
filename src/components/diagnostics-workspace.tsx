@@ -56,7 +56,7 @@ export function DiagnosticsWorkspace() {
       onClose={closeWorkspace}
     >
       <WorkspaceHeader
-        subtitle="Diagnostics Workspace"
+        subtitle="Diagnostics"
         subtitleColor="text-amber-300"
         titleId={DIAGNOSTICS_WORKSPACE_TITLE_ID}
         title="Operational Diagnostics"

@@ -226,7 +226,7 @@ export function MissionReviewWorkspace() {
       <WorkspaceHeader
         subtitle="Mission Review"
         titleId={MISSION_REVIEW_WORKSPACE_TITLE_ID}
-        title="Audit Workspace"
+        title="Review and replay"
         onClose={() => void handleWorkspaceClose()}
         actions={
           <button
@@ -361,8 +361,9 @@ export function MissionReviewWorkspace() {
             </div>
           </aside>
 
-          <section className="flex min-h-0 flex-col px-6 py-5">
-            <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
+          <section className="flex min-h-0 min-w-0 flex-col px-6 py-5">
+            {/* Wraps, so a docked Review narrowed for the map keeps every tab reachable (DON-368). */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-stone-800 pb-3">
               <TabButton
                 active={activeTab === 'mission-details'}
                 label="Mission Details"
@@ -763,13 +764,13 @@ function MissionDetailsTab(props: {
                 onChange={(event) => props.onToggleTelemetry(event.target.checked)}
                 type="checkbox"
               />
-              Show tracking telemetry
+              Show every position update
             </label>
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-stone-400">
             {props.includeTelemetry
-              ? 'Showing all events, including high-volume device and position telemetry.'
-              : 'Showing operator events only. Device and position telemetry are hidden.'}
+              ? 'Showing everything, including every position update from each device.'
+              : 'Showing what people did only. Individual position updates are hidden.'}
           </p>
           {props.auditLogTruncated ? (
             <p

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openMissionSections } from './helpers/mission-sections'
 import { openMissionPanel, openParticipantPickers } from './helpers/workspace-panels'
 
 test('keeps a re-added group visibly pending until every selected member completes [DON-271]', async ({ page }) => {
@@ -15,7 +16,7 @@ test('keeps a re-added group visibly pending until every selected member complet
   await page.getByTestId('mission-name-input').fill('Train D group progress')
   await page.getByTestId('mission-offset-input').fill('2')
   await page.getByTestId('mission-start-btn').click()
-  await openMissionPanel(page)
+  await openMissionSections(page, ['participants'])
   await page.getByTestId('participant-active-list').getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByTestId('participant-active-list')).toContainText('No mission participants')
   const earlierLocal = await page.evaluate(async () => {
@@ -35,7 +36,7 @@ test('keeps a re-added group visibly pending until every selected member complet
   await page.getByTestId('participant-add-ref').selectOption('101')
   await page.getByTestId('participant-effective-from').fill(earlierLocal)
   await page.getByTestId('participant-add-btn').click()
-  await expect(page.getByTestId('participant-backfill-status')).toContainText('2/2 required group members')
+  await expect(page.getByTestId('participant-backfill-status')).toContainText('loading for 2 of 2 people')
   await page.evaluate(async () => {
     const storePath = '/src/features/browser-validation/browser-harness-store.ts'
     const runtimePath = '/src/features/participants/participant-store.ts'
@@ -49,10 +50,10 @@ test('keeps a re-added group visibly pending until every selected member complet
     }
     await useParticipantStore.getState().controller.refreshMission(mission.id)
   })
-  await expect(page.getByTestId('participant-backfill-status')).toContainText('pending / retrying for 1/2 required group members')
+  await expect(page.getByTestId('participant-backfill-status')).toContainText('loading for 1 of 2 people')
+  await openMissionSections(page, ['participants'])
   await page.getByTestId('participant-backfill-status').scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('pending-group-progress.png'), fullPage: true })
-  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
   await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
@@ -90,11 +91,11 @@ test('shows unknown legacy group scope and keeps Finish closed [DON-271]', async
   await openMissionPanel(page)
   await expect(page.getByTestId('start-screen-resume')).toBeVisible()
   await page.getByTestId('start-screen-resume-btn').click()
-  await expect(page.getByTestId('participant-backfill-status')).toContainText('unknown historical group scope')
+  await expect(page.getByTestId('participant-backfill-status')).toContainText('who was in this group earlier is unknown')
   await expect(page.getByTestId('participant-backfill-status')).not.toContainText('0/0')
+  await openMissionSections(page, ['participants'])
   await page.getByTestId('participant-backfill-status').scrollIntoViewIfNeeded()
   await page.screenshot({ path: test.info().outputPath('unknown-legacy-scope.png'), fullPage: true })
-  await openMissionPanel(page)
   await page.getByTestId('mission-finish-btn').click()
   await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish', exact: true }).click()
   await expect(page.getByTestId('mission-control')).toContainText('legacy group history scope is unknown')

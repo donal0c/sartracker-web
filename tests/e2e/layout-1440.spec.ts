@@ -143,7 +143,7 @@ test('gives the Tracking, Tools and Layers body room during a calm mission [DON-
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-attention', '')
   await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-open', 'false')
   await expect(page.getByTestId('mission-participants-section-summary')).toHaveText('1 device · history complete')
-  await expect(page.getByTestId('mission-outings-section-summary')).toHaveText('No outing · fixes Unassigned')
+  await expect(page.getByTestId('mission-outings-section-summary')).toHaveText('No outing open')
   // Was the sidebar tab body under Mission. Layers now has its own side panel (DON-341).
   // The browser copy also shows its ~35 px "Browser testing mode" banner, which the desktop app does not.
   await openWorkspacePanel(page, 'layers')
@@ -186,8 +186,8 @@ test('folding a section keeps an unfinished entry and its error [DON-300]', asyn
 async function expectControlsInView(page: import('@playwright/test').Page): Promise<void> {
   // Pause and Finish are in the Mission panel; the phase is in the top bar (DON-341).
   await openMissionPanel(page)
-  // Active search time moved from Mission to the top bar (DON-341).
-  for (const testId of ['mission-elapsed', 'ws-search-time', 'mission-pause-resume-btn', 'mission-finish-btn']) {
+  // Active search time moved from Mission to the top bar (DON-341); it is the only clock (DON-368).
+  for (const testId of ['ws-search-time', 'mission-pause-resume-btn', 'mission-finish-btn']) {
     expect(await fullyShown(page.getByTestId(testId)), `${testId} fully shown`).toBe(true)
   }
   expect(await fullyShown(page.getByTestId('ws-mission-phase')), 'phase fully shown').toBe(true)
@@ -208,7 +208,7 @@ test('keeps every folded summary to one line, even for a long outing name [DON-3
   await completeHistory(page)
   // Unassigned stays in view while folded, in full: not cut off by the ellipsis.
   const outingSummary = page.getByTestId('mission-outings-section-summary')
-  await expect(outingSummary).toHaveText('No outing · fixes Unassigned')
+  await expect(outingSummary).toHaveText('No outing open')
   expect(await outingSummary.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   expect(await singleLine(page.getByTestId('mission-participants-section-summary'))).toBe(true)
   expect(await singleLine(outingSummary)).toBe(true)
@@ -241,16 +241,18 @@ test('shows Pause and Finish from the top after Start, even when setup was scrol
   await host.evaluate((element) => { element.scrollTop = element.scrollHeight })
   expect(await host.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
   await page.getByTestId('mission-start-btn').click()
-  await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')
+  // A warning is shown in words on the summary line; the admin form stays folded (DON-368).
+  await openMissionPanel(page)
+  await expect(page.getByTestId('mission-participants-section-attention')).toBeVisible()
   await expectControlsInView(page)
 })
 
-test.describe('a warning keeps Participants open, with Pause and Finish still in view [DON-300]', () => {
+test.describe('a warning shows in words above the fold, with Pause and Finish still in view [DON-300] [DON-368]', () => {
   test('nobody selected', async ({ page }) => {
     await startMission(page, async () => undefined)
-    const section = page.getByTestId('mission-participants-section')
-    await expect(section).toHaveAttribute('data-forced', 'true')
-    await expect(page.getByTestId('mission-participants-section-toggle')).toContainText('Needs attention')
+    await openMissionPanel(page)
+    await expect(page.getByTestId('mission-participants-section-attention')).toBeVisible()
+    await expect(page.getByTestId('mission-participants-section-summary')).toContainText('No participants selected')
     await expectControlsInView(page)
   })
 
@@ -259,8 +261,9 @@ test.describe('a warning keeps Participants open, with Pause and Finish still in
       await openParticipantPickers(page)
       await target.getByTestId('participant-group-picker').getByText('Hill Team', { exact: true }).click()
     }, '2')
-    await expect(page.getByTestId('mission-participants-section')).toHaveAttribute('data-forced', 'true')
-    await expect(page.getByTestId('participant-backfill-status').first()).toContainText('pending')
+    await openMissionPanel(page)
+    await expect(page.getByTestId('mission-participants-section-attention')).toBeVisible()
+    await expect(page.getByTestId('mission-participants-section-summary')).toContainText('history loading')
     await expectControlsInView(page)
   })
 })

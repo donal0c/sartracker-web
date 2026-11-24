@@ -29,12 +29,15 @@ import { useStationaryAttentionStore } from '../features/tracking/stationary-att
 const DEVICES_WORKSPACE_TITLE_ID = 'devices-workspace-title'
 const DEVICE_ROW_GRID_COLUMNS =
   'grid-cols-[minmax(7.5rem,1fr)_minmax(9rem,1.2fr)_4rem_6rem_11.5rem_5.5rem_6rem_8rem]'
+/** Docked after Zoom: name, status, shown and Zoom fit the narrow window without scrolling sideways. */
+const DOCKED_ROW_GRID_COLUMNS = 'grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_4.5rem]'
 
 /**
  * Renders the dedicated tracking devices workspace used for roster-scale operations.
  */
 export function DevicesWorkspace() {
   const open = useDeviceWorkspaceStore((state) => state.open)
+  const docked = useDeviceWorkspaceStore((state) => state.docked)
   const closeWorkspace = useDeviceWorkspaceStore((state) => state.closeWorkspace)
 
   return (
@@ -42,16 +45,21 @@ export function DevicesWorkspace() {
       labelledBy={DEVICES_WORKSPACE_TITLE_ID}
       open={open}
       onClose={closeWorkspace}
-      maxWidth="max-w-7xl"
+      maxWidth={docked ? 'max-w-md' : 'max-w-7xl'}
+      docked={docked}
     >
-      <DevicesWorkspaceContent closeWorkspace={closeWorkspace} />
+      <DevicesWorkspaceContent closeWorkspace={closeWorkspace} docked={docked} />
     </WorkspaceOverlay>
   )
 }
 
 function DevicesWorkspaceContent(props: {
   readonly closeWorkspace: () => void
+  readonly docked: boolean
 }) {
+  const { docked } = props
+  const dock = useDeviceWorkspaceStore((state) => state.dock)
+  const undock = useDeviceWorkspaceStore((state) => state.undock)
   const selectedDeviceId = useDeviceWorkspaceStore((state) => state.selectedDeviceId)
   const selectDevice = useDeviceWorkspaceStore((state) => state.selectDevice)
   const trackingSnapshot = useTrackingStore((state) => state.snapshot)
@@ -108,17 +116,28 @@ function DevicesWorkspaceContent(props: {
     { id: 'hidden', label: 'Hidden', count: summary.hiddenDevices },
     { id: 'online', label: 'Online', count: summary.onlineDevices },
     { id: 'stale', label: 'Stale', count: summary.staleDevices },
-    { id: 'nofix', label: 'NoFix', count: rows.filter((row) => !row.hasFix).length },
+    { id: 'nofix', label: 'No position', count: rows.filter((row) => !row.hasFix).length },
   ]
 
   return (
     <>
       <WorkspaceHeader
-        subtitle="Devices Workspace"
+        subtitle="All devices"
         titleId={DEVICES_WORKSPACE_TITLE_ID}
         title="Tracking Devices"
         onClose={props.closeWorkspace}
         actions={
+          <>
+          {docked ? (
+            <button
+              className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200"
+              data-testid="devices-full-width"
+              onClick={undock}
+              type="button"
+            >
+              Full width
+            </button>
+          ) : null}
           <button
             className="rounded-lg border border-stone-600 bg-stone-800 px-3 py-2 text-xs font-semibold text-stone-200 disabled:opacity-50"
             data-testid="devices-refresh-btn"
@@ -128,10 +147,21 @@ function DevicesWorkspaceContent(props: {
           >
             {refreshing ? 'Refreshing…' : 'Reconnect'}
           </button>
+          </>
         }
       />
 
-        <div className="sar-devices-layout grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      {docked ? (
+        <p
+          className="border-b border-amber-400/40 bg-amber-400/10 px-6 py-2 text-[13px] font-semibold text-amber-100"
+          data-testid="devices-docked-note"
+          role="status"
+        >
+          This list is narrow so the map shows beside it. Full width shows each device&apos;s details and trail settings.
+        </p>
+      ) : null}
+
+        <div className={`sar-devices-layout grid min-h-0 flex-1 gap-0 ${docked ? '' : 'lg:grid-cols-[minmax(0,1fr)_18rem]'}`}>
           <section
             className="flex min-h-0 flex-col overflow-hidden border-r border-stone-800"
             data-testid="devices-workspace"
@@ -185,7 +215,7 @@ function DevicesWorkspaceContent(props: {
                 </p>
               ) : null}
 
-              <div>
+              <div hidden={docked}>
                 <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">
                   Breadcrumb Display
                 </p>
@@ -249,6 +279,7 @@ function DevicesWorkspaceContent(props: {
                         ? 'border-amber-500/60 bg-amber-500/10 text-amber-200'
                         : 'border-stone-700 bg-stone-900/40 text-stone-300 hover:border-stone-500'
                     }`}
+                    aria-pressed={activeFilter === tab.id}
                     data-testid={`device-filter-${tab.id}`}
                     key={tab.id}
                     onClick={() => setActiveFilter(tab.id)}
@@ -285,19 +316,20 @@ function DevicesWorkspaceContent(props: {
               ) : (
                 <>
                   <div
-                    className={`sar-device-grid sticky top-0 z-10 grid ${DEVICE_ROW_GRID_COLUMNS} border-b border-stone-800 bg-[var(--sar-panel)] px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
+                    className={`${docked ? DOCKED_ROW_GRID_COLUMNS : `sar-device-grid ${DEVICE_ROW_GRID_COLUMNS}`} sticky top-0 z-10 grid border-b border-stone-800 bg-[var(--sar-panel)] px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-stone-300`}
                   >
-                    <span>Device</span>
+                    {docked ? null : <span>Device</span>}
                     <span>Name</span>
-                    <span>Trail</span>
+                    {docked ? null : <span>Trail</span>}
                     <span>Status</span>
-                    <span>Last Seen</span>
-                    <span>Source</span>
+                    {docked ? null : <span>Last Seen</span>}
+                    {docked ? null : <span>Source</span>}
                     <span>Visible</span>
                     <span className="text-right">Actions</span>
                   </div>
                   {filteredRows.map((row) => (
                     <DeviceRow
+                      compact={docked}
                       key={row.deviceId}
                       row={row}
                       selected={row.deviceId === selectedRow?.deviceId}
@@ -313,7 +345,7 @@ function DevicesWorkspaceContent(props: {
             </div>
           </section>
 
-          <aside className="sar-devices-inspector min-w-0 overflow-y-auto px-6 py-6" data-testid="devices-inspector">
+          <aside className="sar-devices-inspector min-w-0 overflow-y-auto px-6 py-6" data-testid="devices-inspector" hidden={docked}>
             {selectedRow === null ? (
               <div className="rounded-2xl border border-dashed border-stone-600 bg-stone-900/30 p-5 text-sm italic text-stone-300">
                 No devices available. Configure a tracking provider in Settings to see devices here.
@@ -339,7 +371,7 @@ function DevicesWorkspaceContent(props: {
                     testId={`device-inspector-last-seen-${selectedRow.deviceId}`}
                   />
                   <Detail
-                    label="Fix Time"
+                    label="Position Time"
                     value={selectedRow.fixTimeDisplay}
                     testId={`device-fix-time-${selectedRow.deviceId}`}
                   />
@@ -360,7 +392,7 @@ function DevicesWorkspaceContent(props: {
                     label="Coordinates"
                     value={
                       selectedRow.latitude === null || selectedRow.longitude === null
-                        ? 'No fix'
+                        ? 'No position'
                         : `${selectedRow.latitude.toFixed(5)}, ${selectedRow.longitude.toFixed(5)}`
                     }
                   />
@@ -383,13 +415,7 @@ function DevicesWorkspaceContent(props: {
                     data-testid="devices-inspector-zoom"
                     disabled={!selectedRow.hasFix}
                     onClick={() => {
-                      if (selectedRow.latitude !== null && selectedRow.longitude !== null) {
-                        queueTarget(
-                          selectedRow.latitude,
-                          selectedRow.longitude,
-                          selectedRow.name,
-                        )
-                      }
+                      zoomDevice(selectedRow)
                     }}
                     type="button"
                   >
@@ -420,9 +446,14 @@ function DevicesWorkspaceContent(props: {
     }
   }
 
+  /**
+   * Centres the map on a device and docks this window narrow at the left, so
+   * the device is not centred underneath it (DON-368, rule 8).
+   */
   function zoomDevice(row: DeviceWorkspaceRow): void {
     selectDevice(row.deviceId)
     if (row.latitude !== null && row.longitude !== null) {
+      dock()
       queueTarget(row.latitude, row.longitude, row.name)
     }
   }
@@ -442,7 +473,7 @@ function getEmptyStateMessage(filter: DeviceWorkspaceFilter, query: string): str
     case 'online':
       return 'No devices currently online. Devices will appear here when they report a live position.'
     case 'nofix':
-      return 'All devices have a GPS fix. Devices without position data will appear here.'
+      return 'Every device has a position. Devices without one will appear here.'
     case 'stale':
       return 'No stale devices. Devices that stop reporting for more than 5 minutes will appear here.'
   }
@@ -457,7 +488,7 @@ function getFilterLabel(filter: DeviceWorkspaceFilter): string {
     case 'online':
       return 'Online'
     case 'nofix':
-      return 'NoFix'
+      return 'No position'
     case 'stale':
       return 'Stale'
   }
@@ -485,18 +516,21 @@ function DeviceRow(props: {
   readonly onSetDeviceColor: (deviceId: string, color: string) => void
   readonly onToggleVisibility: (deviceId: string) => void
   readonly onZoomDevice: (row: DeviceWorkspaceRow) => void
+  /** Docked window: only name, status, shown and Zoom. */
+  readonly compact?: boolean
 }) {
+  const compact = props.compact === true
   const rowTestId = `device-row-${props.row.deviceId}`
 
   return (
     <div
-      className={`sar-device-grid grid cursor-pointer ${DEVICE_ROW_GRID_COLUMNS} items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
+      className={`${compact ? DOCKED_ROW_GRID_COLUMNS : `sar-device-grid ${DEVICE_ROW_GRID_COLUMNS}`} grid cursor-pointer items-center border-b border-stone-800/70 px-4 py-3 text-sm ${
         props.selected ? 'sar-selected-row' : 'bg-transparent'
       }`}
       data-testid={rowTestId}
       onClick={() => props.onSelectDevice(props.row.deviceId)}
     >
-      <button
+      {compact ? null : <button
         className="block min-w-0 w-full text-left"
         data-testid={`device-select-${props.row.deviceId}`}
         onClick={(event) => {
@@ -508,7 +542,7 @@ function DeviceRow(props: {
         <p className="truncate font-mono text-[11px] text-stone-300">
           {props.row.deviceId}
         </p>
-      </button>
+      </button>}
       <button
         className="block min-w-0 w-full text-left"
         data-testid={`device-select-name-${props.row.deviceId}`}
@@ -519,6 +553,16 @@ function DeviceRow(props: {
         type="button"
       >
         <p className="truncate font-semibold text-stone-100">{props.row.name}</p>
+        {compact && (!props.row.hasFix || props.row.sourceDisplay !== 'Live') ? (
+          // The narrow list has no Source column, so a position that is not
+          // live, or missing, says so in words beside the name, never by colour alone.
+          <p
+            className={`mt-1 truncate text-[11px] font-bold ${props.row.stale ? 'text-rose-300' : 'text-amber-300'}`}
+            data-testid={`device-trust-${props.row.deviceId}`}
+          >
+            {props.row.hasFix ? props.row.sourceDisplay : 'No position'}
+          </p>
+        ) : null}
         {props.row.stationaryAttention ? (
           <p
             className="mt-1 truncate text-[10px] font-bold uppercase tracking-wide text-amber-300"
@@ -544,16 +588,16 @@ function DeviceRow(props: {
           </p>
         )}
       </button>
-      <DeviceColorSwatch
+      {compact ? null : <DeviceColorSwatch
         color={props.deviceColor}
         deviceId={props.row.deviceId}
         deviceName={props.row.name}
         onSetColor={props.onSetDeviceColor}
-      />
+      />}
       <span
         className={`font-semibold uppercase ${
-          // A stale position must not read as reporting now in green [M-21].
-          props.row.status === 'online' && !props.row.stale
+          // A stale or missing position must not read as reporting now in green [M-21, DON-368].
+          props.row.status === 'online' && props.row.hasFix && !props.row.stale
             ? 'text-emerald-300'
             : props.row.status === 'offline'
               ? 'text-amber-300'
@@ -563,24 +607,24 @@ function DeviceRow(props: {
       >
         {props.row.status}
       </span>
-      <span
+      {compact ? null : <span
         className="font-mono text-[10px] leading-4 text-stone-300"
         data-testid={`device-last-seen-${props.row.deviceId}`}
       >
         <CompactOperatorTimestamp value={props.row.lastSeenDisplay} />
-      </span>
-      <span
+      </span>}
+      {compact ? null : <span
         className={`text-xs font-semibold ${
           props.row.stale
             ? 'text-rose-300'
-            : props.row.sourceDisplay === 'Cache'
+            : props.row.sourceDisplay === 'Saved earlier'
               ? 'text-amber-300'
               : 'text-stone-300'
         }`}
         data-testid={`device-source-${props.row.deviceId}`}
       >
         {props.row.sourceDisplay}
-      </span>
+      </span>}
       <label className="flex items-center gap-2 text-xs text-stone-300">
         <input
           checked={!props.row.hidden}

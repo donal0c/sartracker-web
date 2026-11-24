@@ -88,7 +88,7 @@ describe('device workspace model', () => {
     expect(rows[0]).toMatchObject({
       deviceId: 'alpha',
       // Marked stale so it is never live; the label says both [M-21].
-      sourceDisplay: 'Stale · Fix time ahead of laptop clock',
+      sourceDisplay: 'Stale · Position time ahead of laptop clock',
       stale: true,
     })
   })
@@ -148,7 +148,7 @@ describe('device workspace model', () => {
     expect(rows[0]).toMatchObject({
       deviceId: 'alpha',
       // A stale fix stays visibly stale whatever its time provenance [M-21].
-      sourceDisplay: 'Stale · Fix time unverified',
+      sourceDisplay: 'Stale · Position time not confirmed',
       fixTimeUnverified: true,
       ingestWarning: '1 position row rejected — invalid coordinates.',
     })
@@ -162,7 +162,7 @@ describe('device workspace model', () => {
       { ...SNAPSHOT, positions: [hourOld({ fix_time_unverified: true }), SNAPSHOT.positions[1]!] }, [], undefined, {}, 'online',
     ).find((row) => row.deviceId === 'alpha')!
     expect(unverifiedOnline.sourceDisplay).toMatch(/Stale/)
-    expect(unverifiedOnline.sourceDisplay).toMatch(/unverified/)
+    expect(unverifiedOnline.sourceDisplay).toMatch(/not confirmed/)
     expect(unverifiedOnline.stale).toBe(true)
 
     const staleOffline = buildDeviceWorkspaceRows(

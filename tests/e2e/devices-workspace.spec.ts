@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openMissionPanel } from './helpers/workspace-panels'
+import { openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,6 +13,8 @@ test.describe('M19 devices workspace', () => {
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     await seedTrackingWorkspace(page)
+    // Start leaves the map clear (DON-368); Open Devices is in People.
+    await openWorkspacePanel(page, 'people')
   })
 
   test('opens the dedicated workspace, renders the roster, and supports selection plus zoom', async ({
@@ -540,6 +542,175 @@ test.describe('M19 devices workspace', () => {
   })
 })
 
+test.describe('All devices docked after Zoom [DON-368]', () => {
+  test.use({ viewport: { width: 1366, height: 768 } })
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Docked Devices Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await seedTrackingWorkspace(page)
+    await openWorkspacePanel(page, 'people')
+    await page.getByTestId('open-devices-workspace').click()
+    await expect(page.getByTestId('devices-workspace')).toBeVisible()
+  })
+
+  test('puts the zoomed device in the map that is still visible beside the docked list, with People open', async ({ page }) => {
+    await page.getByTestId('device-zoom-bravo').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expect(page.getByTestId('coordinate-target-indicator')).toContainText('Bravo Team')
+
+    // Wait for the camera to settle, then check the device is right of the dock
+    // and inside the map canvas, not underneath the list.
+    await expect.poll(() => targetPlacement(page, [-9.50722, 52.05944]), { timeout: 15_000 }).toBe('visible')
+  })
+
+  test('keeps a device near the western map boundary visible beside the docked list', async ({ page }) => {
+    await page.evaluate(async () => {
+      const now = new Date().toISOString()
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: [{ device_id: 'edge', name: 'Edge Team', status: 'online', last_seen: now, unique_id: null, category: null }],
+          positions: [{
+            id: 'pos-edge', device_id: 'edge', lat: 52.05, lon: -10.84, altitude: null, speed: null, battery: null,
+            accuracy: null, timestamp: now, source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false,
+          }],
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: now, warning: null },
+      )
+    })
+    await page.getByTestId('device-zoom-edge').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expect.poll(() => targetPlacement(page, [-10.84, 52.05]), { timeout: 15_000 }).toBe('visible')
+  })
+
+  test('says No position beside a device without a position, never green Online alone', async ({ page }) => {
+    await page.evaluate(async () => {
+      const now = new Date().toISOString()
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: [
+            { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: now, unique_id: null, category: null },
+            { device_id: 'nofix', name: 'Charlie Team', status: 'online', last_seen: now, unique_id: null, category: null },
+          ],
+          positions: [{
+            id: 'pos-alpha', device_id: 'alpha', lat: 51.99917, lon: -9.74406, altitude: null, speed: null, battery: null,
+            accuracy: null, timestamp: now, source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false,
+          }],
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: now, warning: null },
+      )
+    })
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+
+    await expect(page.getByTestId('device-trust-nofix')).toBeVisible()
+    await expect(page.getByTestId('device-trust-nofix')).toHaveText('No position')
+    await expect(page.getByTestId('device-status-nofix')).not.toHaveClass(/text-emerald/)
+    // A live position needs no extra words.
+    await expect(page.getByTestId('device-trust-alpha')).toHaveCount(0)
+  })
+
+  test('leaves the coordinate readouts and Map Tools uncovered beside the docked list', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    for (const testId of ['coords-grid', 'coords-wgs84', 'coords-dms', 'drawing-toolbar']) {
+      await expect.poll(() => page.evaluate((id) => {
+        const element = document.querySelector(`[data-testid="${id}"]`)
+        const dock = document.querySelector('[data-testid="devices-workspace"]')?.closest('[role="dialog"]')
+        if (element === null || dock === null || dock === undefined) return 'missing'
+        const box = element.getBoundingClientRect()
+        if (box.width === 0) return 'not drawn'
+        const x = box.left + Math.min(box.width, 40) / 2
+        const y = box.top + box.height / 2
+        const top = document.elementFromPoint(x, y)
+        if (top === null || dock.contains(top)) return `covered by the dock at ${Math.round(x)},${Math.round(y)}`
+        // Not clipped by an overflow-hidden parent either.
+        let parent = element.parentElement
+        while (parent !== null) {
+          const style = getComputedStyle(parent)
+          if (style.overflow !== 'visible' || style.overflowX !== 'visible') {
+            const clip = parent.getBoundingClientRect()
+            if (box.left < clip.left - 1 || box.right > clip.right + 1) return `clipped by ${parent.dataset.testid ?? parent.className}`
+          }
+          parent = parent.parentElement
+        }
+        return 'visible'
+      }, testId), { timeout: 10_000, message: testId }).toBe('visible')
+    }
+    // The readouts wrap onto more rows here, so the map scale must sit above the taller bar.
+    await expect.poll(() => page.evaluate(() => {
+      const scale = document.querySelector('[data-testid="map-scale-readout"]')?.getBoundingClientRect()
+      const bar = document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect()
+      if (scale === undefined || bar === undefined) return 'missing'
+      return scale.bottom <= bar.top ? 'clear' : `scale bottom ${Math.round(scale.bottom)} overlaps bar top ${Math.round(bar.top)}`
+    }), { timeout: 10_000 }).toBe('clear')
+  })
+
+  test('fits the open Map Tools panels inside the map beside the docked list', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expectMapToolsPanelsInsideMap(page)
+  })
+
+  test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await page.evaluate(async () => {
+      const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
+        import('/src/features/map/map-overlay-warning-store.ts'),
+        import('/src/lib/map-health.ts'),
+      ])
+      const warning = createMapOverlaySyncWarning('tracking', 'tracking')
+      useMapOverlayWarningStore.getState().raiseWarning({ ...warning, registrationId: 'layout-fixture-tracking' as typeof warning.registrationId })
+    })
+    await expect(page.getByTestId('map-degraded-alert')).toBeVisible()
+    // The bar must really have wrapped past the old fixed 80 px clearance.
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect().height ?? 0)))
+      .toBeGreaterThan(80)
+    await expect.poll(() => page.evaluate(() => {
+      const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
+      const bar = document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect()
+      if (alerts === undefined || bar === undefined) return 'missing'
+      return alerts.bottom <= bar.top ? 'clear' : `warnings end ${Math.round(alerts.bottom)}, bar starts ${Math.round(bar.top)}`
+    }), { timeout: 10_000 }).toBe('clear')
+  })
+
+  test('keeps the filter, search and keyboard focus when Zoom docks the list', async ({ page }) => {
+    await page.getByTestId('device-filter-stale').click()
+    await page.getByTestId('device-list-search').fill('Bravo')
+    await expect(page.getByTestId('device-row-alpha')).toBeHidden()
+
+    await page.getByTestId('device-zoom-bravo').focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+
+    await expect(page.getByTestId('device-filter-stale')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByTestId('device-list-search')).toHaveValue('Bravo')
+    await expect(page.getByTestId('device-row-alpha')).toBeHidden()
+    await expect(page.getByTestId('device-zoom-bravo')).toBeFocused()
+  })
+
+  test('keeps each device\'s position trust in words beside its name, and does not claim the map is live', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+
+    // Bravo's position is stale: colour alone must not say so.
+    await expect(page.getByTestId('device-trust-bravo')).toBeVisible()
+    await expect(page.getByTestId('device-trust-bravo')).toHaveText('Stale')
+    // Tracking is offline in this fixture, so Alpha's position is the last known one.
+    await expect(page.getByTestId('device-trust-alpha')).toBeVisible()
+    await expect(page.getByTestId('device-trust-alpha')).toHaveText('Last known')
+    await expect(page.getByTestId('devices-docked-note')).not.toContainText('live')
+  })
+})
+
 test.describe('Operational tracking overlay readiness [DON-263]', () => {
   test('renders current positions and breadcrumbs while basemap tiles remain pending', async ({
     context,
@@ -877,4 +1048,153 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
       },
     )
   })
+}
+
+/**
+ * Once the camera settles, says whether a [longitude, latitude] is drawn inside
+ * the map canvas and right of the docked All devices list (DON-368).
+ */
+async function targetPlacement(page: import('@playwright/test').Page, target: [number, number]): Promise<string> {
+  return page.evaluate((lngLat) => {
+    const map = (window as Window & { __SARTRACKER_MAP__: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+    if (map.isMoving()) return 'moving'
+    const canvas = map.getCanvas().getBoundingClientRect()
+    const dock = document.querySelector('[data-testid="devices-workspace"]')?.closest('[role="dialog"]')?.getBoundingClientRect()
+    if (dock === undefined) return 'no dock'
+    const point = map.project(lngLat)
+    const x = canvas.left + point.x
+    const y = canvas.top + point.y
+    return x > dock.right + 16 && x > canvas.left + 16 && x < canvas.right - 16 && y > canvas.top + 16 && y < canvas.bottom - 16
+      ? 'visible'
+      : `hidden at ${Math.round(x)},${Math.round(y)}; dock ends ${Math.round(dock.right)}, map ${Math.round(canvas.left)}-${Math.round(canvas.right)}`
+  }, target)
+}
+
+test.describe('Review docked at the narrowest supported width [DON-368]', () => {
+  test.use({ viewport: { width: 1180, height: 768 } })
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Narrow Review Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await seedTrackingWorkspace(page)
+    await openWorkspacePanel(page, 'people')
+    await openMissionReview(page)
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'false')
+  })
+
+  test('keeps a usable map, Map Tools and the alarm action beside Review and People', async ({ page }) => {
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('.ws-map-area')?.getBoundingClientRect().width ?? 0)))
+      .toBeGreaterThanOrEqual(MIN_DOCKED_MAP_WIDTH_PX)
+    await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-alarm-details"]'), { timeout: 10_000 }).toBe('inside')
+    await expectMapToolsPanelsInsideMap(page)
+  })
+})
+
+test.describe('Review docked with People closed at the narrowest supported width [DON-368]', () => {
+  test.use({ viewport: { width: 1180, height: 768 } })
+
+  test('shows the tracking warnings on the map clear of the open Map Tools panels', async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Narrow Review Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    // Tracking is up and one device has gone quiet, so that person is named on the map.
+    await page.evaluate(async () => {
+      const now = Date.now()
+      const at = (ms: number) => new Date(ms).toISOString()
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: [
+            { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: at(now), unique_id: null, category: null },
+            { device_id: 'bravo', name: 'Bravo Team', status: 'offline', last_seen: at(now - 40 * 60_000), unique_id: null, category: null },
+          ],
+          positions: [
+            { id: 'pos-alpha', device_id: 'alpha', lat: 51.99917, lon: -9.74406, altitude: null, speed: null, battery: null, accuracy: null, timestamp: at(now), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false },
+            { id: 'pos-bravo', device_id: 'bravo', lat: 52.05944, lon: -9.50722, altitude: null, speed: null, battery: null, accuracy: null, timestamp: at(now - 40 * 60_000), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false },
+          ],
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: at(now), warning: null },
+      )
+    })
+    await openMissionReview(page)
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'true')
+    await expect(page.getByTestId('ws-exceptions')).toBeVisible()
+
+    await page.getByTestId('drawing-toolbar-expand').click()
+    for (const tool of ['measure', 'marker_at_grid']) {
+      await page.getByTestId(`drawing-tool-${tool}`).click()
+      await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+      await expectMapToolsApartFromWarnings(page, tool)
+    }
+
+    // The red alarm appears while Map Tools is open: it pushes the warnings down
+    // without resizing them, and Map Tools must follow (Codex round 5).
+    await page.evaluate(async () => {
+      const { useTrackingMapUpdateStore } = await import('/src/features/tracking/tracking-map-update-store.ts')
+      useTrackingMapUpdateStore.getState().reportFailure('Layout fixture: the map could not draw the latest positions.')
+    })
+    await expect(page.getByTestId('ws-alarm')).toContainText('MAP NOT UPDATING')
+    // Wait until the warnings have actually moved down under the alarm.
+    await expect.poll(() => page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.ws-exceptions') as HTMLElement).getPropertyValue('--ws-alarm-height')) || 0))
+      .toBeGreaterThan(0)
+    await expect(page.getByTestId('ws-exceptions')).toBeVisible()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    await expectMapToolsApartFromWarnings(page, 'marker_at_grid with the alarm')
+  })
+})
+
+/** Checks Map Tools and the warnings named on the map are each inside the map, uncovered, and apart. */
+async function expectMapToolsApartFromWarnings(page: import('@playwright/test').Page, label: string): Promise<void> {
+  await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: label }).toBe('inside')
+  await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-exceptions"]'), { timeout: 10_000, message: `${label} warnings` }).toBe('inside')
+  await expect.poll(() => page.evaluate(() => {
+    const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
+    const warnings = document.querySelector('[data-testid="ws-exceptions"]')?.getBoundingClientRect()
+    if (tools === undefined || warnings === undefined) return 'missing'
+    const overlap = tools.left < warnings.right && warnings.left < tools.right && tools.top < warnings.bottom && warnings.top < tools.bottom
+    return overlap ? `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} meets warnings ${Math.round(warnings.top)}-${Math.round(warnings.bottom)}` : 'apart'
+  }), { timeout: 10_000, message: label }).toBe('apart')
+}
+
+/** The narrowest map a docked panel may leave beside itself (DON-368). */
+const MIN_DOCKED_MAP_WIDTH_PX = 480
+
+/** Opens Map Tools, then Measure and Marker at GR, and checks each stays inside the map, uncovered. */
+async function expectMapToolsPanelsInsideMap(page: import('@playwright/test').Page): Promise<void> {
+  await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: 'collapsed Map Tools' }).toBe('inside')
+  await page.getByTestId('drawing-toolbar-expand').click()
+  for (const tool of ['measure', 'marker_at_grid']) {
+    await page.getByTestId(`drawing-tool-${tool}`).click()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: tool }).toBe('inside')
+  }
+}
+
+/** 'inside' when the element lies within the map area and nothing else is drawn over its centre. */
+async function uncoveredInsideMap(page: import('@playwright/test').Page, selector: string): Promise<string> {
+  return page.evaluate((sel) => {
+    const element = document.querySelector(sel)
+    const map = document.querySelector('.ws-map-area')
+    if (element === null || map === null) return 'missing'
+    const box = element.getBoundingClientRect()
+    const area = map.getBoundingClientRect()
+    if (box.width === 0) return 'not drawn'
+    if (box.left < area.left - 1 || box.right > area.right + 1 || box.top < area.top - 1 || box.bottom > area.bottom + 1) {
+      return `outside the map: ${Math.round(box.left)}-${Math.round(box.right)} vs ${Math.round(area.left)}-${Math.round(area.right)}`
+    }
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height, 40) / 2)
+    if (top === null || !element.contains(top)) return `covered by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
+    return 'inside'
+  }, selector)
 }

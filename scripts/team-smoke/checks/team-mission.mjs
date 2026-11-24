@@ -27,6 +27,7 @@ import {
 } from '../lib/operator.mjs'
 import { openMissionReview, openParticipantPickers, openWorkspacePanel } from '../../workspace-panels.mjs'
 import { assessDiagnosticsReport, exportDiagnosticsReport, parseDiagnosticsReport } from '../lib/diagnostics-report.mjs'
+import { historyLoaded, historySettled, historyStillLoading, noEarlierHistoryAsked } from '../lib/history-status.mjs'
 import { expectProduct, NotTested } from '../lib/results.mjs'
 import { missionFixes, withStore } from '../lib/store.mjs'
 import { TEAM_DEVICES, TEAM_GROUPS, startTeamTraccar } from '../lib/team-traccar.mjs'
@@ -115,7 +116,7 @@ export async function waitForBackfill(page, budgetMs) {
   while (Date.now() - started < budgetMs) {
     await openMissionSection(page, 'participants')
     statuses = await page.getByTestId('participant-backfill-status').allInnerTexts()
-    if (statuses.length > 0 && statuses.every((status) => /complete|no earlier history requested/i.test(status))) {
+    if (statuses.length > 0 && statuses.every(historySettled)) {
       return { seconds: Math.round((Date.now() - started) / 1000), statuses }
     }
     await delay(10_000)
@@ -246,8 +247,8 @@ export default [
       expectProduct(backfill.seconds !== null,
         `Participant history did not complete within ${BACKFILL_BUDGET_MS / 60_000} min: ${JSON.stringify(backfill.statuses).slice(0, 300)}.`)
       notes.push(`backfill of ${backfill.statuses.length} participant rows complete in ${backfill.seconds} s`)
-      const lateStatus = backfill.statuses.find((status) => /no earlier history requested/i.test(status))
-      if (lateStatus === undefined) findings.push('the late "Now" participant did not say no earlier history was requested')
+      const lateStatus = backfill.statuses.find(noEarlierHistoryAsked)
+      if (lateStatus === undefined) findings.push('the late "Now" participant did not say no earlier positions were asked for')
 
       // The phone regains signal and uploads the buffered stretch in one burst.
       // Checked before the quit below, while the rest of the scenario runs.

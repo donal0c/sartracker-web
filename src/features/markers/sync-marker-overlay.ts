@@ -70,7 +70,7 @@ export async function syncMarkerOverlay(
         'text-font': ['Open Sans Semibold', 'Arial Unicode MS Bold'],
         'text-allow-overlap': true,
         'text-ignore-placement': true,
-        'text-offset': [0, 1.1],
+        'text-offset': [...markerLabelOffset(markerType)],
         'text-anchor': 'top',
       },
       paint: {
@@ -139,11 +139,25 @@ const MARKER_IMAGE_SVGS: Record<string, string> = {
       <polygon points="17,30 31,7 3,7" fill="#FF0000" stroke="#FFFFFF" stroke-width="2" />
     </svg>
   `,
+  // Rule 12 (DON-368): the casualty stands out from place labels and other
+  // markers on any basemap: larger, on a white disc with a dark ring.
   'marker-casualty': `
-    <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 42 42">
-      <ellipse cx="21" cy="32" rx="11" ry="4" fill="#111827" opacity="0.35" />
-      <polygon points="21,3 25.5,14.5 38,14.5 27.8,22.2 31.8,35.5 21,27.1 10.2,35.5 14.2,22.2 4,14.5 16.5,14.5"
-        fill="#FF0000" stroke="#FFFFFF" stroke-width="2.4" />
+    <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60">
+      <circle cx="30" cy="30" r="27" fill="#FFFFFF" stroke="#111827" stroke-width="3.5" />
+      <polygon points="30,7 35.9,22.2 52.3,22.2 39,32.3 44.2,49.7 30,38.7 15.8,49.7 21,32.3 7.7,22.2 24.1,22.2"
+        fill="#FF0000" stroke="#7F0000" stroke-width="1.6" stroke-linejoin="round" />
     </svg>
   `,
+}
+
+/** Returns the SVG drawn for a marker type, so its prominence can be checked. */
+export function getMarkerImageSvg(markerType: MarkerType): string {
+  const svg = MARKER_IMAGE_SVGS[`marker-${markerType}`]
+  if (svg === undefined) throw new Error(`No marker symbol for ${markerType}`)
+  return svg
+}
+
+/** Label offset in ems below the symbol; the larger casualty symbol needs more room. */
+export function markerLabelOffset(markerType: MarkerType): readonly [number, number] {
+  return markerType === 'casualty' ? [0, 2.1] : [0, 1.1]
 }

@@ -11,6 +11,7 @@ import {
 import { isBreadcrumbTrailDrawnForDevice } from '../tracking/trail-line-visibility'
 import { createDrawingFeatureCollection } from '../drawings/drawing-geojson'
 import { createMarkerFeatureCollection } from '../markers/marker-geojson'
+import { getMarkerImageSvg } from '../markers/sync-marker-overlay'
 import {
   DEFAULT_BREADCRUMB_LINE_GAP_THRESHOLD_MS,
   createExactBreadcrumbDotFeatureCollection,
@@ -204,6 +205,9 @@ function renderTrackingOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackO
   }
 }
 
+/** Width and height of the casualty symbol, matching the MapLibre image. */
+const CASUALTY_SYMBOL_PX = 60
+
 function renderMarkerOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackOverlayInput): void {
   const hiddenMarkerIds = new Set(input.hiddenMarkerIds)
   const markers = createMarkerFeatureCollection(input.markers)
@@ -221,15 +225,39 @@ function renderMarkerOverlay(layerGroup: L.LayerGroup, input: LeafletFallbackOve
       continue
     }
 
+    const name = readStringProperty(properties, 'name') ?? markerType
+    if (markerType === 'casualty') {
+      // The same white-disc, dark-ring red star as MapLibre, so the casualty
+      // stands out on any basemap in the fallback too (DON-368).
+      L.marker(toLatLng(feature.geometry.coordinates), {
+        icon: L.divIcon({
+          className: 'sar-leaflet-casualty',
+          html: getMarkerImageSvg('casualty'),
+          iconSize: [CASUALTY_SYMBOL_PX, CASUALTY_SYMBOL_PX],
+          iconAnchor: [CASUALTY_SYMBOL_PX / 2, CASUALTY_SYMBOL_PX / 2],
+        }),
+        interactive: false,
+        keyboard: false,
+      })
+        .bindTooltip(name, {
+          className: 'sar-leaflet-label',
+          direction: 'top',
+          offset: [0, -CASUALTY_SYMBOL_PX / 2],
+          permanent: true,
+        })
+        .addTo(layerGroup)
+      continue
+    }
+
     L.circleMarker(toLatLng(feature.geometry.coordinates), {
-      radius: markerType === 'casualty' ? 10 : 8,
+      radius: 8,
       color: markerType === 'clue' ? '#111827' : '#FFFFFF',
       fillColor: MARKER_COLORS[markerType],
       fillOpacity: 0.98,
       opacity: 1,
       weight: 2.5,
     })
-      .bindTooltip(readStringProperty(properties, 'name') ?? markerType, {
+      .bindTooltip(name, {
         className: 'sar-leaflet-label',
         direction: 'top',
         offset: [0, -8],

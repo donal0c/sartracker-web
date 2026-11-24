@@ -9,6 +9,14 @@ type MissionSectionDisclosureProps = {
   /** Collapsing applies only while a mission is running or paused. */
   readonly collapsible: boolean
   readonly children: ReactNode
+  /**
+   * Simplified panel (DON-368): the button that opens the fold, for example
+   * "Change who's taking part". With it, a warning never forces the fold open;
+   * warnings go in `alwaysShown`, which stays on screen above the fold.
+   */
+  readonly foldLabel?: string
+  /** Shown between the summary line and the fold, whether folded or not. */
+  readonly alwaysShown?: ReactNode
 }
 
 /**
@@ -19,7 +27,22 @@ type MissionSectionDisclosureProps = {
  */
 export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
   const [expanded, setExpanded] = useState(false)
-  if (!props.collapsible) return <>{props.children}</>
+  if (!props.collapsible) return <>{props.alwaysShown}{props.children}</>
+  if (props.foldLabel !== undefined) {
+    return (
+      <SummaryWithFold
+        alwaysShown={props.alwaysShown}
+        expanded={expanded}
+        foldLabel={props.foldLabel}
+        onToggle={() => setExpanded((value) => !value)}
+        section={props.section}
+        testId={props.testId}
+        title={props.title}
+      >
+        {props.children}
+      </SummaryWithFold>
+    )
+  }
   const forced = props.section.attention.length > 0
   const open = forced || expanded
   return (
@@ -50,6 +73,56 @@ export function MissionSectionDisclosure(props: MissionSectionDisclosureProps) {
         </span>
       </button>
       <div data-testid={`${props.testId}-body`} hidden={!open}>{props.children}</div>
+    </div>
+  )
+}
+
+/**
+ * A one-line summary, then whatever must stay on screen (warnings), then one
+ * button that opens the rest. The fold holds only controls, so it is never
+ * forced open: two clicks reach Add or Remove (DON-368).
+ */
+function SummaryWithFold(props: {
+  readonly title: string
+  readonly testId: string
+  readonly section: MissionSectionSummary
+  readonly foldLabel: string
+  readonly alwaysShown: ReactNode
+  readonly expanded: boolean
+  readonly onToggle: () => void
+  readonly children: ReactNode
+}) {
+  const attention = props.section.attention.length > 0
+  return (
+    <div
+      className="space-y-2"
+      data-attention={props.section.attention.join('; ')}
+      data-forced="false"
+      data-open={props.expanded ? 'true' : 'false'}
+      data-testid={props.testId}
+    >
+      <div className="sar-readout flex items-center justify-between gap-3 px-3 py-1.5">
+        <span className="min-w-0">
+          <span className="block text-[12px] font-bold leading-tight text-amber-300">{props.title}</span>
+          <span className="block truncate text-[13px] leading-snug text-stone-200" data-testid={`${props.testId}-summary`} title={props.section.summary}>
+            {props.section.summary}
+          </span>
+        </span>
+        {attention ? (
+          <span className="shrink-0 text-[12px] font-bold text-amber-300" data-testid={`${props.testId}-attention`}>Needs attention</span>
+        ) : null}
+      </div>
+      {props.alwaysShown}
+      <button
+        aria-expanded={props.expanded}
+        className="sar-button w-full px-3 py-2 text-left text-[13px] font-semibold"
+        data-testid={`${props.testId}-toggle`}
+        onClick={props.onToggle}
+        type="button"
+      >
+        {props.expanded ? '▾ ' : '▸ '}{props.foldLabel}
+      </button>
+      <div data-testid={`${props.testId}-body`} hidden={!props.expanded}>{props.children}</div>
     </div>
   )
 }

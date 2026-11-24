@@ -474,7 +474,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
     // and the mission paused, who is tracked and who is stale stay readable.
     await injectOneStalePosition(page)
     await pauseMission(page)
-    await page.getByTestId('ws-full-map').click()
+    // Start already left the map clear (DON-368).
     await expect(page.getByTestId('ws-full-map')).toHaveText('Show panel')
     await expect(page.getByTestId('ws-people-panel')).toBeHidden()
     await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
@@ -578,6 +578,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
   test('breadcrumb dot mode shows every authoritative fix without distance omission [DON-259]', async ({
     page,
   }) => {
+    await openWorkspacePanel(page, 'people')
     await page.getByTestId('open-devices-workspace').click()
     await page.getByTestId('breadcrumb-mode-dots').click()
     await page.getByTestId('device-breadcrumb-color-alpha').click()
@@ -730,6 +731,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
 
   test('full operational view with tracking, top bar and People panel', async ({ page }) => {
     await expect(page.getByTestId('ws-search-time')).not.toHaveText('00:00:00')
+    await openWorkspacePanel(page, 'people')
     await expect(page.getByTestId('ws-people-panel')).toBeVisible()
 
     await captureAndRegister(page, {

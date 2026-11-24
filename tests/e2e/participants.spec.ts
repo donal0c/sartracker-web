@@ -50,7 +50,7 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-participants-section-summary')).toContainText('1 group')
     await openMissionSections(page, ['participants'])
-    await expect(page.getByTestId('participant-active-list')).toContainText('Hill Team')
+    await expectShown(page.getByTestId('participant-active-list'), 'Hill Team')
   })
 
   test('keeps pre-start selections for a mission started after finishing an earlier one [DON-292]', async ({ page }) => {
@@ -58,10 +58,10 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-name-input').fill('Earlier Mission')
     await page.getByTestId('mission-start-btn').click()
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await expect(page.getByTestId('participant-selection-step')).toBeVisible()
 
     await openParticipantPickers(page)
@@ -71,9 +71,11 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-name-input').fill('Second Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
+    // The list folds behind "Change who's taking part" while running (DON-368).
+    await openMissionSections(page, ['participants'])
 
-    await expect(page.getByTestId('participant-active-list')).toContainText('Hill Team')
-    await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
+    await expectShown(page.getByTestId('participant-active-list'), 'Hill Team')
+    await expectShown(page.getByTestId('participant-active-list'), 'Alpha Team')
     const recorded = await page.evaluate(() => {
       const state = window.__SARTRACKER_BROWSER_HARNESS__?.readState()
       const mission = state?.missions.find((entry) => entry.name === 'Second Mission')
@@ -93,8 +95,10 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-name-input').fill('Participant Flow')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
-    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+    // The list folds behind "Change who's taking part" while running (DON-368).
+    await openMissionSections(page, ['participants'])
+    await expectShown(page.getByTestId('participant-active-list'), 'Alpha Team')
+    await expectShown(page.getByTestId('participant-backfill-status'), 'still loading')
 
     await injectTwoDeviceSnapshot(page)
     const initiallyPersistedDeviceIds = await page.evaluate(() =>
@@ -103,7 +107,7 @@ test.describe('mission participants [DON-271]', () => {
     expect(initiallyPersistedDeviceIds).toEqual(['1'])
     await expect(page.getByTestId('ws-toggle-people')).toContainText('People 1')
 
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await page.getByTestId('participant-add-ref').selectOption('2')
     const earlierLocalTime = await page.evaluate(() => {
       const value = new Date(Date.now() - 60 * 60 * 1_000)
@@ -112,8 +116,8 @@ test.describe('mission participants [DON-271]', () => {
     })
     await page.getByTestId('participant-effective-from').fill(earlierLocalTime)
     await page.getByTestId('participant-add-btn').click()
-    await expect(page.getByTestId('participant-active-list')).toContainText('Bravo Team')
-    await expect(page.getByTestId('participant-backfill-status').last()).toContainText('pending')
+    await expectShown(page.getByTestId('participant-active-list'), 'Bravo Team')
+    await expectShown(page.getByTestId('participant-backfill-status').last(), 'still loading')
 
     await injectTwoDeviceSnapshot(page)
     await expect(page.getByTestId('ws-toggle-people')).toContainText('People 2')
@@ -139,19 +143,19 @@ test.describe('mission participants [DON-271]', () => {
     )
     await page.getByTestId('mission-start-btn').click()
 
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await page.getByTestId('participant-add-ref').selectOption('1')
     await expect(page.getByTestId('participant-add-btn')).toBeDisabled()
     await page.getByTestId('participant-history-start-mission').check()
     await page.getByTestId('participant-add-btn').click()
-    await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
-    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+    await expectShown(page.getByTestId('participant-active-list'), 'Alpha Team')
+    await expectShown(page.getByTestId('participant-backfill-status'), 'still loading')
 
     await page.getByTestId('participant-add-ref').selectOption('2')
     await page.getByTestId('participant-history-start-now').check()
     await page.getByTestId('participant-add-btn').click()
     await expect(page.getByTestId('participant-backfill-status').last())
-      .toContainText('no earlier history requested')
+      .toContainText('no earlier ones asked for')
 
     const state = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__?.readState())
     const missionStart = state?.missions[0]?.start_time
@@ -183,8 +187,10 @@ test.describe('mission participants [DON-271]', () => {
     await expect(groupCoveredDevice).toBeDisabled()
     await page.getByTestId('mission-name-input').fill('Group Follow Mission')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('participant-backfill-status')).toContainText(
-      '1/1 required group members',
+    // The list folds behind "Change who's taking part" while running (DON-368).
+    await openMissionSections(page, ['participants'])
+    await expectShown(page.getByTestId('participant-backfill-status'),
+      'loading for 1 of 1 people',
     )
 
     // A leave needs a second complete roster to confirm it [DON-300], so the
@@ -206,7 +212,7 @@ test.describe('mission participants [DON-271]', () => {
     await expect(page.getByTestId('participant-membership-notice').last()).toContainText(
       'No earlier evidence was invented',
     )
-    await expect(page.getByTestId('participant-active-list')).toContainText('Hill Team')
+    await expectShown(page.getByTestId('participant-active-list'), 'Hill Team')
     await expect(page.getByTestId('participant-active-list')).not.toContainText('renamed server-side')
     const state = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__?.readState())
     expect(state?.groupMembershipEvents.map((event) => [event.traccar_device_id, event.change])).toEqual(
@@ -224,11 +230,11 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-offset-input').fill('1')
     await page.getByTestId('mission-start-btn').click()
 
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await page.getByTestId('participant-add-ref').selectOption('2')
     await page.getByTestId('participant-history-start-now').check()
     await page.getByTestId('participant-add-btn').click()
-    await expect(page.getByTestId('participant-active-list')).toContainText('Bravo Team')
+    await expectShown(page.getByTestId('participant-active-list'), 'Bravo Team')
 
     await page.evaluate(async () => {
       const observedAt = new Date().toISOString()
@@ -282,9 +288,11 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-name-input').fill('Backfill Finish Fence Mission')
     await page.getByTestId('mission-offset-input').fill('2')
     await page.getByTestId('mission-start-btn').click()
-    await expect(page.getByTestId('participant-backfill-status')).toContainText('pending')
+    // The list folds behind "Change who's taking part" while running (DON-368).
+    await openMissionSections(page, ['participants'])
+    await expectShown(page.getByTestId('participant-backfill-status'), 'still loading')
 
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
 
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog')
@@ -317,16 +325,17 @@ test.describe('mission participants [DON-271]', () => {
     await page.getByTestId('mission-name-input').fill('Unique Participant Path Mission')
     await page.getByTestId('mission-start-btn').click()
 
-    await openMissionPanel(page)
+    await openMissionSections(page, ['participants'])
     await page.getByTestId('participant-add-kind').selectOption('group')
     await page.getByTestId('participant-add-ref').selectOption('101')
     await page.getByTestId('participant-history-start-now').check()
     await page.getByTestId('participant-add-btn').click()
 
-    await expect(page.getByTestId('participant-management')).toContainText(
+    // Errors sit above the fold, so they show while the form is folded (DON-368).
+    await expect(page.getByTestId('participant-warnings')).toContainText(
       'Participant group already covers an active individual device.',
     )
-    await expect(page.getByTestId('participant-active-list')).toContainText('Alpha Team')
+    await expectShown(page.getByTestId('participant-active-list'), 'Alpha Team')
     await expect(page.getByTestId('participant-active-list')).not.toContainText('Hill Team')
     const state = await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__?.readState())
     expect(state?.missionParticipants.filter((participant) => participant.removed_at === null)).toHaveLength(1)
@@ -409,4 +418,16 @@ async function injectSnapshotWithoutCurrentFixes(
       rawBreadcrumbsForPersistence: [],
     })
   })
+}
+
+/**
+ * Asserts fold content is on screen as well as in the DOM: a participant row
+ * inside the closed "Change who's taking part" fold is not visible (DON-368).
+ */
+async function expectShown(
+  locator: import('@playwright/test').Locator,
+  text: string | RegExp,
+): Promise<void> {
+  await expect(locator).toBeVisible()
+  await expect(locator).toContainText(text)
 }

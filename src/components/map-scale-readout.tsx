@@ -66,7 +66,7 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
 
   return (
     <div
-      className="sar-map-scale pointer-events-none absolute bottom-[5.75rem] left-4 z-10"
+      className="sar-map-scale pointer-events-none absolute bottom-[calc(var(--sar-coordinate-bar-height,72px)+1.25rem)] left-4 z-10"
       data-testid="map-scale-readout"
       title="Current map scale"
     >
@@ -84,7 +84,7 @@ export function MapScaleReadout({ mapRef }: MapScaleReadoutProps) {
           {readout.label}
         </span>
       </div>
-      <p className="mt-1.5 text-[10px] font-black uppercase tracking-[0.14em] text-amber-200">
+      <p className="mt-1.5 text-[12px] font-black uppercase tracking-[0.14em] text-amber-200">
         Map Scale
       </p>
     </div>

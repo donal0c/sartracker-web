@@ -8,7 +8,7 @@ export type MapCameraSnapshot = {
 }
 
 type CameraMap = Pick<MapLibreMap, 'getCenter' | 'getZoom' | 'getBearing' | 'getPitch'>
-type NavigationMap = CameraMap & Pick<MapLibreMap, 'flyTo' | 'jumpTo' | 'on' | 'off'>
+type NavigationMap = CameraMap & Pick<MapLibreMap, 'flyTo' | 'jumpTo' | 'on' | 'off' | 'resize' | 'getContainer' | 'getCanvas'>
 type NavigationIntent = {
   readonly camera: MapCameraSnapshot
   readonly isCurrent: () => boolean
@@ -53,8 +53,18 @@ export function navigateMapToTarget(
   map.on('movestart', onMoveStart)
   map.on('style.load', onStyleLoad)
   map.on('remove', release)
+  // A panel may have docked beside the map in the same render (All devices after Zoom),
+  // so measure the canvas again before choosing where the target lands (DON-368).
+  if (canvasSizeIsStale(map)) map.resize()
   map.flyTo({ center, zoom: intent.camera.zoom, essential: true }, NAVIGATION_EVENT)
   return release
+}
+
+/** True when the container has changed size since the canvas was last drawn. */
+function canvasSizeIsStale(map: Pick<MapLibreMap, 'getContainer' | 'getCanvas'>): boolean {
+  const container = map.getContainer()
+  const canvas = map.getCanvas()
+  return container.clientWidth !== canvas.clientWidth || container.clientHeight !== canvas.clientHeight
 }
 
 /** Applies a style restoration without mistaking it for an operator camera action. */
