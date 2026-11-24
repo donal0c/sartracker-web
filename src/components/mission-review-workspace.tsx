@@ -361,8 +361,9 @@ export function MissionReviewWorkspace() {
             </div>
           </aside>
 
-          <section className="flex min-h-0 flex-col px-6 py-5">
-            <div className="flex items-center gap-2 border-b border-stone-800 pb-3">
+          <section className="flex min-h-0 min-w-0 flex-col px-6 py-5">
+            {/* Wraps, so a docked Review narrowed for the map keeps every tab reachable (DON-368). */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-stone-800 pb-3">
               <TabButton
                 active={activeTab === 'mission-details'}
                 label="Mission Details"

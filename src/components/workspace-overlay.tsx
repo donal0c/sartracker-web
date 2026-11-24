@@ -107,14 +107,18 @@ export function WorkspaceOverlay({
       return
     }
 
-    const root = document.documentElement
-    const publish = () => root.style.setProperty(DOCKED_PANEL_WIDTH_VAR, `${panel.getBoundingClientRect().width}px`)
+    const key = {}
+    const publish = () => {
+      dockedPanelWidths.set(key, panel.getBoundingClientRect().width)
+      publishDockedPanelWidth()
+    }
     publish()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
     observer?.observe(panel)
     return () => {
       observer?.disconnect()
-      root.style.removeProperty(DOCKED_PANEL_WIDTH_VAR)
+      dockedPanelWidths.delete(key)
+      publishDockedPanelWidth()
     }
   }, [docked, open])
 
@@ -213,6 +217,7 @@ export function WorkspaceOverlay({
         onKeyDown={handleKeyDown}
         ref={panelRef}
         role="dialog"
+        style={docked ? { maxWidth: dockedPanelMaxWidth(maxWidth) } : undefined}
         tabIndex={-1}
       >
         {children}
@@ -221,8 +226,45 @@ export function WorkspaceOverlay({
   )
 }
 
+/** Narrowest map a docked panel may leave beside itself and the side panel (DON-368). */
+export const MIN_DOCKED_MAP_WIDTH = '30rem'
+/** Narrowest a docked panel gets while making room for that map (DON-368). */
+export const MIN_DOCKED_PANEL_WIDTH = '20rem'
+const DOCKED_PANEL_WIDTHS: Readonly<Record<string, string>> = { 'max-w-md': '28rem', 'max-w-xl': '36rem' }
+
+/**
+ * A docked panel narrows before the map gets narrower than
+ * {@link MIN_DOCKED_MAP_WIDTH}, so the map, Map Tools and the alarm action stay
+ * usable beside it and the side panel (DON-368).
+ */
+function dockedPanelMaxWidth(maxWidthClass: string): string {
+  const preferred = DOCKED_PANEL_WIDTHS[maxWidthClass]
+  if (preferred === undefined) {
+    throw new Error(`Docked workspace width "${maxWidthClass}" has no known size; add it to DOCKED_PANEL_WIDTHS.`)
+  }
+  return `max(${MIN_DOCKED_PANEL_WIDTH}, min(${preferred}, calc(100vw - var(--sar-workspace-side-width, 0px) - ${MIN_DOCKED_MAP_WIDTH})))`
+}
+
 /** Width of an open docked workspace panel; the map row is padded by it (DON-368). */
 export const DOCKED_PANEL_WIDTH_VAR = '--sar-docked-panel-width'
+
+/**
+ * Widths of every docked panel still open. Review and All devices can both be
+ * docked, one over the other on the left, so the map row makes room for the
+ * widest one still open; closing one never hands the map back under another
+ * (DON-368).
+ */
+const dockedPanelWidths = new Map<object, number>()
+
+/** Publishes the widest open docked panel, or clears the space when none is open. */
+function publishDockedPanelWidth(): void {
+  const root = document.documentElement
+  if (dockedPanelWidths.size === 0) {
+    root.style.removeProperty(DOCKED_PANEL_WIDTH_VAR)
+    return
+  }
+  root.style.setProperty(DOCKED_PANEL_WIDTH_VAR, `${Math.max(...dockedPanelWidths.values())}px`)
+}
 
 /** Marks regions that a modal workspace makes inert while it is open. */
 export const MODAL_BACKGROUND_ATTRIBUTE = 'data-modal-background'

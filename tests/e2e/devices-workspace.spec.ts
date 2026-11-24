@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openMissionPanel, openWorkspacePanel } from './helpers/workspace-panels'
+import { openMissionPanel, openMissionReview, openWorkspacePanel } from './helpers/workspace-panels'
 
 test.describe('M19 devices workspace', () => {
   test.beforeEach(async ({ page }) => {
@@ -653,6 +653,12 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     }), { timeout: 10_000 }).toBe('clear')
   })
 
+  test('fits the open Map Tools panels inside the map beside the docked list', async ({ page }) => {
+    await page.getByTestId('device-zoom-alpha').click()
+    await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await expectMapToolsPanelsInsideMap(page)
+  })
+
   test('keeps the filter, search and keyboard focus when Zoom docks the list', async ({ page }) => {
     await page.getByTestId('device-filter-stale').click()
     await page.getByTestId('device-list-search').fill('Bravo')
@@ -1039,4 +1045,62 @@ async function targetPlacement(page: import('@playwright/test').Page, target: [n
       ? 'visible'
       : `hidden at ${Math.round(x)},${Math.round(y)}; dock ends ${Math.round(dock.right)}, map ${Math.round(canvas.left)}-${Math.round(canvas.right)}`
   }, target)
+}
+
+test.describe('Review docked at the narrowest supported width [DON-368]', () => {
+  test.use({ viewport: { width: 1180, height: 768 } })
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Narrow Review Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await seedTrackingWorkspace(page)
+    await openWorkspacePanel(page, 'people')
+    await openMissionReview(page)
+    await expect(page.getByTestId('mission-review-docked-readonly-note')).toBeVisible()
+    await expect(page.getByTestId('ws-side')).toHaveAttribute('data-empty', 'false')
+  })
+
+  test('keeps a usable map, Map Tools and the alarm action beside Review and People', async ({ page }) => {
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('.ws-map-area')?.getBoundingClientRect().width ?? 0)))
+      .toBeGreaterThanOrEqual(MIN_DOCKED_MAP_WIDTH_PX)
+    await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-alarm-details"]'), { timeout: 10_000 }).toBe('inside')
+    await expectMapToolsPanelsInsideMap(page)
+  })
+})
+
+/** The narrowest map a docked panel may leave beside itself (DON-368). */
+const MIN_DOCKED_MAP_WIDTH_PX = 480
+
+/** Opens Map Tools, then Measure and Marker at GR, and checks each stays inside the map, uncovered. */
+async function expectMapToolsPanelsInsideMap(page: import('@playwright/test').Page): Promise<void> {
+  await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: 'collapsed Map Tools' }).toBe('inside')
+  await page.getByTestId('drawing-toolbar-expand').click()
+  for (const tool of ['measure', 'marker_at_grid']) {
+    await page.getByTestId(`drawing-tool-${tool}`).click()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: tool }).toBe('inside')
+  }
+}
+
+/** 'inside' when the element lies within the map area and nothing else is drawn over its centre. */
+async function uncoveredInsideMap(page: import('@playwright/test').Page, selector: string): Promise<string> {
+  return page.evaluate((sel) => {
+    const element = document.querySelector(sel)
+    const map = document.querySelector('.ws-map-area')
+    if (element === null || map === null) return 'missing'
+    const box = element.getBoundingClientRect()
+    const area = map.getBoundingClientRect()
+    if (box.width === 0) return 'not drawn'
+    if (box.left < area.left - 1 || box.right > area.right + 1 || box.top < area.top - 1 || box.bottom > area.bottom + 1) {
+      return `outside the map: ${Math.round(box.left)}-${Math.round(box.right)} vs ${Math.round(area.left)}-${Math.round(area.right)}`
+    }
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + Math.min(box.height, 40) / 2)
+    if (top === null || !element.contains(top)) return `covered by ${top?.getAttribute('data-testid') ?? top?.className ?? 'nothing'}`
+    return 'inside'
+  }, selector)
 }

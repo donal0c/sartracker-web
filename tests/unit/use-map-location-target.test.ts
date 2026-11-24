@@ -36,7 +36,7 @@ describe('useMapLocationTarget', () => {
   })
 
   it('measures the map again before flying, so a panel that just docked beside it is allowed for [DON-368]', () => {
-    const harness = createMapHarness({ styleLoaded: true, styleLayers: [{ id: 'base-layer' }] })
+    const harness = createMapHarness({ styleLoaded: true, styleLayers: [{ id: 'base-layer' }], canvasWidth: 996 })
     renderHook(harness.map)
 
     act(() => {
@@ -45,6 +45,18 @@ describe('useMapLocationTarget', () => {
 
     expect(harness.resize).toHaveBeenCalledOnce()
     expect(harness.resize.mock.invocationCallOrder[0]).toBeLessThan(harness.flyTo.mock.invocationCallOrder[0] ?? 0)
+  })
+
+  it('does not resize the map for a Go To when its size has not changed [DON-368]', () => {
+    const harness = createMapHarness({ styleLoaded: true, styleLayers: [{ id: 'base-layer' }] })
+    renderHook(harness.map)
+
+    act(() => {
+      useMapTargetStore.getState().queueTarget(52.05, -9.84, 'Device')
+    })
+
+    expect(harness.flyTo).toHaveBeenCalledOnce()
+    expect(harness.resize).not.toHaveBeenCalled()
   })
 
   it('applies a repeated Go To after the prior target has expired [AUD-06]', () => {
@@ -397,6 +409,8 @@ function TargetProbe(props: {
 function createMapHarness(input: {
   readonly styleLayers: readonly StyleLayer[]
   readonly styleLoaded: boolean
+  /** Width the canvas was last drawn at; the container is 548 px wide. */
+  readonly canvasWidth?: number
 }): {
   readonly addLayer: ReturnType<typeof vi.fn>
   readonly addSource: ReturnType<typeof vi.fn>
@@ -427,6 +441,8 @@ function createMapHarness(input: {
   const resize = vi.fn()
   const map = {
     resize,
+    getContainer: () => ({ clientWidth: 548, clientHeight: 600 }),
+    getCanvas: () => ({ clientWidth: input.canvasWidth ?? 548, clientHeight: 600 }),
     addLayer,
     addSource,
     flyTo,

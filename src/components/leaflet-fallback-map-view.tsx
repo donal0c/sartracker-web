@@ -31,6 +31,7 @@ import {
   renderLeafletFallbackOverlays,
 } from '../features/map/leaflet-fallback-renderer'
 import type { OfflineMapReadiness } from '../features/map/offline-map-readiness'
+import { keepLeafletSizedToContainer } from '../features/map/leaflet-container-resize'
 
 type HoverCoordinate = {
   readonly latitude: number | null
@@ -119,12 +120,14 @@ export function LeafletFallbackMapView() {
     map.on('mouseout', () => setHoverCoordinate(EMPTY_HOVER_COORDINATE))
     mapRef.current = map
     overlayGroupRef.current = overlayGroup
+    const stopFollowingContainer = keepLeafletSizedToContainer(map, containerRef.current)
 
     if (typeof window !== 'undefined') {
       ;(window as Window & { __SARTRACKER_LEAFLET_MAP__?: L.Map }).__SARTRACKER_LEAFLET_MAP__ = map
     }
 
     return () => {
+      stopFollowingContainer()
       map.remove()
       mapRef.current = null
       overlayGroupRef.current = null
