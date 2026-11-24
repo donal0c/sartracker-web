@@ -671,6 +671,9 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
       useMapOverlayWarningStore.getState().raiseWarning({ ...warning, registrationId: 'layout-fixture-tracking' as typeof warning.registrationId })
     })
     await expect(page.getByTestId('map-degraded-alert')).toBeVisible()
+    // The bar must really have wrapped past the old fixed 80 px clearance.
+    await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect().height ?? 0)))
+      .toBeGreaterThan(80)
     await expect.poll(() => page.evaluate(() => {
       const alerts = document.querySelector('[data-testid="map-degraded-alert"]')?.getBoundingClientRect()
       const bar = document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect()
@@ -1132,18 +1135,37 @@ test.describe('Review docked with People closed at the narrowest supported width
     for (const tool of ['measure', 'marker_at_grid']) {
       await page.getByTestId(`drawing-tool-${tool}`).click()
       await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
-      await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: tool }).toBe('inside')
-      await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-exceptions"]'), { timeout: 10_000, message: `${tool} warnings` }).toBe('inside')
-      await expect.poll(() => page.evaluate(() => {
-        const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
-        const warnings = document.querySelector('[data-testid="ws-exceptions"]')?.getBoundingClientRect()
-        if (tools === undefined || warnings === undefined) return 'missing'
-        const overlap = tools.left < warnings.right && warnings.left < tools.right && tools.top < warnings.bottom && warnings.top < tools.bottom
-        return overlap ? `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} meets warnings ${Math.round(warnings.top)}-${Math.round(warnings.bottom)}` : 'apart'
-      }), { timeout: 10_000, message: tool }).toBe('apart')
+      await expectMapToolsApartFromWarnings(page, tool)
     }
+
+    // The red alarm appears while Map Tools is open: it pushes the warnings down
+    // without resizing them, and Map Tools must follow (Codex round 5).
+    await page.evaluate(async () => {
+      const { useTrackingMapUpdateStore } = await import('/src/features/tracking/tracking-map-update-store.ts')
+      useTrackingMapUpdateStore.getState().reportFailure('Layout fixture: the map could not draw the latest positions.')
+    })
+    await expect(page.getByTestId('ws-alarm')).toContainText('MAP NOT UPDATING')
+    // Wait until the warnings have actually moved down under the alarm.
+    await expect.poll(() => page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.ws-exceptions') as HTMLElement).getPropertyValue('--ws-alarm-height')) || 0))
+      .toBeGreaterThan(0)
+    await expect(page.getByTestId('ws-exceptions')).toBeVisible()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    await expectMapToolsApartFromWarnings(page, 'marker_at_grid with the alarm')
   })
 })
+
+/** Checks Map Tools and the warnings named on the map are each inside the map, uncovered, and apart. */
+async function expectMapToolsApartFromWarnings(page: import('@playwright/test').Page, label: string): Promise<void> {
+  await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: label }).toBe('inside')
+  await expect.poll(() => uncoveredInsideMap(page, '[data-testid="ws-exceptions"]'), { timeout: 10_000, message: `${label} warnings` }).toBe('inside')
+  await expect.poll(() => page.evaluate(() => {
+    const tools = document.querySelector('[data-testid="drawing-toolbar"]')?.getBoundingClientRect()
+    const warnings = document.querySelector('[data-testid="ws-exceptions"]')?.getBoundingClientRect()
+    if (tools === undefined || warnings === undefined) return 'missing'
+    const overlap = tools.left < warnings.right && warnings.left < tools.right && tools.top < warnings.bottom && warnings.top < tools.bottom
+    return overlap ? `Map Tools ${Math.round(tools.top)}-${Math.round(tools.bottom)} meets warnings ${Math.round(warnings.top)}-${Math.round(warnings.bottom)}` : 'apart'
+  }), { timeout: 10_000, message: label }).toBe('apart')
+}
 
 /** The narrowest map a docked panel may leave beside itself (DON-368). */
 const MIN_DOCKED_MAP_WIDTH_PX = 480

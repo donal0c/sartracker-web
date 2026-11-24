@@ -4,8 +4,12 @@ import { useMapTargetStore } from '../../features/map/map-target-store'
 import { selectExceptionsForMap, type PersonRow } from '../../features/workspace/people-model'
 
 const MAX_EXCEPTIONS_ON_MAP = 3
-/** Bottom of the warnings on the map, measured from the top of the map area. */
-export const EXCEPTIONS_BOTTOM_VAR = '--ws-exceptions-bottom'
+/**
+ * Height of the warnings on the map. Their top is set in CSS from the live
+ * alarm height, so CSS works out their bottom and nothing measured goes stale
+ * when the alarm moves them.
+ */
+export const EXCEPTIONS_HEIGHT_VAR = '--ws-exceptions-height'
 
 /** With People closed, whoever needs a look is still named on the map, in words. */
 export function ExceptionsOnMap(props: { readonly people: readonly PersonRow[]; readonly onShowAll: () => void }) {
@@ -20,13 +24,13 @@ export function ExceptionsOnMap(props: { readonly people: readonly PersonRow[]; 
     const list = listRef.current
     const scope = list?.parentElement
     if (!shown || list === null || scope === null || scope === undefined) return undefined
-    const publish = () => scope.style.setProperty(EXCEPTIONS_BOTTOM_VAR, `${list.offsetTop + list.offsetHeight}px`)
+    const publish = () => scope.style.setProperty(EXCEPTIONS_HEIGHT_VAR, `${list.offsetHeight}px`)
     publish()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish)
     observer?.observe(list)
     return () => {
       observer?.disconnect()
-      scope.style.removeProperty(EXCEPTIONS_BOTTOM_VAR)
+      scope.style.removeProperty(EXCEPTIONS_HEIGHT_VAR)
     }
   }, [shown])
 
