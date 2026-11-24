@@ -286,20 +286,21 @@ export function MissionControlPanel({
           />
         ) : null}
 
-        <div className={`grid gap-3 sm:grid-cols-2 ${simplified ? (startScreen ? 'hidden' : 'sm:!grid-cols-1') : ''}`}>
+        {/* Simplified: mission time shows once, as Search time in the top bar (rule 3, DON-368). */}
+        {simplified ? null : <div className="grid gap-3 sm:grid-cols-2">
           <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">{simplified ? 'Since start' : 'Elapsed'}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Elapsed</p>
             <p className={`mt-1 font-mono font-black leading-none text-stone-100 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-elapsed">
               {formatMissionDuration(timerState?.elapsedSeconds ?? 0)}
             </p>
           </div>
-          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'} ${simplified ? 'hidden' : ''}`}>
+          <div className={`sar-readout ${sectionsCollapsible ? 'px-3 py-2' : 'p-3'}`}>
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-300">Active Search</p>
             <p className={`mt-1 font-mono font-black leading-none text-emerald-400 ${sectionsCollapsible ? 'text-[20px]' : 'text-[26px]'}`} data-testid="mission-active-search">
               {formatMissionDuration(timerState?.activeSeconds ?? 0)}
             </p>
           </div>
-        </div>
+        </div>}
 
         {/* Setup Inputs - Only visible in Idle */}
         {phase === 'idle' ? (
@@ -419,14 +420,28 @@ export function MissionControlPanel({
         {/* During a mission Pause/Finish sit above the sections, so a section
             held open by a warning can never push them out of view [DON-300]. */}
         {phase !== 'idle' && !resumeChoice ? (
-          <MissionSectionDisclosure
-            collapsible={sectionsCollapsible}
-            section={participantSection}
-            testId="mission-participants-section"
-            title={simplified ? 'People on this mission' : 'Participants'}
-          >
-            <ParticipantControlsSection phase={phase} />
-          </MissionSectionDisclosure>
+          simplified ? (
+            // The full admin folds behind one button; warnings stay above it (DON-368).
+            <MissionSectionDisclosure
+              alwaysShown={<ParticipantControlsSection part="warnings" phase={phase} variant="simplified" />}
+              collapsible={sectionsCollapsible}
+              foldLabel="Change who's taking part"
+              section={participantSection}
+              testId="mission-participants-section"
+              title="People on this mission"
+            >
+              <ParticipantControlsSection part="admin" phase={phase} variant="simplified" />
+            </MissionSectionDisclosure>
+          ) : (
+            <MissionSectionDisclosure
+              collapsible={sectionsCollapsible}
+              section={participantSection}
+              testId="mission-participants-section"
+              title="Participants"
+            >
+              <ParticipantControlsSection phase={phase} />
+            </MissionSectionDisclosure>
+          )
         ) : null}
 
         {simplified && !startScreen ? (
@@ -442,8 +457,10 @@ export function MissionControlPanel({
         ) : null}
 
         {/* After Finish the start screen still lists the finished mission's outings, so one left open reads "Open" (DON-270). */}
+        {/* Rule 5 (DON-368): no Outings while a mission runs, unless an outing error needs
+            seeing. The data and behaviour stay; after Finish the outings show again. */}
         {(currentMission !== null || governanceMission !== null) && outingSection.enabled && simplified
-          && (!startScreen || (phase === 'idle' && governanceMission !== null)) ? (
+          && ((!startScreen && outingNeedsAttention) || (phase === 'idle' && governanceMission !== null)) ? (
           <MoreMissionOptions open={outingNeedsAttention}>
             <MissionSectionDisclosure
               collapsible={sectionsCollapsible}

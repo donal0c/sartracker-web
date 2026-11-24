@@ -172,6 +172,55 @@ describe('ParticipantControlsSection [DON-271]', () => {
     })
   })
 
+  describe('simplified running panel: warnings above the fold, changes inside it [DON-368]', () => {
+    const group = {
+      id: 'hill', mission_id: 'mission-1', kind: 'group' as const, traccar_device_id: null, mission_team_id: 'team',
+      traccar_group_id: '101', team_name: 'Hill Team', provenance: 'explicit' as const,
+      effective_from: '2026-11-24T05:37:16.000Z', added_at: '2026-11-24T07:37:16.000Z', added_by: 'Mission coordinator',
+      removed_at: null, removed_by: null, backfill_member_count: 6, backfill_completed_count: 0,
+      backfill_scope_unknown: false, starting_member_device_ids_json: '[]',
+    }
+
+    it('shows every warning, in plain words, and none of the admin form', () => {
+      useParticipantStore.setState({
+        participants: [{ ...group, backfill_scope_error: 'Group roster could not be read.' }],
+        envelope: { activeDeviceCount: 6, warning: 'Tracking scope is wider than this mission.' } as never,
+        membershipNotices: ['6 devices in Hill Team are missing from the tracking server.'],
+        rosterError: 'Group membership could not be recorded: disk busy',
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      const text = document.body.textContent ?? ''
+      expect(text).toContain('Tracking scope is wider than this mission.')
+      expect(text).toContain('missing from the tracking server')
+      expect(text).toContain('disk busy')
+      expect(text).toContain('Earlier positions for Hill Team could not be loaded: Group roster could not be read.')
+      expect(document.querySelector('[data-testid="participant-add-btn"]')).toBeNull()
+      expect(document.querySelector('[data-testid="participant-active-list"]')).toBeNull()
+    })
+
+    it('renders nothing when there is nothing to warn about', () => {
+      useParticipantStore.setState({ participants: [group] })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'warnings' }))
+      expect(host?.textContent).toBe('')
+    })
+
+    it('lists people with Remove and the add form in plain words, without repeating the warnings', () => {
+      useParticipantStore.setState({
+        participants: [group],
+        envelope: { activeDeviceCount: 6, warning: 'Tracking scope is wider than this mission.' } as never,
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', variant: 'simplified', part: 'admin' }))
+      const management = document.querySelector('[data-testid="participant-management"]')?.textContent ?? ''
+      expect(management).toContain('Hill Team')
+      expect(management).toContain('Remove')
+      expect(document.querySelector('[data-testid="participant-add-btn"]')).not.toBeNull()
+      expect(management).not.toContain('Tracking scope is wider')
+      expect(management).not.toMatch(/explicit|backfill|effective|Traccar group|Individual device/)
+      expect(document.querySelector('[data-testid="participant-backfill-status"]')?.textContent)
+        .toContain('Earlier positions: loading for 6 of 6 people')
+    })
+  })
+
   it('surfaces active-mission membership bookkeeping failures', () => {
     useParticipantStore.setState({
       rosterError: 'Group membership could not be recorded: disk busy',

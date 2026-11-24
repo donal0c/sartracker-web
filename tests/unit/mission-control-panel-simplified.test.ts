@@ -23,7 +23,8 @@ vi.mock('../../src/features/mission/use-mission-section-summaries', () => ({
   useOutingSectionSummary: () => ({ summary: 'No outing', attention: mocks.outingAttention, enabled: true }),
 }))
 vi.mock('../../src/components/participant-controls-section', () => ({
-  ParticipantControlsSection: () => React.createElement('div', { 'data-testid': 'participants-stub' }),
+  ParticipantControlsSection: (props: { readonly part?: string }) =>
+    React.createElement('div', { 'data-testid': `participants-stub-${props.part ?? 'all'}` }),
 }))
 vi.mock('../../src/components/outing-controls-section', () => ({
   OutingControlsSection: () => React.createElement('div', { 'data-testid': 'outings-stub' }, 'Could not load outings'),
@@ -126,6 +127,60 @@ describe('MissionControlPanel in the simplified workspace', () => {
     expect(card?.textContent).toContain('Last finished mission: archive and unlock')
     expect(card?.closest('details')).toBeNull()
     expect(document.querySelector('[data-testid="mission-governance-card"]')?.closest('details')).toBeNull()
+  })
+
+  it('shows mission time once: no Since start clock in the running Mission panel [DON-368]', async () => {
+    mocks.model = createModel({ phase: 'active' })
+    await renderPanel()
+    expect(query('[data-testid="mission-elapsed"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('Since start')
+  })
+
+  it('folds who is taking part behind one button, with a one-line summary [DON-368]', async () => {
+    mocks.model = createModel({ phase: 'active' })
+    await renderPanel()
+    const section = query('[data-testid="mission-participants-section"]')
+    expect(section?.textContent).toContain('3 people')
+    const toggle = query('[data-testid="mission-participants-section-toggle"]')
+    expect(toggle?.textContent).toContain("Change who's taking part")
+    expect((query('[data-testid="mission-participants-section-body"]') as HTMLElement).hidden).toBe(true)
+    expect(query('[data-testid="participants-stub-admin"]')?.closest('[hidden]')).not.toBeNull()
+
+    // Two clicks to add or remove someone: this button, then Remove or Add.
+    click('[data-testid="mission-participants-section-toggle"]')
+    expect((query('[data-testid="mission-participants-section-body"]') as HTMLElement).hidden).toBe(false)
+    expect(query('[data-testid="participants-stub-admin"]')?.closest('[hidden]')).toBeNull()
+  })
+
+  it('never hides participant warnings behind the fold [DON-368]', async () => {
+    mocks.model = createModel({ phase: 'active' })
+    mocks.participantAttention = ['group history problem']
+    await renderPanel()
+    const warnings = query('[data-testid="participants-stub-warnings"]')
+    expect(warnings).not.toBeNull()
+    expect(warnings?.closest('[hidden]')).toBeNull()
+    expect(warnings?.closest('details:not([open])')).toBeNull()
+    expect(query('[data-testid="mission-participants-section"]')?.textContent).toContain('Needs attention')
+    // The admin list stays folded; the operator opens it only to change who is taking part.
+    expect(query('[data-testid="participants-stub-admin"]')?.closest('[hidden]')).not.toBeNull()
+  })
+
+  it('hides Outings from the running mission, keeping them after Finish [DON-368]', async () => {
+    mocks.model = createModel({ phase: 'active' })
+    await renderPanel()
+    expect(query('[data-testid="mission-outings-section"]')).toBeNull()
+    expect(query('[data-testid="outings-stub"]')).toBeNull()
+    expect(query('[data-testid="ws-more-mission-options"]')).toBeNull()
+    act(() => root?.unmount())
+    host?.remove()
+
+    mocks.model = createModel({
+      phase: 'idle', currentMission: null, canStart: true,
+      governanceMission: createMission({ status: 'finished' } as Partial<Mission>),
+    })
+    await renderPanel()
+    // Outside a running mission the section is not folded, so its content shows directly.
+    expect(query('[data-testid="outings-stub"]')).not.toBeNull()
   })
 
   it('cannot start a new mission while Resume is still in progress', async () => {
