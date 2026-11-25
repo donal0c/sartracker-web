@@ -377,7 +377,10 @@ export default [
   {
     check: 'Replay, basemaps and layers',
     id: 'replay-basemaps',
-    manualSteps: ['Inspect the basemap screenshots for rendered tiles; verify layer toggles and the reconstructed replay on the map.'],
+    manualSteps: [
+      'Inspect the basemap screenshots for rendered tiles; verify layer toggles and the reconstructed replay on the map.',
+      'Map scale [DON-339]: on online Discovery Topo, map flat (not tilted or rotated), compare the distance marked on the scale bar with a known 1 km grid interval near the map centre. Record NOT TESTED if Discovery Topo or its grid is unavailable.',
+    ],
     async run(ctx) {
       const mock = await startMockTraccar()
       ctx.cleanups.push(() => mock.close())
