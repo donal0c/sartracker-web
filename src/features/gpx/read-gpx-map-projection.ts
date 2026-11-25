@@ -55,9 +55,6 @@ export async function readGpxMapProjection(
   throw new Error('GPX map projection did not finish within its page limit.')
 }
 
-/**
- * Words the operator reads when the map does not show every imported track. Null when it does.
- */
 /** Notice for runtimes without a map projection, whose map can show only the visible list page. */
 export function describeListPageMapCoverage(shown: number, hasOtherPages: boolean): string | null {
   if (!hasOtherPages) return null
@@ -65,6 +62,19 @@ export function describeListPageMapCoverage(shown: number, hasOtherPages: boolea
     + 'other pages are not drawn in this runtime. Every track is still listed in the GPX panel.'
 }
 
+/**
+ * Notice for a failed map refresh [M-87]. The operational warning comes first, because the map notice shows only
+ * two lines (DON-369); the technical reason follows and is read in full from the notice's title.
+ */
+export function describeGpxMapRefreshFailure(shown: number, reason: string): string {
+  return `GPX map not refreshed: it still shows the ${shown} track${shown === 1 ? '' : 's'} from the last successful read; `
+    + 'newer imports may be missing. Every track is still listed in the GPX panel. '
+    + `Reason: ${reason.replace(/\.+$/u, '')}.`
+}
+
+/**
+ * Words the operator reads when the map does not show every imported track. Null when it does.
+ */
 export function describeGpxMapCoverage(projection: GpxMapProjection): string | null {
   const drawn = projection.entries.length
   if (drawn >= projection.totalActive && projection.undrawn.length === 0 && !projection.truncated) return null

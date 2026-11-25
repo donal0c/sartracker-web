@@ -203,7 +203,14 @@ describe('GPX runtime map coverage and watched rescans [DON-350]', () => {
 
     const runtime = lastRuntime(applyRuntime)
     expect(runtime.mapImports).toHaveLength(3)
-    expect(runtime.mapCoverageNotice).toMatch(/could not be refreshed[\s\S]*database busy/u)
+    expect(runtime.mapCoverageNotice).toMatch(/not refreshed[\s\S]*Reason: database busy\./u)
+    // The operational warning leads, so the two-line map notice shows it; the technical reason follows [DON-369].
+    expect(runtime.mapCoverageNotice).toMatch(
+      /^GPX map not refreshed: it still shows the 3 tracks from the last successful read; newer imports may be missing\./u,
+    )
+    expect(runtime.mapCoverageNotice?.indexOf('database busy')).toBeGreaterThan(
+      runtime.mapCoverageNotice?.indexOf('newer imports may be missing') ?? Number.POSITIVE_INFINITY,
+    )
   })
 
   it('keeps the operator on list page 2 when a rescan finds only unchanged files [M-37]', async () => {

@@ -1508,6 +1508,43 @@ test.describe('Long GPX notice with the alarm and team shortcuts at 1180x760 [DO
   })
 })
 
+test.describe('GPX map refresh failure notice at 1180x760 [DON-369]', () => {
+  test.use({ viewport: { width: 1180, height: 760 } })
+
+  test('[Codex r8] shows the operational warning within the two visible lines in the database-busy case', async ({ page }) => {
+    await serveBlankTiles(page)
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    const text = await page.evaluate(async () => {
+      const { describeGpxMapRefreshFailure } = await import('/src/features/gpx/read-gpx-map-projection.ts')
+      const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
+      const notice = describeGpxMapRefreshFailure(3, 'GPX map projection failed: SQLITE_BUSY: database is locked; the mission store could not answer within 5000 ms.')
+      useGpxStore.setState({ mapCoverageNotice: notice })
+      return notice
+    })
+    const notice = page.getByTestId('gpx-map-coverage-notice')
+    await expect(notice).toBeVisible()
+    await expect(notice).toHaveAttribute('title', text)
+    await expect(notice).toContainText('database is locked')
+    const warning = 'GPX map not refreshed: it still shows the 3 tracks from the last successful read; newer imports may be missing.'
+    // Every line box of the warning sentence lies inside the clamped notice, so it is on screen, not cut off.
+    await expect.poll(() => notice.evaluate((element, sentence) => {
+      const node = element.firstChild
+      if (node === null || node.nodeType !== Node.TEXT_NODE) return 'no text node'
+      const start = (node.textContent ?? '').indexOf(sentence)
+      if (start !== 0) return `warning starts at ${start}`
+      const range = document.createRange()
+      range.setStart(node, start)
+      range.setEnd(node, start + sentence.length)
+      const box = element.getBoundingClientRect()
+      const bottom = box.bottom - parseFloat(getComputedStyle(element).paddingBottom)
+      const cut = [...range.getClientRects()].find((line) => line.bottom > bottom + 0.5)
+      return cut === undefined ? 'visible' : `line at ${Math.round(cut.top)}-${Math.round(cut.bottom)} is below ${Math.round(bottom)}`
+    }, warning)).toBe('visible')
+  })
+})
+
 /** Checks Map Tools and the warnings named on the map are each inside the map, uncovered, and apart. */
 async function expectMapToolsApartFromWarnings(page: import('@playwright/test').Page, label: string): Promise<void> {
   await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: label }).toBe('inside')
