@@ -54,7 +54,9 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   Otherwise **New** asks for a name and the **Roll back time (hours)**. If
   your team default group is set and Traccar lists it, it is already ticked.
   **Check who is ticked before you press Start.** To pick other groups or
-  devices, open **Change who's taking part**.
+  devices, open **Change who's taking part** if it is shown; otherwise the
+  **Groups** list is already open, and single devices are under **Add one
+  person at a time**.
 - **Top bar, from the left:** the **Mission** button (pause, resume, finish,
   add people) with the search clock; the **tracking line** (press it for
   what is wrong and what to do); **People**, **Layers** and **Full map**;
@@ -156,7 +158,7 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Damaged settings are set aside, not lost.** The app starts with default
   settings and says the saved ones were damaged. Re-enter the tracking
   connection and check your team default group, maps and weather links, then
-  press **Save**. The damaged file is kept [M-47].
+  press **Save, Connect & Close**. The damaged file is kept [M-47].
 - **Backups pause when the disk is nearly full** instead of filling it: you
   see **Disk nearly full: mission backup paused**, and the last good backup
   is kept. A damaged copy is never saved over the last good backup
