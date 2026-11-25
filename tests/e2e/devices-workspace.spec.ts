@@ -1206,6 +1206,30 @@ test.describe('Review docked at the narrowest supported width [DON-368]', () => 
     await expectMapScaleClear(page, 'Review docked at 1180')
   })
 
+  // The map takes clicks on the warning cards, which are not interaction boundaries, so Measure works through them.
+  test('[Codex r7] Measure clicks reach the map through a warning card while the warnings show', async ({ page }) => {
+    await raiseTrackingOverlayWarning(page, ['tracking', 'measurements'])
+    await page.getByTestId('drawing-toolbar-expand').click()
+    await page.getByTestId('drawing-tool-measure').click()
+    await expect(page.locator('.sar-map-tools-body')).toHaveAttribute('data-panel-open', 'true')
+    const area = await page.locator('.ws-map-area').boundingBox()
+    const tools = await page.getByTestId('drawing-toolbar').boundingBox()
+    const card = await page.getByTestId('map-overlay-warning-layout-fixture-tracking').locator('p').last().boundingBox()
+    expect(area).not.toBeNull()
+    expect(tools).not.toBeNull()
+    expect(card).not.toBeNull()
+    // First point on open map right of Map Tools, above the warnings; second on the warning card's text below Map Tools.
+    const firstX = (tools!.x + tools!.width + area!.x + area!.width) / 2
+    const cardTextTop = Math.max(card!.y, tools!.y + tools!.height)
+    expect(card!.y + card!.height - cardTextTop).toBeGreaterThan(10)
+    await page.mouse.click(firstX, area!.y + area!.height * 0.3)
+    await page.mouse.click(card!.x + card!.width / 2, (cardTextTop + card!.y + card!.height) / 2)
+    await expect(page.getByTestId('measurement-count')).toHaveText('1')
+    await expect(page.getByTestId('map-overlay-warning-layout-fixture-tracking')).toBeVisible()
+    await page.getByTestId('drawing-toolbar-collapse').click()
+    await expectMapWarningsOnTop(page, 'after measuring through a warning, Map Tools closed')
+  })
+
   test('[Codex r2] measures, reads, clears and closes Map Tools beside Review while map warnings stay showing', async ({ page }) => {
     await raiseTrackingOverlayWarning(page, ['tracking', 'measurements'])
     await expect(page.getByTestId('map-degraded-alert').locator('[data-testid^="map-overlay-warning-layout-fixture"]')).toHaveCount(2)
@@ -1433,6 +1457,57 @@ test.describe('Review docked with People closed at 1180x760 [DON-369]', () => {
   })
 })
 
+test.describe('Long GPX notice with the alarm and team shortcuts at 1180x760 [DON-369]', () => {
+  test.use({ viewport: { width: 1180, height: 760 } })
+
+  test('[Codex r7] keeps every map warning uncovered with the alarm, team shortcuts, a long GPX notice and a tile warning', async ({ page }) => {
+    await page.context().route('https://*.opentopomap.org/**', (route) => route.abort())
+    await page.goto('/?missionHarness=1')
+    await page.getByTestId('app-title').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForSelector('canvas', { timeout: 15000 })
+    await openMissionPanel(page)
+    await page.getByTestId('mission-name-input').fill('Narrow Review Mission')
+    await page.getByTestId('mission-start-btn').click()
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    await page.evaluate(async () => {
+      const now = Date.now()
+      const at = (ms: number) => new Date(ms).toISOString()
+      const quiet = ['alpha', 'bravo', 'charlie', 'delta']
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: quiet.map((id) => ({ device_id: id, name: `${id} Team`, status: 'offline', last_seen: at(now - 40 * 60_000), unique_id: null, category: null })),
+          positions: quiet.map((id, index) => ({ id: `pos-${id}`, device_id: id, lat: 52 + index * 0.01, lon: -9.6, altitude: null, speed: null, battery: null, accuracy: null, timestamp: at(now - 40 * 60_000), source: null, data_origin: 'live', cache_age_seconds: null, device_cache_stale: false })),
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: at(now), warning: null },
+      )
+      const { useTrackingMapUpdateStore } = await import('/src/features/tracking/tracking-map-update-store.ts')
+      useTrackingMapUpdateStore.getState().reportFailure('Layout fixture: the map could not draw the latest positions.')
+    })
+    await openMissionReview(page)
+    await expect(page.getByTestId('ws-exceptions-more')).toBeVisible()
+    await expect(page.getByTestId('ws-alarm')).toContainText('MAP NOT UPDATING')
+    await page.evaluate(() => {
+      const map = (window as Window & { __SARTRACKER_MAP__?: import('maplibre-gl').Map }).__SARTRACKER_MAP__
+      map?.jumpTo({ center: [-8.2, 53.3], zoom: 12.3 })
+    })
+    await expect(page.getByTestId('map-degraded-alert')).toContainText(/tiles failed/i, { timeout: 15_000 })
+    await page.evaluate(async (text) => {
+      const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
+      useGpxStore.setState({ mapCoverageNotice: text })
+    }, LONG_GPX_NOTICE)
+    const notice = page.getByTestId('gpx-map-coverage-notice')
+    await expect(notice).toBeVisible()
+    // The notice keeps to a bounded height; its whole text stays readable from its title and to a screen reader.
+    await expect.poll(() => notice.evaluate((element) => Math.round(element.getBoundingClientRect().height))).toBeLessThanOrEqual(48)
+    await expect(notice).toHaveAttribute('title', LONG_GPX_NOTICE)
+    await expect(notice).toHaveText(LONG_GPX_NOTICE)
+    await expect(notice).toContainText('Map shows 2 of 5 imported GPX tracks.')
+    await expectMapWarningsOnTop(page, 'alarm, shortcuts, long GPX notice and tile warning')
+    await expect.poll(() => uncovered(page, 'ws-exceptions-more'), { timeout: 10_000 }).toBe('uncovered')
+  })
+})
+
 /** Checks Map Tools and the warnings named on the map are each inside the map, uncovered, and apart. */
 async function expectMapToolsApartFromWarnings(page: import('@playwright/test').Page, label: string): Promise<void> {
   await expect.poll(() => uncoveredInsideMap(page, '[data-testid="drawing-toolbar"]'), { timeout: 10_000, message: label }).toBe('inside')
@@ -1448,6 +1523,10 @@ async function expectMapToolsApartFromWarnings(page: import('@playwright/test').
 
 /** The narrowest map a docked panel may leave beside itself (DON-368). */
 const MIN_DOCKED_MAP_WIDTH_PX = 480
+/** Codex r7 (DON-369): a GPX notice naming three long, valid file names. */
+const LONG_GPX_NOTICE = 'Map shows 2 of 5 imported GPX tracks. Not drawn: Kerry-ridge-search-sector-north-west-team-alpha-day-two.gpx, '
+  + 'Mangerton-descent-route-hasty-team-bravo-evening-sweep.gpx, Torc-waterfall-valley-line-search-charlie-afternoon.gpx '
+  + '(the file has no drawable track points). Every track is still listed in the GPX panel.'
 /** A real tile PNG, served for every outside request so a live tile outage cannot add map warnings. */
 const BLANK_TILE_PNG = Buffer.from(
   (createRequire(import.meta.url)('../../electron/official-map-no-coverage.cjs') as { NO_COVERAGE_TILE_BASE64: string }).NO_COVERAGE_TILE_BASE64,
