@@ -75,7 +75,7 @@ jobs:
   correctness:
     name: Correctness and browser regressions
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout exact source head
         uses: actions/checkout@v4

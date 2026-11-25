@@ -64,7 +64,7 @@ jobs:
   gates:
     name: Gates (lint, tests, build, E2E)
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     outputs:
       tag: ${{ steps.resolve_tag.outputs.tag }}
       commit: ${{ steps.resolve_tag.outputs.commit }}
