@@ -7,7 +7,12 @@ import type {
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import { writeGpxImportColorMetadata } from './gpx-style'
 import { digestGpxSource, parseGpxFile } from './gpx-parser'
-import { describeGpxMapCoverage, describeListPageMapCoverage, readGpxMapProjection } from './read-gpx-map-projection'
+import {
+  describeGpxMapCoverage,
+  describeGpxMapRefreshFailure,
+  describeListPageMapCoverage,
+  readGpxMapProjection,
+} from './read-gpx-map-projection'
 
 type GpxStoreBoundary = {
   readonly listGpxImports: (missionId: string) => Promise<readonly GpxTrackImport[]>
@@ -1079,13 +1084,7 @@ export async function startGpxRuntime(
       }
     } catch (error) {
       if (!stillCurrent()) return
-      const shown = state.mapImports.length
-      state = {
-        ...state,
-        mapCoverageNotice: `The GPX map could not be refreshed: ${toErrorMessage(error).replace(/\.+$/u, '')}. `
-          + `It still shows the ${shown} track${shown === 1 ? '' : 's'} from the last successful read; newer imports may be missing. `
-          + 'Every track is still listed in the GPX panel.',
-      }
+      state = { ...state, mapCoverageNotice: describeGpxMapRefreshFailure(state.mapImports.length, toErrorMessage(error)) }
     }
     publishRuntime()
   }

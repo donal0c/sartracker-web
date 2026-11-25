@@ -38,6 +38,9 @@
   --sar-selection-edge: #facc15;
   /** Keyboard focus outline; the light theme swaps in a deep blue. */
   --sar-focus: #facc15;
+  /** Map scale chip (DON-369): fixed height and gap above the coordinate bar, so Map Tools can stop above it. */
+  --sar-map-scale-height: 4.125rem;
+  --sar-map-scale-gap: 1.25rem;
   /** Focus-mode coordinate mirror backdrop. */
   --sar-mirror-bg: rgba(9, 8, 7, 0.94);
   --sar-selection-fill: rgba(250, 204, 21, 0.28);
@@ -557,18 +560,47 @@ body {
       0 12px 28px rgba(0, 0, 0, 0.45);
   }
 
+  /**
+   * Segmented map scale bar (DON-369): a solid chip so it reads on any basemap,
+   * with OS-style alternating black and white blocks framed by an outline that
+   * contrasts with the chip in either theme.
+   */
   .sar-map-scale {
+    --sar-map-scale-outline: #f5f1ea;
+    box-sizing: border-box;
+    height: var(--sar-map-scale-height);
+    bottom: calc(var(--sar-coordinate-bar-height, 72px) + var(--sar-map-scale-gap));
     border: 1px solid rgba(214, 204, 190, 0.48);
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent),
-      rgba(9, 8, 7, 0.9);
+    background: #0c0b0a;
     color: var(--sar-text);
-    padding: 0.55rem 0.7rem 0.45rem;
+    padding: 0.5rem 0.7rem 0.4rem;
     box-shadow:
       0 0 0 1px rgba(0, 0, 0, 0.58),
-      0 14px 28px rgba(0, 0, 0, 0.46),
-      inset 0 1px rgba(255, 255, 255, 0.08);
+      0 14px 28px rgba(0, 0, 0, 0.46);
   }
+
+  .sar-map-scale-heading { color: #fde68a; }
+
+  /* The GPX coverage notice sits above the scale chip, never under it (DON-369, Codex r2). */
+  .sar-gpx-map-coverage-notice {
+    bottom: calc(var(--sar-coordinate-bar-height, 72px) + var(--sar-map-scale-gap) + var(--sar-map-scale-height) + 0.5rem);
+  }
+
+  /* Room for the "0" label centred on the left end and the unit after the last label. */
+  .sar-map-scale-body { padding: 0.45rem 2.1rem 0 0.3rem; }
+
+  /* The frame is drawn inside the bar, over the blocks, so the painted ends are exactly the measured ends (Codex r1). */
+  .sar-map-scale-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1.5px solid var(--sar-map-scale-outline);
+    pointer-events: none;
+  }
+  .sar-map-scale-unavailable { font-size: 13px; font-weight: 800; line-height: 1.2; padding-top: 0.6rem; }
+  .sar-map-scale-block-dark { background: #0b0d10; }
+  .sar-map-scale-block-light { background: #ffffff; }
+  .sar-map-scale-tick { color: var(--sar-text-strong, var(--sar-text)); }
 
   /** Status chip with explicit semantic backing for green/online states. */
   .sar-status-chip-success {
@@ -783,6 +815,11 @@ body {
     color: var(--sar-text);
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6), 0 6px 16px rgba(15, 23, 42, 0.28);
   }
+  :where([data-theme='light']) .sar-map-scale {
+    --sar-map-scale-outline: #0b0d10;
+    background: #f8f9fa;
+  }
+  :where([data-theme='light']) .sar-map-scale-heading { color: #78350f; }
   :where([data-theme='light']) .sar-status-chip-success { border-color: #047857; background: #d1fae5; color: #064e3b; }
   :where([data-theme='light']) .sar-status-chip-warning { border-color: #b45309; background: #fef3c7; color: #78350f; }
   :where([data-theme='light']) .sar-status-chip-danger { border-color: #be123c; background: #ffe4e6; color: #881337; }
@@ -923,8 +960,15 @@ body {
 /* Rule 15 (DON-368): Map Tools starts below any warnings named on the map and stops above the coordinate bar, even with the alarm showing; its list scrolls inside. */
 /* Map Tools and the warnings both move down with the alarm, so the clearance below the warnings is alarm-free. */
 [data-panel-arrangement] .ws-map-area:has(.ws-exceptions) [data-testid='drawing-toolbar'] { --ws-map-tools-clearance: calc(var(--ws-exceptions-top) + var(--ws-exceptions-height, 0px) + 0.5rem); }
-[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: calc(100% - max(var(--sar-map-tools-top), var(--ws-map-tools-clearance, 0px)) - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - 0.75rem); }
+/* DON-369: the bottom of the map is one column of bands, bottom to top: coordinate bar, map scale, any GPX
+   notice, then the map warnings. Map Tools stops above all of them, so Map Tools and the warnings each keep their own space.
+   It never shrinks below 9rem, so its header and collapse control stay reachable and its body scrolls;
+   where that minimum meets a tall warning stack, open Map Tools (z-20) is drawn over the warnings (z-15), as before DON-369, so its controls work. */
+[data-panel-arrangement] [data-testid='drawing-toolbar'] { display: flex; flex-direction: column; max-height: max(9rem, calc(100% - max(var(--sar-map-tools-top), var(--ws-map-tools-clearance, 0px)) - var(--ws-alarm-height, 0px) - var(--sar-coordinate-bar-height, 72px) - var(--sar-map-scale-gap) - var(--sar-map-scale-height) - var(--sar-gpx-notice-reserve, 0px) - 0.5rem - var(--sar-map-alerts-height, 0px) - 0.5rem)); }
 [data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-height: none; min-height: 0; flex: 0 1 auto; }
+/* DON-369 (Codex r3): the map warnings stop below the tracking shortcuts named on the map and scroll inside, so neither covers the other.
+   They never shrink below 6rem, so a warning is always shown; on a map too short for both, the shortcuts (z-25) are drawn on top, as before DON-369. */
+[data-panel-arrangement] .ws-map-area:has(.ws-exceptions) [data-testid='map-degraded-alert'] { max-height: max(6rem, min(50%, calc(100% - var(--sar-coordinate-bar-height, 72px) - var(--sar-map-scale-gap) - var(--sar-map-scale-height) - var(--sar-gpx-notice-reserve, 0px) - 0.5rem - var(--ws-exceptions-top) - var(--ws-alarm-height, 0px) - var(--ws-exceptions-height, 0px) - 0.5rem))); }
 @container (max-width: 820px) {
   [data-panel-arrangement] [data-testid='drawing-toolbar'] { --sar-map-tools-top: 5.25rem; left: 1rem; max-width: calc(100% - 5rem); }
   [data-panel-arrangement] [data-testid='drawing-toolbar'] > .sar-map-tools-body { max-width: 100%; }

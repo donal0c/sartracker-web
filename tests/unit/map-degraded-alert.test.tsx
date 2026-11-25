@@ -25,8 +25,9 @@ describe('map overlay warning alert', () => {
     expect(markup).toContain('role="region"')
     expect(markup).toContain('aria-label="Active map alerts, 1 overlay warning"')
     expect(markup).toContain('tabindex="0"')
-    expect(markup).toContain('max-h-[min(50%,calc(100%-var(--sar-coordinate-bar-height,72px)-1.5rem))]')
-    expect(markup).toContain('bottom-[calc(var(--sar-coordinate-bar-height,72px)+0.5rem)]')
+    // DON-369: the warnings sit above the coordinate bar, the map scale and any GPX notice, in their own band.
+    expect(markup).toContain('max-h-[min(50%,calc(100%-var(--sar-coordinate-bar-height,72px)-var(--sar-map-scale-gap)-var(--sar-map-scale-height)-var(--sar-gpx-notice-reserve,0px)-1.5rem))]')
+    expect(markup).toContain('bottom-[calc(var(--sar-coordinate-bar-height,72px)+var(--sar-map-scale-gap)+var(--sar-map-scale-height)+var(--sar-gpx-notice-reserve,0px)+0.5rem)]')
     expect(markup).toContain('overflow-y-auto')
     expect(markup).toContain('data-testid="map-overlay-warning-markers"')
     expect(markup).toContain('role="alert"')
