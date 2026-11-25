@@ -5,8 +5,9 @@
 
 ## ⚠ Read first
 
-- **The screen looks different.** After you press **Start**, the map fills the
-  screen and panels open only when you ask for them. Mission Control is the
+- **The screen looks different.** When you start a new mission, the side
+  panel closes and the map fills the screen; panels open when you ask for
+  them, or when a mission warning needs you. Mission Control is the
   **Mission** button at the top left. See "Where things are now" below
   [DON-341, DON-342, DON-368].
 - **The map scale was wrong since it was added in beta.8.** The bar showed
@@ -50,21 +51,23 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 ### Where things are now [DON-341, DON-342, DON-343, DON-368]
 
 - **Start screen.** If a mission was not finished, **Resume** comes first.
-  Otherwise **New** asks for a name and the **Roll back time (hours)**. Your
-  team default group is already ticked, so you can usually just press
-  **Start**. To pick other groups or devices, open **Change who's taking
-  part**.
+  Otherwise **New** asks for a name and the **Roll back time (hours)**. If
+  your team default group is set and Traccar lists it, it is already ticked.
+  **Check who is ticked before you press Start.** To pick other groups or
+  devices, open **Change who's taking part**.
 - **Top bar, from the left:** the **Mission** button (pause, resume, finish,
   add people) with the search clock; the **tracking line** (press it for
   what is wrong and what to do); **People**, **Layers** and **Full map**;
   then **Settings** and **More**.
 - **More** holds Review and replay, Diagnostics, Help, Weather and the
   light/dark **Theme** switch.
-- **The map has the whole screen by default.** People, Layers and other
-  panels open on the right; **Full map** closes the side panel (the button
-  then reads **Show panel**). Review and All devices can also sit on the
-  left. Warnings never go away when you close a panel. Mission setup or a
-  mission warning can open the Mission panel by itself.
+- **The map has the whole screen after Start.** People, Layers and other
+  panels open on the right; **Full map** closes the side panel, and the
+  button reads **Show panel** while no panel is open. Review and All devices
+  can also sit on the left. The red tracking alarm stays on screen when you
+  close a panel. A mission warning can open the Mission panel by itself, and
+  after a restart People may already be open. Notices about people joining
+  or leaving are in the Mission panel.
 - **Adding people during a mission:** Mission → **Change who's taking
   part**, choose the person or group and when their positions should start,
   then press **Add**.
@@ -81,11 +84,12 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 ### Team default group
 
 - Set it once in **Settings → Tracking sources → Team default group**. It is
-  ticked for you at Start in every new mission, marked *team default*. You
-  can untick it under **Change who's taking part**.
+  ticked for you at Start in every new mission while Traccar lists it, marked
+  *team default*. You can untick it under **Change who's taking part**.
 - Anyone added to a ticked group in Traccar during a mission appears once
   SAR Tracker next reads the group from Traccar. An amber notice says which
-  devices joined which group. Their trail starts from when they joined.
+  devices joined which group. Their trail starts from when SAR Tracker first
+  saw them in the group, so positions from just before that may be missing.
 
 ### Map
 
@@ -111,10 +115,11 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   folder cannot be opened (a USB stick unplugged), a red line names it.
 - **Imported tracks are drawn, up to 512** [DON-350]. If not all of them can
   be drawn, the map says *Map shows X of Y imported GPX tracks* and names the
-  first few left out.
+  first few left out. If the map cannot be refreshed it says **GPX map not
+  refreshed**, and older tracks may still be on screen.
 - Watched folders of up to 1,000 files work. Unchanged files are not imported
-  again. A stalled import is stopped and says what was saved before it
-  stopped [DON-350].
+  again. A stalled import is stopped, and where the app can tell, it says
+  how many files were saved before it stopped [DON-350].
 
 ### Tracking warnings you can trust
 
@@ -148,8 +153,10 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   last unsaved positions marked as possibly missing [M-48].
 - **A blank window at start** now shows a message to reinstall instead
   [DON-354].
-- **Damaged settings are set aside, not lost.** The app starts, says the
-  settings were damaged, and **Save** repairs them. The damaged file is kept [M-47].
+- **Damaged settings are set aside, not lost.** The app starts with default
+  settings and says the saved ones were damaged. Re-enter the tracking
+  connection and check your team default group, maps and weather links, then
+  press **Save**. The damaged file is kept [M-47].
 - **Backups pause when the disk is nearly full** instead of filling it: you
   see **Disk nearly full: mission backup paused**, and the last good backup
   is kept. A damaged copy is never saved over the last good backup
@@ -211,7 +218,7 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 
 ## Rollback
 
-Quit the app, remove it (`sudo apt remove sartracker-electron-validation`, or
+Quit the app, remove it (`sudo apt remove sartracker-web`, or
 delete the AppImage) and reinstall 13.7. 13.8 uses the same mission database
 version as 13.7; if 13.7 refuses the data folder, restore the copy you made before
 upgrading. Watched GPX folders saved by 13.8 are not used by 13.7; add them
