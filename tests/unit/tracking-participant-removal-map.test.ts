@@ -226,5 +226,19 @@ describe('removing participants from a running mission [DON-374]', () => {
     // Recorded history stays in the mission record for Review.
     expect(await realStore.countPositions(mission.id, 'bravo')).toBe(2)
     expect(await realStore.listMissionParticipants(mission.id)).toHaveLength(3)
+
+    // Adding Bravo back never replays an old snapshot: no stale fix comes
+    // back. Bravo appears with the next poll's own data.
+    await realStore.addMissionParticipant({
+      mission_id: mission.id, kind: 'device', ref: 'bravo', confirmed_by: 'Coordinator',
+      effective_from: new Date().toISOString(),
+    })
+    scope = createParticipationScope({
+      participants: await realStore.listMissionParticipants(mission.id),
+      membershipEvents: [],
+    })
+    const publishedBeforeReAdd = applySnapshot.mock.calls.length
+    notifyScope('scope')
+    expect(applySnapshot.mock.calls.length).toBe(publishedBeforeReAdd)
   })
 })

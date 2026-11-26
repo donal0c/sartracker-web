@@ -321,6 +321,31 @@ describe('startParticipantRuntime [DON-271]', () => {
     expect(states.at(-1)?.rosterError).toBeNull()
   })
 
+  it('drops a member awaiting a failed membership write once their group is removed [DON-374]', async () => {
+    let participants: readonly MissionParticipant[] = [GROUP_PARTICIPANT]
+    const store = createStore({ participants, membershipEvents: [] })
+    store.listMissionParticipants.mockImplementation(async () => participants)
+    store.selectMissionParticipants.mockImplementation(async () => participants)
+    store.recordGroupMembershipEvents.mockRejectedValue(new Error('disk busy'))
+    store.removeMissionParticipant.mockImplementation(async () => {
+      participants = [{ ...GROUP_PARTICIPANT, removed_at: '2026-08-23T11:05:00.000Z', removed_by: 'Coordinator' }]
+    })
+    const states: Array<{ readonly scope: { readonly operationalDeviceIdsAt: (at: string) => readonly string[] } }> = []
+    const runtime = await startParticipantRuntime({
+      participantStore: store,
+      applyRuntime: (state) => states.push(state),
+    })
+    await runtime.refreshMission('mission-1')
+    await runtime.applyRoster([device('device-2', 'group-1')], '2026-08-23T11:00:00.000Z')
+    expect(states.at(-1)?.scope.operationalDeviceIdsAt(new Date().toISOString())).toEqual(['device-2'])
+
+    // The group is no longer selected, so only the pending membership write
+    // could still keep device-2 on the map.
+    await runtime.removeParticipant(GROUP_PARTICIPANT.id, 'Coordinator')
+
+    expect(states.at(-1)?.scope.operationalDeviceIdsAt(new Date().toISOString())).toEqual([])
+  })
+
   it('retries the original membership delta without moving its observation time', async () => {
     const store = createStore({ participants: [GROUP_PARTICIPANT], membershipEvents: [] })
     store.recordGroupMembershipEvents
