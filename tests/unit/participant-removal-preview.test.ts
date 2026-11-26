@@ -40,7 +40,14 @@ function device(deviceId: string, groupId: string | null) {
 async function runtimeWith(
   participants: readonly MissionParticipant[],
   events: readonly GroupMembershipEvent[],
-  options: { readonly membershipWriteFails?: boolean; readonly holdLeaveWrites?: boolean } = {},
+  options: {
+    readonly membershipWriteFails?: boolean
+    readonly holdLeaveWrites?: boolean
+    /** Each write waits here until the test resolves it. */
+    readonly manualWrites?: { resolve: () => void; events: readonly { readonly change: string }[] }[]
+    /** Called on every runtime publish, as an open prompt re-renders. */
+    readonly onPublish?: () => void
+  } = {},
 ) {
   const store = {
     selectMissionParticipants: vi.fn().mockResolvedValue(participants),
@@ -54,6 +61,9 @@ async function runtimeWith(
       if (options.holdLeaveWrites === true && input.events.some((event) => event.change === 'left')) {
         return new Promise<never>(() => undefined)
       }
+      if (options.manualWrites !== undefined) {
+        await new Promise<void>((resolve) => options.manualWrites!.push({ resolve, events: input.events }))
+      }
       return input.events.map((event, index) => ({
         ...event, id: `new-${index}`, sequence: events.length + index + 1, mission_id: 'mission-1',
       }))
@@ -62,7 +72,7 @@ async function runtimeWith(
     listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([]),
   }
   const runtime = await startParticipantRuntime({
-    participantStore: store, applyRuntime: vi.fn(), now: () => new Date(NOW),
+    participantStore: store, applyRuntime: () => options.onPublish?.(), now: () => new Date(NOW),
   })
   await runtime.refreshMission('mission-1')
   return runtime
@@ -119,6 +129,29 @@ describe('Remove counts who would stop being recorded [DON-373]', () => {
     await vi.waitFor(() => expect(runtime.previewRemoval('part-alice')?.rosterConfirmed).toBe(false))
     expect(removalPromptText('Alice', 'device', runtime.previewRemoval('part-alice')))
       .not.toContain('No one stops being tracked')
+  })
+
+  it('stays unconfirmed between membership writes while a later roster change is still queued', async () => {
+    const writes: { resolve: () => void; events: readonly { readonly change: string }[] }[] = []
+    const shownAtPublish: string[] = []
+    let ready = false
+    const runtime: Awaited<ReturnType<typeof runtimeWith>> = await runtimeWith([KMRT, ALICE], [member('d1', 1)], {
+      manualWrites: writes,
+      // What an open prompt for Alice would say after each publish.
+      onPublish: () => { if (ready) shownAtPublish.push(removalPromptText('Alice', 'device', runtime.previewRemoval('part-alice'))) },
+    })
+    ready = true
+    // Bob joins KMRT: that write is held open.
+    void runtime.applyRoster([device('d1', 'group-kmrt'), device('d2', 'group-kmrt')], NOW)
+    await vi.waitFor(() => expect(writes).toHaveLength(1))
+    // Two complete rosters then confirm Alice left KMRT; they queue behind Bob's write.
+    void runtime.applyRoster([device('d1', null), device('d2', 'group-kmrt')], '2026-11-26T11:01:00.000Z')
+    void runtime.applyRoster([device('d1', null), device('d2', 'group-kmrt')], '2026-11-26T11:02:00.000Z')
+    writes[0]!.resolve()
+    await vi.waitFor(() => expect(writes.length).toBeGreaterThan(1))
+    expect(shownAtPublish.length).toBeGreaterThan(0)
+    // Until Alice's departure is saved, no publish may promise she stays recorded.
+    expect(shownAtPublish.filter((text) => text.includes('No one stops being tracked'))).toEqual([])
   })
 
   it('returns null for a row that is not an active participant', async () => {

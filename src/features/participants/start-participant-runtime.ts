@@ -556,8 +556,14 @@ export async function startParticipantRuntime(
       if (stopping === null) return null
       return {
         stopsTrackingCount: stopping.length,
-        // An unsaved membership change may be a member the count is missing.
-        rosterConfirmed: canSelectGroups() && currentRosterError() === null && pendingMembershipWrite === null,
+        // An unsaved or not yet reconciled membership change may be a member
+        // the count is missing, or a coverage it wrongly relies on.
+        rosterConfirmed: canSelectGroups()
+          && currentRosterError() === null
+          && pendingMembershipWrite === null
+          && pendingRosterObservations.length === 0
+          && !rosterReconciliationRunning
+          && inFlightRosterApplicationCount === 0,
       }
     },
     clearMembershipNotices: () => {
