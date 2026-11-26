@@ -192,7 +192,13 @@ export default [
     check: 'Team mission scenario',
     id: 'team-mission',
     timeoutMs: 45 * 60_000,
-    manualSteps: ['Inspect the scenario screenshots: tracks for both groups on the map, stationary and stale indicators, casualty marker and search area visible.'],
+    manualSteps: [
+      'Inspect the scenario screenshots: tracks for both groups on the map, stationary and stale indicators, casualty marker and search area visible.',
+      'Wave-1 hand steps [DON-372 to DON-377], after the automated run, on the same installed artifact with a disposable profile and the approved Live Traccar device. Start a mission with that device in its own row, a 48 h Start Offset and People → All devices → Breadcrumb Display set to Solid line, then do steps 1 to 3 in order.',
+      '1. Positions [DON-372, DON-377], while the person is still taking part: before the pointer enters the map, the bottom bar says Map centre; with the pointer on the map it says Cursor position; neither names a person. In People, click the person to go to them: the bar still names nobody. Their People → All devices card shows Position with the Irish Grid reference first.',
+      '2. Finish and Try again [DON-376]: disconnect the laptop network so earlier history is still pending, then press Mission → Finish → Confirm Finish. It must be refused with "still fetching earlier tracks" and a Try again button. Reconnect the network and press Try again. PASS: the dialog says Fetching earlier tracks again and the mission stays active. NOT TESTED: history finished loading before the refusal or the retry could be seen. FAIL: with the network back and history still pending, Try again does not start fetching. Close the dialog with Cancel.',
+      '3. Remove [DON-373, DON-374]: confirm the person has a visible marker and a saved trail. In Mission → Change who\'s taking part, press Remove on their row, then Keep: nobody is removed. Disconnect the network, press Remove and confirm: they leave the map and People at once. Reconnect and check their saved track is still in Review.',
+    ],
     async run(ctx) {
       const findings = []
       const notes = []
