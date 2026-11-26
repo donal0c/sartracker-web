@@ -620,7 +620,8 @@
           <p>
             <strong>Earlier positions: still loading</strong> means the earlier track is still
             being fetched from the tracking server. <strong>You cannot finish the mission until it
-            completes.</strong> If it stays loading, click the tracking status in the top bar. If it
+            completes.</strong> If it stays loading, click the tracking status in the top bar, or press
+            <strong>Try again</strong> on the refused Finish message (see <a href="#mission-finish">Finish</a>). If it
             fails, the Mission panel says so in words, for example <em>Earlier positions for Hill Team
             could not be loaded</em>.
           </p>
@@ -690,9 +691,24 @@
           <div class="warning">
             <strong>Finish can be refused.</strong> If participant history is still loading, or the app
             could not save evidence it has already seen, the mission stays active and a red message
-            explains why (for example <em>Mission cannot be finished while 2 participant history backfill
-            checkpoint(s) are incomplete</em>). Fix or wait, then try again. Do not treat a refused
-            Finish as a cosmetic error.
+            explains why. While earlier tracks are still being fetched it says, for example,
+            <em>Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the
+            internet connection, then press Try again.</em> Check this computer's internet connection,
+            then press <strong>Try again</strong>: the app starts fetching that history again straight
+            away, without waiting for its next automatic retry, and adds <em>Fetching earlier tracks
+            again</em> under the red message. The count of people still loading keeps updating, and
+            <strong>Try again</strong> stays available. If a device has no saved record in this mission,
+            the note says its earlier tracks cannot be fetched. Live tracking carries on as before. If
+            Try again cannot start, for example because tracking is not connected, the red message stays
+            and says why. If the app cannot read the participant list, the message says <em>some
+            people</em> rather than guess a number.
+            <strong>Try again</strong> never finishes the mission. Press <strong>Confirm Finish</strong>
+            again when the message changes to <em>Earlier tracks have now loaded</em> or <em>Earlier
+            tracks may have finished loading</em>; if Finish is still refused, press
+            <strong>Try again</strong> once more. Finish stays refused until every earlier track is saved. After a restart,
+            <strong>Finish it, start new</strong> is refused for the same reason: resume the unfinished
+            mission so its earlier tracks can load, then finish it. For other
+            refusals, fix or wait, then try again. Do not treat a refused Finish as a cosmetic error.
           </div>
 
           <h3 id="mission-recovery">If the app restarts or crashes</h3>

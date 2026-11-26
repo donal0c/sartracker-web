@@ -46,7 +46,7 @@ for (const resolution of ['attested-empty', 'supplied-members'] as const) {
       await openMissionSections(page, ['participants'])
       await page.getByTestId('mission-finish-btn').click()
       await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish', exact: true }).click()
-      await expect(page.getByTestId('mission-control')).toContainText('backfill')
+      await expect(page.getByTestId('mission-control')).toContainText("Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people.")
       expect(await page.evaluate(() => window.__SARTRACKER_BROWSER_HARNESS__!.readState().missions[0]!.status)).toBe('active')
       await page.evaluate(async () => {
         const storePath = '/src/features/browser-validation/browser-harness-store.ts'

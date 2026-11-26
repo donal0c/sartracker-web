@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import type {
   FinalizeMissionResult,
@@ -21,8 +21,27 @@ import { useMissionTimer } from './use-mission-timer'
 import { useGovernanceAdminRoster, type AdminRosterStatus } from './use-governance-admin-roster'
 import { useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
+import { getAppRuntimeController } from '../runtime/app-runtime-controller'
+import type { ParticipantHistoryRetryOutcome } from '../tracking/participant-history-retry'
+import type { ParticipantBackfillCheckpoint } from '../../infrastructure/mission-store/tauri-mission-store'
+import {
+  HISTORY_MAY_HAVE_LOADED_NOTE,
+  HISTORY_NOW_LOADED_NOTE,
+  HISTORY_START_FRESH_REFUSAL,
+  countPeopleStillFetchingHistoryIfKnown,
+  describeHistoryIncompleteFinishRefusal,
+  describeHistoryRetryStarted,
+  isHistoryIncompleteFinishRefusal,
+} from './finish-refusal'
 
 const MAX_START_OFFSET_HOURS = 48
+
+/** Try again beside a Finish refused for incomplete history (DON-376). */
+export type HistoryRetryState = {
+  readonly busy: boolean
+  /** Says a fetch really started; null until one has. */
+  readonly note: string | null
+}
 
 export type MissionControlViewModel = {
   readonly phase: MissionRuntimePhase
@@ -75,6 +94,15 @@ export type MissionControlViewModel = {
   readonly startMission: () => Promise<void>
   readonly pauseOrResume: () => Promise<void>
   readonly confirmFinish: () => Promise<void>
+  /**
+   * Present while Finish is refused because earlier tracks are still being
+   * fetched; the panel then offers Try again (DON-376).
+   */
+  readonly historyRetry: HistoryRetryState | null
+  /** Asks tracking to fetch the missing earlier tracks now. Never finishes. */
+  readonly retryHistoryFetch: () => Promise<void>
+  /** True while a Finish check is running; Confirm Finish is then disabled. */
+  readonly finishBusy: boolean
   readonly resumeRecoverable: () => Promise<void>
   readonly startFresh: () => Promise<void>
   readonly issueArchiveRecoveryCode: (
@@ -117,7 +145,59 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [missionName, setMissionNameState] = useState('')
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [startError, setStartError] = useState<string | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
+  const [actionErrorState, setActionErrorState] = useState<string | null>(null)
+  // Finish refused while earlier tracks load (DON-376). Its words are derived
+  // live from the participant checkpoints, so the count never goes stale.
+  const [finishBlock, setFinishBlock] = useState<FinishHistoryBlock | null>(null)
+  const [historyRetryBusy, setHistoryRetryBusy] = useState(false)
+  const [finishBusy, setFinishBusy] = useState(false)
+  // Only one Finish check runs at a time, so a second press cannot replace
+  // the real refusal with a transient guard message.
+  const finishInFlight = useRef(false)
+  // Any newer mission message (a Finish attempt, a Pause or Resume failure)
+  // supersedes a Try again result still on its way.
+  const messageGeneration = useRef(0)
+  const participantMissionId = useParticipantStore((state) => state.activeMissionId)
+  const participantError = useParticipantStore((state) => state.error)
+  const backfillCheckpoints = useParticipantStore((state) => state.backfillCheckpoints)
+  /** Shows a mission action failure; any history refusal it replaces goes. */
+  const setActionError = useCallback((message: string | null) => {
+    messageGeneration.current += 1
+    setFinishBlock(null)
+    setActionErrorState(message)
+  }, [])
+  const finishBlockActive = finishBlock !== null && currentMission?.id === finishBlock.missionId
+  const peopleStillLoading = !finishBlockActive
+    ? null
+    : finishBlock.heldSnapshot !== null && backfillCheckpoints === finishBlock.heldSnapshot.checkpoints
+      // SQLite or tracking said otherwise after this list was published; wait for a newer one.
+      ? finishBlock.heldSnapshot.people
+      : countPeopleStillFetchingHistoryIfKnown(
+        { activeMissionId: participantMissionId, error: participantError, checkpoints: backfillCheckpoints },
+        finishBlock.missionId,
+      )
+  // Only tracking's own read of the durable checkpoints may say "loaded"; a
+  // published list showing none left may predate a newer checkpoint.
+  const historyNowLoaded = finishBlockActive && finishBlock.trackingSaysComplete &&
+    backfillCheckpoints === finishBlock.heldSnapshot?.checkpoints
+  const historyMayHaveLoaded = finishBlockActive && !historyNowLoaded && peopleStillLoading === 0
+  const actionError = !finishBlockActive
+    ? actionErrorState
+    : historyNowLoaded
+      ? HISTORY_NOW_LOADED_NOTE
+      : historyMayHaveLoaded
+        ? `${HISTORY_MAY_HAVE_LOADED_NOTE}${
+          finishBlock.retryError === null ? '' : ` Try again did not work: ${finishBlock.retryError}`}`
+        : `${describeHistoryIncompleteFinishRefusal(peopleStillLoading)}${
+        finishBlock.retryError === null ? '' : ` Try again did not work: ${finishBlock.retryError}`}`
+  const historyRetry = finishBlockActive && !historyNowLoaded
+    ? {
+      busy: historyRetryBusy,
+      note: finishBlock.retryStarted === null || historyMayHaveLoaded
+        ? null
+        : describeHistoryRetryStarted(finishBlock.retryStarted.unfetchableDeviceCount),
+    }
+    : null
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
@@ -266,10 +346,14 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   }
 
   async function confirmFinish(): Promise<void> {
-    if (controller === null) {
+    if (controller === null || finishInFlight.current) {
       return
     }
 
+    finishInFlight.current = true
+    setFinishBusy(true)
+    messageGeneration.current += 1
+    const missionId = currentMission?.id ?? null
     setActionError(null)
 
     try {
@@ -277,7 +361,77 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       await targetGovernanceAt(finished)
       setShowFinishDialog(false)
     } catch (error) {
-      setActionError(toErrorMessage(error))
+      const message = toErrorMessage(error)
+      if (missionId === null || !isHistoryIncompleteFinishRefusal(message)) {
+        setActionError(message)
+        return
+      }
+      // The store's precise refusal is already in the main-process log; the
+      // operator gets plain words and Try again.
+      setActionErrorState(null)
+      // A published list that already shows everything loaded is older than
+      // this refusal: say "some people" until a newer list arrives.
+      const scope = useParticipantStore.getState()
+      const published = countPeopleStillFetchingHistoryIfKnown(
+        { activeMissionId: scope.activeMissionId, error: scope.error, checkpoints: scope.backfillCheckpoints },
+        missionId,
+      )
+      setFinishBlock({
+        missionId,
+        retryError: null,
+        retryStarted: null,
+        heldSnapshot: published === 0 ? { checkpoints: scope.backfillCheckpoints, people: null } : null,
+        trackingSaysComplete: false,
+      })
+    } finally {
+      finishInFlight.current = false
+      setFinishBusy(false)
+    }
+  }
+
+  /**
+   * Try again: asks tracking to fetch the incomplete participant history now,
+   * skipping its backoff. It never finishes the mission; Finish stays refused
+   * until the history is complete (DON-376). The refusal, its live count and
+   * Try again stay on screen; a retry that cannot start shows the reason.
+   */
+  async function retryHistoryFetch(): Promise<void> {
+    if (!finishBlockActive || historyRetryBusy) return
+    const block = finishBlock
+    const generation = messageGeneration.current
+    setHistoryRetryBusy(true)
+    let outcome: ParticipantHistoryRetryOutcome
+    try {
+      const runtime = getAppRuntimeController()
+      outcome = runtime === null
+        ? { kind: 'unavailable', reason: 'Tracking is not running. Restart SAR Tracker.' }
+        : await runtime.retryParticipantHistory()
+    } catch (error) {
+      outcome = { kind: 'unavailable', reason: toErrorMessage(error) }
+    } finally {
+      setHistoryRetryBusy(false)
+    }
+    // A Finish pressed meanwhile owns the message now.
+    if (generation !== messageGeneration.current) return
+    if (outcome.kind === 'started') {
+      setFinishBlock({
+        ...block,
+        retryError: null,
+        retryStarted: { unfetchableDeviceCount: outcome.unfetchableDeviceCount },
+        trackingSaysComplete: false,
+      })
+    } else if (outcome.kind === 'complete') {
+      // Tracking read the durable checkpoints just now; the published list
+      // may be older until the participant store refreshes.
+      setFinishBlock({
+        ...block,
+        retryError: null,
+        retryStarted: null,
+        heldSnapshot: { checkpoints: useParticipantStore.getState().backfillCheckpoints, people: 0 },
+        trackingSaysComplete: true,
+      })
+    } else {
+      setFinishBlock({ ...block, retryError: outcome.reason, retryStarted: null, trackingSaysComplete: false })
     }
   }
 
@@ -306,7 +460,8 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       const finished = await controller.startFresh()
       await targetGovernanceAt(finished)
     } catch (error) {
-      setActionError(toErrorMessage(error))
+      const message = toErrorMessage(error)
+      setActionError(isHistoryIncompleteFinishRefusal(message) ? HISTORY_START_FRESH_REFUSAL : message)
     }
   }
 
@@ -506,6 +661,9 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     startMission,
     pauseOrResume,
     confirmFinish,
+    historyRetry,
+    retryHistoryFetch,
+    finishBusy,
     resumeRecoverable,
     startFresh,
     issueArchiveRecoveryCode,
@@ -518,6 +676,25 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     confirmEvidenceLossAcknowledgement,
     confirmUnlock,
   }
+}
+
+/** Finish refused while earlier tracks load, for one mission (DON-376). */
+type FinishHistoryBlock = {
+  readonly missionId: string
+  /** Why the last Try again could not start, if it could not. */
+  readonly retryError: string | null
+  /** Set once Try again really started a fetch. */
+  readonly retryStarted: { readonly unfetchableDeviceCount: number } | null
+  /**
+   * A published checkpoint list known to be older than SQLite or tracking,
+   * and what to say while it is still the list on screen.
+   */
+  /** Tracking read the durable checkpoints and found nothing left. */
+  readonly trackingSaysComplete: boolean
+  readonly heldSnapshot: {
+    readonly checkpoints: readonly ParticipantBackfillCheckpoint[]
+    readonly people: number | null
+  } | null
 }
 
 function toErrorMessage(error: unknown): string {

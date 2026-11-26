@@ -1274,6 +1274,257 @@ describe('startTrackingRuntime', () => {
     await stop()
   })
 
+  describe('Try again on a refused Finish retries participant history now [DON-376]', () => {
+    const checkpoint = {
+      mission_id: 'mission-1',
+      traccar_device_id: '11',
+      window_from: '2026-04-06T08:00:00.000Z',
+      window_to: '2026-04-06T10:00:00.000Z',
+      reconciled_until: '2026-04-06T08:00:00.000Z',
+      completed: 0,
+      updated_at: '2026-04-06T10:00:00.000Z',
+    }
+
+    async function startWithHistory(overrides: HistoryOverrides) {
+      return startTrackingRuntime(historyDependencies(overrides))
+    }
+
+    type HistoryOverrides = {
+      readonly getBreadcrumbsWithReport: ReturnType<typeof vi.fn>
+      readonly config?: { readonly baseUrl: string } | null
+      readonly missionModelEnabled?: boolean
+      readonly listParticipantBackfillCheckpoints?: ReturnType<typeof vi.fn>
+      readonly listDevices?: ReturnType<typeof vi.fn>
+    }
+
+    function historyDependencies(overrides: HistoryOverrides) {
+      return ({
+        config: overrides.config === undefined ? { baseUrl: 'http://test:8082' } : overrides.config,
+        createClient: vi.fn().mockReturnValue({ getBreadcrumbsWithReport: overrides.getBreadcrumbsWithReport }),
+        createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn(), requestPollNow: vi.fn() }),
+        cache: { read: vi.fn().mockResolvedValue(null), write: vi.fn() },
+        missionStore: createMissionStoreStub({
+          getActiveMission: vi.fn().mockResolvedValue({ id: 'mission-1' }),
+          listParticipantBackfillCheckpoints: overrides.listParticipantBackfillCheckpoints ?? vi.fn().mockResolvedValue([checkpoint]),
+          upsertParticipantBackfillCheckpoint: vi.fn().mockResolvedValue(undefined),
+          persistTrackingHistoryBatch: vi.fn().mockResolvedValue([]),
+          ...(overrides.listDevices === undefined ? {} : { listDevices: overrides.listDevices }),
+        }),
+        applySnapshot: vi.fn(),
+        applyStatus: vi.fn(),
+        missionModelEnabled: overrides.missionModelEnabled ?? true,
+        logger: { warn: vi.fn() },
+        readParticipationScope: () => createParticipationScope({ participants: [], membershipEvents: [] }),
+        readParticipationScopeMissionId: () => 'mission-1',
+        readParticipationScopeStatus: () => 'ready',
+        subscribeParticipationScope: () => () => undefined,
+      }) satisfies Parameters<typeof startTrackingRuntime>[0]
+    }
+
+    /** Holds the next checkpoint read until released; the read before it passes. */
+    function holdNextCheckpointRead() {
+      let release: () => void = () => undefined
+      let held = false
+      let reached: () => void = () => undefined
+      const readHeld = new Promise<void>((resolve) => { reached = resolve })
+      const listParticipantBackfillCheckpoints = vi.fn(async () => {
+        if (held) {
+          held = false
+          reached()
+          await new Promise<void>((resolve) => { release = resolve })
+        }
+        return [checkpoint]
+      })
+      return {
+        listParticipantBackfillCheckpoints,
+        holdNext: () => { held = true },
+        readHeld,
+        release: () => release(),
+      }
+    }
+
+    it('says tracking is not connected, and sends nothing, when tracking is turned off during its read', async () => {
+      const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [], rejected: [] })
+      const read = holdNextCheckpointRead()
+      const dependencies = historyDependencies({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints: read.listParticipantBackfillCheckpoints })
+      const stop = await startTrackingRuntime(dependencies)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const requestsBefore = getBreadcrumbsWithReport.mock.calls.length
+
+      read.holdNext()
+      const retry = stop.retryParticipantHistoryNow?.()
+      await read.readHeld
+      await stop.reconfigure!({ ...dependencies, config: null })
+      read.release()
+
+      expect(await retry).toEqual({ kind: 'unavailable', reason: 'Tracking is not connected. Check the tracking server in Settings.' })
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(requestsBefore)
+      await stop()
+    })
+
+    it('says tracking is restarting, and sends nothing, when tracking stops during its read', async () => {
+      const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [], rejected: [] })
+      const read = holdNextCheckpointRead()
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints: read.listParticipantBackfillCheckpoints })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const requestsBefore = getBreadcrumbsWithReport.mock.calls.length
+
+      read.holdNext()
+      const retry = stop.retryParticipantHistoryNow?.()
+      await read.readHeld
+      const stopping = stop()
+      read.release()
+
+      expect(await retry).toEqual({ kind: 'unavailable', reason: 'Tracking is restarting. Wait a moment, then press Try again.' })
+      await stopping
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(requestsBefore)
+    })
+
+    it('a press while a fetch is already running fetches again as soon as that one fails', async () => {
+      let failFirst: (error: Error) => void = () => undefined
+      const getBreadcrumbsWithReport = vi.fn()
+        .mockImplementationOnce(() => new Promise((_resolve, reject) => { failFirst = reject }))
+        .mockResolvedValue({ accepted: [], rejected: [] })
+      const stop = await startWithHistory({ getBreadcrumbsWithReport })
+      await stop.retryParticipantHistoryNow?.()
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
+
+      // Try again lets the running fetch settle, then starts the next one at once.
+      const retry = stop.retryParticipantHistoryNow?.()
+      failFirst(new Error('network down'))
+      expect(await retry).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
+
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(2), { timeout: 300 })
+      await stop()
+    })
+
+    it('answers from the pass that runs it, so a later failing read cannot make "started" untrue', async () => {
+      let readsLeft = Number.POSITIVE_INFINITY
+      const listParticipantBackfillCheckpoints = vi.fn(async () => {
+        if (readsLeft <= 0) throw new Error('database is locked')
+        readsLeft -= 1
+        return [checkpoint]
+      })
+      const getBreadcrumbsWithReport = vi.fn()
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue({ accepted: [], rejected: [] })
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints })
+      await stop.retryParticipantHistoryNow?.()
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
+      // Only Try again's own read succeeds; every later read fails.
+      readsLeft = 1
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
+
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(2), { timeout: 300 })
+      await stop()
+    })
+
+    it('while another pass runs, waits for the pass that handles it and reports that pass\'s read failure', async () => {
+      let finishFirst: (value: unknown) => void = () => undefined
+      let failReads = false
+      const listParticipantBackfillCheckpoints = vi.fn(async () => {
+        if (failReads) throw new Error('database is locked')
+        return [checkpoint]
+      })
+      const getBreadcrumbsWithReport = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve }))
+        .mockResolvedValue({ accepted: [], rejected: [] })
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints })
+      void stop.retryParticipantHistoryNow?.()
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
+
+      let answered = false
+      const retry = stop.retryParticipantHistoryNow?.().finally(() => { answered = true })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(answered).toBe(false)
+
+      failReads = true
+      finishFirst({ accepted: [], rejected: [] })
+      expect(await retry).toEqual({
+        kind: 'unavailable',
+        reason: 'SAR Tracker could not read which earlier tracks are still missing (database is locked). Press Try again; restart SAR Tracker if this keeps happening.',
+      })
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1)
+      await stop()
+    })
+
+    it('says so when the only people left have no saved record and cannot be fetched', async () => {
+      const getBreadcrumbsWithReport = vi.fn()
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listDevices: vi.fn().mockResolvedValue([]) })
+
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({
+        kind: 'unavailable',
+        reason: 'SAR Tracker has no saved record of device 11 in this mission, so its earlier tracks cannot be fetched. See the PARTICIPANT HISTORY UNAVAILABLE warning.',
+      })
+      expect(getBreadcrumbsWithReport).not.toHaveBeenCalled()
+      await stop()
+    })
+
+    it('says so when the mission\'s track progress cannot be read', async () => {
+      const stop = await startWithHistory({
+        getBreadcrumbsWithReport: vi.fn(),
+        listParticipantBackfillCheckpoints: vi.fn().mockRejectedValue(new Error('database is locked')),
+      })
+
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({
+        kind: 'unavailable',
+        reason: 'SAR Tracker could not read which earlier tracks are still missing (database is locked). Press Try again; restart SAR Tracker if this keeps happening.',
+      })
+      await stop()
+    })
+
+    it('says when every earlier track has already loaded', async () => {
+      const stop = await startWithHistory({
+        getBreadcrumbsWithReport: vi.fn(),
+        listParticipantBackfillCheckpoints: vi.fn().mockResolvedValue([{ ...checkpoint, completed: 1 }]),
+      })
+
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({ kind: 'complete' })
+      await stop()
+    })
+
+    it('skips the backoff of a failed device and fetches its history again straight away', async () => {
+      const getBreadcrumbsWithReport = vi.fn()
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue({ accepted: [], rejected: [] })
+      const stop = await startWithHistory({ getBreadcrumbsWithReport })
+      await stop.retryParticipantHistoryNow?.()
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
+      // The failure backs the device off for a second; nothing retries before then on its own.
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1)
+
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
+
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(2), { timeout: 300 })
+      await stop()
+    })
+
+    it('says it cannot retry when tracking has no connection to fetch history with', async () => {
+      const getBreadcrumbsWithReport = vi.fn()
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, config: null })
+
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({
+        kind: 'unavailable',
+        reason: 'Tracking is not connected. Check the tracking server in Settings.',
+      })
+      expect(getBreadcrumbsWithReport).not.toHaveBeenCalled()
+      await stop()
+    })
+
+    it('says it cannot retry when participant history is not in use', async () => {
+      const stop = await startWithHistory({ getBreadcrumbsWithReport: vi.fn(), missionModelEnabled: false })
+
+      expect(await stop.retryParticipantHistoryNow?.()).toEqual({
+        kind: 'unavailable',
+        reason: 'This version is not fetching earlier tracks. Tell your technical lead.',
+      })
+      await stop()
+    })
+  })
+
   it('continues participant backfill through the next fixed chunk without another poll', async () => {
     let checkpoint = {
       mission_id: 'mission-1',

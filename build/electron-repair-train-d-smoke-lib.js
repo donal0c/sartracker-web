@@ -858,8 +858,8 @@ export function validateSmokeReceipt(receipt, options = {}) {
     || pendingGroup.effective_from !== automatic.readdWindow?.from
     || heldCheckpoint === undefined
     || successfulCheckpoint === undefined
-    || !/participant history backfill/iu.test(String(aud08?.finishBlockedSurface ?? ''))
-    || !/incomplete/iu.test(String(aud08?.finishBlockedSurface ?? ''))) {
+    || !/Can't finish yet/u.test(String(aud08?.finishBlockedSurface ?? ''))
+    || !/still fetching earlier tracks/u.test(String(aud08?.finishBlockedSurface ?? ''))) {
     throw new Error('Packaged smoke receipt does not prove the AUD-08 1/2 progress and finish refusal.')
   }
   const successfulRequest = automatic.successfulHistoryRequest
