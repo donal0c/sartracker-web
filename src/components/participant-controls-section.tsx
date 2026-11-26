@@ -10,6 +10,7 @@ import {
 import { useParticipantStore } from '../features/participants/participant-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
+import { removalPeopleCount, removalPromptText } from '../features/participants/participant-removal-prompt'
 import type { ParticipantProvenance } from '../infrastructure/mission-store/tauri-mission-store'
 
 const COORDINATOR_ACTOR = 'Mission coordinator'
@@ -52,6 +53,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [historyStart, setHistoryStart] = useState<ParticipantHistoryStart | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
+  // Remove asks first (DON-373): the participant whose confirm is open, if any.
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
   const missionStartTime = useMissionStore((state) => state.currentMission?.start_time ?? null)
 
   const activeParticipants = useMemo(
@@ -258,19 +261,19 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
       <div className="space-y-2" data-testid="participant-active-list">
         {activeParticipants.length === 0 ? (
           <p className="text-xs text-stone-300">No mission participants are currently selected.</p>
-        ) : activeParticipants.map((participant) => (
+        ) : activeParticipants.map((participant) => {
+          const label = participant.kind === 'group'
+            ? participant.team_name ?? participant.traccar_group_id ?? 'this group'
+            : deviceLabel(participant.traccar_device_id, availableDevices)
+          return (
           <div
-            className="sar-readout flex items-start justify-between gap-3 p-2"
+            className="sar-readout flex flex-wrap items-start justify-between gap-3 p-2"
             data-participant-kind={participant.kind}
             data-traccar-device-id={participant.traccar_device_id ?? undefined}
             key={participant.id}
           >
             <div className="min-w-0">
-              <p className="truncate text-xs font-semibold text-stone-100">
-                {participant.kind === 'group'
-                  ? participant.team_name ?? participant.traccar_group_id
-                  : deviceLabel(participant.traccar_device_id, availableDevices)}
-              </p>
+              <p className="truncate text-xs font-semibold text-stone-100">{label}</p>
               <p className="mt-1 text-[11px] text-stone-300">
                 {simplified
                   ? `${participant.kind === 'group' ? 'Group' : 'One person'}${plainProvenance(participant.provenance)} · from ${formatTimestamp(participant.effective_from)}`
@@ -297,20 +300,58 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                 </p>
               ) : null}
             </div>
-            <button
-              className="sar-action-danger px-2 py-1 text-[11px]"
-              disabled={saving}
-              onClick={() => void controller?.removeParticipant(
-                participant.id,
-                COORDINATOR_ACTOR,
-                'Coordinator removed participant',
-              )}
-              type="button"
-            >
-              Remove
-            </button>
+            {confirmRemoveId === participant.id ? null : (
+              <button
+                className="sar-action-danger px-2 py-1 text-[11px]"
+                data-testid={`participant-remove-${participant.id}`}
+                disabled={saving}
+                onClick={() => setConfirmRemoveId(participant.id)}
+                type="button"
+              >
+                Remove
+              </button>
+            )}
+            {confirmRemoveId === participant.id ? (
+              <div
+                className="w-full rounded-xl border border-rose-400/40 bg-rose-950/40 p-3 text-rose-100"
+                data-testid="participant-remove-confirmation"
+                role="group"
+                aria-label={`Confirm removing ${label}`}
+              >
+                <p className="text-xs font-semibold">
+                  {removalPromptText(label, removalPeopleCount(participant, availableDevices, catalogueError === null))}
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    className="rounded-lg border border-rose-300/50 bg-rose-400/20 px-3 py-1.5 text-xs font-semibold text-rose-50"
+                    data-testid="participant-remove-confirm-btn"
+                    disabled={saving}
+                    onClick={() => {
+                      setConfirmRemoveId(null)
+                      void controller?.removeParticipant(
+                        participant.id,
+                        COORDINATOR_ACTOR,
+                        'Coordinator removed participant',
+                      )
+                    }}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                  <button
+                    className="rounded-lg border border-stone-600 bg-stone-950 px-3 py-1.5 text-xs font-semibold text-stone-200"
+                    data-testid="participant-remove-keep-btn"
+                    onClick={() => setConfirmRemoveId(null)}
+                    type="button"
+                  >
+                    Keep
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="grid gap-2 border-t border-[var(--sar-line)] pt-3 sm:grid-cols-2">

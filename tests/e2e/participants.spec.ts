@@ -124,6 +124,14 @@ test.describe('mission participants [DON-271]', () => {
 
     const bravoRow = page.getByTestId('participant-active-list').locator('div.sar-readout').filter({ hasText: 'Bravo Team' })
     await bravoRow.getByRole('button', { name: 'Remove' }).click()
+    // One click only asks (DON-373): Bravo is still tracked until confirmed.
+    const confirmation = bravoRow.getByTestId('participant-remove-confirmation')
+    await expect(confirmation).toContainText('Stop tracking Bravo Team (1 person)? Their positions stop being recorded.')
+    await confirmation.getByRole('button', { name: 'Keep' }).click()
+    await expect(confirmation).toHaveCount(0)
+    await expect(page.getByTestId('participant-active-list')).toContainText('Bravo Team')
+    await bravoRow.getByRole('button', { name: 'Remove' }).click()
+    await bravoRow.getByTestId('participant-remove-confirm-btn').click()
     await expect(page.getByTestId('participant-active-list')).not.toContainText('Bravo Team')
 
     await injectSnapshotWithoutCurrentFixes(page)

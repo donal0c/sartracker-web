@@ -259,6 +259,86 @@ describe('ParticipantControlsSection [DON-271]', () => {
     })
   })
 
+  describe('Remove asks before it stops tracking anyone [DON-373]', () => {
+    const groupRow = {
+      id: 'part-kmrt', mission_id: 'mission', kind: 'group' as const, traccar_device_id: null,
+      mission_team_id: 'team-kmrt', traccar_group_id: '7', team_name: 'KMRT', provenance: 'explicit' as const,
+      effective_from: '2026-11-26T08:00:00Z', added_at: '2026-11-26T08:00:00Z', added_by: 'A',
+      removed_at: null, removed_by: null,
+    }
+    const deviceRow = {
+      id: 'part-alice', mission_id: 'mission', kind: 'device' as const, traccar_device_id: '31',
+      mission_team_id: null, provenance: 'explicit' as const,
+      effective_from: '2026-11-26T08:00:00Z', added_at: '2026-11-26T08:00:00Z', added_by: 'A',
+      removed_at: null, removed_by: null,
+    }
+    const device = (device_id: string, name: string, group_id: string | null) => ({
+      device_id, name, status: 'online', last_seen: null, unique_id: `u-${device_id}`, category: null, group_id,
+    }) as never
+
+    function renderRunning(removeParticipant: ParticipantRuntimeController['removeParticipant'], simplified = false): void {
+      useParticipantStore.setState({
+        controller: { removeParticipant } as unknown as ParticipantRuntimeController,
+        participants: [groupRow, deviceRow],
+        availableDevices: [device('1', 'One', '7'), device('2', 'Two', '7'), device('3', 'Three', '7'), device('31', 'Alice', null)],
+      })
+      render(React.createElement(ParticipantControlsSection, { phase: 'active', ...(simplified ? { variant: 'simplified', part: 'admin' } : {}) }))
+    }
+
+    function removeCalls(): { calls: unknown[][]; fn: ParticipantRuntimeController['removeParticipant'] } {
+      const calls: unknown[][] = []
+      const fn = (async (...args: unknown[]) => { calls.push(args) }) as unknown as ParticipantRuntimeController['removeParticipant']
+      return { calls, fn }
+    }
+
+    it('one click on Remove does not remove; it asks, naming the group and how many people', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(remove.calls).toHaveLength(0)
+      const confirm = document.querySelector('[data-testid="participant-remove-confirmation"]')
+      expect(confirm?.textContent).toContain('Stop tracking KMRT (3 people)? Their positions stop being recorded.')
+      expect(confirm?.querySelector('[data-testid="participant-remove-confirm-btn"]')?.textContent).toBe('Remove')
+      expect(confirm?.querySelector('[data-testid="participant-remove-keep-btn"]')?.textContent).toBe('Keep')
+    })
+
+    it('names one person for a single device', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn, true)
+      click('[data-testid="participant-remove-part-alice"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking Alice (1 person)? Their positions stop being recorded.')
+    })
+
+    it('Keep closes the question and removes nobody', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      click('[data-testid="participant-remove-keep-btn"]')
+      expect(remove.calls).toHaveLength(0)
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+      expect(document.querySelector('[data-testid="participant-remove-part-kmrt"]')).not.toBeNull()
+    })
+
+    it('confirming removes exactly that participant with the unchanged audit actor and reason', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      click('[data-testid="participant-remove-confirm-btn"]')
+      expect(remove.calls).toEqual([['part-kmrt', 'Mission coordinator', 'Coordinator removed participant']])
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
+    })
+
+    it('says the number of people is unknown when the Traccar device list could not be read', () => {
+      const remove = removeCalls()
+      renderRunning(remove.fn)
+      act(() => useParticipantStore.setState({ availableDevices: [], catalogueError: 'Traccar unreachable' }))
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking KMRT (number of people not known)? Their positions stop being recorded.')
+    })
+  })
+
   describe('release smoke reads the history lines the operator sees [DON-368]', () => {
     const base = {
       mission_id: 'mission-1', mission_team_id: null, provenance: 'explicit' as const,
