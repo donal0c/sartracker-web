@@ -16,6 +16,7 @@ import { useIngestHealthStore } from '../../src/features/tracking/ingest-health-
 
 const mocks = vi.hoisted(() => ({
   loadAppSettings: vi.fn(),
+  getAppRuntimeController: vi.fn(),
 }))
 
 const ARCHIVE_CUSTODY = {
@@ -27,6 +28,13 @@ const ARCHIVE_CUSTODY = {
 vi.mock('../../src/infrastructure/settings-store/tauri-settings-store', () => ({
   loadAppSettings: mocks.loadAppSettings,
 }))
+
+vi.mock('../../src/features/runtime/app-runtime-controller', () => ({
+  getAppRuntimeController: mocks.getAppRuntimeController,
+}))
+
+const HISTORY_REFUSAL =
+  'Mission cannot be finished while 3 participant history backfill checkpoint(s) are incomplete. Keep the mission active and retry history backfill before finishing.'
 
 describe('useMissionControlViewModel', () => {
   let root: Root | null = null
@@ -606,6 +614,97 @@ describe('useMissionControlViewModel', () => {
     expect(getModel().actionError).toMatch(/degraded evidence health blocks finalization/i)
   })
 
+
+  describe('Finish refused while earlier tracks are still being fetched [DON-376]', () => {
+    function setUpRefusedFinish() {
+      const finishMission = vi.fn().mockRejectedValue(new Error(HISTORY_REFUSAL))
+      const refreshMission = vi.fn().mockResolvedValue(undefined)
+      useMissionStore.setState({ phase: 'active', currentMission: createMission({ status: 'active' }), controller: createController({ finishMission }) })
+      useParticipantStore.setState({
+        activeMissionId: 'mission-1',
+        controller: { refreshMission } as never,
+        backfillCheckpoints: [
+          historyCheckpoint('1', '2026-05-17T08:00:00.000Z'),
+          historyCheckpoint('1', '2026-05-17T08:30:00.000Z'),
+          historyCheckpoint('2', '2026-05-17T08:00:00.000Z'),
+        ],
+      })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      return { finishMission, refreshMission, warn }
+    }
+
+    it('says in plain words how many people are still loading and offers Try again', async () => {
+      const { refreshMission, warn } = setUpRefusedFinish()
+      const { getModel } = renderHook()
+
+      await act(async () => getModel().confirmFinish())
+
+      expect(refreshMission).toHaveBeenCalledWith('mission-1')
+      expect(getModel().actionError).toBe(
+        "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the internet connection, then press Try again.",
+      )
+      expect(getModel().historyRetry).toEqual({ busy: false })
+      expect(useMissionStore.getState().phase).toBe('active')
+      // The store's precise refusal stays in the log for diagnostics.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Finish refused'), HISTORY_REFUSAL)
+    })
+
+    it('Try again restarts the history fetch through the existing reconnect path and never finishes', async () => {
+      const { finishMission } = setUpRefusedFinish()
+      const reloadSettings = vi.fn().mockResolvedValue(undefined)
+      mocks.getAppRuntimeController.mockReturnValue({ reloadSettings })
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      await act(async () => getModel().retryHistoryFetch())
+
+      expect(reloadSettings).toHaveBeenCalledWith({ forceConnect: true })
+      expect(finishMission).toHaveBeenCalledTimes(1)
+      expect(getModel().actionError).toBeNull()
+      expect(getModel().historyRetry).toBeNull()
+      expect(getModel().historyRetryNote).toBe(
+        'Fetching earlier tracks again. Press Finish once they have loaded.',
+      )
+    })
+
+    it('keeps the refusal on screen and says so when Try again fails', async () => {
+      setUpRefusedFinish()
+      mocks.getAppRuntimeController.mockReturnValue({ reloadSettings: vi.fn().mockRejectedValue(new Error('Tracking server unreachable.')) })
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      await act(async () => getModel().retryHistoryFetch())
+
+      expect(getModel().actionError).toBe(
+        "Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the internet connection, then press Try again. Try again did not work: Tracking server unreachable.",
+      )
+      expect(getModel().historyRetry).toEqual({ busy: false })
+      expect(getModel().historyRetryNote).toBeNull()
+    })
+
+    it('says Try again is unavailable when the app runtime is not running', async () => {
+      setUpRefusedFinish()
+      mocks.getAppRuntimeController.mockReturnValue(null)
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      await act(async () => getModel().retryHistoryFetch())
+
+      expect(getModel().actionError).toContain('Try again did not work: tracking is not running. Restart SAR Tracker.')
+      expect(getModel().historyRetry).toEqual({ busy: false })
+    })
+
+    it('leaves other Finish failures as they were, without Try again', async () => {
+      useMissionStore.setState({ phase: 'active', currentMission: createMission({ status: 'active' }), controller: createController({ finishMission: vi.fn().mockRejectedValue(new Error('Mission is already finished.')) }) })
+      const { getModel } = renderHook()
+
+      await act(async () => getModel().confirmFinish())
+
+      expect(getModel().actionError).toBe('Mission is already finished.')
+      expect(getModel().historyRetry).toBeNull()
+    })
+  })
+
   function renderHook(): { readonly getModel: () => MissionControlViewModel } {
     let currentModel: MissionControlViewModel | null = null
 
@@ -682,6 +781,18 @@ function createEvidenceLossGovernanceController() {
       conflictDeviceIds: [],
     }),
     unlockGovernanceMission: vi.fn(),
+  }
+}
+
+function historyCheckpoint(deviceId: string, windowFrom: string) {
+  return {
+    mission_id: 'mission-1',
+    traccar_device_id: deviceId,
+    window_from: windowFrom,
+    window_to: '2026-05-17T10:00:00.000Z',
+    reconciled_until: windowFrom,
+    completed: 0,
+    updated_at: '2026-05-17T10:00:00.000Z',
   }
 }
 

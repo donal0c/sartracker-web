@@ -416,11 +416,11 @@ test.describe('Simplified workspace', () => {
     await page.getByTestId('ws-mission-button').click()
     await page.getByTestId('mission-finish-btn').click()
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Confirm Finish' }).click()
-    await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+    await expect(page.getByTestId('mission-control')).toContainText("Can't finish yet. SAR Tracker is still fetching earlier tracks")
     // Cancelling the dialog keeps the refusal on screen and flagged on the Mission button.
     await page.getByTestId('mission-finish-dialog').getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByTestId('mission-finish-dialog')).toBeHidden()
-    await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+    await expect(page.getByTestId('mission-control')).toContainText("Can't finish yet. SAR Tracker is still fetching earlier tracks")
     await expect(page.getByTestId('ws-mission-attention')).toBeVisible()
 
     // Tracking still opens, and the refusal stays flagged on the Mission button.
@@ -431,7 +431,7 @@ test.describe('Simplified workspace', () => {
 
     // Opening Mission again shows the refusal in words.
     await page.getByTestId('ws-mission-button').click()
-    await expect(page.getByTestId('mission-control')).toContainText('participant history backfill checkpoint(s) are incomplete')
+    await expect(page.getByTestId('mission-control')).toContainText("Can't finish yet. SAR Tracker is still fetching earlier tracks")
   })
 
   test('All devices, Settings and Diagnostics never cover the alarm, running or paused, at either window size', async ({ page }) => {

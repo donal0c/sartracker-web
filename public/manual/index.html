@@ -617,7 +617,8 @@
           <p>
             <strong>Earlier positions: still loading</strong> means the earlier track is still
             being fetched from the tracking server. <strong>You cannot finish the mission until it
-            completes.</strong> If it stays loading, click the tracking status in the top bar. If it
+            completes.</strong> If it stays loading, click the tracking status in the top bar, or press
+            <strong>Try again</strong> on the refused Finish message (see <a href="#mission-finish">Finish</a>). If it
             fails, the Mission panel says so in words, for example <em>Earlier positions for Hill Team
             could not be loaded</em>.
           </p>
@@ -687,9 +688,14 @@
           <div class="warning">
             <strong>Finish can be refused.</strong> If participant history is still loading, or the app
             could not save evidence it has already seen, the mission stays active and a red message
-            explains why (for example <em>Mission cannot be finished while 2 participant history backfill
-            checkpoint(s) are incomplete</em>). Fix or wait, then try again. Do not treat a refused
-            Finish as a cosmetic error.
+            explains why. While earlier tracks are still being fetched it says, for example,
+            <em>Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the
+            internet connection, then press Try again.</em> Check this computer's internet connection,
+            then press <strong>Try again</strong>: the app reconnects to the tracking server and starts
+            fetching that history again straight away, and says <em>Fetching earlier tracks again</em>.
+            <strong>Try again</strong> never finishes the mission. Press <strong>Finish</strong> again once
+            <em>Earlier positions</em> shows loaded; until then Finish is still refused. For other
+            refusals, fix or wait, then try again. Do not treat a refused Finish as a cosmetic error.
           </div>
 
           <h3 id="mission-recovery">If the app restarts or crashes</h3>

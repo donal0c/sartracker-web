@@ -300,13 +300,26 @@ test.describe('mission participants [DON-271]', () => {
       .click()
 
     await expect(page.getByTestId('mission-control')).toContainText(
-      'participant history backfill checkpoint(s) are incomplete',
+      "Can't finish yet. SAR Tracker is still fetching earlier tracks",
     )
+    await expect(page.getByTestId('mission-control')).toContainText('for 1 person. Check the internet connection, then press Try again.')
+    await expect(page.getByTestId('mission-control')).not.toContainText('backfill checkpoint')
     await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
     const mission = await page.evaluate(() =>
       window.__SARTRACKER_BROWSER_HARNESS__?.readState().missions.at(-1),
     )
     expect(mission?.status).toBe('active')
+
+    // Try again restarts the history fetch; it never finishes the mission (DON-376).
+    await page.getByTestId('mission-finish-dialog').getByTestId('mission-history-retry').click()
+    await expect(page.getByTestId('mission-history-retry-note')).toHaveText(
+      'Fetching earlier tracks again. Press Finish once they have loaded.',
+    )
+    await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
+    const afterRetry = await page.evaluate(() =>
+      window.__SARTRACKER_BROWSER_HARNESS__?.readState().missions.at(-1),
+    )
+    expect(afterRetry?.status).toBe('active')
   })
 
   test('rejects a later group selection that would duplicate an active individual', async ({ page }) => {

@@ -21,6 +21,13 @@ import { useMissionTimer } from './use-mission-timer'
 import { useGovernanceAdminRoster, type AdminRosterStatus } from './use-governance-admin-roster'
 import { useParticipantStore } from '../participants/participant-store'
 import { isMissionModelEnabled } from '../runtime/mission-model-flag'
+import { getAppRuntimeController } from '../runtime/app-runtime-controller'
+import {
+  HISTORY_RETRY_STARTED_NOTE,
+  countPeopleStillFetchingHistory,
+  describeHistoryIncompleteFinishRefusal,
+  isHistoryIncompleteFinishRefusal,
+} from './finish-refusal'
 
 const MAX_START_OFFSET_HOURS = 48
 
@@ -75,6 +82,15 @@ export type MissionControlViewModel = {
   readonly startMission: () => Promise<void>
   readonly pauseOrResume: () => Promise<void>
   readonly confirmFinish: () => Promise<void>
+  /**
+   * Present while Finish is refused because earlier tracks are still being
+   * fetched; the panel then offers Try again (DON-376).
+   */
+  readonly historyRetry: { readonly busy: boolean } | null
+  /** Restarts the history fetch through the existing reconnect path. Never finishes. */
+  readonly retryHistoryFetch: () => Promise<void>
+  /** Says the history fetch was restarted, until Finish is pressed again. */
+  readonly historyRetryNote: string | null
   readonly resumeRecoverable: () => Promise<void>
   readonly startFresh: () => Promise<void>
   readonly issueArchiveRecoveryCode: (
@@ -118,6 +134,10 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   const [startOffsetHours, setStartOffsetHours] = useState('0')
   const [startError, setStartError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // The plain refusal shown while Finish waits on earlier tracks (DON-376).
+  const [historyRefusal, setHistoryRefusal] = useState<string | null>(null)
+  const [historyRetryBusy, setHistoryRetryBusy] = useState(false)
+  const [historyRetryNote, setHistoryRetryNote] = useState<string | null>(null)
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
@@ -271,13 +291,67 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     }
 
     setActionError(null)
+    setHistoryRefusal(null)
+    setHistoryRetryNote(null)
 
     try {
       const finished = await controller.finishMission()
       await targetGovernanceAt(finished)
       setShowFinishDialog(false)
     } catch (error) {
-      setActionError(toErrorMessage(error))
+      const message = toErrorMessage(error)
+      if (!isHistoryIncompleteFinishRefusal(message)) {
+        setActionError(message)
+        return
+      }
+      // The store's precise sentence stays in the log; the operator gets plain words.
+      console.warn('Finish refused while participant history is incomplete:', message)
+      const refusal = describeHistoryIncompleteFinishRefusal(await readPeopleStillFetchingHistory())
+      setHistoryRefusal(refusal)
+      setActionError(refusal)
+    }
+  }
+
+  /**
+   * Re-reads the mission's history checkpoints and counts the people still
+   * loading, or null when that count cannot be read truthfully.
+   */
+  async function readPeopleStillFetchingHistory(): Promise<number | null> {
+    const missionId = currentMission?.id
+    if (missionId === undefined) return null
+    try {
+      await participantController?.refreshMission(missionId)
+    } catch (error) {
+      console.warn('Could not re-read participant history progress after a refused Finish.', error)
+      return null
+    }
+    const participants = useParticipantStore.getState()
+    if (participants.activeMissionId !== missionId) return null
+    const count = countPeopleStillFetchingHistory(participants.backfillCheckpoints, missionId)
+    return count > 0 ? count : null
+  }
+
+  /**
+   * Try again: restarts tracking with a forced connect, the same path as
+   * Reconnect, which starts the history fetch afresh without waiting out its
+   * backoff. Finish stays refused until history is complete (DON-376).
+   */
+  async function retryHistoryFetch(): Promise<void> {
+    const refusal = historyRefusal
+    if (refusal === null || historyRetryBusy) return
+    setHistoryRetryBusy(true)
+    try {
+      const runtime = getAppRuntimeController()
+      if (runtime === null) throw new Error('tracking is not running. Restart SAR Tracker.')
+      await runtime.reloadSettings({ forceConnect: true })
+      setActionError(null)
+      setHistoryRefusal(null)
+      setHistoryRetryNote(HISTORY_RETRY_STARTED_NOTE)
+    } catch (error) {
+      console.warn('Try again for participant history failed.', error)
+      setActionError(`${refusal} Try again did not work: ${toErrorMessage(error)}`)
+    } finally {
+      setHistoryRetryBusy(false)
     }
   }
 
@@ -506,6 +580,11 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     startMission,
     pauseOrResume,
     confirmFinish,
+    historyRetry: historyRefusal !== null && actionError !== null && actionError.startsWith(historyRefusal)
+      ? { busy: historyRetryBusy }
+      : null,
+    retryHistoryFetch,
+    historyRetryNote: phase === 'active' || phase === 'paused' ? historyRetryNote : null,
     resumeRecoverable,
     startFresh,
     issueArchiveRecoveryCode,

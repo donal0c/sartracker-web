@@ -117,6 +117,9 @@ export function MissionControlPanel({
     startMission,
     pauseOrResume,
     confirmFinish,
+    historyRetry,
+    retryHistoryFetch,
+    historyRetryNote,
     resumeRecoverable,
     startFresh,
     issueArchiveRecoveryCode,
@@ -362,8 +365,13 @@ export function MissionControlPanel({
           {startError !== null ? <p className="border border-rose-400/24 bg-rose-400/10 p-2 text-xs text-rose-400">{startError}</p> : null}
           {actionError !== null && !showFinishDialog && !showFinalizeDialog &&
             !showUnlockDialog && !showCleanupDialog && !showEvidenceLossDialog
-            ? <MissionActionError message={actionError} />
+            ? <MissionActionError historyRetry={historyRetry} message={actionError} onRetryHistory={retryHistoryFetch} />
             : null}
+          {historyRetryNote !== null && actionError === null ? (
+            <p className="mt-3 border border-stone-500/30 bg-stone-800/60 p-2 text-xs text-stone-200" data-testid="mission-history-retry-note" role="status">
+              {historyRetryNote}
+            </p>
+          ) : null}
           {duplicateWarning !== null ? (
             <p className="sar-inline-alert p-2 text-xs text-amber-300">{duplicateWarning}</p>
           ) : null}
@@ -723,7 +731,7 @@ export function MissionControlPanel({
             This stops the mission clock and returns to the start screen. Everything recorded stays saved.
           </p>
           <OpenOutingFinishOffer />
-          {actionError !== null ? <MissionActionError message={actionError} /> : null}
+          {actionError !== null ? <MissionActionError historyRetry={historyRetry} message={actionError} onRetryHistory={retryHistoryFetch} /> : null}
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-700"
@@ -748,15 +756,35 @@ export function MissionControlPanel({
 }
 
 /** Keeps lifecycle failures visible beside the decision the operator can retry or cancel. */
-function MissionActionError({ message }: { readonly message: string }) {
+/**
+ * A refused or failed mission action in words. When Finish is refused because
+ * earlier tracks are still being fetched, it carries Try again (DON-376).
+ */
+function MissionActionError(props: {
+  readonly message: string
+  readonly historyRetry?: { readonly busy: boolean } | null
+  readonly onRetryHistory?: () => Promise<void>
+}) {
+  const { message, historyRetry, onRetryHistory } = props
   return (
-    <p
+    <div
       className="mt-3 border border-rose-400/30 bg-rose-400/10 p-2 text-xs font-semibold text-rose-300"
       data-testid="mission-action-error"
       role="alert"
     >
-      {message}
-    </p>
+      <p>{message}</p>
+      {historyRetry !== null && historyRetry !== undefined && onRetryHistory !== undefined ? (
+        <button
+          className="sar-button mt-2 px-3 py-1.5 text-[12px] font-bold"
+          data-testid="mission-history-retry"
+          disabled={historyRetry.busy}
+          onClick={() => void onRetryHistory()}
+          type="button"
+        >
+          {historyRetry.busy ? 'Trying again…' : 'Try again'}
+        </button>
+      ) : null}
+    </div>
   )
 }
 
