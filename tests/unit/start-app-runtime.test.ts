@@ -1136,7 +1136,7 @@ describe('app runtime startup', () => {
       forceConnect === true
         ? createBootstrapSettings()
         : { ...createBootstrapSettings(), trackingConfig: null })
-    const retryParticipantHistoryNow = vi.fn().mockReturnValue({ kind: 'started' })
+    const retryParticipantHistoryNow = vi.fn().mockResolvedValue({ kind: 'started', unfetchableDeviceCount: 0 })
     const session = Object.assign(vi.fn(), { reconfigure: vi.fn(), retryParticipantHistoryNow })
     const startTrackingRuntime = vi.fn().mockResolvedValue(session)
 
@@ -1154,13 +1154,13 @@ describe('app runtime startup', () => {
       startTrackingRuntime,
     })
     await runtime!.reloadSettings({ forceConnect: true })
-    expect(runtime!.retryParticipantHistory()).toEqual({ kind: 'started' })
+    expect(await runtime!.retryParticipantHistory()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
     expect(retryParticipantHistoryNow).toHaveBeenCalledOnce()
     // Try again never reconnects: no settings reload is started by it.
     expect(readRuntimeBootstrapSettings).toHaveBeenCalledTimes(2)
 
     await runtime!.dispose()
-    expect(runtime!.retryParticipantHistory()).toEqual({ kind: 'unavailable', reason: 'SAR Tracker is shutting down.' })
+    expect(await runtime!.retryParticipantHistory()).toEqual({ kind: 'unavailable', reason: 'SAR Tracker is shutting down.' })
   })
 
   it('reports tracking as not connected after settings that stop tracking are applied [DON-352]', async () => {

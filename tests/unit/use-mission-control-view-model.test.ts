@@ -625,6 +625,7 @@ describe('useMissionControlViewModel', () => {
       useMissionStore.setState({ phase: 'active', currentMission: createMission({ status: 'active' }), controller: createController({ finishMission }) })
       useParticipantStore.setState({
         activeMissionId: 'mission-1',
+        error: null,
         controller: { refreshMission } as never,
         backfillCheckpoints: [
           historyCheckpoint('1', '2026-05-17T08:00:00.000Z'),
@@ -642,7 +643,7 @@ describe('useMissionControlViewModel', () => {
       await act(async () => getModel().confirmFinish())
 
       expect(getModel().actionError).toBe(PLAIN_TWO)
-      expect(getModel().historyRetry).toEqual({ busy: false })
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
       expect(useMissionStore.getState().phase).toBe('active')
       // Counting never reloads the participant scope live evidence depends on.
       expect(refreshMission).not.toHaveBeenCalled()
@@ -669,9 +670,9 @@ describe('useMissionControlViewModel', () => {
       expect(getModel().historyRetry).toBeNull()
     })
 
-    it('Try again asks tracking to fetch the history now, and never finishes', async () => {
+    it('Try again asks tracking to fetch the history now, keeps the live count and Try again, and never finishes', async () => {
       const { finishMission } = setUpRefusedFinish()
-      const retryParticipantHistory = vi.fn().mockReturnValue({ kind: 'started' })
+      const retryParticipantHistory = vi.fn().mockResolvedValue({ kind: 'started', unfetchableDeviceCount: 0 })
       const reloadSettings = vi.fn()
       mocks.getAppRuntimeController.mockReturnValue({ retryParticipantHistory, reloadSettings })
       const { getModel } = renderHook()
@@ -682,16 +683,73 @@ describe('useMissionControlViewModel', () => {
       expect(retryParticipantHistory).toHaveBeenCalledOnce()
       expect(reloadSettings).not.toHaveBeenCalled()
       expect(finishMission).toHaveBeenCalledTimes(1)
-      expect(getModel().actionError).toBeNull()
+      expect(getModel().actionError).toBe(PLAIN_TWO)
+      expect(getModel().historyRetry).toEqual({
+        busy: false,
+        note: 'Fetching earlier tracks again. Press Confirm Finish once they have loaded.',
+      })
+
+      // Once the history really completes, the fetching note goes with Try again.
+      act(() => useParticipantStore.setState({
+        backfillCheckpoints: [
+          { ...historyCheckpoint('1', '2026-05-17T08:00:00.000Z'), completed: 1 },
+          { ...historyCheckpoint('2', '2026-05-17T08:00:00.000Z'), completed: 1 },
+        ],
+      }))
+      expect(getModel().actionError).toBe('Earlier tracks have now loaded. Press Confirm Finish again.')
       expect(getModel().historyRetry).toBeNull()
-      expect(getModel().historyRetryNote).toBe('Fetching earlier tracks again. Press Finish once they have loaded.')
+    })
+
+    it('names devices whose earlier tracks cannot be fetched when Try again starts', async () => {
+      setUpRefusedFinish()
+      mocks.getAppRuntimeController.mockReturnValue({
+        retryParticipantHistory: vi.fn().mockResolvedValue({ kind: 'started', unfetchableDeviceCount: 1 }),
+      })
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      await act(async () => getModel().retryHistoryFetch())
+
+      expect(getModel().historyRetry?.note).toBe(
+        'Fetching earlier tracks again. Press Confirm Finish once they have loaded. Earlier tracks for 1 device cannot be fetched; see the PARTICIPANT HISTORY UNAVAILABLE warning.',
+      )
+    })
+
+    it('says the tracks have loaded when tracking finds nothing left to fetch', async () => {
+      setUpRefusedFinish()
+      mocks.getAppRuntimeController.mockReturnValue({ retryParticipantHistory: vi.fn().mockResolvedValue({ kind: 'complete' }) })
+      act(() => useParticipantStore.setState({ error: 'Participant refresh failed.', backfillCheckpoints: [] }))
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      await act(async () => getModel().retryHistoryFetch())
+
+      expect(getModel().actionError).toBe('Earlier tracks have now loaded. Press Confirm Finish again.')
+      expect(getModel().historyRetry).toBeNull()
+    })
+
+    it('never reads a failed participant refresh as history that has loaded', async () => {
+      setUpRefusedFinish()
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      // A failed refresh empties the checkpoint list for the same mission.
+      act(() => useParticipantStore.setState({ error: 'Participant refresh failed.', backfillCheckpoints: [] }))
+      expect(getModel().actionError).toBe(
+        "Can't finish yet. SAR Tracker is still fetching earlier tracks for some people. Check the internet connection, then press Try again.",
+      )
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
+
+      // An empty list without an error is not proof either.
+      act(() => useParticipantStore.setState({ error: null, backfillCheckpoints: [] }))
+      expect(getModel().actionError).toContain('for some people.')
+      expect(getModel().historyRetry).not.toBeNull()
     })
 
     it('keeps the refusal on screen and gives the reason when Try again cannot start', async () => {
       setUpRefusedFinish()
-      vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       mocks.getAppRuntimeController.mockReturnValue({
-        retryParticipantHistory: vi.fn().mockReturnValue({ kind: 'unavailable', reason: 'Tracking is not connected. Check the tracking server in Settings.' }),
+        retryParticipantHistory: vi.fn().mockResolvedValue({ kind: 'unavailable', reason: 'Tracking is not connected. Check the tracking server in Settings.' }),
       })
       const { getModel } = renderHook()
       await act(async () => getModel().confirmFinish())
@@ -701,13 +759,25 @@ describe('useMissionControlViewModel', () => {
       expect(getModel().actionError).toBe(
         `${PLAIN_TWO} Try again did not work: Tracking is not connected. Check the tracking server in Settings.`,
       )
-      expect(getModel().historyRetry).toEqual({ busy: false })
-      expect(getModel().historyRetryNote).toBeNull()
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
+    })
+
+    it('gives the reason when Try again itself fails', async () => {
+      setUpRefusedFinish()
+      mocks.getAppRuntimeController.mockReturnValue({
+        retryParticipantHistory: vi.fn().mockRejectedValue(new Error('IPC closed')),
+      })
+      const { getModel } = renderHook()
+      await act(async () => getModel().confirmFinish())
+
+      await act(async () => getModel().retryHistoryFetch())
+
+      expect(getModel().actionError).toBe(`${PLAIN_TWO} Try again did not work: IPC closed`)
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
     })
 
     it('says Try again is unavailable when the app runtime is not running', async () => {
       setUpRefusedFinish()
-      vi.spyOn(console, 'warn').mockImplementation(() => undefined)
       mocks.getAppRuntimeController.mockReturnValue(null)
       const { getModel } = renderHook()
       await act(async () => getModel().confirmFinish())
@@ -715,21 +785,51 @@ describe('useMissionControlViewModel', () => {
       await act(async () => getModel().retryHistoryFetch())
 
       expect(getModel().actionError).toContain('Try again did not work: Tracking is not running. Restart SAR Tracker.')
-      expect(getModel().historyRetry).toEqual({ busy: false })
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
     })
 
-    it('a later Finish failure replaces the history refusal, and the note never outlives its mission', async () => {
+    it('ignores a second Confirm Finish while the first is still checking, so the real refusal shows', async () => {
+      let rejectFirst: (error: Error) => void = () => undefined
+      const finishMission = vi.fn().mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirst = reject }))
+        .mockRejectedValue(new Error('Mission finish is already checking participant membership changes.'))
+      setUpRefusedFinish()
+      useMissionStore.setState({ controller: createController({ finishMission }) })
+      const { getModel } = renderHook()
+
+      let first: Promise<void> = Promise.resolve()
+      act(() => { first = getModel().confirmFinish() })
+      expect(getModel().finishBusy).toBe(true)
+      await act(async () => getModel().confirmFinish())
+      expect(finishMission).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        rejectFirst(new Error(HISTORY_REFUSAL))
+        await first
+      })
+      expect(getModel().finishBusy).toBe(false)
+      expect(getModel().actionError).toBe(PLAIN_TWO)
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
+    })
+
+    it('a Finish pressed during Try again owns the message, and nothing outlives its mission', async () => {
       const { finishMission } = setUpRefusedFinish()
-      mocks.getAppRuntimeController.mockReturnValue({ retryParticipantHistory: vi.fn().mockReturnValue({ kind: 'started' }) })
+      let resolveRetry: (outcome: unknown) => void = () => undefined
+      mocks.getAppRuntimeController.mockReturnValue({
+        retryParticipantHistory: vi.fn().mockImplementation(() => new Promise((resolve) => { resolveRetry = resolve })),
+      })
       const { getModel } = renderHook()
       await act(async () => getModel().confirmFinish())
-      await act(async () => getModel().retryHistoryFetch())
 
+      let retry: Promise<void> = Promise.resolve()
+      act(() => { retry = getModel().retryHistoryFetch() })
       finishMission.mockRejectedValueOnce(new Error('Mission cannot be finished while a GPX import is unsettled.'))
       await act(async () => getModel().confirmFinish())
+      await act(async () => {
+        resolveRetry({ kind: 'started', unfetchableDeviceCount: 0 })
+        await retry
+      })
       expect(getModel().actionError).toBe('Mission cannot be finished while a GPX import is unsettled.')
       expect(getModel().historyRetry).toBeNull()
-      expect(getModel().historyRetryNote).toBeNull()
 
       await act(async () => getModel().confirmFinish())
       act(() => useMissionStore.setState({ currentMission: createMission({ id: 'mission-2' }) }))

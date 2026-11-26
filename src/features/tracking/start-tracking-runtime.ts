@@ -89,6 +89,13 @@ type ParticipantBackfillRetryState = {
   successCount: number
 }
 
+/** The active mission's incomplete participant history, as one pass sees it. */
+type ParticipantBackfillWork = {
+  readonly missionId: string
+  readonly fetchable: readonly ParticipantBackfillCheckpoint[]
+  readonly missingDeviceIds: readonly string[]
+}
+
 /** What one participant backfill pass leaves for the scheduler. */
 type ParticipantBackfillPassResult =
   | { readonly kind: 'continue' }
@@ -437,7 +444,7 @@ export type TrackingRuntimeStop = (() => Promise<void>) & {
    * Fetches incomplete participant history now, skipping any backoff still
    * running, without touching the live connection. Never finishes a mission.
    */
-  readonly retryParticipantHistoryNow?: () => ParticipantHistoryRetryOutcome
+  readonly retryParticipantHistoryNow?: () => Promise<ParticipantHistoryRetryOutcome>
 }
 const breadcrumbRendererSessionId = createBreadcrumbRendererSessionId()
 let nextTrackingCacheIdentityToken = 1
@@ -505,6 +512,9 @@ export async function startTrackingRuntime(
     readonly deviceIds: readonly string[]
   } | null = null
   let participantBackfillRetryTimer: ReturnType<typeof setTimeout> | null = null
+  // Try again pressed while a pass was running: run another as soon as it ends.
+  let participantBackfillRetryRequested = false
+  let participantBackfillWakeRequested = false
   const participantScopeWaiters = new Set<() => void>()
   const participantScopeReadyTimeoutMs = dependencies.participantScopeReadyTimeoutMs
     ?? DEFAULT_PARTICIPANT_SCOPE_READY_TIMEOUT_MS
@@ -552,7 +562,7 @@ export async function startTrackingRuntime(
 
     return Object.assign(
       async () => invalidateTrackingRuntimeGeneration(runtimeGeneration),
-      { retryParticipantHistoryNow: () => PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED },
+      { retryParticipantHistoryNow: async () => PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED },
     )
   }
 
@@ -1392,10 +1402,11 @@ export async function startTrackingRuntime(
    * already running. The live transport and positions are left alone, and the
    * durable checkpoints still decide when Finish is allowed.
    */
-  function retryParticipantHistoryNow(): ParticipantHistoryRetryOutcome {
-    if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) {
-      return { kind: 'unavailable', reason: 'Tracking is restarting. Wait a moment, then press Try again.' }
+  async function retryParticipantHistoryNow(): Promise<ParticipantHistoryRetryOutcome> {
+    const restarting: ParticipantHistoryRetryOutcome = {
+      kind: 'unavailable', reason: 'Tracking is restarting. Wait a moment, then press Try again.',
     }
+    if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return restarting
     if (dependencies.missionModelEnabled !== true ||
       dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
       dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
@@ -1404,18 +1415,54 @@ export async function startTrackingRuntime(
       return { kind: 'unavailable', reason: 'This version is not fetching earlier tracks. Tell your technical lead.' }
     }
     if (!hasBreadcrumbClient(client)) return PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
+    // Report "started" only when a fetch can really start.
+    let work: ParticipantBackfillWork | null
+    try {
+      work = await readParticipantBackfillWork()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn('Try again could not read participant history progress.', error)
+      return {
+        kind: 'unavailable',
+        reason: `SAR Tracker could not read which earlier tracks are still missing (${message}). Press Try again; restart SAR Tracker if this keeps happening.`,
+      }
+    }
+    if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return restarting
+    if (!hasBreadcrumbClient(client)) return PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
+    if (work === null) return { kind: 'unavailable', reason: 'No mission is running.' }
+    noteParticipantBackfillMissingDevices(work.missionId, work.missingDeviceIds)
+    if (work.fetchable.length === 0) {
+      if (work.missingDeviceIds.length === 0) return { kind: 'complete' }
+      const devices = work.missingDeviceIds.length === 1
+        ? `device ${work.missingDeviceIds[0]}`
+        : `devices ${work.missingDeviceIds.join(', ')}`
+      return {
+        kind: 'unavailable',
+        reason: `SAR Tracker has no saved record of ${devices} in this mission, so ${work.missingDeviceIds.length === 1 ? 'its' : 'their'} earlier tracks cannot be fetched. See the PARTICIPANT HISTORY UNAVAILABLE warning.`,
+      }
+    }
+    clearParticipantBackfillBackoff()
+    if (participantBackfillInFlight) {
+      participantBackfillRetryRequested = true
+    } else {
+      scheduleParticipantBackfill()
+    }
+    void Promise.resolve().then(() => dependencies.recordDiagnosticEvent?.({
+      level: 'info', category: 'tracking', event: 'participant_history_retry_requested',
+      fields: { fetchableCheckpoints: work.fetchable.length, unfetchableDevices: work.missingDeviceIds.length },
+    })).catch((error: unknown) => logger.warn('Participant history retry diagnostic could not be recorded.', error))
+    return { kind: 'started', unfetchableDeviceCount: work.missingDeviceIds.length }
+  }
+
+  /** Lets every backed-off participant history checkpoint be fetched at once. */
+  function clearParticipantBackfillBackoff(): void {
     for (const state of participantBackfillRetryStates.values()) state.retryAtMs = 0
     if (participantBackfillRetryTimer !== null) {
       clearTimeout(participantBackfillRetryTimer)
       participantBackfillRetryTimer = null
     }
-    void Promise.resolve().then(() => dependencies.recordDiagnosticEvent?.({
-      level: 'info', category: 'tracking', event: 'participant_history_retry_requested',
-      fields: { backedOffCheckpoints: participantBackfillRetryStates.size },
-    })).catch((error: unknown) => logger.warn('Participant history retry diagnostic could not be recorded.', error))
-    scheduleParticipantBackfill()
-    return { kind: 'started' }
   }
+
 
   /** Changes transport settings while one runtime retains all evidence custody. */
   async function reconfigure(next: StartTrackingRuntimeDependencies): Promise<void> {
@@ -1700,9 +1747,14 @@ export async function startTrackingRuntime(
    * failing waits out its own backoff while the others keep moving [DON-338].
    */
   function scheduleParticipantBackfill(): void {
+    if (participantBackfillInFlight) {
+      // A wake-up (new snapshot, scope change) while a pass runs must not be
+      // lost: that pass may have read the mission before the change.
+      participantBackfillWakeRequested = true
+      return
+    }
     if (
       dependencies.missionModelEnabled !== true ||
-      participantBackfillInFlight ||
       participantBackfillAbortController.signal.aborted ||
       dependencies.missionStore.listParticipantBackfillCheckpoints === undefined ||
       dependencies.missionStore.upsertParticipantBackfillCheckpoint === undefined ||
@@ -1723,7 +1775,13 @@ export async function startTrackingRuntime(
       participantBackfillInFlight = false
       if (participantBackfillTask === task) participantBackfillTask = null
       if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) return
-      if (result.kind === 'continue') {
+      const wakeRequested = participantBackfillWakeRequested
+      participantBackfillWakeRequested = false
+      if (participantBackfillRetryRequested) {
+        participantBackfillRetryRequested = false
+        clearParticipantBackfillBackoff()
+        scheduleParticipantBackfill()
+      } else if (result.kind === 'continue' || wakeRequested) {
         scheduleParticipantBackfill()
       } else if (result.kind === 'waiting') {
         scheduleParticipantBackfillRetry(result.retryAtMs)
@@ -1834,34 +1892,46 @@ export async function startTrackingRuntime(
     }
   }
 
+  /**
+   * Reads the active mission's incomplete participant history, split into the
+   * checkpoints that can be fetched and the devices that cannot because the
+   * mission has no saved record of them [M-34]. Null when no mission runs.
+   */
+  async function readParticipantBackfillWork(): Promise<ParticipantBackfillWork | null> {
+    const activeMission = await dependencies.missionStore.getActiveMission()
+    if (activeMission === null) return null
+    const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
+      activeMission.id,
+    ) ?? []
+    const incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
+    if (incomplete.length === 0 || dependencies.missionStore.listDevices === undefined) {
+      return { missionId: activeMission.id, fetchable: incomplete, missingDeviceIds: [] }
+    }
+    const devices = await dependencies.missionStore.listDevices(activeMission.id)
+    const durableDeviceIds = new Set(devices.map((device) => device.device_id))
+    // History for a device with no mission record cannot be stored yet. Skip
+    // only that device, by name, so it never stalls everyone else's backfill
+    // [M-34]. Its checkpoint stays incomplete and truthful.
+    const missingDeviceIds = [...new Set(incomplete
+      .filter((candidate) => !durableDeviceIds.has(candidate.traccar_device_id))
+      .map((candidate) => candidate.traccar_device_id))].sort()
+    return {
+      missionId: activeMission.id,
+      fetchable: incomplete.filter((candidate) => durableDeviceIds.has(candidate.traccar_device_id)),
+      missingDeviceIds,
+    }
+  }
+
   async function runNextParticipantBackfillPass(): Promise<ParticipantBackfillPassResult> {
     // Participant backfill consumes only durability acknowledgement, never returned rows.
     const persistChunk = dependencies.missionStore.persistTrackingPositionsBulk
       ?? dependencies.missionStore.persistTrackingHistoryBatch
     if (!hasBreadcrumbClient(client) || persistChunk === undefined) return { kind: 'idle' }
-    const activeMission = await dependencies.missionStore.getActiveMission()
-    if (activeMission === null) return { kind: 'idle' }
-    const checkpoints = await dependencies.missionStore.listParticipantBackfillCheckpoints?.(
-      activeMission.id,
-    ) ?? []
-    let incomplete = checkpoints.filter((candidate) => candidate.completed !== 1)
-    if (incomplete.length === 0) {
-      noteParticipantBackfillMissingDevices(activeMission.id, [])
-      return { kind: 'idle' }
-    }
-    if (dependencies.missionStore.listDevices !== undefined) {
-      const devices = await dependencies.missionStore.listDevices(activeMission.id)
-      const durableDeviceIds = new Set(devices.map((device) => device.device_id))
-      // History for a device with no mission record cannot be stored yet.
-      // Skip only that device, by name, so it never stalls everyone else's
-      // backfill [M-34]. Its checkpoint stays incomplete and truthful.
-      const missingDeviceIds = [...new Set(incomplete
-        .filter((candidate) => !durableDeviceIds.has(candidate.traccar_device_id))
-        .map((candidate) => candidate.traccar_device_id))].sort()
-      noteParticipantBackfillMissingDevices(activeMission.id, missingDeviceIds)
-      incomplete = incomplete.filter((candidate) => durableDeviceIds.has(candidate.traccar_device_id))
-      if (incomplete.length === 0) return { kind: 'idle' }
-    }
+    const work = await readParticipantBackfillWork()
+    if (work === null) return { kind: 'idle' }
+    noteParticipantBackfillMissingDevices(work.missionId, work.missingDeviceIds)
+    const incomplete = work.fetchable
+    if (incomplete.length === 0) return { kind: 'idle' }
     const checkpoint = selectParticipantBackfillCheckpoint(incomplete, Date.now())
     if (checkpoint === undefined) {
       const retryAtMs = Math.min(...incomplete.map((candidate) =>

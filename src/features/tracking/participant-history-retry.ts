@@ -1,6 +1,10 @@
 /** What asking participant history to retry now achieved (DON-376). */
 export type ParticipantHistoryRetryOutcome =
-  | { readonly kind: 'started' }
+  /** A fetch starts now (or right after the one already running). */
+  | { readonly kind: 'started'; readonly unfetchableDeviceCount: number }
+  /** Nothing is left to fetch: every earlier track has loaded. */
+  | { readonly kind: 'complete' }
+  /** No fetch can start; the reason is in words a volunteer can act on. */
   | { readonly kind: 'unavailable'; readonly reason: string }
 
 /** Said when no tracking connection exists to fetch participant history with. */

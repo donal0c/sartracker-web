@@ -692,12 +692,16 @@
             <em>Can't finish yet. SAR Tracker is still fetching earlier tracks for 2 people. Check the
             internet connection, then press Try again.</em> Check this computer's internet connection,
             then press <strong>Try again</strong>: the app starts fetching that history again straight
-            away, without waiting for its next automatic retry, and says <em>Fetching earlier tracks
-            again</em>. Live tracking carries on as before. If it cannot start, for example because
-            tracking is not connected, the red message stays and says why.
-            <strong>Try again</strong> never finishes the mission. Press <strong>Finish</strong> again once
-            <em>Earlier positions</em> shows loaded, or when the message changes to <em>Earlier tracks have
-            now loaded</em>; until then Finish is still refused. After a restart,
+            away, without waiting for its next automatic retry, and adds <em>Fetching earlier tracks
+            again</em> under the red message. The count of people still loading keeps updating, and
+            <strong>Try again</strong> stays available. If a device has no saved record in this mission,
+            the note says its earlier tracks cannot be fetched. Live tracking carries on as before. If
+            Try again cannot start, for example because tracking is not connected, the red message stays
+            and says why. If the app cannot read the participant list, the message says <em>some
+            people</em> rather than guess a number.
+            <strong>Try again</strong> never finishes the mission. Press <strong>Confirm Finish</strong>
+            again when the message changes to <em>Earlier tracks have now loaded</em>; until then Finish
+            is still refused. After a restart,
             <strong>Finish it, start new</strong> is refused for the same reason: resume the unfinished
             mission so its earlier tracks can load, then finish it. For other
             refusals, fix or wait, then try again. Do not treat a refused Finish as a cosmetic error.

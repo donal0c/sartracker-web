@@ -233,7 +233,7 @@ export async function startMissionBrowserHarness(): Promise<void> {
     isTrackingConnected: () => trackingConnectionApplied,
     // The browser harness never downloads participant history, so it says so
     // rather than pretend a retry started (DON-376).
-    retryParticipantHistory: () => ({
+    retryParticipantHistory: async () => ({
       kind: 'unavailable',
       reason: 'Browser testing mode does not fetch earlier tracks.',
     }),

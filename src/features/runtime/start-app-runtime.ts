@@ -307,7 +307,7 @@ export async function startAppRuntime(
       await reloadSettings(options)
     },
     isTrackingConnected: () => trackingConnectionApplied,
-    retryParticipantHistory: () => {
+    retryParticipantHistory: async () => {
       if (disposed) return { kind: 'unavailable', reason: 'SAR Tracker is shutting down.' }
       return trackingSession?.retryParticipantHistoryNow?.() ?? PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED
     },

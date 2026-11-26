@@ -2,7 +2,7 @@ import { lazy, Suspense, useLayoutEffect, useState, type ReactNode } from 'react
 
 import { ResumeMissionChoice } from './workspace/resume-mission-choice'
 
-import { useMissionControlViewModel } from '../features/mission/use-mission-control-view-model'
+import { useMissionControlViewModel, type HistoryRetryState } from '../features/mission/use-mission-control-view-model'
 import { formatMissionDuration } from '../features/mission/mission-timers'
 import { selectMissionPhasePresentation } from '../features/mission/mission-phase-presentation'
 import {
@@ -119,7 +119,7 @@ export function MissionControlPanel({
     confirmFinish,
     historyRetry,
     retryHistoryFetch,
-    historyRetryNote,
+    finishBusy,
     resumeRecoverable,
     startFresh,
     issueArchiveRecoveryCode,
@@ -367,11 +367,6 @@ export function MissionControlPanel({
             !showUnlockDialog && !showCleanupDialog && !showEvidenceLossDialog
             ? <MissionActionError historyRetry={historyRetry} message={actionError} onRetryHistory={retryHistoryFetch} />
             : null}
-          {historyRetryNote !== null && actionError === null ? (
-            <p className="mt-3 border border-stone-500/30 bg-stone-800/60 p-2 text-xs text-stone-200" data-testid="mission-history-retry-note" role="status">
-              {historyRetryNote}
-            </p>
-          ) : null}
           {duplicateWarning !== null ? (
             <p className="sar-inline-alert p-2 text-xs text-amber-300">{duplicateWarning}</p>
           ) : null}
@@ -735,7 +730,7 @@ export function MissionControlPanel({
           <div className="mt-4 flex gap-2">
             <button
               className="flex-1 bg-rose-600 px-3 py-2 text-[12px] font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={historyRetry?.busy === true}
+              disabled={finishBusy || historyRetry?.busy === true}
               onClick={() => void confirmFinish()}
               type="button"
             >
@@ -763,7 +758,7 @@ export function MissionControlPanel({
  */
 function MissionActionError(props: {
   readonly message: string
-  readonly historyRetry?: { readonly busy: boolean } | null
+  readonly historyRetry?: HistoryRetryState | null
   readonly onRetryHistory?: () => Promise<void>
 }) {
   const { message, historyRetry, onRetryHistory } = props
@@ -784,6 +779,11 @@ function MissionActionError(props: {
         >
           {historyRetry.busy ? 'Trying again…' : 'Try again'}
         </button>
+      ) : null}
+      {historyRetry?.note !== null && historyRetry?.note !== undefined ? (
+        <p className="mt-2 font-normal text-stone-200" data-testid="mission-history-retry-note" role="status">
+          {historyRetry.note}
+        </p>
       ) : null}
     </div>
   )

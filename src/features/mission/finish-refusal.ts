@@ -18,7 +18,17 @@ export const HISTORY_START_FRESH_REFUSAL =
   "Can't start a new mission yet. SAR Tracker still has earlier tracks to fetch for the unfinished mission. Press Resume, check the internet connection, and finish it once they have loaded."
 
 /** What the operator is told after pressing Try again succeeds (DON-376). */
-export const HISTORY_RETRY_STARTED_NOTE = 'Fetching earlier tracks again. Press Finish once they have loaded.'
+export const HISTORY_RETRY_STARTED_NOTE = 'Fetching earlier tracks again. Press Confirm Finish once they have loaded.'
+
+/**
+ * The note after Try again started a fetch. Devices with no saved mission
+ * record cannot be fetched, so they are named rather than hidden.
+ */
+export function describeHistoryRetryStarted(unfetchableDeviceCount: number): string {
+  if (unfetchableDeviceCount < 1) return HISTORY_RETRY_STARTED_NOTE
+  const devices = `${unfetchableDeviceCount} ${unfetchableDeviceCount === 1 ? 'device' : 'devices'}`
+  return `${HISTORY_RETRY_STARTED_NOTE} Earlier tracks for ${devices} cannot be fetched; see the PARTICIPANT HISTORY UNAVAILABLE warning.`
+}
 
 /**
  * True when a Finish failure is the store refusing because participant
@@ -55,4 +65,25 @@ export function countPeopleStillFetchingHistory(
     }
   }
   return devices.size
+}
+
+/** The participant store fields that say what history is still missing. */
+export type ParticipantHistoryScope = {
+  readonly activeMissionId: string | null
+  readonly error: string | null
+  readonly checkpoints: readonly ParticipantBackfillCheckpoint[]
+}
+
+/**
+ * People still waiting for earlier tracks, or null when the participant store
+ * cannot say: it holds another mission, its last refresh failed, or it has
+ * no checkpoints for this mission. Null is never read as "all loaded".
+ */
+export function countPeopleStillFetchingHistoryIfKnown(
+  scope: ParticipantHistoryScope,
+  missionId: string,
+): number | null {
+  if (scope.activeMissionId !== missionId || scope.error !== null) return null
+  if (!scope.checkpoints.some((checkpoint) => checkpoint.mission_id === missionId)) return null
+  return countPeopleStillFetchingHistory(scope.checkpoints, missionId)
 }

@@ -25,14 +25,21 @@ import { getAppRuntimeController } from '../runtime/app-runtime-controller'
 import type { ParticipantHistoryRetryOutcome } from '../tracking/participant-history-retry'
 import {
   HISTORY_NOW_LOADED_NOTE,
-  HISTORY_RETRY_STARTED_NOTE,
   HISTORY_START_FRESH_REFUSAL,
-  countPeopleStillFetchingHistory,
+  countPeopleStillFetchingHistoryIfKnown,
   describeHistoryIncompleteFinishRefusal,
+  describeHistoryRetryStarted,
   isHistoryIncompleteFinishRefusal,
 } from './finish-refusal'
 
 const MAX_START_OFFSET_HOURS = 48
+
+/** Try again beside a Finish refused for incomplete history (DON-376). */
+export type HistoryRetryState = {
+  readonly busy: boolean
+  /** Says a fetch really started; null until one has. */
+  readonly note: string | null
+}
 
 export type MissionControlViewModel = {
   readonly phase: MissionRuntimePhase
@@ -89,11 +96,11 @@ export type MissionControlViewModel = {
    * Present while Finish is refused because earlier tracks are still being
    * fetched; the panel then offers Try again (DON-376).
    */
-  readonly historyRetry: { readonly busy: boolean } | null
-  /** Restarts the history fetch through the existing reconnect path. Never finishes. */
+  readonly historyRetry: HistoryRetryState | null
+  /** Asks tracking to fetch the missing earlier tracks now. Never finishes. */
   readonly retryHistoryFetch: () => Promise<void>
-  /** Says the history fetch was restarted, until Finish is pressed again. */
-  readonly historyRetryNote: string | null
+  /** True while a Finish check is running; Confirm Finish is then disabled. */
+  readonly finishBusy: boolean
   readonly resumeRecoverable: () => Promise<void>
   readonly startFresh: () => Promise<void>
   readonly issueArchiveRecoveryCode: (
@@ -141,10 +148,14 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   // live from the participant checkpoints, so the count never goes stale.
   const [finishBlock, setFinishBlock] = useState<FinishHistoryBlock | null>(null)
   const [historyRetryBusy, setHistoryRetryBusy] = useState(false)
-  const [historyRetryNote, setHistoryRetryNote] = useState<{ readonly missionId: string; readonly text: string } | null>(null)
+  const [finishBusy, setFinishBusy] = useState(false)
+  // Only one Finish check runs at a time, so a second press cannot replace
+  // the real refusal with a transient guard message.
+  const finishInFlight = useRef(false)
   // Each Finish attempt supersedes any Try again result still on its way.
   const finishAttempt = useRef(0)
   const participantMissionId = useParticipantStore((state) => state.activeMissionId)
+  const participantError = useParticipantStore((state) => state.error)
   const backfillCheckpoints = useParticipantStore((state) => state.backfillCheckpoints)
   /** Shows a mission action failure; any history refusal it replaces goes. */
   const setActionError = useCallback((message: string | null) => {
@@ -152,17 +163,26 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     setActionErrorState(message)
   }, [])
   const finishBlockActive = finishBlock !== null && currentMission?.id === finishBlock.missionId
-  const peopleStillLoading = finishBlockActive && participantMissionId === finishBlock.missionId
-    ? countPeopleStillFetchingHistory(backfillCheckpoints, finishBlock.missionId)
+  const peopleStillLoading = finishBlockActive
+    ? countPeopleStillFetchingHistoryIfKnown(
+      { activeMissionId: participantMissionId, error: participantError, checkpoints: backfillCheckpoints },
+      finishBlock.missionId,
+    )
     : null
-  const historyNowLoaded = finishBlockActive && finishBlock.countAtRefusal !== null && peopleStillLoading === 0
+  const historyNowLoaded = finishBlockActive &&
+    (peopleStillLoading === 0 || (finishBlock.retryComplete && peopleStillLoading === null))
   const actionError = !finishBlockActive
     ? actionErrorState
     : historyNowLoaded
       ? HISTORY_NOW_LOADED_NOTE
       : `${describeHistoryIncompleteFinishRefusal(peopleStillLoading)}${
         finishBlock.retryError === null ? '' : ` Try again did not work: ${finishBlock.retryError}`}`
-  const historyRetry = finishBlockActive && !historyNowLoaded ? { busy: historyRetryBusy } : null
+  const historyRetry = finishBlockActive && !historyNowLoaded
+    ? {
+      busy: historyRetryBusy,
+      note: finishBlock.retryStarted === null ? null : describeHistoryRetryStarted(finishBlock.retryStarted.unfetchableDeviceCount),
+    }
+    : null
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
   const [duplicateAcknowledged, setDuplicateAcknowledged] = useState(false)
   const [showFinishDialog, setShowFinishDialog] = useState(false)
@@ -311,21 +331,21 @@ export function useMissionControlViewModel(): MissionControlViewModel {
   }
 
   async function confirmFinish(): Promise<void> {
-    if (controller === null) {
+    if (controller === null || finishInFlight.current) {
       return
     }
 
-    const attempt = ++finishAttempt.current
+    finishInFlight.current = true
+    setFinishBusy(true)
+    finishAttempt.current += 1
     const missionId = currentMission?.id ?? null
     setActionError(null)
-    setHistoryRetryNote(null)
 
     try {
       const finished = await controller.finishMission()
       await targetGovernanceAt(finished)
       setShowFinishDialog(false)
     } catch (error) {
-      if (attempt !== finishAttempt.current) return
       const message = toErrorMessage(error)
       if (missionId === null || !isHistoryIncompleteFinishRefusal(message)) {
         setActionError(message)
@@ -333,43 +353,48 @@ export function useMissionControlViewModel(): MissionControlViewModel {
       }
       // The store's precise refusal is already in the main-process log; the
       // operator gets plain words and Try again.
-      const { activeMissionId, backfillCheckpoints: checkpoints } = useParticipantStore.getState()
-      const count = activeMissionId === missionId ? countPeopleStillFetchingHistory(checkpoints, missionId) : 0
       setActionErrorState(null)
-      setFinishBlock({ missionId, countAtRefusal: count > 0 ? count : null, retryError: null })
+      setFinishBlock({ missionId, retryError: null, retryStarted: null, retryComplete: false })
+    } finally {
+      finishInFlight.current = false
+      setFinishBusy(false)
     }
   }
 
   /**
    * Try again: asks tracking to fetch the incomplete participant history now,
    * skipping its backoff. It never finishes the mission; Finish stays refused
-   * until the history is complete (DON-376). A retry that cannot start keeps
-   * the refusal on screen with the reason.
+   * until the history is complete (DON-376). The refusal, its live count and
+   * Try again stay on screen; a retry that cannot start shows the reason.
    */
   async function retryHistoryFetch(): Promise<void> {
     if (!finishBlockActive || historyRetryBusy) return
     const block = finishBlock
     const attempt = finishAttempt.current
     setHistoryRetryBusy(true)
+    let outcome: ParticipantHistoryRetryOutcome
     try {
       const runtime = getAppRuntimeController()
-      const outcome: ParticipantHistoryRetryOutcome = runtime === null
+      outcome = runtime === null
         ? { kind: 'unavailable', reason: 'Tracking is not running. Restart SAR Tracker.' }
-        : runtime.retryParticipantHistory()
-      if (attempt !== finishAttempt.current) return
-      if (outcome.kind === 'started') {
-        setFinishBlock(null)
-        setActionErrorState(null)
-        setHistoryRetryNote({ missionId: block.missionId, text: HISTORY_RETRY_STARTED_NOTE })
-        return
-      }
-      console.warn('Try again for participant history could not start:', outcome.reason)
-      setFinishBlock({ ...block, retryError: outcome.reason })
+        : await runtime.retryParticipantHistory()
     } catch (error) {
-      console.warn('Try again for participant history failed.', error)
-      if (attempt === finishAttempt.current) setFinishBlock({ ...block, retryError: toErrorMessage(error) })
+      outcome = { kind: 'unavailable', reason: toErrorMessage(error) }
     } finally {
       setHistoryRetryBusy(false)
+    }
+    // A Finish pressed meanwhile owns the message now.
+    if (attempt !== finishAttempt.current) return
+    if (outcome.kind === 'started') {
+      setFinishBlock({
+        ...block,
+        retryError: null,
+        retryStarted: { unfetchableDeviceCount: outcome.unfetchableDeviceCount },
+      })
+    } else if (outcome.kind === 'complete') {
+      setFinishBlock({ ...block, retryError: null, retryStarted: null, retryComplete: true })
+    } else {
+      setFinishBlock({ ...block, retryError: outcome.reason, retryStarted: null })
     }
   }
 
@@ -601,10 +626,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
     confirmFinish,
     historyRetry,
     retryHistoryFetch,
-    historyRetryNote: historyRetryNote !== null && historyRetryNote.missionId === currentMission?.id &&
-      (phase === 'active' || phase === 'paused')
-      ? historyRetryNote.text
-      : null,
+    finishBusy,
     resumeRecoverable,
     startFresh,
     issueArchiveRecoveryCode,
@@ -622,10 +644,12 @@ export function useMissionControlViewModel(): MissionControlViewModel {
 /** Finish refused while earlier tracks load, for one mission (DON-376). */
 type FinishHistoryBlock = {
   readonly missionId: string
-  /** People still loading when Finish was refused, or null when not known. */
-  readonly countAtRefusal: number | null
   /** Why the last Try again could not start, if it could not. */
   readonly retryError: string | null
+  /** Set once Try again really started a fetch. */
+  readonly retryStarted: { readonly unfetchableDeviceCount: number } | null
+  /** Set when tracking found every earlier track already loaded. */
+  readonly retryComplete: boolean
 }
 
 function toErrorMessage(error: unknown): string {

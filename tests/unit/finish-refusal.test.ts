@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   countPeopleStillFetchingHistory,
+  countPeopleStillFetchingHistoryIfKnown,
   describeHistoryIncompleteFinishRefusal,
+  describeHistoryRetryStarted,
   isHistoryIncompleteFinishRefusal,
 } from '../../src/features/mission/finish-refusal'
 import type { ParticipantBackfillCheckpoint } from '../../src/infrastructure/mission-store/tauri-mission-store'
@@ -42,6 +44,26 @@ describe('finish refusal wording [DON-376]', () => {
     ]
     expect(countPeopleStillFetchingHistory(checkpoints, 'mission-1')).toBe(2)
     expect(countPeopleStillFetchingHistory([], 'mission-1')).toBe(0)
+  })
+
+  it('only counts when the participant store holds this mission, without an error, with its checkpoints', () => {
+    const checkpoints = [checkpoint({ traccar_device_id: '1' }), checkpoint({ traccar_device_id: '2', completed: 1 })]
+    const scope = { activeMissionId: 'mission-1', error: null, checkpoints }
+    expect(countPeopleStillFetchingHistoryIfKnown(scope, 'mission-1')).toBe(1)
+    expect(countPeopleStillFetchingHistoryIfKnown({ ...scope, activeMissionId: 'other' }, 'mission-1')).toBeNull()
+    expect(countPeopleStillFetchingHistoryIfKnown({ ...scope, error: 'Refresh failed.' }, 'mission-1')).toBeNull()
+    expect(countPeopleStillFetchingHistoryIfKnown({ ...scope, checkpoints: [] }, 'mission-1')).toBeNull()
+    expect(countPeopleStillFetchingHistoryIfKnown(
+      { ...scope, checkpoints: [checkpoint({ completed: 1 })] },
+      'mission-1',
+    )).toBe(0)
+  })
+
+  it('names devices that cannot be fetched after Try again starts', () => {
+    expect(describeHistoryRetryStarted(0)).toBe('Fetching earlier tracks again. Press Confirm Finish once they have loaded.')
+    expect(describeHistoryRetryStarted(2)).toBe(
+      'Fetching earlier tracks again. Press Confirm Finish once they have loaded. Earlier tracks for 2 devices cannot be fetched; see the PARTICIPANT HISTORY UNAVAILABLE warning.',
+    )
   })
 })
 
