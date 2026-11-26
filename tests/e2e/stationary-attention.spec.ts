@@ -102,11 +102,13 @@ test.describe('Not-moving warnings off [DON-384]', () => {
         positions: [latest], breadcrumbs: [],
       })
     })
-    const headline = page.getByTestId('ws-tracking-headline')
-    // A phone's second position arrives well inside two minutes, so nothing is said yet.
-    await expect(headline).not.toContainText('not-moving off')
+    // The visible problem words, not the hidden sizing copy beside them.
+    const words = page.getByTestId('ws-tracking-problems')
+    // A phone's second position is normally kept well inside two minutes, so nothing is said yet.
+    await expect(page.getByTestId('ws-tracking-headline')).not.toContainText('not-moving off')
     await page.clock.fastForward('02:05')
-    await expect(headline).toContainText('1 not-moving off')
+    await expect(words).toBeVisible()
+    await expect(words).toContainText('1 not-moving off')
     await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ws-tracking-happened'))
       .toContainText('Not-moving warnings are off for 1 person: their trail is not being recorded')

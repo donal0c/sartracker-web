@@ -31,6 +31,8 @@ export type StationaryAttentionProjector = {
     config: StationaryAttentionConfig,
     activeDeviceIds?: readonly string[],
   ) => ReadonlyMap<string, StationaryAttentionEvaluation>
+  /** Distinct trail positions kept for a person in the last projected snapshot [DON-384]. */
+  readonly keptFixCount: (deviceId: string) => number
   readonly reset: () => void
 }
 
@@ -192,7 +194,12 @@ export function createStationaryAttentionProjector(
     preparedByDevice.clear()
   }
 
-  return { project, reset }
+  /** Reads the kept-position count from the history grouped by the last projection. */
+  function keptFixCount(deviceId: string): number {
+    return cachedHistoryByDevice.get(deviceId)?.identityKeys.size ?? 0
+  }
+
+  return { project, keptFixCount, reset }
 }
 
 /** Builds the initial immutable per-device histories. */

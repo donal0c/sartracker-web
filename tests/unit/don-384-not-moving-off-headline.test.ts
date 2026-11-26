@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useStationaryAttentionStore } from '../../src/features/tracking/stationary-attention-store'
 import { buildDeviceWorkspaceRows } from '../../src/features/tracking/device-workspace-model'
@@ -21,7 +21,7 @@ describe('the tracking line says once when not-moving warnings are off [DON-384]
     expect(headline.condition).toBe('attention')
     expect(headline.tone).toBe('warning')
     expect(headline.issues).toContain(
-      'Not-moving warnings are off for 2 people: their trail is not being recorded (cause: trail positions are not being saved)',
+      'Not-moving warnings are off for 2 people: their trail is not being recorded (possible cause: trail positions are not being saved)',
     )
     expect(headline.problems).toContain('2 not-moving off')
   })
@@ -42,23 +42,52 @@ describe('the tracking line says once when not-moving warnings are off [DON-384]
   })
 })
 
-describe('the not-moving check clock in the stationary store [DON-384]', () => {
+describe('the stationary store times people by kept trail positions [DON-384]', () => {
   beforeEach(() => useStationaryAttentionStore.setState(useStationaryAttentionStore.getInitialState()))
+  const since = () => useStationaryAttentionStore.getState().checkOffSinceByDevice
 
-  it('records when a person with one position went off, and not a person with none', () => {
-    const before = Date.now()
+  it('times a person with one kept position, and not a person with no position', () => {
     useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0)], ['one', 'none']), 'mission-1')
-    const since = useStationaryAttentionStore.getState().checkOffSinceByDevice
-    expect(Object.keys(since)).toEqual(['one'])
-    expect(since.one).toBeGreaterThanOrEqual(before)
+    expect(Object.keys(since())).toEqual(['one'])
   })
 
-  it('clears once a second position is on record, and on a new mission', () => {
+  it('keeps timing when the only other position is a live one that was not kept', () => {
+    // The live fix makes the stationary check evaluable, but the trail still has one kept fix.
+    const kept = fix('one', 'a', 0)
+    const unsaved = fix('one', 'b', 1)
+    useStationaryAttentionStore.getState().applySnapshot({ ...snapshot([kept], ['one']), positions: [unsaved] }, 'mission-1')
+    expect(Object.keys(since())).toEqual(['one'])
+  })
+
+  it('keeps timing while newer fixes carry an unverified time and are not kept', () => {
+    const kept = fix('one', 'a', 0)
+    const unverified = { ...fix('one', 'b', 1), fix_time_unverified: true, timestamp_source: 'device' as const }
+    useStationaryAttentionStore.getState().applySnapshot({ ...snapshot([kept], ['one']), positions: [unverified] }, 'mission-1')
+    expect(Object.keys(since())).toEqual(['one'])
+  })
+
+  it('does not time a position restored from the saved cache', () => {
+    const cached = { ...fix('one', 'a', 0), data_origin: 'cache' as const }
+    useStationaryAttentionStore.getState().applySnapshot({ ...snapshot([], ['one']), positions: [cached] }, 'mission-1')
+    expect(since()).toEqual({})
+  })
+
+  it('restarts the time on a new mission, and clears once a second position is kept', () => {
+    vi.spyOn(performance, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(5_000)
     useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0)], ['one']), 'mission-1')
+    expect(since()).toEqual({ one: 1_000 })
     useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0)], ['one']), 'mission-2')
-    expect(Object.keys(useStationaryAttentionStore.getState().checkOffSinceByDevice)).toEqual(['one'])
+    expect(since()).toEqual({ one: 5_000 })
+    vi.restoreAllMocks()
     useStationaryAttentionStore.getState().applySnapshot(snapshot([fix('one', 'a', 0), fix('one', 'b', 1)], ['one']), 'mission-2')
-    expect(useStationaryAttentionStore.getState().checkOffSinceByDevice).toEqual({})
+    expect(since()).toEqual({})
+  })
+
+  it('waits two refreshes when tracking refreshes less often than every minute', () => {
+    useStationaryAttentionStore.getState().setPollInterval(5 * 60_000)
+    expect(useStationaryAttentionStore.getState().checkOffGraceMs).toBe(10 * 60_000)
+    useStationaryAttentionStore.getState().setPollInterval(30_000)
+    expect(useStationaryAttentionStore.getState().checkOffGraceMs).toBe(2 * 60_000)
   })
 })
 

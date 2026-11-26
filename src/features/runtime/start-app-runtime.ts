@@ -340,6 +340,7 @@ export async function startAppRuntime(
   ): Promise<void> {
 
     useStationaryAttentionStore.getState().setConfig(runtimeSettings.stationaryAttentionConfig)
+    useStationaryAttentionStore.getState().setPollInterval(runtimeSettings.trackingPollIntervalMs)
 
     // Settings load while the current tracker remains live. Replace auxiliary
     // services here; the retained tracking session selects one publisher while

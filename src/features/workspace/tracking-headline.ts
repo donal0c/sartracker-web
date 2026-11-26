@@ -10,8 +10,9 @@ import { selectCoverageStateForMission } from '../tracking/mission-coverage-scop
 import { describeTrackingHealth } from '../tracking/persistent-tracking-health'
 import { useStationaryAttentionStore } from '../tracking/stationary-attention-store'
 import {
-  STATIONARY_CHECK_OFF_GRACE_MS,
+  checkOffClockNow,
   describeStationaryCheckOff,
+  nextStationaryCheckOffDue,
   summarizeStationaryCheckOff,
   type StationaryCheckOffSummary,
 } from '../tracking/stationary-check-off'
@@ -328,16 +329,20 @@ export function useTrackingHeadline(): TrackingHeadline {
   const coverage = selectCoverageStateForMission(useCoverageStore((state) => state.state), missionId)
   const mapUpdateFailed = useTrackingMapUpdateStore((state) => state.failure !== null)
   const checkOffSinceByDevice = useStationaryAttentionStore((state) => state.checkOffSinceByDevice)
-  const nowMs = useCheckOffClock(checkOffSinceByDevice)
-  // Only a running or paused mission relies on the warning; before one starts no trail is recorded.
-  const missionRunning = phase === 'active' || phase === 'paused'
-  const stationaryCheckOff = useMemo(() => missionRunning
-    ? summarizeStationaryCheckOff({
-        sinceByDevice: checkOffSinceByDevice, positions, nowMs, warningCodes: status.warningCodes,
-        evidenceState: evidence.state, coverageStatus: coverage.status,
-      })
-    : { count: 0, causes: [] },
-  [checkOffSinceByDevice, coverage.status, evidence.state, missionRunning, nowMs, positions, status.warningCodes])
+  const checkOffGraceMs = useStationaryAttentionStore((state) => state.checkOffGraceMs)
+  const checkOffGateOpenedAtMs = useStationaryAttentionStore((state) => state.checkOffGateOpenedAtMs)
+  // Only a running mission with tracking connected is expected to grow a trail:
+  // a pause suspends refreshes and a lost connection has its own alarm.
+  const checkOffGateOpen = phase === 'active' && status.mode === 'online'
+  useEffect(() => {
+    useStationaryAttentionStore.getState().setCheckOffGate(checkOffGateOpen)
+  }, [checkOffGateOpen])
+  const nowMs = useCheckOffClock(checkOffSinceByDevice, checkOffGateOpenedAtMs, checkOffGraceMs)
+  const stationaryCheckOff = useMemo(() => summarizeStationaryCheckOff({
+    sinceByDevice: checkOffSinceByDevice, positions, nowMs, graceMs: checkOffGraceMs,
+    gateOpenedAtMs: checkOffGateOpen ? checkOffGateOpenedAtMs : null, warningCodes: status.warningCodes,
+  }),
+  [checkOffGateOpen, checkOffGateOpenedAtMs, checkOffGraceMs, checkOffSinceByDevice, nowMs, positions, status.warningCodes])
 
   return useMemo(() => describeTrackingHeadline({
     status, phase, positions, ingestRejected: ingest.totalRejected, evidenceState: evidence.state,
@@ -348,27 +353,27 @@ export function useTrackingHeadline(): TrackingHeadline {
 }
 
 /**
- * The time used to judge the not-moving grace period. It ticks only while
- * someone's check is off and not yet due, so the line appears on time even
- * when no new tracking update arrives [DON-384].
+ * The monotonic time used to judge the not-moving grace period. It ticks only
+ * while someone is pending and not yet due, so the line appears on time even
+ * when no new tracking update arrives, and a wall-clock correction cannot
+ * delay it [DON-384].
  *
- * @param sinceByDevice when each person's check went off
- * @returns the current time in epoch ms
+ * @param sinceByDevice when each person was first seen short of two kept positions
+ * @param gateOpenedAtMs when the running-and-connected gate last opened, or null
+ * @param graceMs the grace period
+ * @returns the current monotonic time, as last sampled
  */
-function useCheckOffClock(sinceByDevice: Readonly<Record<string, number>>): number {
-  const [nowMs, setNowMs] = useState(() => Date.now())
+function useCheckOffClock(
+  sinceByDevice: Readonly<Record<string, number>>,
+  gateOpenedAtMs: number | null,
+  graceMs: number,
+): number {
+  const [nowMs, setNowMs] = useState(() => checkOffClockNow())
   useEffect(() => {
-    // Wake once the next person not yet counted by the held time is due; a
-    // person already due by the real clock is caught up on the next tick.
-    const pending = Object.values(sinceByDevice)
-      .map((since) => since + STATIONARY_CHECK_OFF_GRACE_MS)
-      .filter((due) => due > nowMs)
-    if (pending.length === 0) return undefined
-    const timer = setTimeout(
-      () => setNowMs(Date.now()),
-      Math.max(0, Math.min(...pending) - Date.now()) + 50,
-    )
+    const due = nextStationaryCheckOffDue(sinceByDevice, gateOpenedAtMs, graceMs, nowMs)
+    if (due === null) return undefined
+    const timer = setTimeout(() => setNowMs(checkOffClockNow()), Math.max(0, due - checkOffClockNow()) + 50)
     return () => clearTimeout(timer)
-  }, [sinceByDevice, nowMs])
+  }, [sinceByDevice, gateOpenedAtMs, graceMs, nowMs])
   return nowMs
 }
