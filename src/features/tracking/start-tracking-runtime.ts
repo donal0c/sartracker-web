@@ -1418,6 +1418,8 @@ export async function startTrackingRuntime(
       // now: the same device id can be another person on the new server. Clear
       // the map until the new server answers [DON-374].
       lastPublishedOperational = null
+      // The empty map is not showing cached positions any more.
+      cachedOperationalDataWarning = null
       if (runtimeGeneration === activeTrackingRuntimeGeneration) {
         dependencies.applySnapshot({ devices: [], positions: [], breadcrumbs: [] })
       }
