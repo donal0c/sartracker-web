@@ -90,6 +90,12 @@ Exit codes: 0 pass, 1 a finding at or above `--fail-on`, 2 reviewer error, 3 no
 entries. Every checklist item must be verifiable from the captured frame. Mark
 operator-safety items `critical`. The browser harness is `?missionHarness=1`;
 inject tracking with `window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot()`.
+With tracking not connected, the harness map does not follow who is taking part:
+it is filtered only when a snapshot is injected, a later add or remove is not
+reapplied, and `hydrateTracking` (and page load) draws every stored device and
+fix. Do not judge participation on the map from the harness; use the real
+tracking runtime (`tests/unit/tracking-participant-removal-map.test.ts`) or a
+package [DON-374].
 
 ## Handle a failure without restarting everything
 

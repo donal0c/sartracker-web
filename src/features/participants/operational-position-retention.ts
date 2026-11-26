@@ -94,11 +94,9 @@ export function createOperationalPositionRetention(): OperationalPositionRetenti
           continue
         }
         positionsByDevice.set(position.device_id, position)
-        if (
-          !incomingDeviceIds.has(position.device_id) &&
-          (operationalDeviceIds.has(position.device_id) ||
-            scope.includesAt(position.device_id, position.timestamp))
-        ) {
+        // Only someone still taking part keeps a marker across an omitted
+        // poll; a removed person leaves the live map at once [DON-374].
+        if (!incomingDeviceIds.has(position.device_id) && operationalDeviceIds.has(position.device_id)) {
           retainedPositions.push(position)
         }
       }

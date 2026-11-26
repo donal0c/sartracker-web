@@ -136,23 +136,26 @@ describe('operational position retention', () => {
     const retention = createOperationalPositionRetention()
     const observedAt = new Date('2026-04-06T11:00:00.000Z')
     retention.apply({ ...FIRST_SNAPSHOT, positions: [{ ...POSITION, data_origin: 'cache', cache_age_seconds: 240 }] },
-      REMOVED_PARTICIPANT_SCOPE, observedAt, 'mission-1')
-    const retained = retention.apply(EMPTY_SNAPSHOT, REMOVED_PARTICIPANT_SCOPE,
+      ACTIVE_PARTICIPANT_SCOPE, observedAt, 'mission-1')
+    const retained = retention.apply(EMPTY_SNAPSHOT, ACTIVE_PARTICIPANT_SCOPE,
       new Date('2026-04-06T11:00:30.000Z'), 'mission-1')
     expect(retained.positions).toEqual([expect.objectContaining({ data_origin: 'cache', cache_age_seconds: 270 })])
-    const expired = retention.apply(EMPTY_SNAPSHOT, REMOVED_PARTICIPANT_SCOPE,
+    const expired = retention.apply(EMPTY_SNAPSHOT, ACTIVE_PARTICIPANT_SCOPE,
       new Date('2026-04-06T11:01:01.000Z'), 'mission-1')
     expect(expired.positions).toEqual([])
   })
-  it('keeps a removed participant last accepted marker when a later poll omits it', () => {
+  it('does not carry a removed participant marker across a later poll that omits it [DON-374]', () => {
     const retention = createOperationalPositionRetention()
 
-    retention.apply(
+    // Accepted while still taking part.
+    const first = retention.apply(
       FIRST_SNAPSHOT,
-      REMOVED_PARTICIPANT_SCOPE,
-      new Date('2026-04-06T11:00:00.000Z'),
+      ACTIVE_PARTICIPANT_SCOPE,
+      new Date('2026-04-06T10:59:30.000Z'),
       'mission-1',
     )
+    expect(first.positions).toEqual([POSITION])
+    // Removed at 11:00; the next poll omits the device.
     const later = retention.apply(
       EMPTY_SNAPSHOT,
       REMOVED_PARTICIPANT_SCOPE,
@@ -160,8 +163,8 @@ describe('operational position retention', () => {
       'mission-1',
     )
 
-    expect(later.devices).toEqual([DEVICE])
-    expect(later.positions).toEqual([POSITION])
+    expect(later.devices).toEqual([])
+    expect(later.positions).toEqual([])
   })
 
   it('drops retained markers after the stale threshold', () => {
