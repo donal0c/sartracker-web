@@ -23,6 +23,13 @@
   The map does not update while paused. Do not count on positions from the
   paused time being filled in later. **If anyone is still out overnight,
   leave the mission running; do not pause it.**
+- **The grid reference at the bottom of the map is the mouse pointer's
+  position, never a person's.** Before, after **Go to … on the map** the bar
+  put that person's name next to the pointer's grid reference, which could be
+  read out over the radio as their position. The name is gone and the
+  readout is headed **Cursor position**. For a person's position, use their
+  card in **All devices**, which now shows the Irish Grid reference first
+  [DON-372, DON-377].
 - **The light theme is now the default.** For night use, open **More** and
   press **Theme: Light** to switch to dark [DON-344].
 
@@ -104,6 +111,12 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Trail line kept in Breadcrumb dots** [DON-338]. The dots sit on top of
   the trail line; Earlier and Later move only the dots. A trail you have
   hidden in Layers stays hidden.
+- **The bar at the bottom shows the pointer's position** (**Cursor
+  position**) and never names a person [DON-372].
+- **All devices shows a person's position as Irish Grid first**, large, with
+  latitude and longitude beneath. Outside Ireland it says **Outside
+  Ireland**; with no usable position it says **No position** or **Position
+  unreadable**, never a made-up grid [DON-377].
 - **Coordinate converter** [DON-351]: changing any box clears the old
   result, so **Go To Location** and **Create Marker Here** can no longer use
   an old position. East Co. Down (Ards Peninsula, Portaferry, Copeland
@@ -140,8 +153,35 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Re-enter password** in the top bar appears when the saved tracking
   password cannot be read; the tracking details say what to do and have a
   button to open Settings [DON-353].
+- **TRACKING NOT CONNECTED** (red) appears when a mission is running but
+  tracking was never connected (for example Auto-connect is off), with
+  **Connect in Settings**. Before, this was a quiet grey line while old
+  positions stayed on the map [DON-375].
+- **Not-moving warnings off:** if someone has a position but their trail has
+  not been recorded for 2 minutes, the tracking line shows amber **not-moving
+  off** and says their not-moving warning cannot fire, with the cause it can
+  see (history not fetched, positions not saved, or position times not
+  verified). The grey "Stationary check unavailable" on each row is gone
+  [DON-384].
 - While paused, the People badge counts only people with a problem of their
   own; the red MISSION PAUSED strip covers everyone else [DON-356].
+
+### People and finishing
+
+- **Remove asks first.** In **Change who's taking part**, **Remove** now asks
+  "Stop tracking … (N people)?" with **Remove** or **Keep**. If the app
+  cannot be sure of the count, it says "at least N" or that the number is not
+  known [DON-373].
+- **Removed people leave the map at once**, with their trail, People count
+  and warnings, even while tracking is down. Their saved track stays in the
+  mission record and Review [DON-374].
+- **Changing to a different Traccar server clears the map** until the new
+  server answers, because the same device can be a different person there
+  [DON-374].
+- **Finish refused while earlier tracks are still downloading** now says so
+  plainly ("still fetching earlier tracks for N people") with a **Try again**
+  button. Try again restarts the fetch; it never finishes the mission by
+  itself. Press Finish again once the tracks have loaded [DON-376].
 
 ### Crashes, hangs and saving
 
@@ -187,8 +227,14 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
    and reopen the mission. The file should import by itself.
 5. **Long trails:** on a long mission, switch between Solid line and
    Breadcrumb dots. The whole trail should stay on the map.
-6. **Light and dark:** try **More → Theme** in daylight and at night.
-7. Report problems with a support bundle (More → Diagnostics → Export Support
+6. **People and finishing:** remove a person and press **Keep**, then
+   remove them for real; they should leave the map straight away. Try
+   Finish while earlier tracks are still loading and press **Try again**.
+7. **Positions:** after **Go to … on the map**, check the bottom bar says
+   **Cursor position** and no name; check a person's card in **All devices**
+   shows their Irish Grid reference first.
+8. **Light and dark:** try **More → Theme** in daylight and at night.
+9. Report problems with a support bundle (More → Diagnostics → Export Support
    Bundle).
 
 ## Known issues
@@ -214,6 +260,9 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
 - **Hidden GPX tracks:** we still need the affected GPX files to find why
   some 13.5 imports were hidden; each track says whether it is on the map and
   why [DON-319].
+- **In Breadcrumb dots mode, a removed person's dots can still show** on the
+  live map. The default Solid line mode removes them straight away
+  [DON-374].
 - Most pictures in the Help manual still show the old dark screens.
 - Not yet tested on PCLinuxOS by us [DON-298]. AppImage on Ubuntu may need
   `--no-sandbox`.
@@ -265,6 +314,10 @@ for DON-338 (d3c0f687, never in a released build) made late positions stall
 after a restart under heavy load; fixed in PR 101 and caught by the packaged
 soak. Not regressions: DON-339 (the scale has been wrong since it was added in
 0.1.0-beta.8, DON-195) and DON-337 (long-standing, per its Linear issue).
+
+The DON-371 screen fixes (DON-372 to DON-377 and DON-384) came from our own
+review of the 13.8 screens, not from team reports or earlier releases, so
+they are not regressions.
 
 Team reports also corrected here: DON-338 (team testers, Dublin test, about
 7 Nov), DON-339 (team, SARNOV 8) and DON-340 (team, Nov). Each carries its
