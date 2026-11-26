@@ -814,9 +814,15 @@ async function captureDeviceWorkspace(launch, evidenceDir, phase) {
   const workspace = await openDevicesWorkspace(launch.page, { timeoutMs: CONDITION_TIMEOUT_MS })
   const row = launch.page.getByTestId(`device-select-name-${DEVICE_ID}`)
   const layout = workspace.locator('..')
+  let coordinates = null
+  let irishGrid = null
   if (await row.count() > 0) {
     await row.click()
-    await layout.getByText('Coordinates', { exact: true }).waitFor()
+    // The selected device card writes its position as Irish Grid, then lat/lon (DON-377).
+    await layout.getByTestId(`device-inspector-position-${DEVICE_ID}`).waitFor()
+    irishGrid = await layout.getByTestId(`device-inspector-grid-${DEVICE_ID}`).innerText()
+    const latLon = layout.getByTestId(`device-inspector-latlon-${DEVICE_ID}`)
+    coordinates = await latLon.count() > 0 ? await latLon.innerText() : null
   }
   // The inspector is a sibling of the roster section, inside this layout.
   const workspaceText = await layout.innerText()
@@ -828,7 +834,8 @@ async function captureDeviceWorkspace(launch, evidenceDir, phase) {
     visible: true,
     screenshotPath,
     text: workspaceText,
-    coordinates: workspaceText.match(/Coordinates\s+(-?\d+\.\d+),\s*(-?\d+\.\d+)/i)?.[0] ?? null,
+    coordinates,
+    irishGrid,
     syntheticDeviceVisible: workspaceText.includes('WAR-06 Synthetic Device'),
   }
 }
@@ -1096,6 +1103,7 @@ function assertMissionBFresh(phase, missionAId, missionBId) {
   assert.ok(phase.surface.currentFixCount > 0, 'Mission B fresh response did not render a current fix.')
   assert.equal(phase.deviceWorkspace?.syntheticDeviceVisible, true, 'Mission B synthetic device was not visible in the inspector.')
   assert.match(phase.deviceWorkspace?.coordinates ?? '', /52\.90010,\s*-9\.10010/, 'Mission B inspector did not show B coordinates.')
+  assert.match(phase.deviceWorkspace?.irishGrid ?? '', /^[A-Z] \d{5} \d{5}$/, 'Mission B inspector did not show an Irish Grid reference first.')
   assertNoIds(phase.ipc.positions, [A_CURRENT_ID, ...A_HISTORY_IDS], 'Mission B fresh renderer IPC evidence')
   assertNoIds(phase.sqliteReadOnly.positions, [A_CURRENT_ID, ...A_HISTORY_IDS], 'Mission B fresh readonly SQLite evidence')
   assert.ok(phase.sqliteReadOnly.positions.some((position) =>
