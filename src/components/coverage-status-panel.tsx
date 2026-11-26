@@ -107,6 +107,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               omittedOutingCount={props.omittedOutingCount}
               unassignedOmitted={props.unassignedOmitted}
               updatedAt={props.state.updatedAt}
+              freshness={freshness}
             />
           ) : summary.kind === 'loading' ? (
             <p className="mt-1" data-testid="coverage-loading">
@@ -223,6 +224,8 @@ function CompleteSummary(props: {
   readonly omittedOutingCount: number
   readonly unassignedOmitted: boolean
   readonly updatedAt: string | undefined
+  /** The sentence about current positions, which is never "live" while tracking is not [DON-375]. */
+  readonly freshness: string
 }) {
   const omitted = props.omittedDeviceCount + props.omittedOutingCount > 0 ||
     props.unassignedOmitted
@@ -231,7 +234,7 @@ function CompleteSummary(props: {
       <p>{omitted ? 'All selected history shown' : 'All mission history shown'}</p>
       {omitted ? (
         <p data-testid="coverage-omission-summary">
-          {formatOmissionSummary(props)} Live positions are unchanged.
+          {formatOmissionSummary(props)} {props.freshness}
         </p>
       ) : null}
       {props.updatedAt === undefined ? null : (

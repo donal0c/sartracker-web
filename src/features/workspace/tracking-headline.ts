@@ -235,7 +235,7 @@ export function describeTrackingHeadline(input: {
     }
   }
   // A map or record alarm must not call positions live while the feed is not online [DON-375].
-  const feedNotLive = status.mode === 'online' ? {} : { feedNotLive: true as const, lastReceivedShown }
+  const feedNotLive = status.mode === 'online' ? {} : { feedNotLive: true as const }
   // The feed is fine but the map still draws older positions: that must never
   // read as live, so it is the alarm, ahead of the record warning [DON-357].
   if (input.mapUpdateFailed) {
@@ -250,7 +250,8 @@ export function describeTrackingHeadline(input: {
     const alarm = status.mode === 'online'
       ? 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing'
       : 'MISSION RECORD NOT FULLY SAVED: open this before finishing; positions are not updating yet'
-    return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm, issues, ...feedNotLive }
+    // The map drew these fixes (no map failure here), so "last received" is true of them.
+    return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm, issues, ...feedNotLive, ...(status.mode === 'online' ? {} : { lastReceivedShown }) }
   }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
   // Before a mission starts amber is enough: nobody relies on the map yet.

@@ -203,6 +203,8 @@ describe('tracking headline', () => {
       expect(record.feedNotLive).toBe(true)
       expect(map.feedNotLive).toBe(true)
       expect(record.lastReceivedShown).toBe(true)
+      // The map failed to draw the latest fix, so it must keep its own map wording.
+      expect(map.lastReceivedShown).toBeUndefined()
       const liveRecord = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: status({}) })
       expect(liveRecord.alarm).toMatch(/positions are live/)
       expect(liveRecord.feedNotLive).toBeUndefined()

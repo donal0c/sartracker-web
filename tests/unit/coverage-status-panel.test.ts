@@ -29,6 +29,8 @@ describe('coverage status panel [DON-275]', () => {
     render(state('partial', { backfillIncomplete: true }), { trackingLive: false })
     expect(host.textContent).not.toContain('remain live')
     expect(host.textContent).toContain('Current positions are not live')
+    render(state('complete'), { omittedOutingCount: 1, trackingLive: false })
+    expect(host.querySelector('[data-testid="coverage-omission-summary"]')?.textContent).toContain('Current positions are not live')
   })
   it('AUD-14 does not claim all history when retrieval has failed despite saved evidence being delivered', () => {
     act(() => root.render(React.createElement(CoverageStatusPanel, {
