@@ -75,7 +75,7 @@ export async function runAttentionProbe({ appPath, evidencePath, developmentTest
     await page.screenshot({ path: path.join(evidencePath, 'attention-acknowledged.png'), fullPage: true })
     server.setStage('disconnected')
     // No mode chip in the new layout: the top bar names the condition and says it in words.
-    await expect(headline).toHaveAttribute('data-condition', /^(lost|notConnected|disconnected)$/u, { timeout: 60_000 })
+    await expect(headline).toHaveAttribute('data-condition', /^(lost|disconnected)$/u, { timeout: 60_000 })
     const disconnected = (await headline.getAttribute('aria-label')) ?? ''
     const disconnectedCondition = await headline.getAttribute('data-condition')
     // The words an operator sees, which a correct label alone would not prove.

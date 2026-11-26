@@ -144,6 +144,7 @@ describe('tracking headline', () => {
       expect(headline.remedy).toBe('Connect in Settings')
       expect(headline.problems).toContain('Connect in Settings')
       expect(headline.lastReceivedShown).toBe(true)
+      expect(headline.leadInAlarm).toBe(true)
       expect(headline.text).not.toBe('Tracking not connected')
     })
 
@@ -155,10 +156,20 @@ describe('tracking headline', () => {
       expect(headline.lastReceivedShown).toBe(false)
     })
 
-    it('covers a status published without a warning, as on the first cache read', () => {
-      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], status: status({ mode: 'idle' }) })
-      expect(headline.condition).toBe('notConnected')
-      expect(headline.tone).toBe('alert')
+    it('does not send a configured source waiting for its first poll to Settings', () => {
+      // The bridge leaves an idle status until the first poll answers; that is
+      // not "not configured", and must not flash red with a Settings fix.
+      for (const waiting of [status({ mode: 'idle' }), status({ mode: 'idle', warning: 'Waiting for an active mission.', warningCodes: ['mission_waiting'] })]) {
+        const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], status: waiting })
+        expect(headline.condition).toBe('disconnected')
+        expect(headline.remedy).toBeUndefined()
+      }
+    })
+
+    it('names a person who needs a radio check before the connect fix', () => {
+      const stale = { device_cache_stale: true } as unknown as NormalizedTrackingPosition
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [stale], stationaryCount: 1, status: notConfigured })
+      expect(headline.problems.slice(0, 4)).toEqual(['TRACKING NOT CONNECTED', '1 stale', '1 not moving', 'Connect in Settings'])
     })
 
     it('keeps the pause as the lead while paused, and adds where to connect', () => {
@@ -174,15 +185,19 @@ describe('tracking headline', () => {
       expect(plain.remedy).toBeUndefined()
     })
 
-    it('reads a reconnect in progress as amber, never as grey', () => {
-      const headline = describeTrackingHeadline({
-        ...base, phase: 'active', positions: [kept],
-        status: status({ mode: 'idle', warning: 'Reconnecting tracking — retained positions are last known until a fresh response arrives.', warningCodes: ['tracking_reconnecting'] }),
-      })
-      expect(headline.condition).toBe('notConnected')
+    it('reads a reconnect in progress as amber, never as grey, without clearing a map or record alarm', () => {
+      const reconnecting = status({ mode: 'idle', warning: 'Reconnecting tracking — retained positions are last known until a fresh response arrives.', warningCodes: ['tracking_reconnecting'] })
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], status: reconnecting })
+      expect(headline.condition).toBe('reconnecting')
       expect(headline.tone).toBe('warning')
       expect(headline.problems[0]).toBe('Reconnecting')
       expect(headline.lastReceivedShown).toBe(true)
+      const map = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], mapUpdateFailed: true, status: reconnecting })
+      expect(map.condition).toBe('map')
+      expect(map.tone).toBe('alert')
+      const record = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: reconnecting })
+      expect(record.condition).toBe('record')
+      expect(record.tone).toBe('alert')
     })
 
     it('stays quiet with no mission running', () => {

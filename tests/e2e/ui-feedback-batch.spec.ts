@@ -312,3 +312,40 @@ for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1920, 108
     expect(coordinate!.x >= scale!.x + scale!.width || scale!.x >= coordinate!.x + coordinate!.width || coordinate!.y >= scale!.y + scale!.height || scale!.y >= coordinate!.y + coordinate!.height).toBe(true)
   })
 }
+
+test('a running mission without tracking keeps old positions loud and points to Settings [DON-375]', async ({ page }) => {
+  // Was: yesterday's dots on the map under a quiet grey "Tracking not connected" (finding 4, screenshot 23).
+  const notConfigured = { mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+    warning: 'Tracking auto-connect is off. Use Save, Connect & Close to start live tracking.', warningCodes: ['tracking_not_configured'] }
+  const old = { id: 'old', device_id: 'alpha', lat: 51.98, lon: -9.72, altitude: null, speed: null, battery: null, accuracy: null,
+    timestamp: new Date(Date.now() - 3_600_000).toISOString(), source: 'gps', data_origin: 'live', cache_age_seconds: null, device_cache_stale: false }
+  await page.evaluate(({ status, position }) => window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot(
+    { devices: [], positions: [position], breadcrumbs: [] }, status), { status: notConfigured, position: old })
+  const headline = page.getByTestId('ws-tracking-headline')
+  await expect(headline).toHaveAttribute('data-condition', 'notConnected')
+  await expect(headline).toHaveClass(/ws-health-alert/)
+  await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING NOT CONNECTED: positions on the map are not updating; connect in Settings → Tracking sources')
+
+  await page.getByTestId('ws-alarm-details').click()
+  await expect(page.getByTestId('ws-tracking-map')).toContainText('The last positions received')
+  await expect(page.getByTestId('ws-tracking-advice')).toContainText('Tracking sources')
+  await expect(page.getByTestId('ws-reconnect')).toBeVisible()
+  await page.getByTestId('ws-open-tracking-settings').click()
+  await expect(page.getByTestId('settings-workspace')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('settings-workspace')).toBeHidden()
+
+  // Paused: the pause leads, and the strip and panel still say to connect first.
+  await page.evaluate(async () => {
+    const path = '/src/features/mission/mission-store.ts'
+    const { useMissionStore } = await import(path)
+    await useMissionStore.getState().controller.pauseMission()
+  })
+  await page.evaluate(({ status, position }) => window.__SARTRACKER_BROWSER_HARNESS__.injectTrackingSnapshot(
+    { devices: [], positions: [position], breadcrumbs: [] }, status), { status: notConfigured, position: old })
+  await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED: positions are not updating; tracking is not connected')
+  await expect(page.getByTestId('ws-alarm-resume')).toBeVisible()
+  await openWorkspacePanel(page, 'tracking')
+  await expect(page.getByTestId('ws-tracking-advice')).toContainText('tracking is not connected')
+  await expect(page.getByTestId('ws-open-tracking-settings')).toBeVisible()
+})

@@ -82,10 +82,6 @@ describe('packaged attention independent source and UI oracle', () => {
     expect(validateAttentionSurface(facts).passed).toBe(true)
     expect(validateAttentionSurface({ ...facts, disconnectedCondition: 'disconnected',
       disconnected: 'Tracking not connected. Open tracking details', disconnectedWords: 'Tracking not connected' }).passed).toBe(true)
-    expect(validateAttentionSurface({ ...facts, disconnectedCondition: 'notConnected',
-      disconnected: 'TRACKING NOT CONNECTED: connect in Settings → Tracking sources. Open tracking details', disconnectedWords: 'TRACKING NOT CONNECTED' }).passed).toBe(true)
-    expect(() => validateAttentionSurface({ ...facts, disconnectedCondition: 'notConnected',
-      disconnected: 'Tracking OK. Open tracking details', disconnectedWords: 'Tracking OK' })).toThrow(/does not say tracking is down/)
     expect(validateAttentionSurface({ ...facts, recoveredCondition: 'attention',
       recovered: '1 position out of date. Open tracking details', recoveredWords: '1 stale' }).passed).toBe(true)
 
@@ -155,8 +151,8 @@ describe('packaged attention independent source and UI oracle', () => {
       lost: appHeadline({ mode: 'offline' }, 'active'),
       record: appHeadline({}, 'active', 'failed'),
       recovery: appHeadline({}, 'recovery'),
-      disconnected: appHeadline({ mode: 'idle' }, 'idle'),
-      notConnected: appHeadline({ mode: 'idle' }, 'active'),
+      disconnected: appHeadline({ mode: 'idle' }, 'active'),
+      notConnected: appHeadline({ mode: 'idle', warning: 'Tracking is not configured.', warningCodes: ['tracking_not_configured'] }, 'active'),
     }
     for (const [condition, headline] of Object.entries(states)) {
       expect(headline.condition).toBe(condition)
