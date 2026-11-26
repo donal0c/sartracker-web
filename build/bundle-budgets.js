@@ -19,8 +19,10 @@ export const BUNDLE_BUDGETS = [
     // press is never lost), so the main chunk gets its own bound.
     // DON-368: the folded people controls and docked All devices added about
     // 2 KB (601.5 KB); the bound moves to 610 KB rather than splitting Mission.
+    // DON-373: the Remove question and its count add about 3.4 KB on top of
+    // master's 609.2 KB (612.6 KB); the bound moves to 620 KB for the same reason.
     pattern: /^index-.*\.js$/,
-    maxBytes: 610_000,
+    maxBytes: 620_000,
     reason: 'Main chunk holds first-paint JS, including Review loaded at startup (PR 76).',
   },
 ]
