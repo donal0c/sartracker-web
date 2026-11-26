@@ -225,6 +225,7 @@ export function LeafletFallbackMapView() {
       <CoordinateBar
         latitude={hoverCoordinate.latitude}
         longitude={hoverCoordinate.longitude}
+        source="cursor"
       />
     </div>
   )
