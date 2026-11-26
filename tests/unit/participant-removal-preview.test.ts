@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { previewWhileTracking, removalPromptText } from '../../src/features/participants/participant-removal-prompt'
+import { previewWhileRosterCurrent, removalPromptText } from '../../src/features/participants/participant-removal-prompt'
 import { startParticipantRuntime } from '../../src/features/participants/start-participant-runtime'
 import type {
   GroupMembershipEvent,
@@ -40,7 +40,7 @@ function device(deviceId: string, groupId: string | null) {
 async function runtimeWith(
   participants: readonly MissionParticipant[],
   events: readonly GroupMembershipEvent[],
-  options: { readonly membershipWriteFails?: boolean } = {},
+  options: { readonly membershipWriteFails?: boolean; readonly holdLeaveWrites?: boolean } = {},
 ) {
   const store = {
     selectMissionParticipants: vi.fn().mockResolvedValue(participants),
@@ -51,6 +51,9 @@ async function runtimeWith(
       readonly events: readonly Omit<GroupMembershipEvent, 'id' | 'sequence' | 'mission_id'>[]
     }) => {
       if (options.membershipWriteFails === true) throw new Error('disk full')
+      if (options.holdLeaveWrites === true && input.events.some((event) => event.change === 'left')) {
+        return new Promise<never>(() => undefined)
+      }
       return input.events.map((event, index) => ({
         ...event, id: `new-${index}`, sequence: events.length + index + 1, mission_id: 'mission-1',
       }))
@@ -108,6 +111,16 @@ describe('Remove counts who would stop being recorded [DON-373]', () => {
     expect(runtime.previewRemoval('part-alice')).toEqual({ stopsTrackingCount: 1, rosterConfirmed: false })
   })
 
+  it('marks a queued group departure unconfirmed, so a covered person is not promised continued recording', async () => {
+    const runtime = await runtimeWith([KMRT, ALICE], [member('d1', 1), member('d2', 2)], { holdLeaveWrites: true })
+    // Two complete rosters confirm Alice left KMRT; the leave write is still in flight.
+    await runtime.applyRoster([device('d1', null), device('d2', 'group-kmrt')], NOW)
+    void runtime.applyRoster([device('d1', null), device('d2', 'group-kmrt')], '2026-11-26T11:01:00.000Z')
+    await vi.waitFor(() => expect(runtime.previewRemoval('part-alice')?.rosterConfirmed).toBe(false))
+    expect(removalPromptText('Alice', 'device', runtime.previewRemoval('part-alice')))
+      .not.toContain('No one stops being tracked')
+  })
+
   it('returns null for a row that is not an active participant', async () => {
     const runtime = await runtimeWith([KMRT], [member('d1', 1)])
     expect(runtime.previewRemoval('no-such-row')).toBeNull()
@@ -131,12 +144,18 @@ describe('removal question wording [DON-373]', () => {
       .toBe('Stop tracking KMRT (number of people not known)? Their positions stop being recorded.')
   })
 
-  it('never presents a count as confirmed while tracking is offline', () => {
-    expect(previewWhileTracking({ stopsTrackingCount: 3, rosterConfirmed: true }, false))
-      .toEqual({ stopsTrackingCount: 3, rosterConfirmed: false })
-    expect(previewWhileTracking({ stopsTrackingCount: 3, rosterConfirmed: true }, true))
-      .toEqual({ stopsTrackingCount: 3, rosterConfirmed: true })
-    expect(previewWhileTracking(null, false)).toBeNull()
+  it('never presents a count as confirmed while tracking is offline or the device list is not current', () => {
+    const confirmed = { stopsTrackingCount: 3, rosterConfirmed: true }
+    expect(previewWhileRosterCurrent(confirmed, { mode: 'online' })).toEqual(confirmed)
+    expect(previewWhileRosterCurrent(confirmed, { mode: 'offline' })?.rosterConfirmed).toBe(false)
+    expect(previewWhileRosterCurrent(confirmed, { mode: 'online', warningCodes: ['roster_unavailable'] })?.rosterConfirmed)
+      .toBe(false)
+    expect(previewWhileRosterCurrent(null, { mode: 'offline' })).toBeNull()
+  })
+
+  it('never says no one stops being tracked from an unconfirmed count', () => {
+    expect(removalPromptText('Alice', 'device', { stopsTrackingCount: 0, rosterConfirmed: false }))
+      .toBe('Stop tracking Alice (number of people not known)? Their positions stop being recorded.')
   })
 
   it('says when removing the row stops tracking nobody', () => {

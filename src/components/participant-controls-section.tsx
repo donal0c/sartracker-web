@@ -11,7 +11,7 @@ import { useParticipantStore } from '../features/participants/participant-store'
 import { useTrackingStore } from '../features/tracking/tracking-store'
 import { useParticipantSelectionViewModel } from '../features/participants/use-participant-selection-view-model'
 import { LegacyRosterRecoveryForm } from '../features/participants/legacy-roster-recovery-form'
-import { previewWhileTracking, removalPromptText } from '../features/participants/participant-removal-prompt'
+import { previewWhileRosterCurrent, removalPromptText } from '../features/participants/participant-removal-prompt'
 import { useSectionBodyOpen } from './section-body-open'
 import type { ParticipantProvenance } from '../infrastructure/mission-store/tauri-mission-store'
 
@@ -60,8 +60,9 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
   // Re-read on every runtime publish so the confirm's count stays current.
   useParticipantStore((state) => state.scope)
   const sectionBodyOpen = useSectionBodyOpen()
-  // A roster replayed from the last good poll while offline is not a confirmed count.
-  const trackingOnline = useTrackingStore((state) => state.status.mode === 'online')
+  // A roster replayed from the last good poll, or a failed device list, is not a confirmed count.
+  const trackingStatus = useTrackingStore((state) => state.status)
+  const activeListRef = useRef<HTMLDivElement | null>(null)
   const keepButtonRef = useRef<HTMLButtonElement | null>(null)
   const returnFocusToRemoveId = useRef<string | null>(null)
   const removeButtons = useRef(new Map<string, HTMLButtonElement>())
@@ -290,7 +291,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
       </div>}
       {part === 'admin' ? null : warnings}
 
-      <div className="space-y-2" data-testid="participant-active-list">
+      <div className="space-y-2" data-testid="participant-active-list" ref={activeListRef} tabIndex={-1}>
         {activeParticipants.length === 0 ? (
           <p className="text-xs text-stone-300">No mission participants are currently selected.</p>
         ) : activeParticipants.map((participant) => {
@@ -357,7 +358,7 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                 role="group"
               >
                 <p className="text-xs font-semibold" id={`participant-remove-question-${participant.id}`}>
-                  {removalPromptText(label, participant.kind, previewWhileTracking(controller?.previewRemoval(participant.id) ?? null, trackingOnline))}
+                  {removalPromptText(label, participant.kind, previewWhileRosterCurrent(controller?.previewRemoval(participant.id) ?? null, trackingStatus))}
                 </p>
                 <div className="mt-2 flex gap-2">
                   <button
@@ -365,6 +366,8 @@ export function ParticipantControlsSection({ phase, lookbackRequested = false, v
                     data-testid="participant-remove-confirm-btn"
                     disabled={saving}
                     onClick={() => {
+                      // The row is about to go: keep keyboard focus in the list.
+                      activeListRef.current?.focus()
                       setConfirmRemoveId(null)
                       void controller?.removeParticipant(
                         participant.id,

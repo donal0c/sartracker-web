@@ -10,6 +10,8 @@ import type {
   MissionParticipant,
   ParticipantBackfillCheckpoint,
 } from '../../infrastructure/mission-store/tauri-mission-store'
+import type { TrackingConnectionStatus } from '../tracking/tracking-types'
+import type { TrackingWarningCode } from '../tracking/tracking-warnings'
 import { createParticipationScope } from './participation-scope'
 
 /** What removing one participant row would do now, as the runtime sees it. */
@@ -54,24 +56,36 @@ export function devicesStoppingOnRemoval(input: {
   return before.filter((deviceId) => !after.has(deviceId))
 }
 
+/** Roster warnings that mean the live device list is not the current one. */
+const ROSTER_NOT_CURRENT: ReadonlySet<TrackingWarningCode> = new Set<TrackingWarningCode>([
+  'roster_refreshing',
+  'roster_unavailable',
+  'cached_operational_data',
+  'offline_last_known',
+  'offline_no_positions',
+])
+
 /**
- * A preview is only confirmed while tracking is live: when polls fail the
- * roster is the last good one replayed, so a group count may be out of date.
+ * A preview is only confirmed while tracking is online and its roster is
+ * current: when polls or the device list fail, the roster is the last good
+ * one replayed, so a group count may be out of date.
  */
-export function previewWhileTracking(
+export function previewWhileRosterCurrent(
   preview: ParticipantRemovalPreview | null,
-  trackingOnline: boolean,
+  status: Pick<TrackingConnectionStatus, 'mode' | 'warningCodes'>,
 ): ParticipantRemovalPreview | null {
-  if (preview === null || trackingOnline) return preview
-  return { ...preview, rosterConfirmed: false }
+  if (preview === null) return null
+  const current = status.mode === 'online'
+    && !(status.warningCodes ?? []).some((code) => ROSTER_NOT_CURRENT.has(code))
+  return current ? preview : { ...preview, rosterConfirmed: false }
 }
 
 /**
  * The confirm wording, for example
  * "Stop tracking KMRT (34 people)? Their positions stop being recorded."
- * A group count from an unconfirmed roster is given as "at least"; when it
- * cannot be known at all it is said plainly rather than guessed. Removing a
- * row that tracks nobody on its own says so.
+ * "No one stops being tracked" is said only from a confirmed count. An
+ * unconfirmed count is given as "at least N" for a group, and as not known
+ * when it is zero, rather than guessed.
  */
 export function removalPromptText(
   label: string,
@@ -79,13 +93,15 @@ export function removalPromptText(
   preview: ParticipantRemovalPreview | null,
 ): string {
   const consequence = 'Their positions stop being recorded.'
-  if (preview === null) return `Stop tracking ${label} (number of people not known)? ${consequence}`
+  const unknown = `Stop tracking ${label} (number of people not known)? ${consequence}`
+  if (preview === null) return unknown
   const count = preview.stopsTrackingCount
   const people = `${count} ${count === 1 ? 'person' : 'people'}`
-  if (kind === 'group' && !preview.rosterConfirmed) {
-    return count === 0
-      ? `Stop tracking ${label} (number of people not known)? ${consequence}`
-      : `Stop tracking ${label} (at least ${people})? ${consequence}`
+  if (!preview.rosterConfirmed) {
+    if (count === 0) return unknown
+    return kind === 'group'
+      ? `Stop tracking ${label} (at least ${people})? ${consequence}`
+      : `Stop tracking ${label} (${people})? ${consequence}`
   }
   if (count === 0) {
     return `Remove ${label} from this mission? No one stops being tracked: nobody is tracked only through ${label}.`

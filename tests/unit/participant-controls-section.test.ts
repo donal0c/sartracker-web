@@ -408,6 +408,24 @@ describe('ParticipantControlsSection [DON-271]', () => {
       expect(document.querySelector('[data-testid="participant-remove-confirmation"]')).toBeNull()
     })
 
+    it('keeps keyboard focus in the list after confirming', () => {
+      renderRunning(removeCalls().fn)
+      click('[data-testid="participant-remove-part-kmrt"]')
+      click('[data-testid="participant-remove-confirm-btn"]')
+      act(() => useParticipantStore.setState({ participants: [deviceRow] }))
+      expect(document.activeElement?.getAttribute('data-testid')).toBe('participant-active-list')
+    })
+
+    it('gives a group count as a minimum while the device list is not current', () => {
+      renderRunning(removeCalls().fn)
+      act(() => useTrackingStore.setState({ status: {
+        ...useTrackingStore.getInitialState().status, mode: 'online', warningCodes: ['roster_unavailable'],
+      } }))
+      click('[data-testid="participant-remove-part-kmrt"]')
+      expect(document.querySelector('[data-testid="participant-remove-confirmation"]')?.textContent)
+        .toContain('Stop tracking KMRT (at least 3 people)?')
+    })
+
     it('closes the question when a reload drops the row, so it does not come back armed', () => {
       renderRunning(removeCalls().fn)
       click('[data-testid="participant-remove-part-kmrt"]')
