@@ -1,5 +1,6 @@
 import type { CoverageState } from '../features/tracking/coverage-controller'
 import type { CoverageErrorClass } from '../features/tracking/coverage-diagnostics'
+import { describeCurrentPositionsFreshness } from '../features/tracking/current-positions-freshness'
 import {
   COVERAGE_CATCH_UP_STALL_MS,
   summarizeCoverageStatus,
@@ -13,6 +14,8 @@ type CoverageStatusPanelProps = {
   readonly onRetry: () => void
   readonly onInspectExactFixes: () => void
   readonly inspectLabel?: string
+  /** Whether the tracking feed is online; when false no message calls positions live [DON-375]. Defaults to true. */
+  readonly trackingLive?: boolean
 }
 
 /** Renders calm, database-backed mission-history progress and recovery controls. */
@@ -20,6 +23,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
   if (props.state.status === 'inactive') return null
 
   const summary = summarizeCoverageStatus(props.state)
+  const freshness = describeCurrentPositionsFreshness(props.trackingLive !== false)
   const blockers = new Set(props.state.blockers ?? [])
   const historyUnreconciled = blockers.has('history_reconciliation_incomplete')
   const reorganizing = props.state.manifest?.pendingInvalidation === true ||
@@ -73,16 +77,16 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
                 rendererEvidencePending, outboxPending,
               })}.
               {' '}The line may be missing recent positions or be out of date.
-              {' '}Current positions remain live. Press Retry.
+              {' '}{freshness} Press Retry.
             </p>
           ) : rendererDetached ? (
             <p className="mt-1" data-testid="coverage-renderer-detached">
-              Coverage is being reattached to the map. Current positions remain live.
+              Coverage is being reattached to the map. {freshness}
             </p>
           ) : rendererFilterPending ? (
             <p className="mt-1" data-testid="coverage-filter-pending">
               Applying the selected history filter to the map. Completion is paused.
-              {' '}Current positions remain live.
+              {' '}{freshness}
             </p>
           ) : reorganizing ? (
             <p className="mt-1" data-testid="coverage-reorganizing">
@@ -90,12 +94,12 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
             </p>
           ) : backfill ? (
             <p className="mt-1" data-testid="coverage-backfill">
-              Participant history is still being added. Current positions remain live.
+              Participant history is still being added. {freshness}
             </p>
           ) : rendererEvidencePending ? (
             <p className="mt-1" data-testid="coverage-evidence-pending">
               Anomaly evidence is waiting to be saved. History cannot be called complete yet.
-              {' '}Current positions remain live.
+              {' '}{freshness}
             </p>
           ) : attentionShown ? null : props.state.status === 'complete' ? (
             <CompleteSummary
@@ -103,6 +107,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               omittedOutingCount={props.omittedOutingCount}
               unassignedOmitted={props.unassignedOmitted}
               updatedAt={props.state.updatedAt}
+              freshness={freshness}
             />
           ) : summary.kind === 'loading' ? (
             <p className="mt-1" data-testid="coverage-loading">
@@ -123,7 +128,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
               {rendererEvidenceDegraded ? (
                 <p className="mt-1" data-testid="coverage-evidence-degraded">
                   Anomaly evidence may not have been fully saved. History cannot be called complete.
-                  {' '}Current positions remain live; resolve the evidence warning in Tracking.
+                  {' '}{freshness} Resolve the evidence warning in Tracking.
                 </p>
               ) : null}
               {degradedShown ? (
@@ -155,7 +160,7 @@ export function CoverageStatusPanel(props: CoverageStatusPanelProps) {
           {failed && props.state.lastErrorClass === 'worker_out_of_memory' ? (
             <p className="mt-1" data-testid="coverage-out-of-memory">
               This mission&apos;s history is too large for the history builder, so the whole-history
-              line may stay missing. Saved positions are safe and current positions remain live.
+              line may stay missing. Saved positions are safe. {freshness}{' '}
               Use Inspect exact fixes to check saved positions.
             </p>
           ) : null}
@@ -219,6 +224,8 @@ function CompleteSummary(props: {
   readonly omittedOutingCount: number
   readonly unassignedOmitted: boolean
   readonly updatedAt: string | undefined
+  /** The sentence about current positions, which is never "live" while tracking is not [DON-375]. */
+  readonly freshness: string
 }) {
   const omitted = props.omittedDeviceCount + props.omittedOutingCount > 0 ||
     props.unassignedOmitted
@@ -227,7 +234,7 @@ function CompleteSummary(props: {
       <p>{omitted ? 'All selected history shown' : 'All mission history shown'}</p>
       {omitted ? (
         <p data-testid="coverage-omission-summary">
-          {formatOmissionSummary(props)} Live positions are unchanged.
+          {formatOmissionSummary(props)} {props.freshness}
         </p>
       ) : null}
       {props.updatedAt === undefined ? null : (

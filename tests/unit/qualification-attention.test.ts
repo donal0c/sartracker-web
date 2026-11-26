@@ -152,6 +152,7 @@ describe('packaged attention independent source and UI oracle', () => {
       record: appHeadline({}, 'active', 'failed'),
       recovery: appHeadline({}, 'recovery'),
       disconnected: appHeadline({ mode: 'idle' }, 'active'),
+      notConnected: appHeadline({ mode: 'idle', warning: 'Tracking is not configured.', warningCodes: ['tracking_not_configured'] }, 'active'),
     }
     for (const [condition, headline] of Object.entries(states)) {
       expect(headline.condition).toBe(condition)

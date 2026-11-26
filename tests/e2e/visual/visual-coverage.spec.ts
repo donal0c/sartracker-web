@@ -284,7 +284,7 @@ Report PASS or FAIL for each item, then an overall PASS/FAIL.`,
       verificationPrompt: `Verify this filtered SAR Tracker mission-history status:
 1. It says "All selected history shown", not "All mission history shown".
 2. It visibly says one device is omitted.
-3. It explicitly says live positions are unchanged.
+3. It says whether current positions are live, and never calls them live while tracking is not connected.
 4. It still offers exact-fix inspection.
 5. The filtered state looks deliberate and complete for the selected scope, not like missing evidence.
 Report PASS or FAIL for each item, then an overall PASS/FAIL.`,

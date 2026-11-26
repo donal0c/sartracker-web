@@ -12,7 +12,7 @@ import { useStationaryAttentionStore } from '../tracking/stationary-attention-st
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
-import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
+import { CONNECT_WORD, CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
 
 const MAP_NOT_UPDATING_ISSUE = 'Map is not showing the latest positions'
 const MAP_NOT_UPDATING_WORD = 'Map not updating'
@@ -62,7 +62,10 @@ export function useLastConfirmedAt(): string | null {
   return rememberLastConfirmedAt(missionId, reported)
 }
 
-export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'disconnected' | 'attention'
+export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'notConnected' | 'reconnecting' | 'disconnected' | 'attention'
+
+/** Where a mission whose tracking is not connected is connected [DON-375]. */
+const CONNECT_ADVICE = 'connect in Settings → Tracking sources'
 
 export type TrackingHeadline = {
   /** The condition that decides the advice, so a pause is not told to check the internet. */
@@ -94,13 +97,40 @@ export type TrackingHeadline = {
    * before tracking stopped, so the panel says they may be out of date.
    */
   readonly lastReceivedShown?: boolean
+  /**
+   * Set on a map or record alarm while the feed itself is not online (for
+   * example reconnecting), so neither may say positions are live [DON-375].
+   */
+  readonly feedNotLive?: true
+  /**
+   * The map failed to draw a tracking update while another condition leads,
+   * so the panel uses the map-failure wording for what the map shows [DON-375].
+   */
+  readonly mapUpdateFailed?: true
 }
+
+/** What the headline is decided from. */
+type TrackingHeadlineInput = Parameters<typeof decideTrackingHeadline>[0]
 
 /**
  * Decides the headline. Pause is checked first: while paused the runtime reports
  * "Live refresh suspended", which must not read as a lost connection.
+ *
+ * A failed map update is carried on whichever condition leads, so the Tracking
+ * panel never says the map shows the last positions received when it is still
+ * drawing older ones [DON-375].
+ *
+ * @param input the tracking status, mission phase and the problems to rank
+ * @returns the headline for the top bar, the alarm and the Tracking panel
  */
-export function describeTrackingHeadline(input: {
+export function describeTrackingHeadline(input: TrackingHeadlineInput): TrackingHeadline {
+  const headline = decideTrackingHeadline(input)
+  if (!input.mapUpdateFailed || headline.condition === 'map') return headline
+  // Which fixes the map still draws is unknown, so "last received" is not claimed.
+  return { ...headline, ...(headline.lastReceivedShown === undefined ? {} : { lastReceivedShown: false }), mapUpdateFailed: true }
+}
+
+function decideTrackingHeadline(input: {
   readonly status: TrackingConnectionStatus
   readonly phase: MissionRuntimePhase
   readonly positions: readonly NormalizedTrackingPosition[]
@@ -164,6 +194,13 @@ export function describeTrackingHeadline(input: {
   if (input.coverageStatus === 'error') name('History not loaded', PROBLEM_RANK.history)
   if (input.coverageStatus === 'partial') name('History incomplete', PROBLEM_RANK.history + 2)
   if (input.evidenceState !== 'healthy' && input.evidenceLossAcknowledged) name('Record loss noted', PROBLEM_RANK.recordNoted)
+  // Tracking that was never connected, in a mission: the fix is named with the
+  // connection problems, after any person who needs a radio check [DON-375].
+  // Only the runtime's "not configured" status counts: a configured source
+  // waiting for its first poll is idle too, and must not be sent to Settings.
+  const notConfigured = (phase === 'active' || phase === 'paused') && status.mode !== 'online' &&
+    status.warningCodes?.includes('tracking_not_configured') === true
+  if (notConfigured) name(CONNECT_WORD, PROBLEM_RANK.connection)
   // One order for runtime and derived problems; ties keep the order found.
   const problems = ranked.map((entry, index) => ({ ...entry, index }))
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
@@ -197,8 +234,30 @@ export function describeTrackingHeadline(input: {
       issues, lastReceivedShown,
     }
   }
-  if (paused) return { condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), problems: ['MISSION PAUSED', ...problems], detail: conditions, alarm: 'MISSION PAUSED: positions are not updating', issues }
+  // Tracking that was never connected stays not connected after Resume, so the
+  // pause also says where to connect [DON-375].
+  if (paused) {
+    return {
+      condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), problems: ['MISSION PAUSED', ...problems], detail: conditions,
+      alarm: notConfigured ? `MISSION PAUSED: positions are not updating; tracking is not connected: ${CONNECT_ADVICE}` : 'MISSION PAUSED: positions are not updating',
+      issues, ...(notConfigured ? { remedy: CONNECT_WORD } : {}),
+    }
+  }
   if (lost) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), problems: ['TRACKING LOST', ...problems], detail: conditions, alarm: 'TRACKING LOST: positions on the map may not be current', issues }
+  // A running mission whose tracking was never connected: any position drawn is
+  // old, so it must never read as a quiet grey "not connected" (rule 10, DON-375).
+  if (notConfigured) {
+    const lead = 'TRACKING NOT CONNECTED'
+    const map = lastReceivedShown ? 'positions on the map are not updating' : 'no positions are coming in'
+    return {
+      condition: 'notConnected', tone: 'alert', text: prefixed(`${lead}: ${CONNECT_ADVICE}`), problems: [lead, ...problems], leadInAlarm: true, remedy: CONNECT_WORD,
+      // The remedy word already says where; the detail keeps the other conditions.
+      detail: conditions,
+      alarm: `${lead}: ${map}; ${CONNECT_ADVICE}`, issues, lastReceivedShown,
+    }
+  }
+  // A map or record alarm must not call positions live while the feed is not online [DON-375].
+  const feedNotLive = status.mode === 'online' ? {} : { feedNotLive: true as const }
   // The feed is fine but the map still draws older positions: that must never
   // read as live, so it is the alarm, ahead of the record warning [DON-357].
   if (input.mapUpdateFailed) {
@@ -206,15 +265,27 @@ export function describeTrackingHeadline(input: {
     return {
       condition: 'map', tone: 'alert', text: others === '' ? 'MAP NOT UPDATING' : `MAP NOT UPDATING · ${others}`,
       problems: ['MAP NOT UPDATING', ...problems.filter((word) => word !== MAP_NOT_UPDATING_WORD)], detail: others,
-      alarm: 'MAP NOT UPDATING: positions drawn on the map may be out of date', issues,
+      alarm: 'MAP NOT UPDATING: positions drawn on the map may be out of date', issues, ...feedNotLive,
     }
   }
-  if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
+  if (evidenceFailed) {
+    const alarm = status.mode === 'online'
+      ? 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing'
+      : 'MISSION RECORD NOT FULLY SAVED: open this before finishing; positions are not updating yet'
+    // The map drew these fixes (no map failure here), so "last received" is true of them.
+    return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm, issues, ...feedNotLive, ...(status.mode === 'online' ? {} : { lastReceivedShown }) }
+  }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
   // Before a mission starts amber is enough: nobody relies on the map yet.
   if (reentry !== null) {
     const advice = `Tracking not connected: ${reentry.advice}`
     return { condition: reentry.condition, tone: 'warning', text: prefixed(advice), problems, remedy: reentry.remedy, detail: conditions === '' ? advice : `${advice} · ${conditions}`, issues, lastReceivedShown }
+  }
+  // A reconnect in a running mission is amber, never grey: the dots are last
+  // known until it answers. It clears within one poll, or turns lost. It comes
+  // after the map and record alarms so it cannot clear them [DON-375].
+  if (phase === 'active' && status.mode !== 'online' && status.warningCodes?.includes('tracking_reconnecting') === true) {
+    return { condition: 'reconnecting', tone: 'warning', text: prefixed('Reconnecting tracking'), problems, detail: conditions, issues, lastReceivedShown }
   }
   if (status.mode !== 'online') return { condition: 'disconnected', tone: 'neutral', text: 'Tracking not connected', problems: ['Tracking not connected'], detail: '', issues }
   if (issues.length > 0) return { condition: 'attention', tone: 'warning', text: summary, problems, detail: summary, issues }

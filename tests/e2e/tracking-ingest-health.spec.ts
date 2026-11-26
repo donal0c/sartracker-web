@@ -131,11 +131,13 @@ test.describe('BCP-01 current-position ingest health', () => {
 
   test('keeps conflict and degraded evidence warnings visible while current positions stay live [DON-268]', async ({ page }) => {
     await page.evaluate(async () => {
-      const [{ applyTrackingSnapshot }, { applyIngestEvidenceHealth }] = await Promise.all([
+      const [{ applyTrackingSnapshot, applyTrackingStatus }, { applyIngestEvidenceHealth }] = await Promise.all([
         import('/src/features/tracking/tracking-store.ts'),
         import('/src/features/tracking/ingest-health-store.ts'),
       ])
       applyTrackingSnapshot({ devices: [], positions: [], breadcrumbs: [] })
+      // Positions are only "live" while the feed is online [DON-375].
+      applyTrackingStatus({ mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: new Date().toISOString(), warning: null })
       applyIngestEvidenceHealth({
         state: 'degraded', reason: 'ledger_projection_failed', pendingCount: 1,
         corruptCount: 0, conflictCount: 1, rejectedCount: 0,
@@ -145,5 +147,14 @@ test.describe('BCP-01 current-position ingest health', () => {
     await openWorkspacePanel(page, 'tracking')
     await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions remain live')
     await expect(page.getByTestId('position-conflict-warning')).toContainText('first accepted fix remains displayed')
+
+    // The same warning must not call positions live once tracking is not connected [DON-375].
+    await page.evaluate(async () => {
+      const { applyTrackingStatus } = await import('/src/features/tracking/tracking-store.ts')
+      applyTrackingStatus({ mode: 'idle', consecutiveFailures: 0, recovered: false, lastSuccessAt: null,
+        warning: 'Tracking auto-connect is off. Use Save, Connect & Close to start live tracking.', warningCodes: ['tracking_not_configured'] })
+    })
+    await expect(page.getByTestId('ingest-evidence-health-warning')).toContainText('Current positions are not live')
+    await expect(page.getByTestId('ingest-evidence-health-warning')).not.toContainText('remain live')
   })
 })
