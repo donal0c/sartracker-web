@@ -1285,14 +1285,20 @@ describe('startTrackingRuntime', () => {
       updated_at: '2026-04-06T10:00:00.000Z',
     }
 
-    async function startWithHistory(overrides: {
+    async function startWithHistory(overrides: HistoryOverrides) {
+      return startTrackingRuntime(historyDependencies(overrides))
+    }
+
+    type HistoryOverrides = {
       readonly getBreadcrumbsWithReport: ReturnType<typeof vi.fn>
       readonly config?: { readonly baseUrl: string } | null
       readonly missionModelEnabled?: boolean
       readonly listParticipantBackfillCheckpoints?: ReturnType<typeof vi.fn>
       readonly listDevices?: ReturnType<typeof vi.fn>
-    }) {
-      return startTrackingRuntime({
+    }
+
+    function historyDependencies(overrides: HistoryOverrides) {
+      return ({
         config: overrides.config === undefined ? { baseUrl: 'http://test:8082' } : overrides.config,
         createClient: vi.fn().mockReturnValue({ getBreadcrumbsWithReport: overrides.getBreadcrumbsWithReport }),
         createPoller: vi.fn().mockReturnValue({ start: vi.fn(), stop: vi.fn(), requestPollNow: vi.fn() }),
@@ -1312,8 +1318,67 @@ describe('startTrackingRuntime', () => {
         readParticipationScopeMissionId: () => 'mission-1',
         readParticipationScopeStatus: () => 'ready',
         subscribeParticipationScope: () => () => undefined,
-      })
+      }) satisfies Parameters<typeof startTrackingRuntime>[0]
     }
+
+    /** Holds the next checkpoint read until released; the read before it passes. */
+    function holdNextCheckpointRead() {
+      let release: () => void = () => undefined
+      let held = false
+      let reached: () => void = () => undefined
+      const readHeld = new Promise<void>((resolve) => { reached = resolve })
+      const listParticipantBackfillCheckpoints = vi.fn(async () => {
+        if (held) {
+          held = false
+          reached()
+          await new Promise<void>((resolve) => { release = resolve })
+        }
+        return [checkpoint]
+      })
+      return {
+        listParticipantBackfillCheckpoints,
+        holdNext: () => { held = true },
+        readHeld,
+        release: () => release(),
+      }
+    }
+
+    it('says tracking is not connected, and sends nothing, when tracking is turned off during its read', async () => {
+      const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [], rejected: [] })
+      const read = holdNextCheckpointRead()
+      const dependencies = historyDependencies({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints: read.listParticipantBackfillCheckpoints })
+      const stop = await startTrackingRuntime(dependencies)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const requestsBefore = getBreadcrumbsWithReport.mock.calls.length
+
+      read.holdNext()
+      const retry = stop.retryParticipantHistoryNow?.()
+      await read.readHeld
+      await stop.reconfigure!({ ...dependencies, config: null })
+      read.release()
+
+      expect(await retry).toEqual({ kind: 'unavailable', reason: 'Tracking is not connected. Check the tracking server in Settings.' })
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(requestsBefore)
+      await stop()
+    })
+
+    it('says tracking is restarting, and sends nothing, when tracking stops during its read', async () => {
+      const getBreadcrumbsWithReport = vi.fn().mockResolvedValue({ accepted: [], rejected: [] })
+      const read = holdNextCheckpointRead()
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints: read.listParticipantBackfillCheckpoints })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const requestsBefore = getBreadcrumbsWithReport.mock.calls.length
+
+      read.holdNext()
+      const retry = stop.retryParticipantHistoryNow?.()
+      await read.readHeld
+      const stopping = stop()
+      read.release()
+
+      expect(await retry).toEqual({ kind: 'unavailable', reason: 'Tracking is restarting. Wait a moment, then press Try again.' })
+      await stopping
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(requestsBefore)
+    })
 
     it('a press while a fetch is already running fetches again as soon as that one fails', async () => {
       let failFirst: (error: Error) => void = () => undefined

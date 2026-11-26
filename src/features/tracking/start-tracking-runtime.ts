@@ -1985,6 +1985,17 @@ export async function startTrackingRuntime(
       answerRetry(work.missingDeviceIds.length === 0 ? { kind: 'complete' } : describeUnfetchableOnly(work.missingDeviceIds))
       return { kind: 'idle' }
     }
+    // The read awaited: tracking may have stopped or lost its connection
+    // meanwhile. Check again, with no await before the request is sent.
+    if (!acceptingRuntimeUpdates || participantBackfillAbortController.signal.aborted) {
+      answerRetry(PARTICIPANT_HISTORY_RETRY_RESTARTING)
+      return { kind: 'idle' }
+    }
+    const requestClient = client
+    if (!hasBreadcrumbClient(requestClient)) {
+      answerRetry(PARTICIPANT_HISTORY_RETRY_NOT_CONNECTED)
+      return { kind: 'idle' }
+    }
     const checkpoint = selectParticipantBackfillCheckpoint(incomplete, Date.now())
     if (checkpoint === undefined) {
       const retryAtMs = Math.min(...incomplete.map((candidate) =>
@@ -2009,7 +2020,7 @@ export async function startTrackingRuntime(
       try {
         await runParticipantBackfillPass({
           checkpoint,
-          getBreadcrumbsWithReport: client.getBreadcrumbsWithReport,
+          getBreadcrumbsWithReport: requestClient.getBreadcrumbsWithReport,
           ...(dependencies.recordBreadcrumbRejections === undefined
             ? {}
             : { recordRejections: dependencies.recordBreadcrumbRejections }),
