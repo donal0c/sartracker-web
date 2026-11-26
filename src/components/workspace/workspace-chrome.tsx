@@ -247,7 +247,9 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
     : advice.todo
   // Positions received before the password stopped working stay on the map;
   // they must not be described as if none had arrived (DON-353).
-  const mapShowing = headline.lastReceivedShown === true ? LAST_RECEIVED : advice.map
+  // While the map cannot draw the latest update, it shows fixes from before that (DON-375).
+  const mapShowing = headline.mapUpdateFailed === true ? TRACKING_ADVICE.map.map
+    : headline.lastReceivedShown === true ? LAST_RECEIVED : advice.map
   const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected' || headline.condition === 'notConnected'
   // Settings opens at Tracking sources, where the password or token is entered.
   const openSettings = useSettingsWorkspaceStore((state) => state.openWorkspace)

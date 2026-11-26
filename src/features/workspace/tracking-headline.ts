@@ -102,13 +102,35 @@ export type TrackingHeadline = {
    * example reconnecting), so neither may say positions are live [DON-375].
    */
   readonly feedNotLive?: true
+  /**
+   * The map failed to draw a tracking update while another condition leads,
+   * so the panel uses the map-failure wording for what the map shows [DON-375].
+   */
+  readonly mapUpdateFailed?: true
 }
+
+/** What the headline is decided from. */
+type TrackingHeadlineInput = Parameters<typeof decideTrackingHeadline>[0]
 
 /**
  * Decides the headline. Pause is checked first: while paused the runtime reports
  * "Live refresh suspended", which must not read as a lost connection.
+ *
+ * A failed map update is carried on whichever condition leads, so the Tracking
+ * panel never says the map shows the last positions received when it is still
+ * drawing older ones [DON-375].
+ *
+ * @param input the tracking status, mission phase and the problems to rank
+ * @returns the headline for the top bar, the alarm and the Tracking panel
  */
-export function describeTrackingHeadline(input: {
+export function describeTrackingHeadline(input: TrackingHeadlineInput): TrackingHeadline {
+  const headline = decideTrackingHeadline(input)
+  if (!input.mapUpdateFailed || headline.condition === 'map') return headline
+  // Which fixes the map still draws is unknown, so "last received" is not claimed.
+  return { ...headline, ...(headline.lastReceivedShown === undefined ? {} : { lastReceivedShown: false }), mapUpdateFailed: true }
+}
+
+function decideTrackingHeadline(input: {
   readonly status: TrackingConnectionStatus
   readonly phase: MissionRuntimePhase
   readonly positions: readonly NormalizedTrackingPosition[]

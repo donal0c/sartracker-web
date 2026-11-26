@@ -210,6 +210,15 @@ describe('tracking headline', () => {
       expect(liveRecord.feedNotLive).toBeUndefined()
     })
 
+    it('keeps the map-failure fact when tracking is switched off mid-failure', () => {
+      const headline = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], mapUpdateFailed: true, status: notConfigured })
+      expect(headline.condition).toBe('notConnected')
+      expect(headline.tone).toBe('alert')
+      expect(headline.mapUpdateFailed).toBe(true)
+      expect(headline.lastReceivedShown).not.toBe(true)
+      expect(headline.problems).toContain('Map not updating')
+    })
+
     it('stays quiet with no mission running', () => {
       const headline = describeTrackingHeadline({ ...base, phase: 'idle', positions: [kept], status: notConfigured })
       expect(headline.condition).toBe('disconnected')
