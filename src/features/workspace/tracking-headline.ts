@@ -12,7 +12,7 @@ import { useStationaryAttentionStore } from '../tracking/stationary-attention-st
 import { useTrackingStore } from '../tracking/tracking-store'
 import { useTrackingMapUpdateStore } from '../tracking/tracking-map-update-store'
 import { isCriticalTrackingTrustWarning } from '../tracking/tracking-trust-warning'
-import { CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
+import { CONNECT_WORD, CREDENTIAL_REENTRY_WORD, PROBLEM_RANK, rankTrackingWarning, SETTINGS_REENTRY_WORD, type RankedProblem } from './tracking-problem-labels'
 
 const MAP_NOT_UPDATING_ISSUE = 'Map is not showing the latest positions'
 const MAP_NOT_UPDATING_WORD = 'Map not updating'
@@ -62,7 +62,10 @@ export function useLastConfirmedAt(): string | null {
   return rememberLastConfirmedAt(missionId, reported)
 }
 
-export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'disconnected' | 'attention'
+export type TrackingCondition = 'ok' | 'lost' | 'map' | 'paused' | 'record' | 'recovery' | 'credentials' | 'settings' | 'notConnected' | 'disconnected' | 'attention'
+
+/** Where a mission whose tracking is not connected is connected [DON-375]. */
+const CONNECT_ADVICE = 'connect in Settings → Tracking sources'
 
 export type TrackingHeadline = {
   /** The condition that decides the advice, so a pause is not told to check the internet. */
@@ -197,8 +200,33 @@ export function describeTrackingHeadline(input: {
       issues, lastReceivedShown,
     }
   }
-  if (paused) return { condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), problems: ['MISSION PAUSED', ...problems], detail: conditions, alarm: 'MISSION PAUSED: positions are not updating', issues }
+  // Tracking that was never connected stays not connected after Resume, so the
+  // pause also says where to connect [DON-375].
+  const notConfigured = status.mode !== 'online' && status.warningCodes?.includes('tracking_not_configured') === true
+  if (paused) {
+    const connect = notConfigured ? { remedy: CONNECT_WORD, problems: ['MISSION PAUSED', CONNECT_WORD, ...problems], alarm: `MISSION PAUSED: positions are not updating; tracking is not connected: ${CONNECT_ADVICE}` } : null
+    return {
+      condition: 'paused', tone: 'alert', text: prefixed('MISSION PAUSED'), problems: connect?.problems ?? ['MISSION PAUSED', ...problems], detail: conditions,
+      alarm: connect?.alarm ?? 'MISSION PAUSED: positions are not updating', issues, ...(connect === null ? {} : { remedy: connect.remedy }),
+    }
+  }
   if (lost) return { condition: 'lost', tone: 'alert', text: prefixed('TRACKING LOST'), problems: ['TRACKING LOST', ...problems], detail: conditions, alarm: 'TRACKING LOST: positions on the map may not be current', issues }
+  // A running mission with no live feed: any position drawn is old, so it must
+  // never read as a quiet grey "not connected" (rule 10, DON-375). A reconnect
+  // in progress is amber: it clears by itself within one poll, or turns lost.
+  if (phase === 'active' && status.mode !== 'online') {
+    if (status.warningCodes?.includes('tracking_reconnecting') === true) {
+      return { condition: 'notConnected', tone: 'warning', text: prefixed('Reconnecting tracking'), problems, detail: conditions, issues, lastReceivedShown }
+    }
+    const lead = 'TRACKING NOT CONNECTED'
+    const map = lastReceivedShown ? 'positions on the map are not updating' : 'no positions are coming in'
+    return {
+      condition: 'notConnected', tone: 'alert', text: prefixed(`${lead}: ${CONNECT_ADVICE}`), problems: [lead, CONNECT_WORD, ...problems], leadInAlarm: true, remedy: CONNECT_WORD,
+      // The remedy word already says where; the detail keeps the other conditions.
+      detail: conditions,
+      alarm: `${lead}: ${map}; ${CONNECT_ADVICE}`, issues, lastReceivedShown,
+    }
+  }
   // The feed is fine but the map still draws older positions: that must never
   // read as live, so it is the alarm, ahead of the record warning [DON-357].
   if (input.mapUpdateFailed) {

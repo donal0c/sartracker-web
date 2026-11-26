@@ -128,7 +128,10 @@ test('a pause from Full map shows the alarm, and its Resume brings tracking back
   await expect(page.getByTestId('ws-alarm')).toContainText('MISSION PAUSED')
   await page.getByTestId('ws-alarm-resume').click()
   await expect(page.getByTestId('mission-control')).toHaveAttribute('data-mission-phase', 'active')
-  await expect(page.getByTestId('ws-alarm')).toBeHidden()
+  await expect(page.getByTestId('ws-alarm')).not.toContainText('MISSION PAUSED')
+  // The harness has no tracking server, so the running mission is told so, in red [DON-375].
+  await expect(page.getByTestId('ws-alarm')).toContainText('TRACKING NOT CONNECTED')
+  await expect(page.getByTestId('ws-alarm-details')).toBeVisible()
   await expect(page.getByTestId('ws-mission-phase')).toContainText('Running')
 })
 

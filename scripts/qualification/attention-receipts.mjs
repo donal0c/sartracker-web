@@ -41,7 +41,8 @@ const DOWN_WORDS = /offline|disconnected|not connected|lost/iu
 const NOT_LIVE_WORDS = /offline|disconnected|not connected|lost|paused|needs resuming|not (?:fully )?saved|login failed|reconnect|not configured/iu
 
 /** Words each down condition must show, in the visible headline and its label. */
-const DOWN_CONDITION_WORDS = { lost: /TRACKING LOST/u, disconnected: DOWN_WORDS }
+// A running mission whose tracking is not connected is red too [DON-375].
+const DOWN_CONDITION_WORDS = { lost: /TRACKING LOST/u, notConnected: /TRACKING NOT CONNECTED/u, disconnected: DOWN_WORDS }
 
 /** Quotes what was observed, so a failed receipt says which words were wrong. */
 function observed(condition, label, words) {
@@ -50,8 +51,8 @@ function observed(condition, label, words) {
 
 /**
  * The tracking state after the source dropped. The old mode chip said it in
- * words; the new top bar (DON-341) names the condition ("lost" or
- * "disconnected") and shows short problem words. The condition, the label and
+ * words; the new top bar (DON-341) names the condition ("lost",
+ * "notConnected" or "disconnected") and shows short problem words. The condition, the label and
  * the visible words must all agree.
  *
  * @returns null when it agrees, otherwise why not
@@ -62,7 +63,7 @@ function trackingWentDown(facts) {
     return /offline|disconnected|not connected/i.test(label) ? null : `the old mode chip read ${JSON.stringify(label)}`
   }
   const expected = DOWN_CONDITION_WORDS[condition]
-  if (expected === undefined) return `expected condition lost or disconnected; ${observed(condition, label, words)}`
+  if (expected === undefined) return `expected condition lost, notConnected or disconnected; ${observed(condition, label, words)}`
   if (typeof label !== 'string' || !expected.test(label)) return `the label does not say tracking is down; ${observed(condition, label, words)}`
   if (typeof words !== 'string' || !expected.test(words)) return `the visible words do not say tracking is down; ${observed(condition, label, words)}`
   return null

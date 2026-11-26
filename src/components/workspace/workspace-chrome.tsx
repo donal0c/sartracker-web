@@ -13,6 +13,7 @@ import { getAppRuntimeController } from '../../features/runtime/app-runtime-cont
 import { ThemeToggle } from '../theme-toggle'
 import { TrackingStatusPanel } from '../tracking-status-panel'
 import { TrackingProblemWords } from './tracking-problem-words'
+import { CONNECT_WORD } from '../../features/workspace/tracking-problem-labels'
 
 const LAST_RECEIVED = 'The last positions received. They may not be where people are now.'
 const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; readonly map: string; readonly todo: string }> = {
@@ -25,6 +26,7 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
   recovery: { happened: 'A mission was interrupted and has not been resumed.', map: LAST_RECEIVED, todo: 'Choose Resume in the mission card if this is the same incident.' },
   credentials: { happened: 'Tracking cannot connect: the saved tracking password or token cannot be used on this computer.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the tracking password or token again, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
   settings: { happened: 'Tracking cannot connect: the saved settings file was damaged, so SAR Tracker set it aside and started with default settings.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the Traccar server, user and password again, check the rosters and maps, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
+  notConnected: { happened: 'The mission is running, but tracking is not connected, so no new positions are arriving.', map: 'No live positions yet.', todo: "Don't rely on the map until this clears. Open Settings, then Tracking sources. Check the tracking server, user and password, then press Save, Connect & Close. If they are already right, press Reconnect." },
   disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
 }
 
@@ -228,10 +230,13 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
   const advice = TRACKING_ADVICE[headline.condition]
+  // A paused mission whose tracking was never connected must also be told where to connect [DON-375].
+  const connectToo = headline.condition === 'paused' && headline.remedy === CONNECT_WORD
+  const todo = connectToo ? `${advice.todo} Tracking is not connected either: open Settings, then Tracking sources, and press Save, Connect & Close.` : advice.todo
   // Positions received before the password stopped working stay on the map;
   // they must not be described as if none had arrived (DON-353).
   const mapShowing = headline.lastReceivedShown === true ? LAST_RECEIVED : advice.map
-  const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected'
+  const canReconnect = headline.condition === 'lost' || headline.condition === 'disconnected' || headline.condition === 'notConnected'
   // Settings opens at Tracking sources, where the password or token is entered.
   const openSettings = useSettingsWorkspaceStore((state) => state.openWorkspace)
 
@@ -245,7 +250,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
           <dt>What the map is showing</dt>
           <dd data-testid="ws-tracking-map">{mapShowing} Last update: {lastSuccessAt === null ? 'none yet' : formatOperatorLocalTimestamp(lastSuccessAt)}.</dd>
           <dt>What to do</dt>
-          <dd data-testid="ws-tracking-advice">{advice.todo}</dd>
+          <dd data-testid="ws-tracking-advice">{todo}</dd>
         </dl>
         {canReconnect ? <button
           className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
@@ -264,7 +269,7 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
         >
           {reconnecting ? 'Reconnecting…' : 'Reconnect'}
         </button> : null}
-        {headline.condition === 'credentials' || headline.condition === 'settings' ? <button
+        {headline.condition === 'credentials' || headline.condition === 'settings' || headline.condition === 'notConnected' || connectToo ? <button
           className="sar-button my-2 w-full px-3 py-2 text-sm font-bold"
           data-testid="ws-open-tracking-settings"
           onClick={() => openSettings()}
