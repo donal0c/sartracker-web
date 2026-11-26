@@ -180,8 +180,9 @@ Verify downloads first: `sha256sum -c SHA256SUMS --ignore-missing` must say
   **Remove** now asks how many people will stop being recorded, with
   **Remove** or **Keep**. Anyone still covered by another group or their own
   row is not counted and stays on the map; if the app is sure nobody would
-  stop, it says **No one stops being tracked**. If it cannot be sure of the
-  count, it says **at least N** or **number of people not known** [DON-373].
+  stop, it says **No one stops being tracked**. If it cannot be sure of a
+  group's count, it says **at least N**, or **number of people not known**
+  [DON-373].
 - **Removed people leave the live map at once**, with their trail, People
   count and warnings, even while tracking is down. Their saved track stays in
   the mission record and Review. In **Breadcrumb dots** mode their saved dots
