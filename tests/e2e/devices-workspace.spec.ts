@@ -618,6 +618,45 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
     await expect(page.getByTestId('device-trust-alpha')).toHaveCount(0)
   })
 
+  test('writes the selected device position as Irish Grid first, lat/lon beneath, and Outside Ireland abroad [DON-377]', async ({ page }) => {
+    await page.evaluate(async () => {
+      const now = new Date().toISOString()
+      const position = (deviceId: string, lat: number, lon: number) => ({
+        id: `pos-${deviceId}`, device_id: deviceId, lat, lon, altitude: null, speed: null, battery: null,
+        accuracy: null, timestamp: now, source: null, data_origin: 'live' as const, cache_age_seconds: null, device_cache_stale: false,
+      })
+      await window.__SARTRACKER_BROWSER_HARNESS__?.injectTrackingSnapshot(
+        {
+          devices: [
+            { device_id: 'alpha', name: 'Alpha Team', status: 'online', last_seen: now, unique_id: null, category: null },
+            { device_id: 'abroad', name: 'Delta Team', status: 'online', last_seen: now, unique_id: null, category: null },
+          ],
+          // Carrauntoohil Summit from the Kerry golden fixtures, and Paris.
+          positions: [position('alpha', 51.99917, -9.74406), position('abroad', 48.8566, 2.3522)],
+          breadcrumbs: [],
+        },
+        { mode: 'online', consecutiveFailures: 0, recovered: false, lastSuccessAt: now, warning: null },
+      )
+    })
+
+    await page.getByTestId('device-row-alpha').click()
+    const grid = page.getByTestId('device-inspector-grid-alpha')
+    const latLon = page.getByTestId('device-inspector-latlon-alpha')
+    await expect(grid).toHaveText('V 80269 84392')
+    await expect(latLon).toHaveText('51.99917, -9.74406')
+    const [gridBox, latLonBox] = await Promise.all([grid.boundingBox(), latLon.boundingBox()])
+    expect(gridBox !== null && latLonBox !== null && gridBox.y < latLonBox.y).toBe(true)
+    const [gridSize, latLonSize] = await Promise.all([
+      grid.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+      latLon.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    ])
+    expect(gridSize).toBeGreaterThan(latLonSize)
+
+    await page.getByTestId('device-row-abroad').click()
+    await expect(page.getByTestId('device-inspector-grid-abroad')).toHaveText('Outside Ireland')
+    await expect(page.getByTestId('device-inspector-latlon-abroad')).toHaveText('48.85660, 2.35220')
+  })
+
   test('leaves the coordinate readouts and Map Tools uncovered beside the docked list', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()

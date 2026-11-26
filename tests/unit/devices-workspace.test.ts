@@ -387,6 +387,54 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="device-filter-nofix"]')).toContain('No position')
   })
 
+  it('writes the selected device position as Irish Grid first with lat/lon beneath [DON-377]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    useTrackingStore.setState({ snapshot: SNAPSHOT, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="device-inspector-position-alpha"]')
+
+    expect(getText('[data-testid="device-inspector-grid-alpha"]')).toBe('V 80269 84392')
+    expect(getText('[data-testid="device-inspector-latlon-alpha"]')).toBe('51.99917, -9.74406')
+    const position = getText('[data-testid="device-inspector-position-alpha"]')
+    expect(position.indexOf('V 80269 84392')).toBeLessThan(position.indexOf('51.99917'))
+  })
+
+  it('says Outside Ireland, not a grid reference, for a selected device off Ireland [DON-377]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    const abroad: TrackingSnapshot = {
+      ...SNAPSHOT,
+      positions: SNAPSHOT.positions.map((position) =>
+        position.device_id === 'alpha' ? { ...position, lat: 48.8566, lon: 2.3522 } : position,
+      ),
+    }
+    useTrackingStore.setState({ snapshot: abroad, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="device-inspector-position-alpha"]')
+
+    expect(getText('[data-testid="device-inspector-grid-alpha"]')).toBe('Outside Ireland')
+    expect(getText('[data-testid="device-inspector-latlon-alpha"]')).toBe('48.85660, 2.35220')
+  })
+
+  it('says No position and shows no lat/lon for a selected device without a position [DON-377]', async () => {
+    const { DevicesWorkspace } = await import('../../src/components/devices-workspace')
+    const noFix: TrackingSnapshot = {
+      ...SNAPSHOT,
+      positions: SNAPSHOT.positions.filter((position) => position.device_id !== 'alpha'),
+    }
+    useTrackingStore.setState({ snapshot: noFix, status: STATUS })
+    useDeviceWorkspaceStore.setState({ open: true, selectedDeviceId: 'alpha' })
+
+    render(React.createElement(DevicesWorkspace))
+    await waitForElement('[data-testid="device-inspector-position-alpha"]')
+
+    expect(getText('[data-testid="device-inspector-grid-alpha"]')).toBe('No position')
+    expect(document.querySelector('[data-testid="device-inspector-latlon-alpha"]')).toBeNull()
+  })
+
   function render(element: React.ReactElement): void {
     host = document.createElement('div')
     document.body.append(host)

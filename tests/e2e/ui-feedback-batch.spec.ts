@@ -287,6 +287,15 @@ for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1920, 108
       const panel = element.closest('aside')!.getBoundingClientRect()
       return value.left >= panel.left && value.right <= panel.right && element.scrollWidth <= element.clientWidth
     })).toBe(true)
+    // The Irish Grid reference stays on one line inside the panel at every width [DON-377].
+    const grid = page.getByTestId('device-inspector-grid-alpha')
+    await expect(grid).toHaveText(/^[A-Z] \d{5} \d{5}$/)
+    expect(await grid.evaluate((element) => {
+      const value = element.getBoundingClientRect()
+      const panel = element.closest('aside')!.getBoundingClientRect()
+      const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight)
+      return value.left >= panel.left && value.right <= panel.right && value.height < lineHeight * 1.5
+    })).toBe(true)
     if (width === 1920) {
       expect(await page.getByTestId('device-list-scroll').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
       await expect(zoom).toBeInViewport()
