@@ -38,9 +38,19 @@ test.describe('M19 devices workspace', () => {
   })
 
   test('never shows a person\'s name beside the cursor\'s grid after Go to from People [DON-372]', async ({ page }) => {
+    // Hover the map first, so the bar holds a cursor grid, then leave it for the People list.
+    const map = await page.locator('.maplibregl-canvas').boundingBox()
+    expect(map).not.toBeNull()
+    await page.mouse.move(Math.round(map!.x + map!.width * 0.5), Math.round(map!.y + map!.height * 0.6))
+    await expect(page.getByTestId('coordinate-readout-owner')).toHaveText('Cursor position')
+    await expect(page.getByTestId('coords-grid')).not.toHaveText('—')
+
     await page.getByRole('button', { name: 'Go to Alpha Team on the map' }).click()
     await expectMapTargetAt(page, [-9.74406, 51.99917])
     await expect.poll(() => page.evaluate(() => window.__SARTRACKER_MAP__!.isMoving())).toBe(false)
+    // The pointer is on the People list, not the map: no cursor grid, old or re-read, stays on the bar.
+    await expect(page.getByTestId('coords-grid')).toHaveText('—')
+    await expectCoordinateBarNamesNobody(page, 'Alpha Team')
 
     // Point well away from Alpha Team, then read the bar.
     const canvas = await page.locator('.maplibregl-canvas').boundingBox()
@@ -697,6 +707,7 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
   test('[Codex r2] keeps the GPX coverage notice clear of the scale and Map Tools when the coordinate bar wraps', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await hoverMapForReadouts(page)
     await page.evaluate(async () => {
       const { useGpxStore } = await import('/src/features/gpx/gpx-store.ts')
       useGpxStore.setState({ mapCoverageNotice: 'Layout fixture: 2 of 5 GPX tracks are not shown on the map.' })
@@ -774,6 +785,7 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
   test('[Codex r6] keeps a tile-failure warning and the GPX notice in separate bands on the narrow docked map', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await hoverMapForReadouts(page)
     await expect.poll(() => page.evaluate(() => Math.round(document.querySelector('[data-testid="coordinate-display"]')?.getBoundingClientRect().height ?? 0)))
       .toBeGreaterThan(80)
     // Every new OpenTopoMap tile fails, so the map shows its short tile-failure warning.
@@ -804,6 +816,7 @@ test.describe('All devices docked after Zoom [DON-368]', () => {
   test('keeps the map warnings above the wrapped coordinate bar beside the docked list', async ({ page }) => {
     await page.getByTestId('device-zoom-alpha').click()
     await expect(page.getByTestId('devices-docked-note')).toBeVisible()
+    await hoverMapForReadouts(page)
     await page.evaluate(async () => {
       const [{ useMapOverlayWarningStore }, { createMapOverlaySyncWarning }] = await Promise.all([
         import('/src/features/map/map-overlay-warning-store.ts'),
@@ -1196,6 +1209,17 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
  * Once the camera settles, says whether a [longitude, latitude] is drawn inside
  * the map canvas and right of the docked All devices list (DON-368).
  */
+/**
+ * Rests the pointer on the open map so the coordinate bar holds full cursor readouts; they are
+ * blank while the pointer is off the map (DON-372), and the wrap checks need real values.
+ */
+async function hoverMapForReadouts(page: import('@playwright/test').Page): Promise<void> {
+  const canvas = await page.locator('.maplibregl-canvas').boundingBox()
+  expect(canvas).not.toBeNull()
+  await page.mouse.move(Math.round(canvas!.x + canvas!.width * 0.7), Math.round(canvas!.y + canvas!.height * 0.45))
+  await expect(page.getByTestId('coords-grid')).not.toHaveText('—')
+}
+
 /** Distance in metres between two same-square Irish Grid references such as "V 81215 84740". */
 function gridDistanceMetres(first: string, second: string): number {
   const parse = (reference: string) => {

@@ -647,6 +647,22 @@ test.describe('M2 map shell', () => {
       return formatIrishGridReference(...wgs84ToTM65(ground.lat, ground.lng))
     }, pointer)
     await expect(page.getByTestId('coords-grid')).toHaveText(groundUnderPointer)
+
+    // The map's layout changes under the resting pointer: the bar re-reads the ground under it.
+    const beforeResize = await page.getByTestId('coords-grid').innerText()
+    await page.setViewportSize({ width: 1100, height: 760 })
+    await expect(page.getByTestId('coords-grid')).not.toHaveText(beforeResize)
+    const groundAfterResize = await page.evaluate(async ({ x, y }) => {
+      const { formatIrishGridReference, wgs84ToTM65 } = await import('/src/lib/coordinates.ts')
+      const map = window.__SARTRACKER_MAP__!
+      const container = map.getCanvasContainer()
+      const under = document.elementFromPoint(x, y)
+      if (under === null || !container.contains(under)) return '—'
+      const box = container.getBoundingClientRect()
+      const ground = map.unproject([x - box.left, y - box.top])
+      return formatIrishGridReference(...wgs84ToTM65(ground.lat, ground.lng))
+    }, pointer)
+    await expect(page.getByTestId('coords-grid')).toHaveText(groundAfterResize)
   })
 
   test('updates the coordinate bar on mouse move', async ({ page }) => {

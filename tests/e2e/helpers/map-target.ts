@@ -2,24 +2,22 @@ import { expect, type Page } from '@playwright/test'
 
 /**
  * Reads the go-to target marker the map is drawing, as [longitude, latitude], or null when none
- * is drawn: no map, no style, no marker layer or an empty marker source. The coordinate bar no
+ * is drawn: no map, no style, no or hidden marker layer, or an empty marker source. The coordinate bar no
  * longer names the target (DON-372), so the drawn marker itself is the evidence.
  */
 export async function mapTargetMarker(page: Page): Promise<[number, number] | null> {
   return page.evaluate(() => {
     const map = window.__SARTRACKER_MAP__
-    if (map === undefined) return null
-    try {
-      if (map.getLayer('coordinate-target-dot') === undefined) return null
-      const source = map.getSource('coordinate-target') as { serialize?: () => { data?: unknown } } | undefined
-      const data = source?.serialize?.().data as GeoJSON.FeatureCollection | undefined
-      const point = data?.features?.[0]?.geometry
-      if (point === undefined || point.type !== 'Point') return null
-      return [point.coordinates[0]!, point.coordinates[1]!]
-    } catch {
-      // The style can be missing during a basemap change; that is "no marker drawn".
-      return null
-    }
+    // No style (for example during a basemap change) means no marker is drawn.
+    if (map === undefined || map.getStyle() === undefined) return null
+    if (map.getLayer('coordinate-target-dot') === undefined) return null
+    if (map.getLayoutProperty('coordinate-target-dot', 'visibility') === 'none') return null
+    const source = map.getSource('coordinate-target') as { serialize: () => { data?: unknown } } | undefined
+    if (source === undefined) return null
+    const data = source.serialize().data as GeoJSON.FeatureCollection
+    const point = data.features[0]?.geometry
+    if (point === undefined || point.type !== 'Point') return null
+    return [point.coordinates[0]!, point.coordinates[1]!]
   })
 }
 

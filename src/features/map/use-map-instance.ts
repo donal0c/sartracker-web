@@ -214,7 +214,11 @@ export function useMapInstance(): MapInstanceController {
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.on('load', () => {
-      // Until the pointer is over the map, the bar shows the map centre and says so.
+      // Until the pointer is over the map, the bar shows the map centre and says so. A pointer
+      // reading taken while the map was still loading stays: it is the cursor's (DON-372).
+      if (pendingHoverCoordinateRef.current.source === 'cursor' && pendingHoverCoordinateRef.current.latitude !== null) {
+        return
+      }
       const center = map.getCenter()
       pendingHoverCoordinateRef.current = {
         latitude: center.lat,
@@ -278,32 +282,46 @@ export function useMapInstance(): MapInstanceController {
       }
       hoverCoordinateFrameRef.current = window.requestAnimationFrame(publishPendingHoverCoordinate)
     }
-    // Where the pointer rests on the map, so a camera move (Go to, zoom) re-reads the ground under
-    // it instead of leaving the previous spot on the bar as the cursor position (DON-372).
-    let pointerPoint: maplibregl.Point | null = null
+    // Where the pointer rests, in screen pixels, so a camera move (Go to, zoom) or a layout change
+    // (a docked list opening or closing) re-reads the ground under it instead of leaving the old
+    // spot on the bar as the cursor position (DON-372).
+    let pointerOnScreen: { readonly clientX: number; readonly clientY: number } | null = null
+    const clearCursorReading = () => {
+      pointerOnScreen = null
+      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
+    }
+    const rereadUnderPointer = () => {
+      if (pointerOnScreen === null) {
+        if (pendingHoverCoordinateRef.current.source === 'map-centre') {
+          const center = map.getCenter()
+          scheduleHoverCoordinate({ latitude: center.lat, longitude: center.lng, source: 'map-centre' })
+        }
+        return
+      }
+      // The pointer may now be over a panel rather than the map: then there is no cursor reading.
+      const container = map.getCanvasContainer()
+      const under = document.elementFromPoint(pointerOnScreen.clientX, pointerOnScreen.clientY)
+      if (under === null || !container.contains(under)) {
+        clearCursorReading()
+        return
+      }
+      const box = container.getBoundingClientRect()
+      const ground = map.unproject([pointerOnScreen.clientX - box.left, pointerOnScreen.clientY - box.top])
+      scheduleHoverCoordinate({ latitude: ground.lat, longitude: ground.lng, source: 'cursor' })
+    }
     map.on('mousemove', (event) => {
-      pointerPoint = event.point
+      pointerOnScreen = { clientX: event.originalEvent.clientX, clientY: event.originalEvent.clientY }
       scheduleHoverCoordinate({
         latitude: event.lngLat.lat,
         longitude: event.lngLat.lng,
         source: 'cursor',
       })
     })
-    map.on('mouseleave', () => {
-      pointerPoint = null
-      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
-    })
-    map.on('move', () => {
-      if (pointerPoint !== null) {
-        const ground = map.unproject(pointerPoint)
-        scheduleHoverCoordinate({ latitude: ground.lat, longitude: ground.lng, source: 'cursor' })
-        return
-      }
-      if (pendingHoverCoordinateRef.current.source === 'map-centre') {
-        const center = map.getCenter()
-        scheduleHoverCoordinate({ latitude: center.lat, longitude: center.lng, source: 'map-centre' })
-      }
-    })
+    // MapLibre fires `mouseout` when the pointer leaves the map canvas; its map-level `mouseleave`
+    // needs a layer and never fired here, which left the last cursor grid on the bar (DON-372).
+    map.on('mouseout', clearCursorReading)
+    map.on('move', rereadUnderPointer)
+    map.on('resize', rereadUnderPointer)
 
     mapRef.current = map
     window.setTimeout(() => {
