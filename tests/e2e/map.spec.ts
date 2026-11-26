@@ -663,6 +663,25 @@ test.describe('M2 map shell', () => {
       return formatIrishGridReference(...wgs84ToTM65(ground.lat, ground.lng))
     }, pointer)
     await expect(page.getByTestId('coords-grid')).toHaveText(groundAfterResize)
+
+    // Drag the map and release without moving again: MapLibre sends no mousemove while panning,
+    // but the bar must show the ground under where the pointer now is, not the pre-drag spot.
+    const canvasAfterResize = await page.locator('.maplibregl-canvas').boundingBox()
+    const dragStart = { x: Math.round(canvasAfterResize!.x + canvasAfterResize!.width * 0.6), y: Math.round(canvasAfterResize!.y + canvasAfterResize!.height * 0.6) }
+    const dragEnd = { x: dragStart.x - 220, y: dragStart.y - 60 }
+    await page.mouse.move(dragStart.x, dragStart.y)
+    await page.mouse.down()
+    await page.mouse.move(dragEnd.x, dragEnd.y, { steps: 12 })
+    await page.mouse.up()
+    await expect.poll(() => page.evaluate(() => window.__SARTRACKER_MAP__!.isMoving())).toBe(false)
+    const groundAfterDrag = await page.evaluate(async ({ x, y }) => {
+      const { formatIrishGridReference, wgs84ToTM65 } = await import('/src/lib/coordinates.ts')
+      const map = window.__SARTRACKER_MAP__!
+      const box = map.getCanvasContainer().getBoundingClientRect()
+      const ground = map.unproject([x - box.left, y - box.top])
+      return formatIrishGridReference(...wgs84ToTM65(ground.lat, ground.lng))
+    }, dragEnd)
+    await expect(page.getByTestId('coords-grid')).toHaveText(groundAfterDrag)
   })
 
   test('updates the coordinate bar on mouse move', async ({ page }) => {

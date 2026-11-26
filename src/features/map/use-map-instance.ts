@@ -213,10 +213,48 @@ export function useMapInstance(): MapInstanceController {
     const stopTrackingSourceErrorReport = reportTrackingSourceErrors(map)
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
+    // The pointer is tracked with DOM pointer events on the map element, which keep firing during
+    // a drag (MapLibre suppresses its own mousemove while panning), in screen pixels so a camera
+    // move or a layout change re-reads the ground under it (DON-372).
+    const mapElement = containerRef.current
+    let pointerOnScreen: { readonly clientX: number; readonly clientY: number } | null = null
+    let pointerHasBeenOnMap = false
+    const clearCursorReading = () => {
+      pointerOnScreen = null
+      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
+    }
+    const rereadUnderPointer = () => {
+      if (pointerOnScreen === null) {
+        if (pendingHoverCoordinateRef.current.source === 'map-centre') {
+          const center = map.getCenter()
+          scheduleHoverCoordinate({ latitude: center.lat, longitude: center.lng, source: 'map-centre' })
+        }
+        return
+      }
+      // Over a panel, control or warning instead of the map itself: no cursor reading.
+      const canvasContainer = map.getCanvasContainer()
+      const under = document.elementFromPoint(pointerOnScreen.clientX, pointerOnScreen.clientY)
+      if (under === null || !canvasContainer.contains(under)) {
+        scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
+        return
+      }
+      const box = canvasContainer.getBoundingClientRect()
+      const ground = map.unproject([pointerOnScreen.clientX - box.left, pointerOnScreen.clientY - box.top])
+      scheduleHoverCoordinate({ latitude: ground.lat, longitude: ground.lng, source: 'cursor' })
+    }
+    const handlePointerMove = (event: PointerEvent) => {
+      pointerHasBeenOnMap = true
+      pointerOnScreen = { clientX: event.clientX, clientY: event.clientY }
+      rereadUnderPointer()
+    }
+    mapElement.addEventListener('pointermove', handlePointerMove)
+    mapElement.addEventListener('pointerleave', clearCursorReading)
+    map.on('move', rereadUnderPointer)
+    map.on('resize', rereadUnderPointer)
     map.on('load', () => {
-      // Until the pointer is over the map, the bar shows the map centre and says so. A pointer
-      // reading taken while the map was still loading stays: it is the cursor's (DON-372).
-      if (pendingHoverCoordinateRef.current.source === 'cursor' && pendingHoverCoordinateRef.current.latitude !== null) {
+      // Until the pointer is over the map, the bar shows the map centre and says so. Once the
+      // pointer has been on the map (even while it was loading), the bar is the cursor's (DON-372).
+      if (pointerHasBeenOnMap) {
         return
       }
       const center = map.getCenter()
@@ -282,46 +320,6 @@ export function useMapInstance(): MapInstanceController {
       }
       hoverCoordinateFrameRef.current = window.requestAnimationFrame(publishPendingHoverCoordinate)
     }
-    // Where the pointer rests, in screen pixels, so a camera move (Go to, zoom) or a layout change
-    // (a docked list opening or closing) re-reads the ground under it instead of leaving the old
-    // spot on the bar as the cursor position (DON-372).
-    let pointerOnScreen: { readonly clientX: number; readonly clientY: number } | null = null
-    const clearCursorReading = () => {
-      pointerOnScreen = null
-      scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
-    }
-    const rereadUnderPointer = () => {
-      if (pointerOnScreen === null) {
-        if (pendingHoverCoordinateRef.current.source === 'map-centre') {
-          const center = map.getCenter()
-          scheduleHoverCoordinate({ latitude: center.lat, longitude: center.lng, source: 'map-centre' })
-        }
-        return
-      }
-      // The pointer may now be over a panel rather than the map: then there is no cursor reading.
-      const container = map.getCanvasContainer()
-      const under = document.elementFromPoint(pointerOnScreen.clientX, pointerOnScreen.clientY)
-      if (under === null || !container.contains(under)) {
-        clearCursorReading()
-        return
-      }
-      const box = container.getBoundingClientRect()
-      const ground = map.unproject([pointerOnScreen.clientX - box.left, pointerOnScreen.clientY - box.top])
-      scheduleHoverCoordinate({ latitude: ground.lat, longitude: ground.lng, source: 'cursor' })
-    }
-    map.on('mousemove', (event) => {
-      pointerOnScreen = { clientX: event.originalEvent.clientX, clientY: event.originalEvent.clientY }
-      scheduleHoverCoordinate({
-        latitude: event.lngLat.lat,
-        longitude: event.lngLat.lng,
-        source: 'cursor',
-      })
-    })
-    // MapLibre fires `mouseout` when the pointer leaves the map canvas; its map-level `mouseleave`
-    // needs a layer and never fired here, which left the last cursor grid on the bar (DON-372).
-    map.on('mouseout', clearCursorReading)
-    map.on('move', rereadUnderPointer)
-    map.on('resize', rereadUnderPointer)
 
     mapRef.current = map
     window.setTimeout(() => {
@@ -338,6 +336,8 @@ export function useMapInstance(): MapInstanceController {
         hoverCoordinateFrameRef.current = null
       }
       stopTrackingSourceErrorReport()
+      mapElement.removeEventListener('pointermove', handlePointerMove)
+      mapElement.removeEventListener('pointerleave', clearCursorReading)
       map.remove()
       if (typeof window !== 'undefined') {
         delete (window as Window & { __SARTRACKER_MAP__?: maplibregl.Map }).__SARTRACKER_MAP__
