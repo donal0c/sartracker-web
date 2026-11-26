@@ -1408,13 +1408,13 @@ export async function startTrackingRuntime(
       trackingCacheMissionWarningActive = false
       trackingCacheReadWarningActive = false
       trustedOperationalScope = null
+      // The map's device ids may belong to another server now [DON-374].
+      lastPublishedOperational = null
     }
     cacheReadActive = false
     currentTransportFreshness.reset()
     dependencies = next
     deferredOperationalSnapshot = null
-    // Provider-local device ids may belong to another server now [DON-374].
-    lastPublishedOperational = null
     client = nextClient
     if (nextClient === null) {
       pollerGeneration++
@@ -1547,6 +1547,7 @@ export async function startTrackingRuntime(
         }
       } else {
         cachedOperationalDataWarning = describeCachedOperationalData(operationalCachedSnapshot)
+        lastPublishedOperational = { snapshot: operationalCachedSnapshot, contextKey: currentOperationalContextKey() }
         dependencies.applySnapshot(currentTransportFreshness.decorate(operationalCachedSnapshot))
       }
       // Cold-start visibility: until the first live poll succeeds, the operator
@@ -2280,6 +2281,9 @@ export async function startTrackingRuntime(
       ...last.snapshot.positions,
       ...last.snapshot.breadcrumbs,
     ]
+    // A later poll that falls back to the trusted scope must not redraw
+    // someone this removal took off the map.
+    trustedOperationalScope = { contextKey: last.contextKey, scope, acceptedAt: now().getTime() }
     if (shown.every((entry) => takingPart.has(entry.device_id))) return
     publishOperationalSnapshot(scope.filterSnapshot(last.snapshot, observedAt))
   }

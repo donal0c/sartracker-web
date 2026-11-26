@@ -241,4 +241,126 @@ describe('removing participants from a running mission [DON-374]', () => {
     notifyScope('scope')
     expect(applySnapshot.mock.calls.length).toBe(publishedBeforeReAdd)
   })
+
+  describe('the live map still narrows after runtime transitions', () => {
+    const MISSION = 'mission-don-374'
+
+    /** Two device participants; Bravo optionally removed. */
+    function scopeWith(bravoRemoved: boolean, nowMs: number): ParticipationScope {
+      const from = new Date(nowMs - 30 * 60_000).toISOString()
+      const base = {
+        mission_id: MISSION, kind: 'device' as const, display_name: null, traccar_group_id: null,
+        effective_from: from, effective_to: null, confirmed_by: 'Coordinator', confirmed_at: from,
+        removed_by: null, removed_at: null, mission_team_id: null,
+      }
+      const participants = [
+        { ...base, id: 'p-alpha', ref: 'alpha', traccar_device_id: 'alpha' },
+        {
+          ...base, id: 'p-bravo', ref: 'bravo', traccar_device_id: 'bravo',
+          ...(bravoRemoved ? { effective_to: new Date(nowMs - 1_000).toISOString(), removed_by: 'Coordinator', removed_at: new Date(nowMs - 1_000).toISOString() } : {}),
+        },
+      ] as unknown as Participant[]
+      return createParticipationScope({ participants, membershipEvents: [] })
+    }
+
+    /** Starts the runtime with a controllable scope, status and optional cache. */
+    async function start(options: { readonly cache?: string }) {
+      const nowMs = Date.now()
+      setActiveMission(MISSION, new Date(nowMs - 60 * 60_000).toISOString())
+      const state = {
+        scope: scopeWith(false, nowMs),
+        status: 'ready' as 'ready' | 'loading',
+        notify: (() => undefined) as (reason?: 'scope' | 'status') => void,
+        hooks: undefined as undefined | {
+          readonly onSnapshot: (snapshot: TrackingSnapshot, context?: TrackingSnapshotContext) => void | Promise<void>
+          readonly onStatusChange: (status: Record<string, unknown>) => void
+        },
+      }
+      const applySnapshot = vi.fn<(snapshot: TrackingSnapshot) => void>()
+      const dependencies = {
+        config: { baseUrl: 'http://synthetic.invalid' },
+        createClient: vi.fn().mockReturnValue({}),
+        createPoller: vi.fn().mockImplementation((_client: unknown, pollerHooks: typeof state.hooks) => {
+          state.hooks = pollerHooks
+          return { start: vi.fn(), stop: vi.fn() }
+        }),
+        cache: { read: vi.fn().mockResolvedValue(options.cache ?? null), write: vi.fn() },
+        missionStore: {
+          getActiveMission: vi.fn().mockResolvedValue({ id: MISSION }),
+          listPositions: vi.fn().mockResolvedValue([]),
+          listDevices: vi.fn().mockResolvedValue([]),
+          upsertDevice: vi.fn().mockResolvedValue(undefined),
+          addPosition: vi.fn().mockResolvedValue(undefined),
+          persistTrackingPositionsBulk: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        applySnapshot,
+        applyStatus: vi.fn(),
+        writeCache: false,
+        missionModelEnabled: true,
+        logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        readParticipationScope: () => state.scope,
+        readParticipationScopeMissionId: () => MISSION,
+        readParticipationScopeStatus: () => state.status,
+        subscribeParticipationScope: (listener: (reason?: 'scope' | 'status') => void) => {
+          state.notify = listener
+          return () => undefined
+        },
+      }
+      const runtime = await startTrackingRuntime(dependencies as never)
+      stopRuntime = runtime
+      const latest = new Date(nowMs - 60_000).toISOString()
+      const snapshot: TrackingSnapshot = {
+        devices: [device('alpha'), device('bravo')],
+        positions: [fix('alpha', latest), fix('bravo', latest)],
+        breadcrumbs: [fix('alpha', latest), fix('bravo', latest)],
+      }
+      return { nowMs, state, applySnapshot, runtime, dependencies, snapshot }
+    }
+
+    /** Device ids drawn as markers by the last published snapshot. */
+    function drawn(applySnapshot: ReturnType<typeof vi.fn<(snapshot: TrackingSnapshot) => void>>): string[] {
+      return createDeviceFeatureCollection(applySnapshot.mock.calls.at(-1)![0]).features
+        .map((feature) => feature.properties.deviceId).sort()
+    }
+
+    it('after a reconnect to the same server', async () => {
+      const { nowMs, state, applySnapshot, runtime, dependencies, snapshot } = await start({})
+      await state.hooks!.onSnapshot(snapshot, { historyResetKey: MISSION })
+      expect(drawn(applySnapshot)).toEqual(['alpha', 'bravo'])
+      await runtime.reconfigure!(dependencies as never)
+      state.scope = scopeWith(true, nowMs)
+      state.notify('scope')
+      expect(drawn(applySnapshot)).toEqual(['alpha'])
+    })
+
+    it('when the map shows the startup cache and no poll has arrived', async () => {
+      const cachedAt = new Date().toISOString()
+      const latest = new Date(Date.now() - 60_000).toISOString()
+      const { nowMs, state, applySnapshot } = await start({
+        cache: JSON.stringify({
+          mission_id: MISSION,
+          cached_at: cachedAt,
+          devices: [device('alpha'), device('bravo')],
+          positions: [fix('alpha', latest), fix('bravo', latest)],
+          breadcrumbs: [],
+        }),
+      })
+      await vi.waitFor(() => expect(drawn(applySnapshot)).toEqual(['alpha', 'bravo']))
+      state.scope = scopeWith(true, nowMs)
+      state.notify('scope')
+      expect(drawn(applySnapshot)).toEqual(['alpha'])
+    })
+
+    it('when a later poll falls back to the trusted scope while participation reloads', async () => {
+      const { nowMs, state, applySnapshot, snapshot } = await start({})
+      await state.hooks!.onSnapshot(snapshot, { historyResetKey: MISSION })
+      state.scope = scopeWith(true, nowMs)
+      state.notify('scope')
+      expect(drawn(applySnapshot)).toEqual(['alpha'])
+      // Participation reloads; the poll uses the last trusted scope.
+      state.status = 'loading'
+      await state.hooks!.onSnapshot(snapshot, { historyResetKey: MISSION })
+      expect(drawn(applySnapshot)).toEqual(['alpha'])
+    })
+  })
 })
