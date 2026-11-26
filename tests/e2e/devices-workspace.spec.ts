@@ -37,6 +37,35 @@ test.describe('M19 devices workspace', () => {
     await expectCoordinateBarNamesNobody(page, 'Alpha Team')
   })
 
+  test('never shows a person\'s name beside the cursor\'s grid after Go to from People [DON-372]', async ({ page }) => {
+    await page.getByRole('button', { name: 'Go to Alpha Team on the map' }).click()
+    await expectMapTargetAt(page, [-9.74406, 51.99917])
+    await expect.poll(() => page.evaluate(() => window.__SARTRACKER_MAP__!.isMoving())).toBe(false)
+
+    // Point well away from Alpha Team, then read the bar.
+    const canvas = await page.locator('.maplibregl-canvas').boundingBox()
+    expect(canvas).not.toBeNull()
+    const pointer = { x: canvas!.x + canvas!.width * 0.85, y: canvas!.y + canvas!.height * 0.3 }
+    await page.mouse.move(pointer.x, pointer.y)
+    const grids = await page.evaluate(async ({ x, y }) => {
+      const { formatIrishGridReference, wgs84ToTM65 } = await import('/src/lib/coordinates.ts')
+      const map = window.__SARTRACKER_MAP__!
+      const box = map.getCanvas().getBoundingClientRect()
+      const cursor = map.unproject([x - box.left, y - box.top])
+      return {
+        cursor: formatIrishGridReference(...wgs84ToTM65(cursor.lat, cursor.lng)),
+        alpha: formatIrishGridReference(...wgs84ToTM65(51.99917, -9.74406)),
+      }
+    }, pointer)
+    expect(grids.cursor).not.toBe(grids.alpha)
+    // The bar shows the ground under the pointer (within a pixel's few metres), not Alpha Team's grid.
+    await expect.poll(async () => gridDistanceMetres(await page.getByTestId('coords-grid').innerText(), grids.cursor))
+      .toBeLessThan(10)
+    expect(gridDistanceMetres(grids.cursor, grids.alpha)).toBeGreaterThan(100)
+    await expectCoordinateBarNamesNobody(page, 'Alpha Team')
+    await expect(page.getByTestId('coordinate-display')).not.toContainText(grids.alpha)
+  })
+
   test('unmounts the workspace immediately when the operator closes it [DON-260]', async ({
     page,
   }) => {
@@ -1167,6 +1196,19 @@ async function seedTrackingWorkspace(page: import('@playwright/test').Page) {
  * Once the camera settles, says whether a [longitude, latitude] is drawn inside
  * the map canvas and right of the docked All devices list (DON-368).
  */
+/** Distance in metres between two same-square Irish Grid references such as "V 81215 84740". */
+function gridDistanceMetres(first: string, second: string): number {
+  const parse = (reference: string) => {
+    const match = /^([A-Z]) (\d{5}) (\d{5})$/u.exec(reference.trim())
+    if (match === null) throw new Error(`Not a 10-figure grid reference: ${reference}`)
+    return { square: match[1], easting: Number(match[2]), northing: Number(match[3]) }
+  }
+  const a = parse(first)
+  const b = parse(second)
+  if (a.square !== b.square) return Number.POSITIVE_INFINITY
+  return Math.hypot(a.easting - b.easting, a.northing - b.northing)
+}
+
 async function targetPlacement(page: import('@playwright/test').Page, target: [number, number]): Promise<string> {
   return page.evaluate((lngLat) => {
     const map = (window as Window & { __SARTRACKER_MAP__: import('maplibre-gl').Map }).__SARTRACKER_MAP__

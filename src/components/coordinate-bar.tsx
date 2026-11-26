@@ -12,6 +12,14 @@ import { useCoordinateToolStore } from '../features/coordinates/coordinate-tool-
 type CoordinateBarProps = {
   readonly latitude: number | null
   readonly longitude: number | null
+  /** Whose position the readouts are: under the pointer, or the map centre before any pointer. */
+  readonly source: 'cursor' | 'map-centre'
+}
+
+/** Caption naming whose position the readouts are, so none can be taken for a person's (DON-372). */
+const READOUT_OWNER_CAPTION: Record<CoordinateBarProps['source'], string> = {
+  cursor: 'Cursor position',
+  'map-centre': 'Map centre',
 }
 
 /** Height of the coordinate bar; map chrome above it (scale, Map Tools) keeps clear of it. */
@@ -24,12 +32,14 @@ type CoordinateDisplayParts = {
 }
 
 /**
- * Bottom strip showing the position under the cursor (DD, Irish Grid, DMS) and the Convert button.
- * Every readout here belongs to the cursor, never to a person or marker: no name may sit beside
+ * Bottom strip showing the position under the cursor (DD, Irish Grid, DMS) and the Convert button;
+ * before the pointer is over the map it shows the map centre and says so. Every readout here
+ * belongs to the cursor or map centre, never to a person or marker: no name may sit beside
  * these values, or a coordinator could read the cursor's grid over the radio as someone's
  * position (DON-372). A person's own position belongs with that person, with its age.
  */
-export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
+export function CoordinateBar({ latitude, longitude, source }: CoordinateBarProps) {
+  const ownerCaption = READOUT_OWNER_CAPTION[source]
   const openDialog = useCoordinateToolStore((state) => state.openDialog)
   const barRef = useRef<HTMLDivElement>(null)
 
@@ -57,7 +67,7 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
   const dmsDisplay = displays?.dmsDisplay ?? null
   const content =
     wgs84Display !== null && gridDisplay !== null && dmsDisplay !== null
-      ? `Cursor position: ${wgs84Display}  |  ${gridDisplay}  |  ${dmsDisplay}`
+      ? `${ownerCaption}: ${wgs84Display}  |  ${gridDisplay}  |  ${dmsDisplay}`
       : '—'
 
   return (
@@ -72,13 +82,12 @@ export function CoordinateBar({ latitude, longitude }: CoordinateBarProps) {
         <div aria-hidden="true" className="sar-coordinate-spacer" />
 
         <div className="flex min-w-0 flex-col justify-center">
-          {/* Names whose position the readouts are, so none can be taken for a person's (DON-372). */}
           <p
             aria-hidden="true"
             className="sar-meta-label sar-coordinate-label px-4 text-center leading-none max-[1320px]:px-3"
             data-testid="coordinate-readout-owner"
           >
-            Cursor position
+            {ownerCaption}
           </p>
           <div
             className="sar-coordinate-readouts flex min-w-0 items-center justify-center gap-4 overflow-hidden px-4 max-[1320px]:gap-2 max-[1320px]:px-3"

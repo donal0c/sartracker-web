@@ -622,6 +622,33 @@ test.describe('M2 map shell', () => {
     })
   })
 
+  test('says Map centre until the pointer is over the map, then Cursor position [DON-372]', async ({ page }) => {
+    // Before any pointer, the readout is the map centre and must not be labelled as the cursor.
+    await page.waitForFunction(() => window.__SARTRACKER_MAP__?.loaded() === true, undefined, { timeout: 15_000 })
+    await expect(page.getByTestId('coordinate-readout-owner')).toHaveText('Map centre')
+    await expect(page.getByTestId('coords-combined')).toContainText('Map centre: ')
+    await page.getByTestId('ws-mission-close').click()
+    const canvas = await page.locator('.maplibregl-canvas').boundingBox()
+    expect(canvas).not.toBeNull()
+    const pointer = { x: Math.round(canvas!.x + canvas!.width * 0.8), y: Math.round(canvas!.y + canvas!.height * 0.5) }
+    await page.mouse.move(pointer.x, pointer.y)
+    await expect(page.getByTestId('coordinate-readout-owner')).toHaveText('Cursor position')
+    await expect(page.getByTestId('coords-combined')).toContainText('Cursor position: ')
+
+    // The camera moves under a resting pointer (Go to, wheel zoom): the bar re-reads the ground under it.
+    const before = await page.getByTestId('coords-grid').innerText()
+    await page.evaluate(() => window.__SARTRACKER_MAP__!.jumpTo({ center: [-9.464944, 52.179337] }))
+    await expect(page.getByTestId('coords-grid')).not.toHaveText(before)
+    const groundUnderPointer = await page.evaluate(async ({ x, y }) => {
+      const { formatIrishGridReference, wgs84ToTM65 } = await import('/src/lib/coordinates.ts')
+      const map = window.__SARTRACKER_MAP__!
+      const box = map.getCanvas().getBoundingClientRect()
+      const ground = map.unproject([x - box.left, y - box.top])
+      return formatIrishGridReference(...wgs84ToTM65(ground.lat, ground.lng))
+    }, pointer)
+    await expect(page.getByTestId('coords-grid')).toHaveText(groundUnderPointer)
+  })
+
   test('updates the coordinate bar on mouse move', async ({ page }) => {
     const mapContainer = page.getByTestId('map-container')
     const bounds = await mapContainer.boundingBox()

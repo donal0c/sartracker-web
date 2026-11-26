@@ -74,8 +74,11 @@ test('a never-loaded target expires and cannot reappear when the map recovers [A
   await page.waitForFunction(() => window.__SARTRACKER_MAP__ !== undefined)
   await page.evaluate(() => window.__SARTRACKER_MAP__!.setStyle(null))
   await navigateTo(page, '52.179337', '-9.464944')
-  // The style is gone, so the target cannot attach; let its 30 s request lifetime run out.
+  // The style is gone, so the target is queued but cannot attach yet.
+  expect(await pendingTarget(page)).toEqual({ latitude: 52.179337, longitude: -9.464944, attached: false })
+  // Let its 30 s request lifetime run out.
   await page.clock.fastForward(30_001)
+  await expect.poll(() => pendingTarget(page)).toBeNull()
   await page.evaluate(() => window.__SARTRACKER_MAP__!.setStyle({ version: 8, sources: {}, layers: [
     { id: 'recovered-background', type: 'background', paint: { 'background-color': '#dde6e8' } },
   ] }))
@@ -169,6 +172,15 @@ test('latest repeated Go To survives delayed style loading and renders at the re
   await assertRenderedTarget(page, [-9.464944, 52.179337])
   await page.screenshot({ path: testInfo.outputPath('navigation-repeated.png') })
 })
+
+/** Reads the map's current go-to request from the running app's target store, or null when none. */
+async function pendingTarget(page: Page): Promise<{ latitude: number; longitude: number; attached: boolean } | null> {
+  return page.evaluate(async () => {
+    const { useMapTargetStore } = await import('/src/features/map/map-target-store.ts')
+    const target = useMapTargetStore.getState().activeTarget
+    return target === null ? null : { latitude: target.latitude, longitude: target.longitude, attached: target.attached }
+  })
+}
 
 /** Submits a real coordinate-converter navigation action. */
 async function navigateTo(page: Page, latitude: string, longitude: string): Promise<void> {

@@ -22,7 +22,7 @@ describe('CoordinateBar', () => {
   })
 
   it('keeps operator coordinates visible without low-use CRS cells', () => {
-    render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912 }))
+    render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912, source: 'cursor' }))
 
     expect(text('[data-testid="coordinate-display"]')).toContain('52.274681')
     expect(text('[data-testid="coordinate-display"]')).toContain('52°16')
@@ -39,7 +39,7 @@ describe('CoordinateBar', () => {
 
   it('renders a safe placeholder instead of throwing for impossible coordinate props', () => {
     expect(() =>
-      render(React.createElement(CoordinateBar, { latitude: 95, longitude: -190 })),
+      render(React.createElement(CoordinateBar, { latitude: 95, longitude: -190, source: 'cursor' })),
     ).not.toThrow()
 
     expect(text('[data-testid="coordinate-display"]')).toContain('—')
@@ -49,7 +49,7 @@ describe('CoordinateBar', () => {
   it('never puts a selected person\'s name beside the cursor\'s grid reference [DON-372]', () => {
     // Searcher 01 is selected at their stored position; the pointer is somewhere else.
     act(() => useMapTargetStore.getState().queueTarget(51.99917, -9.74406, 'Searcher 01'))
-    render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912 }))
+    render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912, source: 'cursor' }))
 
     const bar = text('[data-testid="coordinate-display"]')
     expect(text('[data-testid="coords-grid"]')).toContain('Q')
@@ -58,6 +58,13 @@ describe('CoordinateBar', () => {
     // The readout says whose position it is: the cursor's.
     expect(text('[data-testid="coordinate-readout-owner"]')).toBe('Cursor position')
     expect(text('[data-testid="coords-combined"]')).toMatch(/^Cursor position: /)
+  })
+
+  it('says Map centre, not Cursor position, before the pointer has been over the map [DON-372]', () => {
+    render(React.createElement(CoordinateBar, { latitude: 52.274681, longitude: -9.530912, source: 'map-centre' }))
+
+    expect(text('[data-testid="coordinate-readout-owner"]')).toBe('Map centre')
+    expect(text('[data-testid="coords-combined"]')).toMatch(/^Map centre: /)
   })
 
   function render(element: React.ReactElement): void {

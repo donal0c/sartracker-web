@@ -33,11 +33,17 @@ import { recordDiagnosticEvent } from '../diagnostics/diagnostic-event-log'
 export type HoverCoordinate = {
   readonly latitude: number | null
   readonly longitude: number | null
+  /**
+   * Whose position this is: the ground under the pointer, or the map centre before the pointer
+   * has been over the map. The bar says which, so neither is read out as a person's (DON-372).
+   */
+  readonly source: 'cursor' | 'map-centre'
 }
 
 const EMPTY_HOVER_COORDINATE: HoverCoordinate = {
   latitude: null,
   longitude: null,
+  source: 'cursor',
 }
 
 export type MapInstanceController = {
@@ -208,11 +214,14 @@ export function useMapInstance(): MapInstanceController {
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right')
     map.on('load', () => {
+      // Until the pointer is over the map, the bar shows the map centre and says so.
       const center = map.getCenter()
-      setHoverCoordinate({
+      pendingHoverCoordinateRef.current = {
         latitude: center.lat,
         longitude: center.lng,
-      })
+        source: 'map-centre',
+      }
+      setHoverCoordinate(pendingHoverCoordinateRef.current)
     })
     map.on('idle', () => {
       if (styleFailureRef.current !== null) return
@@ -269,14 +278,31 @@ export function useMapInstance(): MapInstanceController {
       }
       hoverCoordinateFrameRef.current = window.requestAnimationFrame(publishPendingHoverCoordinate)
     }
+    // Where the pointer rests on the map, so a camera move (Go to, zoom) re-reads the ground under
+    // it instead of leaving the previous spot on the bar as the cursor position (DON-372).
+    let pointerPoint: maplibregl.Point | null = null
     map.on('mousemove', (event) => {
+      pointerPoint = event.point
       scheduleHoverCoordinate({
         latitude: event.lngLat.lat,
         longitude: event.lngLat.lng,
+        source: 'cursor',
       })
     })
     map.on('mouseleave', () => {
+      pointerPoint = null
       scheduleHoverCoordinate(EMPTY_HOVER_COORDINATE)
+    })
+    map.on('move', () => {
+      if (pointerPoint !== null) {
+        const ground = map.unproject(pointerPoint)
+        scheduleHoverCoordinate({ latitude: ground.lat, longitude: ground.lng, source: 'cursor' })
+        return
+      }
+      if (pendingHoverCoordinateRef.current.source === 'map-centre') {
+        const center = map.getCenter()
+        scheduleHoverCoordinate({ latitude: center.lat, longitude: center.lng, source: 'map-centre' })
+      }
     })
 
     mapRef.current = map

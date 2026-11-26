@@ -1,17 +1,25 @@
 import { expect, type Page } from '@playwright/test'
 
 /**
- * Reads the go-to target marker the map is drawing, as [longitude, latitude], or null when none.
- * The coordinate bar no longer names the target (DON-372), so the marker itself is the evidence.
+ * Reads the go-to target marker the map is drawing, as [longitude, latitude], or null when none
+ * is drawn: no map, no style, no marker layer or an empty marker source. The coordinate bar no
+ * longer names the target (DON-372), so the drawn marker itself is the evidence.
  */
 export async function mapTargetMarker(page: Page): Promise<[number, number] | null> {
   return page.evaluate(() => {
     const map = window.__SARTRACKER_MAP__
-    const source = map?.getSource('coordinate-target') as { serialize?: () => { data?: unknown } } | undefined
-    const data = source?.serialize?.().data as GeoJSON.FeatureCollection | undefined
-    const point = data?.features?.[0]?.geometry
-    if (point === undefined || point.type !== 'Point') return null
-    return [point.coordinates[0]!, point.coordinates[1]!]
+    if (map === undefined) return null
+    try {
+      if (map.getLayer('coordinate-target-dot') === undefined) return null
+      const source = map.getSource('coordinate-target') as { serialize?: () => { data?: unknown } } | undefined
+      const data = source?.serialize?.().data as GeoJSON.FeatureCollection | undefined
+      const point = data?.features?.[0]?.geometry
+      if (point === undefined || point.type !== 'Point') return null
+      return [point.coordinates[0]!, point.coordinates[1]!]
+    } catch {
+      // The style can be missing during a basemap change; that is "no marker drawn".
+      return null
+    }
   })
 }
 
@@ -25,8 +33,11 @@ export async function expectMapTargetAt(page: Page, coordinate: [number, number]
   }, { timeout: 10_000 }).toBe(true)
 }
 
-/** The bar's readouts belong to the cursor: no person or target name may sit beside them (DON-372). */
+/**
+ * The bar's readouts belong to the cursor (or the map centre before any pointer): no person or
+ * target name may sit beside them, and the bar says whose position it shows (DON-372).
+ */
 export async function expectCoordinateBarNamesNobody(page: Page, name: string): Promise<void> {
   await expect(page.getByTestId('coordinate-display')).not.toContainText(name, { ignoreCase: true })
-  await expect(page.getByTestId('coordinate-readout-owner')).toHaveText('Cursor position')
+  await expect(page.getByTestId('coordinate-readout-owner')).toHaveText(/^(Cursor position|Map centre)$/u)
 }
