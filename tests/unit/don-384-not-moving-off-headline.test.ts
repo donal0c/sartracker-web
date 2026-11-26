@@ -66,6 +66,21 @@ describe('the stationary store times people by kept trail positions [DON-384]', 
     expect(Object.keys(since())).toEqual(['one'])
   })
 
+  it('does not time a "Last known" position the current connection has not confirmed', () => {
+    useStationaryAttentionStore.getState().applySnapshot(
+      { ...snapshot([fix('one', 'a', 0)], ['one']), unconfirmedCurrentDeviceIds: ['one'] }, 'mission-1')
+    expect(since()).toEqual({})
+  })
+
+  it('does not time a person whose not-moving warning is already raised', () => {
+    // One kept fix plus an unverified fix at the same spot 18 minutes later raises the warning itself.
+    const kept = fix('one', 'a', 0)
+    const later = { ...fix('one', 'b', 18), fix_time_unverified: true, timestamp_source: 'device' as const }
+    useStationaryAttentionStore.getState().applySnapshot({ ...snapshot([kept], ['one']), positions: [later] }, 'mission-1')
+    expect(useStationaryAttentionStore.getState().byDevice.one?.state).toBe('attention')
+    expect(since()).toEqual({})
+  })
+
   it('does not time a position restored from the saved cache', () => {
     const cached = { ...fix('one', 'a', 0), data_origin: 'cache' as const }
     useStationaryAttentionStore.getState().applySnapshot({ ...snapshot([], ['one']), positions: [cached] }, 'mission-1')

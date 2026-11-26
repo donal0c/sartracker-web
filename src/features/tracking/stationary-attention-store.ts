@@ -97,6 +97,10 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
       keptFixCountByDevice,
       snapshot.positions,
       checkOffClockNow(),
+      new Set([
+        ...(snapshot.unconfirmedCurrentDeviceIds ?? []),
+        ...Object.keys(byDevice).filter((deviceId) => byDevice[deviceId]?.state === 'attention'),
+      ]),
     )
     set({ missionId, byDevice, checkOffSinceByDevice })
   },

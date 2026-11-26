@@ -73,6 +73,8 @@ export function stationaryCheckOffGraceMs(pollIntervalMs: number): number {
  * @param keptFixCountByDevice how many distinct trail positions are kept for each person checked
  * @param positions the current positions
  * @param nowMs the monotonic time of this update
+ * @param excluded people not to time: a position not confirmed by the current
+ *   connection ("Last known"), or a not-moving warning already raised
  * @returns when each affected person was first seen short
  */
 export function trackStationaryCheckOffSince(
@@ -80,13 +82,14 @@ export function trackStationaryCheckOffSince(
   keptFixCountByDevice: ReadonlyMap<string, number>,
   positions: readonly NormalizedTrackingPosition[],
   nowMs: number,
+  excluded: ReadonlySet<string> = new Set(),
 ): Record<string, number> {
   const withLivePosition = new Set(positions
     .filter((position) => position.data_origin === 'live')
     .map((position) => position.device_id))
   const next: Record<string, number> = {}
   for (const [deviceId, kept] of keptFixCountByDevice) {
-    if (kept >= 2 || !withLivePosition.has(deviceId)) continue
+    if (kept >= 2 || !withLivePosition.has(deviceId) || excluded.has(deviceId)) continue
     next[deviceId] = previous[deviceId] ?? nowMs
   }
   return next
