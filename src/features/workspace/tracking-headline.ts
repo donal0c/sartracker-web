@@ -97,6 +97,11 @@ export type TrackingHeadline = {
    * before tracking stopped, so the panel says they may be out of date.
    */
   readonly lastReceivedShown?: boolean
+  /**
+   * Set on a map or record alarm while the feed itself is not online (for
+   * example reconnecting), so neither may say positions are live [DON-375].
+   */
+  readonly feedNotLive?: true
 }
 
 /**
@@ -229,6 +234,8 @@ export function describeTrackingHeadline(input: {
       alarm: `${lead}: ${map}; ${CONNECT_ADVICE}`, issues, lastReceivedShown,
     }
   }
+  // A map or record alarm must not call positions live while the feed is not online [DON-375].
+  const feedNotLive = status.mode === 'online' ? {} : { feedNotLive: true as const }
   // The feed is fine but the map still draws older positions: that must never
   // read as live, so it is the alarm, ahead of the record warning [DON-357].
   if (input.mapUpdateFailed) {
@@ -236,10 +243,15 @@ export function describeTrackingHeadline(input: {
     return {
       condition: 'map', tone: 'alert', text: others === '' ? 'MAP NOT UPDATING' : `MAP NOT UPDATING · ${others}`,
       problems: ['MAP NOT UPDATING', ...problems.filter((word) => word !== MAP_NOT_UPDATING_WORD)], detail: others,
-      alarm: 'MAP NOT UPDATING: positions drawn on the map may be out of date', issues,
+      alarm: 'MAP NOT UPDATING: positions drawn on the map may be out of date', issues, ...feedNotLive,
     }
   }
-  if (evidenceFailed) return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm: 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing', issues }
+  if (evidenceFailed) {
+    const alarm = status.mode === 'online'
+      ? 'MISSION RECORD NOT FULLY SAVED: positions are live, but open this before finishing'
+      : 'MISSION RECORD NOT FULLY SAVED: open this before finishing; positions are not updating yet'
+    return { condition: 'record', tone: 'alert', text: summary, problems, detail: summary, alarm, issues, ...feedNotLive }
+  }
   if (phase === 'recovery') return { condition: 'recovery', tone: 'warning', text: 'Mission needs resuming: tracking not live', problems: ['Mission needs resuming'], detail: 'tracking not live', issues }
   // Before a mission starts amber is enough: nobody relies on the map yet.
   if (reentry !== null) {

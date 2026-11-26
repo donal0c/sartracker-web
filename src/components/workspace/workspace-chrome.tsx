@@ -27,9 +27,15 @@ const TRACKING_ADVICE: Record<TrackingCondition, { readonly happened: string; re
   credentials: { happened: 'Tracking cannot connect: the saved tracking password or token cannot be used on this computer.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the tracking password or token again, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
   settings: { happened: 'Tracking cannot connect: the saved settings file was damaged, so SAR Tracker set it aside and started with default settings.', map: 'No live positions yet.', todo: 'Open Settings, then Tracking sources. Enter the Traccar server, user and password again, check the rosters and maps, then press Save, Connect & Close. If the mission is paused, press Resume mission afterwards.' },
   notConnected: { happened: 'The mission is running, but tracking is not connected, so no new positions are arriving.', map: 'No live positions yet.', todo: "Don't rely on the map until this clears. Open Settings, then Tracking sources. Check the tracking server, user and password, and that Auto-refresh is on, then press Save, Connect & Close. If they are already right, press Reconnect." },
-  reconnecting: { happened: 'Tracking is reconnecting, for example after new tracking settings were saved.', map: LAST_RECEIVED, todo: 'Wait a few seconds. If the status turns red, follow what the red strip says.' },
+  reconnecting: { happened: 'Tracking is reconnecting, for example after new tracking settings were saved.', map: 'No live positions yet.', todo: 'Wait a few seconds. If the status turns red, follow what the red strip says.' },
   disconnected: { happened: 'Tracking is not connected.', map: 'No live positions yet.', todo: 'Check the tracking server in Settings, then press Reconnect.' },
 }
+
+/** Map and record advice while the feed is not online, so neither calls positions live [DON-375]. */
+const FEED_NOT_LIVE_ADVICE = {
+  map: { happened: 'The map could not draw the latest positions, and tracking is not live: new positions are not arriving yet.', map: TRACKING_ADVICE.map.map, todo: "Don't rely on positions drawn on the map or listed in People until this clears. If tracking is reconnecting, wait a few seconds. If this does not clear, open More, then Diagnostics, and send the support bundle." },
+  record: { happened: 'Part of the mission record could not be saved, and tracking is not live: new positions are not arriving yet.', map: LAST_RECEIVED, todo: 'Keep this app open. Do not finish the mission yet. If tracking is reconnecting, wait a few seconds. Open More, then Diagnostics, and send the support bundle.' },
+} as const
 
 /** The one line that says whether the map can be trusted; click for the detail. */
 function TrackingHeadlineButton(props: { readonly headline: TrackingHeadline; readonly onOpen: () => void }) {
@@ -230,7 +236,10 @@ export function TrackingDetails(props: { readonly headline: TrackingHeadline; re
   const lastSuccessAt = useLastConfirmedAt()
   const [reconnecting, setReconnecting] = useState(false)
   const [reconnectError, setReconnectError] = useState<string | null>(null)
-  const advice = TRACKING_ADVICE[headline.condition]
+  // A map or record alarm while tracking is not online must not say positions are arriving [DON-375].
+  const advice = headline.feedNotLive === true && (headline.condition === 'map' || headline.condition === 'record')
+    ? FEED_NOT_LIVE_ADVICE[headline.condition]
+    : TRACKING_ADVICE[headline.condition]
   // A paused mission whose tracking was never connected must also be told where to connect [DON-375].
   const connectToo = headline.condition === 'paused' && headline.remedy === CONNECT_WORD
   const todo = connectToo

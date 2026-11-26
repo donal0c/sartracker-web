@@ -198,6 +198,13 @@ describe('tracking headline', () => {
       const record = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: reconnecting })
       expect(record.condition).toBe('record')
       expect(record.tone).toBe('alert')
+      // Neither may call positions live while the feed is reconnecting.
+      expect(record.alarm).not.toMatch(/positions are live/)
+      expect(record.feedNotLive).toBe(true)
+      expect(map.feedNotLive).toBe(true)
+      const liveRecord = describeTrackingHeadline({ ...base, phase: 'active', positions: [kept], evidenceState: 'failed', status: status({}) })
+      expect(liveRecord.alarm).toMatch(/positions are live/)
+      expect(liveRecord.feedNotLive).toBeUndefined()
     })
 
     it('stays quiet with no mission running', () => {
