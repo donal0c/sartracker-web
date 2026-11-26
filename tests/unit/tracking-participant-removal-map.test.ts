@@ -333,6 +333,16 @@ describe('removing participants from a running mission [DON-374]', () => {
       expect(drawn(applySnapshot)).toEqual(['alpha'])
     })
 
+    it('after a change to another server that has not answered yet', async () => {
+      const { nowMs, state, applySnapshot, runtime, dependencies, snapshot } = await start({})
+      await state.hooks!.onSnapshot(snapshot, { historyResetKey: MISSION })
+      await runtime.reconfigure!({ ...dependencies, config: { baseUrl: 'http://other-synthetic.invalid' } } as never)
+      expect(drawn(applySnapshot)).toEqual(['alpha', 'bravo'])
+      state.scope = scopeWith(true, nowMs)
+      state.notify('scope')
+      expect(drawn(applySnapshot)).toEqual(['alpha'])
+    })
+
     it('when the map shows the startup cache and no poll has arrived', async () => {
       const cachedAt = new Date().toISOString()
       const latest = new Date(Date.now() - 60_000).toISOString()

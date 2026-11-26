@@ -1408,8 +1408,10 @@ export async function startTrackingRuntime(
       trackingCacheMissionWarningActive = false
       trackingCacheReadWarningActive = false
       trustedOperationalScope = null
-      // The map's device ids may belong to another server now [DON-374].
-      lastPublishedOperational = null
+      // lastPublishedOperational is kept: it is what the map still shows, and
+      // a removal must be able to narrow it until the new server publishes.
+      // Narrowing only takes people away, so nothing from the old server is
+      // added or refreshed [DON-374].
     }
     cacheReadActive = false
     currentTransportFreshness.reset()
