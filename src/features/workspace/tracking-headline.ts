@@ -330,6 +330,10 @@ export function useTrackingHeadline(): TrackingHeadline {
   const mapUpdateFailed = useTrackingMapUpdateStore((state) => state.failure !== null)
   const checkOffSinceByDevice = useStationaryAttentionStore((state) => state.checkOffSinceByDevice)
   const checkOffGraceMs = useStationaryAttentionStore((state) => state.checkOffGraceMs)
+  const stationaryByDevice = useStationaryAttentionStore((state) => state.byDevice)
+  const stationaryShown = useMemo(() => new Set(Object.entries(stationaryByDevice)
+    .filter(([, attention]) => attention.state === 'attention')
+    .map(([deviceId]) => deviceId)), [stationaryByDevice])
   const checkOffGateOpenedAtMs = useStationaryAttentionStore((state) => state.checkOffGateOpenedAtMs)
   // Only a running mission with tracking connected is expected to grow a trail:
   // a pause suspends refreshes and a lost connection has its own alarm.
@@ -340,9 +344,9 @@ export function useTrackingHeadline(): TrackingHeadline {
   const nowMs = useCheckOffClock(checkOffSinceByDevice, checkOffGateOpenedAtMs, checkOffGraceMs)
   const stationaryCheckOff = useMemo(() => summarizeStationaryCheckOff({
     sinceByDevice: checkOffSinceByDevice, positions, nowMs, graceMs: checkOffGraceMs,
-    gateOpenedAtMs: checkOffGateOpen ? checkOffGateOpenedAtMs : null, warningCodes: status.warningCodes,
+    gateOpenedAtMs: checkOffGateOpen ? checkOffGateOpenedAtMs : null, warningCodes: status.warningCodes, stationaryShown,
   }),
-  [checkOffGateOpen, checkOffGateOpenedAtMs, checkOffGraceMs, checkOffSinceByDevice, nowMs, positions, status.warningCodes])
+  [checkOffGateOpen, checkOffGateOpenedAtMs, checkOffGraceMs, checkOffSinceByDevice, nowMs, positions, stationaryShown, status.warningCodes])
 
   return useMemo(() => describeTrackingHeadline({
     status, phase, positions, ingestRejected: ingest.totalRejected, evidenceState: evidence.state,

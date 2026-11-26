@@ -74,7 +74,7 @@ export function stationaryCheckOffGraceMs(pollIntervalMs: number): number {
  * @param positions the current positions
  * @param nowMs the monotonic time of this update
  * @param excluded people not to time: a position not confirmed by the current
- *   connection ("Last known"), or a not-moving warning already raised
+ *   connection ("Last known")
  * @returns when each affected person was first seen short
  */
 export function trackStationaryCheckOffSince(
@@ -112,6 +112,12 @@ export function summarizeStationaryCheckOff(input: {
   readonly graceMs: number
   readonly gateOpenedAtMs: number | null
   readonly warningCodes: readonly TrackingWarningCode[] | undefined
+  /**
+   * People whose not-moving warning is showing: they are left out of the count
+   * while it shows, but their clock keeps running so a brief warning cannot
+   * restart the wait.
+   */
+  readonly stationaryShown?: ReadonlySet<string>
 }): StationaryCheckOffSummary {
   const gate = input.gateOpenedAtMs
   if (gate === null) return { count: 0, causes: [] }
@@ -119,7 +125,7 @@ export function summarizeStationaryCheckOff(input: {
     .filter((position) => position.data_origin === 'live')
     .map((position) => [position.device_id, position]))
   const affected = Object.entries(input.sinceByDevice)
-    .filter(([deviceId, since]) => liveByDevice.has(deviceId) &&
+    .filter(([deviceId, since]) => liveByDevice.has(deviceId) && input.stationaryShown?.has(deviceId) !== true &&
       input.nowMs - Math.max(since, gate) >= input.graceMs)
     .map(([deviceId]) => deviceId)
   if (affected.length === 0) return { count: 0, causes: [] }

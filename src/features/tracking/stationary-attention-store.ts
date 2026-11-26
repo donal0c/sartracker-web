@@ -97,10 +97,7 @@ export const useStationaryAttentionStore = create<StationaryAttentionStore>((set
       keptFixCountByDevice,
       snapshot.positions,
       checkOffClockNow(),
-      new Set([
-        ...(snapshot.unconfirmedCurrentDeviceIds ?? []),
-        ...Object.keys(byDevice).filter((deviceId) => byDevice[deviceId]?.state === 'attention'),
-      ]),
+      new Set(snapshot.unconfirmedCurrentDeviceIds ?? []),
     )
     set({ missionId, byDevice, checkOffSinceByDevice })
   },
@@ -142,6 +139,7 @@ function hasIdenticalStationaryEvidence(
   const identical = previousSnapshot?.positions === snapshot.positions &&
     previousSnapshot.breadcrumbs === snapshot.breadcrumbs &&
     previousSnapshot.devices === snapshot.devices &&
+    previousSnapshot.unconfirmedCurrentDeviceIds === snapshot.unconfirmedCurrentDeviceIds &&
     previousMissionId === missionId &&
     previousActiveDeviceKey === activeDeviceKey &&
     previousConfig === config

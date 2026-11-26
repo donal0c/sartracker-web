@@ -72,12 +72,22 @@ describe('the stationary store times people by kept trail positions [DON-384]', 
     expect(since()).toEqual({})
   })
 
-  it('does not time a person whose not-moving warning is already raised', () => {
+  it('keeps the clock through a not-moving warning, so a brief warning cannot restart the wait', () => {
     // One kept fix plus an unverified fix at the same spot 18 minutes later raises the warning itself.
     const kept = fix('one', 'a', 0)
     const later = { ...fix('one', 'b', 18), fix_time_unverified: true, timestamp_source: 'device' as const }
+    useStationaryAttentionStore.getState().applySnapshot(snapshot([kept], ['one']), 'mission-1')
+    const first = since().one
     useStationaryAttentionStore.getState().applySnapshot({ ...snapshot([kept], ['one']), positions: [later] }, 'mission-1')
     expect(useStationaryAttentionStore.getState().byDevice.one?.state).toBe('attention')
+    expect(since().one).toBe(first)
+  })
+
+  it('reacts to a change in which positions the connection has confirmed alone', () => {
+    const base = snapshot([fix('one', 'a', 0)], ['one'])
+    useStationaryAttentionStore.getState().applySnapshot(base, 'mission-1')
+    expect(Object.keys(since())).toEqual(['one'])
+    useStationaryAttentionStore.getState().applySnapshot({ ...base, unconfirmedCurrentDeviceIds: ['one'] }, 'mission-1')
     expect(since()).toEqual({})
   })
 

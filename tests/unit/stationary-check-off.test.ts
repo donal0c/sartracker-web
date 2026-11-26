@@ -70,6 +70,12 @@ describe('when the line counts someone [DON-384]', () => {
     expect(summarizeStationaryCheckOff({ ...open, gateOpenedAtMs: resumed, sinceByDevice, positions: [position('a')], nowMs: resumed + GRACE }).count).toBe(1)
   })
 
+  it('leaves a person out while their not-moving warning shows, and counts them again once it clears', () => {
+    const input = { ...open, sinceByDevice: { a: NOW }, positions: [position('a')], nowMs: NOW + GRACE }
+    expect(summarizeStationaryCheckOff({ ...input, stationaryShown: new Set(['a']) }).count).toBe(0)
+    expect(summarizeStationaryCheckOff({ ...input, stationaryShown: new Set() }).count).toBe(1)
+  })
+
   it('leaves people with no live position out of the count', () => {
     const summary = summarizeStationaryCheckOff({
       ...open, sinceByDevice: { a: NOW, gone: NOW, cached: NOW },
