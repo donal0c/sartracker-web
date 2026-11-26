@@ -1851,7 +1851,7 @@ describe('startTrackingRuntime', () => {
     stop()
   })
 
-  it('carries a removed participant last accepted marker across later polls until it becomes stale', async () => {
+  it('drops a removed participant marker on later polls, even one from before the removal [DON-374]', async () => {
     const applySnapshot = vi.fn()
     let pollerHooks: { readonly onSnapshot: (snapshot: TrackingSnapshot) => Promise<void> } | undefined
     const selectedDevice = SNAPSHOT.devices[0]!
@@ -1911,7 +1911,7 @@ describe('startTrackingRuntime', () => {
     })
 
     expect(applySnapshot).toHaveBeenLastCalledWith(expect.objectContaining({
-      positions: [expect.objectContaining({ id: 'pre-removal-fix' })],
+      devices: [], positions: [], breadcrumbs: [],
     }))
     stop()
   })

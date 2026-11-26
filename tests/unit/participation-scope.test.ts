@@ -197,7 +197,7 @@ describe('participation scope [DON-271]', () => {
     expect(scope.includesAt('12', '2026-08-20T08:59:59.999Z')).toBe(false)
   })
 
-  it('keeps the last accepted pre-removal current marker until it becomes stale', () => {
+  it('takes a removed participant off the live map at once, keeping in-window evidence [DON-374]', () => {
     const scope = createParticipationScope({
       participants: [participant({
         traccar_device_id: '11', removed_at: '2026-08-20T11:00:00.000Z',
@@ -206,18 +206,25 @@ describe('participation scope [DON-271]', () => {
     })
     const lastAccepted = position('11', '2026-08-20T10:59:00.000Z')
     const postRemoval = position('11', '2026-08-20T11:01:00.000Z')
-
-    expect(scope.filterSnapshot({
-      devices: [device('11')], positions: [lastAccepted], breadcrumbs: [],
-    }, '2026-08-20T11:05:00.000Z').positions).toEqual([lastAccepted])
-    expect(scope.filterSnapshot({
-      devices: [device('11')], positions: [postRemoval], breadcrumbs: [],
-    }, '2026-08-20T11:05:00.000Z').positions).toEqual([])
-    expect(scope.filterSnapshot({
+    const snapshot = {
       devices: [device('11')],
-      positions: [{ ...lastAccepted, device_cache_stale: true }],
-      breadcrumbs: [],
-    }, '2026-08-20T11:05:00.000Z').positions).toEqual([])
+      positions: [lastAccepted],
+      breadcrumbs: [lastAccepted, postRemoval],
+      rawBreadcrumbsForPersistence: [lastAccepted, postRemoval],
+    }
+
+    // A fix from before the removal does not keep them on the map, in People
+    // or in its warnings, and their trail leaves with their dot.
+    expect(scope.filterSnapshot(snapshot, '2026-08-20T11:00:30.000Z')).toMatchObject({
+      devices: [], positions: [], breadcrumbs: [],
+    })
+    // What was recorded while they took part is still mission evidence.
+    expect(scope.filterEvidenceSnapshot(snapshot, '2026-08-20T11:00:30.000Z')).toMatchObject({
+      devices: [{ device_id: '11' }],
+      positions: [lastAccepted],
+      breadcrumbs: [lastAccepted],
+      rawBreadcrumbsForPersistence: [lastAccepted],
+    })
   })
 
   it('keeps a current marker whose fix time is only ahead of a slow laptop clock [DON-349 M-06]', () => {
@@ -233,7 +240,7 @@ describe('participation scope [DON-271]', () => {
 
     expect(scope.filterSnapshot({
       devices: [device('11')], positions: [ahead], breadcrumbs: [],
-    }, '2026-08-20T10:55:00.000Z').positions).toEqual([ahead])
+    }, '2026-08-20T10:58:30.000Z').positions).toEqual([ahead])
   })
 
   it('uses persisted membership sequence for equal-time append ordering', () => {

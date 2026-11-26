@@ -613,6 +613,9 @@
             part of this mission. To take someone out, press <strong>Change who's taking part</strong>, then
             <strong>Remove</strong> on their row.
             That stops collecting from now on; what is already saved stays saved.
+            They leave the map, the People list and its warnings straight away, along with their trail
+            line; their saved track stays in the mission record and in Review. With the trail shown as
+            dots, their saved dots can still appear on the map.
           </p>
           <p>
             <strong>Earlier positions: still loading</strong> means the earlier track is still
@@ -738,7 +741,9 @@
           <p>
             SAR Tracker asks the Traccar server for positions about every 30 seconds (the interval is
             in <a href="#settings">Settings</a>). If the server cannot be reached it keeps the last
-            positions it had and marks them, rather than clearing the map.
+            positions it had and marks them, rather than clearing the map. If you change to a
+            different Traccar server in Settings, the map clears until the new server answers,
+            because the old server's trackers may not be the same people.
           </p>
           <figure class="screenshot narrow">
             <img src="assets/tracking-tab.png" alt="Tracking panel: What has happened, What the map is showing with the last update time, What to do, and the mission history coverage box" />

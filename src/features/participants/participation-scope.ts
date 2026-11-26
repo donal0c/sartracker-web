@@ -4,7 +4,6 @@ import type {
   ParticipantBackfillCheckpoint,
 } from '../../infrastructure/mission-store/tauri-mission-store'
 import type { TrackingSnapshot } from '../tracking/tracking-types'
-import { isPositionExpired } from '../tracking/tracking-snapshot-health'
 
 export type ParticipationScope = {
   readonly includesAt: (deviceId: string, timestamp: string) => boolean
@@ -141,22 +140,22 @@ export function createParticipationScope(input: {
     historicalDeviceIdsThrough,
     operationalDeviceIdsAt,
     filterSnapshot: (snapshot, observedAt = new Date().toISOString()) => {
+      // The live map shows only who is taking part now. Someone removed from
+      // the mission leaves the map, People and its warnings at once, even if
+      // their last fix was taken while they were still taking part; what was
+      // recorded stays in the mission record and Review [DON-374].
       const activeDeviceIds = new Set(operationalDeviceIdsAt(observedAt))
-      const visiblePositions = snapshot.positions.filter((position) =>
-        activeDeviceIds.has(position.device_id) ||
-        (!isPositionExpired(position) && includesAt(position.device_id, position.timestamp)))
-      const visibleDeviceIds = new Set([
-        ...activeDeviceIds,
-        ...visiblePositions.map((position) => position.device_id),
-      ])
       return {
         ...snapshot,
-        devices: snapshot.devices.filter((device) => visibleDeviceIds.has(device.device_id)),
+        devices: snapshot.devices.filter((device) => activeDeviceIds.has(device.device_id)),
         // Current positions describe where selected participants are now. Their
         // source fix can predate a late selection or observation-time group
         // membership change, so historical evidence windows must not hide them.
-        positions: visiblePositions,
+        positions: snapshot.positions.filter((position) => activeDeviceIds.has(position.device_id)),
+        // The map draws a dot at the newest trail point, so a removed person's
+        // trail must leave the live map with their dot.
         breadcrumbs: snapshot.breadcrumbs.filter((position) =>
+          activeDeviceIds.has(position.device_id) &&
           includesAt(position.device_id, position.timestamp)),
         ...(snapshot.rawBreadcrumbsForPersistence === undefined
           ? {}
