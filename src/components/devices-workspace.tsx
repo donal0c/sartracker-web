@@ -699,6 +699,7 @@ function DevicePositionDetail(props: {
     >
       <dt className="sar-meta-label">Position</dt>
       <dd className="mt-1">
+        {display.kind === 'irish_grid' ? <span className="sr-only">Irish Grid </span> : null}
         <span
           className={
             display.kind === 'irish_grid'
@@ -710,12 +711,15 @@ function DevicePositionDetail(props: {
           {display.primary}
         </span>
         {display.secondary === null ? null : (
-          <span
-            className="mt-0.5 block font-mono text-xs text-stone-300"
-            data-testid={`device-inspector-latlon-${props.deviceId}`}
-          >
-            {display.secondary}
-          </span>
+          <>
+            <span className="sr-only">Latitude, longitude </span>
+            <span
+              className="mt-0.5 block font-mono text-xs text-stone-300"
+              data-testid={`device-inspector-latlon-${props.deviceId}`}
+            >
+              {display.secondary}
+            </span>
+          </>
         )}
       </dd>
     </div>

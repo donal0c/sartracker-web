@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import fixture from '../fixtures/kerry-reference-points.json'
 import { formatDevicePositionDisplay } from '../../src/features/tracking/device-position-display'
@@ -36,6 +36,21 @@ describe('formatDevicePositionDisplay [DON-377]', () => {
       primary: 'Outside Ireland',
       secondary: '48.85660, 2.35220',
     })
+  })
+
+  it('never offers a grid reference that Convert would reject at the envelope edge', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      // 51.3, -10.8 formats to V 04777 08887, whose metre cell lies just outside Ireland.
+      expect(formatDevicePositionDisplay(51.3, -10.8)).toEqual({
+        kind: 'grid_unavailable',
+        primary: 'Irish Grid unavailable',
+        secondary: '51.30000, -10.80000',
+      })
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('Irish Grid unavailable for device position 51.30000, -10.80000'))
+    } finally {
+      error.mockRestore()
+    }
   })
 
   it('says No position when the device has none', () => {

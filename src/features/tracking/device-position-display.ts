@@ -1,4 +1,10 @@
-import { formatIrishGridReference, isWithinIreland, wgs84ToTM65 } from '../../lib/coordinates'
+import {
+  formatIrishGridReference,
+  isWithinIreland,
+  parseIrishGridReference,
+  tm65ToWgs84,
+  wgs84ToTM65,
+} from '../../lib/coordinates'
 
 /**
  * Which state a device's written-out position is in. Only `irish_grid` carries a grid
@@ -48,21 +54,23 @@ export function formatDevicePositionDisplay(
   }
 
   try {
-    return {
-      kind: 'irish_grid',
-      primary: formatIrishGridReference(...wgs84ToTM65(latitude, longitude)),
-      secondary,
-    }
+    const gridReference = formatIrishGridReference(...wgs84ToTM65(latitude, longitude))
+    // The operator may type this reference into Convert or the marker form. Show only a
+    // reference that converts back inside Ireland, so the card never offers one the app
+    // itself would reject (a metre cell truncated just past the envelope edge).
+    tm65ToWgs84(...parseIrishGridReference(gridReference))
+    return { kind: 'irish_grid', primary: gridReference, secondary }
   } catch (error) {
-    // A point on the very edge of the Irish envelope can fall outside the TM65 grid.
-    // Say so rather than crash the card or guess a reference.
-    if (error instanceof RangeError) {
-      return { kind: 'grid_unavailable', primary: 'Irish Grid unavailable', secondary }
-    }
-    throw error
+    // A point on the very edge of the Irish envelope can fall outside the TM65 grid, or
+    // its reference may not convert back. Say so rather than crash the card or guess a
+    // reference, and leave a trace for the support report.
+    const reason = error instanceof Error ? error.message : String(error)
+    console.error(`Irish Grid unavailable for device position ${secondary}: ${reason}`)
+    return { kind: 'grid_unavailable', primary: 'Irish Grid unavailable', secondary }
   }
 }
 
+/** Reports whether a latitude/longitude pair is finite and inside the WGS84 range. */
 function isReadableWgs84(latitude: number, longitude: number): boolean {
   return (
     Number.isFinite(latitude) &&

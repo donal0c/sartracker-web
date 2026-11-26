@@ -399,6 +399,9 @@ describe('DevicesWorkspace', () => {
     expect(getText('[data-testid="device-inspector-latlon-alpha"]')).toBe('51.99917, -9.74406')
     const position = getText('[data-testid="device-inspector-position-alpha"]')
     expect(position.indexOf('V 80269 84392')).toBeLessThan(position.indexOf('51.99917'))
+    // A screen reader hears which value is which, not two bare numbers.
+    expect(position).toContain('Irish Grid V 80269 84392')
+    expect(position).toContain('Latitude, longitude 51.99917, -9.74406')
   })
 
   it('says Outside Ireland, not a grid reference, for a selected device off Ireland [DON-377]', async () => {
