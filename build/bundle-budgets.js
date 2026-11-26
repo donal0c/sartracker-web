@@ -19,8 +19,12 @@ export const BUNDLE_BUDGETS = [
     // press is never lost), so the main chunk gets its own bound.
     // DON-368: the folded people controls and docked All devices added about
     // 2 KB (601.5 KB); the bound moves to 610 KB rather than splitting Mission.
+    // DON-371 wave 1 (PRs 110-115: Finish refusal, not-connected headline,
+    // Irish Grid position on the device card, cursor grid chip, removed
+    // people, stationary line) took main to 614.1 KB;
+    // the bound moves to 620 KB rather than splitting first-paint code.
     pattern: /^index-.*\.js$/,
-    maxBytes: 610_000,
+    maxBytes: 620_000,
     reason: 'Main chunk holds first-paint JS, including Review loaded at startup (PR 76).',
   },
 ]
