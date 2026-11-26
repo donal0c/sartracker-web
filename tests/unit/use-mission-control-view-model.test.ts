@@ -666,8 +666,9 @@ describe('useMissionControlViewModel', () => {
       act(() => useParticipantStore.setState({
         backfillCheckpoints: [{ ...historyCheckpoint('2', '2026-05-17T08:00:00.000Z'), completed: 1 }],
       }))
-      expect(getModel().actionError).toBe('Earlier tracks have now loaded. Press Confirm Finish again.')
-      expect(getModel().historyRetry).toBeNull()
+      // The published list may predate a newer checkpoint, so it never claims "loaded".
+      expect(getModel().actionError).toBe('Earlier tracks may have finished loading. Press Confirm Finish again; if it is still refused, press Try again.')
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
     })
 
     it('Try again asks tracking to fetch the history now, keeps the live count and Try again, and never finishes', async () => {
@@ -689,15 +690,15 @@ describe('useMissionControlViewModel', () => {
         note: 'Fetching earlier tracks again. Press Confirm Finish once they have loaded.',
       })
 
-      // Once the history really completes, the fetching note goes with Try again.
+      // Once the list shows nothing left, the fetching note goes; Try again stays.
       act(() => useParticipantStore.setState({
         backfillCheckpoints: [
           { ...historyCheckpoint('1', '2026-05-17T08:00:00.000Z'), completed: 1 },
           { ...historyCheckpoint('2', '2026-05-17T08:00:00.000Z'), completed: 1 },
         ],
       }))
-      expect(getModel().actionError).toBe('Earlier tracks have now loaded. Press Confirm Finish again.')
-      expect(getModel().historyRetry).toBeNull()
+      expect(getModel().actionError).toBe('Earlier tracks may have finished loading. Press Confirm Finish again; if it is still refused, press Try again.')
+      expect(getModel().historyRetry).toEqual({ busy: false, note: null })
     })
 
     it('names devices whose earlier tracks cannot be fetched when Try again starts', async () => {

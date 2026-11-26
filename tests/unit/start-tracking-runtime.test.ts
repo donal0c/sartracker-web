@@ -1333,7 +1333,7 @@ describe('startTrackingRuntime', () => {
       await stop()
     })
 
-    it('starts the fetch from the read it reported on, so a later failing read cannot make "started" untrue', async () => {
+    it('answers from the pass that runs it, so a later failing read cannot make "started" untrue', async () => {
       let readsLeft = Number.POSITIVE_INFINITY
       const listParticipantBackfillCheckpoints = vi.fn(async () => {
         if (readsLeft <= 0) throw new Error('database is locked')
@@ -1353,6 +1353,35 @@ describe('startTrackingRuntime', () => {
       expect(await stop.retryParticipantHistoryNow?.()).toEqual({ kind: 'started', unfetchableDeviceCount: 0 })
 
       await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(2), { timeout: 300 })
+      await stop()
+    })
+
+    it('while another pass runs, waits for the pass that handles it and reports that pass\'s read failure', async () => {
+      let finishFirst: (value: unknown) => void = () => undefined
+      let failReads = false
+      const listParticipantBackfillCheckpoints = vi.fn(async () => {
+        if (failReads) throw new Error('database is locked')
+        return [checkpoint]
+      })
+      const getBreadcrumbsWithReport = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve }))
+        .mockResolvedValue({ accepted: [], rejected: [] })
+      const stop = await startWithHistory({ getBreadcrumbsWithReport, listParticipantBackfillCheckpoints })
+      void stop.retryParticipantHistoryNow?.()
+      await vi.waitFor(() => expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1))
+
+      let answered = false
+      const retry = stop.retryParticipantHistoryNow?.().finally(() => { answered = true })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(answered).toBe(false)
+
+      failReads = true
+      finishFirst({ accepted: [], rejected: [] })
+      expect(await retry).toEqual({
+        kind: 'unavailable',
+        reason: 'SAR Tracker could not read which earlier tracks are still missing (database is locked). Press Try again; restart SAR Tracker if this keeps happening.',
+      })
+      expect(getBreadcrumbsWithReport).toHaveBeenCalledTimes(1)
       await stop()
     })
 

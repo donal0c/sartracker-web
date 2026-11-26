@@ -11,6 +11,13 @@ const HISTORY_INCOMPLETE_REFUSAL = /participant history backfill checkpoint\(s\)
 export const HISTORY_NOW_LOADED_NOTE = 'Earlier tracks have now loaded. Press Confirm Finish again.'
 
 /**
+ * The participant list shows no earlier tracks left, but it may be older than
+ * the store, so the app does not claim they have loaded (DON-376).
+ */
+export const HISTORY_MAY_HAVE_LOADED_NOTE =
+  'Earlier tracks may have finished loading. Press Confirm Finish again; if it is still refused, press Try again.'
+
+/**
  * Start Fresh after a restart finishes the unfinished mission, so the same
  * refusal applies; its history only loads while that mission runs (DON-376).
  */

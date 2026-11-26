@@ -25,6 +25,7 @@ import { getAppRuntimeController } from '../runtime/app-runtime-controller'
 import type { ParticipantHistoryRetryOutcome } from '../tracking/participant-history-retry'
 import type { ParticipantBackfillCheckpoint } from '../../infrastructure/mission-store/tauri-mission-store'
 import {
+  HISTORY_MAY_HAVE_LOADED_NOTE,
   HISTORY_NOW_LOADED_NOTE,
   HISTORY_START_FRESH_REFUSAL,
   countPeopleStillFetchingHistoryIfKnown,
@@ -175,17 +176,26 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         { activeMissionId: participantMissionId, error: participantError, checkpoints: backfillCheckpoints },
         finishBlock.missionId,
       )
-  const historyNowLoaded = finishBlockActive && peopleStillLoading === 0
+  // Only tracking's own read of the durable checkpoints may say "loaded"; a
+  // published list showing none left may predate a newer checkpoint.
+  const historyNowLoaded = finishBlockActive && finishBlock.trackingSaysComplete &&
+    backfillCheckpoints === finishBlock.heldSnapshot?.checkpoints
+  const historyMayHaveLoaded = finishBlockActive && !historyNowLoaded && peopleStillLoading === 0
   const actionError = !finishBlockActive
     ? actionErrorState
     : historyNowLoaded
       ? HISTORY_NOW_LOADED_NOTE
-      : `${describeHistoryIncompleteFinishRefusal(peopleStillLoading)}${
+      : historyMayHaveLoaded
+        ? `${HISTORY_MAY_HAVE_LOADED_NOTE}${
+          finishBlock.retryError === null ? '' : ` Try again did not work: ${finishBlock.retryError}`}`
+        : `${describeHistoryIncompleteFinishRefusal(peopleStillLoading)}${
         finishBlock.retryError === null ? '' : ` Try again did not work: ${finishBlock.retryError}`}`
   const historyRetry = finishBlockActive && !historyNowLoaded
     ? {
       busy: historyRetryBusy,
-      note: finishBlock.retryStarted === null ? null : describeHistoryRetryStarted(finishBlock.retryStarted.unfetchableDeviceCount),
+      note: finishBlock.retryStarted === null || historyMayHaveLoaded
+        ? null
+        : describeHistoryRetryStarted(finishBlock.retryStarted.unfetchableDeviceCount),
     }
     : null
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
@@ -371,6 +381,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         retryError: null,
         retryStarted: null,
         heldSnapshot: published === 0 ? { checkpoints: scope.backfillCheckpoints, people: null } : null,
+        trackingSaysComplete: false,
       })
     } finally {
       finishInFlight.current = false
@@ -407,6 +418,7 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         ...block,
         retryError: null,
         retryStarted: { unfetchableDeviceCount: outcome.unfetchableDeviceCount },
+        trackingSaysComplete: false,
       })
     } else if (outcome.kind === 'complete') {
       // Tracking read the durable checkpoints just now; the published list
@@ -416,9 +428,10 @@ export function useMissionControlViewModel(): MissionControlViewModel {
         retryError: null,
         retryStarted: null,
         heldSnapshot: { checkpoints: useParticipantStore.getState().backfillCheckpoints, people: 0 },
+        trackingSaysComplete: true,
       })
     } else {
-      setFinishBlock({ ...block, retryError: outcome.reason, retryStarted: null })
+      setFinishBlock({ ...block, retryError: outcome.reason, retryStarted: null, trackingSaysComplete: false })
     }
   }
 
@@ -676,6 +689,8 @@ type FinishHistoryBlock = {
    * A published checkpoint list known to be older than SQLite or tracking,
    * and what to say while it is still the list on screen.
    */
+  /** Tracking read the durable checkpoints and found nothing left. */
+  readonly trackingSaysComplete: boolean
   readonly heldSnapshot: {
     readonly checkpoints: readonly ParticipantBackfillCheckpoint[]
     readonly people: number | null
